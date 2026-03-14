@@ -142,6 +142,248 @@ export type Database = {
           },
         ]
       }
+      document_sections: {
+        Row: {
+          created_at: string
+          document_id: string | null
+          id: string
+          is_color: boolean
+          is_duplex: boolean
+          lamination: string | null
+          order_item_id: string
+          page_range_end: number | null
+          page_range_start: number | null
+          paper_stock: string | null
+          paper_weight_gsm: number | null
+          section_type: Database["public"]["Enums"]["section_type"]
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          document_id?: string | null
+          id?: string
+          is_color?: boolean
+          is_duplex?: boolean
+          lamination?: string | null
+          order_item_id: string
+          page_range_end?: number | null
+          page_range_start?: number | null
+          paper_stock?: string | null
+          paper_weight_gsm?: number | null
+          section_type?: Database["public"]["Enums"]["section_type"]
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          document_id?: string | null
+          id?: string
+          is_color?: boolean
+          is_duplex?: boolean
+          lamination?: string | null
+          order_item_id?: string
+          page_range_end?: number | null
+          page_range_start?: number | null
+          paper_stock?: string | null
+          paper_weight_gsm?: number | null
+          section_type?: Database["public"]["Enums"]["section_type"]
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_sections_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_sections_order_item_id_fkey"
+            columns: ["order_item_id"]
+            isOneToOne: false
+            referencedRelation: "order_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      documents: {
+        Row: {
+          created_at: string
+          document_status: Database["public"]["Enums"]["document_status"]
+          file_name: string
+          file_path: string
+          file_size: number | null
+          id: string
+          mime_type: string | null
+          order_item_id: string
+          page_count: number | null
+          page_height_mm: number | null
+          page_width_mm: number | null
+          preflight_data: Json | null
+          sort_order: number
+          thumbnail_urls: Json | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          document_status?: Database["public"]["Enums"]["document_status"]
+          file_name: string
+          file_path: string
+          file_size?: number | null
+          id?: string
+          mime_type?: string | null
+          order_item_id: string
+          page_count?: number | null
+          page_height_mm?: number | null
+          page_width_mm?: number | null
+          preflight_data?: Json | null
+          sort_order?: number
+          thumbnail_urls?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          document_status?: Database["public"]["Enums"]["document_status"]
+          file_name?: string
+          file_path?: string
+          file_size?: number | null
+          id?: string
+          mime_type?: string | null
+          order_item_id?: string
+          page_count?: number | null
+          page_height_mm?: number | null
+          page_width_mm?: number | null
+          preflight_data?: Json | null
+          sort_order?: number
+          thumbnail_urls?: Json | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "documents_order_item_id_fkey"
+            columns: ["order_item_id"]
+            isOneToOne: false
+            referencedRelation: "order_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      order_items: {
+        Row: {
+          build_status: Database["public"]["Enums"]["build_status"]
+          created_at: string
+          id: string
+          order_id: string
+          product_family_id: string | null
+          quantity: number
+          spec: Json
+          title: string | null
+          unit_price: number
+          updated_at: string
+        }
+        Insert: {
+          build_status?: Database["public"]["Enums"]["build_status"]
+          created_at?: string
+          id?: string
+          order_id: string
+          product_family_id?: string | null
+          quantity?: number
+          spec?: Json
+          title?: string | null
+          unit_price?: number
+          updated_at?: string
+        }
+        Update: {
+          build_status?: Database["public"]["Enums"]["build_status"]
+          created_at?: string
+          id?: string
+          order_id?: string
+          product_family_id?: string | null
+          quantity?: number
+          spec?: Json
+          title?: string | null
+          unit_price?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_items_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_product_family_id_fkey"
+            columns: ["product_family_id"]
+            isOneToOne: false
+            referencedRelation: "product_families"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orders: {
+        Row: {
+          branch_id: string | null
+          created_at: string
+          fulfillment_type:
+            | Database["public"]["Enums"]["fulfillment_type"]
+            | null
+          id: string
+          notes: string | null
+          order_status: Database["public"]["Enums"]["order_status"]
+          tenant_id: string | null
+          total_price: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          branch_id?: string | null
+          created_at?: string
+          fulfillment_type?:
+            | Database["public"]["Enums"]["fulfillment_type"]
+            | null
+          id?: string
+          notes?: string | null
+          order_status?: Database["public"]["Enums"]["order_status"]
+          tenant_id?: string | null
+          total_price?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          branch_id?: string | null
+          created_at?: string
+          fulfillment_type?:
+            | Database["public"]["Enums"]["fulfillment_type"]
+            | null
+          id?: string
+          notes?: string | null
+          order_status?: Database["public"]["Enums"]["order_status"]
+          tenant_id?: string | null
+          total_price?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pricing_rules: {
         Row: {
           conditions: Json
@@ -429,6 +671,7 @@ export type Database = {
         | "dispatched"
         | "delivered"
         | "cancelled"
+      section_type: "body" | "front_cover" | "back_cover" | "insert" | "tab"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -585,6 +828,7 @@ export const Constants = {
         "delivered",
         "cancelled",
       ],
+      section_type: ["body", "front_cover", "back_cover", "insert", "tab"],
     },
   },
 } as const
