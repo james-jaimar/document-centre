@@ -17,6 +17,7 @@ const ALLOWED_PATHS = [
   "convert/cmyk",
   "imposition/labels",
   "verify-pdf",
+  "rasterize",
 ];
 
 Deno.serve(async (req) => {
