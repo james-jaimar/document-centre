@@ -2,3 +2,6 @@ project_id = "lcvdhtaqoumyokjqaqfw"
 
 [functions.send-email]
 verify_jwt = false
+
+[functions.pdf-api]
+verify_jwt = false
