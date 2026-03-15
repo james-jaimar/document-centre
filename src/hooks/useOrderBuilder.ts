@@ -155,7 +155,7 @@ export function useUpdateOrderItemSpec() {
     mutationFn: async ({ id, spec }: { id: string; spec: ItemSpec }) => {
       const { data, error } = await supabase
         .from("order_items")
-        .update({ spec: spec as unknown as Record<string, unknown> })
+        .update({ spec: spec as any })
         .eq("id", id)
         .select()
         .single();
