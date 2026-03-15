@@ -1,0 +1,151 @@
+import type { Tables } from "@/integrations/supabase/types";
+import { FileText, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+
+type Document = Tables<"documents">;
+
+interface UploadProgress {
+  fileName: string;
+  status: "uploading" | "analyzing" | "done" | "error";
+  progress: number;
+  error?: string;
+}
+
+interface FileListProps {
+  documents: Document[];
+  uploads: Record<string, UploadProgress>;
+  selectedDocId: string | null;
+  onSelect: (id: string) => void;
+}
+
+const STATUS_ICONS = {
+  pending: Loader2,
+  uploading: Loader2,
+  processing: Loader2,
+  analyzed: CheckCircle2,
+  ready: CheckCircle2,
+  error: AlertCircle,
+};
+
+export default function FileList({
+  documents,
+  uploads,
+  selectedDocId,
+  onSelect,
+}: FileListProps) {
+  // Show in-progress uploads at the top
+  const activeUploads = Object.values(uploads).filter(
+    (u) => u.status !== "done"
+  );
+
+  return (
+    <div className="space-y-2">
+      {activeUploads.map((upload) => (
+        <div
+          key={upload.fileName}
+          className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 p-3"
+        >
+          <div className="h-10 w-10 rounded bg-muted flex items-center justify-center shrink-0">
+            <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-foreground truncate">
+              {upload.fileName}
+            </p>
+            <div className="flex items-center gap-2 mt-1">
+              <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all duration-300"
+                  style={{ width: `${upload.progress}%` }}
+                />
+              </div>
+              <span className="text-xs text-muted-foreground capitalize">
+                {upload.status === "uploading"
+                  ? "Uploading…"
+                  : upload.status === "analyzing"
+                  ? "Analyzing…"
+                  : upload.status}
+              </span>
+            </div>
+            {upload.error && (
+              <p className="text-xs text-destructive mt-1">{upload.error}</p>
+            )}
+          </div>
+        </div>
+      ))}
+
+      {documents.map((doc) => {
+        const StatusIcon = STATUS_ICONS[doc.document_status] ?? FileText;
+        const isReady = doc.document_status === "ready" || doc.document_status === "analyzed";
+        const isError = doc.document_status === "error";
+        const isProcessing = !isReady && !isError;
+
+        return (
+          <div
+            key={doc.id}
+            onClick={() => isReady && onSelect(doc.id)}
+            className={cn(
+              "flex items-center gap-3 rounded-lg border p-3 transition-all",
+              selectedDocId === doc.id
+                ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                : "border-border hover:border-primary/30 cursor-pointer",
+              !isReady && "opacity-60 cursor-default"
+            )}
+          >
+            {/* Thumbnail or icon */}
+            <div className="h-12 w-10 rounded bg-muted flex items-center justify-center shrink-0 overflow-hidden">
+              {doc.thumbnail_urls &&
+              Array.isArray(doc.thumbnail_urls) &&
+              (doc.thumbnail_urls as string[]).length > 0 ? (
+                <img
+                  src={(doc.thumbnail_urls as string[])[0]}
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <FileText className="h-5 w-5 text-muted-foreground" />
+              )}
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">
+                {doc.file_name}
+              </p>
+              <div className="flex items-center gap-2 mt-0.5">
+                {doc.page_count && (
+                  <span className="text-xs text-muted-foreground">
+                    {doc.page_count} {doc.page_count === 1 ? "page" : "pages"}
+                  </span>
+                )}
+                {doc.page_width_mm && doc.page_height_mm && (
+                  <span className="text-xs text-muted-foreground">
+                    {Math.round(Number(doc.page_width_mm))}×
+                    {Math.round(Number(doc.page_height_mm))}mm
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="shrink-0">
+              {isProcessing ? (
+                <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
+              ) : isError ? (
+                <AlertCircle className="h-4 w-4 text-destructive" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4 text-success" />
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      {documents.length === 0 && activeUploads.length === 0 && (
+        <div className="text-center py-8 text-muted-foreground">
+          <FileText className="h-8 w-8 mx-auto mb-2 opacity-40" />
+          <p className="text-sm">No files uploaded yet</p>
+        </div>
+      )}
+    </div>
+  );
+}

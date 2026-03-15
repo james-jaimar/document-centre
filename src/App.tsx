@@ -15,6 +15,9 @@ import NotFound from "@/pages/NotFound";
 import CustomerDashboard from "@/pages/dashboard/CustomerDashboard";
 import CustomerOrders from "@/pages/dashboard/CustomerOrders";
 import CustomerSettings from "@/pages/dashboard/CustomerSettings";
+import NewOrder from "@/pages/dashboard/NewOrder";
+import OrderFiles from "@/pages/dashboard/OrderFiles";
+import OrderBuild from "@/pages/dashboard/OrderBuild";
 
 // Branch
 import BranchDashboard from "@/pages/branch/BranchDashboard";
@@ -51,6 +54,9 @@ const App = () => (
               {/* Customer */}
               <Route path="/dashboard" element={<CustomerDashboard />} />
               <Route path="/dashboard/orders" element={<CustomerOrders />} />
+              <Route path="/dashboard/orders/new" element={<NewOrder />} />
+              <Route path="/dashboard/orders/:id/files" element={<OrderFiles />} />
+              <Route path="/dashboard/orders/:id/build" element={<OrderBuild />} />
               <Route path="/dashboard/settings" element={<CustomerSettings />} />
 
               {/* Branch */}
