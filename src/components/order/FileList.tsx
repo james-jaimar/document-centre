@@ -1,6 +1,7 @@
 import type { Tables } from "@/integrations/supabase/types";
-import { FileText, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { FileText, Loader2, AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
 
 type Document = Tables<"documents">;
 
@@ -16,6 +17,7 @@ interface FileListProps {
   uploads: Record<string, UploadProgress>;
   selectedDocId: string | null;
   onSelect: (id: string) => void;
+  onReprocess?: (doc: { id: string; file_path: string; file_name: string }) => Promise<void>;
 }
 
 export default function FileList({
@@ -23,10 +25,26 @@ export default function FileList({
   uploads,
   selectedDocId,
   onSelect,
+  onReprocess,
 }: FileListProps) {
+  const [reprocessingIds, setReprocessingIds] = useState<Set<string>>(new Set());
   const activeUploads = Object.values(uploads).filter(
     (u) => u.status !== "done"
   );
+
+  const handleReprocess = async (doc: Document) => {
+    if (!onReprocess || reprocessingIds.has(doc.id)) return;
+    setReprocessingIds((prev) => new Set(prev).add(doc.id));
+    try {
+      await onReprocess({ id: doc.id, file_path: doc.file_path, file_name: doc.file_name });
+    } finally {
+      setReprocessingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(doc.id);
+        return next;
+      });
+    }
+  };
 
   return (
     <div className="space-y-2">
@@ -68,6 +86,8 @@ export default function FileList({
         const isReady = doc.document_status === "ready" || doc.document_status === "analyzed";
         const isError = doc.document_status === "error";
         const isProcessing = !isReady && !isError;
+        const hasThumbnails = Array.isArray(doc.thumbnail_urls) && (doc.thumbnail_urls as string[]).length > 0;
+        const isReprocessing = reprocessingIds.has(doc.id);
 
         return (
           <div
@@ -114,8 +134,22 @@ export default function FileList({
               </div>
             </div>
 
-            <div className="shrink-0">
-              {isProcessing ? (
+            <div className="shrink-0 flex items-center gap-1">
+              {/* Reprocess button for docs without thumbnails */}
+              {isReady && !hasThumbnails && onReprocess && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleReprocess(doc);
+                  }}
+                  disabled={isReprocessing}
+                  className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
+                  title="Reprocess PDF"
+                >
+                  <RefreshCw className={cn("h-3.5 w-3.5", isReprocessing && "animate-spin")} />
+                </button>
+              )}
+              {isProcessing || isReprocessing ? (
                 <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
               ) : isError ? (
                 <AlertCircle className="h-4 w-4 text-destructive" />

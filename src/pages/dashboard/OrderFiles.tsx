@@ -28,7 +28,7 @@ export default function OrderFiles() {
     refetchSections,
   } = useOrderData(orderId);
 
-  const { uploads, uploadFiles } = useDocumentUpload(orderItem?.id);
+  const { uploads, uploadFiles, reprocessDocument } = useDocumentUpload(orderItem?.id);
   const addSection = useAddSection();
   const updateSection = useUpdateSection();
   const deleteSection = useDeleteSection();
@@ -175,6 +175,7 @@ export default function OrderFiles() {
             uploads={uploads}
             selectedDocId={selectedDocId}
             onSelect={setSelectedDocId}
+            onReprocess={reprocessDocument}
           />
         </div>
 
