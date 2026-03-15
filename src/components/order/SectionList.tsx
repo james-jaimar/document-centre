@@ -72,6 +72,31 @@ export default function SectionList({
             )}
           >
             <div className="flex items-start justify-between gap-2">
+              {/* Thumbnail */}
+              {(() => {
+                const thumbs = doc?.thumbnail_urls;
+                const firstThumb =
+                  Array.isArray(thumbs) && (thumbs as string[]).length > 0
+                    ? (thumbs as string[])[0]
+                    : null;
+                return (
+                  <div className="h-14 w-10 rounded-md bg-muted/50 border border-border/40 overflow-hidden shrink-0 flex items-center justify-center">
+                    {firstThumb ? (
+                      <img
+                        src={firstThumb}
+                        alt=""
+                        className={cn(
+                          "h-full w-full object-cover",
+                          !section.is_color && "grayscale"
+                        )}
+                      />
+                    ) : (
+                      <FileText className="h-4 w-4 text-muted-foreground/40" />
+                    )}
+                  </div>
+                );
+              })()}
+
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-2.5 py-0.5 text-xs font-semibold">
