@@ -31,6 +31,7 @@ Deno.serve(async (req) => {
     // Auth
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
+      console.error("pdf-api: Missing or invalid Authorization header");
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401, headers: jsonHeaders,
       });
@@ -42,19 +43,23 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) {
+    // Use getUser for reliable auth verification
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user) {
+      console.error("pdf-api: Auth failed:", userError?.message ?? "No user");
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401, headers: jsonHeaders,
       });
     }
+
+    console.log("pdf-api: Authenticated user:", userData.user.id);
 
     // Parse body
     const body = await req.json();
     const { path, ...payload } = body;
 
     if (!path || !ALLOWED_PATHS.includes(path)) {
+      console.error("pdf-api: Invalid path:", path);
       return new Response(
         JSON.stringify({ error: `Invalid path. Allowed: ${ALLOWED_PATHS.join(", ")}` }),
         { status: 400, headers: jsonHeaders }
@@ -65,6 +70,8 @@ Deno.serve(async (req) => {
     const vpsUrl = Deno.env.get("VPS_PDF_API_URL")!;
     const vpsKey = Deno.env.get("VPS_PDF_API_KEY")!;
 
+    console.log(`pdf-api: Forwarding to VPS /${path}`);
+
     const vpsResponse = await fetch(`${vpsUrl}/${path}`, {
       method: "POST",
       headers: {
@@ -73,6 +80,8 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify(payload),
     });
+
+    console.log(`pdf-api: VPS responded with status ${vpsResponse.status}`);
 
     // Handle 503 busy
     if (vpsResponse.status === 503) {
@@ -85,6 +94,7 @@ Deno.serve(async (req) => {
     // Forward error responses
     if (!vpsResponse.ok) {
       const errorText = await vpsResponse.text();
+      console.error(`pdf-api: VPS error (${vpsResponse.status}):`, errorText);
       let errorBody: unknown;
       try { errorBody = JSON.parse(errorText); } catch { errorBody = { error: errorText }; }
       return new Response(JSON.stringify(errorBody), {
