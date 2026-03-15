@@ -1,7 +1,6 @@
 import type { Tables } from "@/integrations/supabase/types";
 import { FileText, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 
 type Document = Tables<"documents">;
 
@@ -19,22 +18,12 @@ interface FileListProps {
   onSelect: (id: string) => void;
 }
 
-const STATUS_ICONS = {
-  pending: Loader2,
-  uploading: Loader2,
-  processing: Loader2,
-  analyzed: CheckCircle2,
-  ready: CheckCircle2,
-  error: AlertCircle,
-};
-
 export default function FileList({
   documents,
   uploads,
   selectedDocId,
   onSelect,
 }: FileListProps) {
-  // Show in-progress uploads at the top
   const activeUploads = Object.values(uploads).filter(
     (u) => u.status !== "done"
   );
@@ -44,9 +33,9 @@ export default function FileList({
       {activeUploads.map((upload) => (
         <div
           key={upload.fileName}
-          className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 p-3"
+          className="flex items-center gap-3 rounded-xl border border-border bg-muted/30 p-3"
         >
-          <div className="h-10 w-10 rounded bg-muted flex items-center justify-center shrink-0">
+          <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
             <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
           </div>
           <div className="flex-1 min-w-0">
@@ -76,7 +65,6 @@ export default function FileList({
       ))}
 
       {documents.map((doc) => {
-        const StatusIcon = STATUS_ICONS[doc.document_status] ?? FileText;
         const isReady = doc.document_status === "ready" || doc.document_status === "analyzed";
         const isError = doc.document_status === "error";
         const isProcessing = !isReady && !isError;
@@ -86,15 +74,14 @@ export default function FileList({
             key={doc.id}
             onClick={() => isReady && onSelect(doc.id)}
             className={cn(
-              "flex items-center gap-3 rounded-lg border p-3 transition-all",
+              "flex items-center gap-3 rounded-xl border p-3 transition-all",
               selectedDocId === doc.id
                 ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-                : "border-border hover:border-primary/30 cursor-pointer",
+                : "border-border/60 hover:border-primary/30 cursor-pointer",
               !isReady && "opacity-60 cursor-default"
             )}
           >
-            {/* Thumbnail or icon */}
-            <div className="h-12 w-10 rounded bg-muted flex items-center justify-center shrink-0 overflow-hidden">
+            <div className="h-10 w-8 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden">
               {doc.thumbnail_urls &&
               Array.isArray(doc.thumbnail_urls) &&
               (doc.thumbnail_urls as string[]).length > 0 ? (
@@ -104,7 +91,7 @@ export default function FileList({
                   className="h-full w-full object-cover"
                 />
               ) : (
-                <FileText className="h-5 w-5 text-muted-foreground" />
+                <FileText className="h-4 w-4 text-muted-foreground" />
               )}
             </div>
 
@@ -133,7 +120,7 @@ export default function FileList({
               ) : isError ? (
                 <AlertCircle className="h-4 w-4 text-destructive" />
               ) : (
-                <CheckCircle2 className="h-4 w-4 text-success" />
+                <CheckCircle2 className="h-4 w-4 text-primary" />
               )}
             </div>
           </div>
@@ -141,8 +128,8 @@ export default function FileList({
       })}
 
       {documents.length === 0 && activeUploads.length === 0 && (
-        <div className="text-center py-8 text-muted-foreground">
-          <FileText className="h-8 w-8 mx-auto mb-2 opacity-40" />
+        <div className="text-center py-6 text-muted-foreground">
+          <FileText className="h-7 w-7 mx-auto mb-2 opacity-40" />
           <p className="text-sm">No files uploaded yet</p>
         </div>
       )}
