@@ -4,51 +4,57 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 210 20% 96%;
+    --foreground: 222 24% 18%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 222 24% 18%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 222 24% 18%;
 
-    --primary: 215 70% 45%;
+    --primary: 201 76% 47%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 210 18% 92%;
+    --secondary-foreground: 222 24% 18%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 210 18% 94%;
+    --muted-foreground: 215 16% 45%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 160 45% 66%;
+    --accent-foreground: 222 24% 18%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 215 70% 45%;
+    --border: 210 18% 88%;
+    --input: 210 18% 88%;
+    --ring: 201 76% 47%;
 
-    --radius: 0.5rem;
+    --radius: 1rem;
 
-    --sidebar-background: 222 47% 11%;
-    --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 215 70% 55%;
+    /* Sidebar tokens */
+    --sidebar-background: 224 19% 13%;
+    --sidebar-foreground: 210 20% 96%;
+    --sidebar-primary: 201 76% 47%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 222 30% 18%;
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 222 20% 20%;
-    --sidebar-ring: 215 70% 55%;
-    --sidebar-muted: 210 20% 70%;
+    --sidebar-accent: 184 27% 38%;
+    --sidebar-accent-foreground: 210 20% 96%;
+    --sidebar-border: 224 15% 20%;
+    --sidebar-ring: 201 76% 47%;
+    --sidebar-muted: 215 16% 65%;
+
+    /* Printflow extras */
+    --soft-blue: 201 76% 47%;
+    --soft-teal: 167 35% 62%;
+    --soft-gold: 40 89% 58%;
 
     --success: 142 76% 36%;
     --success-foreground: 0 0% 100%;
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
-    --info: 215 70% 55%;
+    --info: 201 76% 47%;
     --info-foreground: 0 0% 100%;
   }
 
@@ -62,7 +68,7 @@
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 215 70% 55%;
+    --primary: 201 76% 55%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 217.2 32.6% 17.5%;
@@ -71,7 +77,7 @@
     --muted: 217.2 32.6% 17.5%;
     --muted-foreground: 215 20.2% 65.1%;
 
-    --accent: 217.2 32.6% 17.5%;
+    --accent: 160 45% 40%;
     --accent-foreground: 210 40% 98%;
 
     --destructive: 0 62.8% 30.6%;
@@ -83,19 +89,19 @@
 
     --sidebar-background: 222 47% 8%;
     --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 215 70% 55%;
+    --sidebar-primary: 201 76% 55%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 222 30% 14%;
+    --sidebar-accent: 184 27% 30%;
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 222 20% 16%;
-    --sidebar-ring: 215 70% 55%;
+    --sidebar-ring: 201 76% 55%;
     --sidebar-muted: 210 20% 60%;
 
     --success: 142 76% 36%;
     --success-foreground: 0 0% 100%;
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
-    --info: 215 70% 55%;
+    --info: 201 76% 55%;
     --info-foreground: 0 0% 100%;
   }
 }
@@ -106,8 +112,110 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
     font-size: 14px;
     line-height: 1.5;
+  }
+}
+
+/* === Printflow component classes === */
+@layer components {
+  /* Customer portal body gradient — applied by CustomerLayout */
+  .customer-body {
+    background:
+      radial-gradient(circle at top left, rgba(115, 178, 195, 0.18), transparent 22%),
+      radial-gradient(circle at top right, rgba(67, 126, 246, 0.12), transparent 18%),
+      linear-gradient(to bottom, hsl(210 20% 96%) 0%, hsl(210 22% 94%) 100%);
+  }
+
+  .print-sidebar {
+    @apply relative flex flex-col border-r border-white/10 text-sidebar-foreground;
+    background:
+      radial-gradient(circle at bottom left, rgba(72, 133, 255, 0.14), transparent 30%),
+      linear-gradient(180deg, hsl(var(--sidebar-background)) 0%, #171c25 100%);
+  }
+
+  .print-topbar {
+    @apply sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-border bg-white/80 px-6 backdrop-blur;
+  }
+
+  .glass-card {
+    @apply rounded-3xl border border-white/60 bg-white/80 shadow-[0_10px_30px_rgba(16,24,40,0.08)] backdrop-blur;
+  }
+
+  .section-card {
+    @apply rounded-2xl border border-border bg-white shadow-sm;
+  }
+
+  .section-header {
+    @apply flex items-center justify-between rounded-t-2xl border-b border-border bg-secondary/80 px-4 py-3 text-sm font-semibold tracking-wide text-muted-foreground;
+  }
+
+  .sidebar-nav-item {
+    @apply flex items-center gap-3 rounded-2xl px-4 py-3 text-[15px] font-medium text-sidebar-foreground/90 transition-all;
+  }
+
+  .sidebar-nav-item:hover {
+    @apply bg-white/10 text-white;
+  }
+
+  .sidebar-nav-item.active {
+    @apply bg-sidebar-accent/90 text-white shadow-lg;
+  }
+
+  .product-tile {
+    @apply flex min-w-[150px] flex-col items-center gap-3 rounded-3xl border border-white/60 bg-white/75 px-4 py-5 shadow-sm transition-all cursor-pointer;
+  }
+
+  .product-tile:hover {
+    @apply -translate-y-0.5 shadow-md;
+  }
+
+  .product-thumb {
+    @apply flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-secondary to-muted shadow-inner;
+  }
+
+  .upload-dropzone {
+    @apply flex min-h-[220px] flex-col items-center justify-center rounded-3xl border-2 border-dashed border-border bg-gradient-to-b from-white to-secondary/50 text-center transition-all cursor-pointer;
+  }
+
+  .upload-dropzone:hover {
+    @apply border-primary bg-white;
+  }
+
+  .metric-table {
+    @apply w-full text-sm;
+  }
+
+  .metric-table th {
+    @apply px-4 py-3 text-left font-semibold text-muted-foreground;
+  }
+
+  .metric-table td {
+    @apply border-t border-secondary px-4 py-3 text-foreground;
+  }
+
+  .soft-button {
+    @apply inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition;
+  }
+
+  .soft-button-primary {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90;
+  }
+
+  .soft-button-gold {
+    @apply bg-warning text-warning-foreground hover:bg-warning/90;
+  }
+
+  .status-empty {
+    @apply flex min-h-[150px] items-center justify-center text-sm text-muted-foreground;
+  }
+
+  .search-shell {
+    @apply flex h-12 flex-1 items-center gap-3 rounded-2xl border border-border bg-secondary/50 px-4;
+  }
+
+  .search-input {
+    @apply w-full bg-transparent text-base outline-none placeholder:text-muted-foreground;
   }
 }

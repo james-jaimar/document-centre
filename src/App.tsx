@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
+import CustomerLayout from "@/components/CustomerLayout";
 
 import Auth from "@/pages/Auth";
 import ResetPassword from "@/pages/ResetPassword";
@@ -49,16 +50,18 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/reset-password" element={<ResetPassword />} />
 
-            {/* Protected shell */}
-            <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-              {/* Customer */}
+            {/* Customer portal — dedicated layout */}
+            <Route element={<ProtectedRoute><CustomerLayout /></ProtectedRoute>}>
               <Route path="/dashboard" element={<CustomerDashboard />} />
               <Route path="/dashboard/orders" element={<CustomerOrders />} />
               <Route path="/dashboard/orders/new" element={<NewOrder />} />
               <Route path="/dashboard/orders/:id/files" element={<OrderFiles />} />
               <Route path="/dashboard/orders/:id/build" element={<OrderBuild />} />
               <Route path="/dashboard/settings" element={<CustomerSettings />} />
+            </Route>
 
+            {/* Admin / Branch / Platform — original layout */}
+            <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               {/* Branch */}
               <Route path="/branch" element={
                 <ProtectedRoute allowedRoles={["branch_manager", "store_operator", "head_office_admin", "platform_admin"]}>
