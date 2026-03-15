@@ -54,6 +54,9 @@ const App = () => (
               {/* Customer */}
               <Route path="/dashboard" element={<CustomerDashboard />} />
               <Route path="/dashboard/orders" element={<CustomerOrders />} />
+              <Route path="/dashboard/orders/new" element={<NewOrder />} />
+              <Route path="/dashboard/orders/:id/files" element={<OrderFiles />} />
+              <Route path="/dashboard/orders/:id/build" element={<OrderBuild />} />
               <Route path="/dashboard/settings" element={<CustomerSettings />} />
 
               {/* Branch */}
