@@ -15,6 +15,9 @@ import NotFound from "@/pages/NotFound";
 import CustomerDashboard from "@/pages/dashboard/CustomerDashboard";
 import CustomerOrders from "@/pages/dashboard/CustomerOrders";
 import CustomerSettings from "@/pages/dashboard/CustomerSettings";
+import NewOrder from "@/pages/dashboard/NewOrder";
+import OrderFiles from "@/pages/dashboard/OrderFiles";
+import OrderBuild from "@/pages/dashboard/OrderBuild";
 
 // Branch
 import BranchDashboard from "@/pages/branch/BranchDashboard";

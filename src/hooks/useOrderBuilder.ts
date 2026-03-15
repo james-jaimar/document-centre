@@ -197,7 +197,7 @@ export function useUpdateSection() {
     mutationFn: async ({ id, ...updates }: Partial<DocumentSection> & { id: string }) => {
       const { data, error } = await supabase
         .from("document_sections")
-        .update(updates)
+        .update(updates as any)
         .eq("id", id)
         .select()
         .single();
