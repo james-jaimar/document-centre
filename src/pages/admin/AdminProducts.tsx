@@ -22,8 +22,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Plus, Pencil, Trash2, ChevronDown } from "lucide-react";
+import { Plus, Pencil, Trash2, ChevronDown, Sparkles } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { seedBoundDocument } from "@/lib/seedBoundDocument";
 
 const AdminProducts = () => {
   const { data: families = [], isLoading } = useProductFamilies();
@@ -35,6 +36,7 @@ const AdminProducts = () => {
   const [editingFamily, setEditingFamily] = useState<ProductFamily | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [seeding, setSeeding] = useState(false);
 
   function handleCreate() {
     setEditingFamily(null);
@@ -72,6 +74,23 @@ const AdminProducts = () => {
     setDeleteId(null);
   }
 
+  async function handleSeedBoundDocument() {
+    setSeeding(true);
+    try {
+      const result = await seedBoundDocument();
+      toast({
+        title: "Bound Documents seeded",
+        description: `Created with ${result.optionCount} options and ${result.ruleCount} pricing rules.`,
+      });
+      // Refetch
+      window.location.reload();
+    } catch (e: any) {
+      toast({ title: "Seed failed", description: e.message, variant: "destructive" });
+    } finally {
+      setSeeding(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -79,16 +98,22 @@ const AdminProducts = () => {
           <h1 className="text-2xl font-bold text-foreground">Product Families</h1>
           <p className="text-sm text-muted-foreground">Manage product types and their configurable options.</p>
         </div>
-        <Button onClick={handleCreate}>
-          <Plus className="h-4 w-4 mr-2" /> New Product Family
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleSeedBoundDocument} disabled={seeding}>
+            <Sparkles className="h-4 w-4 mr-2" />
+            {seeding ? "Seeding…" : "Seed Bound Document"}
+          </Button>
+          <Button onClick={handleCreate}>
+            <Plus className="h-4 w-4 mr-2" /> New Product Family
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
         <p className="text-muted-foreground">Loading…</p>
       ) : families.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center">
-          <p className="text-muted-foreground">No product families yet. Create your first one to get started.</p>
+          <p className="text-muted-foreground">No product families yet. Create your first one or seed the Bound Document template.</p>
         </div>
       ) : (
         <div className="rounded-md border">
