@@ -175,6 +175,7 @@ export default function OrderFiles() {
             uploads={uploads}
             selectedDocId={selectedDocId}
             onSelect={setSelectedDocId}
+            onReprocess={reprocessDocument}
           />
         </div>
 
