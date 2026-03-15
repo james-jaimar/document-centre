@@ -1,0 +1,170 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 20% 96%;
+    --foreground: 222 24% 18%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 24% 18%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 24% 18%;
+
+    --primary: 201 76% 47%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 18% 92%;
+    --secondary-foreground: 222 24% 18%;
+
+    --muted: 210 18% 94%;
+    --muted-foreground: 215 16% 45%;
+
+    --accent: 160 45% 66%;
+    --accent-foreground: 222 24% 18%;
+
+    --border: 210 18% 88%;
+    --input: 210 18% 88%;
+    --ring: 201 76% 47%;
+
+    --radius: 1rem;
+
+    --sidebar-bg: 224 19% 13%;
+    --sidebar-fg: 210 20% 96%;
+    --sidebar-muted: 215 16% 65%;
+    --sidebar-active: 184 27% 38%;
+    --topbar-bg: 0 0% 100%;
+    --page-surface: 210 20% 96%;
+    --soft-blue: 201 76% 47%;
+    --soft-teal: 167 35% 62%;
+    --soft-gold: 40 89% 58%;
+  }
+
+  body {
+    @apply bg-[hsl(var(--background))] text-[hsl(var(--foreground))] antialiased;
+    background:
+      radial-gradient(circle at top left, rgba(115, 178, 195, 0.18), transparent 22%),
+      radial-gradient(circle at top right, rgba(67, 126, 246, 0.12), transparent 18%),
+      linear-gradient(to bottom, #f7f9fc 0%, #eef3f8 100%);
+  }
+}
+
+@layer components {
+  .print-shell {
+    @apply min-h-screen w-full;
+  }
+
+  .print-layout {
+    @apply grid min-h-screen;
+    grid-template-columns: 260px 1fr;
+  }
+
+  .print-sidebar {
+    @apply relative flex flex-col border-r border-white/10 text-[hsl(var(--sidebar-fg))];
+    background:
+      radial-gradient(circle at bottom left, rgba(72, 133, 255, 0.14), transparent 30%),
+      linear-gradient(180deg, hsl(var(--sidebar-bg)) 0%, #171c25 100%);
+  }
+
+  .print-topbar {
+    @apply sticky top-0 z-20 flex h-20 items-center gap-4 border-b border-[hsl(var(--border))] bg-white/80 px-6 backdrop-blur;
+  }
+
+  .glass-card {
+    @apply rounded-3xl border border-white/60 bg-white/80 shadow-[0_10px_30px_rgba(16,24,40,0.08)] backdrop-blur;
+  }
+
+  .section-card {
+    @apply rounded-2xl border border-[hsl(var(--border))] bg-white shadow-sm;
+  }
+
+  .section-header {
+    @apply flex items-center justify-between rounded-t-2xl border-b border-[hsl(var(--border))] bg-slate-100/80 px-4 py-3 text-sm font-semibold tracking-wide text-slate-600;
+  }
+
+  .sidebar-nav-item {
+    @apply flex items-center gap-3 rounded-2xl px-4 py-3 text-[15px] font-medium text-[hsl(var(--sidebar-fg))]/90 transition-all;
+  }
+
+  .sidebar-nav-item:hover {
+    @apply bg-white/10 text-white;
+  }
+
+  .sidebar-nav-item.active {
+    @apply bg-[hsl(var(--sidebar-active))]/90 text-white shadow-lg;
+  }
+
+  .product-tile {
+    @apply flex min-w-[150px] flex-col items-center gap-3 rounded-3xl border border-white/60 bg-white/75 px-4 py-5 shadow-sm transition-all;
+  }
+
+  .product-tile:hover {
+    @apply -translate-y-0.5 shadow-md;
+  }
+
+  .product-thumb {
+    @apply flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 shadow-inner;
+  }
+
+  .upload-dropzone {
+    @apply flex min-h-[240px] flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-gradient-to-b from-white to-slate-50 text-center transition-all;
+  }
+
+  .upload-dropzone:hover {
+    @apply border-[hsl(var(--soft-blue))] bg-white;
+  }
+
+  .metric-table {
+    @apply w-full text-sm;
+  }
+
+  .metric-table th {
+    @apply px-4 py-3 text-left font-semibold text-slate-500;
+  }
+
+  .metric-table td {
+    @apply border-t border-slate-100 px-4 py-3 text-slate-700;
+  }
+
+  .soft-button {
+    @apply inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition;
+  }
+
+  .soft-button-primary {
+    @apply bg-sky-600 text-white hover:bg-sky-700;
+  }
+
+  .soft-button-gold {
+    @apply bg-amber-500 text-white hover:bg-amber-600;
+  }
+
+  .status-empty {
+    @apply flex min-h-[150px] items-center justify-center text-sm text-slate-400;
+  }
+
+  .search-shell {
+    @apply flex h-14 flex-1 items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4;
+  }
+
+  .search-input {
+    @apply w-full bg-transparent text-base outline-none placeholder:text-slate-400;
+  }
+}
+
+@media (max-width: 1280px) {
+  .print-layout {
+    grid-template-columns: 88px 1fr;
+  }
+}
+
+@media (max-width: 1024px) {
+  .print-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .print-sidebar {
+    display: none;
+  }
+}
