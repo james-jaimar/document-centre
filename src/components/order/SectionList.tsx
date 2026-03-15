@@ -1,11 +1,8 @@
 import type { Tables } from "@/integrations/supabase/types";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   FileText,
   Palette,
-  PaintBucket,
   FlipHorizontal,
   FlipVertical,
   ArrowUp,
@@ -48,7 +45,7 @@ export default function SectionList({
   if (sections.length === 0) {
     return (
       <div className="text-center py-8 text-muted-foreground">
-        <FileText className="h-8 w-8 mx-auto mb-2 opacity-40" />
+        <FileText className="h-7 w-7 mx-auto mb-2 opacity-40" />
         <p className="text-sm">No sections yet</p>
         <p className="text-xs mt-1">
           Select a file and add it as a section
@@ -68,18 +65,18 @@ export default function SectionList({
             key={section.id}
             onClick={() => onSelect(section.id)}
             className={cn(
-              "rounded-lg border p-3 transition-all cursor-pointer",
+              "rounded-xl border p-3 transition-all cursor-pointer",
               selectedSectionId === section.id
                 ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-                : "border-border hover:border-primary/30"
+                : "border-border/60 hover:border-primary/30"
             )}
           >
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <Badge variant="secondary" className="text-xs shrink-0">
+                  <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-2.5 py-0.5 text-xs font-semibold">
                     {SECTION_LABELS[section.section_type] ?? section.section_type}
-                  </Badge>
+                  </span>
                   {doc && (
                     <span className="text-xs text-muted-foreground truncate">
                       {doc.file_name}
@@ -95,10 +92,8 @@ export default function SectionList({
 
               {/* Move buttons */}
               <div className="flex flex-col gap-0.5 shrink-0">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5"
+                <button
+                  className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30"
                   disabled={idx === 0}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -106,11 +101,9 @@ export default function SectionList({
                   }}
                 >
                   <ArrowUp className="h-3 w-3" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5"
+                </button>
+                <button
+                  className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30"
                   disabled={idx === sections.length - 1}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -118,32 +111,38 @@ export default function SectionList({
                   }}
                 >
                   <ArrowDown className="h-3 w-3" />
-                </Button>
+                </button>
               </div>
             </div>
 
             {/* Per-section controls */}
-            <div className="flex items-center gap-1 mt-2">
-              <Button
-                variant={section.is_color ? "default" : "outline"}
-                size="sm"
-                className="h-7 text-xs gap-1.5 px-2"
+            <div className="flex items-center gap-1.5 mt-2">
+              <button
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggleColor(section);
                 }}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all",
+                  section.is_color
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                )}
               >
                 <Palette className="h-3 w-3" />
                 {section.is_color ? "Colour" : "B&W"}
-              </Button>
-              <Button
-                variant={section.is_duplex ? "default" : "outline"}
-                size="sm"
-                className="h-7 text-xs gap-1.5 px-2"
+              </button>
+              <button
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggleDuplex(section);
                 }}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all",
+                  section.is_duplex
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                )}
               >
                 {section.is_duplex ? (
                   <FlipHorizontal className="h-3 w-3" />
@@ -151,7 +150,7 @@ export default function SectionList({
                   <FlipVertical className="h-3 w-3" />
                 )}
                 {section.is_duplex ? "Duplex" : "Simplex"}
-              </Button>
+              </button>
             </div>
           </div>
         );

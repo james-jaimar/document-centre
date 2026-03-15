@@ -11,11 +11,9 @@ import FileUploader from "@/components/order/FileUploader";
 import FileList from "@/components/order/FileList";
 import SectionActions from "@/components/order/SectionActions";
 import SectionList from "@/components/order/SectionList";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
 
 export default function OrderFiles() {
   const { id: orderId } = useParams<{ id: string }>();
@@ -136,40 +134,41 @@ export default function OrderFiles() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">
-            Upload &amp; Organise Files
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Step 1 of 2 — Upload your PDFs and assign them to document sections
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            onClick={() => navigate("/dashboard/orders/new")}
-          >
-            <ArrowLeft className="h-4 w-4 mr-1" />
-            Back
-          </Button>
-          <Button
-            disabled={!canContinue}
-            onClick={() => navigate(`/dashboard/orders/${orderId}/build`)}
-          >
-            Configure Options
-            <ArrowRight className="h-4 w-4 ml-1" />
-          </Button>
+      <div className="glass-card p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">
+              Upload &amp; Organise Files
+            </h1>
+            <p className="text-muted-foreground mt-1 text-sm">
+              Step 1 of 2 — Upload your PDFs and assign them to document sections
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate("/dashboard/orders/new")}
+              className="soft-button flex items-center gap-1.5 text-sm"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </button>
+            <button
+              disabled={!canContinue}
+              onClick={() => navigate(`/dashboard/orders/${orderId}/build`)}
+              className="soft-button soft-button-primary flex items-center gap-1.5 text-sm rounded-xl disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Configure Options
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Three-column layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_180px_1fr] gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_auto_1fr] gap-5 items-start">
         {/* Left: Uploaded Files */}
-        <div className="space-y-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Uploaded Files
-          </h2>
+        <div className="glass-card p-5 space-y-4">
+          <h2 className="section-header">Uploaded Files</h2>
           <FileUploader onFiles={handleFiles} />
           <FileList
             documents={documents}
@@ -180,20 +179,20 @@ export default function OrderFiles() {
         </div>
 
         {/* Middle: Actions */}
-        <div className="hidden lg:block pt-8">
-          <SectionActions
-            hasSelectedFile={!!selectedDocId}
-            onAddAs={handleAddAs}
-            hasSelectedSection={!!selectedSectionId}
-            onRemoveSection={handleRemoveSection}
-          />
+        <div className="hidden lg:block">
+          <div className="glass-card p-4 sticky top-24">
+            <SectionActions
+              hasSelectedFile={!!selectedDocId}
+              onAddAs={handleAddAs}
+              hasSelectedSection={!!selectedSectionId}
+              onRemoveSection={handleRemoveSection}
+            />
+          </div>
         </div>
 
         {/* Right: Document Sections */}
-        <div className="space-y-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Your Document
-          </h2>
+        <div className="section-card p-5 space-y-4">
+          <h2 className="section-header">Your Document</h2>
           <SectionList
             sections={sections}
             documents={documents}
@@ -206,8 +205,8 @@ export default function OrderFiles() {
         </div>
       </div>
 
-      {/* Mobile actions (visible on small screens) */}
-      <div className="lg:hidden">
+      {/* Mobile actions */}
+      <div className="lg:hidden glass-card p-4">
         <SectionActions
           hasSelectedFile={!!selectedDocId}
           onAddAs={handleAddAs}
