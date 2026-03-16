@@ -9,6 +9,7 @@ const corsHeaders = {
 const ALLOWED_PATHS = [
   "health",
   "preflight",
+  "analyze-pdf",
   "page-boxes",
   "manipulate/rotate",
   "manipulate/crop",
