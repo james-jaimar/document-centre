@@ -55,11 +55,12 @@ export function useDocumentUpload(orderItemId: string | undefined) {
 
       // Extract page info from page-boxes response
       const pbData = pageBoxesResult as any;
-      const pages = pbData.pages ?? [];
-      const pageCount = pages.length;
-      const firstPage = pages[0];
-      const pageWidthMm = firstPage?.media_box?.width_mm ?? firstPage?.width_mm ?? null;
-      const pageHeightMm = firstPage?.media_box?.height_mm ?? firstPage?.height_mm ?? null;
+      console.log("[upload] raw page-boxes response:", JSON.stringify(pbData));
+      const pageCount = pbData.page_count ?? null;
+      const widthPts = pbData.mediabox?.width ?? null;
+      const heightPts = pbData.mediabox?.height ?? null;
+      const pageWidthMm = widthPts != null ? (widthPts * 25.4) / 72 : null;
+      const pageHeightMm = heightPts != null ? (heightPts * 25.4) / 72 : null;
 
       // Update document with analysis data
       await supabase
