@@ -67,12 +67,13 @@ Deno.serve(async (req) => {
     }
 
     // Forward to VPS
-    const vpsUrl = Deno.env.get("VPS_PDF_API_URL")!;
+    const vpsUrl = Deno.env.get("VPS_PDF_API_URL")!.replace(/\/+$/, "");
     const vpsKey = Deno.env.get("VPS_PDF_API_KEY")!;
+    const fullUrl = `${vpsUrl}/${path}`;
 
-    console.log(`pdf-api: Forwarding to VPS /${path}`);
+    console.log(`pdf-api: Forwarding to VPS -> ${fullUrl}`);
 
-    const vpsResponse = await fetch(`${vpsUrl}/${path}`, {
+    const vpsResponse = await fetch(fullUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
