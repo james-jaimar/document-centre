@@ -10,7 +10,6 @@ const ALLOWED_PATHS = [
   "health",
   "preflight",
   "page-boxes",
-  "analyze-pdf",
   "manipulate/rotate",
   "manipulate/crop",
   "manipulate/split",

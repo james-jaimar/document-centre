@@ -40,53 +40,59 @@ export function useDocumentUpload(orderItemId: string | undefined) {
 
       console.log("[upload] Signed URL created for", fileName);
 
-      // Call VPS /analyze-pdf
-      const analysisResult = await pdfApi.invoke("analyze-pdf", {
-        url: signedData.signedUrl,
-        file_name: fileName,
+      // Call VPS /page-boxes to get page dimensions and count
+      const pageBoxesResult = await pdfApi.invoke("page-boxes", {
+        pdf_url: signedData.signedUrl,
       });
 
-      if (!analysisResult) {
-        console.warn("[upload] analyze-pdf failed for", fileName, "- pdfApi returned null");
+      if (!pageBoxesResult) {
+        console.warn("[upload] page-boxes failed for", fileName, "- pdfApi returned null");
         toast({ title: "Processing warning", description: `PDF analysis failed for ${fileName}. You can retry later.` });
         return false;
       }
 
-      console.log("[upload] analyze-pdf result:", analysisResult);
+      console.log("[upload] page-boxes result:", pageBoxesResult);
+
+      // Extract page info from page-boxes response
+      const pbData = pageBoxesResult as any;
+      const pages = pbData.pages ?? [];
+      const pageCount = pages.length;
+      const firstPage = pages[0];
+      const pageWidthMm = firstPage?.media_box?.width_mm ?? firstPage?.width_mm ?? null;
+      const pageHeightMm = firstPage?.media_box?.height_mm ?? firstPage?.height_mm ?? null;
 
       // Update document with analysis data
       await supabase
         .from("documents")
         .update({
-          page_count: (analysisResult as any).page_count ?? null,
-          page_width_mm: (analysisResult as any).page_width_mm ?? null,
-          page_height_mm: (analysisResult as any).page_height_mm ?? null,
-          preflight_data: (analysisResult as any).preflight ?? {},
+          page_count: pageCount || null,
+          page_width_mm: pageWidthMm,
+          page_height_mm: pageHeightMm,
+          preflight_data: pbData,
           document_status: "analyzed",
         })
         .eq("id", docId);
 
       // Call VPS /rasterize for thumbnails
       const rasterResult = await pdfApi.invoke("rasterize", {
-        url: signedData.signedUrl,
+        pdf_url: signedData.signedUrl,
         dpi: 72,
         format: "jpeg",
-        max_pages: 200,
       });
 
-      if (!rasterResult || !(rasterResult as any).thumbnails) {
+      if (!rasterResult || !(rasterResult as any).pages) {
         console.warn("[upload] rasterize failed for", fileName, "- result:", rasterResult);
         toast({ title: "Processing warning", description: `Thumbnail generation failed for ${fileName}. You can retry later.` });
         // Still mark as analyzed even without thumbnails
         return true;
       }
 
-      console.log("[upload] rasterize result: got", (rasterResult as any).thumbnails?.length, "thumbnails");
+      console.log("[upload] rasterize result: got", (rasterResult as any).pages?.length, "pages");
 
       await supabase
         .from("documents")
         .update({
-          thumbnail_urls: (rasterResult as any).thumbnails,
+          thumbnail_urls: (rasterResult as any).pages,
           document_status: "ready",
         })
         .eq("id", docId);
