@@ -37,6 +37,28 @@ const SECTION_LABELS: Record<string, string> = {
   tab: "Tab",
 };
 
+function PreviewImage({ storagePath, isColor, pageNum }: { storagePath: string; isColor: boolean; pageNum: number }) {
+  const url = useSignedThumbnailUrl(storagePath);
+  if (!url) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-muted/30">
+        <div className="text-center text-muted-foreground">
+          <FileText className="h-10 w-10 mx-auto mb-2 opacity-30" />
+          <p className="text-sm">Page {pageNum}</p>
+          <p className="text-xs opacity-60">Loading…</p>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <img
+      src={url}
+      alt={`Page ${pageNum}`}
+      className={cn("w-full h-full object-contain", !isColor && "grayscale")}
+    />
+  );
+}
+
 export default function PreviewPanel({
   documents,
   sections,
