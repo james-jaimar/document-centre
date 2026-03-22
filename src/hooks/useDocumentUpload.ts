@@ -16,6 +16,7 @@ interface UploadProgress {
   status: "uploading" | "analyzing" | "done" | "error";
   progress: number;
   error?: string;
+  statusText?: string;
 }
 
 export function useDocumentUpload(orderItemId: string | undefined) {
@@ -73,6 +74,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
       try {
         // 1. Register asset with Document Centre API
         console.log("[upload] Registering asset:", storagePath);
+        updateUpload(fileName, { statusText: "Registering file…" });
 
         const { asset_id, job_ids } = await createAsset({
           original_filename: fileName,
@@ -89,19 +91,37 @@ export function useDocumentUpload(orderItemId: string | undefined) {
           .update({ backend_asset_id: asset_id })
           .eq("id", docId);
 
-        // 3. Poll all jobs to completion
+        // 3. Poll all jobs to completion with queue-aware status
         if (job_ids.length > 0) {
+          updateUpload(fileName, { progress: 35, statusText: "Queued — waiting for server…" });
           await Promise.all(
             job_ids.map((jobId) =>
               pollJob(jobId, (job) => {
                 console.log(`[upload] Job ${jobId}: ${job.status}`);
+                if (job.status === "pending") {
+                  updateUpload(fileName, { progress: 35, statusText: "Queued — waiting for server…" });
+                } else if (job.status === "running") {
+                  updateUpload(fileName, { progress: 45, statusText: "Processing PDF…" });
+                }
               })
             )
           );
         }
 
-        // 4. Final fetch of all thumbnails
-        const final_ = await fetchThumbnails(asset_id);
+        updateUpload(fileName, { progress: 50, statusText: "Rendering pages…" });
+
+        // 4. Poll for thumbnails — they are generated asynchronously after initial jobs
+        let final_ = await fetchThumbnails(asset_id);
+        const MAX_THUMB_POLLS = 60; // ~3 minutes at 3s intervals
+
+        for (let i = 0; i < MAX_THUMB_POLLS && final_.thumbnailPaths.length === 0; i++) {
+          const progress = 50 + Math.min(40, (i + 1) * (40 / MAX_THUMB_POLLS));
+          updateUpload(fileName, { progress, statusText: "Rendering pages…" });
+          await new Promise((r) => setTimeout(r, 3000));
+          final_ = await fetchThumbnails(asset_id);
+          console.log(`[upload] Thumbnail poll ${i + 1}: ${final_.thumbnailPaths.length} thumbnails`);
+        }
+
         console.log("[upload] Final thumbnails:", final_.thumbnailPaths.length);
 
         // 5. Update documents row with full metadata
@@ -133,7 +153,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         return false;
       }
     },
-    [fetchThumbnails, qc, orderItemId]
+    [fetchThumbnails, updateUpload, qc, orderItemId]
   );
 
   /* ── Upload a single file ── */
