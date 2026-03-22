@@ -1,4 +1,7 @@
-const BASE_URL = "https://document-centre-api.jaimar.dev";
+import { supabase } from "@/integrations/supabase/client";
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -67,19 +70,39 @@ export interface Job {
 
 // ── Helpers ──────────────────────────────────────────────────────
 
+async function getAuthToken(): Promise<string> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Not authenticated");
+  return token;
+}
+
+/**
+ * All requests go through the pdf-api edge function which proxies
+ * to the Document Centre API, avoiding CORS issues.
+ */
 async function request<T>(
   path: string,
-  options: RequestInit = {}
+  method: "GET" | "POST" = "GET",
+  body?: Record<string, unknown>
 ): Promise<T> {
-  const url = `${BASE_URL}${path}`;
-  console.log(`[doc-centre] ${options.method ?? "GET"} ${path}`);
+  const token = await getAuthToken();
+  const edgeFnUrl = `${SUPABASE_URL}/functions/v1/pdf-api`;
 
-  const res = await fetch(url, {
-    ...options,
+  console.log(`[doc-centre] ${method} ${path}`);
+
+  const res = await fetch(edgeFnUrl, {
+    method: "POST", // Edge function always receives POST
     headers: {
       "Content-Type": "application/json",
-      ...(options.headers ?? {}),
+      Authorization: `Bearer ${token}`,
+      apikey: SUPABASE_ANON_KEY,
     },
+    body: JSON.stringify({
+      path,
+      method,
+      ...(body ?? {}),
+    }),
   });
 
   if (!res.ok) {
@@ -95,34 +118,29 @@ async function request<T>(
 export async function createAsset(
   payload: CreateAssetPayload
 ): Promise<CreateAssetResponse> {
-  return request<CreateAssetResponse>("/v1/assets", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  return request<CreateAssetResponse>("v1/assets", "POST", payload as unknown as Record<string, unknown>);
 }
 
 export async function getAsset(assetId: string): Promise<Asset> {
-  return request<Asset>(`/v1/assets/${assetId}`);
+  return request<Asset>(`v1/assets/${assetId}`, "GET");
 }
 
 export async function getDerivedFiles(
   assetId: string
 ): Promise<DerivedFile[]> {
-  return request<DerivedFile[]>(`/v1/assets/${assetId}/derived-files`);
+  return request<DerivedFile[]>(`v1/assets/${assetId}/derived-files`, "GET");
 }
 
 export async function inspectAsset(
   assetId: string
 ): Promise<{ job_id: string }> {
-  return request<{ job_id: string }>(`/v1/assets/${assetId}/inspect`, {
-    method: "POST",
-  });
+  return request<{ job_id: string }>(`v1/assets/${assetId}/inspect`, "POST");
 }
 
 // ── Job endpoints ────────────────────────────────────────────────
 
 export async function getJob(jobId: string): Promise<Job> {
-  return request<Job>(`/v1/jobs/${jobId}`);
+  return request<Job>(`v1/jobs/${jobId}`, "GET");
 }
 
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
@@ -153,31 +171,22 @@ export async function rotate(
   assetId: string,
   angle: 90 | 180 | 270
 ): Promise<{ job_id: string }> {
-  return request("/v1/operations/rotate", {
-    method: "POST",
-    body: JSON.stringify({ asset_id: assetId, angle }),
-  });
+  return request("v1/operations/rotate", "POST", { asset_id: assetId, angle });
 }
 
 export async function grayscale(
   assetId: string
 ): Promise<{ job_id: string }> {
-  return request("/v1/operations/grayscale", {
-    method: "POST",
-    body: JSON.stringify({ asset_id: assetId }),
-  });
+  return request("v1/operations/grayscale", "POST", { asset_id: assetId });
 }
 
 export async function cmyk(
   assetId: string,
   iccProfile?: string
 ): Promise<{ job_id: string }> {
-  return request("/v1/operations/cmyk", {
-    method: "POST",
-    body: JSON.stringify({
-      asset_id: assetId,
-      ...(iccProfile ? { icc_profile: iccProfile } : {}),
-    }),
+  return request("v1/operations/cmyk", "POST", {
+    asset_id: assetId,
+    ...(iccProfile ? { icc_profile: iccProfile } : {}),
   });
 }
 
@@ -187,14 +196,11 @@ export async function resize(
   heightMm: number,
   fitMode: "fit" | "fill" = "fit"
 ): Promise<{ job_id: string }> {
-  return request("/v1/operations/resize", {
-    method: "POST",
-    body: JSON.stringify({
-      asset_id: assetId,
-      width_mm: widthMm,
-      height_mm: heightMm,
-      fit_mode: fitMode,
-    }),
+  return request("v1/operations/resize", "POST", {
+    asset_id: assetId,
+    width_mm: widthMm,
+    height_mm: heightMm,
+    fit_mode: fitMode,
   });
 }
 
@@ -205,15 +211,12 @@ export async function nup(
   pageWidthMm: number,
   pageHeightMm: number
 ): Promise<{ job_id: string }> {
-  return request("/v1/operations/nup", {
-    method: "POST",
-    body: JSON.stringify({
-      asset_id: assetId,
-      columns,
-      rows,
-      page_width_mm: pageWidthMm,
-      page_height_mm: pageHeightMm,
-    }),
+  return request("v1/operations/nup", "POST", {
+    asset_id: assetId,
+    columns,
+    rows,
+    page_width_mm: pageWidthMm,
+    page_height_mm: pageHeightMm,
   });
 }
 
@@ -233,10 +236,7 @@ export interface ImposeSheetOptions {
 export async function imposeSheet(
   options: ImposeSheetOptions
 ): Promise<{ job_id: string }> {
-  return request("/v1/operations/impose-sheet", {
-    method: "POST",
-    body: JSON.stringify(options),
-  });
+  return request("v1/operations/impose-sheet", "POST", options as unknown as Record<string, unknown>);
 }
 
 export async function booklet(
@@ -244,13 +244,10 @@ export async function booklet(
   sheetWidthMm: number,
   sheetHeightMm: number
 ): Promise<{ job_id: string }> {
-  return request("/v1/operations/booklet", {
-    method: "POST",
-    body: JSON.stringify({
-      asset_id: assetId,
-      sheet_width_mm: sheetWidthMm,
-      sheet_height_mm: sheetHeightMm,
-    }),
+  return request("v1/operations/booklet", "POST", {
+    asset_id: assetId,
+    sheet_width_mm: sheetWidthMm,
+    sheet_height_mm: sheetHeightMm,
   });
 }
 
@@ -258,12 +255,9 @@ export async function merge(
   assetIds: string[],
   outputFilename = "merged.pdf"
 ): Promise<{ job_id: string }> {
-  return request("/v1/operations/merge", {
-    method: "POST",
-    body: JSON.stringify({
-      asset_ids: assetIds,
-      output_filename: outputFilename,
-    }),
+  return request("v1/operations/merge", "POST", {
+    asset_ids: assetIds,
+    output_filename: outputFilename,
   });
 }
 
@@ -274,5 +268,5 @@ export async function health(): Promise<{
   service: string;
   env: string;
 }> {
-  return request("/health");
+  return request("health", "GET");
 }
