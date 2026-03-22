@@ -107,7 +107,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
             page_count: pageCount,
             page_width_mm: pageWidthMm,
             page_height_mm: pageHeightMm,
-            thumbnail_urls: thumbnailUrls,
+            thumbnail_urls: thumbnailPaths,
             preflight_data: {
               boxes: asset.boxes,
               width_pt: widthPt,
