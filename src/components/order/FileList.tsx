@@ -118,7 +118,7 @@ export default function FileList({
             </div>
 
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">
+              <p className="text-xs font-medium text-foreground truncate">
                 {doc.file_name}
               </p>
               <div className="flex items-center gap-2 mt-0.5">
