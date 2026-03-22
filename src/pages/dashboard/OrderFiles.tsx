@@ -58,10 +58,17 @@ export default function OrderFiles() {
 
   const handleFiles = useCallback(
     async (files: File[]) => {
+      setUploadModalOpen(true);
       await uploadFiles(files);
     },
     [uploadFiles]
   );
+
+  const handleUploadContinue = useCallback(() => {
+    setUploadModalOpen(false);
+    clearUploads();
+    refetchDocuments();
+  }, [clearUploads, refetchDocuments]);
 
   const handleAddAs = useCallback(
     async (type: "front_cover" | "back_cover" | "body" | "insert" | "tab") => {
