@@ -1,72 +1,55 @@
 
 
-# Add Document Preview Thumbnail + Lightbox & Make Lists More Compact
+# Progressive Thumbnail Loading & Processing Indicator
 
-## What we're building
+## Problem
+Currently `processDocument` waits for ALL jobs to finish (`Promise.all` on all `job_ids`) before fetching any metadata or thumbnails. For a 24-page PDF this can take 30+ seconds, during which the user sees no thumbnail and the document stays in "processing" state with just a spinner.
 
-Inspired by the Mimeo reference screenshots, three changes:
+## Solution
 
-1. **Larger thumbnail preview** between the file list and section actions in the middle column — shows the first page of the currently selected file/section so the user gets immediate visual feedback
-2. **Clickable lightbox overlay** — clicking that larger thumbnail opens a semi-transparent fullscreen overlay with page-by-page navigation (left/right arrows), similar to Mimeo's preview modal
-3. **More compact file and section list items** — reduce padding, thumbnail sizes, and spacing so 5-6 files fit comfortably without scrolling off the page
+### 1. Two-phase processing in `useDocumentUpload.ts`
 
-## Layout change
+Split `processDocument` into two phases:
 
-The current middle column only has `SectionActions`. We'll restructure it to show:
+**Phase 1 (fast)**: After registering the asset and getting `job_ids`, immediately do a first poll cycle. As soon as the first job completes (or after a short delay ~5s), fetch the asset metadata + derived files. If even one thumbnail exists (page 1), save it to the DB with `document_status: "analyzing"` (new intermediate status) and invalidate queries. This gives the user a thumbnail within seconds.
 
-```text
-┌─────────────────┐
-│  Selected File   │
-│  Thumbnail       │  ← ~200px tall A4 aspect ratio
-│  (clickable)     │
-│                  │
-│  "24 Pages"      │
-│  "Letter Size"   │
-├─────────────────┤
-│  Section Actions │
-│  (existing)      │
-└─────────────────┘
-```
+**Phase 2 (background)**: Continue polling remaining jobs. Once all are done, do a final fetch of derived files to get all page thumbnails, then update the DB with full `thumbnail_urls` array and set `document_status: "ready"`.
+
+### 2. New "analyzing" status in the UI
+
+Update `FileList.tsx` and `DocumentPreviewThumb.tsx` to handle a new intermediate state:
+
+- **`processing`** = no thumbnail yet, show spinner, file is not selectable
+- **`analyzing`** (new) = page 1 thumbnail available, show it with a subtle pulsing overlay/badge saying "Processing pages…". File IS selectable but lightbox only shows available pages
+- **`ready`** = all done, fully interactive
+
+### 3. Prevent premature interaction
+
+In `FileList.tsx`, documents with status `processing` are already not selectable (`!isReady && "opacity-60 cursor-default"`). We'll keep `analyzing` documents selectable (they have a thumbnail) but add a visual processing indicator so the user knows it's not fully done.
 
 ## Files to change
 
-### 1. `src/components/order/DocumentPreviewThumb.tsx` (new)
-- Medium-sized thumbnail component showing the selected document's first page
-- Displays page count + dimensions below the thumbnail
-- Clickable — opens lightbox on click
-- Uses `useSignedThumbnailUrl` for the image
-- Shows placeholder when no file is selected
+| File | Change |
+|---|---|
+| `src/hooks/useDocumentUpload.ts` | Split processDocument into two phases: early thumbnail grab after first job, then background completion |
+| `src/components/order/FileList.tsx` | Add "analyzing" state with thumbnail + processing badge |
+| `src/components/order/DocumentPreviewThumb.tsx` | Show processing overlay when document status is "analyzing" |
+| `src/components/order/PreviewLightbox.tsx` | Handle partial thumbnail arrays gracefully (show available pages only) |
 
-### 2. `src/components/order/PreviewLightbox.tsx` (new)
-- Full-screen semi-transparent overlay (dark backdrop)
-- Large page preview in the center (reuses `PreviewImage` pattern with signed URLs)
-- Left/right navigation arrows + page counter
-- Close button (X) top-right
-- Builds a flat page list from the selected document's thumbnails
-- Keyboard support: arrow keys to navigate, Escape to close
+## Technical detail
 
-### 3. `src/pages/dashboard/OrderFiles.tsx`
-- Import and place `DocumentPreviewThumb` above `SectionActions` in the middle column
-- Pass the selected document (from either `selectedDocId` or `selectedSectionId`) to the preview thumb
-- Add state for lightbox open/close
+The key change in `processDocument`:
 
-### 4. `src/components/order/FileList.tsx` — make compact
-- Reduce item padding from `p-3` to `p-2`
-- Reduce thumbnail from `h-12 w-9` to `h-9 w-7`
-- Reduce file name text from `text-sm` to `text-xs`
-- Reduce gap from `gap-3` to `gap-2`
-- Tighten the upload progress items similarly
+```
+1. createAsset → get job_ids
+2. Save backend_asset_id
+3. Poll jobs with early exit: after first completed job OR 5s, do an interim fetch
+4. Interim: getAsset + getDerivedFiles → save page_count, first thumbnail, status="analyzing"
+5. Invalidate queries → UI updates with thumbnail
+6. Continue polling remaining jobs
+7. Final: getDerivedFiles again → save all thumbnails, status="ready"
+8. Invalidate queries → UI updates with full page set
+```
 
-### 5. `src/components/order/SectionList.tsx` — make compact
-- Reduce item padding from `p-3` to `p-2`
-- Reduce thumbnail from `h-14 w-10` to `h-10 w-7`
-- Reduce spacing between section items
-
-## Technical details
-
-- The lightbox will use a portal (`createPortal`) or a simple fixed-position div with `z-50`
-- Navigation arrows use the same `ChevronLeft`/`ChevronRight` icons
-- The backdrop uses `bg-black/70` with `backdrop-blur-sm` for the semi-transparent effect
-- All thumbnail images continue to use `useSignedThumbnailUrl` from `thumbnailUtils.ts`
-- The selected document for the middle preview is determined by: if a file is selected in the left panel, show that file; if a section is selected in the right panel, show that section's document
+The `analyzing` status doesn't need a DB migration — it's just a string value in the existing `document_status` text column.
 
