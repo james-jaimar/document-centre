@@ -1,38 +1,60 @@
 
 
-# Fix Thumbnail Polling Exit + Lightbox Multi-Page Navigation
+# Fix Thumbnail Discovery + Add Per-Page Progress
 
-## Two issues
+## Diagnosis
 
-1. **Progress stuck at "Rendering pages (1/24)" then jumps to 100%**: The stale-count threshold of 5 polls (~15s) is too aggressive. If the backend renders pages in batches (e.g., all 24 at once after a delay), the count sits at 1 for a few polls, triggers the stale exit, and saves only 1 thumbnail.
+The polling loop logic is sound, but the thumbnail count stays at 1/24 because the `fetchThumbnails` helper filters derived files by `kind === "thumbnail_png" || kind === "preview_png"`. The server likely uses a different `kind` value for per-page renders (e.g., `page_png`, `page_image`, or just `png`). Only the single asset-level `thumbnail_storage_path` is found as a fallback, giving exactly 1 thumbnail.
 
-2. **Lightbox only shows page 1**: Direct consequence of issue 1 -- only 1 thumbnail path was saved to `thumbnail_urls` in the database, so the lightbox has no pages to navigate.
+The server **does** provide per-page data via `getDerivedFiles` -- we are just filtering it out.
 
-## Root cause
+## Plan
 
-The stale-count exit breaks too early. With `stalePolls >= 5` at 3-second intervals, that's only 15 seconds of patience. Backend thumbnail rendering for a 24-page PDF can easily take 30-60 seconds with no intermediate progress.
+### 1. Add diagnostic logging (`useDocumentUpload.ts`)
 
-## Fix
+In `fetchThumbnails`, log the raw derived files array so we can see exactly what `kind` values the server returns:
 
-### `src/hooks/useDocumentUpload.ts`
-
-1. **Increase stale threshold**: Change from 5 to 15 consecutive stale polls (~45 seconds) before accepting partial results. This gives the backend enough time to render all pages even if they arrive as a batch.
-
-2. **Only apply stale exit when we have a meaningful fraction**: Change the condition from `found > 0` to `found >= expectedPages * 0.8` (80% of pages). If we only have 1 out of 24, we clearly aren't done -- keep waiting. If we have 20 out of 24, it's reasonable to accept.
-
-3. **Better trickle progress during waiting**: When `found` hasn't changed, the time-based component (`i / MAX_THUMB_POLLS * 10`) only gives ~0.17% per poll. Increase the time weight so the bar visibly moves every 3 seconds even when stuck.
-
-Updated polling logic:
-```
-stalePolls >= 15 && found >= expectedPages * 0.8
+```typescript
+console.log("[upload] Derived files:", derivedFiles.map(df => ({
+  kind: df.kind, page: df.page, path: df.storage_path?.slice(-40)
+})));
 ```
 
-Updated progress formula -- increase time weight from 10 to 20:
-```
-progress = 50 + (found / expected) * 20 + (i / MAX_THUMB_POLLS) * 20
+### 2. Broaden the kind filter (`useDocumentUpload.ts`)
+
+Instead of only matching `thumbnail_png` and `preview_png`, accept any derived file that has a `page` number and an image media type (or a `kind` containing "png", "thumbnail", "preview", or "page"):
+
+```typescript
+const thumbnailFiles = derivedFiles
+  .filter((df) =>
+    df.page != null &&
+    df.storage_path &&
+    (df.media_type?.startsWith("image/") ||
+     /thumbnail|preview|page|png/i.test(df.kind))
+  )
+  .sort((a, b) => (a.page ?? 0) - (b.page ?? 0));
 ```
 
-This ensures: at 0 thumbnails found, progress still trickles from 50% to 70% over 3 minutes. When thumbnails arrive, it jumps proportionally.
+This ensures we capture whatever naming convention the server uses, while still requiring a `page` number to avoid picking up non-page-specific files.
 
-No other files need changes. The lightbox and PreviewPanel already handle multiple thumbnails correctly -- they just need the data.
+### 3. Deduplicate by page number
+
+If the server produces multiple derived files per page (e.g., a thumbnail AND a preview), take only one per page to avoid inflating the count:
+
+```typescript
+const seenPages = new Set<number>();
+for (const df of thumbnailFiles) {
+  const pg = df.page ?? 0;
+  if (!seenPages.has(pg)) {
+    seenPages.add(pg);
+    thumbnailPaths.push(toStorageKey(df.storage_path));
+  }
+}
+```
+
+### Files to edit
+
+- `src/hooks/useDocumentUpload.ts` -- `fetchThumbnails` helper only (lines 40-68)
+
+No other files change. The polling loop and lightbox are already correct once the thumbnail discovery works properly.
 
