@@ -8,7 +8,6 @@ import {
   getAsset,
   getDerivedFiles,
   pollJob,
-  getJob,
 } from "@/lib/documentCentreApi";
 import { toStorageKey } from "@/lib/thumbnailUtils";
 
