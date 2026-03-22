@@ -1,47 +1,38 @@
 
 
-# Fix Stuck Thumbnail Polling + Smooth Animated Progress Bar
+# Fix Thumbnail Polling Exit + Lightbox Multi-Page Navigation
 
-## Problem 1: Polling gets stuck
+## Two issues
 
-The thumbnail polling loop waits for `thumbnailPaths.length >= expectedPages` (24), but the backend may not produce exactly 24 derived files with kind `thumbnail_png` or `preview_png`. If the count plateaus at, say, 23 or the backend uses a different naming convention for some pages, the loop runs for the full 3 minutes and stays stuck at "Rendering pages... (1/24)".
+1. **Progress stuck at "Rendering pages (1/24)" then jumps to 100%**: The stale-count threshold of 5 polls (~15s) is too aggressive. If the backend renders pages in batches (e.g., all 24 at once after a delay), the count sits at 1 for a few polls, triggers the stale exit, and saves only 1 thumbnail.
 
-**Fix**: Add a "stale count" check. If the thumbnail count hasn't changed for 5 consecutive polls (~15s), accept what we have and move on. This handles the case where the backend is genuinely done but the count doesn't match `page_count`.
+2. **Lightbox only shows page 1**: Direct consequence of issue 1 -- only 1 thumbnail path was saved to `thumbnail_urls` in the database, so the lightbox has no pages to navigate.
 
-### Changes to `src/hooks/useDocumentUpload.ts`
+## Root cause
 
-In the thumbnail polling loop (lines 117-125):
-- Track `lastCount` and `stalePolls` counter
-- If `found === lastCount`, increment `stalePolls`; otherwise reset to 0
-- If `stalePolls >= 5` AND `found > 0`, break out of the loop (backend is done)
-- Also break if `found >= expectedPages` (the existing condition)
+The stale-count exit breaks too early. With `stalePolls >= 5` at 3-second intervals, that's only 15 seconds of patience. Backend thumbnail rendering for a 24-page PDF can easily take 30-60 seconds with no intermediate progress.
 
-## Problem 2: Progress bar feels jerky
+## Fix
 
-The progress jumps in big chunks (30% → 40% → 50% → stays there). The user wants smooth continuous movement.
+### `src/hooks/useDocumentUpload.ts`
 
-**Fix**: Add a CSS transition to the Progress indicator and implement a gentle "trickle" effect during the thumbnail polling phase. Instead of only updating progress when a new thumbnail is found, increment by a small fractional amount on every poll iteration regardless.
+1. **Increase stale threshold**: Change from 5 to 15 consecutive stale polls (~45 seconds) before accepting partial results. This gives the backend enough time to render all pages even if they arrive as a batch.
 
-### Changes to `src/components/ui/progress.tsx`
+2. **Only apply stale exit when we have a meaningful fraction**: Change the condition from `found > 0` to `found >= expectedPages * 0.8` (80% of pages). If we only have 1 out of 24, we clearly aren't done -- keep waiting. If we have 20 out of 24, it's reasonable to accept.
 
-Add a smooth CSS transition to the indicator: `transition: transform 1s ease-out` instead of the default `transition-all`.
+3. **Better trickle progress during waiting**: When `found` hasn't changed, the time-based component (`i / MAX_THUMB_POLLS * 10`) only gives ~0.17% per poll. Increase the time weight so the bar visibly moves every 3 seconds even when stuck.
 
-### Changes to `src/hooks/useDocumentUpload.ts`
-
-During the thumbnail polling loop, calculate progress using both time elapsed AND thumbnails found, so the bar always moves a little on each 3-second poll:
-
+Updated polling logic:
 ```
-progress = 50 + (found / expected) * 30 + (i / MAX_THUMB_POLLS) * 10
+stalePolls >= 15 && found >= expectedPages * 0.8
 ```
 
-This gives 30% weight to actual thumbnail progress and 10% to time, ensuring the bar always creeps forward even when no new thumbnails appear.
+Updated progress formula -- increase time weight from 10 to 20:
+```
+progress = 50 + (found / expected) * 20 + (i / MAX_THUMB_POLLS) * 20
+```
 
-### Changes to `src/components/order/UploadProgressModal.tsx`
+This ensures: at 0 thumbnails found, progress still trickles from 50% to 70% over 3 minutes. When thumbnails arrive, it jumps proportionally.
 
-No structural changes needed — it already uses `upload.statusText` and `upload.progress`.
-
-## Files to edit
-
-1. `src/hooks/useDocumentUpload.ts` — stale-count exit + trickle progress
-2. `src/components/ui/progress.tsx` — smooth CSS transition
+No other files need changes. The lightbox and PreviewPanel already handle multiple thumbnails correctly -- they just need the data.
 
