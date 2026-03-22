@@ -81,16 +81,9 @@ export default function SectionList({
                     ? (thumbs as string[])[0]
                     : null;
                 return (
-                  <div className="h-14 w-10 rounded-md bg-muted/50 border border-border/40 overflow-hidden shrink-0 flex items-center justify-center">
+                  <div className="h-14 w-10 bg-muted/50 border border-border/40 overflow-hidden shrink-0 flex items-center justify-center">
                     {firstThumb ? (
-                      <img
-                        src={firstThumb}
-                        alt=""
-                        className={cn(
-                          "h-full w-full object-cover",
-                          !section.is_color && "grayscale"
-                        )}
-                      />
+                      <SectionThumbnail storagePath={firstThumb} isColor={section.is_color} />
                     ) : (
                       <FileText className="h-4 w-4 text-muted-foreground/40" />
                     )}

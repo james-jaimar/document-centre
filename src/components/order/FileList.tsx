@@ -1,8 +1,8 @@
 import type { Tables } from "@/integrations/supabase/types";
 import { FileText, Loader2, AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useState } from "react";
+import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
 
 type Document = Tables<"documents">;
 
@@ -21,34 +21,10 @@ interface FileListProps {
   onReprocess?: (doc: { id: string; file_path: string; file_name: string }) => Promise<void>;
 }
 
-/** Resolve a storage path to a signed URL (1-hour expiry). */
-function useSignedUrl(storagePath: string | null) {
-  const [url, setUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!storagePath) { setUrl(null); return; }
-
-    // If it's already a full URL (legacy data), use it directly
-    if (storagePath.startsWith("http")) { setUrl(storagePath); return; }
-
-    let cancelled = false;
-    supabase.storage
-      .from("document-uploads")
-      .createSignedUrl(storagePath, 60 * 60) // 1 hour
-      .then(({ data }) => {
-        if (!cancelled && data?.signedUrl) setUrl(data.signedUrl);
-      });
-
-    return () => { cancelled = true; };
-  }, [storagePath]);
-
-  return url;
-}
-
-function ThumbnailImage({ storagePath }: { storagePath: string }) {
-  const url = useSignedUrl(storagePath);
+function ThumbnailImage({ storagePath, className }: { storagePath: string; className?: string }) {
+  const url = useSignedThumbnailUrl(storagePath);
   if (!url) return <FileText className="h-4 w-4 text-muted-foreground" />;
-  return <img src={url} alt="" className="h-full w-full object-cover" />;
+  return <img src={url} alt="" className={cn("h-full w-full object-contain", className)} />;
 }
 
 export default function FileList({
@@ -84,7 +60,7 @@ export default function FileList({
           key={upload.fileName}
           className="flex items-center gap-3 rounded-xl border border-border bg-muted/30 p-3"
         >
-          <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
+          <div className="h-12 w-9 bg-muted flex items-center justify-center shrink-0">
             <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
           </div>
           <div className="flex-1 min-w-0">
@@ -133,7 +109,7 @@ export default function FileList({
               !isReady && "opacity-60 cursor-default"
             )}
           >
-            <div className="h-12 w-9 rounded-sm bg-muted flex items-center justify-center shrink-0 overflow-hidden">
+            <div className="h-12 w-9 bg-muted flex items-center justify-center shrink-0 overflow-hidden">
               {hasThumbnails ? (
                 <ThumbnailImage storagePath={thumbnails[0]} />
               ) : (

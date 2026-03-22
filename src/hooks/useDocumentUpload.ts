@@ -95,10 +95,10 @@ export function useDocumentUpload(orderItemId: string | undefined) {
 
         // Fall back to asset-level thumbnail/preview storage path
         if (thumbnailPaths.length === 0 && asset.thumbnail_storage_path) {
-          thumbnailPaths.push(asset.thumbnail_storage_path);
+          thumbnailPaths.push(toStorageKey(asset.thumbnail_storage_path));
         }
         if (thumbnailPaths.length === 0 && asset.preview_storage_path) {
-          thumbnailPaths.push(asset.preview_storage_path);
+          thumbnailPaths.push(toStorageKey(asset.preview_storage_path));
         }
 
         // 6. Update documents row with metadata
