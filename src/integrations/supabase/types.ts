@@ -321,6 +321,7 @@ export type Database = {
       }
       documents: {
         Row: {
+          backend_asset_id: string | null
           created_at: string
           document_status: Database["public"]["Enums"]["document_status"]
           file_name: string
@@ -338,6 +339,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          backend_asset_id?: string | null
           created_at?: string
           document_status?: Database["public"]["Enums"]["document_status"]
           file_name: string
@@ -355,6 +357,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          backend_asset_id?: string | null
           created_at?: string
           document_status?: Database["public"]["Enums"]["document_status"]
           file_name?: string

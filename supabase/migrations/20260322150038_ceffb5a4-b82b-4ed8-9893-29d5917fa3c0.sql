@@ -1,0 +1,1 @@
+ALTER TABLE public.documents ADD COLUMN backend_asset_id uuid;
