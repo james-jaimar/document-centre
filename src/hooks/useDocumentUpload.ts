@@ -90,44 +90,8 @@ export function useDocumentUpload(orderItemId: string | undefined) {
           .update({ backend_asset_id: asset_id })
           .eq("id", docId);
 
-        // 3. Two-phase polling
+        // 3. Poll all jobs to completion
         if (job_ids.length > 0) {
-          // Phase 1: Wait for the first job to complete (or 8s max), then grab early thumbnail
-          const earlyTimeout = new Promise<void>((resolve) => setTimeout(resolve, 8000));
-          const firstJobDone = (async () => {
-            for (let i = 0; i < 40; i++) {
-              for (const jid of job_ids) {
-                const j = await getJob(jid);
-                if (["completed", "failed", "cancelled"].includes(j.status)) return;
-              }
-              await new Promise((r) => setTimeout(r, 2000));
-            }
-          })();
-
-          await Promise.race([firstJobDone, earlyTimeout]);
-
-          // Interim fetch: grab whatever thumbnails are available now
-          try {
-            const interim = await fetchThumbnails(asset_id);
-            if (interim.thumbnailPaths.length > 0) {
-              await supabase
-                .from("documents")
-                .update({
-                  page_count: interim.pageCount,
-                  page_width_mm: interim.pageWidthMm,
-                  page_height_mm: interim.pageHeightMm,
-                  thumbnail_urls: interim.thumbnailPaths,
-                  document_status: "analyzed",
-                })
-                .eq("id", docId);
-              qc.invalidateQueries({ queryKey: ["documents", orderItemId] });
-              console.log("[upload] Phase 1 done — early thumbnail saved");
-            }
-          } catch (e) {
-            console.warn("[upload] Interim fetch failed, continuing:", e);
-          }
-
-          // Phase 2: Poll remaining jobs to completion
           await Promise.all(
             job_ids.map((jobId) =>
               pollJob(jobId, (job) => {
