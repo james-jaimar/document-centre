@@ -91,6 +91,7 @@ export default function FileList({
 
       {documents.map((doc) => {
         const isReady = doc.document_status === "ready" || doc.document_status === "analyzed";
+        const isAnalyzing = doc.document_status === "analyzed";
         const isError = doc.document_status === "error";
         const isProcessing = !isReady && !isError;
         const thumbnails = Array.isArray(doc.thumbnail_urls) ? (doc.thumbnail_urls as string[]) : [];
