@@ -197,9 +197,14 @@ export default function OrderFiles() {
           />
         </div>
 
-        {/* Middle: Actions */}
+        {/* Middle: Preview + Actions */}
         <div className="hidden lg:block">
-          <div className="glass-card p-4 sticky top-24">
+          <div className="glass-card p-4 sticky top-24 space-y-4">
+            <DocumentPreviewThumb
+              document={previewDoc}
+              onClick={() => lightboxThumbnails.length > 0 && setLightboxOpen(true)}
+            />
+            <div className="border-t border-border/60" />
             <SectionActions
               hasSelectedFile={!!selectedDocId}
               onAddAs={handleAddAs}
