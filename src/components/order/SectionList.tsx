@@ -72,7 +72,7 @@ export default function SectionList({
             key={section.id}
             onClick={() => onSelect(section.id)}
             className={cn(
-              "rounded-xl border p-3 transition-all cursor-pointer",
+              "rounded-xl border p-2 transition-all cursor-pointer",
               selectedSectionId === section.id
                 ? "border-primary bg-primary/5 ring-1 ring-primary/20"
                 : "border-border/60 hover:border-primary/30"
