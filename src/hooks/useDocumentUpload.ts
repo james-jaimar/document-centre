@@ -53,7 +53,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         // 2. Save backend_asset_id to documents row
         await supabase
           .from("documents")
-          .update({ backend_asset_id: asset_id } as any)
+          .update({ backend_asset_id: asset_id })
           .eq("id", docId);
 
         // 3. Poll all jobs until complete
