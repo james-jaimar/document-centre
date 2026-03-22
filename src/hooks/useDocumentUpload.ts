@@ -36,17 +36,49 @@ export function useDocumentUpload(orderItemId: string | undefined) {
 
   /* ── Process: register asset → poll jobs → fetch metadata ── */
 
+  /** Helper: fetch asset metadata + derived thumbnails and build arrays */
+  const fetchThumbnails = useCallback(
+    async (asset_id: string) => {
+      const asset = await getAsset(asset_id);
+      const derivedFiles = await getDerivedFiles(asset_id);
+
+      const pageCount = asset.page_count ?? null;
+      const widthPt = asset.width_pt;
+      const heightPt = asset.height_pt;
+      const pageWidthMm = widthPt != null ? (widthPt * 25.4) / 72 : null;
+      const pageHeightMm = heightPt != null ? (heightPt * 25.4) / 72 : null;
+
+      const thumbnailPaths: string[] = [];
+      const thumbnailFiles = derivedFiles
+        .filter((df) => df.kind === "thumbnail_png" || df.kind === "preview_png")
+        .sort((a, b) => (a.page ?? 0) - (b.page ?? 0));
+      for (const df of thumbnailFiles) {
+        if (df.storage_path) thumbnailPaths.push(toStorageKey(df.storage_path));
+      }
+      if (thumbnailPaths.length === 0 && asset.thumbnail_storage_path) {
+        thumbnailPaths.push(toStorageKey(asset.thumbnail_storage_path));
+      }
+      if (thumbnailPaths.length === 0 && asset.preview_storage_path) {
+        thumbnailPaths.push(toStorageKey(asset.preview_storage_path));
+      }
+
+      return { asset, pageCount, pageWidthMm, pageHeightMm, thumbnailPaths };
+    },
+    []
+  );
+
+  /* ── Process: register asset → poll jobs → fetch metadata ── */
+
   const processDocument = useCallback(
     async (docId: string, storagePath: string, fileName: string) => {
       try {
         // 1. Register asset with Document Centre API
-        const fullStoragePath = storagePath;
-        console.log("[upload] Registering asset:", fullStoragePath);
+        console.log("[upload] Registering asset:", storagePath);
 
         const { asset_id, job_ids } = await createAsset({
           original_filename: fileName,
           media_type: "application/pdf",
-          source_storage_path: fullStoragePath,
+          source_storage_path: storagePath,
           auto_queue: true,
         });
 
@@ -58,8 +90,44 @@ export function useDocumentUpload(orderItemId: string | undefined) {
           .update({ backend_asset_id: asset_id })
           .eq("id", docId);
 
-        // 3. Poll all jobs until complete
+        // 3. Two-phase polling
         if (job_ids.length > 0) {
+          // Phase 1: Wait for the first job to complete (or 8s max), then grab early thumbnail
+          const earlyTimeout = new Promise<void>((resolve) => setTimeout(resolve, 8000));
+          const firstJobDone = (async () => {
+            for (let i = 0; i < 40; i++) {
+              for (const jid of job_ids) {
+                const j = await getJob(jid);
+                if (["completed", "failed", "cancelled"].includes(j.status)) return;
+              }
+              await new Promise((r) => setTimeout(r, 2000));
+            }
+          })();
+
+          await Promise.race([firstJobDone, earlyTimeout]);
+
+          // Interim fetch: grab whatever thumbnails are available now
+          try {
+            const interim = await fetchThumbnails(asset_id);
+            if (interim.thumbnailPaths.length > 0) {
+              await supabase
+                .from("documents")
+                .update({
+                  page_count: interim.pageCount,
+                  page_width_mm: interim.pageWidthMm,
+                  page_height_mm: interim.pageHeightMm,
+                  thumbnail_urls: interim.thumbnailPaths,
+                  document_status: "analyzed",
+                })
+                .eq("id", docId);
+              qc.invalidateQueries({ queryKey: ["documents", orderItemId] });
+              console.log("[upload] Phase 1 done — early thumbnail saved");
+            }
+          } catch (e) {
+            console.warn("[upload] Interim fetch failed, continuing:", e);
+          }
+
+          // Phase 2: Poll remaining jobs to completion
           await Promise.all(
             job_ids.map((jobId) =>
               pollJob(jobId, (job) => {
@@ -69,52 +137,23 @@ export function useDocumentUpload(orderItemId: string | undefined) {
           );
         }
 
-        // 4. Fetch asset metadata
-        const asset = await getAsset(asset_id);
-        console.log("[upload] Asset metadata:", asset);
+        // 4. Final fetch of all thumbnails
+        const final_ = await fetchThumbnails(asset_id);
+        console.log("[upload] Final thumbnails:", final_.thumbnailPaths.length);
 
-        const pageCount = asset.page_count ?? null;
-        const widthPt = asset.width_pt;
-        const heightPt = asset.height_pt;
-        const pageWidthMm = widthPt != null ? (widthPt * 25.4) / 72 : null;
-        const pageHeightMm = heightPt != null ? (heightPt * 25.4) / 72 : null;
-
-        // 5. Fetch derived files for thumbnails
-        const derivedFiles = await getDerivedFiles(asset_id);
-        console.log("[upload] Derived files:", derivedFiles.length);
-
-        // Build thumbnail storage paths from derived files (prefer thumbnail_png, then preview_png)
-        // We store storage_path (not full URL) so we can generate signed URLs at render time
-        const thumbnailPaths: string[] = [];
-        const thumbnailFiles = derivedFiles
-          .filter((df) => df.kind === "thumbnail_png" || df.kind === "preview_png")
-          .sort((a, b) => (a.page ?? 0) - (b.page ?? 0));
-
-        for (const df of thumbnailFiles) {
-          if (df.storage_path) thumbnailPaths.push(toStorageKey(df.storage_path));
-        }
-
-        // Fall back to asset-level thumbnail/preview storage path
-        if (thumbnailPaths.length === 0 && asset.thumbnail_storage_path) {
-          thumbnailPaths.push(toStorageKey(asset.thumbnail_storage_path));
-        }
-        if (thumbnailPaths.length === 0 && asset.preview_storage_path) {
-          thumbnailPaths.push(toStorageKey(asset.preview_storage_path));
-        }
-
-        // 6. Update documents row with metadata
+        // 5. Update documents row with full metadata
         await supabase
           .from("documents")
           .update({
-            page_count: pageCount,
-            page_width_mm: pageWidthMm,
-            page_height_mm: pageHeightMm,
-            thumbnail_urls: thumbnailPaths,
+            page_count: final_.pageCount,
+            page_width_mm: final_.pageWidthMm,
+            page_height_mm: final_.pageHeightMm,
+            thumbnail_urls: final_.thumbnailPaths,
             preflight_data: {
-              boxes: asset.boxes,
-              width_pt: widthPt,
-              height_pt: heightPt,
-              status: asset.status,
+              boxes: final_.asset.boxes,
+              width_pt: final_.asset.width_pt,
+              height_pt: final_.asset.height_pt,
+              status: final_.asset.status,
             },
             document_status: "ready",
           })
@@ -131,7 +170,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         return false;
       }
     },
-    []
+    [fetchThumbnails, qc, orderItemId]
   );
 
   /* ── Upload a single file ── */
