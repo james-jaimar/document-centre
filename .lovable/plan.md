@@ -1,35 +1,42 @@
 
+Fix the thumbnail pipeline in two places, because the current issue is not just styling:
 
-# Fix Thumbnail Display: Shape and Loading
+1. Normalize thumbnail values before saving
+- In `src/hooks/useDocumentUpload.ts`, add a small helper that converts any thumbnail reference into a bucket-relative key.
+- It should handle all of these:
+  - `thumbnails/page-001/file.png`
+  - `/storage/v1/object/public/document-uploads/thumbnails/page-001/file.png`
+  - `https://...supabase.co/storage/v1/object/public/document-uploads/thumbnails/page-001/file.png?`
+- Save only `thumbnails/...png` into `thumbnail_urls`.
+- This fixes new uploads and reprocessed files.
 
-## Problems
+2. Make legacy thumbnail data still work
+- In the UI, do not trust `thumbnail_urls` as already usable.
+- Add shared thumbnail URL resolution so legacy public URLs are converted back to storage keys and then signed.
+- Use that same logic everywhere thumbnails appear:
+  - `src/components/order/FileList.tsx`
+  - `src/components/order/SectionList.tsx`
+  - `src/components/order/PreviewPanel.tsx`
+- Right now only `FileList` attempts signed URLs, while `SectionList` and `PreviewPanel` still render raw values directly.
 
-1. **Thumbnail not loading**: The stored URL is a Supabase Storage **public** URL (`/storage/v1/object/public/document-uploads/thumbnails/...`), but the `document-uploads` bucket is **private**. Public URLs return 400/403 for private buckets.
+3. Remove the clipped/rounded look
+- Change thumbnail frames to true rectangles with no visible rounding:
+  - replace rounded classes on the thumbnail wrappers with `rounded-none` or a near-zero radius
+- Also switch small thumbnail images from `object-cover` to `object-contain` where needed so the page preview is not cropped.
 
-2. **Oval shape**: The thumbnail container is `h-10 w-8 rounded-lg` (40×32px with 8px radius), making it look oval instead of rectangular.
+4. Preserve backward compatibility
+- Keep support for old rows already saved with broken public URLs by normalizing them at render time.
+- That way existing documents can start showing thumbnails immediately, without requiring every old file to be reprocessed.
 
-## Fix
+5. Verify the result
+- Confirm in the database that newly processed documents now store `thumbnail_urls` as storage keys only.
+- Confirm all three UI surfaces show the same thumbnail:
+  - uploaded files list
+  - section list
+  - preview panel
+- Confirm the thumbnail frame is rectangular with no chopped corners.
 
-### 1. Rectangular thumbnail container (`src/components/order/FileList.tsx`)
-- Change the thumbnail wrapper from `h-10 w-8 rounded-lg` to `h-12 w-9 rounded-sm` for a proper rectangular document preview shape.
-
-### 2. Use signed URLs for thumbnails (`src/hooks/useDocumentUpload.ts`)
-Since the bucket is private, replace the public URL with a signed URL when storing `thumbnail_urls`:
-- After getting derived file URLs from the API, check if they are Supabase storage public URLs.
-- Extract the storage path from the URL and generate a signed URL using `supabase.storage.from("document-uploads").createSignedUrl(path, 60 * 60 * 24 * 7)` (7-day expiry).
-- Store the signed URLs in `thumbnail_urls`.
-
-Alternatively (simpler, more durable): generate signed URLs **at render time** in `FileList.tsx` rather than storing them, since signed URLs expire. This avoids stale URLs in the database.
-
-### Recommended approach: render-time signed URLs
-- In `useDocumentUpload.ts`, store the **storage path** (e.g., `thumbnails/page-001/xxx.png`) in `thumbnail_urls` instead of the full URL.
-- In `FileList.tsx`, detect if the thumbnail value is a path (not a full URL) and generate a signed URL on the fly using a small hook or inline logic.
-- This way thumbnails never expire in the database.
-
-### Files to change
-
-| File | Change |
-|---|---|
-| `src/components/order/FileList.tsx` | Fix container shape; add signed URL resolution for thumbnails |
-| `src/hooks/useDocumentUpload.ts` | Store storage paths instead of public URLs in `thumbnail_urls` |
-
+Technical notes
+- I checked the latest `documents` rows: the newest records still contain full public URLs in `thumbnail_urls`, which is why signing is being bypassed.
+- I also checked the code: `SectionList` and `PreviewPanel` currently use `thumbnail_urls` directly, so even if `FileList` is fixed, the rest of the app can still fail.
+- The rectangle issue is caused by both corner radius and image cropping, not just the wrapper size.
