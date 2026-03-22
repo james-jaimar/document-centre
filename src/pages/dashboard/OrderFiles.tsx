@@ -199,7 +199,6 @@ export default function OrderFiles() {
           <FileUploader onFiles={handleFiles} />
           <FileList
             documents={documents}
-            uploads={uploads}
             selectedDocId={selectedDocId}
             onSelect={setSelectedDocId}
             onReprocess={reprocessDocument}
