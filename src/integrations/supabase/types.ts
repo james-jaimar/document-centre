@@ -14,6 +14,60 @@ export type Database = {
   }
   public: {
     Tables: {
+      assets: {
+        Row: {
+          boxes: Json | null
+          created_at: string
+          height_pt: number | null
+          id: string
+          media_type: string
+          metadata: Json
+          normalized_storage_path: string | null
+          original_filename: string
+          page_count: number | null
+          preview_storage_path: string | null
+          source_storage_path: string
+          status: string
+          thumbnail_storage_path: string | null
+          updated_at: string
+          width_pt: number | null
+        }
+        Insert: {
+          boxes?: Json | null
+          created_at?: string
+          height_pt?: number | null
+          id?: string
+          media_type: string
+          metadata?: Json
+          normalized_storage_path?: string | null
+          original_filename: string
+          page_count?: number | null
+          preview_storage_path?: string | null
+          source_storage_path: string
+          status?: string
+          thumbnail_storage_path?: string | null
+          updated_at?: string
+          width_pt?: number | null
+        }
+        Update: {
+          boxes?: Json | null
+          created_at?: string
+          height_pt?: number | null
+          id?: string
+          media_type?: string
+          metadata?: Json
+          normalized_storage_path?: string | null
+          original_filename?: string
+          page_count?: number | null
+          preview_storage_path?: string | null
+          source_storage_path?: string
+          status?: string
+          thumbnail_storage_path?: string | null
+          updated_at?: string
+          width_pt?: number | null
+        }
+        Relationships: []
+      }
       branch_capabilities: {
         Row: {
           branch_id: string
@@ -142,6 +196,63 @@ export type Database = {
           },
         ]
       }
+      derived_files: {
+        Row: {
+          asset_id: string | null
+          created_at: string
+          height: number | null
+          id: string
+          job_id: string | null
+          kind: string
+          media_type: string
+          metadata: Json
+          page: number | null
+          storage_path: string
+          width: number | null
+        }
+        Insert: {
+          asset_id?: string | null
+          created_at?: string
+          height?: number | null
+          id?: string
+          job_id?: string | null
+          kind: string
+          media_type: string
+          metadata?: Json
+          page?: number | null
+          storage_path: string
+          width?: number | null
+        }
+        Update: {
+          asset_id?: string | null
+          created_at?: string
+          height?: number | null
+          id?: string
+          job_id?: string | null
+          kind?: string
+          media_type?: string
+          metadata?: Json
+          page?: number | null
+          storage_path?: string
+          width?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "derived_files_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "derived_files_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       document_sections: {
         Row: {
           created_at: string
@@ -266,6 +377,65 @@ export type Database = {
             columns: ["order_item_id"]
             isOneToOne: false
             referencedRelation: "order_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jobs: {
+        Row: {
+          asset_id: string | null
+          celery_task_id: string | null
+          created_at: string
+          error: string | null
+          finished_at: string | null
+          id: string
+          operation: string
+          payload: Json
+          queue: string
+          result: Json
+          retries: number
+          started_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          asset_id?: string | null
+          celery_task_id?: string | null
+          created_at?: string
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          operation: string
+          payload?: Json
+          queue?: string
+          result?: Json
+          retries?: number
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          asset_id?: string | null
+          celery_task_id?: string | null
+          created_at?: string
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          operation?: string
+          payload?: Json
+          queue?: string
+          result?: Json
+          retries?: number
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jobs_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
             referencedColumns: ["id"]
           },
         ]
