@@ -6,16 +6,8 @@ import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
 
 type Document = Tables<"documents">;
 
-interface UploadProgress {
-  fileName: string;
-  status: "uploading" | "analyzing" | "done" | "error";
-  progress: number;
-  error?: string;
-}
-
 interface FileListProps {
   documents: Document[];
-  uploads: Record<string, UploadProgress>;
   selectedDocId: string | null;
   onSelect: (id: string) => void;
   onReprocess?: (doc: { id: string; file_path: string; file_name: string }) => Promise<void>;
@@ -29,15 +21,11 @@ function ThumbnailImage({ storagePath, className }: { storagePath: string; class
 
 export default function FileList({
   documents,
-  uploads,
   selectedDocId,
   onSelect,
   onReprocess,
 }: FileListProps) {
   const [reprocessingIds, setReprocessingIds] = useState<Set<string>>(new Set());
-  const activeUploads = Object.values(uploads).filter(
-    (u) => u.status !== "done"
-  );
 
   const handleReprocess = async (doc: Document) => {
     if (!onReprocess || reprocessingIds.has(doc.id)) return;
@@ -55,43 +43,8 @@ export default function FileList({
 
   return (
     <div className="space-y-2">
-      {activeUploads.map((upload) => (
-        <div
-          key={upload.fileName}
-          className="flex items-center gap-2 rounded-xl border border-border bg-muted/30 p-2"
-        >
-          <div className="h-9 w-7 bg-muted flex items-center justify-center shrink-0">
-            <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-foreground truncate">
-              {upload.fileName}
-            </p>
-            <div className="flex items-center gap-2 mt-1">
-              <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-primary rounded-full transition-all duration-300"
-                  style={{ width: `${upload.progress}%` }}
-                />
-              </div>
-              <span className="text-xs text-muted-foreground capitalize">
-                {upload.status === "uploading"
-                  ? "Uploading…"
-                  : upload.status === "analyzing"
-                  ? "Analyzing…"
-                  : upload.status}
-              </span>
-            </div>
-            {upload.error && (
-              <p className="text-xs text-destructive mt-1">{upload.error}</p>
-            )}
-          </div>
-        </div>
-      ))}
-
       {documents.map((doc) => {
-        const isReady = doc.document_status === "ready" || doc.document_status === "analyzed";
-        const isAnalyzing = doc.document_status === "analyzed";
+        const isReady = doc.document_status === "ready";
         const isError = doc.document_status === "error";
         const isProcessing = !isReady && !isError;
         const thumbnails = Array.isArray(doc.thumbnail_urls) ? (doc.thumbnail_urls as string[]) : [];
@@ -155,8 +108,6 @@ export default function FileList({
                 <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
               ) : isError ? (
                 <AlertCircle className="h-4 w-4 text-destructive" />
-              ) : isAnalyzing ? (
-                <Loader2 className="h-3.5 w-3.5 text-primary animate-spin" />
               ) : (
                 <CheckCircle2 className="h-4 w-4 text-primary" />
               )}
@@ -165,7 +116,7 @@ export default function FileList({
         );
       })}
 
-      {documents.length === 0 && activeUploads.length === 0 && (
+      {documents.length === 0 && (
         <div className="text-center py-6 text-muted-foreground">
           <FileText className="h-7 w-7 mx-auto mb-2 opacity-40" />
           <p className="text-sm">No files uploaded yet</p>

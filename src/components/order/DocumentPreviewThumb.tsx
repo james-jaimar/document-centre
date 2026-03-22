@@ -1,6 +1,6 @@
 import type { Tables } from "@/integrations/supabase/types";
 import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
-import { FileText, Search, Loader2 } from "lucide-react";
+import { FileText, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Document = Tables<"documents">;
@@ -23,7 +23,6 @@ export default function DocumentPreviewThumb({ document, onClick }: DocumentPrev
       : []
     : [];
   const firstThumb = thumbnails.length > 0 ? thumbnails[0] : null;
-  const isAnalyzing = document?.document_status === "analyzed";
 
   if (!document) {
     return (
@@ -49,19 +48,9 @@ export default function DocumentPreviewThumb({ document, onClick }: DocumentPrev
         ) : (
           <FileText className="h-8 w-8 text-muted-foreground/30" />
         )}
-        {/* Analyzing overlay */}
-        {isAnalyzing && (
-          <div className="absolute inset-0 bg-background/40 flex flex-col items-center justify-center gap-1.5">
-            <Loader2 className="h-5 w-5 text-primary animate-spin" />
-            <span className="text-[10px] font-medium text-primary">Processing…</span>
-          </div>
-        )}
-        {/* Hover overlay */}
-        {!isAnalyzing && (
-          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
-            <Search className="h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-          </div>
-        )}
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+          <Search className="h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+        </div>
       </button>
 
       <div className="text-center space-y-0.5">
@@ -76,9 +65,6 @@ export default function DocumentPreviewThumb({ document, onClick }: DocumentPrev
             <span>
               {Math.round(Number(document.page_width_mm))}×{Math.round(Number(document.page_height_mm))}mm
             </span>
-          )}
-          {isAnalyzing && (
-            <span className="text-primary animate-pulse">Processing pages…</span>
           )}
         </div>
       </div>
