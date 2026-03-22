@@ -38,7 +38,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
     async (docId: string, storagePath: string, fileName: string) => {
       try {
         // 1. Register asset with Document Centre API
-        const fullStoragePath = `document-uploads/${storagePath}`;
+        const fullStoragePath = storagePath;
         console.log("[upload] Registering asset:", fullStoragePath);
 
         const { asset_id, job_ids } = await createAsset({
