@@ -64,7 +64,7 @@ export default function FileList({
             <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-foreground truncate">
+            <p className="text-xs font-medium text-foreground truncate">
               {upload.fileName}
             </p>
             <div className="flex items-center gap-2 mt-1">
