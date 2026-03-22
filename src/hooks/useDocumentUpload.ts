@@ -90,7 +90,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
           .sort((a, b) => (a.page ?? 0) - (b.page ?? 0));
 
         for (const df of thumbnailFiles) {
-          if (df.storage_path) thumbnailPaths.push(df.storage_path);
+          if (df.storage_path) thumbnailPaths.push(toStorageKey(df.storage_path));
         }
 
         // Fall back to asset-level thumbnail/preview storage path
