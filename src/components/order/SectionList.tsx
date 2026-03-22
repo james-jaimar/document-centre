@@ -8,6 +8,7 @@ import {
   ArrowUp,
   ArrowDown,
 } from "lucide-react";
+import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
 
 type DocumentSection = Tables<"document_sections">;
 type Document = Tables<"documents">;
