@@ -114,12 +114,14 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         let final_ = await fetchThumbnails(asset_id);
         const MAX_THUMB_POLLS = 60; // ~3 minutes at 3s intervals
 
-        for (let i = 0; i < MAX_THUMB_POLLS && final_.thumbnailPaths.length === 0; i++) {
-          const progress = 50 + Math.min(40, (i + 1) * (40 / MAX_THUMB_POLLS));
-          updateUpload(fileName, { progress, statusText: "Rendering pages…" });
+        const expectedPages = final_.pageCount ?? 1;
+        for (let i = 0; i < MAX_THUMB_POLLS && final_.thumbnailPaths.length < expectedPages; i++) {
+          const found = final_.thumbnailPaths.length;
+          const progress = 50 + Math.min(40, (found / expectedPages) * 40);
+          updateUpload(fileName, { progress, statusText: `Rendering pages… (${found}/${expectedPages})` });
           await new Promise((r) => setTimeout(r, 3000));
           final_ = await fetchThumbnails(asset_id);
-          console.log(`[upload] Thumbnail poll ${i + 1}: ${final_.thumbnailPaths.length} thumbnails`);
+          console.log(`[upload] Thumbnail poll ${i + 1}: ${final_.thumbnailPaths.length}/${expectedPages} thumbnails`);
         }
 
         console.log("[upload] Final thumbnails:", final_.thumbnailPaths.length);
