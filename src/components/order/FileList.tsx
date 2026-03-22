@@ -102,14 +102,14 @@ export default function FileList({
             key={doc.id}
             onClick={() => isReady && onSelect(doc.id)}
             className={cn(
-              "flex items-center gap-3 rounded-xl border p-3 transition-all",
+              "flex items-center gap-2 rounded-xl border p-2 transition-all",
               selectedDocId === doc.id
                 ? "border-primary bg-primary/5 ring-1 ring-primary/20"
                 : "border-border/60 hover:border-primary/30 cursor-pointer",
               !isReady && "opacity-60 cursor-default"
             )}
           >
-            <div className="h-12 w-9 bg-muted flex items-center justify-center shrink-0 overflow-hidden border border-border/40">
+            <div className="h-9 w-7 bg-muted flex items-center justify-center shrink-0 overflow-hidden border border-border/40">
               {hasThumbnails ? (
                 <ThumbnailImage storagePath={thumbnails[0]} />
               ) : (
