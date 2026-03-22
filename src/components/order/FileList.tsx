@@ -109,7 +109,7 @@ export default function FileList({
               !isReady && "opacity-60 cursor-default"
             )}
           >
-            <div className="h-12 w-9 bg-muted flex items-center justify-center shrink-0 overflow-hidden">
+            <div className="h-12 w-9 bg-muted flex items-center justify-center shrink-0 overflow-hidden border border-border/40">
               {hasThumbnails ? (
                 <ThumbnailImage storagePath={thumbnails[0]} />
               ) : (
