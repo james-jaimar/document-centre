@@ -9,6 +9,7 @@ import {
   getDerivedFiles,
   pollJob,
 } from "@/lib/documentCentreApi";
+import { toStorageKey } from "@/lib/thumbnailUtils";
 
 interface UploadProgress {
   fileName: string;
@@ -89,15 +90,15 @@ export function useDocumentUpload(orderItemId: string | undefined) {
           .sort((a, b) => (a.page ?? 0) - (b.page ?? 0));
 
         for (const df of thumbnailFiles) {
-          if (df.storage_path) thumbnailPaths.push(df.storage_path);
+          if (df.storage_path) thumbnailPaths.push(toStorageKey(df.storage_path));
         }
 
         // Fall back to asset-level thumbnail/preview storage path
         if (thumbnailPaths.length === 0 && asset.thumbnail_storage_path) {
-          thumbnailPaths.push(asset.thumbnail_storage_path);
+          thumbnailPaths.push(toStorageKey(asset.thumbnail_storage_path));
         }
         if (thumbnailPaths.length === 0 && asset.preview_storage_path) {
-          thumbnailPaths.push(asset.preview_storage_path);
+          thumbnailPaths.push(toStorageKey(asset.preview_storage_path));
         }
 
         // 6. Update documents row with metadata
