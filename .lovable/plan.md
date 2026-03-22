@@ -1,62 +1,28 @@
 
 
-# Fix Thumbnail Polling + Queue-Aware Processing Feedback
+# Wait for All Thumbnails Before Completing
 
-## Two problems to solve
+## Problem
 
-1. **Thumbnails missing**: After initial `job_ids` complete (inspection), thumbnail generation runs as subsequent backend jobs. Current code doesn't wait for them — marks "done" immediately with no thumbnails.
+The thumbnail polling loop (line 117 in `useDocumentUpload.ts`) breaks as soon as `thumbnailPaths.length > 0`. For a 24-page PDF, page 1's thumbnail appears first, the loop exits, and only 1 thumbnail is saved to `thumbnail_urls`. The lightbox then only shows 1 page with no arrows.
 
-2. **Timeout risk under load**: The fixed 120-poll limit could expire if jobs sit in a Redis queue. We need indefinite polling (as long as the job isn't failed) and better status messages.
+## Fix
 
-## Changes
+Change the polling condition to wait until the number of thumbnails matches the expected page count. The `fetchThumbnails` helper already returns `pageCount` from the asset metadata.
 
-### 1. `src/hooks/useDocumentUpload.ts`
+### `src/hooks/useDocumentUpload.ts`
 
-**After initial job polling completes, add a thumbnail wait loop:**
-- Poll `fetchThumbnails(asset_id)` every 3 seconds, up to 60 attempts (~3 min)
-- Break as soon as `thumbnailPaths.length > 0`
-- Increment progress from 50% → 90% during this loop
-- Update the upload status text via a new `statusText` field so the modal shows "Rendering pages..." instead of just "Processing PDF..."
+Replace the thumbnail polling loop condition:
 
-**Make job polling queue-aware:**
-- In the `pollJob` `onUpdate` callback, read `job.status` to update the modal status text:
-  - `pending` / `queued` → "Queued — waiting for server..."
-  - `running` → "Processing PDF..."
-- Remove the 120-attempt hard cap on `pollJob` — increase to 360 (15 min) so queued jobs never falsely time out
-- Progress during job polling: 40% → 50%
+**Before:** `final_.thumbnailPaths.length === 0`
 
-### 2. `src/hooks/useDocumentUpload.ts` — UploadProgress interface
+**After:** Check if we have fewer thumbnails than expected pages. Continue polling while `final_.thumbnailPaths.length < (final_.pageCount ?? 1)`. This ensures a 24-page PDF waits until all 24 thumbnails are rendered.
 
-Add optional `statusText` field:
-```typescript
-interface UploadProgress {
-  fileName: string;
-  status: "uploading" | "analyzing" | "done" | "error";
-  progress: number;
-  error?: string;
-  statusText?: string; // NEW: dynamic message for the modal
-}
-```
+Also add a progress calculation based on thumbnails found vs expected, so the modal shows meaningful progress (e.g., "Rendering pages… 12/24").
 
-### 3. `src/components/order/UploadProgressModal.tsx`
+Update `statusText` to include the count: `"Rendering pages… (${found}/${expected})"`.
 
-Use `upload.statusText` when available instead of the hardcoded status labels:
-```
-{upload.statusText || (upload.status === "uploading" ? "Uploading file…" : ...)}
-```
+### No other files change
 
-This means the modal will show contextual messages like:
-- "Uploading file..." (0-30%)
-- "Queued — waiting for server..." (30-40%, if job is pending)
-- "Processing PDF..." (40-50%, when job is running)
-- "Rendering pages..." (50-90%, thumbnail wait loop)
-- "Ready" (100%)
-
-### 4. `src/lib/documentCentreApi.ts`
-
-Update `pollJob` default `maxAttempts` from 120 to 360 to handle long queue waits.
-
-## No other files change
-
-The modal component, file list, and preview components all remain the same structurally — just the status text becomes dynamic.
+The `PreviewLightbox` already has left/right arrows and keyboard navigation — they just weren't showing because `thumbnailPaths` only had 1 entry.
 
