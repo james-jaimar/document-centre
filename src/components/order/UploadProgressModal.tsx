@@ -112,13 +112,13 @@ export default function UploadProgressModal({
 
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">
-                  {upload.status === "uploading"
+                  {upload.statusText || (upload.status === "uploading"
                     ? "Uploading file…"
                     : upload.status === "analyzing"
                     ? "Processing PDF…"
                     : upload.status === "done"
                     ? "Ready"
-                    : "Failed"}
+                    : "Failed")}
                 </span>
                 <span className="text-xs font-medium text-muted-foreground">
                   {Math.round(upload.progress)}%
