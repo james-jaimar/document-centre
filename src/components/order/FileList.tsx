@@ -155,6 +155,8 @@ export default function FileList({
                 <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
               ) : isError ? (
                 <AlertCircle className="h-4 w-4 text-destructive" />
+              ) : isAnalyzing ? (
+                <Loader2 className="h-3.5 w-3.5 text-primary animate-spin" />
               ) : (
                 <CheckCircle2 className="h-4 w-4 text-primary" />
               )}
