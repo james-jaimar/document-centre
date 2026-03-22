@@ -9,6 +9,7 @@ import {
   getDerivedFiles,
   pollJob,
 } from "@/lib/documentCentreApi";
+import { toStorageKey } from "@/lib/thumbnailUtils";
 
 interface UploadProgress {
   fileName: string;
