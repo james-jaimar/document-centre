@@ -39,6 +39,7 @@ export default function OrderFiles() {
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
 
   // Determine which document to show in the middle preview
   const previewDoc = useMemo(() => {
