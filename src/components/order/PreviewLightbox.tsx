@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
-import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
-import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import { batchSignUrls } from "@/lib/thumbnailUtils";
+import { X, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface PreviewLightboxProps {
@@ -9,31 +9,42 @@ interface PreviewLightboxProps {
   onClose: () => void;
 }
 
-function LightboxImage({ storagePath }: { storagePath: string }) {
-  const url = useSignedThumbnailUrl(storagePath);
-  if (!url) {
-    return (
-      <div className="flex items-center justify-center h-full w-full text-muted-foreground/50">
-        Loading…
-      </div>
-    );
-  }
-  return (
-    <img
-      src={url}
-      alt=""
-      className="max-h-[80vh] max-w-[90vw] object-contain shadow-2xl"
-    />
-  );
-}
-
 export default function PreviewLightbox({
   thumbnailPaths,
   initialPage = 0,
   onClose,
 }: PreviewLightboxProps) {
   const [page, setPage] = useState(initialPage);
+  const [urlMap, setUrlMap] = useState<Map<string, string>>(new Map());
+  const [loading, setLoading] = useState(true);
   const total = thumbnailPaths.length;
+
+  // Batch-sign all paths on mount
+  useEffect(() => {
+    let cancelled = false;
+    batchSignUrls(thumbnailPaths).then((map) => {
+      if (!cancelled) {
+        setUrlMap(map);
+        setLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [thumbnailPaths]);
+
+  // Preload adjacent images into browser cache
+  useEffect(() => {
+    if (loading) return;
+    for (let offset = -1; offset <= 2; offset++) {
+      const idx = page + offset;
+      if (idx >= 0 && idx < total && idx !== page) {
+        const url = urlMap.get(thumbnailPaths[idx]);
+        if (url) {
+          const img = new Image();
+          img.src = url;
+        }
+      }
+    }
+  }, [page, loading, urlMap, thumbnailPaths, total]);
 
   const goNext = useCallback(() => setPage((p) => Math.min(p + 1, total - 1)), [total]);
   const goPrev = useCallback(() => setPage((p) => Math.max(p - 1, 0)), []);
@@ -50,12 +61,13 @@ export default function PreviewLightbox({
 
   if (total === 0) return null;
 
+  const currentUrl = urlMap.get(thumbnailPaths[page]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
       onClick={onClose}
     >
-      {/* Close button */}
       <button
         onClick={onClose}
         className="absolute top-4 right-4 h-10 w-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
@@ -63,7 +75,6 @@ export default function PreviewLightbox({
         <X className="h-5 w-5" />
       </button>
 
-      {/* Prev arrow */}
       {total > 1 && (
         <button
           onClick={(e) => { e.stopPropagation(); goPrev(); }}
@@ -77,12 +88,20 @@ export default function PreviewLightbox({
         </button>
       )}
 
-      {/* Image */}
       <div onClick={(e) => e.stopPropagation()} className="flex items-center justify-center">
-        <LightboxImage storagePath={thumbnailPaths[page]} />
+        {loading || !currentUrl ? (
+          <div className="flex items-center justify-center h-[80vh] w-[90vw] text-muted-foreground/50">
+            <Loader2 className="h-8 w-8 animate-spin text-white/50" />
+          </div>
+        ) : (
+          <img
+            src={currentUrl}
+            alt=""
+            className="max-h-[80vh] max-w-[90vw] object-contain shadow-2xl"
+          />
+        )}
       </div>
 
-      {/* Next arrow */}
       {total > 1 && (
         <button
           onClick={(e) => { e.stopPropagation(); goNext(); }}
@@ -96,7 +115,6 @@ export default function PreviewLightbox({
         </button>
       )}
 
-      {/* Page counter */}
       {total > 1 && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-black/50 text-white text-sm px-4 py-1.5 rounded-full">
           {page + 1} / {total}
