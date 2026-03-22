@@ -37,6 +37,22 @@ export default function OrderFiles() {
 
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  // Determine which document to show in the middle preview
+  const previewDoc = useMemo(() => {
+    if (selectedDocId) return documents.find((d) => d.id === selectedDocId) ?? null;
+    if (selectedSectionId) {
+      const section = sections.find((s) => s.id === selectedSectionId);
+      if (section?.document_id) return documents.find((d) => d.id === section.document_id) ?? null;
+    }
+    return null;
+  }, [selectedDocId, selectedSectionId, documents, sections]);
+
+  const lightboxThumbnails = useMemo(() => {
+    if (!previewDoc) return [];
+    return Array.isArray(previewDoc.thumbnail_urls) ? (previewDoc.thumbnail_urls as string[]) : [];
+  }, [previewDoc]);
 
   const handleFiles = useCallback(
     async (files: File[]) => {
