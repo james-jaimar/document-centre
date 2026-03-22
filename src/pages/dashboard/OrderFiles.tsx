@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   useOrderData,
@@ -13,6 +13,7 @@ import SectionActions from "@/components/order/SectionActions";
 import SectionList from "@/components/order/SectionList";
 import DocumentPreviewThumb from "@/components/order/DocumentPreviewThumb";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
+import UploadProgressModal from "@/components/order/UploadProgressModal";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
@@ -30,7 +31,7 @@ export default function OrderFiles() {
     refetchSections,
   } = useOrderData(orderId);
 
-  const { uploads, uploadFiles, reprocessDocument } = useDocumentUpload(orderItem?.id);
+  const { uploads, uploadFiles, reprocessDocument, clearUploads } = useDocumentUpload(orderItem?.id);
   const addSection = useAddSection();
   const updateSection = useUpdateSection();
   const deleteSection = useDeleteSection();
@@ -38,6 +39,7 @@ export default function OrderFiles() {
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
 
   // Determine which document to show in the middle preview
   const previewDoc = useMemo(() => {
@@ -56,10 +58,17 @@ export default function OrderFiles() {
 
   const handleFiles = useCallback(
     async (files: File[]) => {
+      setUploadModalOpen(true);
       await uploadFiles(files);
     },
     [uploadFiles]
   );
+
+  const handleUploadContinue = useCallback(() => {
+    setUploadModalOpen(false);
+    clearUploads();
+    refetchDocuments();
+  }, [clearUploads, refetchDocuments]);
 
   const handleAddAs = useCallback(
     async (type: "front_cover" | "back_cover" | "body" | "insert" | "tab") => {
@@ -190,7 +199,6 @@ export default function OrderFiles() {
           <FileUploader onFiles={handleFiles} />
           <FileList
             documents={documents}
-            uploads={uploads}
             selectedDocId={selectedDocId}
             onSelect={setSelectedDocId}
             onReprocess={reprocessDocument}
@@ -246,6 +254,13 @@ export default function OrderFiles() {
           onClose={() => setLightboxOpen(false)}
         />
       )}
+
+      {/* Upload Progress Modal */}
+      <UploadProgressModal
+        open={uploadModalOpen}
+        uploads={uploads}
+        onContinue={handleUploadContinue}
+      />
     </div>
   );
 }
