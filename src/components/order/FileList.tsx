@@ -91,6 +91,7 @@ export default function FileList({
 
       {documents.map((doc) => {
         const isReady = doc.document_status === "ready" || doc.document_status === "analyzed";
+        const isAnalyzing = doc.document_status === "analyzed";
         const isError = doc.document_status === "error";
         const isProcessing = !isReady && !isError;
         const thumbnails = Array.isArray(doc.thumbnail_urls) ? (doc.thumbnail_urls as string[]) : [];
@@ -154,6 +155,8 @@ export default function FileList({
                 <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
               ) : isError ? (
                 <AlertCircle className="h-4 w-4 text-destructive" />
+              ) : isAnalyzing ? (
+                <Loader2 className="h-3.5 w-3.5 text-primary animate-spin" />
               ) : (
                 <CheckCircle2 className="h-4 w-4 text-primary" />
               )}
