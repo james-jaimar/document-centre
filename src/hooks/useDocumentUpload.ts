@@ -42,19 +42,40 @@ export function useDocumentUpload(orderItemId: string | undefined) {
       const asset = await getAsset(asset_id);
       const derivedFiles = await getDerivedFiles(asset_id);
 
+      // Diagnostic: log what the server actually returns
+      console.log("[upload] Derived files:", derivedFiles.map(df => ({
+        kind: df.kind, page: df.page, media_type: df.media_type,
+        path: df.storage_path?.slice(-40)
+      })));
+
       const pageCount = asset.page_count ?? null;
       const widthPt = asset.width_pt;
       const heightPt = asset.height_pt;
       const pageWidthMm = widthPt != null ? (widthPt * 25.4) / 72 : null;
       const pageHeightMm = heightPt != null ? (heightPt * 25.4) / 72 : null;
 
-      const thumbnailPaths: string[] = [];
+      // Broad filter: accept any per-page image derived file
       const thumbnailFiles = derivedFiles
-        .filter((df) => df.kind === "thumbnail_png" || df.kind === "preview_png")
+        .filter((df) =>
+          df.page != null &&
+          df.storage_path &&
+          (df.media_type?.startsWith("image/") ||
+           /thumbnail|preview|page|png/i.test(df.kind))
+        )
         .sort((a, b) => (a.page ?? 0) - (b.page ?? 0));
+
+      // Deduplicate by page number (take first per page)
+      const thumbnailPaths: string[] = [];
+      const seenPages = new Set<number>();
       for (const df of thumbnailFiles) {
-        if (df.storage_path) thumbnailPaths.push(toStorageKey(df.storage_path));
+        const pg = df.page ?? 0;
+        if (!seenPages.has(pg)) {
+          seenPages.add(pg);
+          thumbnailPaths.push(toStorageKey(df.storage_path));
+        }
       }
+
+      // Fallback to asset-level thumbnail/preview if no per-page files found
       if (thumbnailPaths.length === 0 && asset.thumbnail_storage_path) {
         thumbnailPaths.push(toStorageKey(asset.thumbnail_storage_path));
       }
