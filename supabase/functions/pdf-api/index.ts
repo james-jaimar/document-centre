@@ -6,19 +6,17 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const ALLOWED_PATHS = [
+// Allowed path prefixes for the Document Centre API
+const ALLOWED_PREFIXES = [
+  "v1/assets",
+  "v1/jobs",
+  "v1/operations",
   "health",
-  "preflight",
-  "analyze-pdf",
-  "page-boxes",
-  "manipulate/rotate",
-  "manipulate/crop",
-  "manipulate/split",
-  "convert/cmyk",
-  "imposition/labels",
-  "verify-pdf",
-  "rasterize",
 ];
+
+function isAllowedPath(path: string): boolean {
+  return ALLOWED_PREFIXES.some((prefix) => path === prefix || path.startsWith(prefix + "/"));
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -31,7 +29,6 @@ Deno.serve(async (req) => {
     // Auth
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
-      console.error("pdf-api: Missing or invalid Authorization header");
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401, headers: jsonHeaders,
       });
@@ -43,70 +40,49 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    // Use getUser for reliable auth verification
     const { data: userData, error: userError } = await supabase.auth.getUser();
     if (userError || !userData?.user) {
-      console.error("pdf-api: Auth failed:", userError?.message ?? "No user");
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401, headers: jsonHeaders,
       });
     }
 
-    console.log("pdf-api: Authenticated user:", userData.user.id);
-
-    // Parse body
+    // Parse the proxied path and method from the request body
     const body = await req.json();
-    const { path, ...payload } = body;
+    const { path, method: forwardMethod, ...payload } = body;
 
-    if (!path || !ALLOWED_PATHS.includes(path)) {
-      console.error("pdf-api: Invalid path:", path);
+    if (!path || !isAllowedPath(path)) {
       return new Response(
-        JSON.stringify({ error: `Invalid path. Allowed: ${ALLOWED_PATHS.join(", ")}` }),
+        JSON.stringify({ error: `Invalid path: ${path}` }),
         { status: 400, headers: jsonHeaders }
       );
     }
 
-    // Forward to VPS
-    const vpsUrl = Deno.env.get("VPS_PDF_API_URL")!.replace(/\/+$/, "");
-    const vpsKey = Deno.env.get("VPS_PDF_API_KEY")!;
-    const fullUrl = `${vpsUrl}/${path}`;
+    const baseUrl = Deno.env.get("DOCUMENT_CENTRE_API_URL")!.replace(/\/+$/, "");
+    const fullUrl = `${baseUrl}/${path}`;
+    const httpMethod = (forwardMethod || "POST").toUpperCase();
 
-    console.log(`pdf-api: Forwarding to VPS -> ${fullUrl}`);
+    console.log(`pdf-api: ${httpMethod} ${fullUrl}`);
 
-    const vpsResponse = await fetch(fullUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-Key": vpsKey,
-      },
-      body: JSON.stringify(payload),
-    });
+    const fetchOptions: RequestInit = {
+      method: httpMethod,
+      headers: { "Content-Type": "application/json" },
+    };
 
-    console.log(`pdf-api: VPS responded with status ${vpsResponse.status}`);
-
-    // Handle 503 busy
-    if (vpsResponse.status === 503) {
-      return new Response(
-        JSON.stringify({ error: "PDF server is busy. Please retry in a few seconds.", busy: true }),
-        { status: 503, headers: jsonHeaders }
-      );
+    // Only include body for methods that support it
+    if (httpMethod !== "GET" && httpMethod !== "HEAD" && Object.keys(payload).length > 0) {
+      fetchOptions.body = JSON.stringify(payload);
     }
 
-    // Forward error responses
-    if (!vpsResponse.ok) {
-      const errorText = await vpsResponse.text();
-      console.error(`pdf-api: VPS error (${vpsResponse.status}):`, errorText);
-      let errorBody: unknown;
-      try { errorBody = JSON.parse(errorText); } catch { errorBody = { error: errorText }; }
-      return new Response(JSON.stringify(errorBody), {
-        status: vpsResponse.status, headers: jsonHeaders,
-      });
-    }
+    const upstream = await fetch(fullUrl, fetchOptions);
 
-    // Forward success response as JSON
-    const data = await vpsResponse.json();
-    return new Response(JSON.stringify(data), {
-      status: 200, headers: jsonHeaders,
+    console.log(`pdf-api: upstream responded ${upstream.status}`);
+
+    // Forward the response
+    const responseText = await upstream.text();
+    return new Response(responseText, {
+      status: upstream.status,
+      headers: jsonHeaders,
     });
 
   } catch (error) {
