@@ -1,49 +1,62 @@
 
 
-# Upload Progress Modal (Mimeo-style)
+# Fix Thumbnail Polling + Queue-Aware Processing Feedback
 
-## What we're building
+## Two problems to solve
 
-Replace the inline upload progress indicators with a modal dialog that opens automatically when files are dropped/selected. The modal shows each file's upload and processing status in real-time, with a "Continue" button that only enables once everything is done. This replaces the two-phase progressive approach with a single clean flow inside a modal.
+1. **Thumbnails missing**: After initial `job_ids` complete (inspection), thumbnail generation runs as subsequent backend jobs. Current code doesn't wait for them — marks "done" immediately with no thumbnails.
+
+2. **Timeout risk under load**: The fixed 120-poll limit could expire if jobs sit in a Redis queue. We need indefinite polling (as long as the job isn't failed) and better status messages.
 
 ## Changes
 
-### 1. New component: `src/components/order/UploadProgressModal.tsx`
+### 1. `src/hooks/useDocumentUpload.ts`
 
-A Dialog-based modal that:
-- Opens automatically when there are active uploads
-- Shows a summary bar: "X Uploading | X Processing | X Completed | X Error"
-- Lists each file with: filename, file size, a progress bar, and status label (Uploading / Processing / Complete / Error)
-- Has a cancel button per file (sets status to cancelled, though we won't abort the actual upload mid-flight)
-- Has a "Continue" button at the bottom that closes the modal, enabled only when all uploads are `done` or `error`
-- Clean, polished design matching the app's glass-card aesthetic
+**After initial job polling completes, add a thumbnail wait loop:**
+- Poll `fetchThumbnails(asset_id)` every 3 seconds, up to 60 attempts (~3 min)
+- Break as soon as `thumbnailPaths.length > 0`
+- Increment progress from 50% → 90% during this loop
+- Update the upload status text via a new `statusText` field so the modal shows "Rendering pages..." instead of just "Processing PDF..."
 
-### 2. Update `src/pages/dashboard/OrderFiles.tsx`
+**Make job polling queue-aware:**
+- In the `pollJob` `onUpdate` callback, read `job.status` to update the modal status text:
+  - `pending` / `queued` → "Queued — waiting for server..."
+  - `running` → "Processing PDF..."
+- Remove the 120-attempt hard cap on `pollJob` — increase to 360 (15 min) so queued jobs never falsely time out
+- Progress during job polling: 40% → 50%
 
-- Add state to control modal open/close
-- When `handleFiles` is called, open the modal
-- Pass `uploads` record to the modal
-- On "Continue" (or close), dismiss the modal and clear uploads
+### 2. `src/hooks/useDocumentUpload.ts` — UploadProgress interface
 
-### 3. Update `src/hooks/useDocumentUpload.ts`
+Add optional `statusText` field:
+```typescript
+interface UploadProgress {
+  fileName: string;
+  status: "uploading" | "analyzing" | "done" | "error";
+  progress: number;
+  error?: string;
+  statusText?: string; // NEW: dynamic message for the modal
+}
+```
 
-- Revert to single-phase processing: remove the two-phase interim fetch / `analyzed` status. Just poll all jobs to completion, then save everything at once with `document_status: "ready"`.
-- Keep progress updates granular so the modal can show: uploading (0-30%), processing (30-90%), done (100%).
+### 3. `src/components/order/UploadProgressModal.tsx`
 
-### 4. Clean up `src/components/order/FileList.tsx`
+Use `upload.statusText` when available instead of the hardcoded status labels:
+```
+{upload.statusText || (upload.status === "uploading" ? "Uploading file…" : ...)}
+```
 
-- Remove the inline `activeUploads` progress section (the modal handles it now)
-- Remove the `analyzed` status handling (no longer needed)
-- Keep the document list with its existing thumbnail + metadata display
+This means the modal will show contextual messages like:
+- "Uploading file..." (0-30%)
+- "Queued — waiting for server..." (30-40%, if job is pending)
+- "Processing PDF..." (40-50%, when job is running)
+- "Rendering pages..." (50-90%, thumbnail wait loop)
+- "Ready" (100%)
 
-### 5. Clean up `src/components/order/DocumentPreviewThumb.tsx`
+### 4. `src/lib/documentCentreApi.ts`
 
-- Remove the "analyzing" overlay/badge (no longer needed since we use single-phase + modal)
+Update `pollJob` default `maxAttempts` from 120 to 360 to handle long queue waits.
 
-## Technical notes
+## No other files change
 
-- The modal uses the existing `Dialog` component from `src/components/ui/dialog.tsx`
-- Progress bar uses the existing `Progress` component
-- The `uploads` state already tracks per-file status — we just surface it in the modal instead of inline
-- Single-phase processing is simpler and more reliable; the modal gives the user clear feedback so they don't need to see a thumbnail early
+The modal component, file list, and preview components all remain the same structurally — just the status text becomes dynamic.
 
