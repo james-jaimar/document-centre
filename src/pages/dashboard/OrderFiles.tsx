@@ -13,6 +13,7 @@ import SectionActions from "@/components/order/SectionActions";
 import SectionList from "@/components/order/SectionList";
 import DocumentPreviewThumb from "@/components/order/DocumentPreviewThumb";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
+import UploadProgressModal from "@/components/order/UploadProgressModal";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
