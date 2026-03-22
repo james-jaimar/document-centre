@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   useOrderData,
@@ -11,6 +11,8 @@ import FileUploader from "@/components/order/FileUploader";
 import FileList from "@/components/order/FileList";
 import SectionActions from "@/components/order/SectionActions";
 import SectionList from "@/components/order/SectionList";
+import DocumentPreviewThumb from "@/components/order/DocumentPreviewThumb";
+import PreviewLightbox from "@/components/order/PreviewLightbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
@@ -35,6 +37,22 @@ export default function OrderFiles() {
 
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  // Determine which document to show in the middle preview
+  const previewDoc = useMemo(() => {
+    if (selectedDocId) return documents.find((d) => d.id === selectedDocId) ?? null;
+    if (selectedSectionId) {
+      const section = sections.find((s) => s.id === selectedSectionId);
+      if (section?.document_id) return documents.find((d) => d.id === section.document_id) ?? null;
+    }
+    return null;
+  }, [selectedDocId, selectedSectionId, documents, sections]);
+
+  const lightboxThumbnails = useMemo(() => {
+    if (!previewDoc) return [];
+    return Array.isArray(previewDoc.thumbnail_urls) ? (previewDoc.thumbnail_urls as string[]) : [];
+  }, [previewDoc]);
 
   const handleFiles = useCallback(
     async (files: File[]) => {
@@ -179,9 +197,14 @@ export default function OrderFiles() {
           />
         </div>
 
-        {/* Middle: Actions */}
+        {/* Middle: Preview + Actions */}
         <div className="hidden lg:block">
-          <div className="glass-card p-4 sticky top-24">
+          <div className="glass-card p-4 sticky top-24 space-y-4">
+            <DocumentPreviewThumb
+              document={previewDoc}
+              onClick={() => lightboxThumbnails.length > 0 && setLightboxOpen(true)}
+            />
+            <div className="border-t border-border/60" />
             <SectionActions
               hasSelectedFile={!!selectedDocId}
               onAddAs={handleAddAs}
@@ -215,6 +238,14 @@ export default function OrderFiles() {
           onRemoveSection={handleRemoveSection}
         />
       </div>
+
+      {/* Lightbox */}
+      {lightboxOpen && lightboxThumbnails.length > 0 && (
+        <PreviewLightbox
+          thumbnailPaths={lightboxThumbnails}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
     </div>
   );
 }

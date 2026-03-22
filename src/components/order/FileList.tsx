@@ -58,13 +58,13 @@ export default function FileList({
       {activeUploads.map((upload) => (
         <div
           key={upload.fileName}
-          className="flex items-center gap-3 rounded-xl border border-border bg-muted/30 p-3"
+          className="flex items-center gap-2 rounded-xl border border-border bg-muted/30 p-2"
         >
-          <div className="h-12 w-9 bg-muted flex items-center justify-center shrink-0">
-            <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
+          <div className="h-9 w-7 bg-muted flex items-center justify-center shrink-0">
+            <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-foreground truncate">
+            <p className="text-xs font-medium text-foreground truncate">
               {upload.fileName}
             </p>
             <div className="flex items-center gap-2 mt-1">
@@ -102,14 +102,14 @@ export default function FileList({
             key={doc.id}
             onClick={() => isReady && onSelect(doc.id)}
             className={cn(
-              "flex items-center gap-3 rounded-xl border p-3 transition-all",
+              "flex items-center gap-2 rounded-xl border p-2 transition-all",
               selectedDocId === doc.id
                 ? "border-primary bg-primary/5 ring-1 ring-primary/20"
                 : "border-border/60 hover:border-primary/30 cursor-pointer",
               !isReady && "opacity-60 cursor-default"
             )}
           >
-            <div className="h-12 w-9 bg-muted flex items-center justify-center shrink-0 overflow-hidden border border-border/40">
+            <div className="h-9 w-7 bg-muted flex items-center justify-center shrink-0 overflow-hidden border border-border/40">
               {hasThumbnails ? (
                 <ThumbnailImage storagePath={thumbnails[0]} />
               ) : (
@@ -118,7 +118,7 @@ export default function FileList({
             </div>
 
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">
+              <p className="text-xs font-medium text-foreground truncate">
                 {doc.file_name}
               </p>
               <div className="flex items-center gap-2 mt-0.5">
