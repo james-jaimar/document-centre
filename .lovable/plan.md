@@ -1,60 +1,37 @@
 
 
-# Fix Thumbnail Discovery + Add Per-Page Progress
+# Cache Signed URLs + Preload Adjacent Pages in Lightbox
 
-## Diagnosis
+## Problem
 
-The polling loop logic is sound, but the thumbnail count stays at 1/24 because the `fetchThumbnails` helper filters derived files by `kind === "thumbnail_png" || kind === "preview_png"`. The server likely uses a different `kind` value for per-page renders (e.g., `page_png`, `page_image`, or just `png`). Only the single asset-level `thumbnail_storage_path` is found as a fallback, giving exactly 1 thumbnail.
+Every time the user navigates to a page in the lightbox, `useSignedThumbnailUrl` fires a fresh `createSignedUrl` call — even for pages already visited. Signed URLs are valid for 1 hour but are never cached, causing a ~1s delay on every page turn.
 
-The server **does** provide per-page data via `getDerivedFiles` -- we are just filtering it out.
+## Solution
 
-## Plan
+Two changes:
 
-### 1. Add diagnostic logging (`useDocumentUpload.ts`)
+### 1. Add an in-memory signed URL cache (`src/lib/thumbnailUtils.ts`)
 
-In `fetchThumbnails`, log the raw derived files array so we can see exactly what `kind` values the server returns:
-
-```typescript
-console.log("[upload] Derived files:", derivedFiles.map(df => ({
-  kind: df.kind, page: df.page, path: df.storage_path?.slice(-40)
-})));
-```
-
-### 2. Broaden the kind filter (`useDocumentUpload.ts`)
-
-Instead of only matching `thumbnail_png` and `preview_png`, accept any derived file that has a `page` number and an image media type (or a `kind` containing "png", "thumbnail", "preview", or "page"):
+Add a module-level `Map<string, string>` that stores `storageKey → signedUrl`. Before calling `createSignedUrl`, check the cache. URLs are valid for 1 hour so the cache needs no expiry logic within a single session.
 
 ```typescript
-const thumbnailFiles = derivedFiles
-  .filter((df) =>
-    df.page != null &&
-    df.storage_path &&
-    (df.media_type?.startsWith("image/") ||
-     /thumbnail|preview|page|png/i.test(df.kind))
-  )
-  .sort((a, b) => (a.page ?? 0) - (b.page ?? 0));
+const signedUrlCache = new Map<string, string>();
 ```
 
-This ensures we capture whatever naming convention the server uses, while still requiring a `page` number to avoid picking up non-page-specific files.
+In `useSignedThumbnailUrl`: check cache first, skip the API call if hit. On successful fetch, store in cache.
 
-### 3. Deduplicate by page number
+### 2. Preload adjacent pages in the lightbox (`src/components/order/PreviewLightbox.tsx`)
 
-If the server produces multiple derived files per page (e.g., a thumbnail AND a preview), take only one per page to avoid inflating the count:
+When the current page changes, eagerly resolve signed URLs for the next 2 and previous 1 pages. This populates the cache so navigation feels instant.
 
-```typescript
-const seenPages = new Set<number>();
-for (const df of thumbnailFiles) {
-  const pg = df.page ?? 0;
-  if (!seenPages.has(pg)) {
-    seenPages.add(pg);
-    thumbnailPaths.push(toStorageKey(df.storage_path));
-  }
-}
-```
+- Add a `useBatchSignedUrls(paths)` approach: the lightbox resolves ALL thumbnail paths into signed URLs upfront when it opens (they're just lightweight Supabase API calls, not image downloads).
+- Store resolved URLs in a `Map` via state. Render images using the resolved URL directly instead of calling `useSignedThumbnailUrl` per-page.
+- The browser's own image cache handles the actual pixel data after first load.
+
+Concretely: when the lightbox mounts, fire `createSignedUrls` (Supabase supports batch signing) for all paths at once. This single API call returns all URLs, and every page turn is then instant.
 
 ### Files to edit
 
-- `src/hooks/useDocumentUpload.ts` -- `fetchThumbnails` helper only (lines 40-68)
-
-No other files change. The polling loop and lightbox are already correct once the thumbnail discovery works properly.
+1. **`src/lib/thumbnailUtils.ts`** — Add module-level cache to `useSignedThumbnailUrl`, and export a new `batchSignUrls(paths: string[])` helper that calls `createSignedUrls` and caches all results.
+2. **`src/components/order/PreviewLightbox.tsx`** — On mount, call `batchSignUrls` for all `thumbnailPaths`. Store the resulting URL map in state. Pass resolved URLs directly to `<img>` tags instead of using per-image hooks. Show a brief loading state only on initial batch resolve.
 
