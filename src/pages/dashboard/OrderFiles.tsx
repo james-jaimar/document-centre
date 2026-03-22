@@ -254,6 +254,13 @@ export default function OrderFiles() {
           onClose={() => setLightboxOpen(false)}
         />
       )}
+
+      {/* Upload Progress Modal */}
+      <UploadProgressModal
+        open={uploadModalOpen}
+        uploads={uploads}
+        onContinue={handleUploadContinue}
+      />
     </div>
   );
 }
