@@ -123,10 +123,10 @@ export function useDocumentUpload(orderItemId: string | undefined) {
           // Exit if we have all pages
           if (found >= expectedPages) break;
 
-          // Exit if count hasn't changed for 5 polls (~15s) and we have at least 1
+          // Exit if count hasn't changed for 15 polls (~45s) and we have ≥80% of pages
           if (found === lastCount) {
             stalePolls++;
-            if (stalePolls >= 5 && found > 0) {
+            if (stalePolls >= 15 && found >= expectedPages * 0.8) {
               console.log(`[upload] Stale count after ${stalePolls} polls, accepting ${found}/${expectedPages} thumbnails`);
               break;
             }
@@ -135,8 +135,8 @@ export function useDocumentUpload(orderItemId: string | undefined) {
           }
           lastCount = found;
 
-          // Trickle progress: 30% for actual pages + 10% for time elapsed
-          const progress = 50 + (found / expectedPages) * 30 + (i / MAX_THUMB_POLLS) * 10;
+          // Trickle progress: 20% for actual pages + 20% for time elapsed
+          const progress = 50 + (found / expectedPages) * 20 + (i / MAX_THUMB_POLLS) * 20;
           updateUpload(fileName, { progress: Math.min(90, progress), statusText: `Rendering pages… (${found}/${expectedPages})` });
 
           await new Promise((r) => setTimeout(r, 3000));
