@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   useOrderData,
@@ -11,6 +11,8 @@ import FileUploader from "@/components/order/FileUploader";
 import FileList from "@/components/order/FileList";
 import SectionActions from "@/components/order/SectionActions";
 import SectionList from "@/components/order/SectionList";
+import DocumentPreviewThumb from "@/components/order/DocumentPreviewThumb";
+import PreviewLightbox from "@/components/order/PreviewLightbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
