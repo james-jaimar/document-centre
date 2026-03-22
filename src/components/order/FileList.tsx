@@ -1,7 +1,8 @@
 import type { Tables } from "@/integrations/supabase/types";
 import { FileText, Loader2, AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 type Document = Tables<"documents">;
 
@@ -18,6 +19,36 @@ interface FileListProps {
   selectedDocId: string | null;
   onSelect: (id: string) => void;
   onReprocess?: (doc: { id: string; file_path: string; file_name: string }) => Promise<void>;
+}
+
+/** Resolve a storage path to a signed URL (1-hour expiry). */
+function useSignedUrl(storagePath: string | null) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!storagePath) { setUrl(null); return; }
+
+    // If it's already a full URL (legacy data), use it directly
+    if (storagePath.startsWith("http")) { setUrl(storagePath); return; }
+
+    let cancelled = false;
+    supabase.storage
+      .from("document-uploads")
+      .createSignedUrl(storagePath, 60 * 60) // 1 hour
+      .then(({ data }) => {
+        if (!cancelled && data?.signedUrl) setUrl(data.signedUrl);
+      });
+
+    return () => { cancelled = true; };
+  }, [storagePath]);
+
+  return url;
+}
+
+function ThumbnailImage({ storagePath }: { storagePath: string }) {
+  const url = useSignedUrl(storagePath);
+  if (!url) return <FileText className="h-4 w-4 text-muted-foreground" />;
+  return <img src={url} alt="" className="h-full w-full object-cover" />;
 }
 
 export default function FileList({
@@ -86,7 +117,8 @@ export default function FileList({
         const isReady = doc.document_status === "ready" || doc.document_status === "analyzed";
         const isError = doc.document_status === "error";
         const isProcessing = !isReady && !isError;
-        const hasThumbnails = Array.isArray(doc.thumbnail_urls) && (doc.thumbnail_urls as string[]).length > 0;
+        const thumbnails = Array.isArray(doc.thumbnail_urls) ? (doc.thumbnail_urls as string[]) : [];
+        const hasThumbnails = thumbnails.length > 0;
         const isReprocessing = reprocessingIds.has(doc.id);
 
         return (
@@ -101,15 +133,9 @@ export default function FileList({
               !isReady && "opacity-60 cursor-default"
             )}
           >
-            <div className="h-10 w-8 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden">
-              {doc.thumbnail_urls &&
-              Array.isArray(doc.thumbnail_urls) &&
-              (doc.thumbnail_urls as string[]).length > 0 ? (
-                <img
-                  src={(doc.thumbnail_urls as string[])[0]}
-                  alt=""
-                  className="h-full w-full object-cover"
-                />
+            <div className="h-12 w-9 rounded-sm bg-muted flex items-center justify-center shrink-0 overflow-hidden">
+              {hasThumbnails ? (
+                <ThumbnailImage storagePath={thumbnails[0]} />
               ) : (
                 <FileText className="h-4 w-4 text-muted-foreground" />
               )}
@@ -135,7 +161,6 @@ export default function FileList({
             </div>
 
             <div className="shrink-0 flex items-center gap-1">
-              {/* Reprocess button for docs without thumbnails */}
               {isReady && !hasThumbnails && onReprocess && (
                 <button
                   onClick={(e) => {

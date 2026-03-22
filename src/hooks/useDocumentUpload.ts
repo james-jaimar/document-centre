@@ -81,22 +81,23 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         const derivedFiles = await getDerivedFiles(asset_id);
         console.log("[upload] Derived files:", derivedFiles.length);
 
-        // Build thumbnail URLs from derived files (prefer thumbnail_png, then preview_png)
-        const thumbnailUrls: string[] = [];
+        // Build thumbnail storage paths from derived files (prefer thumbnail_png, then preview_png)
+        // We store storage_path (not full URL) so we can generate signed URLs at render time
+        const thumbnailPaths: string[] = [];
         const thumbnailFiles = derivedFiles
           .filter((df) => df.kind === "thumbnail_png" || df.kind === "preview_png")
           .sort((a, b) => (a.page ?? 0) - (b.page ?? 0));
 
         for (const df of thumbnailFiles) {
-          if (df.url) thumbnailUrls.push(df.url);
+          if (df.storage_path) thumbnailPaths.push(df.storage_path);
         }
 
-        // Fall back to asset-level thumbnail/preview URL
-        if (thumbnailUrls.length === 0 && asset.thumbnail_url) {
-          thumbnailUrls.push(asset.thumbnail_url);
+        // Fall back to asset-level thumbnail/preview storage path
+        if (thumbnailPaths.length === 0 && asset.thumbnail_storage_path) {
+          thumbnailPaths.push(asset.thumbnail_storage_path);
         }
-        if (thumbnailUrls.length === 0 && asset.preview_url) {
-          thumbnailUrls.push(asset.preview_url);
+        if (thumbnailPaths.length === 0 && asset.preview_storage_path) {
+          thumbnailPaths.push(asset.preview_storage_path);
         }
 
         // 6. Update documents row with metadata
@@ -106,7 +107,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
             page_count: pageCount,
             page_width_mm: pageWidthMm,
             page_height_mm: pageHeightMm,
-            thumbnail_urls: thumbnailUrls,
+            thumbnail_urls: thumbnailPaths,
             preflight_data: {
               boxes: asset.boxes,
               width_pt: widthPt,
