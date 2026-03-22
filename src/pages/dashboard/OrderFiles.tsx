@@ -238,6 +238,14 @@ export default function OrderFiles() {
           onRemoveSection={handleRemoveSection}
         />
       </div>
+
+      {/* Lightbox */}
+      {lightboxOpen && lightboxThumbnails.length > 0 && (
+        <PreviewLightbox
+          thumbnailPaths={lightboxThumbnails}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
     </div>
   );
 }
