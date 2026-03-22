@@ -16,6 +16,7 @@ interface UploadProgress {
   status: "uploading" | "analyzing" | "done" | "error";
   progress: number;
   error?: string;
+  statusText?: string;
 }
 
 export function useDocumentUpload(orderItemId: string | undefined) {

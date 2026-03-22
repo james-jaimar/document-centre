@@ -15,6 +15,7 @@ interface UploadProgress {
   status: "uploading" | "analyzing" | "done" | "error";
   progress: number;
   error?: string;
+  statusText?: string;
 }
 
 interface UploadProgressModalProps {

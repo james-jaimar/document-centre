@@ -149,7 +149,7 @@ export async function pollJob(
   jobId: string,
   onUpdate?: (job: Job) => void,
   intervalMs = 2500,
-  maxAttempts = 120
+  maxAttempts = 360
 ): Promise<Job> {
   for (let i = 0; i < maxAttempts; i++) {
     const job = await getJob(jobId);
