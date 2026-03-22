@@ -113,12 +113,32 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         // 4. Poll for thumbnails — they are generated asynchronously after initial jobs
         let final_ = await fetchThumbnails(asset_id);
         const MAX_THUMB_POLLS = 60; // ~3 minutes at 3s intervals
-
         const expectedPages = final_.pageCount ?? 1;
-        for (let i = 0; i < MAX_THUMB_POLLS && final_.thumbnailPaths.length < expectedPages; i++) {
+        let lastCount = -1;
+        let stalePolls = 0;
+
+        for (let i = 0; i < MAX_THUMB_POLLS; i++) {
           const found = final_.thumbnailPaths.length;
-          const progress = 50 + Math.min(40, (found / expectedPages) * 40);
-          updateUpload(fileName, { progress, statusText: `Rendering pages… (${found}/${expectedPages})` });
+
+          // Exit if we have all pages
+          if (found >= expectedPages) break;
+
+          // Exit if count hasn't changed for 5 polls (~15s) and we have at least 1
+          if (found === lastCount) {
+            stalePolls++;
+            if (stalePolls >= 5 && found > 0) {
+              console.log(`[upload] Stale count after ${stalePolls} polls, accepting ${found}/${expectedPages} thumbnails`);
+              break;
+            }
+          } else {
+            stalePolls = 0;
+          }
+          lastCount = found;
+
+          // Trickle progress: 30% for actual pages + 10% for time elapsed
+          const progress = 50 + (found / expectedPages) * 30 + (i / MAX_THUMB_POLLS) * 10;
+          updateUpload(fileName, { progress: Math.min(90, progress), statusText: `Rendering pages… (${found}/${expectedPages})` });
+
           await new Promise((r) => setTimeout(r, 3000));
           final_ = await fetchThumbnails(asset_id);
           console.log(`[upload] Thumbnail poll ${i + 1}: ${final_.thumbnailPaths.length}/${expectedPages} thumbnails`);
