@@ -13,6 +13,12 @@ import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
 type DocumentSection = Tables<"document_sections">;
 type Document = Tables<"documents">;
 
+function SectionThumbnail({ storagePath, isColor }: { storagePath: string; isColor: boolean }) {
+  const url = useSignedThumbnailUrl(storagePath);
+  if (!url) return <FileText className="h-4 w-4 text-muted-foreground/40" />;
+  return <img src={url} alt="" className={cn("h-full w-full object-contain", !isColor && "grayscale")} />;
+}
+
 const SECTION_LABELS: Record<string, string> = {
   front_cover: "Front Cover",
   back_cover: "Back Cover",

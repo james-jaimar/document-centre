@@ -11,6 +11,7 @@ import {
   FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
 
 type Document = Tables<"documents">;
 type DocumentSection = Tables<"document_sections">;
