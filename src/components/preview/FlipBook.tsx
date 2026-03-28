@@ -196,17 +196,29 @@ export default function FlipBook({
           style={{}}
           className=""
         >
-          {urls.map((url, i) => (
-            <FlipPage
-              key={i}
-              url={url}
-              pageNum={i + 1}
-              isColor={colorFlags?.[i] ?? true}
-              effects={resolvedEffects}
-              pageIndex={i}
-              totalPages={urls.length}
-            />
-          ))}
+          {urls.map((url, i) => {
+            const secType = sectionTypes?.[i];
+            const isTab = secType === "tab";
+            // Count tab index among all tabs
+            const tabIndex = isTab
+              ? sectionTypes!.slice(0, i).filter((t) => t === "tab").length
+              : 0;
+            const tabTotal = sectionTypes?.filter((t) => t === "tab").length ?? 0;
+            return (
+              <FlipPage
+                key={i}
+                url={url}
+                pageNum={i + 1}
+                isColor={colorFlags?.[i] ?? true}
+                effects={resolvedEffects}
+                pageIndex={i}
+                totalPages={urls.length}
+                sectionType={secType}
+                tabIndex={tabIndex}
+                tabTotal={tabTotal}
+              />
+            );
+          })}
         </HTMLFlipBook>
       </div>
 
