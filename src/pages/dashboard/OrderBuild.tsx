@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, useLayoutEffect } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useOrderData, useUpdateOrderItemSpec } from "@/hooks/useOrderBuilder";
 import { useProductOptions } from "@/hooks/useProductOptions";
