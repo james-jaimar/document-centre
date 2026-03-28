@@ -27,6 +27,8 @@ interface PageEffectsProps {
   pageIndex: number;
   totalPages: number;
   children: React.ReactNode;
+  /** Explicit page role: "front_cover", "body", "back_cover_card", "blank" */
+  pageRole?: string;
 }
 
 /**
@@ -38,31 +40,31 @@ interface PageEffectsProps {
  * - Hole punch marks
  * - Cover lamination sheen
  */
-export default function PageEffects({ effects, pageIndex, totalPages, children }: PageEffectsProps) {
-  const isFirstPage = pageIndex === 0;
-  const isLastPage = pageIndex === totalPages - 1;
-  const isCoverPage = isFirstPage || isLastPage;
+export default function PageEffects({ effects, pageIndex, totalPages, children, pageRole }: PageEffectsProps) {
+  const role = pageRole ?? (pageIndex === 0 ? "front_cover" : "body");
+  const isFrontCover = role === "front_cover";
+  const isBackCoverCard = role === "back_cover_card";
+  const isCoverPage = isFrontCover || isBackCoverCard;
 
   // Paper background color
   const paperBg = PAPER_COLORS[effects.paperColor] ?? "#ffffff";
 
-  // Back cover: replace content with solid color
-  const isBackCover = isLastPage && effects.backCover !== "none";
-  const backCoverColor = BACK_COVER_COLORS[effects.backCover] ?? undefined;
+  // Back cover card: solid color, edge-to-edge
+  const backCoverColor = isBackCoverCard ? (BACK_COVER_COLORS[effects.backCover] ?? "#1a1a1a") : undefined;
 
-  // Bleed: show white border when bleed is off
-  const showBleedMargin = !effects.bleed;
+  // Bleed: show white border when bleed is off — but NOT for card covers (they're edge-to-edge)
+  const showBleedMargin = !effects.bleed && !isBackCoverCard;
 
   // Front cover overlay type
-  const frontCoverOverlay = isFirstPage && effects.frontCover !== "none" ? effects.frontCover : null;
+  const frontCoverOverlay = isFrontCover && effects.frontCover !== "none" ? effects.frontCover : null;
 
   // Lamination sheen on covers
   const showLamination = isCoverPage && effects.coverLamination !== "none";
 
   return (
     <div className="relative w-full h-full" style={{ backgroundColor: paperBg }}>
-      {/* Back cover: solid color replacement */}
-      {isBackCover ? (
+      {/* Back cover card: solid color replacement */}
+      {isBackCoverCard ? (
         <div className="w-full h-full" style={{ backgroundColor: backCoverColor }} />
       ) : (
         <>
