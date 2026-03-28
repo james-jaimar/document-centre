@@ -89,6 +89,7 @@ export default function DocumentPreview({
     pageAspectRatio,
     effects,
     sectionTypes,
+    pageRoles,
   };
 
   if (BOUND_TYPES.has(productType)) {

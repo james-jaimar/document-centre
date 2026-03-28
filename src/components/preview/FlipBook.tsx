@@ -218,6 +218,7 @@ export default function FlipBook({
                 sectionType={secType}
                 tabIndex={tabIndex}
                 tabTotal={tabTotal}
+                pageRole={pageRoles?.[i]}
               />
             );
           })}

@@ -104,19 +104,55 @@ export default function PreviewPanel({
     return result;
   }, [documents, sections]);
 
+  // Append back cover card and ensure even page count for proper cover rendering
+  const { finalPages, pageRoles: computedPageRoles } = useMemo(() => {
+    const fp = [...pages];
+    const roles: string[] = fp.map((p, i) => {
+      if (i === 0) return "front_cover";
+      if (p.section?.section_type === "tab") return "body";
+      return "body";
+    });
+
+    // Append back cover card if selected
+    if (effects?.backCover && effects.backCover !== "none") {
+      fp.push({
+        thumbnailUrl: "",
+        pageIndex: 0,
+        documentName: "Back Cover",
+        section: undefined,
+        isColor: true,
+      });
+      roles.push("back_cover_card");
+    }
+
+    // Ensure even page count for react-pageflip cover mode
+    if (fp.length % 2 !== 0) {
+      fp.push({
+        thumbnailUrl: "",
+        pageIndex: 0,
+        documentName: "",
+        section: undefined,
+        isColor: true,
+      });
+      roles.push("blank");
+    }
+
+    return { finalPages: fp, pageRoles: roles };
+  }, [pages, effects?.backCover]);
+
   const thumbnailPaths = useMemo(
-    () => pages.map((p) => p.thumbnailUrl),
-    [pages]
+    () => finalPages.map((p) => p.thumbnailUrl),
+    [finalPages]
   );
 
   const colorFlags = useMemo(
-    () => pages.map((p) => p.isColor),
-    [pages]
+    () => finalPages.map((p) => p.isColor),
+    [finalPages]
   );
 
   const sectionTypes = useMemo(
-    () => pages.map((p) => p.section?.section_type ?? "body"),
-    [pages]
+    () => finalPages.map((p) => p.section?.section_type ?? "body"),
+    [finalPages]
   );
 
 
@@ -129,7 +165,7 @@ export default function PreviewPanel({
     return undefined; // let preview components fall back to A4
   }, [documents]);
 
-  const totalPages = pages.length;
+  const totalPages = finalPages.length;
 
   // Derive what's visible in the current spread
   const isShowingCover = isBound && currentPage === 0;
