@@ -141,7 +141,22 @@ export default function OrderBuild() {
     });
   }, [options]);
 
-  const handleOptionChange = useCallback((optionName: string, slug: string) => {
+  // Derive preview type from binding option metadata or product family slug
+  const productType: ProductPreviewType = useMemo(() => {
+    const bindingOption = options.find((o) => o.name === "Binding");
+    const selectedBindingSlug = spec.selected_options["Binding"];
+    if (bindingOption && selectedBindingSlug && isStructuredValues(bindingOption.values)) {
+      const matchedValue = (bindingOption.values as StructuredOptionValue[]).find(
+        (v) => v.slug === selectedBindingSlug
+      );
+      const bindingMethod = matchedValue?.metadata?.binding_method as string | undefined;
+      if (bindingMethod && BINDING_METHOD_TO_PREVIEW[bindingMethod]) {
+        return BINDING_METHOD_TO_PREVIEW[bindingMethod];
+      }
+    }
+    return (productFamily?.slug && SLUG_TO_PREVIEW[productFamily.slug]) || "loose_sheets";
+  }, [options, spec.selected_options, productFamily?.slug]);
+
     setSpec((prev) => ({
       ...prev,
       selected_options: { ...prev.selected_options, [optionName]: slug },
