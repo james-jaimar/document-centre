@@ -37,6 +37,7 @@ export default function DocumentPreview({
   colorFlags,
   pageAspectRatio,
   effects,
+  sectionTypes,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
