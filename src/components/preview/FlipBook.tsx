@@ -165,7 +165,7 @@ export default function FlipBook({
 
   return (
     <div className="flex flex-col items-center justify-center gap-2 overflow-hidden" style={{ width, height }}>
-      <div className="relative flex items-center justify-center overflow-hidden" style={{ minHeight: pageHeight }}>
+      <div className="relative flex items-center justify-center overflow-hidden" style={{ minHeight: pageHeight, boxShadow: "0 2px 8px rgba(0,0,0,0.10)" }}>
         <BindingSpine bindingType={bindingType} height={pageHeight} isOpen={displayPage > 0} />
 
         {/* @ts-ignore — react-pageflip types are imprecise */}
