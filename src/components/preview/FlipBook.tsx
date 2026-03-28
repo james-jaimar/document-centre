@@ -6,12 +6,11 @@ import { DEFAULT_PREVIEW_EFFECTS } from "./previewTypes";
 import BindingSpine from "./BindingSpine";
 import PageEffects from "./PageEffects";
 import { FileText, Loader2 } from "lucide-react";
+import { TAB_COLORS } from "./previewTypes";
 
 /**
  * Each page must be a forwardRef component for react-pageflip.
  */
-import { TAB_COLORS } from "./previewTypes";
-
 const FlipPage = forwardRef<
   HTMLDivElement,
   {
@@ -30,7 +29,7 @@ const FlipPage = forwardRef<
   const isTab = sectionType === "tab";
 
   return (
-    <div ref={ref} className="bg-card overflow-hidden" style={{ width: "100%", height: "100%", position: "relative", border: "1px solid rgba(0,0,0,0.15)", boxShadow: "inset 0 0 0 0.5px rgba(0,0,0,0.10)" }}>
+    <div ref={ref} className="overflow-hidden" style={{ width: "100%", height: "100%", position: "relative", border: "1px solid rgba(0,0,0,0.10)", boxShadow: "inset 0 0 6px rgba(0,0,0,0.08), inset 0 0 0 0.5px rgba(0,0,0,0.06)" }}>
       <PageEffects effects={effects} pageIndex={pageIndex} totalPages={totalPages} pageRole={pageRole}>
         {isTab ? (
           <div className="w-full h-full flex items-center justify-center bg-card">
@@ -160,110 +159,109 @@ export default function FlipBook({
     );
   }
 
-  // Calculate displayed page numbers for the spread
-  const isShowingCover = displayPage === 0;
-  const isShowingBackCover = displayPage >= urls.length - 2;
+  // Determine solo cover states based on displayPage and pageRoles
   const hasBackCoverCard = pageRoles?.includes("back_cover_card");
-  const leftPageNum = isShowingCover ? null : displayPage;
-  const rightPageNum = isShowingCover ? 1 : displayPage + 1;
+  const lastPageIndex = urls.length - 1;
+  const isShowingFrontCover = displayPage === 0;
+  const isShowingBackCover = hasBackCoverCard && displayPage >= lastPageIndex;
 
-  // Determine if we need to mask an empty side
-  const maskLeft = isShowingCover; // front cover = solo right
-  const maskRight = isShowingBackCover && hasBackCoverCard; // back cover card = solo left
+  const isSoloPage = isShowingFrontCover || isShowingBackCover;
+
+  // Centering: when showing a solo page, shift the book container
+  // react-pageflip with showCover renders first page on right, last on left
+  // We shift the container so the single visible page is centered
+  let bookTranslateX = 0;
+  if (isShowingFrontCover) {
+    // Front cover is on the right side of the spread — shift left by half a page width
+    bookTranslateX = -(pageWidth / 2);
+  } else if (isShowingBackCover) {
+    // Back cover is on the left side — shift right by half a page width
+    bookTranslateX = pageWidth / 2;
+  }
+
+  // Page numbers for display
+  const leftPageNum = isShowingFrontCover ? null : displayPage;
+  const rightPageNum = isShowingFrontCover ? 1 : displayPage + 1;
 
   return (
     <div className="flex flex-col items-center justify-center gap-2 overflow-hidden" style={{ width, height }}>
       <div className="relative flex items-center justify-center" style={{ minHeight: pageHeight }}>
-        {/* Outer drop shadow wrapper — not clipped */}
-        <div className="relative" style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.15)" }}>
-          <BindingSpine bindingType={bindingType} height={pageHeight} isOpen={displayPage > 0} />
-
-          {/* Mask left half when showing front cover (solo right page) */}
-          {maskLeft && (
-            <div
-              className="absolute top-0 left-0 z-40 pointer-events-none"
-              style={{
-                width: pageWidth,
-                height: pageHeight,
-                backgroundColor: "hsl(var(--background))",
-              }}
-            />
-          )}
-
-          {/* Mask right half when showing back cover card (solo left page) */}
-          {maskRight && (
-            <div
-              className="absolute top-0 right-0 z-40 pointer-events-none"
-              style={{
-                width: pageWidth,
-                height: pageHeight,
-                backgroundColor: "hsl(var(--background))",
-              }}
-            />
-          )}
-
-        {/* @ts-ignore — react-pageflip types are imprecise */}
-        <HTMLFlipBook
-          ref={flipBookRef}
-          width={pageWidth}
-          height={pageHeight}
-          size="fixed"
-          minWidth={150}
-          maxWidth={pageWidth}
-          minHeight={200}
-          maxHeight={pageHeight}
-          showCover={true}
-          flippingTime={600}
-          drawShadow={true}
-          maxShadowOpacity={0.5}
-          mobileScrollSupport={false}
-          onFlip={handleFlip}
-          startPage={0}
-          usePortrait={false}
-          startZIndex={0}
-          autoSize={false}
-          clickEventForward={false}
-          useMouseEvents={true}
-          swipeDistance={30}
-          showPageCorners={true}
-          disableFlipByClick={false}
-          style={{}}
-          className=""
+        {/* Animated wrapper for Mimeo-style centering */}
+        <div
+          style={{
+            transform: `translateX(${bookTranslateX}px)`,
+            transition: "transform 0.4s ease-in-out",
+          }}
         >
-          {urls.map((url, i) => {
-            const secType = sectionTypes?.[i];
-            const isTab = secType === "tab";
-            // Count tab index among all tabs
-            const tabIndex = isTab
-              ? sectionTypes!.slice(0, i).filter((t) => t === "tab").length
-              : 0;
-            const tabTotal = sectionTypes?.filter((t) => t === "tab").length ?? 0;
-            return (
-              <FlipPage
-                key={i}
-                url={url}
-                pageNum={i + 1}
-                isColor={colorFlags?.[i] ?? true}
-                effects={resolvedEffects}
-                pageIndex={i}
-                totalPages={urls.length}
-                sectionType={secType}
-                tabIndex={tabIndex}
-                tabTotal={tabTotal}
-                pageRole={pageRoles?.[i]}
-              />
-            );
-          })}
-        </HTMLFlipBook>
+          {/* Outer drop shadow wrapper */}
+          <div className="relative" style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.15)" }}>
+            {/* Binding spine — only show when NOT solo */}
+            {!isSoloPage && (
+              <BindingSpine bindingType={bindingType} height={pageHeight} isOpen={displayPage > 0} />
+            )}
+
+            {/* @ts-ignore — react-pageflip types are imprecise */}
+            <HTMLFlipBook
+              ref={flipBookRef}
+              width={pageWidth}
+              height={pageHeight}
+              size="fixed"
+              minWidth={150}
+              maxWidth={pageWidth}
+              minHeight={200}
+              maxHeight={pageHeight}
+              showCover={true}
+              flippingTime={600}
+              drawShadow={true}
+              maxShadowOpacity={0.5}
+              mobileScrollSupport={false}
+              onFlip={handleFlip}
+              startPage={0}
+              usePortrait={false}
+              startZIndex={0}
+              autoSize={false}
+              clickEventForward={false}
+              useMouseEvents={true}
+              swipeDistance={30}
+              showPageCorners={true}
+              disableFlipByClick={false}
+              style={{}}
+              className=""
+            >
+              {urls.map((url, i) => {
+                const secType = sectionTypes?.[i];
+                const isTab = secType === "tab";
+                const tabIndex = isTab
+                  ? sectionTypes!.slice(0, i).filter((t) => t === "tab").length
+                  : 0;
+                const tabTotal = sectionTypes?.filter((t) => t === "tab").length ?? 0;
+                return (
+                  <FlipPage
+                    key={i}
+                    url={url}
+                    pageNum={i + 1}
+                    isColor={colorFlags?.[i] ?? true}
+                    effects={resolvedEffects}
+                    pageIndex={i}
+                    totalPages={urls.length}
+                    sectionType={secType}
+                    tabIndex={tabIndex}
+                    tabTotal={tabTotal}
+                    pageRole={pageRoles?.[i]}
+                  />
+                );
+              })}
+            </HTMLFlipBook>
+          </div>
         </div>
       </div>
 
       {/* Page numbers below the spread */}
       <div className="flex items-center justify-center gap-8 text-xs text-muted-foreground">
-        {!maskLeft && !isShowingCover && leftPageNum !== null && (
+        {!isShowingFrontCover && leftPageNum !== null && (
           <span className="w-20 text-center">{leftPageNum}</span>
         )}
-        {!maskRight && rightPageNum <= urls.length && (
+        {!isShowingBackCover && rightPageNum <= urls.length && (
           <span className="w-20 text-center">{rightPageNum}</span>
         )}
       </div>

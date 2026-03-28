@@ -104,17 +104,34 @@ export default function PreviewPanel({
     return result;
   }, [documents, sections]);
 
-  // Append back cover card and ensure even page count for proper cover rendering
+  // Build final page sequence with explicit roles — no fake padding
   const { finalPages, pageRoles: computedPageRoles } = useMemo(() => {
     const fp = [...pages];
     const roles: string[] = fp.map((p, i) => {
-      if (i === 0) return "front_cover";
+      if (i === 0 && isBound) return "front_cover";
       if (p.section?.section_type === "tab") return "body";
       return "body";
     });
 
-    // Append back cover card if selected
-    if (effects?.backCover && effects.backCover !== "none") {
+    // For bound documents, ensure interior has even count (between covers)
+    // so that spreads pair correctly. If body pages are odd, add an inside-back blank.
+    if (isBound && fp.length > 1) {
+      // Interior = everything after front cover
+      const interiorCount = fp.length - 1;
+      if (interiorCount % 2 !== 0) {
+        fp.push({
+          thumbnailUrl: "",
+          pageIndex: 0,
+          documentName: "",
+          section: undefined,
+          isColor: true,
+        });
+        roles.push("inside_back_blank");
+      }
+    }
+
+    // Append back cover card if selected (always the very last page)
+    if (isBound && effects?.backCover && effects.backCover !== "none") {
       fp.push({
         thumbnailUrl: "",
         pageIndex: 0,
@@ -125,20 +142,8 @@ export default function PreviewPanel({
       roles.push("back_cover_card");
     }
 
-    // Ensure even page count for react-pageflip cover mode
-    if (fp.length % 2 !== 0) {
-      fp.push({
-        thumbnailUrl: "",
-        pageIndex: 0,
-        documentName: "",
-        section: undefined,
-        isColor: true,
-      });
-      roles.push("blank");
-    }
-
     return { finalPages: fp, pageRoles: roles };
-  }, [pages, effects?.backCover]);
+  }, [pages, effects?.backCover, isBound]);
 
   const thumbnailPaths = useMemo(
     () => finalPages.map((p) => p.thumbnailUrl),
