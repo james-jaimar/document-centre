@@ -24,6 +24,7 @@ const FlipPage = forwardRef<
     sectionType?: string;
     tabIndex?: number;
     tabTotal?: number;
+    pageRole?: string;
   }
 >(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, tabIndex = 0, tabTotal = 1 }, ref) => {
   const isTab = sectionType === "tab";
