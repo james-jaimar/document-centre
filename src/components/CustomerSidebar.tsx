@@ -49,16 +49,27 @@ export default function CustomerSidebar() {
   const displayName = profile?.display_name || user?.email?.split("@")[0] || "User";
   const initials = displayName.slice(0, 2).toLowerCase();
 
+   const { collapsed, toggle } = useSidebarCollapse();
+
   return (
     <aside className="print-sidebar w-64 shrink-0 px-5 py-6 hidden lg:flex">
-      {/* Brand */}
-      <div className="mb-8 flex items-center gap-3 px-2">
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-300 to-emerald-500 shadow-md">
-          <Package className="h-5 w-5 text-foreground" />
+      {/* Brand + collapse toggle */}
+      <div className="mb-8 flex items-center justify-between px-2">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-300 to-emerald-500 shadow-md">
+            <Package className="h-5 w-5 text-foreground" />
+          </div>
+          <div className="text-3xl font-semibold tracking-tight text-sidebar-foreground">
+            printflow
+          </div>
         </div>
-        <div className="text-3xl font-semibold tracking-tight text-sidebar-foreground">
-          printflow
-        </div>
+        <button
+          onClick={toggle}
+          className="rounded-lg p-1.5 hover:bg-white/10 transition-colors"
+          title="Collapse sidebar"
+        >
+          <PanelLeftClose className="h-4 w-4 text-sidebar-foreground/60 hover:text-sidebar-foreground" />
+        </button>
       </div>
 
       {/* Nav */}
