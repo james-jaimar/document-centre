@@ -157,6 +157,7 @@ export default function OrderBuild() {
     return (productFamily?.slug && SLUG_TO_PREVIEW[productFamily.slug]) || "loose_sheets";
   }, [options, spec.selected_options, productFamily?.slug]);
 
+  const handleOptionChange = useCallback((optionName: string, slug: string) => {
     setSpec((prev) => ({
       ...prev,
       selected_options: { ...prev.selected_options, [optionName]: slug },
