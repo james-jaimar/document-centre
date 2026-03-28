@@ -29,7 +29,7 @@ const FlipPage = forwardRef<
   const isTab = sectionType === "tab";
 
   return (
-    <div ref={ref} className="bg-card overflow-hidden" style={{ width: "100%", height: "100%", position: "relative", boxShadow: "0 1px 4px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04)" }}>
+    <div ref={ref} className="bg-card overflow-hidden" style={{ width: "100%", height: "100%", position: "relative", border: "1px solid rgba(0,0,0,0.08)", boxShadow: "inset 0 0 0 0.5px rgba(0,0,0,0.06)" }}>
       <PageEffects effects={effects} pageIndex={pageIndex} totalPages={totalPages}>
         {isTab ? (
           <div className="w-full h-full flex items-center justify-center bg-card">
@@ -165,7 +165,7 @@ export default function FlipBook({
 
   return (
     <div className="flex flex-col items-center justify-center gap-2 overflow-hidden" style={{ width, height }}>
-      <div className="relative flex items-center justify-center overflow-hidden" style={{ minHeight: pageHeight }}>
+      <div className="relative flex items-center justify-center overflow-hidden" style={{ minHeight: pageHeight, boxShadow: "0 2px 8px rgba(0,0,0,0.10)" }}>
         <BindingSpine bindingType={bindingType} height={pageHeight} isOpen={displayPage > 0} />
 
         {/* @ts-ignore — react-pageflip types are imprecise */}
