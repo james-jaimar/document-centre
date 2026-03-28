@@ -26,12 +26,12 @@ const FlipPage = forwardRef<
     tabTotal?: number;
     pageRole?: string;
   }
->(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, tabIndex = 0, tabTotal = 1 }, ref) => {
+>(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, tabIndex = 0, tabTotal = 1, pageRole }, ref) => {
   const isTab = sectionType === "tab";
 
   return (
     <div ref={ref} className="bg-card overflow-hidden" style={{ width: "100%", height: "100%", position: "relative", border: "1px solid rgba(0,0,0,0.15)", boxShadow: "inset 0 0 0 0.5px rgba(0,0,0,0.10)" }}>
-      <PageEffects effects={effects} pageIndex={pageIndex} totalPages={totalPages}>
+      <PageEffects effects={effects} pageIndex={pageIndex} totalPages={totalPages} pageRole={pageRole}>
         {isTab ? (
           <div className="w-full h-full flex items-center justify-center bg-card">
             <div className="text-center text-muted-foreground/40">
