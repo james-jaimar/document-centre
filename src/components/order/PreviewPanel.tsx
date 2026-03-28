@@ -101,6 +101,15 @@ export default function PreviewPanel({
     [pages]
   );
 
+  // Derive aspect ratio from the first document's actual dimensions
+  const pageAspectRatio = useMemo(() => {
+    const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
+    if (doc && doc.page_width_mm && doc.page_height_mm) {
+      return Number(doc.page_width_mm) / Number(doc.page_height_mm);
+    }
+    return undefined; // let preview components fall back to A4
+  }, [documents]);
+
   const totalPages = pages.length;
 
   // Derive what's visible in the current spread
