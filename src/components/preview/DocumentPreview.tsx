@@ -7,6 +7,8 @@ import FoldPreview from "./FoldPreview";
 import LooseSheetsPreview from "./LooseSheetsPreview";
 import { Loader2 } from "lucide-react";
 
+import type { PreviewEffects } from "./previewTypes";
+
 interface DocumentPreviewProps {
   thumbnailPaths: string[];
   productType?: ProductPreviewType;
@@ -16,6 +18,7 @@ interface DocumentPreviewProps {
   onPageChange?: (page: number) => void;
   colorFlags?: boolean[];
   pageAspectRatio?: number;
+  effects?: PreviewEffects;
 }
 
 const BOUND_TYPES = new Set([
