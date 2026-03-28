@@ -253,6 +253,7 @@ export default function PreviewPanel({
           pageAspectRatio={pageAspectRatio}
           effects={effects}
           sectionTypes={sectionTypes}
+          pageRoles={computedPageRoles}
         />
       </div>
 
