@@ -260,10 +260,10 @@ export default function FlipBook({
 
       {/* Page numbers below the spread */}
       <div className="flex items-center justify-center gap-8 text-xs text-muted-foreground">
-        {!isShowingCover && leftPageNum !== null && (
+        {!maskLeft && !isShowingCover && leftPageNum !== null && (
           <span className="w-20 text-center">{leftPageNum}</span>
         )}
-        {rightPageNum <= urls.length && (
+        {!maskRight && rightPageNum <= urls.length && (
           <span className="w-20 text-center">{rightPageNum}</span>
         )}
       </div>
