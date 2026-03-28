@@ -11,7 +11,7 @@ import {
   FileText,
 } from "lucide-react";
 import DocumentPreview from "@/components/preview/DocumentPreview";
-import type { ProductPreviewType } from "@/components/preview/previewTypes";
+import type { ProductPreviewType, PreviewEffects } from "@/components/preview/previewTypes";
 
 type Document = Tables<"documents">;
 type DocumentSection = Tables<"document_sections">;
@@ -20,6 +20,7 @@ interface PreviewPanelProps {
   documents: Document[];
   sections: DocumentSection[];
   productType?: ProductPreviewType;
+  effects?: PreviewEffects;
 }
 
 interface PageInfo {
@@ -46,6 +47,7 @@ export default function PreviewPanel({
   documents,
   sections,
   productType = "loose_sheets",
+  effects,
 }: PreviewPanelProps) {
   const [currentPage, setCurrentPage] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -196,6 +198,7 @@ export default function PreviewPanel({
           onPageChange={setCurrentPage}
           colorFlags={colorFlags}
           pageAspectRatio={pageAspectRatio}
+          effects={effects}
         />
       </div>
 

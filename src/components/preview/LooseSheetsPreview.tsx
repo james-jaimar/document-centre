@@ -1,4 +1,6 @@
 import type { PreviewComponentProps } from "./previewTypes";
+import { DEFAULT_PREVIEW_EFFECTS } from "./previewTypes";
+import PageEffects from "./PageEffects";
 import { FileText } from "lucide-react";
 
 export default function LooseSheetsPreview({
@@ -7,7 +9,9 @@ export default function LooseSheetsPreview({
   width,
   height,
   pageAspectRatio,
+  effects,
 }: PreviewComponentProps) {
+  const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
   const ratio = pageAspectRatio ?? 0.707; // fallback to A4
   const invRatio = 1 / ratio; // height/width
   const pageHeight = Math.min(height * 0.9, width * 0.65 * invRatio);
@@ -35,20 +39,22 @@ export default function LooseSheetsPreview({
           key={currentPage}
           style={{ animation: "fadeIn 0.3s ease-out" }}
         >
-          {url ? (
-            <img
-              src={url}
-              alt={`Page ${currentPage + 1}`}
-              className="w-full h-full object-contain"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center bg-muted/30">
-              <div className="text-center text-muted-foreground">
-                <FileText className="h-8 w-8 mx-auto mb-1 opacity-30" />
-                <p className="text-xs">Page {currentPage + 1}</p>
+          <PageEffects effects={resolvedEffects} pageIndex={currentPage} totalPages={urls.length}>
+            {url ? (
+              <img
+                src={url}
+                alt={`Page ${currentPage + 1}`}
+                className="w-full h-full object-contain"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-muted/30">
+                <div className="text-center text-muted-foreground">
+                  <FileText className="h-8 w-8 mx-auto mb-1 opacity-30" />
+                  <p className="text-xs">Page {currentPage + 1}</p>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </PageEffects>
         </div>
       </div>
     </div>

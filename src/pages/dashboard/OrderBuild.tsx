@@ -6,7 +6,8 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { ItemSpec } from "@/lib/calculatePrice";
 import { isStructuredValues, type StructuredOptionValue } from "@/lib/productOptionTypes";
-import type { ProductPreviewType } from "@/components/preview/previewTypes";
+import type { ProductPreviewType, PreviewEffects } from "@/components/preview/previewTypes";
+import { DEFAULT_PREVIEW_EFFECTS } from "@/components/preview/previewTypes";
 import OptionsPanel from "@/components/order/OptionsPanel";
 import PreviewPanel from "@/components/order/PreviewPanel";
 import PriceSummary from "@/components/order/PriceSummary";
@@ -178,6 +179,49 @@ export default function OrderBuild() {
     return slugResult;
   }, [options, spec.selected_options, productFamily?.slug]);
 
+  // Derive visual finishing effects from selected options metadata
+  const previewEffects: PreviewEffects = useMemo(() => {
+    const fx = { ...DEFAULT_PREVIEW_EFFECTS };
+
+    // Helper: find selected value metadata for an option by name (case-insensitive)
+    const getMetadata = (optionName: string): Record<string, any> | null => {
+      const opt = options.find((o) => o.name.toLowerCase() === optionName.toLowerCase());
+      if (!opt || !isStructuredValues(opt.values)) return null;
+      const key = Object.keys(spec.selected_options).find(
+        (k) => k.toLowerCase() === opt.name.toLowerCase()
+      ) || opt.name;
+      const slug = spec.selected_options[key];
+      if (!slug) return null;
+      const val = (opt.values as StructuredOptionValue[]).find((v) => v.slug === slug);
+      return (val?.metadata as Record<string, any>) ?? null;
+    };
+
+    // Print to Edge → bleed
+    const edgeMeta = getMetadata("Print to Edge");
+    if (edgeMeta?.bleed === true) fx.bleed = true;
+
+    // Covers → front + back
+    const coverMeta = getMetadata("Covers");
+    if (coverMeta) {
+      if (coverMeta.front) fx.frontCover = coverMeta.front as PreviewEffects["frontCover"];
+      if (coverMeta.back) fx.backCover = coverMeta.back as PreviewEffects["backCover"];
+    }
+
+    // Paper Stock → paper color
+    const paperMeta = getMetadata("Paper Stock");
+    if (paperMeta?.color) fx.paperColor = paperMeta.color as string;
+
+    // Hole Punching → holes
+    const holeMeta = getMetadata("Hole Punching");
+    if (holeMeta?.holes) fx.holePunch = holeMeta.holes as 0 | 2 | 4;
+
+    // Cover Lamination → lamination finish
+    const lamMeta = getMetadata("Cover Lamination");
+    if (lamMeta?.finish) fx.coverLamination = lamMeta.finish as PreviewEffects["coverLamination"];
+
+    return fx;
+  }, [options, spec.selected_options]);
+
   const handleOptionChange = useCallback((optionName: string, slug: string) => {
     setSpec((prev) => ({
       ...prev,
@@ -266,7 +310,7 @@ export default function OrderBuild() {
 
         {/* Right: Preview */}
         <div className="border border-border rounded-lg bg-card p-4 overflow-auto">
-          <PreviewPanel documents={documents} sections={sections} productType={productType} />
+          <PreviewPanel documents={documents} sections={sections} productType={productType} effects={previewEffects} />
         </div>
       </div>
     </div>
