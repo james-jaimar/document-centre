@@ -14,6 +14,7 @@ interface DocumentPreviewProps {
   height: number;
   currentPage?: number;
   onPageChange?: (page: number) => void;
+  colorFlags?: boolean[];
 }
 
 const BOUND_TYPES = new Set([
@@ -28,6 +29,7 @@ export default function DocumentPreview({
   height,
   currentPage: controlledPage,
   onPageChange: controlledOnPageChange,
+  colorFlags,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
@@ -73,6 +75,7 @@ export default function DocumentPreview({
     onPageChange: handlePageChange,
     width,
     height,
+    colorFlags,
   };
 
   if (BOUND_TYPES.has(productType)) {

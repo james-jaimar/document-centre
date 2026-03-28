@@ -38,6 +38,10 @@ const SECTION_LABELS: Record<string, string> = {
   tab: "Tab",
 };
 
+const BOUND_TYPES = new Set([
+  "wire_bound", "comb_bound", "saddle_stitched", "perfect_bound", "ring_binder",
+]);
+
 export default function PreviewPanel({
   documents,
   sections,
@@ -46,6 +50,9 @@ export default function PreviewPanel({
   const [currentPage, setCurrentPage] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 500, height: 400 });
+
+  const isBound = BOUND_TYPES.has(productType);
+  const step = isBound ? 2 : 1;
 
   // Measure container
   useEffect(() => {
@@ -89,8 +96,73 @@ export default function PreviewPanel({
     [pages]
   );
 
+  const colorFlags = useMemo(
+    () => pages.map((p) => p.isColor),
+    [pages]
+  );
+
   const totalPages = pages.length;
-  const page = pages[currentPage];
+
+  // Derive what's visible in the current spread
+  const isShowingCover = isBound && currentPage === 0;
+  const visibleLeft = isShowingCover ? null : currentPage;
+  const visibleRight = isShowingCover ? 0 : currentPage + 1;
+
+  // Page info text
+  const pageInfoText = useMemo(() => {
+    if (totalPages === 0) return "";
+    if (isBound) {
+      if (isShowingCover) return `Page 1 of ${totalPages}`;
+      const left = currentPage + 1;
+      const right = Math.min(currentPage + 2, totalPages);
+      return left === right
+        ? `Page ${left} of ${totalPages}`
+        : `Pages ${left}–${right} of ${totalPages}`;
+    }
+    return `Page ${currentPage + 1} of ${totalPages}`;
+  }, [currentPage, totalPages, isBound, isShowingCover]);
+
+  // Colour status for visible pages
+  const colourStatus = useMemo(() => {
+    if (totalPages === 0) return "";
+    const visibleIndices: number[] = [];
+    if (visibleLeft !== null) visibleIndices.push(visibleLeft);
+    if (visibleRight !== null && visibleRight < totalPages) visibleIndices.push(visibleRight);
+    if (visibleIndices.length === 0) return "";
+    const allColor = visibleIndices.every((i) => pages[i]?.isColor);
+    const allBW = visibleIndices.every((i) => !pages[i]?.isColor);
+    return allColor ? "Colour" : allBW ? "B&W" : "Mixed";
+  }, [visibleLeft, visibleRight, pages, totalPages]);
+
+  // Duplex status for visible pages
+  const duplexStatus = useMemo(() => {
+    if (totalPages === 0) return "";
+    const idx = visibleLeft ?? visibleRight ?? 0;
+    const sec = pages[idx]?.section;
+    return sec?.is_duplex ? "Duplex" : "Simplex";
+  }, [visibleLeft, visibleRight, pages, totalPages]);
+
+  // Section label for visible pages
+  const sectionLabel = useMemo(() => {
+    if (totalPages === 0) return "";
+    const idx = visibleLeft ?? visibleRight ?? 0;
+    const sec = pages[idx]?.section;
+    return sec ? (SECTION_LABELS[sec.section_type] ?? sec.section_type) : "";
+  }, [visibleLeft, visibleRight, pages, totalPages]);
+
+  // Navigation helpers
+  const goFirst = () => setCurrentPage(0);
+  const goLast = () => {
+    if (isBound) {
+      // Go to last spread: if odd page count the last page is alone
+      const last = totalPages - 1;
+      setCurrentPage(last % 2 === 0 ? last : last - 1);
+    } else {
+      setCurrentPage(totalPages - 1);
+    }
+  };
+  const goPrev = () => setCurrentPage((p) => Math.max(0, p - step));
+  const goNext = () => setCurrentPage((p) => Math.min(totalPages - 1, p + step));
 
   if (totalPages === 0) {
     return (
@@ -113,23 +185,22 @@ export default function PreviewPanel({
           height={containerSize.height}
           currentPage={currentPage}
           onPageChange={setCurrentPage}
+          colorFlags={colorFlags}
         />
       </div>
 
       {/* Page info */}
       <div className="text-center">
-        <p className="text-sm font-medium text-foreground">
-          Page {currentPage + 1} of {totalPages}
-        </p>
-        {page?.section && (
+        <p className="text-sm font-medium text-foreground">{pageInfoText}</p>
+        {sectionLabel && (
           <div className="flex items-center justify-center gap-2 mt-1">
             <Badge variant="secondary" className="text-xs">
-              {SECTION_LABELS[page.section.section_type] ?? page.section.section_type}
+              {sectionLabel}
             </Badge>
             <span className="text-xs text-muted-foreground">
-              {page.isColor ? "Colour" : "B&W"}
+              {colourStatus}
               {" · "}
-              {page.section.is_duplex ? "Duplex" : "Simplex"}
+              {duplexStatus}
             </span>
           </div>
         )}
@@ -137,17 +208,17 @@ export default function PreviewPanel({
 
       {/* Navigation */}
       <div className="flex items-center gap-2 w-full max-w-md">
-        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={currentPage === 0} onClick={() => setCurrentPage(0)}>
+        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={currentPage === 0} onClick={goFirst}>
           <ChevronsLeft className="h-4 w-4" />
         </Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={currentPage === 0} onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}>
+        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={currentPage === 0} onClick={goPrev}>
           <ChevronLeft className="h-4 w-4" />
         </Button>
         <Slider value={[currentPage]} min={0} max={Math.max(0, totalPages - 1)} step={1} onValueChange={([v]) => setCurrentPage(v)} className="flex-1" />
-        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={currentPage >= totalPages - 1} onClick={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))}>
+        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={currentPage >= totalPages - 1} onClick={goNext}>
           <ChevronRight className="h-4 w-4" />
         </Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={currentPage >= totalPages - 1} onClick={() => setCurrentPage(totalPages - 1)}>
+        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={currentPage >= totalPages - 1} onClick={goLast}>
           <ChevronsRight className="h-4 w-4" />
         </Button>
       </div>

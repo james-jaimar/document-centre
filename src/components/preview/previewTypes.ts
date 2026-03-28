@@ -25,6 +25,8 @@ export interface PreviewComponentProps {
   width: number;
   /** Container height in px */
   height: number;
+  /** Per-page colour flag (true = colour, false = B&W) */
+  colorFlags?: boolean[];
 }
 
 export interface FlipBookProps extends PreviewComponentProps {
