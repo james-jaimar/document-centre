@@ -39,6 +39,7 @@ export default function FlipBook({
   height,
   bindingType,
   colorFlags,
+  pageAspectRatio,
 }: FlipBookProps) {
   const flipBookRef = useRef<any>(null);
   const [displayPage, setDisplayPage] = useState(0);

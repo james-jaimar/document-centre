@@ -78,6 +78,7 @@ export default function DocumentPreview({
     width,
     height,
     colorFlags,
+    pageAspectRatio,
   };
 
   if (BOUND_TYPES.has(productType)) {
