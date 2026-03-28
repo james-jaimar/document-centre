@@ -67,22 +67,6 @@ export default function OrderBuild() {
     perfect: "perfect_bound",
   };
 
-  const productType: ProductPreviewType = useMemo(() => {
-    // First try binding option metadata
-    const bindingOption = options.find((o) => o.name === "Binding");
-    const selectedBindingSlug = spec.selected_options["Binding"];
-    if (bindingOption && selectedBindingSlug && isStructuredValues(bindingOption.values)) {
-      const matchedValue = (bindingOption.values as StructuredOptionValue[]).find(
-        (v) => v.slug === selectedBindingSlug
-      );
-      const bindingMethod = matchedValue?.metadata?.binding_method as string | undefined;
-      if (bindingMethod && BINDING_METHOD_TO_PREVIEW[bindingMethod]) {
-        return BINDING_METHOD_TO_PREVIEW[bindingMethod];
-      }
-    }
-    // Fall back to product family slug
-    return (productFamily?.slug && SLUG_TO_PREVIEW[productFamily.slug]) || "loose_sheets";
-  }, [options, spec.selected_options, productFamily?.slug]);
 
   // Fetch pricing rules for this product family
   const { data: pricingRules = [] } = useQuery({
