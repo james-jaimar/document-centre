@@ -15,6 +15,7 @@ interface DocumentPreviewProps {
   currentPage?: number;
   onPageChange?: (page: number) => void;
   colorFlags?: boolean[];
+  pageAspectRatio?: number;
 }
 
 const BOUND_TYPES = new Set([
