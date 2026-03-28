@@ -20,6 +20,7 @@ interface DocumentPreviewProps {
   pageAspectRatio?: number;
   effects?: PreviewEffects;
   sectionTypes?: string[];
+  pageRoles?: string[];
 }
 
 const BOUND_TYPES = new Set([
