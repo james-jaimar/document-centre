@@ -291,6 +291,20 @@ export default function OrderFiles() {
             onToggleDuplex={handleToggleDuplex}
             onMove={handleMoveSection}
           />
+
+          {/* Tab Manager */}
+          {tabInfo && orderItem && (
+            <TabManager
+              sections={sections}
+              documents={documents}
+              orderItemId={orderItem.id}
+              tabCount={tabInfo.tabCount}
+              isMultiColor={tabInfo.isMultiColor}
+              onAddTab={handleAddTab}
+              onDeleteTab={handleDeleteTab}
+              onMoveTab={handleMoveTab}
+            />
+          )}
         </div>
       </div>
 
