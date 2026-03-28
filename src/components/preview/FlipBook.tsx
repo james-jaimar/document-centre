@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useEffect, forwardRef } from "react";
+import React, { useRef, useCallback, useEffect, forwardRef, useState } from "react";
 import HTMLFlipBook from "react-pageflip";
 import type { FlipBookProps } from "./previewTypes";
 import BindingSpine from "./BindingSpine";
@@ -40,17 +40,32 @@ export default function FlipBook({
   bindingType,
 }: FlipBookProps) {
   const flipBookRef = useRef<any>(null);
+  const [displayPage, setDisplayPage] = useState(0);
 
   // A4 aspect ratio: 210/297 ≈ 0.707
-  // In book mode each visible page is half the container width
-  const pageWidth = Math.floor(width / 2);
-  const pageHeight = Math.floor(pageWidth / 0.707);
-  const finalHeight = Math.min(pageHeight, height);
-  const finalWidth = Math.floor(finalHeight * 0.707);
+  // Each page is half the spread width
+  const maxSpreadWidth = width - 40; // leave some padding
+  const maxPageWidth = Math.floor(maxSpreadWidth / 2);
+  const maxPageHeight = height - 60; // room for page numbers
+
+  // Constrain by A4 aspect ratio
+  let pageWidth = maxPageWidth;
+  let pageHeight = Math.floor(pageWidth / 0.707);
+
+  if (pageHeight > maxPageHeight) {
+    pageHeight = maxPageHeight;
+    pageWidth = Math.floor(pageHeight * 0.707);
+  }
+
+  // Ensure minimum sizes
+  pageWidth = Math.max(pageWidth, 150);
+  pageHeight = Math.max(pageHeight, 200);
 
   const handleFlip = useCallback(
     (e: any) => {
-      onPageChange(e.data);
+      const newPage = e.data;
+      setDisplayPage(newPage);
+      onPageChange(newPage);
     },
     [onPageChange]
   );
@@ -71,42 +86,61 @@ export default function FlipBook({
     );
   }
 
-  return (
-    <div className="relative flex items-center justify-center" style={{ width, height }}>
-      {/* @ts-ignore — react-pageflip types are imprecise */}
-      <HTMLFlipBook
-        ref={flipBookRef}
-        width={finalWidth}
-        height={finalHeight}
-        size="stretch"
-        minWidth={200}
-        maxWidth={finalWidth}
-        minHeight={280}
-        maxHeight={finalHeight}
-        showCover={true}
-        flippingTime={800}
-        drawShadow={true}
-        maxShadowOpacity={0.4}
-        mobileScrollSupport={false}
-        onFlip={handleFlip}
-        startPage={0}
-        usePortrait={false}
-        startZIndex={0}
-        autoSize={true}
-        clickEventForward={false}
-        useMouseEvents={true}
-        swipeDistance={30}
-        showPageCorners={true}
-        disableFlipByClick={false}
-        style={{}}
-        className=""
-      >
-        {urls.map((url, i) => (
-          <FlipPage key={i} url={url} pageNum={i + 1} />
-        ))}
-      </HTMLFlipBook>
+  // Calculate displayed page numbers for the spread
+  const isShowingCover = displayPage === 0;
+  const leftPageNum = isShowingCover ? null : displayPage;
+  const rightPageNum = isShowingCover ? 1 : displayPage + 1;
 
-      <BindingSpine bindingType={bindingType} height={finalHeight} />
+  return (
+    <div className="flex flex-col items-center justify-center gap-2" style={{ width, height }}>
+      {/* Book container */}
+      <div className="relative flex items-center justify-center" style={{ minHeight: pageHeight }}>
+        {/* Binding spine - positioned on the left edge of the spread */}
+        <BindingSpine bindingType={bindingType} height={pageHeight} />
+
+        {/* @ts-ignore — react-pageflip types are imprecise */}
+        <HTMLFlipBook
+          ref={flipBookRef}
+          width={pageWidth}
+          height={pageHeight}
+          size="fixed"
+          minWidth={150}
+          maxWidth={pageWidth}
+          minHeight={200}
+          maxHeight={pageHeight}
+          showCover={true}
+          flippingTime={600}
+          drawShadow={true}
+          maxShadowOpacity={0.5}
+          mobileScrollSupport={false}
+          onFlip={handleFlip}
+          startPage={0}
+          usePortrait={false}
+          startZIndex={0}
+          autoSize={false}
+          clickEventForward={false}
+          useMouseEvents={true}
+          swipeDistance={30}
+          showPageCorners={true}
+          disableFlipByClick={false}
+          style={{}}
+          className=""
+        >
+          {urls.map((url, i) => (
+            <FlipPage key={i} url={url} pageNum={i + 1} />
+          ))}
+        </HTMLFlipBook>
+      </div>
+
+      {/* Page numbers below the spread */}
+      <div className="flex items-center justify-center gap-8 text-xs text-muted-foreground">
+        {!isShowingCover && leftPageNum !== null && (
+          <span className="w-20 text-center">{leftPageNum}</span>
+        )}
+        {rightPageNum <= urls.length && (
+          <span className="w-20 text-center">{rightPageNum}</span>
+        )}
+      </div>
     </div>
   );
 }

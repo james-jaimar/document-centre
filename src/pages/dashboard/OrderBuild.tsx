@@ -143,18 +143,31 @@ export default function OrderBuild() {
 
   // Derive preview type from binding option metadata or product family slug
   const productType: ProductPreviewType = useMemo(() => {
-    const bindingOption = options.find((o) => o.name === "Binding");
-    const selectedBindingSlug = spec.selected_options["Binding"];
+    // Case-insensitive lookup for "Binding" option
+    const bindingOption = options.find((o) => o.name.toLowerCase() === "binding");
+    // Try matching the option name exactly in selected_options, or case-insensitive
+    const optionKey = bindingOption
+      ? Object.keys(spec.selected_options).find(
+          (k) => k.toLowerCase() === bindingOption.name.toLowerCase()
+        ) || bindingOption.name
+      : "Binding";
+    const selectedBindingSlug = spec.selected_options[optionKey];
+
+    console.log("[PreviewType] options count:", options.length, "bindingOption:", bindingOption?.name, "selectedSlug:", selectedBindingSlug);
+
     if (bindingOption && selectedBindingSlug && isStructuredValues(bindingOption.values)) {
       const matchedValue = (bindingOption.values as StructuredOptionValue[]).find(
         (v) => v.slug === selectedBindingSlug
       );
       const bindingMethod = matchedValue?.metadata?.binding_method as string | undefined;
+      console.log("[PreviewType] matchedValue:", matchedValue?.label, "bindingMethod:", bindingMethod);
       if (bindingMethod && BINDING_METHOD_TO_PREVIEW[bindingMethod]) {
         return BINDING_METHOD_TO_PREVIEW[bindingMethod];
       }
     }
-    return (productFamily?.slug && SLUG_TO_PREVIEW[productFamily.slug]) || "loose_sheets";
+    const slugResult = (productFamily?.slug && SLUG_TO_PREVIEW[productFamily.slug]) || "loose_sheets";
+    console.log("[PreviewType] falling back to slug:", productFamily?.slug, "→", slugResult);
+    return slugResult;
   }, [options, spec.selected_options, productFamily?.slug]);
 
   const handleOptionChange = useCallback((optionName: string, slug: string) => {
