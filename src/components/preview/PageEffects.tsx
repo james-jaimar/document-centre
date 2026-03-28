@@ -134,7 +134,7 @@ export default function PageEffects({ effects, pageIndex, totalPages, children }
       )}
 
       {/* Hole punch marks */}
-      {effects.holePunch > 0 && <HolePunchMarks count={effects.holePunch} />}
+      {effects.holePunch > 0 && <HolePunchMarks count={effects.holePunch as 2 | 4} />}
     </div>
   );
 }
