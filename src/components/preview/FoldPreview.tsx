@@ -115,7 +115,7 @@ export default function FoldPreview({
         onClick={() => setIsOpen(!isOpen)}
         className="gap-2"
       >
-        {isOpen ? <Fold className="h-4 w-4" /> : <Unfold className="h-4 w-4" />}
+        {isOpen ? <FoldVertical className="h-4 w-4" /> : <UnfoldVertical className="h-4 w-4" />}
         {isOpen ? "Fold" : "Unfold"}
       </Button>
     </div>
