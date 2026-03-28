@@ -39,22 +39,23 @@ export default function FlipBook({
   height,
   bindingType,
   colorFlags,
+  pageAspectRatio,
 }: FlipBookProps) {
   const flipBookRef = useRef<any>(null);
   const [displayPage, setDisplayPage] = useState(0);
   const lastReportedPage = useRef(0);
 
-  // A4 aspect ratio: 210/297 ≈ 0.707
+  const ratio = pageAspectRatio ?? 0.707; // fallback to A4
   const maxSpreadWidth = width - 40;
   const maxPageWidth = Math.floor(maxSpreadWidth / 2);
   const maxPageHeight = height - 60;
 
   let pageWidth = maxPageWidth;
-  let pageHeight = Math.floor(pageWidth / 0.707);
+  let pageHeight = Math.floor(pageWidth / ratio);
 
   if (pageHeight > maxPageHeight) {
     pageHeight = maxPageHeight;
-    pageWidth = Math.floor(pageHeight * 0.707);
+    pageWidth = Math.floor(pageHeight * ratio);
   }
 
   pageWidth = Math.max(pageWidth, 150);

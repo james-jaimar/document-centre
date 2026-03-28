@@ -6,10 +6,12 @@ export default function LooseSheetsPreview({
   currentPage,
   width,
   height,
+  pageAspectRatio,
 }: PreviewComponentProps) {
-  // A4 aspect ratio
-  const pageHeight = Math.min(height * 0.9, width * 0.65 * 1.414);
-  const pageWidth = pageHeight / 1.414;
+  const ratio = pageAspectRatio ?? 0.707; // fallback to A4
+  const invRatio = 1 / ratio; // height/width
+  const pageHeight = Math.min(height * 0.9, width * 0.65 * invRatio);
+  const pageWidth = pageHeight * ratio;
   const url = urls[currentPage];
 
   return (

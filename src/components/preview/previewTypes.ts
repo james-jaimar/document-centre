@@ -27,6 +27,8 @@ export interface PreviewComponentProps {
   height: number;
   /** Per-page colour flag (true = colour, false = B&W) */
   colorFlags?: boolean[];
+  /** Width/height ratio of the document pages (e.g. 0.707 for A4, 0.774 for US Letter) */
+  pageAspectRatio?: number;
 }
 
 export interface FlipBookProps extends PreviewComponentProps {
