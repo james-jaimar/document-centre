@@ -1,78 +1,76 @@
 
 
-# Visual Finishing Effects in the FlipBook Preview
+# Tab Dividers — Management UI + Preview Visualization
 
-## Overview
+## What we're building
 
-Enhance the preview to reflect finishing options the user selects, so they see a realistic representation of the final product. This reads metadata from the selected product options and applies visual CSS effects to the FlipBook pages.
+A tab divider management system that lets users insert tab dividers at specific page positions within their bound document. Tabs appear in the preview as pages with a visible tab extension protruding from the right edge, and users can specify where each tab goes (before/after a given page).
 
-## Options that affect the preview
+## Current state
 
-After reviewing all product options in `seedBoundDocument.ts`, here are the ones with visual impact, ranked by importance:
+- `"tab"` already exists as a `section_type` enum value in the database
+- Tab divider options exist in the product configurator (5-tab, 10-tab, 12-tab, multi-colour, custom)
+- `SectionActions` already has a "Tab Divider" button that creates a section with `section_type: "tab"`
+- However, there's no dedicated UI for managing tab placement, no way to specify *where* a tab goes, and no visual representation of tabs in the FlipBook preview
 
-| Option | Metadata key | Visual effect |
-|--------|-------------|---------------|
-| **Print to Edge** | `bleed: false` | Inset white border (~5mm scaled) around the thumbnail image |
-| **Covers (front)** | `front: "clear_pvc"` / `"frosted_pvc"` / `"matte_pvc"` | Translucent/frosted overlay on the first page |
-| **Covers (back)** | `back: "black_card"` / `"white_card"` / `"navy_card"` | Solid-color last page |
-| **Paper Stock** | `color: "pastel_blue"` etc. | Tinted page background behind thumbnail |
-| **Hole Punching** | `holes: 2` / `4` | Small circular cutouts along the left edge |
-| **Cover Lamination** | `finish: "gloss"` | Subtle glossy sheen gradient overlay on cover pages |
+## Design
 
-## Technical approach
+### 1. Tab Management Panel (new component)
 
-### 1. Build a `PreviewEffects` object in `OrderBuild.tsx`
+When the user selects a tab divider option (not "No Tab Dividers"), show a **Tab Manager** panel below the sections list on the OrderFiles page. This panel:
 
-Read the selected options' metadata and produce a typed object:
+- Shows the selected tab count (e.g. "5-Tab Dividers")
+- Lists each tab with its insertion point (page number) and position (before/after)
+- Has an "Auto-Insert Tabs" button that evenly distributes tabs through the document
+- Has an "Add Tab" button for manual placement
+- Each tab row shows: tab number, "Insert before page [dropdown]", and a remove button
+- Tabs are stored as `document_sections` with `section_type: "tab"` and `document_id: null` (they're blank sheets, not uploaded files). The `sort_order` determines where they appear in the page sequence.
 
-```typescript
-interface PreviewEffects {
-  bleed: boolean;           // Print to Edge
-  frontCover: "none" | "clear_pvc" | "frosted_pvc" | "matte_pvc" | "white_card" | "silk_card" | "gloss_card";
-  backCover: "none" | "black_card" | "white_card" | "navy_card" | "silk_card" | "gloss_card";
-  paperColor: string;       // "white" | "pastel_blue" | "pastel_green" etc.
-  holePunch: 0 | 2 | 4;
-  coverLamination: "none" | "gloss" | "matt" | "soft_touch";
-}
-```
+### 2. Tab visualization in FlipBook preview
 
-Pass this down through `PreviewPanel → DocumentPreview → FlipBook`.
+In `PreviewPanel`, when building the flat page list, tab sections (where `document_id` is null and `section_type === "tab"`) render as:
 
-### 2. Modify `FlipPage` in `FlipBook.tsx`
+- A blank page (white or coloured card depending on the tab option's color metadata)
+- A small rectangular **tab extension** protruding from the right edge, staggered vertically so each tab is at a different position (like real tab dividers)
+- Tab label text on the extension (e.g. "Tab 1", "Tab 2")
 
-The `FlipPage` component currently renders a simple `<img>`. Enhance it to:
+This is done by passing a `sectionTypes` array alongside `colorFlags` to FlipBook, so `FlipPage` knows which pages are tabs and renders the tab extension.
 
-- **Bleed off (default)**: Add `padding: 3%` to the image container, with a white background visible around the edges — simulates the unprintable margin
-- **Bleed on**: Image fills edge-to-edge (current behavior)
-- **Clear/Frosted front cover**: On page index 0, overlay a `<div>` with `background: rgba(255,255,255,0.15)` (clear) or `rgba(255,255,255,0.4) + backdrop-filter: blur(1px)` (frosted) — the content shows through with a translucent sheet effect
-- **Colored back cover**: On the last page, render a solid-color div instead of the thumbnail (`bg-gray-900` for black, `bg-white` for white, `bg-blue-900` for navy)
-- **Paper color**: Set page background to the pastel color (`bg-blue-100`, `bg-green-100`, etc.) — visible if the PDF content doesn't fill the page
-- **Hole punch**: Render 2 or 4 small `border-radius: 50%` divs along the left edge of each page, positioned absolutely
-- **Gloss lamination on covers**: Add a diagonal gradient overlay (`linear-gradient(135deg, transparent 30%, rgba(255,255,255,0.2) 50%, transparent 70%)`) on cover pages
+### 3. Data model usage
 
-### 3. Prop threading
+No schema changes needed. Tab sections use existing `document_sections` with:
+- `section_type: "tab"`
+- `document_id: null` (no uploaded file — it's a blank divider)
+- `sort_order` controls position in the page sequence
+- `page_range_start` / `page_range_end` are unused (single page)
 
-```text
-OrderBuild (derives PreviewEffects from spec + options metadata)
-  → PreviewPanel (passes through)
-    → DocumentPreview (passes through)
-      → FlipBook (applies per-page)
-        → FlipPage (renders effects)
-```
+### Technical details
 
-### 4. Files to edit
+**Files to create:**
+1. **`src/components/order/TabManager.tsx`** — Tab management panel with auto-insert, manual add, reorder, remove. Takes sections + documents and the selected tab option metadata (tab_count, color). Calls `useAddSection` / `useDeleteSection` to create/remove tab sections.
 
-1. **`src/components/preview/previewTypes.ts`** — Add `PreviewEffects` interface and add it to `PreviewComponentProps`
-2. **`src/components/preview/FlipBook.tsx`** — Enhance `FlipPage` to render bleed margins, cover overlays, paper tint, hole punch marks, lamination sheen
-3. **`src/components/preview/DocumentPreview.tsx`** — Pass `effects` prop through
-4. **`src/components/order/PreviewPanel.tsx`** — Accept and pass `effects` prop
-5. **`src/pages/dashboard/OrderBuild.tsx`** — Derive `PreviewEffects` from selected options metadata
-6. **`src/components/preview/LooseSheetsPreview.tsx`** — Apply same bleed/paper effects for loose sheets
+**Files to edit:**
+2. **`src/pages/dashboard/OrderFiles.tsx`** — Import and render `TabManager` below `SectionList` when a tab divider option is active on the order item's spec
+3. **`src/components/order/PreviewPanel.tsx`** — When building the `pages` array, include tab sections as blank pages. Pass a `sectionTypes` string array (e.g. `["body", "body", "tab", "body", ...]`) to `DocumentPreview`
+4. **`src/components/preview/previewTypes.ts`** — Add `sectionTypes?: string[]` to `PreviewComponentProps` and `FlipBookProps`
+5. **`src/components/preview/FlipBook.tsx`** — In `FlipPage`, when `sectionType === "tab"`, render a blank card page with a protruding tab rectangle on the right edge. The tab position is staggered based on tab index.
+6. **`src/components/preview/DocumentPreview.tsx`** — Pass `sectionTypes` through
 
-## What stays the same
+### Tab preview rendering (FlipPage)
 
-- All option definitions and metadata — unchanged
-- OptionsPanel, PriceSummary — unchanged
-- BindingSpine — unchanged
-- No database changes
+When a page is a tab divider:
+- Background: white card (or multi-colour based on tab index)
+- A small rectangle extends ~15px beyond the right edge of the page, positioned at a vertical offset based on tab index (evenly spaced down the page height)
+- The tab has a subtle border and rounded right corners
+- Text "Tab N" in small font on the extension
+
+For multi-colour tabs, cycle through: red, blue, green, yellow, orange for 5-tab sets.
+
+### Auto-Insert logic
+
+"Auto-Insert Tabs" distributes N tabs evenly through the body pages:
+- Count total body pages
+- Divide into N+1 equal segments
+- Insert a tab section at each segment boundary
+- Recalculate sort_orders for all sections
 
