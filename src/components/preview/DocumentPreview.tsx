@@ -19,6 +19,7 @@ interface DocumentPreviewProps {
   colorFlags?: boolean[];
   pageAspectRatio?: number;
   effects?: PreviewEffects;
+  sectionTypes?: string[];
 }
 
 const BOUND_TYPES = new Set([
