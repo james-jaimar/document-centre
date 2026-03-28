@@ -274,7 +274,6 @@ function ThumbImage({ storagePath }: { storagePath: string }) {
   return <img src={url} alt="Page preview" className="h-full w-full object-contain" />;
 }
 
-type Document = Parameters<typeof InlinePreviewThumb>[0]["document"];
 
 function InlinePreviewThumb({
   document,
