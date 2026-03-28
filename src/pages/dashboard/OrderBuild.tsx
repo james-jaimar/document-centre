@@ -26,6 +26,39 @@ export default function OrderBuild() {
 
   const { data: options = [] } = useProductOptions(productFamilyId);
 
+  // Fetch product family to get slug for preview type
+  const { data: productFamily } = useQuery({
+    queryKey: ["product_family", productFamilyId],
+    queryFn: async () => {
+      if (!productFamilyId) return null;
+      const { data, error } = await supabase
+        .from("product_families")
+        .select("*")
+        .eq("id", productFamilyId)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!productFamilyId,
+  });
+
+  // Derive preview type from product family slug
+  const SLUG_TO_PREVIEW: Record<string, ProductPreviewType> = {
+    wire_bound: "wire_bound",
+    comb_bound: "comb_bound",
+    saddle_stitched: "saddle_stitched",
+    perfect_bound: "perfect_bound",
+    ring_binder: "ring_binder",
+    bi_fold: "bi_fold",
+    tri_fold: "tri_fold",
+    z_fold: "z_fold",
+    gate_fold: "gate_fold",
+    loose_sheets: "loose_sheets",
+    poster: "poster",
+  };
+  const productType: ProductPreviewType =
+    (productFamily?.slug && SLUG_TO_PREVIEW[productFamily.slug]) || "loose_sheets";
+
   // Fetch pricing rules for this product family
   const { data: pricingRules = [] } = useQuery({
     queryKey: ["pricing_rules", productFamilyId],
