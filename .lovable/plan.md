@@ -1,58 +1,44 @@
 
 
-# Fix FlipBook Preview — Make It Work Like Mimeo
+# Fix FlipBook UX: Spread Navigation, B&W Rendering, Edge Cases
 
-## Problems identified
+## Problems
 
-1. **Preview type derivation is silently failing** — The `productType` stays as `"loose_sheets"` so the FlipBook never renders. Most likely cause: the `options` data hasn't loaded yet when the `useMemo` runs, or the `spec.selected_options["Binding"]` key doesn't match the option's `name` field. Adding console logging will confirm the exact failure point.
+1. **Navigation advances one page instead of one spread** — The PreviewPanel arrows increment `currentPage` by 1, but in a bound book with `showCover: true`, react-pageflip treats pages in pairs (spreads). Pressing "next" should flip to the next spread (advance by 2), not show a half-turn.
 
-2. **FlipBook component needs improvements** — Even once it activates, it currently shows a single page with no visible interactivity. Mimeo's version shows:
-   - Cover page displayed alone initially (single page)
-   - After flipping cover: two-page spread (left + right pages visible)
-   - Spiral binding graphic running down the left spine
-   - Page numbers below each page in the spread
-   - Click/drag to flip pages with realistic animation
+2. **First/Last buttons break** — Jumping to page 0 or the last page index causes weird flipping because react-pageflip doesn't handle arbitrary `flip()` calls well when multiple spreads need to be skipped.
 
-3. **BindingSpine overlay is CSS-only** — needs to look more like Mimeo's spiral with individual coil rings visible
+3. **B&W pages show in colour** — `FlipPage` supports an `isColor` prop with a `grayscale(100%)` CSS filter, but the data never flows there. The `pages` array in `PreviewPanel` has `isColor` per page, but only `thumbnailPaths` (strings) are passed down through `DocumentPreview` → `FlipBook`. The color flags are lost.
 
-## Plan
+4. **Page counter says "Page 3 of 24" but two pages are visible** — Should show which spread is open (e.g., "Pages 4–5 of 24").
 
-### 1. Debug and fix productType derivation (`OrderBuild.tsx`)
+## Solution
 
-Add `console.log` to trace the exact values at each step of the binding detection chain:
-- Log `options` array length, the found binding option, the selected slug, the matched value, and the extracted `binding_method`
-- This will reveal exactly where the chain breaks
+### 1. Pass per-page colour flags through the component chain
 
-Most likely fix: the option name in the DB may differ from `"Binding"` (e.g., stored with different casing or spacing). Will add a case-insensitive lookup as a fallback.
+- **`PreviewPanel`**: Build a `colorFlags: boolean[]` array alongside `thumbnailPaths` from `pages[].isColor`. Pass it to `DocumentPreview`.
+- **`DocumentPreview`**: Accept `colorFlags?: boolean[]` and pass through to `FlipBook`.
+- **`FlipBook`**: Accept `colorFlags?: boolean[]`. Pass `isColor={colorFlags?.[i] ?? true}` to each `FlipPage`.
 
-### 2. Improve FlipBook component (`FlipBook.tsx`)
+### 2. Fix navigation to work in spreads for bound documents
 
-- Fix the page sizing calculation — currently `pageWidth = width / 2` then derives height from that, but this can produce dimensions that are too large for the container, causing react-pageflip to not render
-- Add `usePortrait: false` to ensure two-page spread mode (already set, but verify it works with the calculated dimensions)
-- Ensure `showCover: true` so page 1 displays alone as a cover, then pages 2-3 show as a spread when you flip
-- Add page number labels below each visible page (like Mimeo shows "8" and "9")
-- Make the container sizing more robust with proper min/max constraints
+- **`PreviewPanel`**: Detect if `productType` is a bound type. If so:
+  - Single arrows advance by 2 (one spread flip)
+  - Double arrows go to page 0 / last page
+  - The slider still works page-by-page but snaps to even indices (spread boundaries)
+  - Page info shows "Pages 4–5 of 24" when a spread is open, "Page 1 of 24" for the cover
 
-### 3. Enhance BindingSpine (`BindingSpine.tsx`)
+- **`FlipBook`**: The `onPageChange` callback should report the react-pageflip page index directly. The `currentPage` sync via `useEffect` should use `turnToPage()` instead of `flip()` for large jumps (first/last), as `flip()` only animates one page turn.
 
-Make the spiral/coil binding look more realistic (like Mimeo's):
-- For `coil`/`wire` types: render individual spiral rings as small circles or arcs running vertically along the left spine
-- Position them at regular intervals (every ~15-20px)
-- Use a subtle metallic gradient for each ring
-- The spine sits at the left edge of the book (not center) since spiral-bound books have the binding on the left side
+### 3. Fix page info display
 
-### 4. Add page number display below the book spread
-
-Below the FlipBook, show the current page numbers (e.g., "8" under left page, "9" under right page) like Mimeo does.
-
-### 5. Wire up navigation controls
-
-The PreviewPanel's slider and arrow buttons need to call `flipBookRef.current.pageFlip().flip(pageNum)` to programmatically turn pages in sync with the slider.
+- When bound: show "Pages X–Y of N" for spreads, "Page 1 of N" for the cover
+- B&W/Colour label should reflect the *currently visible* page(s), not just `currentPage`
 
 ## Files to edit
 
-1. **`src/pages/dashboard/OrderBuild.tsx`** — Add debug logging to productType derivation; add case-insensitive option name lookup
-2. **`src/components/preview/FlipBook.tsx`** — Fix page sizing, add page numbers, improve spine positioning
-3. **`src/components/preview/BindingSpine.tsx`** — More realistic spiral rings
-4. **`src/components/preview/DocumentPreview.tsx`** — Minor: pass debug info through
+1. **`src/components/preview/previewTypes.ts`** — Add `colorFlags?: boolean[]` to `FlipBookProps` and `PreviewComponentProps`
+2. **`src/components/preview/FlipBook.tsx`** — Use `colorFlags` per page; fix `currentPage` sync to use `turnToPage` for jumps; report spread-aware page index
+3. **`src/components/preview/DocumentPreview.tsx`** — Accept and pass `colorFlags`
+4. **`src/components/order/PreviewPanel.tsx`** — Build `colorFlags` array; spread-aware navigation (±2 for bound types); update page info text to show spread range and correct colour status
 
