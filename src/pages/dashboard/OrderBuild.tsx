@@ -42,7 +42,7 @@ export default function OrderBuild() {
     enabled: !!productFamilyId,
   });
 
-  // Derive preview type from product family slug
+  // Derive preview type from binding option metadata or product family slug
   const SLUG_TO_PREVIEW: Record<string, ProductPreviewType> = {
     wire_bound: "wire_bound",
     comb_bound: "comb_bound",
@@ -56,8 +56,33 @@ export default function OrderBuild() {
     loose_sheets: "loose_sheets",
     poster: "poster",
   };
-  const productType: ProductPreviewType =
-    (productFamily?.slug && SLUG_TO_PREVIEW[productFamily.slug]) || "loose_sheets";
+
+  const BINDING_METHOD_TO_PREVIEW: Record<string, ProductPreviewType> = {
+    comb: "comb_bound",
+    spiral: "wire_bound",
+    twin_loop: "wire_bound",
+    wire: "wire_bound",
+    ring_binder: "ring_binder",
+    saddle_stitch: "saddle_stitched",
+    perfect: "perfect_bound",
+  };
+
+  const productType: ProductPreviewType = useMemo(() => {
+    // First try binding option metadata
+    const bindingOption = options.find((o) => o.name === "Binding");
+    const selectedBindingSlug = spec.selected_options["Binding"];
+    if (bindingOption && selectedBindingSlug && isStructuredValues(bindingOption.values)) {
+      const matchedValue = (bindingOption.values as StructuredOptionValue[]).find(
+        (v) => v.slug === selectedBindingSlug
+      );
+      const bindingMethod = matchedValue?.metadata?.binding_method as string | undefined;
+      if (bindingMethod && BINDING_METHOD_TO_PREVIEW[bindingMethod]) {
+        return BINDING_METHOD_TO_PREVIEW[bindingMethod];
+      }
+    }
+    // Fall back to product family slug
+    return (productFamily?.slug && SLUG_TO_PREVIEW[productFamily.slug]) || "loose_sheets";
+  }, [options, spec.selected_options, productFamily?.slug]);
 
   // Fetch pricing rules for this product family
   const { data: pricingRules = [] } = useQuery({
