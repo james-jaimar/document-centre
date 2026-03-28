@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 
 export default function OrderBuild() {
   const { id: orderId } = useParams<{ id: string }>();
@@ -21,6 +22,13 @@ export default function OrderBuild() {
   const { order, orderItem, documents, sections, loading } =
     useOrderData(orderId);
   const updateSpec = useUpdateOrderItemSpec();
+  const { setCollapsed } = useSidebarCollapse();
+
+  // Auto-collapse sidebar on this page for maximum preview space
+  useEffect(() => {
+    setCollapsed(true);
+    return () => setCollapsed(false);
+  }, [setCollapsed]);
 
   const productFamilyId = orderItem?.product_family_id ?? null;
 

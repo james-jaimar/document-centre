@@ -1,16 +1,36 @@
 import { Outlet } from "react-router-dom";
 import CustomerSidebar from "@/components/CustomerSidebar";
-import { Bell, Menu, Search, ShoppingCart, User } from "lucide-react";
+import { Bell, Menu, Search, ShoppingCart, User, PanelLeftOpen } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useState } from "react";
+import { SidebarCollapseProvider, useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 
-export default function CustomerLayout() {
+function CustomerLayoutInner() {
   const { user } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { collapsed, toggle } = useSidebarCollapse();
 
   return (
     <div className="flex h-screen w-full">
-      <CustomerSidebar />
+      {/* Desktop sidebar — animated collapse */}
+      <div
+        className={`hidden lg:flex transition-all duration-300 ease-in-out overflow-hidden ${
+          collapsed ? "w-0" : "w-64"
+        }`}
+      >
+        <CustomerSidebar />
+      </div>
+
+      {/* Collapse toggle tab — visible when sidebar is collapsed */}
+      {collapsed && (
+        <button
+          onClick={toggle}
+          className="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 z-30 items-center justify-center w-6 h-16 rounded-r-lg bg-sidebar border border-l-0 border-sidebar-border shadow-md hover:w-8 transition-all duration-200 group"
+          title="Open sidebar"
+        >
+          <PanelLeftOpen className="h-4 w-4 text-sidebar-foreground/70 group-hover:text-sidebar-foreground transition-colors" />
+        </button>
+      )}
 
       {/* Mobile sidebar overlay */}
       {mobileOpen && (
@@ -53,7 +73,7 @@ export default function CustomerLayout() {
             <button className="relative rounded-xl p-2 hover:bg-secondary">
               <ShoppingCart className="h-5 w-5 text-muted-foreground" />
             </button>
-            <button className="rounded-full border border-border bg-white p-1 shadow-sm">
+            <button className="rounded-full border border-border bg-card p-1 shadow-sm">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-violet-400 to-primary text-primary-foreground">
                 <User className="h-4 w-4" />
               </div>
@@ -67,5 +87,13 @@ export default function CustomerLayout() {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function CustomerLayout() {
+  return (
+    <SidebarCollapseProvider>
+      <CustomerLayoutInner />
+    </SidebarCollapseProvider>
   );
 }
