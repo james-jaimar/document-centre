@@ -193,10 +193,10 @@ export default function PreviewPanel({
     if (visibleLeft !== null) visibleIndices.push(visibleLeft);
     if (visibleRight !== null && visibleRight < totalPages) visibleIndices.push(visibleRight);
     if (visibleIndices.length === 0) return "";
-    const allColor = visibleIndices.every((i) => pages[i]?.isColor);
-    const allBW = visibleIndices.every((i) => !pages[i]?.isColor);
+    const allColor = visibleIndices.every((i) => finalPages[i]?.isColor);
+    const allBW = visibleIndices.every((i) => !finalPages[i]?.isColor);
     return allColor ? "Colour" : allBW ? "B&W" : "Mixed";
-  }, [visibleLeft, visibleRight, pages, totalPages]);
+  }, [visibleLeft, visibleRight, finalPages, totalPages]);
 
   // Duplex status for visible pages
   const duplexStatus = useMemo(() => {
