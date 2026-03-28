@@ -5,7 +5,7 @@ import { useProductOptions } from "@/hooks/useProductOptions";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { ItemSpec } from "@/lib/calculatePrice";
-import { isStructuredValues } from "@/lib/productOptionTypes";
+import { isStructuredValues, type StructuredOptionValue } from "@/lib/productOptionTypes";
 import type { ProductPreviewType } from "@/components/preview/previewTypes";
 import OptionsPanel from "@/components/order/OptionsPanel";
 import PreviewPanel from "@/components/order/PreviewPanel";
@@ -42,7 +42,7 @@ export default function OrderBuild() {
     enabled: !!productFamilyId,
   });
 
-  // Derive preview type from product family slug
+  // Derive preview type from binding option metadata or product family slug
   const SLUG_TO_PREVIEW: Record<string, ProductPreviewType> = {
     wire_bound: "wire_bound",
     comb_bound: "comb_bound",
@@ -56,8 +56,17 @@ export default function OrderBuild() {
     loose_sheets: "loose_sheets",
     poster: "poster",
   };
-  const productType: ProductPreviewType =
-    (productFamily?.slug && SLUG_TO_PREVIEW[productFamily.slug]) || "loose_sheets";
+
+  const BINDING_METHOD_TO_PREVIEW: Record<string, ProductPreviewType> = {
+    comb: "comb_bound",
+    spiral: "wire_bound",
+    twin_loop: "wire_bound",
+    wire: "wire_bound",
+    ring_binder: "ring_binder",
+    saddle_stitch: "saddle_stitched",
+    perfect: "perfect_bound",
+  };
+
 
   // Fetch pricing rules for this product family
   const { data: pricingRules = [] } = useQuery({
@@ -131,6 +140,22 @@ export default function OrderBuild() {
       return { ...prev, selected_options: selected };
     });
   }, [options]);
+
+  // Derive preview type from binding option metadata or product family slug
+  const productType: ProductPreviewType = useMemo(() => {
+    const bindingOption = options.find((o) => o.name === "Binding");
+    const selectedBindingSlug = spec.selected_options["Binding"];
+    if (bindingOption && selectedBindingSlug && isStructuredValues(bindingOption.values)) {
+      const matchedValue = (bindingOption.values as StructuredOptionValue[]).find(
+        (v) => v.slug === selectedBindingSlug
+      );
+      const bindingMethod = matchedValue?.metadata?.binding_method as string | undefined;
+      if (bindingMethod && BINDING_METHOD_TO_PREVIEW[bindingMethod]) {
+        return BINDING_METHOD_TO_PREVIEW[bindingMethod];
+      }
+    }
+    return (productFamily?.slug && SLUG_TO_PREVIEW[productFamily.slug]) || "loose_sheets";
+  }, [options, spec.selected_options, productFamily?.slug]);
 
   const handleOptionChange = useCallback((optionName: string, slug: string) => {
     setSpec((prev) => ({
