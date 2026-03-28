@@ -42,6 +42,28 @@ export default function OrderFiles() {
   const updateSection = useUpdateSection();
   const deleteSection = useDeleteSection();
 
+  // Fetch product options to detect active tab dividers
+  const productFamilyId = orderItem?.product_family_id ?? null;
+  const { data: productOptions = [] } = useProductOptions(productFamilyId);
+  const spec = orderItem?.spec as unknown as ItemSpec | null;
+
+  // Derive tab info from selected options
+  const tabInfo = useMemo(() => {
+    const tabOption = productOptions.find((o) => o.name.toLowerCase().includes("tab"));
+    if (!tabOption || !isStructuredValues(tabOption.values)) return null;
+    const selectedSlug = spec?.selected_options?.[tabOption.name];
+    if (!selectedSlug) return null;
+    const selectedValue = (tabOption.values as StructuredOptionValue[]).find(
+      (v) => v.slug === selectedSlug
+    );
+    if (!selectedValue) return null;
+    const meta = selectedValue.metadata as Record<string, any> | undefined;
+    const tabCount = meta?.tab_count as number | undefined;
+    if (!tabCount || tabCount <= 0) return null;
+    const isMultiColor = selectedValue.slug.includes("multi") || !!meta?.multi_color;
+    return { tabCount, isMultiColor };
+  }, [productOptions, spec]);
+
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
