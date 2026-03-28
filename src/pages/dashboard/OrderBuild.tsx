@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { ItemSpec } from "@/lib/calculatePrice";
 import { isStructuredValues } from "@/lib/productOptionTypes";
+import type { ProductPreviewType } from "@/components/preview/previewTypes";
 import OptionsPanel from "@/components/order/OptionsPanel";
 import PreviewPanel from "@/components/order/PreviewPanel";
 import PriceSummary from "@/components/order/PriceSummary";
