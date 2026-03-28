@@ -19,6 +19,7 @@ interface DocumentPreviewProps {
   colorFlags?: boolean[];
   pageAspectRatio?: number;
   effects?: PreviewEffects;
+  sectionTypes?: string[];
 }
 
 const BOUND_TYPES = new Set([
@@ -36,6 +37,7 @@ export default function DocumentPreview({
   colorFlags,
   pageAspectRatio,
   effects,
+  sectionTypes,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
@@ -84,6 +86,7 @@ export default function DocumentPreview({
     colorFlags,
     pageAspectRatio,
     effects,
+    sectionTypes,
   };
 
   if (BOUND_TYPES.has(productType)) {

@@ -74,6 +74,17 @@ export default function PreviewPanel({
   const pages = useMemo(() => {
     const result: PageInfo[] = [];
     for (const section of sections) {
+      if (section.section_type === "tab") {
+        // Tab divider: no document, single blank page
+        result.push({
+          thumbnailUrl: "",
+          pageIndex: 0,
+          documentName: "Tab Divider",
+          section,
+          isColor: true,
+        });
+        continue;
+      }
       const doc = documents.find((d) => d.id === section.document_id);
       if (!doc) continue;
       const thumbnails = Array.isArray(doc.thumbnail_urls)
@@ -94,7 +105,7 @@ export default function PreviewPanel({
   }, [documents, sections]);
 
   const thumbnailPaths = useMemo(
-    () => pages.map((p) => p.thumbnailUrl).filter(Boolean),
+    () => pages.map((p) => p.thumbnailUrl),
     [pages]
   );
 
@@ -102,6 +113,12 @@ export default function PreviewPanel({
     () => pages.map((p) => p.isColor),
     [pages]
   );
+
+  const sectionTypes = useMemo(
+    () => pages.map((p) => p.section?.section_type ?? "body"),
+    [pages]
+  );
+
 
   // Derive aspect ratio from the first document's actual dimensions
   const pageAspectRatio = useMemo(() => {
@@ -199,6 +216,7 @@ export default function PreviewPanel({
           colorFlags={colorFlags}
           pageAspectRatio={pageAspectRatio}
           effects={effects}
+          sectionTypes={sectionTypes}
         />
       </div>
 

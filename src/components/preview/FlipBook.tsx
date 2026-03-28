@@ -10,31 +10,86 @@ import { FileText, Loader2 } from "lucide-react";
 /**
  * Each page must be a forwardRef component for react-pageflip.
  */
+import { TAB_COLORS } from "./previewTypes";
+
 const FlipPage = forwardRef<
   HTMLDivElement,
-  { url: string; pageNum: number; isColor?: boolean; effects: PreviewEffects; pageIndex: number; totalPages: number }
->(({ url, pageNum, isColor = true, effects, pageIndex, totalPages }, ref) => (
-  <div ref={ref} className="bg-card overflow-hidden" style={{ width: "100%", height: "100%" }}>
-    <PageEffects effects={effects} pageIndex={pageIndex} totalPages={totalPages}>
-      {url ? (
-        <img
-          src={url}
-          alt={`Page ${pageNum}`}
-          className="w-full h-full object-contain"
-          style={{ filter: isColor ? "none" : "grayscale(100%)" }}
-          loading="eager"
-        />
-      ) : (
-        <div className="w-full h-full flex items-center justify-center bg-muted/30">
-          <div className="text-center text-muted-foreground">
-            <FileText className="h-8 w-8 mx-auto mb-1 opacity-30" />
-            <p className="text-xs">Page {pageNum}</p>
+  {
+    url: string;
+    pageNum: number;
+    isColor?: boolean;
+    effects: PreviewEffects;
+    pageIndex: number;
+    totalPages: number;
+    sectionType?: string;
+    tabIndex?: number;
+    tabTotal?: number;
+  }
+>(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, tabIndex = 0, tabTotal = 1 }, ref) => {
+  const isTab = sectionType === "tab";
+
+  return (
+    <div ref={ref} className="bg-card overflow-hidden" style={{ width: "100%", height: "100%", position: "relative" }}>
+      <PageEffects effects={effects} pageIndex={pageIndex} totalPages={totalPages}>
+        {isTab ? (
+          <div className="w-full h-full flex items-center justify-center bg-card">
+            <div className="text-center text-muted-foreground/40">
+              <p className="text-sm font-medium">Tab {tabIndex + 1}</p>
+            </div>
           </div>
+        ) : url ? (
+          <img
+            src={url}
+            alt={`Page ${pageNum}`}
+            className="w-full h-full object-contain"
+            style={{ filter: isColor ? "none" : "grayscale(100%)" }}
+            loading="eager"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-muted/30">
+            <div className="text-center text-muted-foreground">
+              <FileText className="h-8 w-8 mx-auto mb-1 opacity-30" />
+              <p className="text-xs">Page {pageNum}</p>
+            </div>
+          </div>
+        )}
+      </PageEffects>
+
+      {/* Tab extension protruding from right edge */}
+      {isTab && (
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            right: -12,
+            top: `${((tabIndex / Math.max(tabTotal, 1)) * 70) + 10}%`,
+            width: 18,
+            height: 32,
+            backgroundColor: TAB_COLORS[tabIndex % TAB_COLORS.length],
+            borderRadius: "0 4px 4px 0",
+            border: "1px solid rgba(0,0,0,0.15)",
+            borderLeft: "none",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "1px 1px 3px rgba(0,0,0,0.15)",
+          }}
+        >
+          <span
+            style={{
+              fontSize: 7,
+              color: "#fff",
+              fontWeight: 700,
+              writingMode: "vertical-rl",
+              textOrientation: "mixed",
+            }}
+          >
+            {tabIndex + 1}
+          </span>
         </div>
       )}
-    </PageEffects>
-  </div>
-));
+    </div>
+  );
+});
 FlipPage.displayName = "FlipPage";
 
 export default function FlipBook({
@@ -47,6 +102,7 @@ export default function FlipBook({
   colorFlags,
   pageAspectRatio,
   effects,
+  sectionTypes,
 }: FlipBookProps) {
   const flipBookRef = useRef<any>(null);
   const [displayPage, setDisplayPage] = useState(0);
@@ -140,17 +196,29 @@ export default function FlipBook({
           style={{}}
           className=""
         >
-          {urls.map((url, i) => (
-            <FlipPage
-              key={i}
-              url={url}
-              pageNum={i + 1}
-              isColor={colorFlags?.[i] ?? true}
-              effects={resolvedEffects}
-              pageIndex={i}
-              totalPages={urls.length}
-            />
-          ))}
+          {urls.map((url, i) => {
+            const secType = sectionTypes?.[i];
+            const isTab = secType === "tab";
+            // Count tab index among all tabs
+            const tabIndex = isTab
+              ? sectionTypes!.slice(0, i).filter((t) => t === "tab").length
+              : 0;
+            const tabTotal = sectionTypes?.filter((t) => t === "tab").length ?? 0;
+            return (
+              <FlipPage
+                key={i}
+                url={url}
+                pageNum={i + 1}
+                isColor={colorFlags?.[i] ?? true}
+                effects={resolvedEffects}
+                pageIndex={i}
+                totalPages={urls.length}
+                sectionType={secType}
+                tabIndex={tabIndex}
+                tabTotal={tabTotal}
+              />
+            );
+          })}
         </HTMLFlipBook>
       </div>
 
