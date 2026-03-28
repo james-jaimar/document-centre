@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 
 export default function OrderBuild() {
   const { id: orderId } = useParams<{ id: string }>();
