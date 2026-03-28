@@ -1,18 +1,35 @@
 
 
-# Add Drop Shadow to FlipBook Pages
+# Fix Page Edge Visibility — Drop Shadow Not Showing
 
 ## Problem
-White paper pages are invisible against the white preview background — no visible edge.
+
+The `box-shadow` on line 32 of `FlipPage` is being clipped. `react-pageflip` wraps each page in its own container with `overflow: hidden`, so any outward shadow is invisible. The shadow needs to be applied differently.
 
 ## Solution
-Add a subtle `box-shadow` to the outer `<div>` of each `FlipPage` component, giving every page a soft edge outline similar to Mimeo's approach.
 
-## File to edit
+Instead of an outward `box-shadow` (which gets clipped), use an **inset shadow** combined with a faint **border** on the FlipPage root div. This creates a visible edge definition that stays within the element bounds and can't be clipped.
 
-**`src/components/preview/FlipBook.tsx`** — Line 32, the FlipPage root div. Add a subtle box-shadow:
+### File: `src/components/preview/FlipBook.tsx`
+
+Replace the current `boxShadow` on the FlipPage root div (line 32) with:
+
+```typescript
+border: "1px solid rgba(0,0,0,0.08)",
+boxShadow: "inset 0 0 0 0.5px rgba(0,0,0,0.06)"
 ```
-boxShadow: "0 1px 4px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04)"
+
+The `border` gives a crisp, visible edge that distinguishes white paper from white background. The `inset` shadow adds a subtle inner depth. Neither can be clipped by the parent's `overflow: hidden`.
+
+### Additionally: outer container shadow
+
+Add a `box-shadow` to the `HTMLFlipBook` wrapper div (line 168) — this div is NOT clipped by react-pageflip, so a standard drop shadow here will frame the entire book spread:
+
+```typescript
+boxShadow: "0 2px 8px rgba(0,0,0,0.10)"
 ```
-This gives a soft drop shadow plus a barely-visible 1px border, making white pages clearly distinguishable from the background regardless of paper color.
+
+## Files to edit
+
+1. **`src/components/preview/FlipBook.tsx`** — Change FlipPage shadow to border + inset; add outer shadow to the book container div
 
