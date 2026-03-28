@@ -47,6 +47,7 @@ export default function PreviewPanel({
   documents,
   sections,
   productType = "loose_sheets",
+  effects,
 }: PreviewPanelProps) {
   const [currentPage, setCurrentPage] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
