@@ -266,3 +266,73 @@ export default function OrderFiles() {
     </div>
   );
 }
+
+/* Inline preview thumbnail replacing the old DocumentPreviewThumb component */
+function ThumbImage({ storagePath }: { storagePath: string }) {
+  const url = useSignedThumbnailUrl(storagePath);
+  if (!url) return <FileText className="h-8 w-8 text-muted-foreground/30" />;
+  return <img src={url} alt="Page preview" className="h-full w-full object-contain" />;
+}
+
+type Document = Parameters<typeof InlinePreviewThumb>[0]["document"];
+
+function InlinePreviewThumb({
+  document,
+  onClick,
+}: {
+  document: { file_name: string; page_count: number | null; page_width_mm: number | null; page_height_mm: number | null; thumbnail_urls: unknown } | null;
+  onClick: () => void;
+}) {
+  const thumbnails = document
+    ? Array.isArray(document.thumbnail_urls)
+      ? (document.thumbnail_urls as string[])
+      : []
+    : [];
+  const firstThumb = thumbnails.length > 0 ? thumbnails[0] : null;
+
+  if (!document) {
+    return (
+      <div className="flex flex-col items-center justify-center py-6 text-muted-foreground/50">
+        <FileText className="h-10 w-10 mb-2 opacity-30" />
+        <p className="text-xs text-center">Select a file to preview</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <button
+        onClick={onClick}
+        className={cn(
+          "relative group w-[140px] aspect-[210/297] bg-muted/30 border border-border/60",
+          "flex items-center justify-center overflow-hidden",
+          "hover:border-primary/40 hover:shadow-md transition-all cursor-pointer"
+        )}
+      >
+        {firstThumb ? (
+          <ThumbImage storagePath={firstThumb} />
+        ) : (
+          <FileText className="h-8 w-8 text-muted-foreground/30" />
+        )}
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+          <Search className="h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+        </div>
+      </button>
+      <div className="text-center space-y-0.5">
+        <p className="text-xs font-medium text-foreground truncate max-w-[160px]">
+          {document.file_name}
+        </p>
+        <div className="flex items-center justify-center gap-2 text-[11px] text-muted-foreground">
+          {document.page_count && (
+            <span>{document.page_count} {document.page_count === 1 ? "page" : "pages"}</span>
+          )}
+          {document.page_width_mm && document.page_height_mm && (
+            <span>
+              {Math.round(Number(document.page_width_mm))}×{Math.round(Number(document.page_height_mm))}mm
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
