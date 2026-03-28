@@ -216,6 +216,7 @@ export default function PreviewPanel({
           colorFlags={colorFlags}
           pageAspectRatio={pageAspectRatio}
           effects={effects}
+          sectionTypes={sectionTypes}
         />
       </div>
 
