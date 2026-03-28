@@ -173,7 +173,7 @@ export function useAddSection() {
   return useMutation({
     mutationFn: async (input: {
       order_item_id: string;
-      document_id: string;
+      document_id?: string | null;
       section_type: "body" | "front_cover" | "back_cover" | "insert" | "tab";
       sort_order: number;
     }) => {

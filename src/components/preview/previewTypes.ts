@@ -56,7 +56,12 @@ export interface PreviewComponentProps {
   pageAspectRatio?: number;
   /** Visual finishing effects */
   effects?: PreviewEffects;
+  /** Per-page section type (e.g. "body", "tab", "front_cover") */
+  sectionTypes?: string[];
 }
+
+/** Multi-colour tab cycling palette */
+export const TAB_COLORS = ["#ef4444", "#3b82f6", "#22c55e", "#eab308", "#f97316"];
 
 export interface FlipBookProps extends PreviewComponentProps {
   bindingType: BindingType;
