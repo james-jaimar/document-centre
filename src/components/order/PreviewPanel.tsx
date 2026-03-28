@@ -210,9 +210,9 @@ export default function PreviewPanel({
   const sectionLabel = useMemo(() => {
     if (totalPages === 0) return "";
     const idx = visibleLeft ?? visibleRight ?? 0;
-    const sec = pages[idx]?.section;
+    const sec = finalPages[idx]?.section;
     return sec ? (SECTION_LABELS[sec.section_type] ?? sec.section_type) : "";
-  }, [visibleLeft, visibleRight, pages, totalPages]);
+  }, [visibleLeft, visibleRight, finalPages, totalPages]);
 
   // Navigation helpers
   const goFirst = () => setCurrentPage(0);
