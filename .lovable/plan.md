@@ -1,32 +1,41 @@
 
 
-# Wire productType to PreviewPanel
+# Fix Preview Type Detection + Clean Up Old Preview System
 
-## Problem
+## Root Cause
 
-`OrderBuild.tsx` renders `<PreviewPanel documents={documents} sections={sections} />` without passing `productType`. It defaults to `"loose_sheets"`, so the flip book never activates — for any document, old or new.
+The product family slug is `"bound-documents"` — a single family covering all binding types. The `SLUG_TO_PREVIEW` mapping in `OrderBuild.tsx` has no entry for this slug, so it always falls through to `"loose_sheets"`. The binding type (comb, spiral, wire, ring binder) is selected as a **product option**, not a product family.
 
-## Fix
+## Solution
 
-### `src/pages/dashboard/OrderBuild.tsx`
+### 1. Derive preview type from the selected binding option (`OrderBuild.tsx`)
 
-Derive `productType` from the order item's spec (e.g., `spec.binding_type` or the product family's configuration) and pass it to `PreviewPanel`:
+Instead of mapping only from the product family slug, also inspect `spec.selected_options.Binding` to extract the `binding_method` metadata from the matching option value. The seed data stores `binding_method` in each binding option's metadata (e.g., `"comb"`, `"spiral"`, `"twin_loop"`, `"ring_binder"`).
 
-```tsx
-<PreviewPanel
-  documents={documents}
-  sections={sections}
-  productType={derivedProductType}
-/>
-```
+Logic:
+- Find the "Binding" option from the `options` array
+- Look up the selected slug in `spec.selected_options["Binding"]`
+- Read its `metadata.binding_method`
+- Map: `comb` → `"comb_bound"`, `spiral` → `"wire_bound"`, `twin_loop` → `"wire_bound"`, `ring_binder` → `"ring_binder"`
+- Fall back to the existing slug-based mapping for fold/leaflet product families
 
-The derivation logic will map the spec's binding/finishing option to a `ProductPreviewType` value (e.g., `"wire_bound"`, `"saddle_stitched"`, `"bi_fold"`, etc.). If no binding is set, it stays as `"loose_sheets"`.
+### 2. Remove old `DocumentPreviewThumb` component
 
-### Investigation needed
+Delete `src/components/order/DocumentPreviewThumb.tsx` and replace its usage in `OrderFiles.tsx` with a small inline thumbnail that uses the existing `batchSignUrls`/`useSignedThumbnailUrl` from thumbnailUtils. The middle column preview in OrderFiles (Step 1) is just a single cover thumbnail — it doesn't need the full preview system, just a signed image.
 
-I need to check what the spec shape looks like and how binding/product type is stored to write the correct mapping. This is a single-line prop addition plus a small mapping function.
+### 3. Remove stale `useSignedThumbnailUrl` usages that bypass the cache
 
-## Scope
+`DocumentPreviewThumb.tsx` and `FileList.tsx` each call `useSignedThumbnailUrl` per-image (individual signed URL calls). These should use the batch cache instead, but since `DocumentPreviewThumb` is being deleted, only `FileList.tsx` needs updating — and its thumbnails are tiny list items, so the per-item hook is acceptable there.
 
-One file changed: `src/pages/dashboard/OrderBuild.tsx`. All existing preview components remain unchanged.
+## Files to change
+
+1. **`src/pages/dashboard/OrderBuild.tsx`** — Add binding-method-based preview type derivation
+2. **`src/pages/dashboard/OrderFiles.tsx`** — Replace `DocumentPreviewThumb` import with inline thumbnail using `useSignedThumbnailUrl`
+3. **`src/components/order/DocumentPreviewThumb.tsx`** — Delete this file
+
+## What stays the same
+
+- All preview components (`FlipBook`, `FoldPreview`, `LooseSheetsPreview`, `DocumentPreview`) — unchanged
+- `PreviewPanel` and `PreviewLightbox` — unchanged
+- `thumbnailUtils.ts` — unchanged
 
