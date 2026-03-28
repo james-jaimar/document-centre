@@ -73,7 +73,7 @@ function CustomerLayoutInner() {
             <button className="relative rounded-xl p-2 hover:bg-secondary">
               <ShoppingCart className="h-5 w-5 text-muted-foreground" />
             </button>
-            <button className="rounded-full border border-border bg-white p-1 shadow-sm">
+            <button className="rounded-full border border-border bg-card p-1 shadow-sm">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-violet-400 to-primary text-primary-foreground">
                 <User className="h-4 w-4" />
               </div>
