@@ -177,7 +177,7 @@ export default function PreviewPanel({
   return (
     <div className="flex flex-col items-center gap-4 h-full">
       {/* Preview display */}
-      <div ref={containerRef} className="flex-1 flex items-center justify-center w-full">
+      <div ref={containerRef} className="flex-1 flex items-center justify-center w-full overflow-hidden">
         <DocumentPreview
           thumbnailPaths={thumbnailPaths}
           productType={productType}
