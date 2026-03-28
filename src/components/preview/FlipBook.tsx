@@ -104,6 +104,7 @@ export default function FlipBook({
   pageAspectRatio,
   effects,
   sectionTypes,
+  pageRoles,
 }: FlipBookProps) {
   const flipBookRef = useRef<any>(null);
   const [displayPage, setDisplayPage] = useState(0);
