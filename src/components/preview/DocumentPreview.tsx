@@ -35,6 +35,7 @@ export default function DocumentPreview({
   onPageChange: controlledOnPageChange,
   colorFlags,
   pageAspectRatio,
+  effects,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
