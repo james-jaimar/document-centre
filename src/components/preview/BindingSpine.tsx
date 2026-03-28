@@ -1,92 +1,48 @@
 import type { BindingType } from "./previewTypes";
 
+import coilClosedImg from "@/assets/bindings/coil_binding_black_closed.png";
+import coilOpenImg from "@/assets/bindings/coil_binding_black_open.png";
+import wireClosedImg from "@/assets/bindings/wire_binding_black_closed.png";
+import wireOpenImg from "@/assets/bindings/wire_binding_black_open.png";
+
 interface BindingSpineProps {
   bindingType: BindingType;
   height: number;
+  /** Whether the book is open (showing a two-page spread) */
+  isOpen?: boolean;
 }
 
-export default function BindingSpine({ bindingType, height }: BindingSpineProps) {
+export default function BindingSpine({ bindingType, height, isOpen = false }: BindingSpineProps) {
   if (bindingType === "none") return null;
 
   const isSpiral = bindingType === "coil" || bindingType === "wire" || bindingType === "comb";
 
   if (isSpiral) {
-    // Spiral/coil/comb binding — render individual rings down the spine
-    const ringSpacing = bindingType === "comb" ? 24 : 18;
-    const ringCount = Math.max(4, Math.floor((height - 40) / ringSpacing));
-    const topPadding = 20;
+    // Pick the correct image based on binding type and open/closed state
+    let spineImage: string;
+    if (bindingType === "wire") {
+      spineImage = isOpen ? wireOpenImg : wireClosedImg;
+    } else {
+      // coil and comb both use coil images for now
+      spineImage = isOpen ? coilOpenImg : coilClosedImg;
+    }
 
     return (
       <div
         className="absolute top-0 left-1/2 z-30 pointer-events-none"
         style={{
           transform: "translateX(-50%)",
-          width: 28,
+          width: 36,
           height,
         }}
       >
-        {/* Shadow groove under the spine */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "linear-gradient(90deg, rgba(0,0,0,0.12) 0%, rgba(0,0,0,0.25) 40%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.25) 60%, rgba(0,0,0,0.12) 100%)",
-          }}
+        <img
+          src={spineImage}
+          alt={`${bindingType} binding`}
+          className="w-full h-full object-fill"
+          style={{ objectFit: "fill" }}
+          draggable={false}
         />
-
-        {/* Individual rings */}
-        {Array.from({ length: ringCount }).map((_, i) => {
-          const y = topPadding + i * ringSpacing;
-
-          if (bindingType === "comb") {
-            // Comb binding: rectangular teeth
-            return (
-              <div
-                key={i}
-                className="absolute left-1/2"
-                style={{
-                  top: y,
-                  transform: "translateX(-50%)",
-                  width: 18,
-                  height: 8,
-                  borderRadius: 2,
-                  background: "linear-gradient(180deg, hsl(0 0% 15%) 0%, hsl(0 0% 25%) 50%, hsl(0 0% 15%) 100%)",
-                  boxShadow: "0 1px 2px rgba(0,0,0,0.4)",
-                }}
-              />
-            );
-          }
-
-          // Wire/coil: circular rings with metallic gradient
-          return (
-            <div
-              key={i}
-              className="absolute left-1/2"
-              style={{
-                top: y,
-                transform: "translateX(-50%)",
-                width: 14,
-                height: 14,
-                borderRadius: "50%",
-                background: "radial-gradient(circle at 35% 35%, hsl(0 0% 85%) 0%, hsl(0 0% 65%) 40%, hsl(0 0% 50%) 70%, hsl(0 0% 40%) 100%)",
-                border: "1.5px solid hsl(0 0% 55%)",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.3), inset 0 1px 1px rgba(255,255,255,0.3)",
-              }}
-            >
-              {/* Inner hole */}
-              <div
-                className="absolute left-1/2 top-1/2"
-                style={{
-                  transform: "translate(-50%, -50%)",
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  background: "radial-gradient(circle, hsl(0 0% 20%) 0%, hsl(0 0% 30%) 100%)",
-                }}
-              />
-            </div>
-          );
-        })}
       </div>
     );
   }
