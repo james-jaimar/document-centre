@@ -222,13 +222,8 @@ export default function PreviewPanel({
   // Navigation helpers
   const goFirst = () => setCurrentPage(0);
   const goLast = () => {
-    if (isBound) {
-      // Go to last spread: if odd page count the last page is alone
-      const last = totalPages - 1;
-      setCurrentPage(last % 2 === 0 ? last : last - 1);
-    } else {
-      setCurrentPage(totalPages - 1);
-    }
+    // The last page index — react-pageflip handles solo rendering for the final page
+    setCurrentPage(totalPages - 1);
   };
   const goPrev = () => setCurrentPage((p) => Math.max(0, p - step));
   const goNext = () => setCurrentPage((p) => Math.min(totalPages - 1, p + step));
