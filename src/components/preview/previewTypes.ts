@@ -15,6 +15,31 @@ export type ProductPreviewType =
   | "loose_sheets"
   | "poster";
 
+/** Visual finishing effects derived from selected product options */
+export interface PreviewEffects {
+  /** True = print to edge (no margin), false = show ~5mm white border */
+  bleed: boolean;
+  /** Front cover material */
+  frontCover: "none" | "clear_pvc" | "frosted_pvc" | "matte_pvc" | "white_card" | "silk_card" | "gloss_card";
+  /** Back cover material/colour */
+  backCover: "none" | "black_card" | "white_card" | "navy_card" | "silk_card" | "gloss_card";
+  /** Paper colour slug (e.g. "white", "pastel_blue") */
+  paperColor: string;
+  /** Number of hole punches (0 = none) */
+  holePunch: 0 | 2 | 4;
+  /** Cover lamination finish */
+  coverLamination: "none" | "gloss" | "matt" | "soft_touch";
+}
+
+export const DEFAULT_PREVIEW_EFFECTS: PreviewEffects = {
+  bleed: false,
+  frontCover: "none",
+  backCover: "none",
+  paperColor: "white",
+  holePunch: 0,
+  coverLamination: "none",
+};
+
 export interface PreviewComponentProps {
   /** Signed thumbnail URLs in page order */
   urls: string[];
@@ -29,6 +54,8 @@ export interface PreviewComponentProps {
   colorFlags?: boolean[];
   /** Width/height ratio of the document pages (e.g. 0.707 for A4, 0.774 for US Letter) */
   pageAspectRatio?: number;
+  /** Visual finishing effects */
+  effects?: PreviewEffects;
 }
 
 export interface FlipBookProps extends PreviewComponentProps {
