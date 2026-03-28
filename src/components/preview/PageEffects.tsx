@@ -63,8 +63,8 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
 
   return (
     <div className="relative w-full h-full" style={{ backgroundColor: paperBg }}>
-      {/* Back cover: solid color replacement */}
-      {isBackCover ? (
+      {/* Back cover card: solid color replacement */}
+      {isBackCoverCard ? (
         <div className="w-full h-full" style={{ backgroundColor: backCoverColor }} />
       ) : (
         <>

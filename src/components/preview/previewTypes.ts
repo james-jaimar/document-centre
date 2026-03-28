@@ -58,6 +58,8 @@ export interface PreviewComponentProps {
   effects?: PreviewEffects;
   /** Per-page section type (e.g. "body", "tab", "front_cover") */
   sectionTypes?: string[];
+  /** Per-page role for rendering logic (e.g. "front_cover", "body", "back_cover_card", "blank") */
+  pageRoles?: string[];
 }
 
 /** Multi-colour tab cycling palette */
