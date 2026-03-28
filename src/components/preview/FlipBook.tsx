@@ -38,17 +38,17 @@ export default function FlipBook({
   width,
   height,
   bindingType,
+  colorFlags,
 }: FlipBookProps) {
   const flipBookRef = useRef<any>(null);
   const [displayPage, setDisplayPage] = useState(0);
+  const lastReportedPage = useRef(0);
 
   // A4 aspect ratio: 210/297 ≈ 0.707
-  // Each page is half the spread width
-  const maxSpreadWidth = width - 40; // leave some padding
+  const maxSpreadWidth = width - 40;
   const maxPageWidth = Math.floor(maxSpreadWidth / 2);
-  const maxPageHeight = height - 60; // room for page numbers
+  const maxPageHeight = height - 60;
 
-  // Constrain by A4 aspect ratio
   let pageWidth = maxPageWidth;
   let pageHeight = Math.floor(pageWidth / 0.707);
 
@@ -57,7 +57,6 @@ export default function FlipBook({
     pageWidth = Math.floor(pageHeight * 0.707);
   }
 
-  // Ensure minimum sizes
   pageWidth = Math.max(pageWidth, 150);
   pageHeight = Math.max(pageHeight, 200);
 
@@ -65,15 +64,23 @@ export default function FlipBook({
     (e: any) => {
       const newPage = e.data;
       setDisplayPage(newPage);
+      lastReportedPage.current = newPage;
       onPageChange(newPage);
     },
     [onPageChange]
   );
 
-  // Sync programmatic page changes
+  // Sync programmatic page changes — use turnToPage for large jumps
   useEffect(() => {
     const pageFlip = flipBookRef.current?.pageFlip?.();
-    if (pageFlip && pageFlip.getCurrentPageIndex() !== currentPage) {
+    if (!pageFlip) return;
+    const current = pageFlip.getCurrentPageIndex();
+    if (current === currentPage) return;
+
+    const distance = Math.abs(current - currentPage);
+    if (distance > 2) {
+      pageFlip.turnToPage(currentPage);
+    } else {
       pageFlip.flip(currentPage);
     }
   }, [currentPage]);
@@ -93,9 +100,7 @@ export default function FlipBook({
 
   return (
     <div className="flex flex-col items-center justify-center gap-2" style={{ width, height }}>
-      {/* Book container */}
       <div className="relative flex items-center justify-center" style={{ minHeight: pageHeight }}>
-        {/* Binding spine - positioned on the left edge of the spread */}
         <BindingSpine bindingType={bindingType} height={pageHeight} />
 
         {/* @ts-ignore — react-pageflip types are imprecise */}
@@ -127,7 +132,12 @@ export default function FlipBook({
           className=""
         >
           {urls.map((url, i) => (
-            <FlipPage key={i} url={url} pageNum={i + 1} />
+            <FlipPage
+              key={i}
+              url={url}
+              pageNum={i + 1}
+              isColor={colorFlags?.[i] ?? true}
+            />
           ))}
         </HTMLFlipBook>
       </div>
