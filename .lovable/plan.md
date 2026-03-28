@@ -1,25 +1,41 @@
 
 
-# Fix Scrollbar Flickering on FlipBook Hover
+# Use Actual Document Dimensions for Preview Aspect Ratio
 
 ## Problem
 
-When hovering over the page corners of the flip book, react-pageflip's corner-peel animation slightly expands the rendered area beyond the container bounds. This triggers scrollbars on the parent container, which then changes the container size (detected by ResizeObserver), which triggers a re-render, causing a flickering loop.
+The FlipBook currently hardcodes an A4 aspect ratio (0.707 = 210/297). When the uploaded PDF is US Letter (216×279mm, ratio ~0.774), the page holder doesn't match — white space appears at top/bottom because the container is taller than needed for Letter's proportions.
 
 ## Solution
 
-Two simple overflow fixes:
+Pass the document's actual `page_width_mm` and `page_height_mm` through the component chain and use that to calculate the aspect ratio instead of hardcoding A4.
 
-### 1. `src/components/preview/FlipBook.tsx`
+## Changes
 
-Add `overflow: hidden` to the outer wrapper div (line 102) and the inner div that holds the HTMLFlipBook (line 103). This clips the corner-peel effect to the container bounds, preventing any size expansion.
+### 1. `src/components/order/PreviewPanel.tsx`
+- Derive `pageAspectRatio` from the first document's `page_width_mm / page_height_mm` (falling back to 0.707 if not available)
+- Pass it to `DocumentPreview` as a new `pageAspectRatio` prop
 
-### 2. `src/components/order/PreviewPanel.tsx`
+### 2. `src/components/preview/DocumentPreview.tsx`
+- Accept `pageAspectRatio?: number` and pass it through to `FlipBook`, `FoldPreview`, and `LooseSheetsPreview`
 
-Add `overflow-hidden` to the container div measured by ResizeObserver (line 180). This ensures even if the flip book tries to push beyond bounds, no scrollbar appears on the preview panel itself.
+### 3. `src/components/preview/previewTypes.ts`
+- Add `pageAspectRatio?: number` to `PreviewComponentProps` (inherited by all preview types)
 
-## Files to edit
+### 4. `src/components/preview/FlipBook.tsx`
+- Replace the hardcoded `0.707` with `pageAspectRatio ?? 0.707` in the page sizing calculation (lines 47-58)
 
-1. **`src/components/preview/FlipBook.tsx`** — Add `overflow: hidden` to the two container divs
-2. **`src/components/order/PreviewPanel.tsx`** — Add `overflow-hidden` class to the measured container
+### 5. `src/components/preview/LooseSheetsPreview.tsx`
+- Same: use `pageAspectRatio` instead of any hardcoded ratio
+
+## Data flow
+
+```text
+Document.page_width_mm / page_height_mm
+  → PreviewPanel (compute ratio)
+    → DocumentPreview (pass through)
+      → FlipBook / LooseSheetsPreview / FoldPreview (use for sizing)
+```
+
+No database changes. The dimension data already exists on every document record.
 
