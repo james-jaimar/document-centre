@@ -75,6 +75,7 @@ export default function DocumentPreview({
     onPageChange: handlePageChange,
     width,
     height,
+    colorFlags,
   };
 
   if (BOUND_TYPES.has(productType)) {
