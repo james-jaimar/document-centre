@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { ItemSpec } from "@/lib/calculatePrice";
 import { isStructuredValues } from "@/lib/productOptionTypes";
+import type { ProductPreviewType } from "@/components/preview/previewTypes";
 import OptionsPanel from "@/components/order/OptionsPanel";
 import PreviewPanel from "@/components/order/PreviewPanel";
 import PriceSummary from "@/components/order/PriceSummary";
@@ -24,6 +25,39 @@ export default function OrderBuild() {
   const productFamilyId = orderItem?.product_family_id ?? null;
 
   const { data: options = [] } = useProductOptions(productFamilyId);
+
+  // Fetch product family to get slug for preview type
+  const { data: productFamily } = useQuery({
+    queryKey: ["product_family", productFamilyId],
+    queryFn: async () => {
+      if (!productFamilyId) return null;
+      const { data, error } = await supabase
+        .from("product_families")
+        .select("*")
+        .eq("id", productFamilyId)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!productFamilyId,
+  });
+
+  // Derive preview type from product family slug
+  const SLUG_TO_PREVIEW: Record<string, ProductPreviewType> = {
+    wire_bound: "wire_bound",
+    comb_bound: "comb_bound",
+    saddle_stitched: "saddle_stitched",
+    perfect_bound: "perfect_bound",
+    ring_binder: "ring_binder",
+    bi_fold: "bi_fold",
+    tri_fold: "tri_fold",
+    z_fold: "z_fold",
+    gate_fold: "gate_fold",
+    loose_sheets: "loose_sheets",
+    poster: "poster",
+  };
+  const productType: ProductPreviewType =
+    (productFamily?.slug && SLUG_TO_PREVIEW[productFamily.slug]) || "loose_sheets";
 
   // Fetch pricing rules for this product family
   const { data: pricingRules = [] } = useQuery({
@@ -186,7 +220,7 @@ export default function OrderBuild() {
 
         {/* Right: Preview */}
         <div className="border border-border rounded-lg bg-card p-4 overflow-auto">
-          <PreviewPanel documents={documents} sections={sections} />
+          <PreviewPanel documents={documents} sections={sections} productType={productType} />
         </div>
       </div>
     </div>
