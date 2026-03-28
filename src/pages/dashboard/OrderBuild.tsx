@@ -310,7 +310,7 @@ export default function OrderBuild() {
 
         {/* Right: Preview */}
         <div className="border border-border rounded-lg bg-card p-4 overflow-auto">
-          <PreviewPanel documents={documents} sections={sections} productType={productType} />
+          <PreviewPanel documents={documents} sections={sections} productType={productType} effects={previewEffects} />
         </div>
       </div>
     </div>
