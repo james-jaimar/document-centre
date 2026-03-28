@@ -1,35 +1,47 @@
 
 
-# Fix Page Edge Visibility — Drop Shadow Not Showing
+# Fix Back Cover & Cover Display Issues
 
-## Problem
+## Problems
 
-The `box-shadow` on line 32 of `FlipPage` is being clipped. `react-pageflip` wraps each page in its own container with `overflow: hidden`, so any outward shadow is invisible. The shadow needs to be applied differently.
+1. **Back cover replaces last document page** — `PageEffects` checks `isLastPage` and renders the navy card color *over* the last document page (page 24). Instead, the back cover should be an **extra page appended** after all document pages.
+
+2. **Back cover shows white bleed border** — A solid card cover (navy, black, etc.) is a physical piece of card that goes edge-to-edge. The bleed margin should not apply to it.
+
+3. **Left-hand page showing on cover** — The `showCover={true}` prop tells react-pageflip to show page 0 solo on the right. This should already work, but if the library renders an empty left page, we may need to ensure page count is even (by padding) so the library handles cover mode correctly.
 
 ## Solution
 
-Instead of an outward `box-shadow` (which gets clipped), use an **inset shadow** combined with a faint **border** on the FlipPage root div. This creates a visible edge definition that stays within the element bounds and can't be clipped.
+### 1. `src/components/order/PreviewPanel.tsx` — Append back cover as extra page
 
-### File: `src/components/preview/FlipBook.tsx`
+After building the page list from sections/documents, if `effects.backCover !== "none"`, push one additional `PageInfo` entry with an empty thumbnail URL, a `sectionType` of `"back_cover_card"`. This makes the back cover its own page rather than overlaying the last document page.
 
-Replace the current `boxShadow` on the FlipPage root div (line 32) with:
+Also ensure total page count is even by padding with a blank page if needed (react-pageflip requires even pages for proper cover mode, and an odd count causes the empty left-side issue).
 
-```typescript
-border: "1px solid rgba(0,0,0,0.08)",
-boxShadow: "inset 0 0 0 0.5px rgba(0,0,0,0.06)"
-```
+### 2. `src/components/preview/PageEffects.tsx` — Use explicit page role instead of position
 
-The `border` gives a crisp, visible edge that distinguishes white paper from white background. The `inset` shadow adds a subtle inner depth. Neither can be clipped by the parent's `overflow: hidden`.
+Stop inferring back cover from `isLastPage`. Instead, add a `pageRole` prop:
+- `"back_cover_card"` — render solid color, no bleed margin
+- `"front_cover"` — apply PVC overlay
+- `"body"` — normal page with bleed logic
 
-### Additionally: outer container shadow
+Change the component interface to accept `pageRole?: string` and use it instead of positional checks. The back cover card page gets full edge-to-edge color with no padding.
 
-Add a `box-shadow` to the `HTMLFlipBook` wrapper div (line 168) — this div is NOT clipped by react-pageflip, so a standard drop shadow here will frame the entire book spread:
+### 3. `src/components/preview/FlipBook.tsx` — Pass page role through
 
-```typescript
-boxShadow: "0 2px 8px rgba(0,0,0,0.10)"
-```
+Thread a `pageRoles` array (parallel to `sectionTypes`) from PreviewPanel → DocumentPreview → FlipBook → FlipPage → PageEffects, so each page knows its role explicitly.
+
+### 4. `src/components/preview/previewTypes.ts` — Add `pageRoles` prop
+
+Add `pageRoles?: string[]` to `PreviewComponentProps` and `FlipBookProps`.
+
+### 5. `src/components/preview/DocumentPreview.tsx` — Pass through `pageRoles`
 
 ## Files to edit
 
-1. **`src/components/preview/FlipBook.tsx`** — Change FlipPage shadow to border + inset; add outer shadow to the book container div
+1. **`src/components/preview/previewTypes.ts`** — Add `pageRoles?: string[]` to props interfaces
+2. **`src/components/order/PreviewPanel.tsx`** — Append back cover page, pad to even count, build `pageRoles` array
+3. **`src/components/preview/PageEffects.tsx`** — Accept `pageRole` prop, use it for cover/bleed logic instead of position
+4. **`src/components/preview/FlipBook.tsx`** — Accept and pass `pageRoles`, forward `pageRole` to `PageEffects`
+5. **`src/components/preview/DocumentPreview.tsx`** — Pass `pageRoles` through
 
