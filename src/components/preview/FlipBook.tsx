@@ -1,15 +1,21 @@
 import React, { useRef, useCallback, useEffect, forwardRef, useState } from "react";
 import HTMLFlipBook from "react-pageflip";
 import type { FlipBookProps } from "./previewTypes";
+import type { PreviewEffects } from "./previewTypes";
+import { DEFAULT_PREVIEW_EFFECTS } from "./previewTypes";
 import BindingSpine from "./BindingSpine";
+import PageEffects from "./PageEffects";
 import { FileText, Loader2 } from "lucide-react";
 
 /**
  * Each page must be a forwardRef component for react-pageflip.
  */
-const FlipPage = forwardRef<HTMLDivElement, { url: string; pageNum: number; isColor?: boolean }>(
-  ({ url, pageNum, isColor = true }, ref) => (
-    <div ref={ref} className="bg-card overflow-hidden" style={{ width: "100%", height: "100%" }}>
+const FlipPage = forwardRef<
+  HTMLDivElement,
+  { url: string; pageNum: number; isColor?: boolean; effects: PreviewEffects; pageIndex: number; totalPages: number }
+>(({ url, pageNum, isColor = true, effects, pageIndex, totalPages }, ref) => (
+  <div ref={ref} className="bg-card overflow-hidden" style={{ width: "100%", height: "100%" }}>
+    <PageEffects effects={effects} pageIndex={pageIndex} totalPages={totalPages}>
       {url ? (
         <img
           src={url}
@@ -26,9 +32,9 @@ const FlipPage = forwardRef<HTMLDivElement, { url: string; pageNum: number; isCo
           </div>
         </div>
       )}
-    </div>
-  )
-);
+    </PageEffects>
+  </div>
+));
 FlipPage.displayName = "FlipPage";
 
 export default function FlipBook({
@@ -40,10 +46,12 @@ export default function FlipBook({
   bindingType,
   colorFlags,
   pageAspectRatio,
+  effects,
 }: FlipBookProps) {
   const flipBookRef = useRef<any>(null);
   const [displayPage, setDisplayPage] = useState(0);
   const lastReportedPage = useRef(0);
+  const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
 
   const ratio = pageAspectRatio ?? 0.707; // fallback to A4
   const maxSpreadWidth = width - 40;
@@ -138,6 +146,9 @@ export default function FlipBook({
               url={url}
               pageNum={i + 1}
               isColor={colorFlags?.[i] ?? true}
+              effects={resolvedEffects}
+              pageIndex={i}
+              totalPages={urls.length}
             />
           ))}
         </HTMLFlipBook>

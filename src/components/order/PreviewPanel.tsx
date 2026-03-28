@@ -198,6 +198,7 @@ export default function PreviewPanel({
           onPageChange={setCurrentPage}
           colorFlags={colorFlags}
           pageAspectRatio={pageAspectRatio}
+          effects={effects}
         />
       </div>
 
