@@ -1,47 +1,40 @@
 
+Implement three focused fixes in the preview stack.
 
-# Fix Back Cover & Cover Display Issues
+1. Correct the page model for bound previews
+- Stop padding the page array with a fake trailing blank page just to satisfy cover mode.
+- Build an explicit preview page sequence in `PreviewPanel.tsx`:
+  - front cover = first real page
+  - body pages = middle document pages + tabs/inserts
+  - optional back cover card = appended extra page
+- Track explicit page roles, including a dedicated solo-back state instead of relying on page count tricks.
 
-## Problems
+2. Make FlipBook render true solo cover/back views
+- In `FlipBook.tsx`, stop assuming every non-cover state is a two-page spread.
+- Add logic based on `pageRoles` and current index so:
+  - first page renders as a single right-hand page
+  - last back cover card renders as a single left-hand page
+  - no ghost/blank opposite page is shown in either case
+- Update displayed page numbers and navigation math so the final state does not show “double blank” behavior.
+- If `react-pageflip` cannot fully suppress the empty opposite side, wrap it with a layout mask/overlay so the unused half is visually hidden.
 
-1. **Back cover replaces last document page** — `PageEffects` checks `isLastPage` and renders the navy card color *over* the last document page (page 24). Instead, the back cover should be an **extra page appended** after all document pages.
+3. Fix the binding spine sizing/alignment regression
+- In `FlipBook.tsx` and `BindingSpine.tsx`, align the spine to the actual rendered book height, not the outer wrapper/shadow box.
+- Check the recent page border/shadow/container sizing changes and remove any clipping or height mismatch causing the spine image to stop short at the bottom.
+- Ensure open/closed spine assets still stay centered and stretch full top-to-bottom.
 
-2. **Back cover shows white bleed border** — A solid card cover (navy, black, etc.) is a physical piece of card that goes edge-to-edge. The bleed margin should not apply to it.
+Files to update
+- `src/components/order/PreviewPanel.tsx`
+- `src/components/preview/FlipBook.tsx`
+- `src/components/preview/BindingSpine.tsx`
+- `src/components/preview/previewTypes.ts` if a clearer page-role/page-mode type is needed
 
-3. **Left-hand page showing on cover** — The `showCover={true}` prop tells react-pageflip to show page 0 solo on the right. This should already work, but if the library renders an empty left page, we may need to ensure page count is even (by padding) so the library handles cover mode correctly.
-
-## Solution
-
-### 1. `src/components/order/PreviewPanel.tsx` — Append back cover as extra page
-
-After building the page list from sections/documents, if `effects.backCover !== "none"`, push one additional `PageInfo` entry with an empty thumbnail URL, a `sectionType` of `"back_cover_card"`. This makes the back cover its own page rather than overlaying the last document page.
-
-Also ensure total page count is even by padding with a blank page if needed (react-pageflip requires even pages for proper cover mode, and an odd count causes the empty left-side issue).
-
-### 2. `src/components/preview/PageEffects.tsx` — Use explicit page role instead of position
-
-Stop inferring back cover from `isLastPage`. Instead, add a `pageRole` prop:
-- `"back_cover_card"` — render solid color, no bleed margin
-- `"front_cover"` — apply PVC overlay
-- `"body"` — normal page with bleed logic
-
-Change the component interface to accept `pageRole?: string` and use it instead of positional checks. The back cover card page gets full edge-to-edge color with no padding.
-
-### 3. `src/components/preview/FlipBook.tsx` — Pass page role through
-
-Thread a `pageRoles` array (parallel to `sectionTypes`) from PreviewPanel → DocumentPreview → FlipBook → FlipPage → PageEffects, so each page knows its role explicitly.
-
-### 4. `src/components/preview/previewTypes.ts` — Add `pageRoles` prop
-
-Add `pageRoles?: string[]` to `PreviewComponentProps` and `FlipBookProps`.
-
-### 5. `src/components/preview/DocumentPreview.tsx` — Pass through `pageRoles`
-
-## Files to edit
-
-1. **`src/components/preview/previewTypes.ts`** — Add `pageRoles?: string[]` to props interfaces
-2. **`src/components/order/PreviewPanel.tsx`** — Append back cover page, pad to even count, build `pageRoles` array
-3. **`src/components/preview/PageEffects.tsx`** — Accept `pageRole` prop, use it for cover/bleed logic instead of position
-4. **`src/components/preview/FlipBook.tsx`** — Accept and pass `pageRoles`, forward `pageRole` to `PageEffects`
-5. **`src/components/preview/DocumentPreview.tsx`** — Pass `pageRoles` through
-
+Technical notes
+- The current bug is coming from using an even-page padding strategy plus generic spread math:
+```text
+front cover should be: [empty][page 1]
+middle spreads should be: [left][right]
+back cover card should be: [back cover][empty]
+```
+- Right now the data model creates extra blank states and the renderer treats them like normal spreads.
+- The fix is to model/display solo states explicitly rather than faking them with padded pages.
