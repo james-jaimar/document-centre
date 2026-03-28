@@ -119,10 +119,6 @@ export default function PreviewPanel({
     [pages]
   );
 
-  const colorFlags = useMemo(
-    () => pages.map((p) => p.isColor),
-    [pages]
-  );
 
   // Derive aspect ratio from the first document's actual dimensions
   const pageAspectRatio = useMemo(() => {
