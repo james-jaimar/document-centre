@@ -171,6 +171,35 @@ export default function OrderFiles() {
     [sections, updateSection]
   );
 
+  // Tab management handlers
+  const handleAddTab = useCallback(
+    async (sortOrder: number) => {
+      if (!orderItem) return;
+      await addSection.mutateAsync({
+        order_item_id: orderItem.id,
+        document_id: null,
+        section_type: "tab",
+        sort_order: sortOrder,
+      });
+    },
+    [orderItem, addSection]
+  );
+
+  const handleDeleteTab = useCallback(
+    async (sectionId: string) => {
+      if (!orderItem) return;
+      await deleteSection.mutateAsync({ id: sectionId, orderItemId: orderItem.id });
+    },
+    [orderItem, deleteSection]
+  );
+
+  const handleMoveTab = useCallback(
+    async (sectionId: string, newSortOrder: number) => {
+      await updateSection.mutateAsync({ id: sectionId, sort_order: newSortOrder });
+    },
+    [updateSection]
+  );
+
   const canContinue = sections.length > 0;
 
   if (loading) {
