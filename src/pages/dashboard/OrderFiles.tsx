@@ -210,7 +210,7 @@ export default function OrderFiles() {
         {/* Middle: Preview + Actions */}
         <div className="hidden lg:block">
           <div className="glass-card p-4 sticky top-24 space-y-4">
-            <DocumentPreviewThumb
+            <InlinePreviewThumb
               document={previewDoc}
               onClick={() => lightboxThumbnails.length > 0 && setLightboxOpen(true)}
             />
