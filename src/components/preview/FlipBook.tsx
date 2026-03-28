@@ -162,13 +162,45 @@ export default function FlipBook({
 
   // Calculate displayed page numbers for the spread
   const isShowingCover = displayPage === 0;
+  const isShowingBackCover = displayPage >= urls.length - 2;
+  const hasBackCoverCard = pageRoles?.includes("back_cover_card");
   const leftPageNum = isShowingCover ? null : displayPage;
   const rightPageNum = isShowingCover ? 1 : displayPage + 1;
 
+  // Determine if we need to mask an empty side
+  const maskLeft = isShowingCover; // front cover = solo right
+  const maskRight = isShowingBackCover && hasBackCoverCard; // back cover card = solo left
+
   return (
     <div className="flex flex-col items-center justify-center gap-2 overflow-hidden" style={{ width, height }}>
-      <div className="relative flex items-center justify-center overflow-hidden" style={{ minHeight: pageHeight, boxShadow: "0 2px 12px rgba(0,0,0,0.15)" }}>
-        <BindingSpine bindingType={bindingType} height={pageHeight} isOpen={displayPage > 0} />
+      <div className="relative flex items-center justify-center" style={{ minHeight: pageHeight }}>
+        {/* Outer drop shadow wrapper — not clipped */}
+        <div className="relative" style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.15)" }}>
+          <BindingSpine bindingType={bindingType} height={pageHeight} isOpen={displayPage > 0} />
+
+          {/* Mask left half when showing front cover (solo right page) */}
+          {maskLeft && (
+            <div
+              className="absolute top-0 left-0 z-40 pointer-events-none"
+              style={{
+                width: pageWidth,
+                height: pageHeight,
+                backgroundColor: "hsl(var(--background))",
+              }}
+            />
+          )}
+
+          {/* Mask right half when showing back cover card (solo left page) */}
+          {maskRight && (
+            <div
+              className="absolute top-0 right-0 z-40 pointer-events-none"
+              style={{
+                width: pageWidth,
+                height: pageHeight,
+                backgroundColor: "hsl(var(--background))",
+              }}
+            />
+          )}
 
         {/* @ts-ignore — react-pageflip types are imprecise */}
         <HTMLFlipBook
@@ -223,14 +255,15 @@ export default function FlipBook({
             );
           })}
         </HTMLFlipBook>
+        </div>
       </div>
 
       {/* Page numbers below the spread */}
       <div className="flex items-center justify-center gap-8 text-xs text-muted-foreground">
-        {!isShowingCover && leftPageNum !== null && (
+        {!maskLeft && !isShowingCover && leftPageNum !== null && (
           <span className="w-20 text-center">{leftPageNum}</span>
         )}
-        {rightPageNum <= urls.length && (
+        {!maskRight && rightPageNum <= urls.length && (
           <span className="w-20 text-center">{rightPageNum}</span>
         )}
       </div>
