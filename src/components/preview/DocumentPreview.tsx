@@ -14,6 +14,7 @@ interface DocumentPreviewProps {
   height: number;
   currentPage?: number;
   onPageChange?: (page: number) => void;
+  colorFlags?: boolean[];
 }
 
 const BOUND_TYPES = new Set([
