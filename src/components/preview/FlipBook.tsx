@@ -255,6 +255,7 @@ export default function FlipBook({
             );
           })}
         </HTMLFlipBook>
+        </div>
       </div>
 
       {/* Page numbers below the spread */}
