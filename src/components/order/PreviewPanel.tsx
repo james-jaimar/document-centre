@@ -202,9 +202,9 @@ export default function PreviewPanel({
   const duplexStatus = useMemo(() => {
     if (totalPages === 0) return "";
     const idx = visibleLeft ?? visibleRight ?? 0;
-    const sec = pages[idx]?.section;
+    const sec = finalPages[idx]?.section;
     return sec?.is_duplex ? "Duplex" : "Simplex";
-  }, [visibleLeft, visibleRight, pages, totalPages]);
+  }, [visibleLeft, visibleRight, finalPages, totalPages]);
 
   // Section label for visible pages
   const sectionLabel = useMemo(() => {
