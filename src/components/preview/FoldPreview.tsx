@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { FoldPreviewProps } from "./previewTypes";
 import { FOLD_GEOMETRY } from "./previewTypes";
 import { Button } from "@/components/ui/button";
-import { Unfold, Fold } from "lucide-react";
+import { FoldVertical, UnfoldVertical } from "lucide-react";
 import { FileText } from "lucide-react";
 
 export default function FoldPreview({
