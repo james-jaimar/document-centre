@@ -254,6 +254,15 @@ export default function PreviewPanel({
   const pageLabels = useMemo(() => finalPages.map((p) => p.label ?? ""), [finalPages]);
   const pageColors = useMemo(() => finalPages.map((p) => p.color ?? ""), [finalPages]);
 
+  // Compute display page numbers — sequential 1-based labels for the physical face sequence
+  const displayPageNumbers = useMemo(() => {
+    let num = 0;
+    return finalPages.map((_, i) => {
+      num++;
+      return num;
+    });
+  }, [finalPages]);
+
   // Compute tab positions for persistent overlay
   const tabPositions = useMemo((): TabPosition[] => {
     const positions: TabPosition[] = [];
