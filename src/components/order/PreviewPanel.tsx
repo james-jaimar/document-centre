@@ -225,6 +225,26 @@ export default function PreviewPanel({
       roles.splice(1, 0, "pvc_cover_back");
     }
 
+    // ── Ensure tab/insert fronts land on even indices (RIGHT side) ──
+    // With showCover={true}, even indices > 0 are right-hand pages.
+    // If a tab or insert front lands on an odd index, it would show on
+    // the LEFT — physically impossible. Insert a blank before it.
+    if (isBound) {
+      let i = 0;
+      while (i < fp.length) {
+        if ((roles[i] === "tab" || roles[i] === "insert") && i % 2 !== 0) {
+          fp.splice(i, 0, {
+            thumbnailUrl: "", pageIndex: -1, documentName: "",
+            section: undefined, isColor: true,
+          });
+          roles.splice(i, 0, "blank_back");
+          i += 3; // skip past inserted blank + tab front + tab back
+        } else {
+          i++;
+        }
+      }
+    }
+
     // ── Physical back cover card ──
     const hasBackCover = isBound && effects?.backCover && effects.backCover !== "none";
     if (isBound) {
