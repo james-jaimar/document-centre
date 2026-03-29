@@ -149,6 +149,7 @@ export default function FlipBook({
   effects,
   sectionTypes,
   pageRoles,
+  bleedFlags,
 }: FlipBookProps) {
   const flipBookRef = useRef<any>(null);
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
