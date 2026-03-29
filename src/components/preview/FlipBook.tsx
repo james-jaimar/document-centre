@@ -21,6 +21,7 @@ const CONTENT_LESS_ROLES = new Set([
   "back_cover_card",
   "blank_back",
   "inside_back_blank",
+  "insert",
 ]);
 
 /**
