@@ -66,6 +66,7 @@ export default function SectionList({
       {sections.map((section, idx) => {
         const doc = getDoc(section.document_id);
         const pageCount = doc?.page_count ?? 0;
+        const isInsertOrTab = section.section_type === "insert" || section.section_type === "tab";
 
         return (
           <div
@@ -79,20 +80,35 @@ export default function SectionList({
             )}
           >
             <div className="flex items-start justify-between gap-2">
-              {/* Thumbnail */}
-              {(() => {
-                const thumbs = doc?.thumbnail_urls;
-                const firstThumb =
-                  Array.isArray(thumbs) && (thumbs as string[]).length > 0
-                    ? (thumbs as string[])[0]
-                    : null;
-                return (
-                  <div className="h-10 w-7 bg-muted/50 border border-border/40 overflow-hidden shrink-0 flex items-center justify-center">
-                    {firstThumb ? (
-                      <SectionThumbnail storagePath={firstThumb} isColor={section.is_color} />
-                    ) : (
-                      <FileText className="h-4 w-4 text-muted-foreground/40" />
-                    )}
+              {/* Thumbnail or colored indicator */}
+              {isInsertOrTab ? (
+                <div className="h-10 w-7 border border-border/40 overflow-hidden shrink-0 flex items-center justify-center rounded-sm"
+                  style={{
+                    backgroundColor: section.section_type === "tab" ? "#e0e7ff" : "#f0fdf4",
+                  }}
+                >
+                  <span className="text-[8px] font-bold text-muted-foreground/60">
+                    {section.section_type === "tab" ? "TAB" : "INS"}
+                  </span>
+                </div>
+              ) : (
+                (() => {
+                  const thumbs = doc?.thumbnail_urls;
+                  const firstThumb =
+                    Array.isArray(thumbs) && (thumbs as string[]).length > 0
+                      ? (thumbs as string[])[0]
+                      : null;
+                  return (
+                    <div className="h-10 w-7 bg-muted/50 border border-border/40 overflow-hidden shrink-0 flex items-center justify-center">
+                      {firstThumb ? (
+                        <SectionThumbnail storagePath={firstThumb} isColor={section.is_color} />
+                      ) : (
+                        <FileText className="h-4 w-4 text-muted-foreground/40" />
+                      )}
+                    </div>
+                  );
+                })()
+              )}
                   </div>
                 );
               })()}
