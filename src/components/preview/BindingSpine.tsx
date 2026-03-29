@@ -38,9 +38,9 @@ export default function BindingSpine({ bindingType, height, isOpen = false, posi
 
     return (
       <div
-        className="absolute top-0 left-1/2 z-30 pointer-events-none"
+        className="absolute top-0 z-30 pointer-events-none"
         style={{
-          transform: "translateX(-50%)",
+          ...positionStyle,
           width: 36,
           height,
         }}
