@@ -1,42 +1,30 @@
 
 
-# Fix Insert Physics + Prominent Tab Rendering
+# Auto-Open Drawer + Visual Highlight on Tab/Insert Selection
 
-## Problem 1: Breaking the laws of physics
+## What needs to change
 
-In a duplex (double-sided) document, each physical sheet has two faces. Pages 1-2 = sheet 1, pages 3-4 = sheet 2, etc. Inserting a colored sheet "after page 9" would split sheet 5 in half — physically impossible.
+Two UX improvements so non-technical users discover the management UI immediately:
 
-**Current code** in `buildPageSequence` injects anchored items after every body page regardless of whether that page is a sheet boundary:
+### 1. Auto-open the drawer when tabs or inserts are first enabled
 
-```
-pageNum++;
-push(body page);
-if (!duplex) push(blank_back);  // simplex = every page is a sheet boundary
-inject anchored items for pageNum;  // BUG: duplex page 9 is NOT a sheet boundary
-```
+In `OrderBuild.tsx`, add a `useEffect` that watches `tabInfo` and `insertEnabled`. When either transitions from falsy to truthy (user selects a tab or insert option for the first time), automatically call `setDrawerOpen(true)`.
 
-**Fix — two layers:**
+Track previous values with a ref to detect the transition — only auto-open on change, not on page load with existing selections.
 
-1. **Drawer UI (`TabInsertDrawer.tsx`)**: Only offer valid "after page" positions. For duplex sections, only show even page numbers (sheet backs). For simplex, every page is valid. This prevents the user from ever selecting an impossible position.
+### 2. Highlight the "Manage Tabs & Inserts" button
 
-2. **Preview engine (`PreviewPanel.tsx`)**: As a safety net, if an anchor falls on the front face of a duplex sheet (odd page), auto-snap it forward to the next even page before injection. This handles legacy data.
+When the drawer is closed and tabs/inserts are enabled, apply an animated attention style to the button — a green/primary pulse or highlighted border — so users know where to go. Once clicked (drawer opened), remove the highlight.
 
-## Problem 2: Tiny tabs
+Use a `hasOpenedDrawer` state flag. While `false` and tabs/inserts are enabled, the button gets `animate-pulse` plus a colored ring. Set to `true` once the drawer opens.
 
-Current tab protrusion: 18px wide × 32px tall with 7px font. Barely visible.
+## File to edit
 
-**Fix in `FlipBook.tsx`**: Make tabs much more prominent — wider (28-30px), taller (48-50px), with larger readable label text (9-10px). Add a subtle paper texture background. The tab should look like a physical tab divider protruding from the page edge, matching the Mimeo reference.
-
-## Files to edit
-
-- `src/components/order/TabInsertDrawer.tsx` — filter "After Page" dropdown to only show sheet-boundary pages
-- `src/components/order/PreviewPanel.tsx` — snap non-boundary anchors to next valid position
-- `src/components/preview/FlipBook.tsx` — enlarge tab protrusion dimensions and label styling
+- `src/pages/dashboard/OrderBuild.tsx` — add auto-open effect + highlight state on the button
 
 ## Expected result
 
-- User can only place inserts/tabs at physically valid positions (between sheets)
-- Duplex documents show only even pages in the dropdown (After Page 2, 4, 6, 8...)
-- Simplex documents show all pages (every page is a sheet boundary)
-- Tabs are prominently visible with readable labels protruding from the page edge
+- Selecting "5-Tab Dividers" from the dropdown immediately slides open the right drawer
+- The "Manage Tabs & Inserts" button pulses with a highlight until first clicked
+- Returning to the page with existing tabs does not auto-open (only triggers on fresh selection)
 
