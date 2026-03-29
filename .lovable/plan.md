@@ -1,42 +1,122 @@
 
+Fix the preview by removing the conflicting “fake material” shortcuts and making the flipbook render one deterministic physical face per slot.
 
-# Fix PVC Cover White-at-Rest + Eliminate Margin Drift
+## What I found
 
-## Two bugs
+### 1. The clear/frosted PVC front bug has a concrete root cause
+In `FlipBook.tsx`, this logic is wrong:
 
-### 1. PVC cover front renders solid white until hover
-`react-pageflip` renders pages to an internal canvas for the static (non-animating) state. The `PageEffects` wrapper for `pvc_cover_front` sets `backgroundColor: "transparent"` — but transparent on a canvas = white. The artwork image is there but the canvas doesn't pick it up at paint time because the background is transparent.
+```ts
+const isMaterial = pageRole === "back_cover_card" || pageRole === "inside_back_cover_card" || pageRole === "pvc_cover_front" || pageRole === "pvc_cover_back";
+...
+} else if (isMaterial || isBlankPaper) {
+  content = null;
+}
+```
 
-**Fix**: Remove `backgroundColor: "transparent"` and instead don't set any explicit background on the PVC wrapper. The image itself fills the space. Also ensure the image for PVC uses `object-cover` instead of `object-contain` so there are no gaps for white to leak through.
+That means `pvc_cover_front` never receives its image content at all. So the static page cannot show the printed cover through the PVC. The reason it seems to “work on hover” is almost certainly that the pageflip animation is revealing the next physical page underneath, not because the PVC page itself is rendering correctly.
 
-### 2. Margins jump and become asymmetric after option changes
-The spacing logic is split across TWO layers:
-- **FlipPage** (line 74): applies `border: 1px solid rgba(0,0,0,0.15)` on non-material pages
-- **PageEffects** (line 158): applies `padding: 3%` for bleed margin
+So yes: earlier logic is still overriding the newer intent.
 
-The 1px border in FlipPage shrinks the available area by 2px total, making the PageEffects padding calculation relative to a slightly smaller box. When `react-pageflip` remounts (bookKey change), its internal size calculations can interact differently with this border, causing the asymmetric appearance. The border is also rendered at the FlipPage level which is captured by the library's canvas — if the library re-measures after mount, the border + padding combination drifts.
+### 2. The margin drift is likely coming from page content scaling, not just border styling
+The current preview uses:
+- `object-cover` for `pvc_cover_front`
+- `object-contain` for standard pages
+- `padding: "3%"` only on some roles
+- special casing for blank/material pages
+- forced remounts via `bookKey`
 
-**Fix**: Move ALL visual edge styling into `PageEffects` only. Remove the border from FlipPage entirely. In PageEffects, for standard paper pages, render the border as an inset box-shadow (which doesn't affect layout) and keep the padding for bleed. This makes the entire visual treatment happen in one place with zero layout side-effects.
+That creates multiple rendering paths for page content, and they do not share one consistent “printable area” box. When users change options repeatedly, the library remounts cleanly, but the page content still lands in different layout models depending on role. That is why the borders look like they jump rather than simply turn on/off.
 
-## Changes
+### 3. The preview is mixing two concepts that should be separated
+Right now the code partially treats a page as:
+- a physical sheet face
+- a visual material effect
+- a thumbnail image container
 
-### `src/components/preview/FlipBook.tsx`
-- Remove `border` and `boxShadow` from FlipPage's outer div style (line 74-76) — make it a plain container for ALL page types
-- The outer div becomes just `width/height: 100%, position: relative, overflow: hidden` with no visual styling
+Those should be separate concerns. At the moment they are coupled in `FlipBook.tsx`, so some roles accidentally suppress content while others apply different fit rules. That is the architectural conflict causing these repeated regressions.
 
-### `src/components/preview/PageEffects.tsx`
-- For standard pages (body, front_cover): add `boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.15), inset 0 0 8px rgba(0,0,0,0.10)"` to the outer wrapper — this gives the same visual border without affecting layout
-- For `pvc_cover_front`: remove `backgroundColor: "transparent"`, just let the content fill naturally
-- For material roles: no inset shadow (they already bypass)
-- For blank paper roles: add the same inset shadow as standard pages
+### 4. The library docs support a cleaner approach
+The `react-pageflip` / StPageFlip docs indicate the component works by loading/updating HTML page elements, and it is very sensitive to DOM structure at mount/update time. Best practice here is to keep each page DOM simple and stable, rather than switching between materially different internal structures based on scattered conditions.
 
-### Result
-- Border is purely cosmetic (inset shadow), so it never interacts with padding calculations
-- PVC front shows artwork through the overlay at rest, not white
-- All visual styling lives in ONE component — no split between FlipPage and PageEffects
-- Margin consistency is guaranteed because there's only one source of spacing
+## Implementation plan
 
-## Files to edit
+### 1. Fix the immediate PVC front rendering bug
+In `src/components/preview/FlipBook.tsx`:
+- stop treating `pvc_cover_front` as a null-content material page
+- only true non-image faces should render `content = null`:
+  - `pvc_cover_back`
+  - `inside_back_cover_card`
+  - `back_cover_card`
+  - intentional blanks
+- `pvc_cover_front` must always render the front artwork image
+
+This should fix the “opaque until hover” issue at the real source.
+
+### 2. Introduce one shared printable-area wrapper in `PageEffects`
+Refactor `src/components/preview/PageEffects.tsx` so standard paper pages and printed cover pages use one consistent internal layout:
+- outer page shell
+- inner printable area
+- optional bleed padding
+- image/content rendered inside that same box every time
+
+That removes the current split where some pages are laid out by image fit rules and others by wrapper logic.
+
+### 3. Stop using different image fit strategies unless physically required
+In `FlipBook.tsx`, simplify image rendering:
+- standard printed pages and printed front cover should use the same fit model
+- only PVC/card material-only faces should bypass image rendering
+- do not use `object-cover` just for `pvc_cover_front` unless the physical trim model explicitly requires cropping
+
+Right now this is a strong candidate for the asymmetrical “margin jump” effect.
+
+### 4. Make `PageEffects` the single source of truth for white-edge logic
+In `PageEffects.tsx`:
+- centralize all bleed/no-bleed spacing there
+- ensure material pages never inherit paper spacing
+- ensure blank backs use the same paper shell as regular paper pages
+- keep card covers edge-to-edge with no paper inset path at all
+
+The goal is: one function decides margins, once.
+
+### 5. Tighten physical role semantics in `PreviewPanel`
+In `src/components/order/PreviewPanel.tsx`:
+- keep generating explicit physical roles
+- verify that every inserted page role maps to exactly one render path
+- avoid any fallback where a physical face becomes generic `body` unless that is truly intended
+
+This prevents future regressions where a new role accidentally falls into the wrong visual branch.
+
+### 6. Reduce flipbook state ambiguity
+In `FlipBook.tsx`:
+- keep the deterministic `bookKey`
+- but make sure page DOM for each role is structurally stable across option changes
+- avoid “same role, different DOM tree shape” behavior where possible
+
+That aligns better with how `react-pageflip` expects HTML pages to behave.
+
+## Files to update
 - `src/components/preview/FlipBook.tsx`
 - `src/components/preview/PageEffects.tsx`
+- `src/components/order/PreviewPanel.tsx`
 
+## Expected result
+- clear/frosted PVC front is visibly translucent at rest, not only during hover/turn
+- the printed front artwork is always present on the PVC front face
+- white margins stop “jumping” because all printed pages use one consistent printable-area layout
+- blank simplex backs remain plain paper
+- inside back card and outer back card stay fully edge-to-edge
+- repeated option changes remain visually stable because each physical role has one deterministic render path
+
+## Technical notes
+Root-cause bug identified:
+```ts
+// Current bug in FlipBook.tsx
+const isMaterial = ... || pageRole === "pvc_cover_front";
+...
+else if (isMaterial || isBlankPaper) {
+  content = null; // drops the PVC front artwork entirely
+}
+```
+
+This is the first thing to remove, because it proves the latest intended behavior is currently being bypassed by earlier branching logic.
