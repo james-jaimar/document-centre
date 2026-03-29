@@ -1,12 +1,10 @@
 import React, { useRef, useCallback, useEffect, forwardRef, useState } from "react";
 import HTMLFlipBook from "react-pageflip";
-import type { FlipBookProps } from "./previewTypes";
-import type { PreviewEffects } from "./previewTypes";
-import { DEFAULT_PREVIEW_EFFECTS } from "./previewTypes";
+import type { FlipBookProps, PreviewEffects } from "./previewTypes";
+import { DEFAULT_PREVIEW_EFFECTS, TAB_COLORS } from "./previewTypes";
 import BindingSpine from "./BindingSpine";
 import PageEffects from "./PageEffects";
 import { FileText, Loader2 } from "lucide-react";
-import { TAB_COLORS } from "./previewTypes";
 
 /**
  * Each page must be a forwardRef component for react-pageflip.
@@ -27,9 +25,20 @@ const FlipPage = forwardRef<
   }
 >(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, tabIndex = 0, tabTotal = 1, pageRole }, ref) => {
   const isTab = sectionType === "tab";
+  const isCardCover = pageRole === "back_cover_card";
 
   return (
-    <div ref={ref} className="overflow-hidden" style={{ width: "100%", height: "100%", position: "relative", border: pageRole === "back_cover_card" ? "none" : "1px solid rgba(0,0,0,0.15)", boxShadow: pageRole === "back_cover_card" ? "none" : "inset 0 0 8px rgba(0,0,0,0.10), inset 0 0 0 0.5px rgba(0,0,0,0.08)" }}>
+    <div
+      ref={ref}
+      className="overflow-hidden"
+      style={{
+        width: "100%",
+        height: "100%",
+        position: "relative",
+        border: isCardCover ? "none" : "1px solid rgba(0,0,0,0.15)",
+        boxShadow: isCardCover ? "none" : "inset 0 0 8px rgba(0,0,0,0.10), inset 0 0 0 0.5px rgba(0,0,0,0.08)",
+      }}
+    >
       <PageEffects effects={effects} pageIndex={pageIndex} totalPages={totalPages} pageRole={pageRole}>
         {isTab ? (
           <div className="w-full h-full flex items-center justify-center bg-card">
@@ -110,7 +119,7 @@ export default function FlipBook({
   const lastReportedPage = useRef(0);
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
 
-  const ratio = pageAspectRatio ?? 0.707; // fallback to A4
+  const ratio = pageAspectRatio ?? 0.707;
   const maxSpreadWidth = width - 40;
   const maxPageWidth = Math.floor(maxSpreadWidth / 2);
   const maxPageHeight = height - 60;
@@ -136,13 +145,11 @@ export default function FlipBook({
     [onPageChange]
   );
 
-  // Sync programmatic page changes — use turnToPage for large jumps
   useEffect(() => {
     const pageFlip = flipBookRef.current?.pageFlip?.();
     if (!pageFlip) return;
     const current = pageFlip.getCurrentPageIndex();
     if (current === currentPage) return;
-
     const distance = Math.abs(current - currentPage);
     if (distance > 2) {
       pageFlip.turnToPage(currentPage);
@@ -159,62 +166,62 @@ export default function FlipBook({
     );
   }
 
-  // Determine solo cover states based on displayPage and pageRoles
-  const hasBackCoverCard = pageRoles?.includes("back_cover_card");
-  const lastPageIndex = urls.length - 1;
-  const isShowingFrontCover = displayPage === 0;
-  const isShowingBackCover = hasBackCoverCard && displayPage >= lastPageIndex;
-  // Also solo when last page without back cover card (library treats last as solo with showCover)
-  const isShowingLastSolo = !hasBackCoverCard && displayPage >= lastPageIndex;
+  // ── Solo-page detection using explicit page roles ──
+  const lastIdx = urls.length - 1;
+  const currentRole = pageRoles?.[displayPage];
+  const lastRole = pageRoles?.[lastIdx];
 
+  const isShowingFrontCover = displayPage === 0;
+  const isShowingBackCover = lastRole === "back_cover_card" && displayPage >= lastIdx;
+  const isShowingLastSolo = lastRole !== "back_cover_card" && displayPage >= lastIdx;
   const isSoloPage = isShowingFrontCover || isShowingBackCover || isShowingLastSolo;
 
-  // Viewport cropping model:
-  // The library's canvas is always 2*pageWidth wide.
-  // - Front cover: library renders it on the RIGHT side of the canvas.
-  //   We crop to show only the right half → viewport width = pageWidth, scroll to right half.
-  // - Back cover: library renders it on the LEFT side of the canvas.
-  //   We crop to show only the left half → viewport width = pageWidth, show left half.
-  // - Spread: show full canvas → viewport width = 2*pageWidth.
+  // ── Layout geometry ──
+  // The library always renders a canvas 2*pageWidth wide.
+  // showCover=true makes first page appear on RIGHT half, last page on LEFT half.
+  // For solo pages we crop the viewport to pageWidth and shift the canvas.
   const spreadWidth = pageWidth * 2;
   const viewportWidth = isSoloPage ? pageWidth : spreadWidth;
 
-  // For front cover, the page is on the right half of the canvas,
-  // so we need to shift the canvas left by pageWidth to bring it into view.
-  // For back cover, the page is on the left half — no shift needed.
-  // For spreads, no shift.
-  let canvasOffsetX = 0;
-  if (isShowingFrontCover) {
-    canvasOffsetX = -pageWidth;
-  }
+  // Front cover: page is on right half → shift canvas left to bring it into view
+  // Back cover: page is on left half → no shift needed
+  // Spread: no shift
+  const canvasOffsetX = isShowingFrontCover ? -pageWidth : 0;
 
-  // Page numbers for display
-  const leftPageNum = isShowingFrontCover ? null : displayPage;
-  const rightPageNum = isShowingFrontCover ? 1 : displayPage + 1;
+  // ── Spine position relative to the sized wrapper ──
+  // The wrapper div below is exactly viewportWidth wide with position:relative,
+  // so BindingSpine's absolute positioning works correctly against the visible area.
+  const spinePosition = isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center";
 
   return (
     <div className="flex flex-col items-center justify-center gap-2 overflow-hidden" style={{ width, height }}>
-      <div className="relative flex items-center justify-center" style={{ minHeight: pageHeight }}>
-        {/* Binding spine — anchored to the outer stage, always visible for bound products */}
+      {/* Sized wrapper: exactly viewportWidth so BindingSpine anchors correctly */}
+      <div
+        style={{
+          width: viewportWidth,
+          height: pageHeight,
+          position: "relative",
+          transition: "width 0.4s ease-in-out",
+        }}
+      >
+        {/* Binding spine — positioned relative to this exact-width wrapper */}
         <BindingSpine
           bindingType={bindingType}
           height={pageHeight}
           isOpen={!isSoloPage}
-          position={isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center"}
+          position={spinePosition}
         />
 
-        {/* Viewport: crops the canvas to hide the ghost half on solo pages */}
+        {/* Viewport: clips the library's full-width canvas */}
         <div
           style={{
-            width: viewportWidth,
-            height: pageHeight,
+            width: "100%",
+            height: "100%",
             overflow: "hidden",
             position: "relative",
-            transition: "width 0.4s ease-in-out",
-            boxShadow: "0 2px 12px rgba(0,0,0,0.15)",
           }}
         >
-          {/* Canvas wrapper: shifts the library's full-width canvas within the viewport */}
+          {/* Canvas wrapper: shifts the 2*pageWidth canvas within the viewport */}
           <div
             style={{
               transform: `translateX(${canvasOffsetX}px)`,
@@ -281,11 +288,16 @@ export default function FlipBook({
 
       {/* Page numbers below the spread */}
       <div className="flex items-center justify-center gap-8 text-xs text-muted-foreground">
-        {!isShowingFrontCover && leftPageNum !== null && (
-          <span className="w-20 text-center">{leftPageNum}</span>
+        {!isShowingFrontCover && displayPage > 0 && (
+          <span className="w-20 text-center">{displayPage}</span>
         )}
-        {!(isShowingBackCover || isShowingLastSolo) && rightPageNum <= urls.length && (
-          <span className="w-20 text-center">{rightPageNum}</span>
+        {!isSoloPage && displayPage + 1 < urls.length && (
+          <span className="w-20 text-center">{displayPage + 1}</span>
+        )}
+        {isSoloPage && (
+          <span className="w-20 text-center">
+            {isShowingFrontCover ? 1 : urls.length}
+          </span>
         )}
       </div>
     </div>
