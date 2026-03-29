@@ -51,6 +51,10 @@ interface PageEffectsProps {
   allowBleed: boolean;
   /** Fixed pixel inset for non-bleed pages */
   bleedInsetPx: number;
+  /** Optional label for tab/insert pages */
+  label?: string;
+  /** Optional color slug for insert pages */
+  color?: string;
 }
 
 /**
