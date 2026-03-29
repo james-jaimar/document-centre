@@ -53,10 +53,13 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
   const role = pageRole ?? (pageIndex === 0 ? "front_cover" : "body");
   const isMaterial = MATERIAL_ROLES.has(role);
 
+  // ── Inset shadow for paper pages (cosmetic only, no layout impact) ──
+  const paperShadow = "inset 0 0 0 1px rgba(0,0,0,0.15), inset 0 0 8px rgba(0,0,0,0.10)";
+
   // ── PVC cover front: artwork + PVC overlay ──
   if (role === "pvc_cover_front") {
     return (
-      <div className="relative w-full h-full" style={{ backgroundColor: "transparent" }}>
+      <div className="relative w-full h-full">
         <div className="w-full h-full relative">
           {children}
           {effects.frontCover === "clear_pvc" && (
