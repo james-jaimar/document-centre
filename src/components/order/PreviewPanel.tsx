@@ -374,6 +374,7 @@ export default function PreviewPanel({
           bleedFlags={bleedFlags}
           pageLabels={pageLabels}
           pageColors={pageColors}
+          tabPositions={tabPositions}
         />
       </div>
 

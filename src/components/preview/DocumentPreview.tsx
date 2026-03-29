@@ -101,10 +101,11 @@ export default function DocumentPreview({
     bleedFlags,
     pageLabels,
     pageColors,
+    tabPositions,
   };
 
   if (BOUND_TYPES.has(productType)) {
-    return <FlipBook {...commonProps} bindingType={getBindingType(productType)} />;
+    return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} />;
   }
 
   if (FOLD_TYPES.has(productType)) {

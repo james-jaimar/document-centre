@@ -66,6 +66,8 @@ export interface PreviewComponentProps {
   pageLabels?: string[];
   /** Per-page color (e.g. insert sheet color slug) */
   pageColors?: string[];
+  /** Tab positions for persistent overlay rendering */
+  tabPositions?: TabPosition[];
 }
 
 /** Multi-colour tab cycling palette */

@@ -137,6 +137,26 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
     );
   }
 
+  // ── Tab divider front: light gray card with label ──
+  if (role === "tab") {
+    return (
+      <div className="w-full h-full" style={{ backgroundColor: TAB_CARD_COLOR, boxShadow: PAPER_SHADOW }}>
+        <div className="w-full h-full flex items-center justify-center">
+          <div className="text-center opacity-30">
+            <p style={{ fontSize: 11, fontWeight: 600, color: "#555" }}>{label || "TAB"}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Tab divider back: plain gray card ──
+  if (role === "tab_back") {
+    return (
+      <div className="w-full h-full" style={{ backgroundColor: TAB_CARD_COLOR, boxShadow: PAPER_SHADOW }} />
+    );
+  }
+
   // ── 4a. Insert sheet back: plain paper same color ──
   if (role === "insert_back") {
     const insertBg = INSERT_COLORS[color || "white"] ?? INSERT_COLORS.white;
