@@ -171,8 +171,10 @@ export default function FlipBook({
       u: urls,
       r: pageRoles,
       s: sectionTypes,
+      l: pageLabels,
+      c: pageColors,
     }),
-    [urls, pageRoles, sectionTypes]
+    [urls, pageRoles, sectionTypes, pageLabels, pageColors]
   );
 
   // ── FIXED internal resolution — never changes ──
