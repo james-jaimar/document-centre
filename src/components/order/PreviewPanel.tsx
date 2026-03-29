@@ -243,6 +243,26 @@ export default function PreviewPanel({
   const pageLabels = useMemo(() => finalPages.map((p) => p.label ?? ""), [finalPages]);
   const pageColors = useMemo(() => finalPages.map((p) => p.color ?? ""), [finalPages]);
 
+  // Compute tab positions for persistent overlay
+  const tabPositions = useMemo((): TabPosition[] => {
+    const positions: TabPosition[] = [];
+    const tabRoleIndices = computedPageRoles
+      .map((r, i) => (r === "tab" ? i : -1))
+      .filter((i) => i >= 0);
+    const tabTotal = tabRoleIndices.length;
+    tabRoleIndices.forEach((pageIdx, tabIdx) => {
+      const page = finalPages[pageIdx];
+      positions.push({
+        pageIndex: pageIdx,
+        label: page?.label || `Tab ${tabIdx + 1}`,
+        tabIndex: tabIdx,
+        tabTotal,
+        color: page?.color || "",
+      });
+    });
+    return positions;
+  }, [computedPageRoles, finalPages]);
+
   const bleedFlags = useMemo(() => {
     const bleedScope = effects?.bleed ?? "none";
     return computedPageRoles.map((role) => {
