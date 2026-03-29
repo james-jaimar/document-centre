@@ -410,6 +410,25 @@ export default function OrderBuild() {
           <PreviewPanel documents={documents} sections={sections} productType={productType} effects={previewEffects} />
         </div>
       </div>
+      {/* Tab/Insert Drawer */}
+      <TabInsertDrawer
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        sections={sections}
+        documents={documents}
+        orderItemId={orderItemId}
+        tabEnabled={!!tabInfo}
+        tabCount={tabInfo?.count ?? 0}
+        isMultiColor={tabInfo?.multiColor ?? false}
+        onAddTab={handleAddTab}
+        onDeleteTab={handleDeleteTab}
+        onMoveTab={handleMoveTab}
+        onUpdateTabLabel={handleUpdateTabLabel}
+        insertEnabled={insertEnabled}
+        onAddInsert={handleAddInsert}
+        onDeleteInsert={handleDeleteInsert}
+        onMoveInsert={handleMoveInsert}
+      />
     </div>
   );
 }
