@@ -115,8 +115,6 @@ export default function FlipBook({
   pageRoles,
 }: FlipBookProps) {
   const flipBookRef = useRef<any>(null);
-  const [displayPage, setDisplayPage] = useState(0);
-  const lastReportedPage = useRef(0);
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
 
   // Build a stable key that changes when ANY rendering-critical input changes.
@@ -151,10 +149,7 @@ export default function FlipBook({
 
   const handleFlip = useCallback(
     (e: any) => {
-      const newPage = e.data;
-      setDisplayPage(newPage);
-      lastReportedPage.current = newPage;
-      onPageChange(newPage);
+      onPageChange(e.data);
     },
     [onPageChange]
   );
