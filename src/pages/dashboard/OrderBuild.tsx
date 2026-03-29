@@ -361,11 +361,36 @@ export default function OrderBuild() {
           <div className="p-3 border-b border-border shrink-0">
             <h2 className="font-semibold text-foreground text-sm">Options</h2>
           </div>
-          <div className="flex-1 overflow-auto p-3">
+          <div className="flex-1 overflow-auto p-3 space-y-3">
             <OptionsPanel
               options={options}
               selectedOptions={spec.selected_options}
               onOptionChange={handleOptionChange}
+            />
+
+            {/* Tab Dividers Manager */}
+            {tabInfo && (
+              <TabManager
+                sections={sections}
+                documents={documents}
+                orderItemId={orderItemId}
+                tabCount={tabInfo.count}
+                isMultiColor={tabInfo.multiColor}
+                onAddTab={handleAddTab}
+                onDeleteTab={handleDeleteTab}
+                onMoveTab={handleMoveTab}
+                onUpdateTabLabel={handleUpdateTabLabel}
+              />
+            )}
+
+            {/* Insert Sheets Manager */}
+            <InsertManager
+              sections={sections}
+              documents={documents}
+              orderItemId={orderItemId}
+              onAddInsert={handleAddInsert}
+              onDeleteInsert={handleDeleteInsert}
+              onMoveInsert={handleMoveInsert}
             />
           </div>
           <div className="p-3 shrink-0">

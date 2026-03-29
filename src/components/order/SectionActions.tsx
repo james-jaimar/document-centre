@@ -18,8 +18,6 @@ const ACTIONS = [
   { type: "front_cover" as const, label: "Front Cover", icon: BookOpen },
   { type: "body" as const, label: "Body Pages", icon: FileText },
   { type: "back_cover" as const, label: "Back Cover", icon: BookOpen },
-  { type: "insert" as const, label: "Insert", icon: Layers },
-  { type: "tab" as const, label: "Tab Divider", icon: Layers },
 ];
 
 export default function SectionActions({
