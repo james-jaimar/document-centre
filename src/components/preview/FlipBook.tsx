@@ -351,6 +351,8 @@ export default function FlipBook({
                       pageRole={pageRoles?.[i]}
                       allowBleed={bleedFlags?.[i] ?? false}
                       bleedInsetPx={bleedInsetPx}
+                      label={pageLabels?.[i]}
+                      color={pageColors?.[i]}
                     />
                   );
                 })}
