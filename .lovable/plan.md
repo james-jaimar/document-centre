@@ -1,111 +1,115 @@
 
-# Fix FlipBook Cover/Back Rendering Using the Library’s Native Cover Mode
+## Fix the FlipBook so solo cover pages are truly solo and still show the binding
 
-## What the documentation tells us
+### What’s actually going wrong
 
-I reviewed the current preview code and the `react-pageflip` docs. The important behavior is:
+The current implementation is mixing two different models:
 
-- `showCover={true}` already makes the **first and last pages render as single pages**
-- The library expects the **real first page** and **real last page** to be the cover endpoints
-- The current implementation is fighting that behavior by:
-  1. appending a fake blank page to force even length
-  2. appending a fake back-cover card as the last page
-  3. masking half the spread with an overlay instead of letting the library render the cover state naturally
+1. `react-pageflip`’s native `showCover` behavior, where the **first and last pages are already treated as single-page cover states**
+2. Our own custom page sequencing/centering logic, where we also insert extra physical states like `inside_back_blank` and then translate the whole book
 
-That is why you are seeing “placeholder”/blank halves and wrong end-of-book behavior.
+That combination is producing the “ghost” opposite page and hiding the binding at the exact moments where Mimeo keeps it visible.
 
-## Root cause
+From the docs, `showCover={true}` means:
+- first page = solo cover
+- last page = solo cover
+- those endpoints should be the true outer materials of the book
 
-Right now the page sequence is modeled incorrectly.
+Right now our data model does not line up with that rule.
 
-```text
-Current model:
-[front cover][body...][back cover card][blank pad]
+---
 
-What the book should logically be:
-[front cover][inside/body pages...][last printed page or blank inside back][back cover material]
-```
+## Implementation approach
 
-For a 24-page document with a navy back cover:
-- page 24’s reverse/inside back is blank if needed
-- the **navy card is the final physical page/material**
-- there should be **no extra visible white page on the right** when viewing the back cover
-- front cover and back cover should be treated as true solo states, ideally centered like Mimeo
-
-## Implementation plan
-
-### 1. Rebuild the preview page model in `PreviewPanel.tsx`
-Replace the “append and pad” approach with an explicit physical-sheet model.
-
-Build a flat preview sequence that represents the actual object:
-- front cover page
-- document interior pages in order
-- if needed, insert an **inside-back blank page** as real content only when the document/imposition requires it
-- append the physical back cover card as the final page/material
-
-Also add explicit roles for clarity:
-- `front_cover`
-- `body`
-- `inside_back_blank`
-- `back_cover_card`
-- `tab`
-
-The key change: stop adding a fake trailing blank just to satisfy the component.
-
-### 2. Stop masking halves in `FlipBook.tsx`
-Remove the current left/right overlay masks entirely.
-
-Let `react-pageflip` handle single-page mode through `showCover={true}`. Then drive layout from the actual current page role:
-- when current index is the first page, treat it as a solo front-cover state
-- when current index is the final `back_cover_card`, treat it as a solo back-cover state
-
-If the library leaves the solo page aligned to one side, then shift the whole rendered book container so the single page is **centered in the viewport**, matching the Mimeo reference.
-
-### 3. Center solo cover states
-Add a small layout mode in `FlipBook.tsx`:
+### 1. Rebuild the bound-page sequence around physical outer materials
+Update `src/components/order/PreviewPanel.tsx` so the sequence matches a real bound book:
 
 ```text
-front cover: single page centered
-middle spreads: two pages centered
-back cover: single page centered
+[front cover][inside pages/body/tabs...][inside back blank if needed][back cover]
 ```
 
-This should be done by shifting the book wrapper, not by painting over one half.
+Key changes:
+- keep `front_cover` as the first page
+- keep `back_cover_card` as the final page only when selected
+- only insert `inside_back_blank` when required as a real interior page
+- stop using page count tricks to “help” the flip library
 
-### 4. Fix page-number and navigation math
-Update the page info logic in `PreviewPanel.tsx` so it reflects the actual visible state:
-- front cover: `Page 1 of N`
-- middle spreads: `Pages X–Y of N`
-- back cover card: show the final material/page state correctly
-- no “double blank” end state
+This ensures the library’s first/last page logic corresponds to the actual object.
 
-Also update `goLast`, slider behavior, and visible-page calculations so they align with the new physical page model rather than the old “step by 2 plus padding” assumption.
+### 2. Stop treating the binding as “not visible on solo pages”
+Update `src/components/preview/FlipBook.tsx` so the binding is not hidden just because the current state is solo.
 
-### 5. Fix the binding spine alignment
-The spine issue is now a layout anchoring problem.
+Instead:
+- show the binding for bound products on both spread and solo states
+- switch asset/open-state as needed, but keep it visible
+- position it relative to the actual rendered single page / spread center so it matches Mimeo
 
-Update `FlipBook.tsx` and `BindingSpine.tsx` so the spine is attached to the actual rendered book box:
-- full `pageHeight`
-- vertically centered with the rendered page stack
-- no clipping from wrapper/shadow/layout transforms
-- correct appearance in both solo and spread modes
+Right now this line is part of the bug:
+- binding is rendered only when `!isSoloPage`
+
+That should change.
+
+### 3. Replace generic centering with role-aware centering
+Keep `showCover={true}`, but rework the centering math in `FlipBook.tsx` so it is based on the actual current role:
+
+- `front_cover` → center the visible right-hand page
+- `back_cover_card` → center the visible left-hand page
+- middle states → center the full spread
+
+Also remove any leftover logic that assumes “solo = hide one side visually” rather than “solo = let the library render it natively and shift the book container”.
+
+### 4. Fix page/spread navigation math in `PreviewPanel.tsx`
+The preview controls and labels need to reflect the real physical sequence, not simple `currentPage + 1` assumptions.
+
+Adjust:
+- visible left/right page calculations
+- page info text
+- section/colour/duplex badges
+- `goPrev`, `goNext`, `goLast`
+- slider interpretation for bound mode
+
+Goal:
+- front cover reports correctly as a single page
+- interior spreads report as two pages
+- back cover reports as the final solo material
+- no fake blank right-side state at the end
+
+### 5. Tighten spine sizing/alignment
+Update `src/components/preview/BindingSpine.tsx` and its placement in `FlipBook.tsx` so the spine:
+- spans full rendered page height
+- remains vertically centered
+- is not clipped by wrappers/shadows/transforms
+- aligns to the book hinge in both solo and spread states
+
+---
 
 ## Files to update
 
-- `src/components/order/PreviewPanel.tsx`
-- `src/components/preview/FlipBook.tsx`
-- `src/components/preview/BindingSpine.tsx`
-- `src/components/preview/previewTypes.ts`
-- possibly `src/components/preview/PageEffects.tsx` only if the new `inside_back_blank` role needs distinct styling
+1. `src/components/order/PreviewPanel.tsx`
+2. `src/components/preview/FlipBook.tsx`
+3. `src/components/preview/BindingSpine.tsx`
+4. `src/components/preview/previewTypes.ts` (if a clearer page-role/page-mode type is needed)
 
-## Expected result
+---
 
-After this change:
+## Technical details
 
-- front cover shows as **one centered page**
-- back cover shows as **one centered page**
-- no fake left/right placeholder halves
-- no extra white page beside the navy/black back cover
-- the last interior blank, if required, is modeled intentionally rather than as a rendering artifact
-- spine runs full height again
-- behavior matches the Mimeo reference much more closely because we stop fighting the library’s native cover logic
+### Root cause in current code
+- `PreviewPanel.tsx` appends `inside_back_blank` and optional `back_cover_card`
+- `FlipBook.tsx` assumes solo states from `displayPage`
+- `FlipBook.tsx` hides the spine during solo states
+- footer/page-number logic is still spread-oriented instead of role-oriented
+
+### Library behavior to align with
+Per `react-pageflip` docs:
+- `showCover={true}` marks the **first and last pages** as hard covers
+- those pages are shown in **single page mode**
+- the correct solution is to make the first/last items in our sequence be the real outer materials, then shift the container for Mimeo-style centering
+
+### Expected result after the fix
+- front cover = one centered page, binding visible
+- middle spreads = two pages, binding visible
+- back cover = one centered page, binding visible
+- no extra opposite white page
+- no placeholder/ghost page
+- no truncated or missing spine
