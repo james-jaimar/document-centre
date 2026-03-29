@@ -1,39 +1,46 @@
 
 
-# Fix Tab/Insert Physical Alignment + Tab Sizing & Color
+# Fix Unnecessary Blank Page Before Tab/Insert
 
-## Three problems
+## Problem
 
-### 1. Tabs/inserts landing on wrong side of spread
-In `react-pageflip` with `showCover={true}`, page indices work like this:
-- Index 0: front cover (solo, RIGHT side)
-- Index 1: LEFT side, Index 2: RIGHT side
-- Index 3: LEFT side, Index 4: RIGHT side
-- etc.
+When a tab is placed "after page 6" in a simplex document, `buildPageSequence` already inserts a `blank_back` after page 6 (the physical back of that sheet). The tab front should naturally follow on the next RIGHT-side index. But the post-processor blindly checks if the tab front is at an odd index and injects **another** blank — creating a visible empty page that shouldn't exist.
 
-A tab or insert is a physical sheet. Its front face MUST land on a RIGHT-side page (even index). Currently `buildPageSequence` just appends tab/insert pages wherever they fall, which can put the front face on a LEFT-side index — splitting the physical sheet across a spread.
+The sequence should be:
+```text
+... page6(RIGHT) → blank_back_of_6(LEFT) → tab_front(RIGHT) → tab_back(LEFT) ...
+```
 
-**Fix**: Post-process the page array. After building all pages, scan for any `tab` or `insert` role at an odd index. If found, insert a `blank_back` page before it to push it to an even index. This guarantees every physical divider/insert starts on the right side.
+But currently it produces:
+```text
+... page6(RIGHT) → blank_back_of_6(LEFT) → EXTRA_BLANK(RIGHT) → tab_front(LEFT?!) ...
+```
 
-### 2. Tab color ignores user selection
-`TabOverlay` uses the hardcoded `TAB_COLORS` palette (red, blue, green, yellow, orange) regardless of what the user selected. If user picks "white" tabs, they should be white/light gray — not red.
+## Root cause
 
-**Fix**: Use the `color` field from `TabPosition` (which comes from the section's color). Only fall back to `TAB_COLORS` if the color is empty AND the tab option is multi-color. For white/single-color tabs, use the actual color.
+The post-processing alignment pass in `PreviewPanel.tsx` (lines ~217-240) doesn't account for the fact that a preceding `blank_back` already provides correct sheet-boundary alignment. It just checks `index % 2 !== 0` and inserts a blank, which can actually **break** the alignment rather than fix it.
 
-### 3. Tab height doesn't follow banking rules
-User specified: tab height = page height / tab count. Max 10 tabs per bank. If > 10, split into banks (e.g., 12 tabs → 2 banks of 6). Tabs 1-6 top-to-bottom, tabs 7-12 top-to-bottom in a second column offset slightly inward.
+## Fix
 
-**Fix**: In `TabOverlay`, calculate `banks = ceil(tabTotal / 10)`, `bankSize = ceil(tabTotal / banks)`. Each tab's vertical position = `(indexWithinBank / bankSize) * pageHeight`. Second bank tabs render slightly inward (offset by tabWidth).
+In the post-processing loop, before inserting a `blank_back` to fix alignment, check whether the **previous** page is already a `blank_back`. If it is, the tab/insert is already correctly positioned after a sheet boundary — skip the insertion.
 
-## Files to edit
+Specifically, change the condition from:
+```
+if (PHYSICAL_FRONT_ROLES.has(roles[i]) && i % 2 !== 0)
+```
+to also require:
+```
+&& roles[i - 1] !== "blank_back"
+```
 
-- **`src/components/order/PreviewPanel.tsx`** — add post-processing pass after `buildPageSequence` to ensure tab/insert front faces land on even indices
-- **`src/components/preview/FlipBook.tsx`** — fix `TabOverlay` to use section color instead of hardcoded palette; implement banking logic for tab height calculation
+If the preceding role is `blank_back`, the physical sheet's back face is already there — no padding needed.
+
+## File to edit
+
+- `src/components/order/PreviewPanel.tsx` — update the post-processing alignment condition (~line 228)
 
 ## Expected result
 
-- Tab and insert front faces always appear on the RIGHT side of a spread
-- White tabs render as white/light gray, not red
-- 5 tabs = page height / 5 each; 12 tabs = 2 banks of 6
-- No more "breaking the laws of physics" with sheets split across spreads
+- Tab after page 6: page 6 (right), back of 6 (left), tab front (right), tab back (left) — no extra blank
+- Alignment still works correctly for cases where there's no preceding blank_back
 
