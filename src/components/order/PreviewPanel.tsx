@@ -237,6 +237,16 @@ export default function PreviewPanel({
     [finalPages]
   );
 
+  const pageLabels = useMemo(
+    () => finalPages.map((p) => p.label ?? ""),
+    [finalPages]
+  );
+
+  const pageColors = useMemo(
+    () => finalPages.map((p) => p.color ?? ""),
+    [finalPages]
+  );
+
   // Compute explicit bleed flags per physical face (once, upstream)
   const bleedFlags = useMemo(() => {
     const bleedScope = effects?.bleed ?? "none";
