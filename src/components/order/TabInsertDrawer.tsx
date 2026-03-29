@@ -79,6 +79,12 @@ export default function TabInsertDrawer({
 
   const bodyPages = useMemo(() => buildBodyPages(sections, documents), [sections, documents]);
 
+  // For duplex, only allow placement at sheet boundaries (even page numbers)
+  const validPages = useMemo(() => {
+    if (!isDuplex) return bodyPages;
+    return bodyPages.filter((p) => p.pageNumber % 2 === 0);
+  }, [bodyPages, isDuplex]);
+
   const tabSections = useMemo(
     () => sections.filter((s) => s.section_type === "tab"),
     [sections]

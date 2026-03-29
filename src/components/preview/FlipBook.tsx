@@ -192,7 +192,7 @@ export default function FlipBook({
   const bleedInsetPx = Math.round(basePageWidth * 0.03);
 
   // ── CSS scale factor to fit into available container ──
-  const availableWidth = width - 40;
+  const availableWidth = width - 80; // extra gutter for tab protrusions
   const availableHeight = height - 60;
   const scaleX = availableWidth / baseSpreadWidth;
   const scaleY = availableHeight / basePageHeight;
