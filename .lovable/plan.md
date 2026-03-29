@@ -1,100 +1,66 @@
 
-Fix the preview by making the rendered book state fully deterministic instead of partially derived from stale internal flipbook state.
 
-## What I found
+# Fix Back Cover Edge-to-Edge + Add Flippable PVC Cover Page
 
-The instability is coming from a few things working against each other:
+## Two issues
 
-1. `react-pageflip` keeps its own internal page/DOM state after mount.
-2. We force remounts with a `key`, but the key only includes:
-   - `effects.bleed`
-   - `pageRoles`
-   - `urls.length`
-3. Many visual changes do **not** change that key:
-   - `effects.frontCover`
-   - `effects.backCover`
-   - `effects.paperColor`
-   - `effects.coverLamination`
-   - `effects.holePunch`
-   - `colorFlags`
-   - actual `urls` content/order
-4. On remount, `FlipBook` immediately resets to page `0` and calls `onPageChange(0)`, which can fight the parent state while the user is changing options.
-5. Solo/spread layout in `FlipBook.tsx` is still based on `displayPage`, which is a local mirror that can temporarily drift during re-init.
+### 1. Back cover card still showing white edges
+The `PageEffects` wrapper div (line 69) has `backgroundColor: paperBg` (white). Even though the inner card div covers the full area, the 1px of the outer wrapper or slight sub-pixel rendering can leak through. Additionally, the `FlipPage` border check only looks at `pageRole === "back_cover_card"` but if the role isn't flowing through perfectly on remount, it falls back to showing borders.
 
-That combination explains the “looks right once, then bounces around / reverts / shows wrong borders later” behavior.
+**Fix**: For `back_cover_card` pages, set the outer wrapper background to the card color too (not white), so there's zero chance of white leaking. Also ensure FlipPage's border/shadow removal is robust.
 
-## Implementation plan
+### 2. PVC cover should be a flippable transparent page (like Mimeo)
+Currently the PVC overlay is just a CSS layer on top of the front cover page. Mimeo models it as an actual separate page that flips independently — when you turn the cover, you see a semi-transparent sheet flipping over, revealing the printed page beneath.
 
-### 1. Make the book key cover every rendering-critical input
-Update `FlipBook.tsx` so the remount key is based on the full visual/structural state, not just bleed:
-- full `resolvedEffects`
-- `pageRoles`
-- `sectionTypes`
-- `colorFlags`
-- `urls` (or a stable summary of them)
+**Fix**: When a PVC front cover is selected (`clear_pvc`, `frosted_pvc`, or `matte_pvc`), insert an extra page at index 0 in the page sequence that represents the physical PVC sheet. This page:
+- Shows the document thumbnail underneath with the PVC overlay effect
+- When flipped, the back side (page 1 in the spread) shows as a light translucent gray sheet
+- The actual printed front cover becomes page 1 (now visible as the right page after flipping the PVC)
 
-This ensures any option change creates a fresh, correct flipbook instance.
+## Changes
 
-### 2. Stop forcing parent page state back to 0 during remount
-Remove the effect that does:
-- `setDisplayPage(0)`
-- `lastReportedPage.current = 0`
-- `onPageChange(0)`
+### File: `src/components/order/PreviewPanel.tsx`
+- In the `finalPages` builder, when `effects.frontCover` is a PVC type and `isBound`, insert an extra page at position 0:
+  - Same thumbnail URL as the original front cover
+  - Role: `"pvc_cover"` 
+  - The original front cover page keeps role `"front_cover"`
+- Adjust parity logic to account for this extra page
 
-Instead:
-- treat remount as a visual refresh only
-- preserve the parent’s selected page when possible
-- only sync page state from actual flipbook events (`onInit` / `onFlip`) or controlled navigation effect
+### File: `src/components/preview/PageEffects.tsx`
+- Add handling for `pageRole === "pvc_cover"`:
+  - Apply the PVC overlay effect (clear/frosted/matte) over the page content
+  - This page renders the same thumbnail with the overlay on top
+- Add handling for `pageRole === "pvc_cover_back"` (the reverse side when flipped):
+  - Show as a light translucent gray sheet (like Mimeo's approach)
+- For `back_cover_card`: set the outer wrapper `backgroundColor` to the card color instead of `paperBg`, eliminating any white bleed-through
 
-This should eliminate the “jumping” and session inconsistency.
+### File: `src/components/preview/FlipBook.tsx`
+- Add `"pvc_cover"` to the card cover check so it gets no border (it's a plastic sheet, not paper)
+- The PVC cover page should be treated as a cover page by `showCover={true}` (it's at index 0, so it already is)
 
-### 3. Use the controlled page as the source of truth for layout
-Refactor solo/spread detection in `FlipBook.tsx` to derive layout from `currentPage`, not a potentially stale local `displayPage`.
+### File: `src/components/preview/previewTypes.ts`
+- No changes needed — existing types cover this
 
-Use explicit role logic:
-- front solo when `currentPage === 0`
-- back solo when current page is the real final solo page
-- spread otherwise
+## PVC page sequence example
 
-Keep local state only if needed for library event sync, not for deciding margins/spine/viewport cropping.
+Without PVC:
+```text
+[front_cover] [body] [body] ... [inside_back_blank?] [back_cover_card?]
+```
 
-### 4. Sync with the library using init/update events instead of implicit reset logic
-Use the flipbook lifecycle more cleanly:
-- on init, align local display state to the real current page
-- on flip, update parent
-- in the controlled-page effect, move the library only when its current page differs
+With PVC cover (e.g., frosted):
+```text
+[pvc_cover] [front_cover] [body] [body] ... [inside_back_blank?] [back_cover_card?]
+```
 
-This removes the current “reset then animate back” feel.
-
-### 5. Stabilize back-cover rendering as role-driven, not history-driven
-Keep `back_cover_card` fully deterministic:
-- no border
-- no inset shadow
-- no bleed padding
-- full solid fill
-
-Also ensure `inside_back_blank` stays separate from `back_cover_card` so the renderer never reuses styling from a prior page state.
-
-### 6. Audit the parent sequence flow once
-In `PreviewPanel.tsx`, verify the final physical page sequence remains stable while options change:
-- `front_cover`
-- body pages
-- optional `inside_back_blank`
-- optional `back_cover_card`
-
-The important part is that cover option changes should only change the final sequence when physically necessary, not cause unrelated preview resets.
-
-## Files to update
-
-- `src/components/preview/FlipBook.tsx`
-- `src/components/order/PreviewPanel.tsx` (light audit, likely minimal)
-- possibly `src/components/preview/PageEffects.tsx` only if any stale styling assumptions remain after the main cleanup
+- Page 0 (solo cover): shows the document thumbnail with frosted overlay
+- Flip page 0: left side shows light translucent gray (back of PVC), right side shows the printed front cover
+- Rest of the book works as before
 
 ## Expected result
+- Back cover card always renders as solid edge-to-edge color with zero white edges
+- PVC covers flip independently as a semi-transparent sheet
+- After flipping the PVC, the back of it shows as a light translucent page
+- The printed front cover is revealed underneath
+- Matches the Mimeo reference behavior closely
 
-After this cleanup:
-- changing options repeatedly does not cause bouncing or reversion
-- whatever the customer selects stays visually consistent in that session
-- back cover card always renders edge-to-edge when selected
-- borders/margins no longer appear inconsistently after switching options
-- front cover, spreads, and back cover remain stable under repeated changes
