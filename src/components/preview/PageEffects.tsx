@@ -137,7 +137,7 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
   const bleedPadding = allowBleed ? undefined : `${bleedInsetPx}px`;
 
   // Lamination sheen on front cover only (not PVC — that's a separate material)
-  const showLamination = isFrontCover && effects.coverLamination !== "none";
+  const showLamination = role === "front_cover" && effects.coverLamination !== "none";
 
   return (
     <div className="w-full h-full relative" style={{ backgroundColor: paperBg, boxShadow: PAPER_SHADOW }}>
