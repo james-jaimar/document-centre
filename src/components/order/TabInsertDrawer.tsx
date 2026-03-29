@@ -181,7 +181,7 @@ export default function TabInsertDrawer({
                             <SelectValue>After Page {anchor}</SelectValue>
                           </SelectTrigger>
                           <SelectContent>
-                            {bodyPages.map((page) => (
+                            {validPages.map((page) => (
                               <SelectItem key={page.pageNumber} value={String(page.pageNumber)} className="text-xs">
                                 After {page.label}
                               </SelectItem>
