@@ -21,6 +21,7 @@ interface DocumentPreviewProps {
   effects?: PreviewEffects;
   sectionTypes?: string[];
   pageRoles?: string[];
+  bleedFlags?: boolean[];
 }
 
 const BOUND_TYPES = new Set([
