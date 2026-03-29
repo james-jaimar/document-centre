@@ -46,11 +46,19 @@ const BOUND_TYPES = new Set([
 ]);
 
 /**
- * Build a page sequence that injects tabs/inserts at their page_range_start anchor.
+ * Build a page sequence respecting physical sheet boundaries.
  *
- * 1. Flatten body/cover sections into sequential body pages
- * 2. Collect anchored items (tabs/inserts) keyed by page_range_start
- * 3. After each body page N, inject any anchored items for N
+ * PHYSICAL RULE: A tab or insert is a physical sheet. It can only begin
+ * after the preceding sheet is complete. For simplex pages, every printed
+ * page has a natural reverse face (blank_back). So the order is always:
+ *
+ *   body page N  →  blank_back (simplex reverse)  →  tab/insert sheet
+ *
+ * For duplex, two content pages share one sheet, and anchors are snapped
+ * to sheet boundaries so tabs/inserts start at the next physical sheet.
+ *
+ * This function builds the sequence in one pass — no post-processing
+ * alignment is needed or should be added.
  */
 function buildPageSequence(sections: DocumentSection[], documents: Document[]): PageInfo[] {
   // Separate body sections from anchored items
@@ -96,7 +104,9 @@ function buildPageSequence(sections: DocumentSection[], documents: Document[]): 
         section,
         isColor: section.is_color,
       });
-      // Simplex blank back
+      // Simplex: push the natural reverse face of this sheet.
+      // This MUST come before any anchored items so the physical
+      // sheet is complete before a new sheet (tab/insert) begins.
       if (!section.is_duplex) {
         result.push({
           thumbnailUrl: "",
@@ -106,7 +116,8 @@ function buildPageSequence(sections: DocumentSection[], documents: Document[]): 
           isColor: section.is_color,
         });
       }
-      // Inject any tabs/inserts anchored after this page
+      // Now the physical sheet is complete — inject any tabs/inserts
+      // anchored "after page N". They start a new physical sheet.
       const anchored = anchorMap.get(pageNum);
       if (anchored) {
         for (const item of anchored) {
