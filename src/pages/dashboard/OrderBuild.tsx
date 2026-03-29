@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useOrderData, useUpdateOrderItemSpec, useAddSection, useUpdateSection, useDeleteSection } from "@/hooks/useOrderBuilder";
 import { useProductOptions } from "@/hooks/useProductOptions";
@@ -259,6 +259,8 @@ export default function OrderBuild() {
 
   // ── Drawer state ──
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [hasOpenedDrawer, setHasOpenedDrawer] = useState(false);
+  const prevTabInsertRef = useRef<{ hadTabs: boolean; hadInserts: boolean }>({ hadTabs: false, hadInserts: false });
 
   // ── Derive tab info from product options ──
   const tabInfo = useMemo(() => {
@@ -286,6 +288,21 @@ export default function OrderBuild() {
     const slug = spec.selected_options[key];
     return !!slug && slug !== "none" && slug !== "no-inserts" && slug !== "no_inserts";
   }, [options, spec.selected_options]);
+
+  // Auto-open drawer when tabs or inserts are first enabled
+  useEffect(() => {
+    const prev = prevTabInsertRef.current;
+    const hasTabs = !!tabInfo;
+    const hasInserts = insertEnabled;
+
+    if ((hasTabs && !prev.hadTabs) || (hasInserts && !prev.hadInserts)) {
+      setDrawerOpen(true);
+      setHasOpenedDrawer(true);
+    }
+
+    prev.hadTabs = hasTabs;
+    prev.hadInserts = hasInserts;
+  }, [tabInfo, insertEnabled]);
 
   const orderItemId = orderItem?.id ?? "";
 
@@ -389,8 +406,15 @@ export default function OrderBuild() {
               <Button
                 variant="outline"
                 size="sm"
-                className="w-full text-xs"
-                onClick={() => setDrawerOpen(true)}
+                className={`w-full text-xs ${
+                  !hasOpenedDrawer && !drawerOpen
+                    ? "animate-pulse ring-2 ring-primary ring-offset-2 ring-offset-card"
+                    : ""
+                }`}
+                onClick={() => {
+                  setDrawerOpen(true);
+                  setHasOpenedDrawer(true);
+                }}
               >
                 <Settings2 className="h-3.5 w-3.5 mr-1.5" />
                 Manage Tabs & Inserts
