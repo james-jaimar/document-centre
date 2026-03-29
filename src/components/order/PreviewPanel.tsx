@@ -97,6 +97,7 @@ export default function PreviewPanel({
           documentName: "Insert Sheet",
           section,
           isColor: true,
+          color: (section as any).color || "white",
         });
         continue;
       }
