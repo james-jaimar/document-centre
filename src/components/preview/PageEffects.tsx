@@ -52,7 +52,10 @@ interface PageEffectsProps {
  * 2. PVC cover back — translucent reverse face, no children
  * 3. PVC cover front — children (artwork) + PVC overlay
  * 4. Blank paper — paper color + shadow, no children
- * 5. Standard paper — paper color + shadow + optional bleed padding + children
+ * 5. Standard paper — paper color + shadow + absolute-positioned content frame + children
+ *
+ * IMPORTANT: Content positioning uses absolute inset (not padding) so that
+ * react-pageflip's canvas measurement is never affected by box-model changes.
  */
 export default function PageEffects({ effects, pageIndex, totalPages, children, pageRole, allowBleed, bleedInsetPx }: PageEffectsProps) {
   const role = pageRole ?? (pageIndex === 0 ? "front_cover" : "body");
@@ -84,9 +87,7 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
   if (role === "pvc_cover_front") {
     return (
       <div className="w-full h-full relative">
-        {/* Artwork image rendered by FlipBook as children */}
         {children}
-        {/* PVC overlay */}
         {effects.frontCover === "clear_pvc" && (
           <div
             className="absolute inset-0 pointer-events-none"
@@ -133,18 +134,25 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
   // ── 5. Standard paper page (front_cover, body, etc.) ──
   const paperBg = PAPER_COLORS[effects.paperColor] ?? "#ffffff";
 
-  // Bleed: use the explicit upstream flag and fixed pixel inset
-  const bleedPadding = allowBleed ? undefined : `${bleedInsetPx}px`;
+  // Content inset: absolute positioning instead of padding.
+  // This ensures react-pageflip's measurement container (the outer div)
+  // is always exactly pageWidth × pageHeight with no box-model interference.
+  const inset = allowBleed ? 0 : bleedInsetPx;
 
   // Lamination sheen on front cover only (not PVC — that's a separate material)
   const showLamination = role === "front_cover" && effects.coverLamination !== "none";
 
   return (
     <div className="w-full h-full relative" style={{ backgroundColor: paperBg, boxShadow: PAPER_SHADOW }}>
-      {/* Single content wrapper — consistent for ALL standard pages */}
+      {/* Absolutely positioned content frame — never affects outer dimensions */}
       <div
-        className="w-full h-full"
-        style={bleedPadding ? { padding: bleedPadding, boxSizing: "border-box" } : undefined}
+        className="absolute overflow-hidden"
+        style={{
+          top: inset,
+          left: inset,
+          right: inset,
+          bottom: inset,
+        }}
       >
         {children}
       </div>
