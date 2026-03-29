@@ -29,7 +29,7 @@ const FlipPage = forwardRef<
   const isTab = sectionType === "tab";
 
   return (
-    <div ref={ref} className="overflow-hidden" style={{ width: "100%", height: "100%", position: "relative", border: "1px solid rgba(0,0,0,0.15)", boxShadow: "inset 0 0 8px rgba(0,0,0,0.10), inset 0 0 0 0.5px rgba(0,0,0,0.08)" }}>
+    <div ref={ref} className="overflow-hidden" style={{ width: "100%", height: "100%", position: "relative", border: pageRole === "back_cover_card" ? "none" : "1px solid rgba(0,0,0,0.15)", boxShadow: pageRole === "back_cover_card" ? "none" : "inset 0 0 8px rgba(0,0,0,0.10), inset 0 0 0 0.5px rgba(0,0,0,0.08)" }}>
       <PageEffects effects={effects} pageIndex={pageIndex} totalPages={totalPages} pageRole={pageRole}>
         {isTab ? (
           <div className="w-full h-full flex items-center justify-center bg-card">
