@@ -14,8 +14,15 @@ interface BindingSpineProps {
   position?: "left" | "center" | "right";
 }
 
-export default function BindingSpine({ bindingType, height, isOpen = false }: BindingSpineProps) {
+export default function BindingSpine({ bindingType, height, isOpen = false, position = "center" }: BindingSpineProps) {
   if (bindingType === "none") return null;
+
+  const positionStyle: React.CSSProperties =
+    position === "left"
+      ? { left: 0, transform: "translateX(-50%)" }
+      : position === "right"
+        ? { right: 0, transform: "translateX(50%)" }
+        : { left: "50%", transform: "translateX(-50%)" };
 
   const isSpiral = bindingType === "coil" || bindingType === "wire" || bindingType === "comb";
 
