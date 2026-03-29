@@ -219,7 +219,7 @@ export default function TabInsertDrawer({
                   size="sm"
                   className="text-xs h-7"
                   onClick={() => onAddInsert(
-                    bodyPages.length > 0 ? bodyPages[bodyPages.length - 1].pageNumber : 1,
+                    validPages.length > 0 ? validPages[validPages.length - 1].pageNumber : 1,
                     selectedInsertColor
                   )}
                 >
