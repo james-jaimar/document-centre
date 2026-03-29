@@ -35,8 +35,8 @@ const FlipPage = forwardRef<
         width: "100%",
         height: "100%",
         position: "relative",
-        border: isCardCover ? "none" : "1px solid rgba(0,0,0,0.15)",
-        boxShadow: isCardCover ? "none" : "inset 0 0 8px rgba(0,0,0,0.10), inset 0 0 0 0.5px rgba(0,0,0,0.08)",
+        border: isMaterial ? "none" : "1px solid rgba(0,0,0,0.15)",
+        boxShadow: isMaterial ? "none" : "inset 0 0 8px rgba(0,0,0,0.10), inset 0 0 0 0.5px rgba(0,0,0,0.08)",
       }}
     >
       <PageEffects effects={effects} pageIndex={pageIndex} totalPages={totalPages} pageRole={pageRole}>
