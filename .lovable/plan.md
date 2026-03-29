@@ -1,63 +1,128 @@
 
+Fix the preview by separating three concepts cleanly: physical page sequence, visual page role, and blank-page rendering.
 
-# Fix Simplex Blank Pages + Stabilize Bleed Rendering
+## What is actually wrong now
 
-## Two issues
+### 1. Blank simplex backs are inserted, but rendered like missing thumbnails
+In `PreviewPanel.tsx`, simplex backs are being added correctly with:
+- `thumbnailUrl: ""`
+- `pageIndex: -1`
 
-### 1. Simplex sections don't insert blank backs
-The page sequence builder in `PreviewPanel.tsx` (lines 74-104) iterates through each section's pages and adds them sequentially, but never checks `section.is_duplex`. When a section is simplex (single-sided), the back of each physical sheet is blank — this blank page must be inserted into the sequence so the preview accurately represents the physical document.
+But in `FlipBook.tsx`, any page with no `url` falls into the generic placeholder UI:
+- file icon
+- “Page X” text
+- muted gray background
 
-**Example with the user's document:**
-- Front cover: 1 page, simplex → page 1 = cover artwork, page 2 = blank back
-- Body: 24 pages, duplex → pages 3-26 = printed both sides, no blanks needed
+That is why the back of a simplex front cover is not showing as a clean blank white sheet.
 
-Currently the sequence is just [cover, body×24] = 25 pages. It should be [cover, blank, body×24] = 26 pages.
+### 2. The inside back card is still being treated like a “paper page slot”
+`inside_back_cover_card` is rendered as solid colour in `PageEffects.tsx`, but the outer `FlipPage` wrapper still contributes layout styling that is tuned for normal pages:
+- the page border/shadow logic is only partly aware of material pages
+- the inner placeholder branch for blank/missing thumbnails can still influence visual perception on non-image pages
+- the standard page shell is not explicitly split between “paper sheet”, “material sheet”, and “intentional blank page”
 
-**Fix**: In the `pages` useMemo, after adding each page from a simplex section, push a blank `PageInfo` with role `"blank_back"`. Skip this for duplex sections. This also fixes the page count display automatically.
+That is the most likely source of the white edge appearing intermittently on the inside back cover.
 
-### 2. Bleed/border inconsistency on option changes
-The `bookKey` in `FlipBook.tsx` already includes `resolvedEffects`, which should force a clean remount. However, the `useMemo` dependency array for `finalPages` in `PreviewPanel.tsx` (line 193) only includes `effects?.backCover` and `effects?.frontCover` — it does NOT include `effects?.bleed`, `effects?.paperColor`, `effects?.coverLamination`, or `effects?.holePunch`. This means the `finalPages` array (and its derived `pageRoles`, `colorFlags`, `sectionTypes`) can go stale when those options change, even though the FlipBook remounts with the new effects. The FlipBook gets new effects but the same old page data.
+### 3. Page-role logic is too coarse for bleed scope
+`PageEffects.tsx` currently only treats `front_cover` as a cover page:
+- `covers` bleed scope only applies to `front_cover`
+- the final printed back page is never identified as a printed back cover role
+- inserted simplex blanks inherit the default `body` behavior
 
-**Fix**: Change the dependency to the full `effects` object so any option change rebuilds the page sequence and its derived arrays.
+So the margin logic is not being driven by true physical meaning. That makes it easier for borders to appear “wrong” after cover/material combinations change.
 
-## Changes
+### 4. Display metadata is still derived from page indices, not physical semantics
+The spread/page info in `PreviewPanel.tsx` still assumes:
+- first page = cover
+- middle pages = regular spreads
+- last page = back cover only if role is `back_cover_card`
 
-### File: `src/components/order/PreviewPanel.tsx`
+That is close, but not robust enough once the book includes:
+- PVC front outside
+- PVC front inside
+- simplex blank backs
+- inside back card
+- solo outer back card
 
-**A) Insert blank backs for simplex sections**
+This is why the UI can look “nearly right” but still feel off when clients flick around.
 
-In the `pages` useMemo (lines 74-104), after pushing each page from a section, check `section.is_duplex`. If false, push a blank page:
-```typescript
-result.push({
-  thumbnailUrl: "",
-  pageIndex: -1,
-  documentName: "",
-  section,
-  isColor: section.is_color,
-});
+## Clean fix
+
+### A. Add explicit page kinds for intentional blanks and printed cover faces
+In `PreviewPanel.tsx`, enrich the generated sequence so roles describe the physical face:
+- `front_cover`
+- `blank_back`
+- `body`
+- `pvc_cover_front`
+- `pvc_cover_back`
+- `inside_back_blank`
+- `inside_back_cover_card`
+- `back_cover_card`
+
+Most importantly:
+- simplex-inserted blank backs should get `blank_back`, not fall through as generic `body`
+- keep printed front cover distinct from PVC material faces
+
+This makes rendering deterministic.
+
+### B. Render blank backs as actual blank paper
+In `FlipBook.tsx`, stop using the file placeholder UI for every `url === ""`.
+
+Instead split blank rendering into:
+- intentional blank page (`blank_back`, `inside_back_blank`) → plain white/paper-colour sheet with no icon or text
+- tab page → tab UI
+- true missing image/fallback → placeholder icon
+
+That directly fixes the “Page 4” icon problem.
+
+### C. Make the outer page shell role-aware, not URL-aware
+Still in `FlipBook.tsx`, determine page styling from `pageRole` first:
+- material roles (`pvc_*`, `*_cover_card`) → no paper border/shadow
+- blank paper roles (`blank_back`, `inside_back_blank`) → normal paper shell, but blank content
+- printed pages → normal paper shell
+
+This removes the current ambiguity where a page without a thumbnail can accidentally look like a broken asset instead of a deliberate blank sheet.
+
+### D. Make bleed logic depend on real page roles
+In `PageEffects.tsx`, compute bleed scope using explicit roles instead of only `isFrontCover`:
+- `front_cover` should respect front-cover bleed
+- if later you add a printed back cover role, it can participate in `covers`
+- material sheets (`pvc_*`, card backs) should bypass paper bleed entirely
+- `blank_back` should behave like paper, usually with normal margins/background
+
+This should stop the white border logic from drifting between physical-material pages and paper pages.
+
+### E. Tighten physical-sequence construction in one place
+In `PreviewPanel.tsx`, keep the sequence builder as the single source of truth:
+```text
+[pvc_cover_front?]
+[pvc_cover_back?]
+[front_cover]
+[blank_back if simplex]
+[body pages with blank backs where simplex]
+[inside_back_blank if needed for parity]
+[inside_back_cover_card?]
+[back_cover_card?]
 ```
 
-This blank page inherits the section reference so it shows correct colour/duplex status. The role will be `"body"` (default), and it renders as an empty page with the paper background.
+Also ensure the role array is built alongside the page array, not inferred later from index defaults. That will prevent “role drift” after option changes.
 
-**B) Fix stale dependency**
+### F. Update the page info display to use visible roles
+Still in `PreviewPanel.tsx`, derive label/status from the visible physical faces:
+- if visible face is `blank_back`, still show it as part of the front-cover section if it belongs to that simplex sheet
+- if visible face is `inside_back_cover_card`, show the back-cover section label correctly
+- avoid relying only on `currentPage + 1`
 
-Change line 193 from:
-```typescript
-}, [pages, effects?.backCover, effects?.frontCover, isBound]);
-```
-to:
-```typescript
-}, [pages, effects, isBound]);
-```
+This will make the preview text match the actual physical book structure.
 
-This ensures any effects change (bleed, paper, lamination, hole punch) triggers a full rebuild of `finalPages`, `pageRoles`, `colorFlags`, `sectionTypes`, and the downstream `bookKey` in FlipBook.
-
-## Files to edit
+## Files to update
 - `src/components/order/PreviewPanel.tsx`
+- `src/components/preview/FlipBook.tsx`
+- `src/components/preview/PageEffects.tsx`
+- `src/components/preview/previewTypes.ts` (optional, to document the expanded role vocabulary)
 
 ## Expected result
-- Simplex front cover (1 page) shows page 1 as artwork, page 2 as blank back
-- Duplex body pages flow continuously with no inserted blanks
-- Total page count reflects physical pages including blanks
-- Changing bleed/paper/lamination options no longer causes stale border rendering
-
+- the back of a simplex cover renders as a plain blank white sheet, not an icon page
+- the inside navy/black card back renders edge-to-edge consistently, without stray white borders
+- changing front/back cover options repeatedly no longer knocks the margin logic out of alignment
+- page/spread info better reflects the real physical document the customer will receive
