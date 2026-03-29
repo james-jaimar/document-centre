@@ -45,6 +45,102 @@ const BOUND_TYPES = new Set([
   "wire_bound", "comb_bound", "saddle_stitched", "perfect_bound", "ring_binder",
 ]);
 
+/**
+ * Build a page sequence that injects tabs/inserts at their page_range_start anchor.
+ *
+ * 1. Flatten body/cover sections into sequential body pages
+ * 2. Collect anchored items (tabs/inserts) keyed by page_range_start
+ * 3. After each body page N, inject any anchored items for N
+ */
+function buildPageSequence(sections: DocumentSection[], documents: Document[]): PageInfo[] {
+  // Separate body sections from anchored items
+  const bodySections = sections.filter(
+    (s) => s.section_type !== "tab" && s.section_type !== "insert"
+  );
+  const anchoredSections = sections.filter(
+    (s) => s.section_type === "tab" || s.section_type === "insert"
+  );
+
+  // Build anchor map: page number → list of sections to inject after that page
+  const anchorMap = new Map<number, DocumentSection[]>();
+  for (const s of anchoredSections) {
+    const anchor = s.page_range_start ?? 0;
+    const list = anchorMap.get(anchor) || [];
+    list.push(s);
+    anchorMap.set(anchor, list);
+  }
+
+  const result: PageInfo[] = [];
+  let pageNum = 0;
+
+  for (const section of bodySections) {
+    const doc = documents.find((d) => d.id === section.document_id);
+    if (!doc) continue;
+    const thumbnails = Array.isArray(doc.thumbnail_urls) ? (doc.thumbnail_urls as string[]) : [];
+    const pageCount = doc.page_count ?? thumbnails.length;
+
+    for (let i = 0; i < pageCount; i++) {
+      pageNum++;
+      // Push the body page
+      result.push({
+        thumbnailUrl: thumbnails[i] ?? "",
+        pageIndex: i,
+        documentName: doc.file_name,
+        section,
+        isColor: section.is_color,
+      });
+      // Simplex blank back
+      if (!section.is_duplex) {
+        result.push({
+          thumbnailUrl: "",
+          pageIndex: -1,
+          documentName: "",
+          section,
+          isColor: section.is_color,
+        });
+      }
+      // Inject any tabs/inserts anchored after this page
+      const anchored = anchorMap.get(pageNum);
+      if (anchored) {
+        for (const item of anchored) {
+          if (item.section_type === "tab") {
+            result.push({
+              thumbnailUrl: "",
+              pageIndex: 0,
+              documentName: "Tab Divider",
+              section: item,
+              isColor: true,
+              label: item.label || undefined,
+            });
+          } else if (item.section_type === "insert") {
+            const insertColor = item.color || "white";
+            // Front face
+            result.push({
+              thumbnailUrl: "",
+              pageIndex: 0,
+              documentName: "Insert Sheet",
+              section: item,
+              isColor: true,
+              color: insertColor,
+            });
+            // Back face (physical sheet)
+            result.push({
+              thumbnailUrl: "",
+              pageIndex: -1,
+              documentName: "Insert Sheet Back",
+              section: item,
+              isColor: true,
+              color: insertColor,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
 export default function PreviewPanel({
   documents,
   sections,
@@ -73,159 +169,46 @@ export default function PreviewPanel({
     return () => obs.disconnect();
   }, []);
 
-  // Build flat page list from sections + documents
-  const pages = useMemo(() => {
-    const result: PageInfo[] = [];
-    for (const section of sections) {
-      // Tab dividers — no document, just a placeholder page
-      if (section.section_type === "tab") {
-        result.push({
-          thumbnailUrl: "",
-          pageIndex: 0,
-          documentName: "Tab Divider",
-          section,
-          isColor: true,
-          label: (section as any).label || undefined,
-        });
-        continue;
-      }
-      // Insert sheets — physical two-sided sheet (front + back)
-      if (section.section_type === "insert") {
-        const insertColor = (section as any).color || "white";
-        result.push({
-          thumbnailUrl: "",
-          pageIndex: 0,
-          documentName: "Insert Sheet",
-          section,
-          isColor: true,
-          color: insertColor,
-        });
-        // Back face of the physical insert sheet
-        result.push({
-          thumbnailUrl: "",
-          pageIndex: -1,
-          documentName: "Insert Sheet Back",
-          section,
-          isColor: true,
-          color: insertColor,
-        });
-        continue;
-      }
-      const doc = documents.find((d) => d.id === section.document_id);
-      if (!doc) continue;
-      const thumbnails = Array.isArray(doc.thumbnail_urls)
-        ? (doc.thumbnail_urls as string[])
-        : [];
-      const pageCount = doc.page_count ?? thumbnails.length;
-      for (let i = 0; i < pageCount; i++) {
-        result.push({
-          thumbnailUrl: thumbnails[i] ?? "",
-          pageIndex: i,
-          documentName: doc.file_name,
-          section,
-          isColor: section.is_color,
-        });
-        // Simplex: insert blank back for each printed page
-        if (!section.is_duplex) {
-          result.push({
-            thumbnailUrl: "",
-            pageIndex: -1,
-            documentName: "",
-            section,
-            isColor: section.is_color,
-          });
-        }
-      }
-    }
-    return result;
-  }, [documents, sections]);
+  // Build flat page list using anchor-based injection
+  const pages = useMemo(() => buildPageSequence(sections, documents), [sections, documents]);
 
   // Build final page sequence with explicit roles
   const { finalPages, pageRoles: computedPageRoles } = useMemo(() => {
     const fp = [...pages];
-    const roles: string[] = fp.map((p, i) => {
-      // Insert back face
+    const roles: string[] = fp.map((p) => {
       if (p.pageIndex === -1 && p.section?.section_type === "insert") return "insert_back";
-      // Simplex blank backs inserted with pageIndex -1
       if (p.pageIndex === -1 && p.thumbnailUrl === "") return "blank_back";
-      if (i === 0 && isBound && p.section?.section_type === "front_cover") return "front_cover";
       if (p.section?.section_type === "tab") return "tab";
       if (p.section?.section_type === "insert") return "insert";
+      if (p.section?.section_type === "front_cover") return "front_cover";
       return "body";
     });
 
-    // ── Physical PVC front cover: TWO faces (outside + inside) ──
+    // ── Physical PVC front cover ──
     const isPvc = isBound && effects?.frontCover && ["clear_pvc", "frosted_pvc", "matte_pvc"].includes(effects.frontCover);
     if (isPvc && fp.length > 0) {
       const frontThumb = fp[0]?.thumbnailUrl ?? "";
-      // Outside face: artwork with PVC overlay (solo cover when closed)
-      fp.unshift({
-        thumbnailUrl: frontThumb,
-        pageIndex: 0,
-        documentName: "PVC Cover",
-        section: undefined,
-        isColor: true,
-      });
+      fp.unshift({ thumbnailUrl: frontThumb, pageIndex: 0, documentName: "PVC Cover", section: undefined, isColor: true });
       roles.unshift("pvc_cover_front");
-      // Inside face: translucent reverse of the PVC sheet (left page when opened)
-      fp.splice(1, 0, {
-        thumbnailUrl: "",
-        pageIndex: 0,
-        documentName: "PVC Cover Inside",
-        section: undefined,
-        isColor: true,
-      });
+      fp.splice(1, 0, { thumbnailUrl: "", pageIndex: 0, documentName: "PVC Cover Inside", section: undefined, isColor: true });
       roles.splice(1, 0, "pvc_cover_back");
     }
 
-    // ── Physical back cover card: TWO faces (inside + outside) ──
+    // ── Physical back cover card ──
     const hasBackCover = isBound && effects?.backCover && effects.backCover !== "none";
-
     if (isBound) {
       if (hasBackCover) {
-        // Ensure even count BEFORE adding the two card faces.
-        // After adding inside + outside, total must be even for react-pageflip.
-        // inside_back_cover_card = right page of last spread, back_cover_card = solo final.
-        // Adding 2 pages: if current count is odd, we need one blank to make it even before
-        // the pair, resulting in odd+1+2 = even. If even, just add 2 = even.
         if (fp.length % 2 !== 0) {
-          fp.push({
-            thumbnailUrl: "",
-            pageIndex: 0,
-            documentName: "",
-            section: undefined,
-            isColor: true,
-          });
+          fp.push({ thumbnailUrl: "", pageIndex: 0, documentName: "", section: undefined, isColor: true });
           roles.push("inside_back_blank");
         }
-        // Inside face of card (right side of last spread)
-        fp.push({
-          thumbnailUrl: "",
-          pageIndex: 0,
-          documentName: "Back Cover Inside",
-          section: undefined,
-          isColor: true,
-        });
+        fp.push({ thumbnailUrl: "", pageIndex: 0, documentName: "Back Cover Inside", section: undefined, isColor: true });
         roles.push("inside_back_cover_card");
-        // Outside face of card (solo back cover)
-        fp.push({
-          thumbnailUrl: "",
-          pageIndex: 0,
-          documentName: "Back Cover",
-          section: undefined,
-          isColor: true,
-        });
+        fp.push({ thumbnailUrl: "", pageIndex: 0, documentName: "Back Cover", section: undefined, isColor: true });
         roles.push("back_cover_card");
       } else {
-        // No card back: just ensure even page count
         if (fp.length % 2 !== 0) {
-          fp.push({
-            thumbnailUrl: "",
-            pageIndex: 0,
-            documentName: "",
-            section: undefined,
-            isColor: true,
-          });
+          fp.push({ thumbnailUrl: "", pageIndex: 0, documentName: "", section: undefined, isColor: true });
           roles.push("inside_back_blank");
         }
       }
@@ -234,44 +217,17 @@ export default function PreviewPanel({
     return { finalPages: fp, pageRoles: roles };
   }, [pages, effects, isBound]);
 
-  const thumbnailPaths = useMemo(
-    () => finalPages.map((p) => p.thumbnailUrl),
-    [finalPages]
-  );
+  const thumbnailPaths = useMemo(() => finalPages.map((p) => p.thumbnailUrl), [finalPages]);
+  const colorFlags = useMemo(() => finalPages.map((p) => p.isColor), [finalPages]);
+  const sectionTypes = useMemo(() => finalPages.map((p) => p.section?.section_type ?? "body"), [finalPages]);
+  const pageLabels = useMemo(() => finalPages.map((p) => p.label ?? ""), [finalPages]);
+  const pageColors = useMemo(() => finalPages.map((p) => p.color ?? ""), [finalPages]);
 
-  const colorFlags = useMemo(
-    () => finalPages.map((p) => p.isColor),
-    [finalPages]
-  );
-
-  const sectionTypes = useMemo(
-    () => finalPages.map((p) => p.section?.section_type ?? "body"),
-    [finalPages]
-  );
-
-  const pageLabels = useMemo(
-    () => finalPages.map((p) => p.label ?? ""),
-    [finalPages]
-  );
-
-  const pageColors = useMemo(
-    () => finalPages.map((p) => p.color ?? ""),
-    [finalPages]
-  );
-
-  // Compute explicit bleed flags per physical face (once, upstream)
   const bleedFlags = useMemo(() => {
     const bleedScope = effects?.bleed ?? "none";
     return computedPageRoles.map((role) => {
-      // Non-paper surfaces: PVC, card — never use paper margin logic
-      if (["pvc_cover_front", "pvc_cover_back", "inside_back_cover_card", "back_cover_card"].includes(role)) {
-        return true; // edge-to-edge, no white inset
-      }
-      // Blank pages: always show paper with margin (no bleed)
-      if (["blank_back", "inside_back_blank"].includes(role)) {
-        return false;
-      }
-      // Printed pages: depends on bleed scope
+      if (["pvc_cover_front", "pvc_cover_back", "inside_back_cover_card", "back_cover_card"].includes(role)) return true;
+      if (["blank_back", "inside_back_blank"].includes(role)) return false;
       if (bleedScope === "all") return true;
       if (bleedScope === "none") return false;
       if (bleedScope === "front_cover" && role === "front_cover") return true;
@@ -280,7 +236,6 @@ export default function PreviewPanel({
     });
   }, [computedPageRoles, effects?.bleed]);
 
-  // Derive aspect ratio from the first document's actual dimensions
   const pageAspectRatio = useMemo(() => {
     const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
     if (doc && doc.page_width_mm && doc.page_height_mm) {
@@ -291,7 +246,6 @@ export default function PreviewPanel({
 
   const totalPages = finalPages.length;
 
-  // Clamp currentPage when page count changes (e.g. cover options added/removed)
   useEffect(() => {
     if (prevPageCount.current !== 0 && totalPages > 0 && currentPage >= totalPages) {
       setCurrentPage(Math.max(0, totalPages - 1));
@@ -299,54 +253,29 @@ export default function PreviewPanel({
     prevPageCount.current = totalPages;
   }, [totalPages, currentPage]);
 
-  // Derive what's visible in the current spread
   const isShowingFrontCover = isBound && currentPage === 0;
   const hasBackCoverCard = computedPageRoles.includes("back_cover_card");
   const isShowingBackCover = isBound && hasBackCoverCard && currentPage >= totalPages - 1;
-  // Also solo when showing the last page without back cover card (library treats last as solo)
   const isShowingLastSolo = isBound && !hasBackCoverCard && currentPage >= totalPages - 1;
-
   const isSoloState = isShowingFrontCover || isShowingBackCover || isShowingLastSolo;
 
   const visibleLeft = isSoloState && isShowingFrontCover ? null : currentPage;
   const visibleRight = isShowingFrontCover ? 0 : (isSoloState ? null : currentPage + 1);
 
-  // Page info text
   const pageInfoText = useMemo(() => {
     if (totalPages === 0) return "";
-    // Use roles for descriptive labels
-    const leftRole = visibleLeft !== null ? computedPageRoles[visibleLeft] : null;
-    const rightRole = visibleRight !== null && visibleRight < totalPages ? computedPageRoles[visibleRight] : null;
-
     if (isBound) {
       if (isShowingFrontCover) {
         const role = computedPageRoles[0];
-        if (role === "pvc_cover_front") return "Front Cover (PVC)";
-        return "Front Cover";
+        return role === "pvc_cover_front" ? "Front Cover (PVC)" : "Front Cover";
       }
       if (isShowingBackCover) return "Back Cover";
       if (isShowingLastSolo) return `Page ${totalPages} of ${totalPages}`;
-
-      // Build labels for left/right
-      const labels: string[] = [];
-      if (leftRole === "pvc_cover_back") labels.push("PVC Inside");
-      else if (leftRole === "blank_back") labels.push("Blank");
-      else if (leftRole === "inside_back_blank") labels.push("Blank");
-      else if (leftRole === "inside_back_cover_card") labels.push("Back Cover Inside");
-      else if (leftRole) labels.push(`Page ${currentPage + 1}`);
-
-      if (rightRole === "front_cover") labels.push("Front Cover");
-      else if (rightRole === "blank_back") labels.push("Blank");
-      else if (rightRole === "inside_back_blank") labels.push("Blank");
-      else if (rightRole === "inside_back_cover_card") labels.push("Back Cover Inside");
-      else if (rightRole) labels.push(`Page ${currentPage + 2}`);
-
-      return labels.length > 0 ? `${labels.join(" · ")}  (${totalPages} pages)` : `Page ${currentPage + 1} of ${totalPages}`;
+      return `Pages ${currentPage + 1}–${currentPage + 2}  (${totalPages} pages)`;
     }
     return `Page ${currentPage + 1} of ${totalPages}`;
-  }, [currentPage, totalPages, isBound, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, hasBackCoverCard, computedPageRoles, visibleLeft, visibleRight]);
+  }, [currentPage, totalPages, isBound, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles]);
 
-  // Colour status for visible pages
   const colourStatus = useMemo(() => {
     if (totalPages === 0) return "";
     const visibleIndices: number[] = [];
@@ -358,7 +287,6 @@ export default function PreviewPanel({
     return allColor ? "Colour" : allBW ? "B&W" : "Mixed";
   }, [visibleLeft, visibleRight, finalPages, totalPages]);
 
-  // Duplex status for visible pages
   const duplexStatus = useMemo(() => {
     if (totalPages === 0) return "";
     const idx = visibleLeft ?? visibleRight ?? 0;
@@ -366,7 +294,6 @@ export default function PreviewPanel({
     return sec?.is_duplex ? "Duplex" : "Simplex";
   }, [visibleLeft, visibleRight, finalPages, totalPages]);
 
-  // Section label for visible pages
   const sectionLabel = useMemo(() => {
     if (totalPages === 0) return "";
     const idx = visibleLeft ?? visibleRight ?? 0;
@@ -374,7 +301,6 @@ export default function PreviewPanel({
     return sec ? (SECTION_LABELS[sec.section_type] ?? sec.section_type) : "";
   }, [visibleLeft, visibleRight, finalPages, totalPages]);
 
-  // Navigation helpers
   const goFirst = () => setCurrentPage(0);
   const goLast = () => setCurrentPage(totalPages - 1);
   const goPrev = () => setCurrentPage((p) => Math.max(0, p - step));
@@ -392,7 +318,6 @@ export default function PreviewPanel({
 
   return (
     <div className="flex flex-col items-center gap-4 h-full">
-      {/* Preview display */}
       <div ref={containerRef} className="flex-1 flex items-center justify-center w-full overflow-hidden">
         <DocumentPreview
           thumbnailPaths={thumbnailPaths}
@@ -412,24 +337,16 @@ export default function PreviewPanel({
         />
       </div>
 
-      {/* Page info */}
       <div className="text-center">
         <p className="text-sm font-medium text-foreground">{pageInfoText}</p>
         {sectionLabel && (
           <div className="flex items-center justify-center gap-2 mt-1">
-            <Badge variant="secondary" className="text-xs">
-              {sectionLabel}
-            </Badge>
-            <span className="text-xs text-muted-foreground">
-              {colourStatus}
-              {" · "}
-              {duplexStatus}
-            </span>
+            <Badge variant="secondary" className="text-xs">{sectionLabel}</Badge>
+            <span className="text-xs text-muted-foreground">{colourStatus} · {duplexStatus}</span>
           </div>
         )}
       </div>
 
-      {/* Navigation */}
       <div className="flex items-center gap-2 w-full max-w-md">
         <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={currentPage === 0} onClick={goFirst}>
           <ChevronsLeft className="h-4 w-4" />
