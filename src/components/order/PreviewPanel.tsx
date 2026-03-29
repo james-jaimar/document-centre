@@ -224,7 +224,7 @@ export default function PreviewPanel({
     const PHYSICAL_FRONT_ROLES = new Set(["tab", "insert"]);
     let i = 0;
     while (i < fp.length) {
-      if (PHYSICAL_FRONT_ROLES.has(roles[i]) && i % 2 !== 0) {
+      if (PHYSICAL_FRONT_ROLES.has(roles[i]) && i % 2 !== 0 && roles[i - 1] !== "blank_back") {
         // Insert a blank page before to push this to an even index
         fp.splice(i, 0, {
           thumbnailUrl: "",
