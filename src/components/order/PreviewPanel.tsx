@@ -212,7 +212,7 @@ export default function PreviewPanel({
   }, []);
 
   // Build flat page list using anchor-based injection
-  const pages = useMemo(() => buildPageSequence(sections, documents), [sections, documents]);
+  const pages = useMemo(() => buildPageSequence(sections, documents, isBound), [sections, documents, isBound]);
 
   // Build final page sequence with explicit roles + enforce physical alignment
   const { finalPages, pageRoles: computedPageRoles } = useMemo(() => {
