@@ -22,19 +22,14 @@ const BACK_COVER_COLORS: Record<string, string> = {
   gloss_card: "#f0f0f0",
 };
 
-/** Roles that represent non-paper material (no bleed margin, no paper tint) */
-const MATERIAL_ROLES = new Set([
-  "pvc_cover_front",
-  "pvc_cover_back",
-  "inside_back_cover_card",
-  "back_cover_card",
-]);
+/** Inset shadow for paper pages — purely cosmetic, zero layout impact */
+const PAPER_SHADOW = "inset 0 0 0 1px rgba(0,0,0,0.12), inset 0 0 6px rgba(0,0,0,0.06)";
 
-/** Roles that are intentional blank paper pages */
-const BLANK_PAPER_ROLES = new Set([
-  "blank_back",
-  "inside_back_blank",
-]);
+/** Roles that are solid card material (edge-to-edge, no paper styling) */
+const CARD_ROLES = new Set(["inside_back_cover_card", "back_cover_card"]);
+
+/** Roles that are blank paper faces */
+const BLANK_PAPER_ROLES = new Set(["blank_back", "inside_back_blank"]);
 
 interface PageEffectsProps {
   effects: PreviewEffects;
@@ -46,60 +41,30 @@ interface PageEffectsProps {
 }
 
 /**
- * Wraps a page's content and applies visual finishing effects.
- * Each role renders one specific physical face.
+ * Single source of truth for all page visual treatment.
+ *
+ * Every page slot renders through ONE of these branches:
+ * 1. Card material — solid color, edge-to-edge, no children
+ * 2. PVC cover back — translucent reverse face, no children
+ * 3. PVC cover front — children (artwork) + PVC overlay
+ * 4. Blank paper — paper color + shadow, no children
+ * 5. Standard paper — paper color + shadow + optional bleed padding + children
  */
 export default function PageEffects({ effects, pageIndex, totalPages, children, pageRole }: PageEffectsProps) {
   const role = pageRole ?? (pageIndex === 0 ? "front_cover" : "body");
-  const isMaterial = MATERIAL_ROLES.has(role);
 
-  // ── Inset shadow for paper pages (cosmetic only, no layout impact) ──
-  const paperShadow = "inset 0 0 0 1px rgba(0,0,0,0.15), inset 0 0 8px rgba(0,0,0,0.10)";
-
-  // ── PVC cover front: artwork + PVC overlay ──
-  if (role === "pvc_cover_front") {
+  // ── 1. Card material: solid edge-to-edge color ──
+  if (CARD_ROLES.has(role)) {
+    const cardColor = BACK_COVER_COLORS[effects.backCover] ?? "#1a1a1a";
     return (
-      <div className="relative w-full h-full">
-        <div className="w-full h-full relative">
-          {children}
-          {effects.frontCover === "clear_pvc" && (
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                background: "rgba(255,255,255,0.12)",
-                boxShadow: "inset 0 0 20px rgba(255,255,255,0.1)",
-              }}
-            />
-          )}
-          {effects.frontCover === "frosted_pvc" && (
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                background: "rgba(255,255,255,0.35)",
-                backdropFilter: "blur(1.5px)",
-                WebkitBackdropFilter: "blur(1.5px)",
-              }}
-            />
-          )}
-          {effects.frontCover === "matte_pvc" && (
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                background: "rgba(255,255,255,0.25)",
-                backdropFilter: "blur(0.5px)",
-                WebkitBackdropFilter: "blur(0.5px)",
-              }}
-            />
-          )}
-        </div>
-      </div>
+      <div className="w-full h-full" style={{ backgroundColor: cardColor }} />
     );
   }
 
-  // ── PVC cover back: translucent reverse side of the plastic sheet ──
+  // ── 2. PVC cover back: translucent reverse ──
   if (role === "pvc_cover_back") {
     return (
-      <div className="relative w-full h-full" style={{ backgroundColor: "rgba(240,240,240,0.6)" }}>
+      <div className="w-full h-full" style={{ backgroundColor: "rgba(240,240,240,0.6)" }}>
         <div
           className="absolute inset-0 pointer-events-none"
           style={{
@@ -111,54 +76,76 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
     );
   }
 
-  // ── Inside back cover card: solid colour, edge-to-edge ──
-  if (role === "inside_back_cover_card") {
-    const cardColor = BACK_COVER_COLORS[effects.backCover] ?? "#1a1a1a";
+  // ── 3. PVC cover front: artwork + PVC overlay ──
+  if (role === "pvc_cover_front") {
     return (
-      <div className="relative w-full h-full" style={{ backgroundColor: cardColor }} />
+      <div className="w-full h-full relative">
+        {/* Artwork image rendered by FlipBook as children */}
+        {children}
+        {/* PVC overlay */}
+        {effects.frontCover === "clear_pvc" && (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background: "rgba(255,255,255,0.12)",
+              boxShadow: "inset 0 0 20px rgba(255,255,255,0.1)",
+            }}
+          />
+        )}
+        {effects.frontCover === "frosted_pvc" && (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background: "rgba(255,255,255,0.35)",
+              backdropFilter: "blur(1.5px)",
+              WebkitBackdropFilter: "blur(1.5px)",
+            }}
+          />
+        )}
+        {effects.frontCover === "matte_pvc" && (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background: "rgba(255,255,255,0.25)",
+              backdropFilter: "blur(0.5px)",
+              WebkitBackdropFilter: "blur(0.5px)",
+            }}
+          />
+        )}
+      </div>
     );
   }
 
-  // ── Back cover card: solid colour, edge-to-edge ──
-  if (role === "back_cover_card") {
-    const cardColor = BACK_COVER_COLORS[effects.backCover] ?? "#1a1a1a";
-    return (
-      <div className="relative w-full h-full" style={{ backgroundColor: cardColor }} />
-    );
-  }
-
-  // ── Intentional blank paper pages ──
+  // ── 4. Blank paper: paper color + shadow, no content ──
   if (BLANK_PAPER_ROLES.has(role)) {
     const paperBg = PAPER_COLORS[effects.paperColor] ?? "#ffffff";
     return (
-      <div className="relative w-full h-full" style={{ backgroundColor: paperBg, boxShadow: paperShadow }}>
-        {/* Hole punch marks on blank pages too */}
+      <div className="w-full h-full" style={{ backgroundColor: paperBg, boxShadow: PAPER_SHADOW }}>
         {effects.holePunch > 0 && <HolePunchMarks count={effects.holePunch as 2 | 4} />}
       </div>
     );
   }
 
-  // ── Standard pages (front_cover, body, etc.) ──
+  // ── 5. Standard paper page (front_cover, body, etc.) ──
   const isFrontCover = role === "front_cover";
-  const isCoverPage = isFrontCover;
-
   const paperBg = PAPER_COLORS[effects.paperColor] ?? "#ffffff";
 
   // Bleed: show white border based on scope
   const isBleedForThisPage =
     effects.bleed === "all" ||
     (effects.bleed === "front_cover" && isFrontCover) ||
-    (effects.bleed === "covers" && isCoverPage);
-  const showBleedMargin = !isBleedForThisPage;
+    (effects.bleed === "covers" && isFrontCover);
+  const bleedPadding = isBleedForThisPage ? undefined : "3%";
 
   // Lamination sheen on front cover only (not PVC — that's a separate material)
   const showLamination = isFrontCover && effects.coverLamination !== "none";
 
   return (
-    <div className="relative w-full h-full" style={{ backgroundColor: paperBg, boxShadow: paperShadow }}>
+    <div className="w-full h-full relative" style={{ backgroundColor: paperBg, boxShadow: PAPER_SHADOW }}>
+      {/* Single content wrapper — consistent for ALL standard pages */}
       <div
         className="w-full h-full"
-        style={showBleedMargin ? { padding: "3%", boxSizing: "border-box" } : undefined}
+        style={bleedPadding ? { padding: bleedPadding, boxSizing: "border-box" } : undefined}
       >
         {children}
       </div>
