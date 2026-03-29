@@ -30,6 +30,12 @@ const MATERIAL_ROLES = new Set([
   "back_cover_card",
 ]);
 
+/** Roles that are intentional blank paper pages */
+const BLANK_PAPER_ROLES = new Set([
+  "blank_back",
+  "inside_back_blank",
+]);
+
 interface PageEffectsProps {
   effects: PreviewEffects;
   pageIndex: number;
