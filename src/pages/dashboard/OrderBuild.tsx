@@ -393,28 +393,34 @@ export default function OrderBuild() {
 
             {/* Tab Dividers Manager */}
             {tabInfo && (
-              <TabManager
-                sections={sections}
-                documents={documents}
-                orderItemId={orderItemId}
-                tabCount={tabInfo.count}
-                isMultiColor={tabInfo.multiColor}
-                onAddTab={handleAddTab}
-                onDeleteTab={handleDeleteTab}
-                onMoveTab={handleMoveTab}
-                onUpdateTabLabel={handleUpdateTabLabel}
-              />
+              <div ref={tabManagerRef} className="border border-accent rounded-lg bg-accent/10 p-3">
+                <TabManager
+                  sections={sections}
+                  documents={documents}
+                  orderItemId={orderItemId}
+                  tabCount={tabInfo.count}
+                  isMultiColor={tabInfo.multiColor}
+                  onAddTab={handleAddTab}
+                  onDeleteTab={handleDeleteTab}
+                  onMoveTab={handleMoveTab}
+                  onUpdateTabLabel={handleUpdateTabLabel}
+                />
+              </div>
             )}
 
             {/* Insert Sheets Manager */}
-            <InsertManager
-              sections={sections}
-              documents={documents}
-              orderItemId={orderItemId}
-              onAddInsert={handleAddInsert}
-              onDeleteInsert={handleDeleteInsert}
-              onMoveInsert={handleMoveInsert}
-            />
+            {insertEnabled && (
+              <div ref={insertManagerRef} className="border border-accent rounded-lg bg-accent/10 p-3">
+                <InsertManager
+                  sections={sections}
+                  documents={documents}
+                  orderItemId={orderItemId}
+                  onAddInsert={handleAddInsert}
+                  onDeleteInsert={handleDeleteInsert}
+                  onMoveInsert={handleMoveInsert}
+                />
+              </div>
+            )}
           </div>
           <div className="p-3 shrink-0">
             <PriceSummary
