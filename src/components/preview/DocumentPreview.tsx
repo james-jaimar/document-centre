@@ -7,7 +7,7 @@ import FoldPreview from "./FoldPreview";
 import LooseSheetsPreview from "./LooseSheetsPreview";
 import { Loader2 } from "lucide-react";
 
-import type { PreviewEffects } from "./previewTypes";
+import type { PreviewEffects, TabPosition } from "./previewTypes";
 
 export interface DocumentPreviewProps {
   thumbnailPaths: string[];
@@ -24,6 +24,7 @@ export interface DocumentPreviewProps {
   bleedFlags?: boolean[];
   pageLabels?: string[];
   pageColors?: string[];
+  tabPositions?: TabPosition[];
 }
 
 const BOUND_TYPES = new Set([
@@ -46,6 +47,7 @@ export default function DocumentPreview({
   bleedFlags,
   pageLabels,
   pageColors,
+  tabPositions,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
@@ -99,10 +101,11 @@ export default function DocumentPreview({
     bleedFlags,
     pageLabels,
     pageColors,
+    tabPositions,
   };
 
   if (BOUND_TYPES.has(productType)) {
-    return <FlipBook {...commonProps} bindingType={getBindingType(productType)} />;
+    return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} />;
   }
 
   if (FOLD_TYPES.has(productType)) {

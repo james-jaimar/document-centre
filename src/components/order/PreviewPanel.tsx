@@ -11,7 +11,7 @@ import {
   FileText,
 } from "lucide-react";
 import DocumentPreview from "@/components/preview/DocumentPreview";
-import type { ProductPreviewType, PreviewEffects } from "@/components/preview/previewTypes";
+import type { ProductPreviewType, PreviewEffects, TabPosition } from "@/components/preview/previewTypes";
 
 type Document = Tables<"documents">;
 type DocumentSection = Tables<"document_sections">;
@@ -111,6 +111,7 @@ function buildPageSequence(sections: DocumentSection[], documents: Document[]): 
       if (anchored) {
         for (const item of anchored) {
           if (item.section_type === "tab") {
+            // Front face of tab divider
             result.push({
               thumbnailUrl: "",
               pageIndex: 0,
@@ -118,6 +119,17 @@ function buildPageSequence(sections: DocumentSection[], documents: Document[]): 
               section: item,
               isColor: true,
               label: item.label || undefined,
+              color: item.color || undefined,
+            });
+            // Back face of tab divider (physical sheet)
+            result.push({
+              thumbnailUrl: "",
+              pageIndex: -1,
+              documentName: "Tab Divider Back",
+              section: item,
+              isColor: true,
+              label: item.label || undefined,
+              color: item.color || undefined,
             });
           } else if (item.section_type === "insert") {
             const insertColor = item.color || "white";
@@ -184,6 +196,7 @@ export default function PreviewPanel({
     const fp = [...pages];
     const roles: string[] = fp.map((p) => {
       if (p.pageIndex === -1 && p.section?.section_type === "insert") return "insert_back";
+      if (p.pageIndex === -1 && p.section?.section_type === "tab") return "tab_back";
       if (p.pageIndex === -1 && p.thumbnailUrl === "") return "blank_back";
       if (p.section?.section_type === "tab") return "tab";
       if (p.section?.section_type === "insert") return "insert";
@@ -229,6 +242,26 @@ export default function PreviewPanel({
   const sectionTypes = useMemo(() => finalPages.map((p) => p.section?.section_type ?? "body"), [finalPages]);
   const pageLabels = useMemo(() => finalPages.map((p) => p.label ?? ""), [finalPages]);
   const pageColors = useMemo(() => finalPages.map((p) => p.color ?? ""), [finalPages]);
+
+  // Compute tab positions for persistent overlay
+  const tabPositions = useMemo((): TabPosition[] => {
+    const positions: TabPosition[] = [];
+    const tabRoleIndices = computedPageRoles
+      .map((r, i) => (r === "tab" ? i : -1))
+      .filter((i) => i >= 0);
+    const tabTotal = tabRoleIndices.length;
+    tabRoleIndices.forEach((pageIdx, tabIdx) => {
+      const page = finalPages[pageIdx];
+      positions.push({
+        pageIndex: pageIdx,
+        label: page?.label || `Tab ${tabIdx + 1}`,
+        tabIndex: tabIdx,
+        tabTotal,
+        color: page?.color || "",
+      });
+    });
+    return positions;
+  }, [computedPageRoles, finalPages]);
 
   const bleedFlags = useMemo(() => {
     const bleedScope = effects?.bleed ?? "none";
@@ -341,6 +374,7 @@ export default function PreviewPanel({
           bleedFlags={bleedFlags}
           pageLabels={pageLabels}
           pageColors={pageColors}
+          tabPositions={tabPositions}
         />
       </div>
 

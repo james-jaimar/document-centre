@@ -1,6 +1,6 @@
 import React, { useRef, useCallback, useEffect, forwardRef, useMemo } from "react";
 import HTMLFlipBook from "react-pageflip";
-import type { FlipBookProps, PreviewEffects } from "./previewTypes";
+import type { FlipBookProps, PreviewEffects, TabPosition } from "./previewTypes";
 import { DEFAULT_PREVIEW_EFFECTS, TAB_COLORS } from "./previewTypes";
 import BindingSpine from "./BindingSpine";
 import PageEffects from "./PageEffects";
@@ -23,6 +23,8 @@ const CONTENT_LESS_ROLES = new Set([
   "inside_back_blank",
   "insert",
   "insert_back",
+  "tab",
+  "tab_back",
 ]);
 
 /**
@@ -38,31 +40,17 @@ const FlipPage = forwardRef<
     pageIndex: number;
     totalPages: number;
     sectionType?: string;
-    tabIndex?: number;
-    tabTotal?: number;
     pageRole?: string;
     allowBleed: boolean;
     bleedInsetPx: number;
     label?: string;
     color?: string;
   }
->(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, tabIndex = 0, tabTotal = 1, pageRole, allowBleed, bleedInsetPx, label, color }, ref) => {
-  const isTab = sectionType === "tab";
-  const isInsert = sectionType === "insert" || pageRole === "insert";
+>(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, pageRole, allowBleed, bleedInsetPx, label, color }, ref) => {
   const isContentLess = CONTENT_LESS_ROLES.has(pageRole ?? "");
 
   let content: React.ReactNode;
-  if (isTab) {
-    content = (
-      <div className="w-full h-full flex items-center justify-center bg-card">
-        <div className="text-center text-muted-foreground/40">
-          <p className="text-sm font-medium">{label || `Tab ${tabIndex + 1}`}</p>
-        </div>
-      </div>
-    );
-  } else if (isInsert) {
-    content = null; // PageEffects handles insert rendering
-  } else if (isContentLess) {
+  if (isContentLess) {
     content = null;
   } else if (url) {
     content = (
@@ -92,7 +80,7 @@ const FlipPage = forwardRef<
         width: "100%",
         height: "100%",
         position: "relative",
-        overflow: isTab ? "visible" : "hidden",
+        overflow: "hidden",
       }}
     >
       <PageEffects
@@ -107,48 +95,141 @@ const FlipPage = forwardRef<
       >
         {content}
       </PageEffects>
-
-      {/* Tab extension protruding from right edge — Mimeo-style */}
-      {isTab && (
-        <div
-          className="absolute pointer-events-none"
-          style={{
-            right: -30,
-            top: `${((tabIndex / Math.max(tabTotal, 1)) * 60) + 12}%`,
-            width: 30,
-            height: 50,
-            backgroundColor: TAB_COLORS[tabIndex % TAB_COLORS.length],
-            borderRadius: "0 6px 6px 0",
-            border: "1px solid rgba(0,0,0,0.18)",
-            borderLeft: "none",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: "2px 2px 6px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.3)",
-            background: `linear-gradient(180deg, ${TAB_COLORS[tabIndex % TAB_COLORS.length]}ee 0%, ${TAB_COLORS[tabIndex % TAB_COLORS.length]} 100%)`,
-          }}
-        >
-          <span
-            style={{
-              fontSize: 10,
-              color: "#fff",
-              fontWeight: 700,
-              writingMode: "vertical-rl",
-              textOrientation: "mixed",
-              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-              letterSpacing: "0.5px",
-              maxHeight: 42,
-              overflow: "hidden",
-            }}
-          >
-            {label || `Tab ${tabIndex + 1}`}
-          </span>
-        </div>
-      )}
     </div>
   );
 });
 FlipPage.displayName = "FlipPage";
+
+/**
+ * Persistent tab overlay — renders tab protrusions visible from every page.
+ * Tabs ahead of the current spread stick out from the right edge.
+ * Tabs behind the current spread stick out from the left edge.
+ */
+function TabOverlay({
+  tabPositions,
+  currentPage,
+  pageWidth,
+  pageHeight,
+  isSoloPage,
+  isShowingFrontCover,
+}: {
+  tabPositions: TabPosition[];
+  currentPage: number;
+  pageWidth: number;
+  pageHeight: number;
+  isSoloPage: boolean;
+  isShowingFrontCover: boolean;
+}) {
+  if (tabPositions.length === 0) return null;
+
+  // Tab protrusion dimensions (at base resolution)
+  const tabWidth = 22;
+  const tabHeight = Math.max(55, Math.min(80, pageHeight / (tabPositions[0].tabTotal + 1)));
+  const spreadWidth = isSoloPage ? pageWidth : pageWidth * 2;
+
+  // The right page edge of the visible spread
+  const rightEdge = spreadWidth;
+  // The left page edge
+  const leftEdge = 0;
+
+  return (
+    <div
+      className="absolute inset-0 pointer-events-none"
+      style={{ width: spreadWidth, height: pageHeight, overflow: "visible" }}
+    >
+      {tabPositions.map((tab) => {
+        // Determine if this tab is ahead or behind the current view
+        const isAhead = tab.pageIndex > currentPage + (isSoloPage ? 0 : 1);
+        const isBehind = tab.pageIndex <= currentPage;
+        // If the tab IS the current page, show it on the right
+        const isCurrent = !isAhead && !isBehind;
+
+        // Calculate staggered vertical position
+        const segmentHeight = pageHeight / (tab.tabTotal + 1);
+        const topOffset = segmentHeight * (tab.tabIndex + 0.5) - tabHeight / 2;
+
+        const tabColor = TAB_COLORS[tab.tabIndex % TAB_COLORS.length];
+
+        if (isAhead || isCurrent) {
+          // Tab protrudes from right edge
+          return (
+            <div
+              key={`tab-r-${tab.tabIndex}`}
+              className="absolute"
+              style={{
+                left: rightEdge,
+                top: topOffset,
+                width: tabWidth,
+                height: tabHeight,
+                zIndex: 10 + tab.tabIndex,
+              }}
+            >
+              <svg
+                width={tabWidth}
+                height={tabHeight}
+                viewBox={`0 0 ${tabWidth} ${tabHeight}`}
+                style={{ filter: "drop-shadow(2px 1px 3px rgba(0,0,0,0.2))" }}
+              >
+                <path
+                  d={`M0,0 C${tabWidth * 0.3},${tabHeight * 0.04} ${tabWidth * 0.7},${tabHeight * 0.06} ${tabWidth},${tabHeight * 0.1} L${tabWidth},${tabHeight * 0.9} C${tabWidth * 0.7},${tabHeight * 0.94} ${tabWidth * 0.3},${tabHeight * 0.96} 0,${tabHeight} Z`}
+                  fill={tabColor}
+                  stroke="rgba(0,0,0,0.15)"
+                  strokeWidth="0.5"
+                />
+                <text
+                  x={tabWidth / 2 + 1}
+                  y={tabHeight / 2}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fill="#fff"
+                  fontSize="8"
+                  fontWeight="700"
+                  style={{ writingMode: "tb" } as any}
+                  transform={`rotate(180, ${tabWidth / 2 + 1}, ${tabHeight / 2})`}
+                >
+                  {tab.label.length > 8 ? tab.label.slice(0, 7) + "…" : tab.label}
+                </text>
+              </svg>
+            </div>
+          );
+        }
+
+        if (isBehind && !isShowingFrontCover) {
+          // Tab protrudes from left edge
+          return (
+            <div
+              key={`tab-l-${tab.tabIndex}`}
+              className="absolute"
+              style={{
+                left: -tabWidth,
+                top: topOffset,
+                width: tabWidth,
+                height: tabHeight,
+                zIndex: 10 + tab.tabIndex,
+              }}
+            >
+              <svg
+                width={tabWidth}
+                height={tabHeight}
+                viewBox={`0 0 ${tabWidth} ${tabHeight}`}
+                style={{ filter: "drop-shadow(-2px 1px 3px rgba(0,0,0,0.15))", transform: "scaleX(-1)" }}
+              >
+                <path
+                  d={`M0,0 C${tabWidth * 0.3},${tabHeight * 0.04} ${tabWidth * 0.7},${tabHeight * 0.06} ${tabWidth},${tabHeight * 0.1} L${tabWidth},${tabHeight * 0.9} C${tabWidth * 0.7},${tabHeight * 0.94} ${tabWidth * 0.3},${tabHeight * 0.96} 0,${tabHeight} Z`}
+                  fill={tabColor}
+                  stroke="rgba(0,0,0,0.15)"
+                  strokeWidth="0.5"
+                />
+              </svg>
+            </div>
+          );
+        }
+
+        return null;
+      })}
+    </div>
+  );
+}
 
 export default function FlipBook({
   urls,
@@ -165,6 +246,7 @@ export default function FlipBook({
   bleedFlags,
   pageLabels,
   pageColors,
+  tabPositions,
 }: FlipBookProps) {
   const flipBookRef = useRef<any>(null);
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
@@ -244,109 +326,139 @@ export default function FlipBook({
   const displayedViewportWidth = isSoloPage ? displayedPageWidth : displayedSpreadWidth;
   const spinePosition = isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center";
 
+  // Tab overlay gutter (extra space for tabs to protrude)
+  const tabGutter = (tabPositions?.length ?? 0) > 0 ? 30 * scaleFactor : 0;
+
   return (
     <div className="flex flex-col items-center justify-center gap-2" style={{ width, height, overflow: "visible" }}>
       {/*
         VIEWER WRAPPER: visible viewport, animates width for solo/spread.
         Uses DISPLAYED (scaled) dimensions — purely cosmetic.
+        Extra padding for tab protrusions.
       */}
       <div
         style={{
-          width: displayedViewportWidth,
+          width: displayedViewportWidth + tabGutter * 2,
           height: displayedPageHeight,
           position: "relative",
           overflow: "visible",
           transition: "width 0.4s ease-in-out",
-          boxShadow: "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
         }}
       >
-        {/* Binding spine */}
-        <BindingSpine
-          bindingType={bindingType}
-          height={displayedPageHeight}
-          isOpen={!isSoloPage}
-          position={spinePosition}
-        />
-
-        {/*
-          PRESENTATION LAYER: offset/clip at display scale for solo pages.
-        */}
+        {/* Inner container for the book + spine, centered with tab gutters */}
         <div
           style={{
-            width: displayedSpreadWidth,
-            height: displayedPageHeight,
             position: "absolute",
+            left: tabGutter,
             top: 0,
-            left: isShowingFrontCover ? -displayedPageWidth : 0,
-            transition: "left 0.4s ease-in-out",
-            ...(isShowingFrontCover
-              ? { clipPath: `inset(0 0 0 ${displayedPageWidth}px)` }
-              : (isShowingBackCover || isShowingLastSolo)
-                ? { clipPath: `inset(0 ${displayedPageWidth}px 0 0)` }
-                : {}),
+            width: displayedViewportWidth,
+            height: displayedPageHeight,
+            boxShadow: "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
           }}
         >
+          {/* Binding spine */}
+          <BindingSpine
+            bindingType={bindingType}
+            height={displayedPageHeight}
+            isOpen={!isSoloPage}
+            position={spinePosition}
+          />
+
+          {/* Tab overlay — persistent, visible from every page */}
+          {tabPositions && tabPositions.length > 0 && (
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: isSoloPage ? displayedPageWidth : displayedSpreadWidth,
+                height: displayedPageHeight,
+                pointerEvents: "none",
+                zIndex: 20,
+                transform: `scale(${scaleFactor})`,
+                transformOrigin: "top left",
+              }}
+            >
+              <TabOverlay
+                tabPositions={tabPositions}
+                currentPage={currentPage}
+                pageWidth={basePageWidth}
+                pageHeight={basePageHeight}
+                isSoloPage={isSoloPage}
+                isShowingFrontCover={isShowingFrontCover}
+              />
+            </div>
+          )}
+
           {/*
-            SCALE WRAPPER: transforms the fixed-resolution stage to display size.
-            The library never sees this transform — it only measures the inner div.
+            PRESENTATION LAYER: offset/clip at display scale for solo pages.
           */}
           <div
             style={{
-              transform: `scale(${scaleFactor})`,
-              transformOrigin: "top left",
-              width: baseSpreadWidth,
-              height: basePageHeight,
+              width: displayedSpreadWidth,
+              height: displayedPageHeight,
+              position: "absolute",
+              top: 0,
+              left: isShowingFrontCover ? -displayedPageWidth : 0,
+              transition: "left 0.4s ease-in-out",
+              ...(isShowingFrontCover
+                ? { clipPath: `inset(0 0 0 ${displayedPageWidth}px)` }
+                : (isShowingBackCover || isShowingLastSolo)
+                  ? { clipPath: `inset(0 ${displayedPageWidth}px 0 0)` }
+                  : {}),
             }}
           >
             {/*
-              MEASUREMENT STAGE: ALWAYS baseSpreadWidth × basePageHeight.
-              Completely static. No transitions, no clips, no position changes.
-              react-pageflip measures THIS container.
+              SCALE WRAPPER: transforms the fixed-resolution stage to display size.
             */}
             <div
               style={{
+                transform: `scale(${scaleFactor})`,
+                transformOrigin: "top left",
                 width: baseSpreadWidth,
                 height: basePageHeight,
-                position: "relative",
               }}
             >
-              {/* @ts-ignore — react-pageflip types are imprecise */}
-              <HTMLFlipBook
-                key={structuralKey}
-                ref={flipBookRef}
-                width={basePageWidth}
-                height={basePageHeight}
-                size="fixed"
-                minWidth={basePageWidth}
-                maxWidth={basePageWidth}
-                minHeight={basePageHeight}
-                maxHeight={basePageHeight}
-                showCover={true}
-                flippingTime={600}
-                drawShadow={true}
-                maxShadowOpacity={0.5}
-                mobileScrollSupport={false}
-                onFlip={handleFlip}
-                startPage={0}
-                usePortrait={false}
-                startZIndex={0}
-                autoSize={false}
-                clickEventForward={false}
-                useMouseEvents={true}
-                swipeDistance={30}
-                showPageCorners={true}
-                disableFlipByClick={false}
-                style={{}}
-                className=""
+              {/*
+                MEASUREMENT STAGE: ALWAYS baseSpreadWidth × basePageHeight.
+              */}
+              <div
+                style={{
+                  width: baseSpreadWidth,
+                  height: basePageHeight,
+                  position: "relative",
+                }}
               >
-                {urls.map((url, i) => {
-                  const secType = sectionTypes?.[i];
-                  const isTab = secType === "tab";
-                  const tabIndex = isTab
-                    ? sectionTypes!.slice(0, i).filter((t) => t === "tab").length
-                    : 0;
-                  const tabTotal = sectionTypes?.filter((t) => t === "tab").length ?? 0;
-                  return (
+                {/* @ts-ignore — react-pageflip types are imprecise */}
+                <HTMLFlipBook
+                  key={structuralKey}
+                  ref={flipBookRef}
+                  width={basePageWidth}
+                  height={basePageHeight}
+                  size="fixed"
+                  minWidth={basePageWidth}
+                  maxWidth={basePageWidth}
+                  minHeight={basePageHeight}
+                  maxHeight={basePageHeight}
+                  showCover={true}
+                  flippingTime={600}
+                  drawShadow={true}
+                  maxShadowOpacity={0.5}
+                  mobileScrollSupport={false}
+                  onFlip={handleFlip}
+                  startPage={0}
+                  usePortrait={false}
+                  startZIndex={0}
+                  autoSize={false}
+                  clickEventForward={false}
+                  useMouseEvents={true}
+                  swipeDistance={30}
+                  showPageCorners={true}
+                  disableFlipByClick={false}
+                  style={{}}
+                  className=""
+                >
+                  {urls.map((url, i) => (
                     <FlipPage
                       key={i}
                       url={url}
@@ -355,18 +467,16 @@ export default function FlipBook({
                       effects={resolvedEffects}
                       pageIndex={i}
                       totalPages={urls.length}
-                      sectionType={secType}
-                      tabIndex={tabIndex}
-                      tabTotal={tabTotal}
+                      sectionType={sectionTypes?.[i]}
                       pageRole={pageRoles?.[i]}
                       allowBleed={bleedFlags?.[i] ?? false}
                       bleedInsetPx={bleedInsetPx}
                       label={pageLabels?.[i]}
                       color={pageColors?.[i]}
                     />
-                  );
-                })}
-              </HTMLFlipBook>
+                  ))}
+                </HTMLFlipBook>
+              </div>
             </div>
           </div>
         </div>

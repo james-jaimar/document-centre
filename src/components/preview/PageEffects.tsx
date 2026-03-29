@@ -28,6 +28,9 @@ const PAPER_SHADOW = "inset 0 0 0 1px rgba(0,0,0,0.12), inset 0 0 6px rgba(0,0,0
 /** Roles that are solid card material (edge-to-edge, no paper styling) */
 const CARD_ROLES = new Set(["inside_back_cover_card", "back_cover_card"]);
 
+/** Tab card color (light gray card stock) */
+const TAB_CARD_COLOR = "#e8e8e8";
+
 /** Roles that are blank paper faces */
 const BLANK_PAPER_ROLES = new Set(["blank_back", "inside_back_blank"]);
 
@@ -131,6 +134,26 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
           />
         )}
       </div>
+    );
+  }
+
+  // ── Tab divider front: light gray card with label ──
+  if (role === "tab") {
+    return (
+      <div className="w-full h-full" style={{ backgroundColor: TAB_CARD_COLOR, boxShadow: PAPER_SHADOW }}>
+        <div className="w-full h-full flex items-center justify-center">
+          <div className="text-center opacity-30">
+            <p style={{ fontSize: 11, fontWeight: 600, color: "#555" }}>{label || "TAB"}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Tab divider back: plain gray card ──
+  if (role === "tab_back") {
+    return (
+      <div className="w-full h-full" style={{ backgroundColor: TAB_CARD_COLOR, boxShadow: PAPER_SHADOW }} />
     );
   }
 
