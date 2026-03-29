@@ -21,6 +21,7 @@ interface DocumentPreviewProps {
   effects?: PreviewEffects;
   sectionTypes?: string[];
   pageRoles?: string[];
+  bleedFlags?: boolean[];
 }
 
 const BOUND_TYPES = new Set([
@@ -40,6 +41,7 @@ export default function DocumentPreview({
   effects,
   sectionTypes,
   pageRoles,
+  bleedFlags,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
@@ -90,6 +92,7 @@ export default function DocumentPreview({
     effects,
     sectionTypes,
     pageRoles,
+    bleedFlags,
   };
 
   if (BOUND_TYPES.has(productType)) {

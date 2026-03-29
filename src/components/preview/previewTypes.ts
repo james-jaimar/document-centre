@@ -60,6 +60,8 @@ export interface PreviewComponentProps {
   sectionTypes?: string[];
   /** Per-page role for rendering logic (e.g. "front_cover", "body", "back_cover_card", "blank") */
   pageRoles?: string[];
+  /** Per-page bleed flag — true means edge-to-edge (no white margin), computed upstream once */
+  bleedFlags?: boolean[];
 }
 
 /** Multi-colour tab cycling palette */

@@ -38,6 +38,10 @@ interface PageEffectsProps {
   children: React.ReactNode;
   /** Explicit page role */
   pageRole?: string;
+  /** Whether this face renders edge-to-edge (no white margin) — computed upstream */
+  allowBleed: boolean;
+  /** Fixed pixel inset for non-bleed pages */
+  bleedInsetPx: number;
 }
 
 /**
@@ -50,7 +54,7 @@ interface PageEffectsProps {
  * 4. Blank paper — paper color + shadow, no children
  * 5. Standard paper — paper color + shadow + optional bleed padding + children
  */
-export default function PageEffects({ effects, pageIndex, totalPages, children, pageRole }: PageEffectsProps) {
+export default function PageEffects({ effects, pageIndex, totalPages, children, pageRole, allowBleed, bleedInsetPx }: PageEffectsProps) {
   const role = pageRole ?? (pageIndex === 0 ? "front_cover" : "body");
 
   // ── 1. Card material: solid edge-to-edge color ──
@@ -127,18 +131,13 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
   }
 
   // ── 5. Standard paper page (front_cover, body, etc.) ──
-  const isFrontCover = role === "front_cover";
   const paperBg = PAPER_COLORS[effects.paperColor] ?? "#ffffff";
 
-  // Bleed: show white border based on scope
-  const isBleedForThisPage =
-    effects.bleed === "all" ||
-    (effects.bleed === "front_cover" && isFrontCover) ||
-    (effects.bleed === "covers" && isFrontCover);
-  const bleedPadding = isBleedForThisPage ? undefined : "3%";
+  // Bleed: use the explicit upstream flag and fixed pixel inset
+  const bleedPadding = allowBleed ? undefined : `${bleedInsetPx}px`;
 
   // Lamination sheen on front cover only (not PVC — that's a separate material)
-  const showLamination = isFrontCover && effects.coverLamination !== "none";
+  const showLamination = role === "front_cover" && effects.coverLamination !== "none";
 
   return (
     <div className="w-full h-full relative" style={{ backgroundColor: paperBg, boxShadow: PAPER_SHADOW }}>

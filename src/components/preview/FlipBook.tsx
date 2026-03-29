@@ -36,8 +36,10 @@ const FlipPage = forwardRef<
     tabIndex?: number;
     tabTotal?: number;
     pageRole?: string;
+    allowBleed: boolean;
+    bleedInsetPx: number;
   }
->(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, tabIndex = 0, tabTotal = 1, pageRole }, ref) => {
+>(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, tabIndex = 0, tabTotal = 1, pageRole, allowBleed, bleedInsetPx }, ref) => {
   const isTab = sectionType === "tab";
   const isContentLess = CONTENT_LESS_ROLES.has(pageRole ?? "");
 
@@ -87,7 +89,14 @@ const FlipPage = forwardRef<
         overflow: "hidden",
       }}
     >
-      <PageEffects effects={effects} pageIndex={pageIndex} totalPages={totalPages} pageRole={pageRole}>
+      <PageEffects
+        effects={effects}
+        pageIndex={pageIndex}
+        totalPages={totalPages}
+        pageRole={pageRole}
+        allowBleed={allowBleed}
+        bleedInsetPx={bleedInsetPx}
+      >
         {content}
       </PageEffects>
 
@@ -140,6 +149,7 @@ export default function FlipBook({
   effects,
   sectionTypes,
   pageRoles,
+  bleedFlags,
 }: FlipBookProps) {
   const flipBookRef = useRef<any>(null);
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
@@ -172,6 +182,9 @@ export default function FlipBook({
 
   pageWidth = Math.max(pageWidth, 150);
   pageHeight = Math.max(pageHeight, 200);
+
+  // Fixed pixel inset for non-bleed pages — computed once, immune to CSS % timing
+  const bleedInsetPx = Math.round(pageWidth * 0.03);
 
   const handleFlip = useCallback(
     (e: any) => {
@@ -303,6 +316,8 @@ export default function FlipBook({
                     tabIndex={tabIndex}
                     tabTotal={tabTotal}
                     pageRole={pageRoles?.[i]}
+                    allowBleed={bleedFlags?.[i] ?? false}
+                    bleedInsetPx={bleedInsetPx}
                   />
                 );
               })}
