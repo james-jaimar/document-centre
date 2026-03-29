@@ -49,6 +49,7 @@ export default function DocumentPreview({
   pageLabels,
   pageColors,
   tabPositions,
+  displayPageNumbers,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
