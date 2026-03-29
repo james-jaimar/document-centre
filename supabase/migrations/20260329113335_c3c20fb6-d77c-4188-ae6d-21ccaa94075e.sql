@@ -1,0 +1,3 @@
+ALTER TABLE public.document_sections
+  ADD COLUMN IF NOT EXISTS label TEXT,
+  ADD COLUMN IF NOT EXISTS color TEXT;

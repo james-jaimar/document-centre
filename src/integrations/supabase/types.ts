@@ -255,11 +255,13 @@ export type Database = {
       }
       document_sections: {
         Row: {
+          color: string | null
           created_at: string
           document_id: string | null
           id: string
           is_color: boolean
           is_duplex: boolean
+          label: string | null
           lamination: string | null
           order_item_id: string
           page_range_end: number | null
@@ -271,11 +273,13 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          color?: string | null
           created_at?: string
           document_id?: string | null
           id?: string
           is_color?: boolean
           is_duplex?: boolean
+          label?: string | null
           lamination?: string | null
           order_item_id: string
           page_range_end?: number | null
@@ -287,11 +291,13 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          color?: string | null
           created_at?: string
           document_id?: string | null
           id?: string
           is_color?: boolean
           is_duplex?: boolean
+          label?: string | null
           lamination?: string | null
           order_item_id?: string
           page_range_end?: number | null

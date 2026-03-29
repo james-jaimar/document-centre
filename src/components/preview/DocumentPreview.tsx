@@ -9,7 +9,7 @@ import { Loader2 } from "lucide-react";
 
 import type { PreviewEffects } from "./previewTypes";
 
-interface DocumentPreviewProps {
+export interface DocumentPreviewProps {
   thumbnailPaths: string[];
   productType?: ProductPreviewType;
   width: number;
@@ -22,6 +22,8 @@ interface DocumentPreviewProps {
   sectionTypes?: string[];
   pageRoles?: string[];
   bleedFlags?: boolean[];
+  pageLabels?: string[];
+  pageColors?: string[];
 }
 
 const BOUND_TYPES = new Set([
@@ -42,6 +44,8 @@ export default function DocumentPreview({
   sectionTypes,
   pageRoles,
   bleedFlags,
+  pageLabels,
+  pageColors,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
@@ -93,6 +97,8 @@ export default function DocumentPreview({
     sectionTypes,
     pageRoles,
     bleedFlags,
+    pageLabels,
+    pageColors,
   };
 
   if (BOUND_TYPES.has(productType)) {

@@ -19,6 +19,7 @@ interface TabManagerProps {
   onAddTab: (sortOrder: number) => Promise<void>;
   onDeleteTab: (sectionId: string) => Promise<void>;
   onMoveTab: (sectionId: string, newSortOrder: number) => Promise<void>;
+  onUpdateTabLabel?: (sectionId: string, label: string) => Promise<void>;
 }
 
 export default function TabManager({
@@ -30,6 +31,7 @@ export default function TabManager({
   onAddTab,
   onDeleteTab,
   onMoveTab,
+  onUpdateTabLabel,
 }: TabManagerProps) {
   const [addPopoverOpen, setAddPopoverOpen] = useState(false);
 
@@ -204,9 +206,13 @@ export default function TabManager({
                   className="w-3 h-3 rounded-sm shrink-0 border border-border/40"
                   style={{ backgroundColor: color ?? "hsl(var(--muted))" }}
                 />
-                <span className="text-[11px] font-medium text-foreground flex-1">
-                  Tab {idx + 1}
-                </span>
+                <input
+                  type="text"
+                  defaultValue={(tab as any).label || `Tab ${idx + 1}`}
+                  placeholder={`Tab ${idx + 1}`}
+                  onBlur={(e) => onUpdateTabLabel?.(tab.id, e.target.value)}
+                  className="text-[11px] font-medium text-foreground flex-1 bg-transparent border-0 outline-none focus:ring-1 focus:ring-primary/30 rounded px-1 min-w-0"
+                />
 
                 {/* Position dropdown */}
                 <Select

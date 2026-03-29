@@ -51,6 +51,10 @@ interface PageEffectsProps {
   allowBleed: boolean;
   /** Fixed pixel inset for non-bleed pages */
   bleedInsetPx: number;
+  /** Optional label for tab/insert pages */
+  label?: string;
+  /** Optional color slug for insert pages */
+  color?: string;
 }
 
 /**
@@ -66,7 +70,7 @@ interface PageEffectsProps {
  * IMPORTANT: Content positioning uses absolute inset (not padding) so that
  * react-pageflip's canvas measurement is never affected by box-model changes.
  */
-export default function PageEffects({ effects, pageIndex, totalPages, children, pageRole, allowBleed, bleedInsetPx }: PageEffectsProps) {
+export default function PageEffects({ effects, pageIndex, totalPages, children, pageRole, allowBleed, bleedInsetPx, label, color }: PageEffectsProps) {
   const role = pageRole ?? (pageIndex === 0 ? "front_cover" : "body");
 
   // ── 1. Card material: solid edge-to-edge color ──
@@ -132,12 +136,12 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
 
   // ── 4. Insert sheet: solid colored divider ──
   if (role === "insert") {
-    const insertBg = INSERT_COLORS[effects.paperColor] ?? "#f8f8f8";
+    const insertBg = INSERT_COLORS[color || "white"] ?? INSERT_COLORS.white;
     return (
       <div className="w-full h-full" style={{ backgroundColor: insertBg, boxShadow: PAPER_SHADOW }}>
         <div className="w-full h-full flex items-center justify-center">
           <div className="text-center opacity-20">
-            <p style={{ fontSize: 10, fontWeight: 600, color: "#666" }}>INSERT</p>
+            <p style={{ fontSize: 10, fontWeight: 600, color: "#666" }}>{label || "INSERT"}</p>
           </div>
         </div>
       </div>

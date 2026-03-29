@@ -62,6 +62,10 @@ export interface PreviewComponentProps {
   pageRoles?: string[];
   /** Per-page bleed flag — true means edge-to-edge (no white margin), computed upstream once */
   bleedFlags?: boolean[];
+  /** Per-page label (e.g. tab text) */
+  pageLabels?: string[];
+  /** Per-page color (e.g. insert sheet color slug) */
+  pageColors?: string[];
 }
 
 /** Multi-colour tab cycling palette */

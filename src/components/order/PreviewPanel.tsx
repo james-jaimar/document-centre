@@ -29,6 +29,8 @@ interface PageInfo {
   documentName: string;
   section?: DocumentSection;
   isColor: boolean;
+  label?: string;
+  color?: string;
 }
 
 const SECTION_LABELS: Record<string, string> = {
@@ -83,6 +85,7 @@ export default function PreviewPanel({
           documentName: "Tab Divider",
           section,
           isColor: true,
+          label: (section as any).label || undefined,
         });
         continue;
       }
@@ -94,6 +97,7 @@ export default function PreviewPanel({
           documentName: "Insert Sheet",
           section,
           isColor: true,
+          color: (section as any).color || "white",
         });
         continue;
       }
@@ -230,6 +234,16 @@ export default function PreviewPanel({
 
   const sectionTypes = useMemo(
     () => finalPages.map((p) => p.section?.section_type ?? "body"),
+    [finalPages]
+  );
+
+  const pageLabels = useMemo(
+    () => finalPages.map((p) => p.label ?? ""),
+    [finalPages]
+  );
+
+  const pageColors = useMemo(
+    () => finalPages.map((p) => p.color ?? ""),
     [finalPages]
   );
 
@@ -381,6 +395,8 @@ export default function PreviewPanel({
           sectionTypes={sectionTypes}
           pageRoles={computedPageRoles}
           bleedFlags={bleedFlags}
+          pageLabels={pageLabels}
+          pageColors={pageColors}
         />
       </div>
 

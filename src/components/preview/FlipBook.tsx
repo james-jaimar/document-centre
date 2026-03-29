@@ -42,8 +42,10 @@ const FlipPage = forwardRef<
     pageRole?: string;
     allowBleed: boolean;
     bleedInsetPx: number;
+    label?: string;
+    color?: string;
   }
->(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, tabIndex = 0, tabTotal = 1, pageRole, allowBleed, bleedInsetPx }, ref) => {
+>(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, tabIndex = 0, tabTotal = 1, pageRole, allowBleed, bleedInsetPx, label, color }, ref) => {
   const isTab = sectionType === "tab";
   const isInsert = sectionType === "insert" || pageRole === "insert";
   const isContentLess = CONTENT_LESS_ROLES.has(pageRole ?? "");
@@ -53,7 +55,7 @@ const FlipPage = forwardRef<
     content = (
       <div className="w-full h-full flex items-center justify-center bg-card">
         <div className="text-center text-muted-foreground/40">
-          <p className="text-sm font-medium">Tab {tabIndex + 1}</p>
+          <p className="text-sm font-medium">{label || `Tab ${tabIndex + 1}`}</p>
         </div>
       </div>
     );
@@ -99,6 +101,8 @@ const FlipPage = forwardRef<
         pageRole={pageRole}
         allowBleed={allowBleed}
         bleedInsetPx={bleedInsetPx}
+        label={label}
+        color={color}
       >
         {content}
       </PageEffects>
@@ -153,6 +157,8 @@ export default function FlipBook({
   sectionTypes,
   pageRoles,
   bleedFlags,
+  pageLabels,
+  pageColors,
 }: FlipBookProps) {
   const flipBookRef = useRef<any>(null);
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
@@ -347,6 +353,8 @@ export default function FlipBook({
                       pageRole={pageRoles?.[i]}
                       allowBleed={bleedFlags?.[i] ?? false}
                       bleedInsetPx={bleedInsetPx}
+                      label={pageLabels?.[i]}
+                      color={pageColors?.[i]}
                     />
                   );
                 })}
