@@ -250,6 +250,14 @@ export default function PreviewPanel({
     return undefined;
   }, [documents]);
 
+  // Clamp currentPage when page count changes (e.g. cover options added/removed)
+  useEffect(() => {
+    if (prevPageCount.current !== 0 && totalPages > 0 && currentPage >= totalPages) {
+      setCurrentPage(Math.max(0, totalPages - 1));
+    }
+    prevPageCount.current = totalPages;
+  }, [totalPages, currentPage]);
+
   const totalPages = finalPages.length;
 
   // Derive what's visible in the current spread
