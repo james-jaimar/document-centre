@@ -31,6 +31,15 @@ const CARD_ROLES = new Set(["inside_back_cover_card", "back_cover_card"]);
 /** Roles that are blank paper faces */
 const BLANK_PAPER_ROLES = new Set(["blank_back", "inside_back_blank"]);
 
+/** Insert sheet colors */
+const INSERT_COLORS: Record<string, string> = {
+  white: "#f8f8f8",
+  yellow: "#fef9c3",
+  blue: "#dbeafe",
+  green: "#dcfce7",
+  pink: "#fce7f3",
+};
+
 interface PageEffectsProps {
   effects: PreviewEffects;
   pageIndex: number;
@@ -121,7 +130,21 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
     );
   }
 
-  // ── 4. Blank paper: paper color + shadow, no content ──
+  // ── 4. Insert sheet: solid colored divider ──
+  if (role === "insert") {
+    const insertBg = INSERT_COLORS[effects.paperColor] ?? "#f8f8f8";
+    return (
+      <div className="w-full h-full" style={{ backgroundColor: insertBg, boxShadow: PAPER_SHADOW }}>
+        <div className="w-full h-full flex items-center justify-center">
+          <div className="text-center opacity-20">
+            <p style={{ fontSize: 10, fontWeight: 600, color: "#666" }}>INSERT</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 5. Blank paper: paper color + shadow, no content ──
   if (BLANK_PAPER_ROLES.has(role)) {
     const paperBg = PAPER_COLORS[effects.paperColor] ?? "#ffffff";
     return (

@@ -47,17 +47,17 @@ export default function OptionsPanel({
             value={option.id}
             className="border-b border-border"
           >
-            <AccordionTrigger className="py-3 hover:no-underline">
+            <AccordionTrigger className="py-2 hover:no-underline">
               <div className="flex items-center justify-between w-full pr-2">
-                <span className="text-sm font-medium text-foreground">
+                <span className="text-xs font-medium text-foreground">
                   {option.name}
                 </span>
-                <span className="text-xs text-muted-foreground ml-2 truncate max-w-[140px]">
+                <span className="text-[11px] text-muted-foreground ml-2 truncate max-w-[140px]">
                   {getDisplayValue(option)}
                 </span>
               </div>
             </AccordionTrigger>
-            <AccordionContent className="pb-3">
+            <AccordionContent className="pb-2">
               <OptionSelector
                 option={option}
                 value={selectedOptions[option.name] ?? ""}

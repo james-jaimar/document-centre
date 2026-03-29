@@ -75,11 +75,23 @@ export default function PreviewPanel({
   const pages = useMemo(() => {
     const result: PageInfo[] = [];
     for (const section of sections) {
+      // Tab dividers — no document, just a placeholder page
       if (section.section_type === "tab") {
         result.push({
           thumbnailUrl: "",
           pageIndex: 0,
           documentName: "Tab Divider",
+          section,
+          isColor: true,
+        });
+        continue;
+      }
+      // Insert sheets — no document, blank colored divider page
+      if (section.section_type === "insert") {
+        result.push({
+          thumbnailUrl: "",
+          pageIndex: 0,
+          documentName: "Insert Sheet",
           section,
           isColor: true,
         });
@@ -122,6 +134,7 @@ export default function PreviewPanel({
       if (p.pageIndex === -1 && p.thumbnailUrl === "") return "blank_back";
       if (i === 0 && isBound && p.section?.section_type === "front_cover") return "front_cover";
       if (p.section?.section_type === "tab") return "body";
+      if (p.section?.section_type === "insert") return "insert";
       return "body";
     });
 

@@ -21,6 +21,7 @@ const CONTENT_LESS_ROLES = new Set([
   "back_cover_card",
   "blank_back",
   "inside_back_blank",
+  "insert",
 ]);
 
 /**
@@ -44,6 +45,7 @@ const FlipPage = forwardRef<
   }
 >(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, tabIndex = 0, tabTotal = 1, pageRole, allowBleed, bleedInsetPx }, ref) => {
   const isTab = sectionType === "tab";
+  const isInsert = sectionType === "insert" || pageRole === "insert";
   const isContentLess = CONTENT_LESS_ROLES.has(pageRole ?? "");
 
   let content: React.ReactNode;
@@ -55,6 +57,8 @@ const FlipPage = forwardRef<
         </div>
       </div>
     );
+  } else if (isInsert) {
+    content = null; // PageEffects handles insert rendering
   } else if (isContentLess) {
     content = null;
   } else if (url) {

@@ -287,20 +287,20 @@ export default function OrderBuild() {
       </div>
 
       {/* Split panel */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-6 min-h-0">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[300px_1fr] xl:grid-cols-[340px_1fr] gap-4 xl:gap-6 min-h-0">
         {/* Left: Options */}
         <div className="flex flex-col overflow-auto border border-border rounded-lg bg-card">
-          <div className="p-4 border-b border-border shrink-0">
-            <h2 className="font-semibold text-foreground">Options</h2>
+          <div className="p-3 border-b border-border shrink-0">
+            <h2 className="font-semibold text-foreground text-sm">Options</h2>
           </div>
-          <div className="flex-1 overflow-auto p-4">
+          <div className="flex-1 overflow-auto p-3">
             <OptionsPanel
               options={options}
               selectedOptions={spec.selected_options}
               onOptionChange={handleOptionChange}
             />
           </div>
-          <div className="p-4 shrink-0">
+          <div className="p-3 shrink-0">
             <PriceSummary
               spec={spec}
               options={options}

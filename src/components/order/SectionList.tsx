@@ -66,6 +66,7 @@ export default function SectionList({
       {sections.map((section, idx) => {
         const doc = getDoc(section.document_id);
         const pageCount = doc?.page_count ?? 0;
+        const isInsertOrTab = section.section_type === "insert" || section.section_type === "tab";
 
         return (
           <div
@@ -79,8 +80,19 @@ export default function SectionList({
             )}
           >
             <div className="flex items-start justify-between gap-2">
-              {/* Thumbnail */}
-              {(() => {
+              {/* Thumbnail or colored indicator for inserts/tabs */}
+              {isInsertOrTab ? (
+                <div
+                  className="h-10 w-7 border border-border/40 overflow-hidden shrink-0 flex items-center justify-center rounded-sm"
+                  style={{
+                    backgroundColor: section.section_type === "tab" ? "#e0e7ff" : "#f0fdf4",
+                  }}
+                >
+                  <span className="text-[8px] font-bold text-muted-foreground/60">
+                    {section.section_type === "tab" ? "TAB" : "INS"}
+                  </span>
+                </div>
+              ) : (() => {
                 const thumbs = doc?.thumbnail_urls;
                 const firstThumb =
                   Array.isArray(thumbs) && (thumbs as string[]).length > 0
@@ -140,43 +152,45 @@ export default function SectionList({
               </div>
             </div>
 
-            {/* Per-section controls */}
-            <div className="flex items-center gap-1.5 mt-2">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleColor(section);
-                }}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all",
-                  section.is_color
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
-                )}
-              >
-                <Palette className="h-3 w-3" />
-                {section.is_color ? "Colour" : "B&W"}
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleDuplex(section);
-                }}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all",
-                  section.is_duplex
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
-                )}
-              >
-                {section.is_duplex ? (
-                  <FlipHorizontal className="h-3 w-3" />
-                ) : (
-                  <FlipVertical className="h-3 w-3" />
-                )}
-                {section.is_duplex ? "Duplex" : "Simplex"}
-              </button>
-            </div>
+            {/* Per-section controls — hide for insert/tab sections */}
+            {!isInsertOrTab && (
+              <div className="flex items-center gap-1.5 mt-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleColor(section);
+                  }}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all",
+                    section.is_color
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                  )}
+                >
+                  <Palette className="h-3 w-3" />
+                  {section.is_color ? "Colour" : "B&W"}
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleDuplex(section);
+                  }}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all",
+                    section.is_duplex
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                  )}
+                >
+                  {section.is_duplex ? (
+                    <FlipHorizontal className="h-3 w-3" />
+                  ) : (
+                    <FlipVertical className="h-3 w-3" />
+                  )}
+                  {section.is_duplex ? "Duplex" : "Simplex"}
+                </button>
+              </div>
+            )}
           </div>
         );
       })}
