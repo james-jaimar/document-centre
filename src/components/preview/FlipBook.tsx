@@ -119,6 +119,20 @@ export default function FlipBook({
   const lastReportedPage = useRef(0);
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
 
+  // Build a stable key that changes when rendering-critical inputs change.
+  // This forces react-pageflip to remount with fresh DOM nodes.
+  const bookKey = useMemo(
+    () => JSON.stringify({ b: resolvedEffects.bleed, l: resolvedEffects.lamination, r: pageRoles, n: urls.length }),
+    [resolvedEffects.bleed, resolvedEffects.lamination, pageRoles, urls.length]
+  );
+
+  // Reset displayPage when the book remounts (key changes)
+  useEffect(() => {
+    setDisplayPage(0);
+    lastReportedPage.current = 0;
+    onPageChange(0);
+  }, [bookKey]);
+
   const ratio = pageAspectRatio ?? 0.707;
   const maxSpreadWidth = width - 40;
   const maxPageWidth = Math.floor(maxSpreadWidth / 2);
