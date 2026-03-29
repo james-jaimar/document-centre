@@ -31,6 +31,15 @@ const CARD_ROLES = new Set(["inside_back_cover_card", "back_cover_card"]);
 /** Roles that are blank paper faces */
 const BLANK_PAPER_ROLES = new Set(["blank_back", "inside_back_blank"]);
 
+/** Insert sheet colors */
+const INSERT_COLORS: Record<string, string> = {
+  white: "#f8f8f8",
+  yellow: "#fef9c3",
+  blue: "#dbeafe",
+  green: "#dcfce7",
+  pink: "#fce7f3",
+};
+
 interface PageEffectsProps {
   effects: PreviewEffects;
   pageIndex: number;
