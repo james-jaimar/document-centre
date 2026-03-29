@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useEffect, forwardRef, useState, useMemo } from "react";
+import React, { useRef, useCallback, useEffect, forwardRef, useMemo } from "react";
 import HTMLFlipBook from "react-pageflip";
 import type { FlipBookProps, PreviewEffects } from "./previewTypes";
 import { DEFAULT_PREVIEW_EFFECTS, TAB_COLORS } from "./previewTypes";
@@ -115,23 +115,21 @@ export default function FlipBook({
   pageRoles,
 }: FlipBookProps) {
   const flipBookRef = useRef<any>(null);
-  const [displayPage, setDisplayPage] = useState(0);
-  const lastReportedPage = useRef(0);
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
 
-  // Build a stable key that changes when rendering-critical inputs change.
-  // This forces react-pageflip to remount with fresh DOM nodes.
+  // Build a stable key that changes when ANY rendering-critical input changes.
+  // react-pageflip captures DOM at mount time, so we must remount for visual changes.
   const bookKey = useMemo(
-    () => JSON.stringify({ b: resolvedEffects.bleed, r: pageRoles, n: urls.length }),
-    [resolvedEffects.bleed, pageRoles, urls.length]
+    () => JSON.stringify({
+      e: resolvedEffects,
+      r: pageRoles,
+      s: sectionTypes,
+      c: colorFlags,
+      n: urls.length,
+      u: urls,
+    }),
+    [resolvedEffects, pageRoles, sectionTypes, colorFlags, urls]
   );
-
-  // Reset displayPage when the book remounts (key changes)
-  useEffect(() => {
-    setDisplayPage(0);
-    lastReportedPage.current = 0;
-    onPageChange(0);
-  }, [bookKey]);
 
   const ratio = pageAspectRatio ?? 0.707;
   const maxSpreadWidth = width - 40;
@@ -151,10 +149,7 @@ export default function FlipBook({
 
   const handleFlip = useCallback(
     (e: any) => {
-      const newPage = e.data;
-      setDisplayPage(newPage);
-      lastReportedPage.current = newPage;
-      onPageChange(newPage);
+      onPageChange(e.data);
     },
     [onPageChange]
   );
@@ -180,31 +175,19 @@ export default function FlipBook({
     );
   }
 
-  // ── Solo-page detection using explicit page roles ──
+  // ── Solo-page detection using currentPage (source of truth) ──
   const lastIdx = urls.length - 1;
-  const currentRole = pageRoles?.[displayPage];
   const lastRole = pageRoles?.[lastIdx];
 
-  const isShowingFrontCover = displayPage === 0;
-  const isShowingBackCover = lastRole === "back_cover_card" && displayPage >= lastIdx;
-  const isShowingLastSolo = lastRole !== "back_cover_card" && displayPage >= lastIdx;
+  const isShowingFrontCover = currentPage === 0;
+  const isShowingBackCover = lastRole === "back_cover_card" && currentPage >= lastIdx;
+  const isShowingLastSolo = lastRole !== "back_cover_card" && currentPage >= lastIdx;
   const isSoloPage = isShowingFrontCover || isShowingBackCover || isShowingLastSolo;
 
   // ── Layout geometry ──
-  // The library always renders a canvas 2*pageWidth wide.
-  // showCover=true makes first page appear on RIGHT half, last page on LEFT half.
-  // For solo pages we crop the viewport to pageWidth and shift the canvas.
   const spreadWidth = pageWidth * 2;
   const viewportWidth = isSoloPage ? pageWidth : spreadWidth;
-
-  // Front cover: page is on right half → shift canvas left to bring it into view
-  // Back cover: page is on left half → no shift needed
-  // Spread: no shift
   const canvasOffsetX = isShowingFrontCover ? -pageWidth : 0;
-
-  // ── Spine position relative to the sized wrapper ──
-  // The wrapper div below is exactly viewportWidth wide with position:relative,
-  // so BindingSpine's absolute positioning works correctly against the visible area.
   const spinePosition = isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center";
 
   return (
@@ -304,11 +287,11 @@ export default function FlipBook({
 
       {/* Page numbers below the spread */}
       <div className="flex items-center justify-center gap-8 text-xs text-muted-foreground">
-        {!isShowingFrontCover && displayPage > 0 && (
-          <span className="w-20 text-center">{displayPage}</span>
+        {!isShowingFrontCover && currentPage > 0 && (
+          <span className="w-20 text-center">{currentPage}</span>
         )}
-        {!isSoloPage && displayPage + 1 < urls.length && (
-          <span className="w-20 text-center">{displayPage + 1}</span>
+        {!isSoloPage && currentPage + 1 < urls.length && (
+          <span className="w-20 text-center">{currentPage + 1}</span>
         )}
         {isSoloPage && (
           <span className="w-20 text-center">
