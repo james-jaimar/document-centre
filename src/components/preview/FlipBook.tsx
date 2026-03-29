@@ -101,6 +101,8 @@ const FlipPage = forwardRef<
         pageRole={pageRole}
         allowBleed={allowBleed}
         bleedInsetPx={bleedInsetPx}
+        label={label}
+        color={color}
       >
         {content}
       </PageEffects>
