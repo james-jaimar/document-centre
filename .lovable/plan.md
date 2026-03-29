@@ -1,47 +1,100 @@
 
+Fix the preview by making the rendered book state fully deterministic instead of partially derived from stale internal flipbook state.
 
-# Fix Stale Rendering When Options Change
+## What I found
 
-## Root cause
+The instability is coming from a few things working against each other:
 
-`react-pageflip` captures DOM nodes at mount time and manipulates them directly for the flip animation. When React updates props on `FlipPage` children (e.g., `effects`, `pageRoles`, border styles), the library does **not** pick up those changes because it holds references to the original DOM elements. This is why the preview looks correct on first load but gets confused as the user toggles options back and forth — borders appear on wrong edges, back cover styling reverts, etc.
+1. `react-pageflip` keeps its own internal page/DOM state after mount.
+2. We force remounts with a `key`, but the key only includes:
+   - `effects.bleed`
+   - `pageRoles`
+   - `urls.length`
+3. Many visual changes do **not** change that key:
+   - `effects.frontCover`
+   - `effects.backCover`
+   - `effects.paperColor`
+   - `effects.coverLamination`
+   - `effects.holePunch`
+   - `colorFlags`
+   - actual `urls` content/order
+4. On remount, `FlipBook` immediately resets to page `0` and calls `onPageChange(0)`, which can fight the parent state while the user is changing options.
+5. Solo/spread layout in `FlipBook.tsx` is still based on `displayPage`, which is a local mirror that can temporarily drift during re-init.
 
-## Fix
+That combination explains the “looks right once, then bounces around / reverts / shows wrong borders later” behavior.
 
-### 1. Force remount of HTMLFlipBook when effects or page roles change
+## Implementation plan
 
-Add a `key` prop to the `HTMLFlipBook` component that changes whenever the rendering-critical inputs change. This forces React to unmount and remount the entire flip book, ensuring all page DOM nodes are freshly created with current props.
+### 1. Make the book key cover every rendering-critical input
+Update `FlipBook.tsx` so the remount key is based on the full visual/structural state, not just bleed:
+- full `resolvedEffects`
+- `pageRoles`
+- `sectionTypes`
+- `colorFlags`
+- `urls` (or a stable summary of them)
 
-**File: `src/components/preview/FlipBook.tsx`**
+This ensures any option change creates a fresh, correct flipbook instance.
 
-- Compute a stable key from the inputs that affect page appearance: `effects` object, `pageRoles` array, and `urls` length
-- Use something like: `key={JSON.stringify({ e: resolvedEffects, r: pageRoles, n: urls.length })}`
-- This ensures that any option change (covers, bleed, paper color, etc.) triggers a clean re-render
+### 2. Stop forcing parent page state back to 0 during remount
+Remove the effect that does:
+- `setDisplayPage(0)`
+- `lastReportedPage.current = 0`
+- `onPageChange(0)`
 
-### 2. Reset displayPage when the book remounts
+Instead:
+- treat remount as a visual refresh only
+- preserve the parent’s selected page when possible
+- only sync page state from actual flipbook events (`onInit` / `onFlip`) or controlled navigation effect
 
-When the `HTMLFlipBook` remounts, its internal page index resets to 0. We need to sync our `displayPage` state accordingly to avoid the viewport/spine logic being out of sync.
+This should eliminate the “jumping” and session inconsistency.
 
-**File: `src/components/preview/FlipBook.tsx`**
+### 3. Use the controlled page as the source of truth for layout
+Refactor solo/spread detection in `FlipBook.tsx` to derive layout from `currentPage`, not a potentially stale local `displayPage`.
 
-- Add a `useEffect` that detects when the key changes and resets `displayPage` to `currentPage` (or 0)
-- Or more simply: derive the key and let the natural remount + `startPage={0}` handle it, then sync `displayPage` via `onFlip`
+Use explicit role logic:
+- front solo when `currentPage === 0`
+- back solo when current page is the real final solo page
+- spread otherwise
 
-### 3. Also key on pageRoles in PreviewPanel
+Keep local state only if needed for library event sync, not for deciding margins/spine/viewport cropping.
 
-**File: `src/components/order/PreviewPanel.tsx`**
+### 4. Sync with the library using init/update events instead of implicit reset logic
+Use the flipbook lifecycle more cleanly:
+- on init, align local display state to the real current page
+- on flip, update parent
+- in the controlled-page effect, move the library only when its current page differs
 
-- No changes needed here — the `computedPageRoles` already flows through correctly. The issue is purely at the `HTMLFlipBook` level not re-rendering its captured children.
+This removes the current “reset then animate back” feel.
 
-## Why this works
+### 5. Stabilize back-cover rendering as role-driven, not history-driven
+Keep `back_cover_card` fully deterministic:
+- no border
+- no inset shadow
+- no bleed padding
+- full solid fill
 
-The library is designed for static page content. By remounting on option changes, we treat each configuration as a fresh book. The flip animation still works smoothly within a configuration — only when the user actually changes an option does the book reset, which is the expected UX (the preview updates to show the new configuration).
+Also ensure `inside_back_blank` stays separate from `back_cover_card` so the renderer never reuses styling from a prior page state.
 
-## Files to edit
-- `src/components/preview/FlipBook.tsx` — add reactive `key` to `HTMLFlipBook`, handle displayPage reset
+### 6. Audit the parent sequence flow once
+In `PreviewPanel.tsx`, verify the final physical page sequence remains stable while options change:
+- `front_cover`
+- body pages
+- optional `inside_back_blank`
+- optional `back_cover_card`
+
+The important part is that cover option changes should only change the final sequence when physically necessary, not cause unrelated preview resets.
+
+## Files to update
+
+- `src/components/preview/FlipBook.tsx`
+- `src/components/order/PreviewPanel.tsx` (light audit, likely minimal)
+- possibly `src/components/preview/PageEffects.tsx` only if any stale styling assumptions remain after the main cleanup
 
 ## Expected result
-- Changing any cover, bleed, paper, or lamination option immediately shows the correct rendering
-- No stale borders, ghost edges, or mixed styling from previous configurations
-- The book resets to page 0 on option change (acceptable UX since the user is reconfiguring)
 
+After this cleanup:
+- changing options repeatedly does not cause bouncing or reversion
+- whatever the customer selects stays visually consistent in that session
+- back cover card always renders edge-to-edge when selected
+- borders/margins no longer appear inconsistently after switching options
+- front cover, spreads, and back cover remain stable under repeated changes
