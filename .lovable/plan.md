@@ -1,110 +1,63 @@
 
-Fix the preview by modeling physical cover sheets correctly instead of faking them as one-sided visual effects.
 
-## What’s actually conflicting now
+# Fix Simplex Blank Pages + Stabilize Bleed Rendering
 
-The current implementation is mixing:
-- a page sequence that mostly represents printed document pages
-- visual roles that try to represent physical materials (PVC front, black card back)
+## Two issues
 
-That causes the wrong faces to appear when flipping:
-- `pvc_cover` is inserted as only one page, so its reverse side is never modeled
-- `back_cover_card` is only modeled as the final solo page, so its inside face is missing from the prior spread
-- spread labels/navigation still assume `currentPage` and `currentPage + 1` are the visible pair, which is no longer reliable once extra physical sheets are inserted
-- some border/margin drift is likely because the physical sequence is incomplete, so the same DOM/page slot ends up representing different real-world faces over time
+### 1. Simplex sections don't insert blank backs
+The page sequence builder in `PreviewPanel.tsx` (lines 74-104) iterates through each section's pages and adds them sequentially, but never checks `section.is_duplex`. When a section is simplex (single-sided), the back of each physical sheet is blank — this blank page must be inserted into the sequence so the preview accurately represents the physical document.
 
-## Clean implementation approach
+**Example with the user's document:**
+- Front cover: 1 page, simplex → page 1 = cover artwork, page 2 = blank back
+- Body: 24 pages, duplex → pages 3-26 = printed both sides, no blanks needed
 
-### 1. Rebuild the bound page sequence as physical sheets
-In `PreviewPanel.tsx`, stop treating covers as styling-only add-ons.
+Currently the sequence is just [cover, body×24] = 25 pages. It should be [cover, blank, body×24] = 26 pages.
 
-Build the final sequence as actual physical faces in order:
-```text
-[pvc_front_outside?]
-[pvc_front_inside?]
-[printed_front_cover]
-[body...]
-[inside_back_card?]
-[back_cover_card]
+**Fix**: In the `pages` useMemo, after adding each page from a simplex section, push a blank `PageInfo` with role `"blank_back"`. Skip this for duplex sections. This also fixes the page count display automatically.
+
+### 2. Bleed/border inconsistency on option changes
+The `bookKey` in `FlipBook.tsx` already includes `resolvedEffects`, which should force a clean remount. However, the `useMemo` dependency array for `finalPages` in `PreviewPanel.tsx` (line 193) only includes `effects?.backCover` and `effects?.frontCover` — it does NOT include `effects?.bleed`, `effects?.paperColor`, `effects?.coverLamination`, or `effects?.holePunch`. This means the `finalPages` array (and its derived `pageRoles`, `colorFlags`, `sectionTypes`) can go stale when those options change, even though the FlipBook remounts with the new effects. The FlipBook gets new effects but the same old page data.
+
+**Fix**: Change the dependency to the full `effects` object so any option change rebuilds the page sequence and its derived arrays.
+
+## Changes
+
+### File: `src/components/order/PreviewPanel.tsx`
+
+**A) Insert blank backs for simplex sections**
+
+In the `pages` useMemo (lines 74-104), after pushing each page from a section, check `section.is_duplex`. If false, push a blank page:
+```typescript
+result.push({
+  thumbnailUrl: "",
+  pageIndex: -1,
+  documentName: "",
+  section,
+  isColor: section.is_color,
+});
 ```
 
-Rules:
-- If front cover is PVC, insert two faces:
-  - outside = frosted/clear/matte overlay over the front artwork
-  - inside = translucent reverse side of that PVC sheet
-- If back cover is card, insert two faces:
-  - inside face = solid black/navy/etc on the right side of the last spread
-  - outside face = solo final back cover
-- Only insert `inside_back_blank` when there is genuinely a blank physical inside face needed
+This blank page inherits the section reference so it shows correct colour/duplex status. The role will be `"body"` (default), and it renders as an empty page with the paper background.
 
-This makes the page order deterministic and removes the need for hacks later.
+**B) Fix stale dependency**
 
-### 2. Add explicit page roles for both sides of special materials
-Extend role usage so rendering is face-based, not inferred:
-- `pvc_cover_front`
-- `pvc_cover_back`
-- `front_cover`
-- `body`
-- `inside_back_cover_card`
-- `back_cover_card`
+Change line 193 from:
+```typescript
+}, [pages, effects?.backCover, effects?.frontCover, isBound]);
+```
+to:
+```typescript
+}, [pages, effects, isBound]);
+```
 
-This keeps `PageEffects.tsx` simple and makes each page render one thing only.
+This ensures any effects change (bleed, paper, lamination, hole punch) triggers a full rebuild of `finalPages`, `pageRoles`, `colorFlags`, `sectionTypes`, and the downstream `bookKey` in FlipBook.
 
-### 3. Update PageEffects to render each role explicitly
-In `PageEffects.tsx`:
-- `pvc_cover_front` = artwork + frosted/clear/matte overlay
-- `pvc_cover_back` = translucent/light grey plastic reverse side
-- `inside_back_cover_card` = solid card colour, edge-to-edge
-- `back_cover_card` = same solid card colour, edge-to-edge
-
-Also make card/PVC roles consistently bypass:
-- white bleed padding
-- paper tint logic
-- paper-style borders/shadows
-
-That should eliminate the inconsistent white edge problem.
-
-### 4. Update FlipBook so “special material pages” are treated as material sheets, not paper pages
-In `FlipBook.tsx`:
-- treat both PVC roles and both card-back roles as non-paper sheets
-- keep the remount key, but make sure it reflects the new final roles/page order
-- keep solo/spread logic driven by `currentPage`, but verify it uses the new physical last page correctly
-
-This keeps the native `showCover` behavior while aligning it to a correct page sequence.
-
-### 5. Fix PreviewPanel’s visible-page info to follow the real sequence
-The current info logic assumes:
-- front solo at page 0
-- spread = `currentPage` + `currentPage + 1`
-- back solo only on final page
-
-That breaks once PVC and inside-back-card pages exist.
-
-Update the visible-page calculation so labels and badges are derived from the actual final page roles:
-- first solo page = front material outside
-- first spread after flip = left PVC reverse, right printed front cover
-- last spread before final back = left prior printed page, right inside back card
-- final solo page = outer back card
-
-### 6. Keep the code clean by removing stale one-sided assumptions
-As part of the refactor, remove any logic that assumes:
-- PVC is only a single extra page
-- back cover card only exists as the very last page
-- `inside_back_blank` should always be inserted before a card back
-
-This is the main cleanup that should stop the “it works once, then gets confused” behavior.
-
-## Files to update
+## Files to edit
 - `src/components/order/PreviewPanel.tsx`
-- `src/components/preview/PageEffects.tsx`
-- `src/components/preview/FlipBook.tsx`
-- `src/components/preview/previewTypes.ts` (if you want the new page-role vocabulary documented clearly)
 
 ## Expected result
-- frosted/clear/matte front behaves like a real flippable sheet
-- when opened, left page shows the translucent PVC reverse and right page shows the printed front cover
-- black/navy card back appears on both faces:
-  - right side of the final spread
-  - final solo back cover
-- margins/borders stop jumping because each page slot has one stable physical meaning
-- repeated option changes stay consistent because the book sequence itself is now correct
+- Simplex front cover (1 page) shows page 1 as artwork, page 2 as blank back
+- Duplex body pages flow continuously with no inserted blanks
+- Total page count reflects physical pages including blanks
+- Changing bleed/paper/lamination options no longer causes stale border rendering
+
