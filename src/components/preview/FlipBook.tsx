@@ -200,6 +200,7 @@ export default function FlipBook({
           bindingType={bindingType}
           height={pageHeight}
           isOpen={!isSoloPage}
+          position={isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center"}
         />
 
         {/* Viewport: crops the canvas to hide the ghost half on solo pages */}
