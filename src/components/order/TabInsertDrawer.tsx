@@ -42,6 +42,7 @@ interface TabInsertDrawerProps {
   sections: DocumentSection[];
   documents: Document[];
   orderItemId: string;
+  isDuplex: boolean;
   tabEnabled: boolean;
   tabCount: number;
   isMultiColor: boolean;
