@@ -7,7 +7,21 @@ import PageEffects from "./PageEffects";
 import { FileText, Loader2 } from "lucide-react";
 
 /**
+ * Roles where content is handled entirely by PageEffects (no image).
+ * pvc_cover_front is NOT here — it needs the artwork image.
+ */
+const CONTENT_LESS_ROLES = new Set([
+  "pvc_cover_back",
+  "inside_back_cover_card",
+  "back_cover_card",
+  "blank_back",
+  "inside_back_blank",
+]);
+
+/**
  * Each page must be a forwardRef component for react-pageflip.
+ * The outer div is kept intentionally simple — no borders, no shadows,
+ * no conditional styling. ALL visual treatment lives in PageEffects.
  */
 const FlipPage = forwardRef<
   HTMLDivElement,
@@ -25,8 +39,7 @@ const FlipPage = forwardRef<
   }
 >(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, tabIndex = 0, tabTotal = 1, pageRole }, ref) => {
   const isTab = sectionType === "tab";
-  const isMaterial = pageRole === "back_cover_card" || pageRole === "inside_back_cover_card" || pageRole === "pvc_cover_front" || pageRole === "pvc_cover_back";
-  const isBlankPaper = pageRole === "blank_back" || pageRole === "inside_back_blank";
+  const isContentLess = CONTENT_LESS_ROLES.has(pageRole ?? "");
 
   // Determine content to render inside PageEffects
   let content: React.ReactNode;
@@ -38,15 +51,16 @@ const FlipPage = forwardRef<
         </div>
       </div>
     );
-  } else if (isMaterial || isBlankPaper) {
-    // Material pages and intentional blanks: PageEffects handles the visual entirely
+  } else if (isContentLess) {
+    // Material/blank pages: PageEffects handles the visual entirely
     content = null;
   } else if (url) {
+    // ALL image pages use object-contain — consistent fit model
     content = (
       <img
         src={url}
         alt={`Page ${pageNum}`}
-        className={`w-full h-full ${pageRole === "pvc_cover_front" ? "object-cover" : "object-contain"}`}
+        className="w-full h-full object-contain"
         style={{ filter: isColor ? "none" : "grayscale(100%)" }}
         loading="eager"
       />
@@ -66,11 +80,11 @@ const FlipPage = forwardRef<
   return (
     <div
       ref={ref}
-      className="overflow-hidden"
       style={{
         width: "100%",
         height: "100%",
         position: "relative",
+        overflow: "hidden",
       }}
     >
       <PageEffects effects={effects} pageIndex={pageIndex} totalPages={totalPages} pageRole={pageRole}>
@@ -131,7 +145,6 @@ export default function FlipBook({
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
 
   // Build a stable key that changes when ANY rendering-critical input changes.
-  // react-pageflip captures DOM at mount time, so we must remount for visual changes.
   const bookKey = useMemo(
     () => JSON.stringify({
       e: resolvedEffects,
