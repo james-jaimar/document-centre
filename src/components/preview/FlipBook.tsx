@@ -29,7 +29,7 @@ const FlipPage = forwardRef<
   const isTab = sectionType === "tab";
 
   return (
-    <div ref={ref} className="overflow-hidden" style={{ width: "100%", height: "100%", position: "relative", border: "1px solid rgba(0,0,0,0.10)", boxShadow: "inset 0 0 6px rgba(0,0,0,0.08), inset 0 0 0 0.5px rgba(0,0,0,0.06)" }}>
+    <div ref={ref} className="overflow-hidden" style={{ width: "100%", height: "100%", position: "relative", border: "1px solid rgba(0,0,0,0.15)", boxShadow: "inset 0 0 8px rgba(0,0,0,0.10), inset 0 0 0 0.5px rgba(0,0,0,0.08)" }}>
       <PageEffects effects={effects} pageIndex={pageIndex} totalPages={totalPages} pageRole={pageRole}>
         {isTab ? (
           <div className="w-full h-full flex items-center justify-center bg-card">
@@ -164,19 +164,28 @@ export default function FlipBook({
   const lastPageIndex = urls.length - 1;
   const isShowingFrontCover = displayPage === 0;
   const isShowingBackCover = hasBackCoverCard && displayPage >= lastPageIndex;
+  // Also solo when last page without back cover card (library treats last as solo with showCover)
+  const isShowingLastSolo = !hasBackCoverCard && displayPage >= lastPageIndex;
 
-  const isSoloPage = isShowingFrontCover || isShowingBackCover;
+  const isSoloPage = isShowingFrontCover || isShowingBackCover || isShowingLastSolo;
 
-  // Centering: when showing a solo page, shift the book container
-  // react-pageflip with showCover renders first page on right, last on left
-  // We shift the container so the single visible page is centered
-  let bookTranslateX = 0;
+  // Viewport cropping model:
+  // The library's canvas is always 2*pageWidth wide.
+  // - Front cover: library renders it on the RIGHT side of the canvas.
+  //   We crop to show only the right half → viewport width = pageWidth, scroll to right half.
+  // - Back cover: library renders it on the LEFT side of the canvas.
+  //   We crop to show only the left half → viewport width = pageWidth, show left half.
+  // - Spread: show full canvas → viewport width = 2*pageWidth.
+  const spreadWidth = pageWidth * 2;
+  const viewportWidth = isSoloPage ? pageWidth : spreadWidth;
+
+  // For front cover, the page is on the right half of the canvas,
+  // so we need to shift the canvas left by pageWidth to bring it into view.
+  // For back cover, the page is on the left half — no shift needed.
+  // For spreads, no shift.
+  let canvasOffsetX = 0;
   if (isShowingFrontCover) {
-    // Front cover is on the right side of the spread — shift left by half a page width
-    bookTranslateX = -(pageWidth / 2);
-  } else if (isShowingBackCover) {
-    // Back cover is on the left side — shift right by half a page width
-    bookTranslateX = pageWidth / 2;
+    canvasOffsetX = -pageWidth;
   }
 
   // Page numbers for display
@@ -186,18 +195,33 @@ export default function FlipBook({
   return (
     <div className="flex flex-col items-center justify-center gap-2 overflow-hidden" style={{ width, height }}>
       <div className="relative flex items-center justify-center" style={{ minHeight: pageHeight }}>
-        {/* Animated wrapper for Mimeo-style centering */}
+        {/* Binding spine — anchored to the outer stage, always visible for bound products */}
+        <BindingSpine
+          bindingType={bindingType}
+          height={pageHeight}
+          isOpen={!isSoloPage}
+        />
+
+        {/* Viewport: crops the canvas to hide the ghost half on solo pages */}
         <div
           style={{
-            transform: `translateX(${bookTranslateX}px)`,
-            transition: "transform 0.4s ease-in-out",
+            width: viewportWidth,
+            height: pageHeight,
+            overflow: "hidden",
+            position: "relative",
+            transition: "width 0.4s ease-in-out",
+            boxShadow: "0 2px 12px rgba(0,0,0,0.15)",
           }}
         >
-          {/* Outer drop shadow wrapper */}
-          <div className="relative" style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.15)" }}>
-            {/* Binding spine — always show for bound products, adjust open state */}
-            <BindingSpine bindingType={bindingType} height={pageHeight} isOpen={!isSoloPage} />
-
+          {/* Canvas wrapper: shifts the library's full-width canvas within the viewport */}
+          <div
+            style={{
+              transform: `translateX(${canvasOffsetX}px)`,
+              transition: "transform 0.4s ease-in-out",
+              width: spreadWidth,
+              height: pageHeight,
+            }}
+          >
             {/* @ts-ignore — react-pageflip types are imprecise */}
             <HTMLFlipBook
               ref={flipBookRef}
@@ -259,7 +283,7 @@ export default function FlipBook({
         {!isShowingFrontCover && leftPageNum !== null && (
           <span className="w-20 text-center">{leftPageNum}</span>
         )}
-        {!isShowingBackCover && rightPageNum <= urls.length && (
+        {!(isShowingBackCover || isShowingLastSolo) && rightPageNum <= urls.length && (
           <span className="w-20 text-center">{rightPageNum}</span>
         )}
       </div>
