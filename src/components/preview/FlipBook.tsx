@@ -55,7 +55,7 @@ const FlipPage = forwardRef<
     content = (
       <div className="w-full h-full flex items-center justify-center bg-card">
         <div className="text-center text-muted-foreground/40">
-          <p className="text-sm font-medium">Tab {tabIndex + 1}</p>
+          <p className="text-sm font-medium">{label || `Tab ${tabIndex + 1}`}</p>
         </div>
       </div>
     );
