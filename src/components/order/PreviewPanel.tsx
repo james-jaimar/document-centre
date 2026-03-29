@@ -98,6 +98,16 @@ export default function PreviewPanel({
           section,
           isColor: section.is_color,
         });
+        // Simplex: insert blank back for each printed page
+        if (!section.is_duplex) {
+          result.push({
+            thumbnailUrl: "",
+            pageIndex: -1,
+            documentName: "",
+            section,
+            isColor: section.is_color,
+          });
+        }
       }
     }
     return result;
