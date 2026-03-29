@@ -28,6 +28,9 @@ const PAPER_SHADOW = "inset 0 0 0 1px rgba(0,0,0,0.12), inset 0 0 6px rgba(0,0,0
 /** Roles that are solid card material (edge-to-edge, no paper styling) */
 const CARD_ROLES = new Set(["inside_back_cover_card", "back_cover_card"]);
 
+/** Tab card color (light gray card stock) */
+const TAB_CARD_COLOR = "#e8e8e8";
+
 /** Roles that are blank paper faces */
 const BLANK_PAPER_ROLES = new Set(["blank_back", "inside_back_blank"]);
 
