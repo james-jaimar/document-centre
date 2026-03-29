@@ -54,7 +54,7 @@ interface PageEffectsProps {
  * 4. Blank paper — paper color + shadow, no children
  * 5. Standard paper — paper color + shadow + optional bleed padding + children
  */
-export default function PageEffects({ effects, pageIndex, totalPages, children, pageRole }: PageEffectsProps) {
+export default function PageEffects({ effects, pageIndex, totalPages, children, pageRole, allowBleed, bleedInsetPx }: PageEffectsProps) {
   const role = pageRole ?? (pageIndex === 0 ? "front_cover" : "body");
 
   // ── 1. Card material: solid edge-to-edge color ──
