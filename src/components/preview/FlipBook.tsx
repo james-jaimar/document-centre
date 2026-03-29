@@ -202,6 +202,7 @@ export default function FlipBook({
           height: pageHeight,
           position: "relative",
           transition: "width 0.4s ease-in-out",
+          boxShadow: "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
         }}
       >
         {/* Binding spine — positioned relative to this exact-width wrapper */}

@@ -32,7 +32,7 @@ export interface PreviewEffects {
 }
 
 export const DEFAULT_PREVIEW_EFFECTS: PreviewEffects = {
-  bleed: false,
+  bleed: "none",
   frontCover: "none",
   backCover: "none",
   paperColor: "white",
