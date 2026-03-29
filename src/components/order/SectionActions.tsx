@@ -1,7 +1,6 @@
 import {
   BookOpen,
   FileText,
-  Layers,
   ArrowRight,
   Trash2,
 } from "lucide-react";
