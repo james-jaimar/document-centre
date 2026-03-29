@@ -44,6 +44,8 @@ export default function DocumentPreview({
   sectionTypes,
   pageRoles,
   bleedFlags,
+  pageLabels,
+  pageColors,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
