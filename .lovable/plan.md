@@ -1,73 +1,34 @@
 
-## Fix the native cover mode so we stop exposing the hidden spread half
 
-### What I found
-The page sequence is not the main problem anymore. The real issue is in `FlipBook.tsx`:
+# Fix Binding Spine Position on Solo Pages + Back Cover Edge-to-Edge
 
-- `showCover={true}` is enabled correctly
-- but we then **translate the entire book/spread wrapper**
-- that wrapper still has the **full two-page canvas width**
-- so when the first/last page is in native single-page mode, we are still visually exposing the other half of the spread area, which reads as a ghost page
-- the spread-level shadow/wrapper styling makes that ghost half even more obvious
+## Two remaining issues
 
-So yes: we are still fighting the library’s native cover handling, but now it is happening at the **layout/viewport level**, not just in the page data.
+### 1. Binding spine centered on solo page instead of at the edge
+Currently `BindingSpine` uses `left: 50%` always. On solo pages where the viewport is only one page wide, this puts the spine in the middle of the page. It should be:
+- **Front cover**: spine on the LEFT edge of the page (that's where the binding holes are)
+- **Back cover**: spine on the RIGHT edge of the page
+- **Spread**: spine in the center (current behavior, correct)
 
-### Implementation plan
+### 2. Back cover card still has white border
+`FlipPage` (line 32) always applies `border: 1px solid rgba(0,0,0,0.15)`. For `back_cover_card` pages (solid navy/black card), this creates a visible white edge. The card should be truly edge-to-edge with no border.
 
-1. Rework `FlipBook.tsx` around a viewport model, not spread translation
-- Remove the current `bookTranslateX` approach on the full book wrapper.
-- Introduce a **role-aware viewport** around `HTMLFlipBook`:
-  - spread state: viewport shows full book width
-  - front cover: viewport crops to only the visible cover side
-  - back cover: viewport crops to only the visible back-cover side
-- Keep the pageflip instance intact; only change what portion of it is visible.
+## Changes
 
-2. Stop styling the whole spread like a page
-- Remove or conditionalize the current outer spread shadow wrapper in solo states.
-- Keep page-level shadows/borders on the actual page surface only.
-- This prevents the hidden half of the pageflip canvas from looking like a real blank page.
+### File: `src/components/preview/FlipBook.tsx`
 
-3. Keep the binding outside the cropped content area
-- Anchor `BindingSpine` to the outer stage, not to the cropped book content box.
-- That way the spine stays visible in:
-  - front-cover solo view
-  - middle spreads
-  - back-cover solo view
-- Make sure it remains full-height and centered on the hinge line.
+**A) Move BindingSpine positioning into FlipBook instead of relying on BindingSpine's internal `left-1/2`**
 
-4. Tighten the solo-state detection
-- In `FlipBook.tsx`, drive solo logic from explicit first/last page roles, not generic wrapper assumptions.
-- Treat these as the only solo states:
-  - `front_cover`
-  - final `back_cover_card` or final valid last page
-- Remove leftover assumptions that “solo” means “translate the full spread”.
+Pass a new `position` prop or calculate the spine's `left` style in FlipBook based on solo state:
+- `isShowingFrontCover` → spine at `left: 0` (left edge of viewport)
+- `isShowingBackCover || isShowingLastSolo` → spine at `right: 0` (right edge of viewport)  
+- spread → spine at `left: 50%` (center, as now)
 
-5. Audit `PreviewPanel.tsx` so it only supplies real physical pages
-- Keep the explicit page-role model.
-- Re-check the parity logic for `inside_back_blank` so it is only added when physically required.
-- Do not add any extra placeholder/pad page just to help rendering.
+**B) Remove border on back_cover_card pages in FlipPage**
 
-### Files to update
-- `src/components/preview/FlipBook.tsx`
-- `src/components/preview/BindingSpine.tsx`
-- `src/components/order/PreviewPanel.tsx`
+In the FlipPage root div (line 32), conditionally remove the `border` when `pageRole === "back_cover_card"`. Keep the inset shadow for other pages.
 
-### Technical details
-```text
-Current bad behavior:
-[full spread viewport] + [translate whole book]
-=> native single cover is still inside a 2-page visual box
-=> hidden half becomes a “ghost page”
+### File: `src/components/preview/BindingSpine.tsx`
 
-Target behavior:
-front cover  -> crop viewport to solo cover width, keep spine visible
-middle spread -> show full spread
-back cover   -> crop viewport to solo cover width, keep spine visible
-```
+Add a `position` prop (`"left" | "center" | "right"`) that controls horizontal placement instead of always using `left-1/2`. Default to `"center"` for backward compatibility.
 
-### Expected result
-- front cover shows as a true single page with no left ghost page
-- back cover shows as a true single page with no right ghost page
-- binding remains visible in all states
-- no fake placeholder look from the hidden half of the pageflip canvas
-- behavior matches the Mimeo reference much more closely
