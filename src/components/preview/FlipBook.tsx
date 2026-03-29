@@ -8,7 +8,6 @@ import { FileText, Loader2 } from "lucide-react";
 
 /**
  * Roles where content is handled entirely by PageEffects (no image).
- * pvc_cover_front is NOT here — it needs the artwork image.
  */
 const CONTENT_LESS_ROLES = new Set([
   "pvc_cover_back",
@@ -20,8 +19,6 @@ const CONTENT_LESS_ROLES = new Set([
 
 /**
  * Each page must be a forwardRef component for react-pageflip.
- * The outer div is kept intentionally simple — no borders, no shadows,
- * no conditional styling. ALL visual treatment lives in PageEffects.
  */
 const FlipPage = forwardRef<
   HTMLDivElement,
@@ -43,7 +40,6 @@ const FlipPage = forwardRef<
   const isTab = sectionType === "tab";
   const isContentLess = CONTENT_LESS_ROLES.has(pageRole ?? "");
 
-  // Determine content to render inside PageEffects
   let content: React.ReactNode;
   if (isTab) {
     content = (
@@ -54,10 +50,8 @@ const FlipPage = forwardRef<
       </div>
     );
   } else if (isContentLess) {
-    // Material/blank pages: PageEffects handles the visual entirely
     content = null;
   } else if (url) {
-    // ALL image pages use object-contain — consistent fit model
     content = (
       <img
         src={url}
@@ -68,7 +62,6 @@ const FlipPage = forwardRef<
       />
     );
   } else {
-    // True missing thumbnail fallback
     content = (
       <div className="w-full h-full flex items-center justify-center bg-muted/30">
         <div className="text-center text-muted-foreground">
@@ -154,7 +147,7 @@ export default function FlipBook({
   const flipBookRef = useRef<any>(null);
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
 
-  // Build a stable key that changes when ANY rendering-critical input changes.
+  // Stable key for remounting
   const bookKey = useMemo(
     () => JSON.stringify({
       e: resolvedEffects,
@@ -183,8 +176,10 @@ export default function FlipBook({
   pageWidth = Math.max(pageWidth, 150);
   pageHeight = Math.max(pageHeight, 200);
 
-  // Fixed pixel inset for non-bleed pages — computed once, immune to CSS % timing
+  // Fixed pixel inset for non-bleed pages
   const bleedInsetPx = Math.round(pageWidth * 0.03);
+
+  const spreadWidth = pageWidth * 2;
 
   const handleFlip = useCallback(
     (e: any) => {
@@ -214,7 +209,7 @@ export default function FlipBook({
     );
   }
 
-  // ── Solo-page detection using currentPage (source of truth) ──
+  // ── Solo-page detection ──
   const lastIdx = urls.length - 1;
   const lastRole = pageRoles?.[lastIdx];
 
@@ -223,25 +218,38 @@ export default function FlipBook({
   const isShowingLastSolo = lastRole !== "back_cover_card" && currentPage >= lastIdx;
   const isSoloPage = isShowingFrontCover || isShowingBackCover || isShowingLastSolo;
 
-  // ── Layout geometry ──
-  const spreadWidth = pageWidth * 2;
+  // ── Viewport masking (the stage ALWAYS stays spreadWidth × pageHeight) ──
+  // We show the user only the relevant portion via clip/overflow
   const viewportWidth = isSoloPage ? pageWidth : spreadWidth;
-  const canvasOffsetX = isShowingFrontCover ? -pageWidth : 0;
   const spinePosition = isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center";
+
+  // The clipPath crops the stable stage to show only what the user should see.
+  // For front cover: show right half of the stage (the first page).
+  // For back cover: show left half.
+  // For spreads: show full stage.
+  let clipStyle: React.CSSProperties | undefined;
+  if (isShowingFrontCover) {
+    // Show right half: clip left half away
+    clipStyle = { clipPath: `inset(0 0 0 ${pageWidth}px)` };
+  } else if (isShowingBackCover || isShowingLastSolo) {
+    // Show left half: clip right half away
+    clipStyle = { clipPath: `inset(0 ${pageWidth}px 0 0)` };
+  }
 
   return (
     <div className="flex flex-col items-center justify-center gap-2 overflow-hidden" style={{ width, height }}>
-      {/* Sized wrapper: exactly viewportWidth so BindingSpine anchors correctly */}
+      {/* Outer wrapper: sizes to what the user sees */}
       <div
         style={{
           width: viewportWidth,
           height: pageHeight,
           position: "relative",
+          overflow: "hidden",
           transition: "width 0.4s ease-in-out",
           boxShadow: "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
         }}
       >
-        {/* Binding spine — positioned relative to this exact-width wrapper */}
+        {/* Binding spine */}
         <BindingSpine
           bindingType={bindingType}
           height={pageHeight}
@@ -249,80 +257,80 @@ export default function FlipBook({
           position={spinePosition}
         />
 
-        {/* Viewport: clips the library's full-width canvas */}
+        {/*
+          STABLE STAGE: always spreadWidth × pageHeight.
+          react-pageflip measures this container — it NEVER changes size.
+          We position it so the visible portion aligns with the outer wrapper.
+        */}
         <div
           style={{
-            width: "100%",
-            height: "100%",
-            overflow: "hidden",
-            position: "relative",
+            width: spreadWidth,
+            height: pageHeight,
+            position: "absolute",
+            top: 0,
+            // For front cover: shift stage left so right half (page 0) is visible
+            // For back cover: keep at 0 so left half is visible
+            // For spread: keep at 0
+            left: isShowingFrontCover ? -pageWidth : 0,
+            transition: "left 0.4s ease-in-out",
+            ...clipStyle,
           }}
         >
-          {/* Canvas wrapper: shifts the 2*pageWidth canvas within the viewport */}
-          <div
-            style={{
-              transform: `translateX(${canvasOffsetX}px)`,
-              transition: "transform 0.4s ease-in-out",
-              width: spreadWidth,
-              height: pageHeight,
-            }}
+          {/* @ts-ignore — react-pageflip types are imprecise */}
+          <HTMLFlipBook
+            key={bookKey}
+            ref={flipBookRef}
+            width={pageWidth}
+            height={pageHeight}
+            size="fixed"
+            minWidth={150}
+            maxWidth={pageWidth}
+            minHeight={200}
+            maxHeight={pageHeight}
+            showCover={true}
+            flippingTime={600}
+            drawShadow={true}
+            maxShadowOpacity={0.5}
+            mobileScrollSupport={false}
+            onFlip={handleFlip}
+            startPage={0}
+            usePortrait={false}
+            startZIndex={0}
+            autoSize={false}
+            clickEventForward={false}
+            useMouseEvents={true}
+            swipeDistance={30}
+            showPageCorners={true}
+            disableFlipByClick={false}
+            style={{}}
+            className=""
           >
-            {/* @ts-ignore — react-pageflip types are imprecise */}
-            <HTMLFlipBook
-              key={bookKey}
-              ref={flipBookRef}
-              width={pageWidth}
-              height={pageHeight}
-              size="fixed"
-              minWidth={150}
-              maxWidth={pageWidth}
-              minHeight={200}
-              maxHeight={pageHeight}
-              showCover={true}
-              flippingTime={600}
-              drawShadow={true}
-              maxShadowOpacity={0.5}
-              mobileScrollSupport={false}
-              onFlip={handleFlip}
-              startPage={0}
-              usePortrait={false}
-              startZIndex={0}
-              autoSize={false}
-              clickEventForward={false}
-              useMouseEvents={true}
-              swipeDistance={30}
-              showPageCorners={true}
-              disableFlipByClick={false}
-              style={{}}
-              className=""
-            >
-              {urls.map((url, i) => {
-                const secType = sectionTypes?.[i];
-                const isTab = secType === "tab";
-                const tabIndex = isTab
-                  ? sectionTypes!.slice(0, i).filter((t) => t === "tab").length
-                  : 0;
-                const tabTotal = sectionTypes?.filter((t) => t === "tab").length ?? 0;
-                return (
-                  <FlipPage
-                    key={i}
-                    url={url}
-                    pageNum={i + 1}
-                    isColor={colorFlags?.[i] ?? true}
-                    effects={resolvedEffects}
-                    pageIndex={i}
-                    totalPages={urls.length}
-                    sectionType={secType}
-                    tabIndex={tabIndex}
-                    tabTotal={tabTotal}
-                    pageRole={pageRoles?.[i]}
-                    allowBleed={bleedFlags?.[i] ?? false}
-                    bleedInsetPx={bleedInsetPx}
-                  />
-                );
-              })}
-            </HTMLFlipBook>
-          </div>
+            {urls.map((url, i) => {
+              const secType = sectionTypes?.[i];
+              const isTab = secType === "tab";
+              const tabIndex = isTab
+                ? sectionTypes!.slice(0, i).filter((t) => t === "tab").length
+                : 0;
+              const tabTotal = sectionTypes?.filter((t) => t === "tab").length ?? 0;
+              return (
+                <FlipPage
+                  key={i}
+                  url={url}
+                  pageNum={i + 1}
+                  isColor={colorFlags?.[i] ?? true}
+                  effects={resolvedEffects}
+                  pageIndex={i}
+                  totalPages={urls.length}
+                  sectionType={secType}
+                  tabIndex={tabIndex}
+                  tabTotal={tabTotal}
+                  pageRole={pageRoles?.[i]}
+                  allowBleed={bleedFlags?.[i] ?? false}
+                  bleedInsetPx={bleedInsetPx}
+                />
+              );
+            })}
+          </HTMLFlipBook>
         </div>
       </div>
 

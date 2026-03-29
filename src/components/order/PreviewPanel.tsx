@@ -50,6 +50,7 @@ export default function PreviewPanel({
   effects,
 }: PreviewPanelProps) {
   const [currentPage, setCurrentPage] = useState(0);
+  const prevPageCount = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 500, height: 400 });
 
@@ -250,6 +251,14 @@ export default function PreviewPanel({
   }, [documents]);
 
   const totalPages = finalPages.length;
+
+  // Clamp currentPage when page count changes (e.g. cover options added/removed)
+  useEffect(() => {
+    if (prevPageCount.current !== 0 && totalPages > 0 && currentPage >= totalPages) {
+      setCurrentPage(Math.max(0, totalPages - 1));
+    }
+    prevPageCount.current = totalPages;
+  }, [totalPages, currentPage]);
 
   // Derive what's visible in the current spread
   const isShowingFrontCover = isBound && currentPage === 0;
