@@ -130,7 +130,21 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
     );
   }
 
-  // ── 4. Blank paper: paper color + shadow, no content ──
+  // ── 4. Insert sheet: solid colored divider ──
+  if (role === "insert") {
+    const insertBg = INSERT_COLORS[effects.paperColor] ?? "#f8f8f8";
+    return (
+      <div className="w-full h-full" style={{ backgroundColor: insertBg, boxShadow: PAPER_SHADOW }}>
+        <div className="w-full h-full flex items-center justify-center">
+          <div className="text-center opacity-20">
+            <p style={{ fontSize: 10, fontWeight: 600, color: "#666" }}>INSERT</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 5. Blank paper: paper color + shadow, no content ──
   if (BLANK_PAPER_ROLES.has(role)) {
     const paperBg = PAPER_COLORS[effects.paperColor] ?? "#ffffff";
     return (
