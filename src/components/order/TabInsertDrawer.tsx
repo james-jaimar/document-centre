@@ -144,7 +144,7 @@ export default function TabInsertDrawer({
                       variant="outline"
                       size="sm"
                       className="text-xs h-7"
-                      onClick={() => onAddTab(bodyPages.length > 0 ? bodyPages[bodyPages.length - 1].pageNumber : 1)}
+                      onClick={() => onAddTab(validPages.length > 0 ? validPages[validPages.length - 1].pageNumber : 1)}
                     >
                       <Plus className="h-3 w-3 mr-1" /> Add
                     </Button>
