@@ -1,81 +1,131 @@
 
+Do I know what the issue is? Yes.
 
-# Right-Drawer Tab & Insert Manager + Physical Sheet Preview
+## What the actual problem is
 
-## Problems identified
+This is not one bug. It is three connected design problems:
 
-1. **"Selects every page" bug**: `bodyPages` in both managers assigns every page within a multi-page section the same `sortOrder` (the section's `sort_order`). When used as `SelectItem` values, all pages from the same section share the same value, so selecting one selects all. Additionally, insert/tab sections with no document fall through to `doc?.page_count ?? 1`, adding ghost entries to the page list.
+1. **The app is storing placement at section level, not page level**
+   - In `src/components/order/TabInsertDrawer.tsx`, selecting “After Page 5” is converted to `parentSortOrder + 1`.
+   - If the whole document body is one section, then pages 1–25 all belong to the same `sort_order`.
+   - So page 5, page 12, and page 25 all save to the same value.
+   - That is why the dropdown keeps snapping back to **“After Page 25”**.
 
-2. **Only one item visible**: The tiny popover and cramped inline UI makes it nearly impossible to manage multiple tabs/inserts. The user wants a proper right-side drawer.
+2. **The preview engine can only inject tabs/inserts between sections, not inside a multi-page document section**
+   - `src/components/order/PreviewPanel.tsx` currently flattens whole sections in order.
+   - So even if the UI says “after page 5”, the preview cannot place a tab/insert there unless the body was already split into separate sections page-by-page.
+   - That is why inserts/tabs are not appearing where the user chose.
 
-3. **No preview rendering**: Tabs and inserts are being created in the DB correctly (the screenshot shows them), but the preview isn't updating because the `structuralKey` in FlipBook doesn't include `pageLabels`/`pageColors`, so adding a tab/insert doesn't trigger a remount. Also, the `PreviewPanel` role assignment marks tabs as `"body"` (line 140) instead of `"tab"`, so they never get tab rendering treatment.
+3. **Tabs are likely being clipped even when they do render**
+   - In `src/components/preview/FlipBook.tsx`, each page root has `overflow: hidden`.
+   - The tab protrusion is rendered outside the page edge with `right: -12`.
+   - So the protruding tab gets cut off before the user can see it.
+   - This is why the Mimeo-style tab edge is not visible.
 
-4. **Insert sheets need two faces**: User confirmed they want physical sheets — each insert should produce 2 pages in the sequence (front + back) like simplex blank backs.
+I also checked the DB state: the recent tabs/inserts are all being saved with the same `sort_order = 2`, which confirms the root problem.
 
-## Plan
+## Clean fix
 
-### 1. Fix the page-position model (shared fix for both managers)
+### 1. Change placement to a real page anchor
+Use `document_sections.page_range_start` as the anchor meaning:
 
-Replace the per-page `sortOrder` model with a unique per-page index. Instead of using `section.sort_order` as the `SelectItem` value (which duplicates), use sequential page numbers as values. The callback then calculates the correct `sort_order` to place the tab/insert after that page's parent section.
+```text
+page_range_start = insert/tab goes after physical body page N
+```
 
-**Changes to both `TabManager.tsx` and `InsertManager.tsx`:**
-- `bodyPages` entries get a unique `pageNumber` (1, 2, 3...) used as the Select value
-- A mapping function converts page number → correct section sort_order for the DB insert
-- Fix: skip insert/tab sections when building `bodyPages` (already done, but also skip sections with no document that aren't body type)
+This field already exists, so no schema change is needed.
 
-### 2. New right-drawer UI for managing tabs and inserts
+Implementation:
+- `src/hooks/useOrderBuilder.ts`
+  - allow `useAddSection` to insert `page_range_start`
+- `src/pages/dashboard/OrderBuild.tsx`
+  - when adding/moving a tab or insert, save `page_range_start`
+  - stop using `sort_order` as the actual page placement source
+- `src/components/order/TabInsertDrawer.tsx`
+  - read/write page anchors from `page_range_start`
+  - use `sort_order` only as a fallback / stable secondary ordering
 
-Create `src/components/order/TabInsertDrawer.tsx`:
-- Uses shadcn `Sheet` component (side="right", ~400px wide)
-- Two sections: "Tab Dividers" and "Insert Sheets", each with:
-  - Header with count and Add button
-  - List of existing items with: color swatch, editable label (tabs), "After Page X" dropdown, delete button
-  - For tabs: Auto-Insert button
-  - For inserts: Color picker (5 swatches) before page selection
-- Triggered by a button in `OrderBuild.tsx` sidebar (replaces inline managers)
-- The drawer stays open while the user configures, preview updates live behind it
+### 2. Rebuild the drawer interaction so there is only one source of truth
+Right now the drawer has:
+- an existing row with an “After Page X” dropdown
+- plus a separate “Add tab after...” / “Insert after...” list below
 
-**Changes to `OrderBuild.tsx`:**
-- Remove inline `TabManager` and `InsertManager` renders
-- Add a "Manage Tabs & Inserts" button that opens the drawer
-- Show the button only when tabs or inserts are enabled
-- Pass all the same callbacks to the drawer
+That is the duplication the user is complaining about.
 
-### 3. Fix PreviewPanel role assignment for tabs
+Replace it with a cleaner Mimeo-style flow:
+- Tabs section:
+  - list existing tabs
+  - each row has:
+    - label
+    - after-page dropdown
+    - delete
+  - one clear **Add Tab** button
+  - optional **Auto Insert** button
+- Insert sheets section:
+  - list existing inserts
+  - each row has:
+    - color swatch / color selector
+    - after-page dropdown
+    - delete
+  - one clear **Add Insert Sheet** button
 
-**Changes to `PreviewPanel.tsx` line 140:**
-- Change `if (p.section?.section_type === "tab") return "body"` → `return "tab"`
+Result:
+- no duplicated placement controls
+- existing rows become the only editable controls
+- much easier to manage multiple items
 
-### 4. Make inserts render as physical two-sided sheets
+Files:
+- `src/components/order/TabInsertDrawer.tsx`
+- `src/pages/dashboard/OrderBuild.tsx`
 
-**Changes to `PreviewPanel.tsx`:**
-- After pushing the insert page, push a second page with role `"insert_back"` (blank reverse side)
-- This makes inserts physical sheets in the flipbook
+### 3. Rebuild preview sequencing around body-page anchors
+`PreviewPanel.tsx` needs to stop thinking in “section chunks only”.
 
-**Changes to `FlipBook.tsx`:**
-- Add `"insert_back"` to `CONTENT_LESS_ROLES`
+New model:
+1. Build the normal body page sequence from uploaded documents
+2. Build an anchor map:
+   - all tabs where `page_range_start = N`
+   - all inserts where `page_range_start = N`
+3. While generating physical preview pages, inject anchored items immediately after body page `N`
+4. For inserts, generate two faces:
+   - `insert`
+   - `insert_back`
 
-**Changes to `PageEffects.tsx`:**
-- Add `"insert_back"` branch that renders as plain paper (same color as front, no watermark)
+This makes “after page 5” mean exactly that, even when the uploaded file is one 25-page section.
 
-### 5. Fix structuralKey to include labels/colors
+File:
+- `src/components/order/PreviewPanel.tsx`
 
-**Changes to `FlipBook.tsx`:**
-- Add `pageLabels` and `pageColors` to the `structuralKey` JSON so adding/moving tabs and inserts triggers a proper remount
+### 4. Make tabs visually protrude like the reference
+Fix the render layer so tabs can actually stick out:
+- remove clipping from the page root in `FlipBook.tsx`
+- keep clipping only on the inner paper/content frame
+- add a small right-side preview gutter so the outermost tab is still visible
+- render the tab label on the protruding tab edge, not just a number
 
-## Files to create/edit
+Files:
+- `src/components/preview/FlipBook.tsx`
+- `src/components/preview/PageEffects.tsx`
 
-- **New**: `src/components/order/TabInsertDrawer.tsx` — right-side Sheet with full tab + insert management UI
-- **Edit**: `src/pages/dashboard/OrderBuild.tsx` — replace inline managers with drawer trigger button
-- **Edit**: `src/components/order/PreviewPanel.tsx` — fix tab role, add insert back face
-- **Edit**: `src/components/preview/FlipBook.tsx` — add insert_back to content-less roles, fix structuralKey
-- **Edit**: `src/components/preview/PageEffects.tsx` — add insert_back rendering branch
+### 5. Preserve backward compatibility
+For older tab/insert records that only have `sort_order`:
+- derive a fallback anchor from current section placement
+- once the user edits the item in the drawer, save `page_range_start` permanently
+
+## Files to update
+
+- `src/hooks/useOrderBuilder.ts`
+- `src/pages/dashboard/OrderBuild.tsx`
+- `src/components/order/TabInsertDrawer.tsx`
+- `src/components/order/PreviewPanel.tsx`
+- `src/components/preview/FlipBook.tsx`
+- `src/components/preview/PageEffects.tsx`
 
 ## Expected result
 
-- "Manage Tabs & Inserts" button opens a spacious right drawer
-- Each page has a unique value in the dropdown — no more "selects every page"
-- Adding a tab immediately shows it in the flipbook with protruding colored extension
-- Adding an insert shows a two-sided colored sheet in the flipbook
-- Labels entered on tabs display on the tab page in the preview
-
+- Selecting **After Page 5** stays on page 5
+- Tabs and inserts no longer collapse to **After Page 25**
+- The drawer has one clean control model, not duplicated add/edit placement
+- Insert sheets appear as true physical two-sided sheets after the selected page
+- Tabs visibly protrude from the document edge like the Mimeo reference
+- Reopening the drawer shows the saved placement correctly every time
