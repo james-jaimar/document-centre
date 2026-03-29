@@ -112,29 +112,29 @@ export default function PreviewPanel({
       return "body";
     });
 
+    // Insert a physical PVC cover sheet at index 0 when a PVC front cover is selected.
+    // Must happen BEFORE parity logic so page count is correct for even/odd checks.
+    const isPvc = isBound && effects?.frontCover && ["clear_pvc", "frosted_pvc", "matte_pvc"].includes(effects.frontCover);
+    if (isPvc && fp.length > 0) {
+      const frontThumb = fp[0]?.thumbnailUrl ?? "";
+      fp.unshift({
+        thumbnailUrl: frontThumb,
+        pageIndex: 0,
+        documentName: "PVC Cover",
+        section: undefined,
+        isColor: true,
+      });
+      roles.unshift("pvc_cover");
+    }
+
     // For bound documents with showCover, the library treats the first AND last
-    // page as solo covers. We need the total page count (excluding any back cover
-    // card we'll append) to be even so that interior spreads pair correctly.
-    //
-    // The total sequence for showCover must have an EVEN number of pages:
-    //   - Page 0 = front cover (solo, right side)
-    //   - Pages 1..N-2 = interior spreads (pairs)
-    //   - Page N-1 = back cover (solo, left side)
-    //
-    // So if we have back cover card: total must be even (front + interior + back)
-    // If no back cover card: total must be even (front + interior, last interior is solo)
-    
+    // page as solo covers. Total page count must be EVEN for interior spreads to pair.
     const hasBackCover = isBound && effects?.backCover && effects.backCover !== "none";
     
     if (isBound) {
-      // Current count without back cover
       const currentCount = fp.length;
       
       if (hasBackCover) {
-        // We'll append a back cover card. For showCover to work correctly,
-        // the total (currentCount + 1 for back cover) must be even.
-        // If currentCount is odd, total will be even — good.
-        // If currentCount is even, total will be odd — need to insert an inside-back blank.
         if (currentCount % 2 === 0) {
           fp.push({
             thumbnailUrl: "",
@@ -145,7 +145,6 @@ export default function PreviewPanel({
           });
           roles.push("inside_back_blank");
         }
-        // Append the back cover card as the final page
         fp.push({
           thumbnailUrl: "",
           pageIndex: 0,
@@ -155,8 +154,6 @@ export default function PreviewPanel({
         });
         roles.push("back_cover_card");
       } else {
-        // No back cover card. The last page in the sequence will be treated
-        // as a solo cover by showCover. Total must be even.
         if (currentCount % 2 !== 0) {
           fp.push({
             thumbnailUrl: "",
@@ -168,21 +165,6 @@ export default function PreviewPanel({
           roles.push("inside_back_blank");
         }
       }
-    }
-
-    // Insert a physical PVC cover sheet at index 0 when a PVC front cover is selected
-    const isPvc = isBound && effects?.frontCover && ["clear_pvc", "frosted_pvc", "matte_pvc"].includes(effects.frontCover);
-    if (isPvc && fp.length > 0) {
-      // The PVC sheet shows the same thumbnail as the printed front cover underneath
-      const frontThumb = fp[0]?.thumbnailUrl ?? "";
-      fp.unshift({
-        thumbnailUrl: frontThumb,
-        pageIndex: 0,
-        documentName: "PVC Cover",
-        section: undefined,
-        isColor: true,
-      });
-      roles.unshift("pvc_cover");
     }
 
     return { finalPages: fp, pageRoles: roles };
