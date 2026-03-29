@@ -1,37 +1,81 @@
 
 
-# Fix Tab Dividers & Insert Sheets UI Visibility
+# Right-Drawer Tab & Insert Manager + Physical Sheet Preview
 
-## What's happening
+## Problems identified
 
-The code is correct structurally — `TabManager` renders when a tab option with `tab_count > 0` is selected, and `InsertManager` always renders. But there are two problems:
+1. **"Selects every page" bug**: `bodyPages` in both managers assigns every page within a multi-page section the same `sortOrder` (the section's `sort_order`). When used as `SelectItem` values, all pages from the same section share the same value, so selecting one selects all. Additionally, insert/tab sections with no document fall through to `doc?.page_count ?? 1`, adding ghost entries to the page list.
 
-1. **InsertManager shows unconditionally** — it should only appear when an insert option other than "No Inserts" is selected (like how TabManager only appears when tabs are selected). Currently it just sits there saying "No insert sheets added yet" even when the user has "No Inserts" selected.
+2. **Only one item visible**: The tiny popover and cramped inline UI makes it nearly impossible to manage multiple tabs/inserts. The user wants a proper right-side drawer.
 
-2. **Both managers are buried below the options accordion** — when tabs or inserts are selected, the management UI appears below the last accordion item. On a laptop screen, this is likely below the visible fold inside the scrollable options column. There's no visual signal that new UI appeared.
+3. **No preview rendering**: Tabs and inserts are being created in the DB correctly (the screenshot shows them), but the preview isn't updating because the `structuralKey` in FlipBook doesn't include `pageLabels`/`pageColors`, so adding a tab/insert doesn't trigger a remount. Also, the `PreviewPanel` role assignment marks tabs as `"body"` (line 140) instead of `"tab"`, so they never get tab rendering treatment.
 
-3. **The `multi_color` metadata key doesn't match** — the DB stores `"color": "multi"` but the code checks `metadata?.multi_color`. Minor but worth fixing.
+4. **Insert sheets need two faces**: User confirmed they want physical sheets — each insert should produce 2 pages in the sequence (front + back) like simplex blank backs.
 
-## The fix
+## Plan
 
-### Make InsertManager conditional (like TabManager)
-In `OrderBuild.tsx`, derive `insertInfo` from the Inserts option — check if the selected slug is not "no-inserts". Only render `InsertManager` when inserts are enabled.
+### 1. Fix the page-position model (shared fix for both managers)
 
-### Make both managers more prominent
-- When TabManager or InsertManager appear, render them as highlighted sections (with a subtle accent border or background) so they're visually distinct from the options accordion
-- Auto-scroll the options panel to show the newly-appeared manager when a tab/insert option is selected
+Replace the per-page `sortOrder` model with a unique per-page index. Instead of using `section.sort_order` as the `SelectItem` value (which duplicates), use sequential page numbers as values. The callback then calculates the correct `sort_order` to place the tab/insert after that page's parent section.
 
-### Fix multi_color detection
-Check `metadata?.color === "multi"` instead of `metadata?.multi_color`.
+**Changes to both `TabManager.tsx` and `InsertManager.tsx`:**
+- `bodyPages` entries get a unique `pageNumber` (1, 2, 3...) used as the Select value
+- A mapping function converts page number → correct section sort_order for the DB insert
+- Fix: skip insert/tab sections when building `bodyPages` (already done, but also skip sections with no document that aren't body type)
 
-## Files to edit
+### 2. New right-drawer UI for managing tabs and inserts
 
-- `src/pages/dashboard/OrderBuild.tsx` — add `insertInfo` conditional logic (mirror `tabInfo` pattern), fix `multiColor` detection, add scroll-into-view behavior
-- No other files need changes
+Create `src/components/order/TabInsertDrawer.tsx`:
+- Uses shadcn `Sheet` component (side="right", ~400px wide)
+- Two sections: "Tab Dividers" and "Insert Sheets", each with:
+  - Header with count and Add button
+  - List of existing items with: color swatch, editable label (tabs), "After Page X" dropdown, delete button
+  - For tabs: Auto-Insert button
+  - For inserts: Color picker (5 swatches) before page selection
+- Triggered by a button in `OrderBuild.tsx` sidebar (replaces inline managers)
+- The drawer stays open while the user configures, preview updates live behind it
+
+**Changes to `OrderBuild.tsx`:**
+- Remove inline `TabManager` and `InsertManager` renders
+- Add a "Manage Tabs & Inserts" button that opens the drawer
+- Show the button only when tabs or inserts are enabled
+- Pass all the same callbacks to the drawer
+
+### 3. Fix PreviewPanel role assignment for tabs
+
+**Changes to `PreviewPanel.tsx` line 140:**
+- Change `if (p.section?.section_type === "tab") return "body"` → `return "tab"`
+
+### 4. Make inserts render as physical two-sided sheets
+
+**Changes to `PreviewPanel.tsx`:**
+- After pushing the insert page, push a second page with role `"insert_back"` (blank reverse side)
+- This makes inserts physical sheets in the flipbook
+
+**Changes to `FlipBook.tsx`:**
+- Add `"insert_back"` to `CONTENT_LESS_ROLES`
+
+**Changes to `PageEffects.tsx`:**
+- Add `"insert_back"` branch that renders as plain paper (same color as front, no watermark)
+
+### 5. Fix structuralKey to include labels/colors
+
+**Changes to `FlipBook.tsx`:**
+- Add `pageLabels` and `pageColors` to the `structuralKey` JSON so adding/moving tabs and inserts triggers a proper remount
+
+## Files to create/edit
+
+- **New**: `src/components/order/TabInsertDrawer.tsx` — right-side Sheet with full tab + insert management UI
+- **Edit**: `src/pages/dashboard/OrderBuild.tsx` — replace inline managers with drawer trigger button
+- **Edit**: `src/components/order/PreviewPanel.tsx` — fix tab role, add insert back face
+- **Edit**: `src/components/preview/FlipBook.tsx` — add insert_back to content-less roles, fix structuralKey
+- **Edit**: `src/components/preview/PageEffects.tsx` — add insert_back rendering branch
 
 ## Expected result
-- Selecting "5-Tab Dividers (White)" from the dropdown immediately shows the TabManager panel below the options, scrolled into view
-- Selecting "Blank Coloured Divider Sheets" from the Inserts dropdown shows the InsertManager panel
-- Selecting "No Tab Dividers" or "No Inserts" hides the respective manager
-- Multi-colour tabs are correctly detected
+
+- "Manage Tabs & Inserts" button opens a spacious right drawer
+- Each page has a unique value in the dropdown — no more "selects every page"
+- Adding a tab immediately shows it in the flipbook with protruding colored extension
+- Adding an insert shows a two-sided colored sheet in the flipbook
+- Labels entered on tabs display on the tab page in the preview
 
