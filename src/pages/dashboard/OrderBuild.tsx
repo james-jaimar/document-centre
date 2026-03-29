@@ -289,49 +289,52 @@ export default function OrderBuild() {
 
   const orderItemId = orderItem?.id ?? "";
 
-  // ── Tab/Insert callbacks ──
-  const handleAddTab = useCallback(async (sortOrder: number) => {
+  // ── Tab/Insert callbacks using page_range_start as anchor ──
+  const handleAddTab = useCallback(async (afterPage: number) => {
     if (!orderItemId) return;
+    const maxSort = sections.reduce((max, s) => Math.max(max, s.sort_order), 0);
     await addSectionMut.mutateAsync({
       order_item_id: orderItemId,
       section_type: "tab",
-      sort_order: sortOrder,
+      sort_order: maxSort + 1,
       document_id: null,
-    });
-  }, [orderItemId, addSectionMut]);
+      page_range_start: afterPage,
+    } as any);
+  }, [orderItemId, addSectionMut, sections]);
 
   const handleDeleteTab = useCallback(async (sectionId: string) => {
     if (!orderItemId) return;
     await deleteSectionMut.mutateAsync({ id: sectionId, orderItemId });
   }, [orderItemId, deleteSectionMut]);
 
-  const handleMoveTab = useCallback(async (sectionId: string, newSortOrder: number) => {
-    await updateSectionMut.mutateAsync({ id: sectionId, sort_order: newSortOrder } as any);
+  const handleMoveTab = useCallback(async (sectionId: string, afterPage: number) => {
+    await updateSectionMut.mutateAsync({ id: sectionId, page_range_start: afterPage } as any);
   }, [updateSectionMut]);
 
   const handleUpdateTabLabel = useCallback(async (sectionId: string, label: string) => {
     await updateSectionMut.mutateAsync({ id: sectionId, label } as any);
   }, [updateSectionMut]);
 
-  const handleAddInsert = useCallback(async (sortOrder: number, color: string) => {
+  const handleAddInsert = useCallback(async (afterPage: number, color: string) => {
     if (!orderItemId) return;
+    const maxSort = sections.reduce((max, s) => Math.max(max, s.sort_order), 0);
     const section = await addSectionMut.mutateAsync({
       order_item_id: orderItemId,
       section_type: "insert",
-      sort_order: sortOrder,
+      sort_order: maxSort + 1,
       document_id: null,
-    });
-    // Set color (not in generated types yet, use raw update)
+      page_range_start: afterPage,
+    } as any);
     await supabase.from("document_sections").update({ color } as any).eq("id", section.id);
-  }, [orderItemId, addSectionMut]);
+  }, [orderItemId, addSectionMut, sections]);
 
   const handleDeleteInsert = useCallback(async (sectionId: string) => {
     if (!orderItemId) return;
     await deleteSectionMut.mutateAsync({ id: sectionId, orderItemId });
   }, [orderItemId, deleteSectionMut]);
 
-  const handleMoveInsert = useCallback(async (sectionId: string, newSortOrder: number) => {
-    await updateSectionMut.mutateAsync({ id: sectionId, sort_order: newSortOrder } as any);
+  const handleMoveInsert = useCallback(async (sectionId: string, afterPage: number) => {
+    await updateSectionMut.mutateAsync({ id: sectionId, page_range_start: afterPage } as any);
   }, [updateSectionMut]);
 
   if (loading) {

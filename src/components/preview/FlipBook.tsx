@@ -92,7 +92,7 @@ const FlipPage = forwardRef<
         width: "100%",
         height: "100%",
         position: "relative",
-        overflow: "hidden",
+        overflow: isTab ? "visible" : "hidden",
       }}
     >
       <PageEffects
@@ -240,7 +240,7 @@ export default function FlipBook({
   const spinePosition = isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center";
 
   return (
-    <div className="flex flex-col items-center justify-center gap-2 overflow-hidden" style={{ width, height }}>
+    <div className="flex flex-col items-center justify-center gap-2" style={{ width, height, overflow: "visible" }}>
       {/*
         VIEWER WRAPPER: visible viewport, animates width for solo/spread.
         Uses DISPLAYED (scaled) dimensions — purely cosmetic.
@@ -250,7 +250,7 @@ export default function FlipBook({
           width: displayedViewportWidth,
           height: displayedPageHeight,
           position: "relative",
-          overflow: "hidden",
+          overflow: "visible",
           transition: "width 0.4s ease-in-out",
           boxShadow: "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
         }}
