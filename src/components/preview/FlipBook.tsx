@@ -195,10 +195,8 @@ export default function FlipBook({
         >
           {/* Outer drop shadow wrapper */}
           <div className="relative" style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.15)" }}>
-            {/* Binding spine — only show when NOT solo */}
-            {!isSoloPage && (
-              <BindingSpine bindingType={bindingType} height={pageHeight} isOpen={displayPage > 0} />
-            )}
+            {/* Binding spine — always show for bound products, adjust open state */}
+            <BindingSpine bindingType={bindingType} height={pageHeight} isOpen={!isSoloPage} />
 
             {/* @ts-ignore — react-pageflip types are imprecise */}
             <HTMLFlipBook

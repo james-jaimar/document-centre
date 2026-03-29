@@ -75,7 +75,6 @@ export default function PreviewPanel({
     const result: PageInfo[] = [];
     for (const section of sections) {
       if (section.section_type === "tab") {
-        // Tab divider: no document, single blank page
         result.push({
           thumbnailUrl: "",
           pageIndex: 0,
@@ -104,7 +103,7 @@ export default function PreviewPanel({
     return result;
   }, [documents, sections]);
 
-  // Build final page sequence with explicit roles — no fake padding
+  // Build final page sequence with explicit roles
   const { finalPages, pageRoles: computedPageRoles } = useMemo(() => {
     const fp = [...pages];
     const roles: string[] = fp.map((p, i) => {
@@ -113,33 +112,62 @@ export default function PreviewPanel({
       return "body";
     });
 
-    // For bound documents, ensure interior has even count (between covers)
-    // so that spreads pair correctly. If body pages are odd, add an inside-back blank.
-    if (isBound && fp.length > 1) {
-      // Interior = everything after front cover
-      const interiorCount = fp.length - 1;
-      if (interiorCount % 2 !== 0) {
+    // For bound documents with showCover, the library treats the first AND last
+    // page as solo covers. We need the total page count (excluding any back cover
+    // card we'll append) to be even so that interior spreads pair correctly.
+    //
+    // The total sequence for showCover must have an EVEN number of pages:
+    //   - Page 0 = front cover (solo, right side)
+    //   - Pages 1..N-2 = interior spreads (pairs)
+    //   - Page N-1 = back cover (solo, left side)
+    //
+    // So if we have back cover card: total must be even (front + interior + back)
+    // If no back cover card: total must be even (front + interior, last interior is solo)
+    
+    const hasBackCover = isBound && effects?.backCover && effects.backCover !== "none";
+    
+    if (isBound) {
+      // Current count without back cover
+      const currentCount = fp.length;
+      
+      if (hasBackCover) {
+        // We'll append a back cover card. For showCover to work correctly,
+        // the total (currentCount + 1 for back cover) must be even.
+        // If currentCount is odd, total will be even — good.
+        // If currentCount is even, total will be odd — need to insert an inside-back blank.
+        if (currentCount % 2 === 0) {
+          fp.push({
+            thumbnailUrl: "",
+            pageIndex: 0,
+            documentName: "",
+            section: undefined,
+            isColor: true,
+          });
+          roles.push("inside_back_blank");
+        }
+        // Append the back cover card as the final page
         fp.push({
           thumbnailUrl: "",
           pageIndex: 0,
-          documentName: "",
+          documentName: "Back Cover",
           section: undefined,
           isColor: true,
         });
-        roles.push("inside_back_blank");
+        roles.push("back_cover_card");
+      } else {
+        // No back cover card. The last page in the sequence will be treated
+        // as a solo cover by showCover. Total must be even.
+        if (currentCount % 2 !== 0) {
+          fp.push({
+            thumbnailUrl: "",
+            pageIndex: 0,
+            documentName: "",
+            section: undefined,
+            isColor: true,
+          });
+          roles.push("inside_back_blank");
+        }
       }
-    }
-
-    // Append back cover card if selected (always the very last page)
-    if (isBound && effects?.backCover && effects.backCover !== "none") {
-      fp.push({
-        thumbnailUrl: "",
-        pageIndex: 0,
-        documentName: "Back Cover",
-        section: undefined,
-        isColor: true,
-      });
-      roles.push("back_cover_card");
     }
 
     return { finalPages: fp, pageRoles: roles };
@@ -160,28 +188,38 @@ export default function PreviewPanel({
     [finalPages]
   );
 
-
   // Derive aspect ratio from the first document's actual dimensions
   const pageAspectRatio = useMemo(() => {
     const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
     if (doc && doc.page_width_mm && doc.page_height_mm) {
       return Number(doc.page_width_mm) / Number(doc.page_height_mm);
     }
-    return undefined; // let preview components fall back to A4
+    return undefined;
   }, [documents]);
 
   const totalPages = finalPages.length;
 
   // Derive what's visible in the current spread
-  const isShowingCover = isBound && currentPage === 0;
-  const visibleLeft = isShowingCover ? null : currentPage;
-  const visibleRight = isShowingCover ? 0 : currentPage + 1;
+  const isShowingFrontCover = isBound && currentPage === 0;
+  const hasBackCoverCard = computedPageRoles.includes("back_cover_card");
+  const isShowingBackCover = isBound && hasBackCoverCard && currentPage >= totalPages - 1;
+  // Also solo when showing the last page without back cover card (library treats last as solo)
+  const isShowingLastSolo = isBound && !hasBackCoverCard && currentPage >= totalPages - 1;
+
+  const isSoloState = isShowingFrontCover || isShowingBackCover || isShowingLastSolo;
+
+  const visibleLeft = isSoloState && isShowingFrontCover ? null : currentPage;
+  const visibleRight = isShowingFrontCover ? 0 : (isSoloState ? null : currentPage + 1);
 
   // Page info text
   const pageInfoText = useMemo(() => {
     if (totalPages === 0) return "";
     if (isBound) {
-      if (isShowingCover) return `Page 1 of ${totalPages}`;
+      if (isShowingFrontCover) return `Page 1 of ${totalPages}`;
+      if (isShowingBackCover) {
+        return hasBackCoverCard ? `Back Cover` : `Page ${totalPages} of ${totalPages}`;
+      }
+      if (isShowingLastSolo) return `Page ${totalPages} of ${totalPages}`;
       const left = currentPage + 1;
       const right = Math.min(currentPage + 2, totalPages);
       return left === right
@@ -189,7 +227,7 @@ export default function PreviewPanel({
         : `Pages ${left}–${right} of ${totalPages}`;
     }
     return `Page ${currentPage + 1} of ${totalPages}`;
-  }, [currentPage, totalPages, isBound, isShowingCover]);
+  }, [currentPage, totalPages, isBound, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, hasBackCoverCard]);
 
   // Colour status for visible pages
   const colourStatus = useMemo(() => {
@@ -221,10 +259,7 @@ export default function PreviewPanel({
 
   // Navigation helpers
   const goFirst = () => setCurrentPage(0);
-  const goLast = () => {
-    // The last page index — react-pageflip handles solo rendering for the final page
-    setCurrentPage(totalPages - 1);
-  };
+  const goLast = () => setCurrentPage(totalPages - 1);
   const goPrev = () => setCurrentPage((p) => Math.max(0, p - step));
   const goNext = () => setCurrentPage((p) => Math.min(totalPages - 1, p + step));
 
