@@ -155,7 +155,7 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
   const showLamination = isFrontCover && effects.coverLamination !== "none";
 
   return (
-    <div className="relative w-full h-full" style={{ backgroundColor: paperBg }}>
+    <div className="relative w-full h-full" style={{ backgroundColor: paperBg, boxShadow: paperShadow }}>
       <div
         className="w-full h-full"
         style={showBleedMargin ? { padding: "3%", boxSizing: "border-box" } : undefined}
