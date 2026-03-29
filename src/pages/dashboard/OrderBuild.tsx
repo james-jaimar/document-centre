@@ -302,14 +302,14 @@ export default function OrderBuild() {
 
   const handleAddInsert = useCallback(async (sortOrder: number, color: string) => {
     if (!orderItemId) return;
-    await addSectionMut.mutateAsync({
+    const section = await addSectionMut.mutateAsync({
       order_item_id: orderItemId,
       section_type: "insert",
       sort_order: sortOrder,
       document_id: null,
     });
-    // Update color after creation (since addSection doesn't support color column yet in types)
-    // The section was just created — we need to find it and update
+    // Set color (not in generated types yet, use raw update)
+    await supabase.from("document_sections").update({ color } as any).eq("id", section.id);
   }, [orderItemId, addSectionMut]);
 
   const handleDeleteInsert = useCallback(async (sectionId: string) => {
