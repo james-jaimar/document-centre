@@ -44,32 +44,72 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
   const role = pageRole ?? (pageIndex === 0 ? "front_cover" : "body");
   const isFrontCover = role === "front_cover";
   const isBackCoverCard = role === "back_cover_card";
-  const isCoverPage = isFrontCover || isBackCoverCard;
+  const isPvcCover = role === "pvc_cover";
+  const isCoverPage = isFrontCover || isBackCoverCard || isPvcCover;
 
   // Paper background color
   const paperBg = PAPER_COLORS[effects.paperColor] ?? "#ffffff";
 
-  // Back cover card: solid color, edge-to-edge
+  // Back cover card: solid color, edge-to-edge — use card color as wrapper bg too
   const backCoverColor = isBackCoverCard ? (BACK_COVER_COLORS[effects.backCover] ?? "#1a1a1a") : undefined;
+  const wrapperBg = isBackCoverCard ? backCoverColor! : isPvcCover ? "transparent" : paperBg;
 
-  // Bleed: show white border based on scope — card covers are always edge-to-edge
+  // Bleed: show white border based on scope — card covers & PVC are always edge-to-edge
   const isBleedForThisPage =
     effects.bleed === "all" ||
     (effects.bleed === "front_cover" && isFrontCover) ||
     (effects.bleed === "covers" && isCoverPage);
-  const showBleedMargin = !isBleedForThisPage && !isBackCoverCard;
+  const showBleedMargin = !isBleedForThisPage && !isBackCoverCard && !isPvcCover;
 
-  // Front cover overlay type
-  const frontCoverOverlay = isFrontCover && effects.frontCover !== "none" ? effects.frontCover : null;
+  // PVC overlay type — applied on pvc_cover pages
+  const pvcOverlayType = isPvcCover ? effects.frontCover : null;
 
-  // Lamination sheen on covers
-  const showLamination = isCoverPage && effects.coverLamination !== "none";
+  // Front cover overlay — no longer applied on front_cover (moved to pvc_cover)
+  const frontCoverOverlay = null;
+
+  // Lamination sheen on covers (not PVC)
+  const showLamination = (isFrontCover || isBackCoverCard) && effects.coverLamination !== "none";
 
   return (
-    <div className="relative w-full h-full" style={{ backgroundColor: paperBg }}>
+    <div className="relative w-full h-full" style={{ backgroundColor: wrapperBg }}>
       {/* Back cover card: solid color replacement */}
       {isBackCoverCard ? (
         <div className="w-full h-full" style={{ backgroundColor: backCoverColor }} />
+      ) : isPvcCover ? (
+        /* PVC cover: show content underneath with transparent overlay */
+        <div className="w-full h-full relative">
+          {children}
+          {/* PVC overlay effect */}
+          {pvcOverlayType === "clear_pvc" && (
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                background: "rgba(255,255,255,0.12)",
+                boxShadow: "inset 0 0 20px rgba(255,255,255,0.1)",
+              }}
+            />
+          )}
+          {pvcOverlayType === "frosted_pvc" && (
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                background: "rgba(255,255,255,0.35)",
+                backdropFilter: "blur(1.5px)",
+                WebkitBackdropFilter: "blur(1.5px)",
+              }}
+            />
+          )}
+          {pvcOverlayType === "matte_pvc" && (
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                background: "rgba(255,255,255,0.25)",
+                backdropFilter: "blur(0.5px)",
+                WebkitBackdropFilter: "blur(0.5px)",
+              }}
+            />
+          )}
+        </div>
       ) : (
         <>
           {/* Content with optional bleed margin */}
@@ -82,36 +122,7 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
         </>
       )}
 
-      {/* PVC front cover overlay */}
-      {frontCoverOverlay === "clear_pvc" && (
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: "rgba(255,255,255,0.12)",
-            boxShadow: "inset 0 0 20px rgba(255,255,255,0.1)",
-          }}
-        />
-      )}
-      {frontCoverOverlay === "frosted_pvc" && (
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: "rgba(255,255,255,0.35)",
-            backdropFilter: "blur(1.5px)",
-            WebkitBackdropFilter: "blur(1.5px)",
-          }}
-        />
-      )}
-      {frontCoverOverlay === "matte_pvc" && (
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: "rgba(255,255,255,0.25)",
-            backdropFilter: "blur(0.5px)",
-            WebkitBackdropFilter: "blur(0.5px)",
-          }}
-        />
-      )}
+      {/* Old PVC front cover overlays removed — now handled by pvc_cover role above */}
 
       {/* Cover lamination sheen */}
       {showLamination && effects.coverLamination === "gloss" && (
