@@ -1,86 +1,92 @@
 
-## Simplified fix
+## Fix the physical sequencing rule for tabs/inserts
 
-You are right: the rule should be simpler and more physical.
+The current preview is still anchoring the tab sheet too early.
 
-If a user places a tab or insert **after page 6**, and page 6 is currently the **right-hand printed face**, then:
-1. page 6 remains as-is
-2. its reverse side continues as the natural back of that same sheet
-3. only **after that sheet is complete** do we insert the tab/insert sheet
+### What is actually wrong
+Right now `buildPageSequence()` in `src/components/order/PreviewPanel.tsx` injects tabs/inserts immediately after the anchor page number. That works for duplex boundaries in some cases, but it is wrong for the user case you described:
 
-So the system should work from **sheet completion**, not from “odd/even preview index” patching.
+- after page 6
+- page 6 is the front/right face of a simplex sheet
+- page 7 must be the reverse/left face of that same sheet
+- only then can the tab sheet begin as pages 8–9
 
-## What to change
+So the sequence must be based on **finishing the current physical sheet**, not “after body page N” in the flat content stream.
 
-### 1. Move the rule into sequence building, not post-processing
-In `src/components/order/PreviewPanel.tsx`, simplify `buildPageSequence()` so it decides insertion timing correctly while building the page list.
+## Implementation plan
 
-Instead of:
-- building pages
-- then scanning for tab/insert roles
-- then injecting `blank_back` later to force even indices
+### 1. Rework sequence building around physical sheets
+In `src/components/order/PreviewPanel.tsx`:
 
-Do this:
-- append each body page
-- if the section is simplex, append its natural `blank_back`
-- then inject any anchored tab/insert items for that page
+- keep `page_range_start` as the user’s “after page N” anchor
+- change `buildPageSequence()` so anchored items are inserted only **after the anchor page’s sheet is complete**
 
-That matches the rule you described exactly.
+Rule set:
+- **Simplex body page**:
+  - push printed page N
+  - if this is the anchor, do **not** insert yet
+  - push the natural back face (`blank_back`) which represents page N+1 on the reverse
+  - now inject the tab/insert sheet
+- **Duplex body pages**:
+  - complete the current physical sheet first
+  - only inject after the sheet boundary
 
-### 2. Remove the alignment post-processor
-Delete the current post-processing block in `PreviewPanel.tsx` that says:
-- tab/insert fronts must be on even indices
-- inject `blank_back` before them if needed
+This removes the impossible `6 -> tab starts at 7` behavior.
 
-That logic is what is causing the extra blank and is the main source of overcomplication.
+### 2. Stop treating simplex blank backs as anonymous empties
+Still in `PreviewPanel.tsx`, make the simplex reverse face explicit in the sequencing logic as the completion of the prior sheet. The code can still render it with the `blank_back` role, but the insertion timing must respect it as a required physical face before any tab/insert is added.
 
-### 3. Keep duplex snapping only in the anchor stage
-Still keep the existing rule that for duplex documents, anchors must snap to valid sheet boundaries:
-- duplex: odd anchors snap to next even page
-- simplex: every page is valid, because the natural back is already added
+### 3. Keep tab/insert as full two-face sheets
+Do not change the physical model:
+- tab front = `tab`
+- tab back = `tab_back`
+- insert front = `insert`
+- insert back = `insert_back`
 
-This preserves physics without later “repair” logic.
+That part is correct. The bug is the insertion point, not the two-face representation.
 
-### 4. Preserve tab/insert as two-faced sheets
-Keep:
-- tab → `tab`
-- tab back → `tab_back`
-- insert → `insert`
-- insert back → `insert_back`
+### 4. Keep the drawer anchor model unchanged
+`src/components/order/TabInsertDrawer.tsx` can continue storing:
+- `page_range_start = 6` meaning “after page 6”
 
-That part is still correct. The issue is only when they are inserted.
+No UX rewrite is needed for this fix. The preview engine should interpret that anchor correctly.
 
-### 5. Leave the overlay/rendering alone for now
-`FlipBook.tsx` and `PageEffects.tsx` do not need another conceptual rewrite for this specific fix.
-The main correction is the page sequence generation in `PreviewPanel.tsx`.
+### 5. Verify page numbering text against the corrected sequence
+After the sequencing fix, review the preview info in `PreviewPanel.tsx` so the spread labels align with the corrected physical order and no misleading “Pages 7–8” state appears where the tab should actually be 8–9.
+
+## Files to update
+
+- `src/components/order/PreviewPanel.tsx`
 
 ## Expected result
 
 For simplex:
 ```text
-Page 6 front
-Page 6 back (blank_back)
-Tab front
-Tab back
-Next document page
+Page 6 = front/right of sheet
+Page 7 = back/left of same sheet
+Page 8 = tab front/right
+Page 9 = tab back/left
 ```
 
-For duplex:
+For the next tab after page 10:
 ```text
-Page 5 / Page 6 complete the current sheet
-Tab front starts at next valid sheet boundary
-Tab back follows
+Page 10 = front/right
+Page 11 = back/left
+Page 12 = tab front/right
+Page 13 = tab back/left
 ```
 
-## File to update
+## Technical note
+The core change is to make the anchor mean:
 
-- `src/components/order/PreviewPanel.tsx`
+```text
+insert after the physical sheet containing page N is complete
+```
 
-## Why this is the right simplification
+not:
 
-The preview should not “correct” physics afterward by looking at preview indices.
-It should build the physical sheet order correctly the first time:
-- finish the current sheet
-- then insert the next physical sheet
+```text
+insert immediately after rendering page N
+```
 
-That gives the behaviour you just described and removes the extra blank-page bug at the root.
+That is the simplest rule and matches the real-world print behavior you described.
