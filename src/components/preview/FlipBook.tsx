@@ -247,6 +247,7 @@ export default function FlipBook({
           >
             {/* @ts-ignore — react-pageflip types are imprecise */}
             <HTMLFlipBook
+              key={bookKey}
               ref={flipBookRef}
               width={pageWidth}
               height={pageHeight}
