@@ -70,7 +70,7 @@ interface PageEffectsProps {
  * IMPORTANT: Content positioning uses absolute inset (not padding) so that
  * react-pageflip's canvas measurement is never affected by box-model changes.
  */
-export default function PageEffects({ effects, pageIndex, totalPages, children, pageRole, allowBleed, bleedInsetPx }: PageEffectsProps) {
+export default function PageEffects({ effects, pageIndex, totalPages, children, pageRole, allowBleed, bleedInsetPx, label, color }: PageEffectsProps) {
   const role = pageRole ?? (pageIndex === 0 ? "front_cover" : "body");
 
   // ── 1. Card material: solid edge-to-edge color ──
