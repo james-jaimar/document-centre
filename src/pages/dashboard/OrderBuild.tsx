@@ -14,7 +14,6 @@ import PriceSummary from "@/components/order/PriceSummary";
 import TabInsertDrawer from "@/components/order/TabInsertDrawer";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
