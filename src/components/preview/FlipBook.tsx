@@ -7,6 +7,12 @@ import PageEffects from "./PageEffects";
 import { FileText, Loader2 } from "lucide-react";
 
 /**
+ * Fixed internal resolution for the flipbook.
+ * The library always renders at this size; CSS transform scales it to fit.
+ */
+const BASE_PAGE_WIDTH = 350;
+
+/**
  * Roles where content is handled entirely by PageEffects (no image).
  */
 const CONTENT_LESS_ROLES = new Set([
@@ -148,8 +154,6 @@ export default function FlipBook({
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
 
   // ── STRUCTURAL key: only remount when page structure changes ──
-  // Visual-only changes (paper color, lamination, hole punch, bleed styling)
-  // do NOT cause a remount — they flow through props/effects to PageEffects.
   const structuralKey = useMemo(
     () => JSON.stringify({
       n: urls.length,
@@ -160,26 +164,26 @@ export default function FlipBook({
     [urls, pageRoles, sectionTypes]
   );
 
+  // ── FIXED internal resolution — never changes ──
   const ratio = pageAspectRatio ?? 0.707;
-  const maxSpreadWidth = width - 40;
-  const maxPageWidth = Math.floor(maxSpreadWidth / 2);
-  const maxPageHeight = height - 60;
+  const basePageWidth = BASE_PAGE_WIDTH;
+  const basePageHeight = Math.round(basePageWidth / ratio);
+  const baseSpreadWidth = basePageWidth * 2;
 
-  let pageWidth = maxPageWidth;
-  let pageHeight = Math.floor(pageWidth / ratio);
+  // Fixed pixel inset — constant because base width is constant
+  const bleedInsetPx = Math.round(basePageWidth * 0.03);
 
-  if (pageHeight > maxPageHeight) {
-    pageHeight = maxPageHeight;
-    pageWidth = Math.floor(pageHeight * ratio);
-  }
+  // ── CSS scale factor to fit into available container ──
+  const availableWidth = width - 40;
+  const availableHeight = height - 60;
+  const scaleX = availableWidth / baseSpreadWidth;
+  const scaleY = availableHeight / basePageHeight;
+  const scaleFactor = Math.min(scaleX, scaleY, 1); // never upscale beyond 1:1
 
-  pageWidth = Math.max(pageWidth, 150);
-  pageHeight = Math.max(pageHeight, 200);
-
-  // Fixed pixel inset for non-bleed pages
-  const bleedInsetPx = Math.round(pageWidth * 0.03);
-
-  const spreadWidth = pageWidth * 2;
+  // The displayed (scaled) dimensions
+  const displayedSpreadWidth = baseSpreadWidth * scaleFactor;
+  const displayedPageWidth = basePageWidth * scaleFactor;
+  const displayedPageHeight = basePageHeight * scaleFactor;
 
   const handleFlip = useCallback(
     (e: any) => {
@@ -218,20 +222,20 @@ export default function FlipBook({
   const isShowingLastSolo = lastRole !== "back_cover_card" && currentPage >= lastIdx;
   const isSoloPage = isShowingFrontCover || isShowingBackCover || isShowingLastSolo;
 
-  const viewportWidth = isSoloPage ? pageWidth : spreadWidth;
+  // Viewport width at display scale
+  const displayedViewportWidth = isSoloPage ? displayedPageWidth : displayedSpreadWidth;
   const spinePosition = isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center";
 
   return (
     <div className="flex flex-col items-center justify-center gap-2 overflow-hidden" style={{ width, height }}>
       {/*
-        VIEWER WRAPPER: This is what the user sees.
-        It animates width and clips to show solo or spread views.
-        It does NOT contain the HTMLFlipBook measurement target.
+        VIEWER WRAPPER: visible viewport, animates width for solo/spread.
+        Uses DISPLAYED (scaled) dimensions — purely cosmetic.
       */}
       <div
         style={{
-          width: viewportWidth,
-          height: pageHeight,
+          width: displayedViewportWidth,
+          height: displayedPageHeight,
           position: "relative",
           overflow: "hidden",
           transition: "width 0.4s ease-in-out",
@@ -241,98 +245,109 @@ export default function FlipBook({
         {/* Binding spine */}
         <BindingSpine
           bindingType={bindingType}
-          height={pageHeight}
+          height={displayedPageHeight}
           isOpen={!isSoloPage}
           position={spinePosition}
         />
 
         {/*
-          PRESENTATION LAYER: handles offset/clip for solo pages.
-          This is a separate div from the measurement stage.
+          PRESENTATION LAYER: offset/clip at display scale for solo pages.
         */}
         <div
           style={{
-            width: spreadWidth,
-            height: pageHeight,
+            width: displayedSpreadWidth,
+            height: displayedPageHeight,
             position: "absolute",
             top: 0,
-            left: isShowingFrontCover ? -pageWidth : 0,
+            left: isShowingFrontCover ? -displayedPageWidth : 0,
             transition: "left 0.4s ease-in-out",
-            // Clip for solo pages
             ...(isShowingFrontCover
-              ? { clipPath: `inset(0 0 0 ${pageWidth}px)` }
+              ? { clipPath: `inset(0 0 0 ${displayedPageWidth}px)` }
               : (isShowingBackCover || isShowingLastSolo)
-                ? { clipPath: `inset(0 ${pageWidth}px 0 0)` }
+                ? { clipPath: `inset(0 ${displayedPageWidth}px 0 0)` }
                 : {}),
           }}
         >
           {/*
-            MEASUREMENT STAGE: completely static geometry.
-            This div is ALWAYS spreadWidth × pageHeight with NO transitions,
-            NO clips, NO position changes. react-pageflip measures THIS container.
+            SCALE WRAPPER: transforms the fixed-resolution stage to display size.
+            The library never sees this transform — it only measures the inner div.
           */}
           <div
             style={{
-              width: spreadWidth,
-              height: pageHeight,
-              position: "relative",
+              transform: `scale(${scaleFactor})`,
+              transformOrigin: "top left",
+              width: baseSpreadWidth,
+              height: basePageHeight,
             }}
           >
-            {/* @ts-ignore — react-pageflip types are imprecise */}
-            <HTMLFlipBook
-              key={structuralKey}
-              ref={flipBookRef}
-              width={pageWidth}
-              height={pageHeight}
-              size="fixed"
-              minWidth={150}
-              maxWidth={pageWidth}
-              minHeight={200}
-              maxHeight={pageHeight}
-              showCover={true}
-              flippingTime={600}
-              drawShadow={true}
-              maxShadowOpacity={0.5}
-              mobileScrollSupport={false}
-              onFlip={handleFlip}
-              startPage={0}
-              usePortrait={false}
-              startZIndex={0}
-              autoSize={false}
-              clickEventForward={false}
-              useMouseEvents={true}
-              swipeDistance={30}
-              showPageCorners={true}
-              disableFlipByClick={false}
-              style={{}}
-              className=""
+            {/*
+              MEASUREMENT STAGE: ALWAYS baseSpreadWidth × basePageHeight.
+              Completely static. No transitions, no clips, no position changes.
+              react-pageflip measures THIS container.
+            */}
+            <div
+              style={{
+                width: baseSpreadWidth,
+                height: basePageHeight,
+                position: "relative",
+              }}
             >
-              {urls.map((url, i) => {
-                const secType = sectionTypes?.[i];
-                const isTab = secType === "tab";
-                const tabIndex = isTab
-                  ? sectionTypes!.slice(0, i).filter((t) => t === "tab").length
-                  : 0;
-                const tabTotal = sectionTypes?.filter((t) => t === "tab").length ?? 0;
-                return (
-                  <FlipPage
-                    key={i}
-                    url={url}
-                    pageNum={i + 1}
-                    isColor={colorFlags?.[i] ?? true}
-                    effects={resolvedEffects}
-                    pageIndex={i}
-                    totalPages={urls.length}
-                    sectionType={secType}
-                    tabIndex={tabIndex}
-                    tabTotal={tabTotal}
-                    pageRole={pageRoles?.[i]}
-                    allowBleed={bleedFlags?.[i] ?? false}
-                    bleedInsetPx={bleedInsetPx}
-                  />
-                );
-              })}
-            </HTMLFlipBook>
+              {/* @ts-ignore — react-pageflip types are imprecise */}
+              <HTMLFlipBook
+                key={structuralKey}
+                ref={flipBookRef}
+                width={basePageWidth}
+                height={basePageHeight}
+                size="fixed"
+                minWidth={basePageWidth}
+                maxWidth={basePageWidth}
+                minHeight={basePageHeight}
+                maxHeight={basePageHeight}
+                showCover={true}
+                flippingTime={600}
+                drawShadow={true}
+                maxShadowOpacity={0.5}
+                mobileScrollSupport={false}
+                onFlip={handleFlip}
+                startPage={0}
+                usePortrait={false}
+                startZIndex={0}
+                autoSize={false}
+                clickEventForward={false}
+                useMouseEvents={true}
+                swipeDistance={30}
+                showPageCorners={true}
+                disableFlipByClick={false}
+                style={{}}
+                className=""
+              >
+                {urls.map((url, i) => {
+                  const secType = sectionTypes?.[i];
+                  const isTab = secType === "tab";
+                  const tabIndex = isTab
+                    ? sectionTypes!.slice(0, i).filter((t) => t === "tab").length
+                    : 0;
+                  const tabTotal = sectionTypes?.filter((t) => t === "tab").length ?? 0;
+                  return (
+                    <FlipPage
+                      key={i}
+                      url={url}
+                      pageNum={i + 1}
+                      isColor={colorFlags?.[i] ?? true}
+                      effects={resolvedEffects}
+                      pageIndex={i}
+                      totalPages={urls.length}
+                      sectionType={secType}
+                      tabIndex={tabIndex}
+                      tabTotal={tabTotal}
+                      pageRole={pageRoles?.[i]}
+                      allowBleed={bleedFlags?.[i] ?? false}
+                      bleedInsetPx={bleedInsetPx}
+                    />
+                  );
+                })}
+              </HTMLFlipBook>
+            </div>
           </div>
         </div>
       </div>
