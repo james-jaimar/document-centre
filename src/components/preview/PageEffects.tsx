@@ -131,7 +131,7 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
   if (BLANK_PAPER_ROLES.has(role)) {
     const paperBg = PAPER_COLORS[effects.paperColor] ?? "#ffffff";
     return (
-      <div className="relative w-full h-full" style={{ backgroundColor: paperBg }}>
+      <div className="relative w-full h-full" style={{ backgroundColor: paperBg, boxShadow: paperShadow }}>
         {/* Hole punch marks on blank pages too */}
         {effects.holePunch > 0 && <HolePunchMarks count={effects.holePunch as 2 | 4} />}
       </div>
