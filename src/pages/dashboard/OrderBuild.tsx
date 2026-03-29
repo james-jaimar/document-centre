@@ -259,6 +259,8 @@ export default function OrderBuild() {
 
   // ── Drawer state ──
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [hasOpenedDrawer, setHasOpenedDrawer] = useState(false);
+  const prevTabInsertRef = useRef<{ hadTabs: boolean; hadInserts: boolean }>({ hadTabs: false, hadInserts: false });
 
   // ── Derive tab info from product options ──
   const tabInfo = useMemo(() => {
