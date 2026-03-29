@@ -147,17 +147,17 @@ export default function FlipBook({
   const flipBookRef = useRef<any>(null);
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
 
-  // Stable key for remounting
-  const bookKey = useMemo(
+  // ── STRUCTURAL key: only remount when page structure changes ──
+  // Visual-only changes (paper color, lamination, hole punch, bleed styling)
+  // do NOT cause a remount — they flow through props/effects to PageEffects.
+  const structuralKey = useMemo(
     () => JSON.stringify({
-      e: resolvedEffects,
-      r: pageRoles,
-      s: sectionTypes,
-      c: colorFlags,
       n: urls.length,
       u: urls,
+      r: pageRoles,
+      s: sectionTypes,
     }),
-    [resolvedEffects, pageRoles, sectionTypes, colorFlags, urls]
+    [urls, pageRoles, sectionTypes]
   );
 
   const ratio = pageAspectRatio ?? 0.707;
@@ -218,27 +218,16 @@ export default function FlipBook({
   const isShowingLastSolo = lastRole !== "back_cover_card" && currentPage >= lastIdx;
   const isSoloPage = isShowingFrontCover || isShowingBackCover || isShowingLastSolo;
 
-  // ── Viewport masking (the stage ALWAYS stays spreadWidth × pageHeight) ──
-  // We show the user only the relevant portion via clip/overflow
   const viewportWidth = isSoloPage ? pageWidth : spreadWidth;
   const spinePosition = isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center";
 
-  // The clipPath crops the stable stage to show only what the user should see.
-  // For front cover: show right half of the stage (the first page).
-  // For back cover: show left half.
-  // For spreads: show full stage.
-  let clipStyle: React.CSSProperties | undefined;
-  if (isShowingFrontCover) {
-    // Show right half: clip left half away
-    clipStyle = { clipPath: `inset(0 0 0 ${pageWidth}px)` };
-  } else if (isShowingBackCover || isShowingLastSolo) {
-    // Show left half: clip right half away
-    clipStyle = { clipPath: `inset(0 ${pageWidth}px 0 0)` };
-  }
-
   return (
     <div className="flex flex-col items-center justify-center gap-2 overflow-hidden" style={{ width, height }}>
-      {/* Outer wrapper: sizes to what the user sees */}
+      {/*
+        VIEWER WRAPPER: This is what the user sees.
+        It animates width and clips to show solo or spread views.
+        It does NOT contain the HTMLFlipBook measurement target.
+      */}
       <div
         style={{
           width: viewportWidth,
@@ -258,9 +247,8 @@ export default function FlipBook({
         />
 
         {/*
-          STABLE STAGE: always spreadWidth × pageHeight.
-          react-pageflip measures this container — it NEVER changes size.
-          We position it so the visible portion aligns with the outer wrapper.
+          PRESENTATION LAYER: handles offset/clip for solo pages.
+          This is a separate div from the measurement stage.
         */}
         <div
           style={{
@@ -268,69 +256,84 @@ export default function FlipBook({
             height: pageHeight,
             position: "absolute",
             top: 0,
-            // For front cover: shift stage left so right half (page 0) is visible
-            // For back cover: keep at 0 so left half is visible
-            // For spread: keep at 0
             left: isShowingFrontCover ? -pageWidth : 0,
             transition: "left 0.4s ease-in-out",
-            ...clipStyle,
+            // Clip for solo pages
+            ...(isShowingFrontCover
+              ? { clipPath: `inset(0 0 0 ${pageWidth}px)` }
+              : (isShowingBackCover || isShowingLastSolo)
+                ? { clipPath: `inset(0 ${pageWidth}px 0 0)` }
+                : {}),
           }}
         >
-          {/* @ts-ignore — react-pageflip types are imprecise */}
-          <HTMLFlipBook
-            key={bookKey}
-            ref={flipBookRef}
-            width={pageWidth}
-            height={pageHeight}
-            size="fixed"
-            minWidth={150}
-            maxWidth={pageWidth}
-            minHeight={200}
-            maxHeight={pageHeight}
-            showCover={true}
-            flippingTime={600}
-            drawShadow={true}
-            maxShadowOpacity={0.5}
-            mobileScrollSupport={false}
-            onFlip={handleFlip}
-            startPage={0}
-            usePortrait={false}
-            startZIndex={0}
-            autoSize={false}
-            clickEventForward={false}
-            useMouseEvents={true}
-            swipeDistance={30}
-            showPageCorners={true}
-            disableFlipByClick={false}
-            style={{}}
-            className=""
+          {/*
+            MEASUREMENT STAGE: completely static geometry.
+            This div is ALWAYS spreadWidth × pageHeight with NO transitions,
+            NO clips, NO position changes. react-pageflip measures THIS container.
+          */}
+          <div
+            style={{
+              width: spreadWidth,
+              height: pageHeight,
+              position: "relative",
+            }}
           >
-            {urls.map((url, i) => {
-              const secType = sectionTypes?.[i];
-              const isTab = secType === "tab";
-              const tabIndex = isTab
-                ? sectionTypes!.slice(0, i).filter((t) => t === "tab").length
-                : 0;
-              const tabTotal = sectionTypes?.filter((t) => t === "tab").length ?? 0;
-              return (
-                <FlipPage
-                  key={i}
-                  url={url}
-                  pageNum={i + 1}
-                  isColor={colorFlags?.[i] ?? true}
-                  effects={resolvedEffects}
-                  pageIndex={i}
-                  totalPages={urls.length}
-                  sectionType={secType}
-                  tabIndex={tabIndex}
-                  tabTotal={tabTotal}
-                  pageRole={pageRoles?.[i]}
-                  allowBleed={bleedFlags?.[i] ?? false}
-                  bleedInsetPx={bleedInsetPx}
-                />
-              );
-            })}
-          </HTMLFlipBook>
+            {/* @ts-ignore — react-pageflip types are imprecise */}
+            <HTMLFlipBook
+              key={structuralKey}
+              ref={flipBookRef}
+              width={pageWidth}
+              height={pageHeight}
+              size="fixed"
+              minWidth={150}
+              maxWidth={pageWidth}
+              minHeight={200}
+              maxHeight={pageHeight}
+              showCover={true}
+              flippingTime={600}
+              drawShadow={true}
+              maxShadowOpacity={0.5}
+              mobileScrollSupport={false}
+              onFlip={handleFlip}
+              startPage={0}
+              usePortrait={false}
+              startZIndex={0}
+              autoSize={false}
+              clickEventForward={false}
+              useMouseEvents={true}
+              swipeDistance={30}
+              showPageCorners={true}
+              disableFlipByClick={false}
+              style={{}}
+              className=""
+            >
+              {urls.map((url, i) => {
+                const secType = sectionTypes?.[i];
+                const isTab = secType === "tab";
+                const tabIndex = isTab
+                  ? sectionTypes!.slice(0, i).filter((t) => t === "tab").length
+                  : 0;
+                const tabTotal = sectionTypes?.filter((t) => t === "tab").length ?? 0;
+                return (
+                  <FlipPage
+                    key={i}
+                    url={url}
+                    pageNum={i + 1}
+                    isColor={colorFlags?.[i] ?? true}
+                    effects={resolvedEffects}
+                    pageIndex={i}
+                    totalPages={urls.length}
+                    sectionType={secType}
+                    tabIndex={tabIndex}
+                    tabTotal={tabTotal}
+                    pageRole={pageRoles?.[i]}
+                    allowBleed={bleedFlags?.[i] ?? false}
+                    bleedInsetPx={bleedInsetPx}
+                  />
+                );
+              })}
+            </HTMLFlipBook>
+          </div>
         </div>
       </div>
 
