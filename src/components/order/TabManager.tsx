@@ -31,6 +31,7 @@ export default function TabManager({
   onAddTab,
   onDeleteTab,
   onMoveTab,
+  onUpdateTabLabel,
 }: TabManagerProps) {
   const [addPopoverOpen, setAddPopoverOpen] = useState(false);
 
