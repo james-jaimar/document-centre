@@ -196,6 +196,7 @@ export default function PreviewPanel({
     const fp = [...pages];
     const roles: string[] = fp.map((p) => {
       if (p.pageIndex === -1 && p.section?.section_type === "insert") return "insert_back";
+      if (p.pageIndex === -1 && p.section?.section_type === "tab") return "tab_back";
       if (p.pageIndex === -1 && p.thumbnailUrl === "") return "blank_back";
       if (p.section?.section_type === "tab") return "tab";
       if (p.section?.section_type === "insert") return "insert";
