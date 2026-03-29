@@ -183,6 +183,9 @@ export default function FlipBook({
   pageWidth = Math.max(pageWidth, 150);
   pageHeight = Math.max(pageHeight, 200);
 
+  // Fixed pixel inset for non-bleed pages — computed once, immune to CSS % timing
+  const bleedInsetPx = Math.round(pageWidth * 0.03);
+
   const handleFlip = useCallback(
     (e: any) => {
       onPageChange(e.data);
