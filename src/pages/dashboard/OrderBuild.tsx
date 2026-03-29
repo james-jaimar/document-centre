@@ -25,6 +25,9 @@ export default function OrderBuild() {
   const { order, orderItem, documents, sections, loading } =
     useOrderData(orderId);
   const updateSpec = useUpdateOrderItemSpec();
+  const addSectionMut = useAddSection();
+  const updateSectionMut = useUpdateSection();
+  const deleteSectionMut = useDeleteSection();
   const { setCollapsed } = useSidebarCollapse();
 
   // Auto-collapse sidebar on this page for maximum preview space
