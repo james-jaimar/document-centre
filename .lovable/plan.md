@@ -1,101 +1,54 @@
 
-Simplify the bound preview instead of layering more fixes on top.
 
-## What the docs confirm
+# Restore Drop Shadow + Fix Scoped Print-to-Edge
 
-`react-pageflip` with `showCover={true}` already does this natively:
-- first page = single cover page
-- last page = single cover page
+## Two issues to fix
 
-So the remaining bugs are coming from our own wrapper logic around it, not from the library itself.
+### 1. Drop shadow lost during cleanup
+The outer wrapper in `FlipBook.tsx` no longer has a drop shadow on the book. Need to add a subtle `boxShadow` on the sized wrapper (the one that holds the viewport + spine), applied to the page area only — not on individual pages or on the viewport clip div.
 
-## What is currently conflicting
+### 2. "Print to Edge" scope is ignored
+The seed data has `scope` metadata on Print to Edge options: `"all"`, `"front_cover"`, `"covers"`. But `OrderBuild.tsx` only reads `bleed: true/false` — it ignores `scope`. And `PreviewEffects.bleed` is a single boolean, so `PageEffects` can't know which pages should be edge-to-edge.
 
-### In `FlipBook.tsx`
-We are still overriding native cover behavior in a few ways:
-- cropping a full two-page canvas with custom `viewportWidth` and `canvasOffsetX`
-- deciding solo states with broad index checks instead of strict role checks
-- adding a spread-level outer shadow on the viewport, which makes hidden/empty areas visible
-- positioning the spine relative to the viewport box instead of the actual visible page edge
+**Current flow:**
+- User selects "Front Cover Only" → metadata: `{ bleed: true, scope: "front_cover" }`
+- `OrderBuild.tsx` sets `fx.bleed = true` (scope lost)
+- `PageEffects` removes the white margin from ALL pages
 
-That explains:
-- white line/ghost edge on the front cover
-- spine sitting in the middle of a solo page
-- back cover looking correct as a full card, but still with the spine in the wrong place
+**Required flow:**
+- `PreviewEffects.bleed` becomes a scope string instead of boolean
+- `PageEffects` checks the scope against the current page role
 
-### In `PreviewPanel.tsx`
-The page sequence is mostly reasonable now, but it still needs to be treated as a physical sequence only:
-- `front_cover`
-- interior/body pages
-- optional `inside_back_blank` only when physically required
-- optional `back_cover_card` as the real final page
+## Changes
 
-The renderer should not add extra visual assumptions on top of that.
+### File: `src/components/preview/previewTypes.ts`
+- Change `bleed: boolean` to `bleed: "none" | "all" | "front_cover" | "covers"`
+- Update `DEFAULT_PREVIEW_EFFECTS` to `bleed: "none"`
 
-## Cleanup plan
+### File: `src/pages/dashboard/OrderBuild.tsx`
+- Read both `bleed` and `scope` from the Print to Edge metadata
+- Set `fx.bleed` to the scope string (`"all"`, `"front_cover"`, `"covers"`) or `"none"`
 
-### 1. Strip `FlipBook.tsx` back to a minimal native-cover wrapper
-Refactor `FlipBook.tsx` so it does only three jobs:
-- size the book
-- pass real pages into `HTMLFlipBook`
-- detect whether the current page role is:
-  - `front_cover`
-  - interior spread
-  - `back_cover_card` / real last solo page
+### File: `src/components/preview/PageEffects.tsx`
+- Update bleed logic: determine `showBleedMargin` based on the scope and the current page role:
+  - `"none"` → always show margin (except card covers)
+  - `"all"` → never show margin
+  - `"front_cover"` → no margin only on `front_cover` pages
+  - `"covers"` → no margin on `front_cover` and `back_cover_card` pages
 
-Then remove the extra viewport/shadow logic that is faking layout around the library.
+### File: `src/components/preview/FlipBook.tsx`
+- Add a subtle `boxShadow` on the sized wrapper div (the one with `width: viewportWidth`) to restore the book's drop shadow:
+  `boxShadow: "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)"`
 
-### 2. Replace index-based solo logic with explicit role-based logic
-Use `pageRoles[displayPage]` plus “is last page” as the source of truth.
+## Technical detail
 
-Target:
-- front cover solo only when current role is `front_cover`
-- back cover solo only when current role is `back_cover_card`, or when the real final page is intentionally solo
-- no generic `>= lastPageIndex` shortcuts
-
-This will make the renderer easier to reason about and stop accidental solo/spread mismatches.
-
-### 3. Re-anchor the spine to the visible page edge, not the viewport center
-Update the layout so the spine is positioned against the actual hinge of the currently visible page state:
-- front cover solo: left edge of the visible page
-- spread: center hinge
-- back cover solo: right edge of the visible page
-
-This should be calculated from the rendered page mode in `FlipBook.tsx`, with `BindingSpine.tsx` staying dumb/presentational.
-
-### 4. Remove spread-level framing that creates false edges
-Delete the outer box shadow/border treatment on the cropped viewport wrapper.
-Keep page-edge styling only on the real page surface.
-
-That should eliminate the front-cover white line and any remaining ghost-page framing.
-
-### 5. Keep back-cover card styling fully role-driven
-Leave `back_cover_card` as a true edge-to-edge material:
-- no bleed padding
-- no page border
-- no inset page shadow
-
-Only ordinary printed pages should get the printed-page edge styling.
-
-### 6. Lightly audit `PreviewPanel.tsx` after the cleanup
-Do one pass to ensure:
-- `inside_back_blank` is only inserted when physically needed
-- navigation labels still match the physical sequence
-- no UI text assumes every bound state is a two-page spread
-
-## Files to update
-
-- `src/components/preview/FlipBook.tsx`
-- `src/components/preview/BindingSpine.tsx`
-- `src/components/order/PreviewPanel.tsx`
-- possibly `src/components/preview/PageEffects.tsx` for any remaining printed-page-only styling split
+The bleed type change from `boolean` to a union string is the key structural fix. It flows through cleanly because only three files read the field: `OrderBuild.tsx` (writes it), `PageEffects.tsx` (reads it), and `previewTypes.ts` (defines it).
 
 ## Expected result
+- Book has a visible drop shadow again
+- "Print to Edge: None" → white margins on all pages
+- "Print to Edge: Front Cover Only" → edge-to-edge on front cover only, margins on body pages
+- "Print to Edge: Covers Only" → edge-to-edge on front + back covers
+- "Print to Edge: Entire Document" → edge-to-edge everywhere
+- Back cover cards remain edge-to-edge regardless (they're physical card, not printed)
 
-After this cleanup:
-- front cover is a true single centered page
-- no extra white line / ghost left page
-- back cover remains a full solid card
-- spine sits on the correct edge in solo states
-- spread states still render normally
-- the implementation becomes simpler because we stop fighting `react-pageflip`’s native cover mode
