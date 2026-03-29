@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useEffect, forwardRef, useState } from "react";
+import React, { useRef, useCallback, useEffect, forwardRef, useState, useMemo } from "react";
 import HTMLFlipBook from "react-pageflip";
 import type { FlipBookProps, PreviewEffects } from "./previewTypes";
 import { DEFAULT_PREVIEW_EFFECTS, TAB_COLORS } from "./previewTypes";
@@ -119,6 +119,20 @@ export default function FlipBook({
   const lastReportedPage = useRef(0);
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
 
+  // Build a stable key that changes when rendering-critical inputs change.
+  // This forces react-pageflip to remount with fresh DOM nodes.
+  const bookKey = useMemo(
+    () => JSON.stringify({ b: resolvedEffects.bleed, r: pageRoles, n: urls.length }),
+    [resolvedEffects.bleed, pageRoles, urls.length]
+  );
+
+  // Reset displayPage when the book remounts (key changes)
+  useEffect(() => {
+    setDisplayPage(0);
+    lastReportedPage.current = 0;
+    onPageChange(0);
+  }, [bookKey]);
+
   const ratio = pageAspectRatio ?? 0.707;
   const maxSpreadWidth = width - 40;
   const maxPageWidth = Math.floor(maxSpreadWidth / 2);
@@ -233,6 +247,7 @@ export default function FlipBook({
           >
             {/* @ts-ignore — react-pageflip types are imprecise */}
             <HTMLFlipBook
+              key={bookKey}
               ref={flipBookRef}
               width={pageWidth}
               height={pageHeight}
