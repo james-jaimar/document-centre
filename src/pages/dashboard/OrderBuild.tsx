@@ -356,35 +356,17 @@ export default function OrderBuild() {
               onOptionChange={handleOptionChange}
             />
 
-            {/* Tab Dividers Manager */}
-            {tabInfo && (
-              <div ref={tabManagerRef} className="border border-accent rounded-lg bg-accent/10 p-3">
-                <TabManager
-                  sections={sections}
-                  documents={documents}
-                  orderItemId={orderItemId}
-                  tabCount={tabInfo.count}
-                  isMultiColor={tabInfo.multiColor}
-                  onAddTab={handleAddTab}
-                  onDeleteTab={handleDeleteTab}
-                  onMoveTab={handleMoveTab}
-                  onUpdateTabLabel={handleUpdateTabLabel}
-                />
-              </div>
-            )}
-
-            {/* Insert Sheets Manager */}
-            {insertEnabled && (
-              <div ref={insertManagerRef} className="border border-accent rounded-lg bg-accent/10 p-3">
-                <InsertManager
-                  sections={sections}
-                  documents={documents}
-                  orderItemId={orderItemId}
-                  onAddInsert={handleAddInsert}
-                  onDeleteInsert={handleDeleteInsert}
-                  onMoveInsert={handleMoveInsert}
-                />
-              </div>
+            {/* Manage Tabs & Inserts button */}
+            {(tabInfo || insertEnabled) && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full text-xs"
+                onClick={() => setDrawerOpen(true)}
+              >
+                <Settings2 className="h-3.5 w-3.5 mr-1.5" />
+                Manage Tabs & Inserts
+              </Button>
             )}
           </div>
           <div className="p-3 shrink-0">
