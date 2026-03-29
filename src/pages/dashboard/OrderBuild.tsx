@@ -289,6 +289,21 @@ export default function OrderBuild() {
     return !!slug && slug !== "none" && slug !== "no-inserts" && slug !== "no_inserts";
   }, [options, spec.selected_options]);
 
+  // Auto-open drawer when tabs or inserts are first enabled
+  useEffect(() => {
+    const prev = prevTabInsertRef.current;
+    const hasTabs = !!tabInfo;
+    const hasInserts = insertEnabled;
+
+    if ((hasTabs && !prev.hadTabs) || (hasInserts && !prev.hadInserts)) {
+      setDrawerOpen(true);
+      setHasOpenedDrawer(true);
+    }
+
+    prev.hadTabs = hasTabs;
+    prev.hadInserts = hasInserts;
+  }, [tabInfo, insertEnabled]);
+
   const orderItemId = orderItem?.id ?? "";
 
   // ── Tab/Insert callbacks using page_range_start as anchor ──
