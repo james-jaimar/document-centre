@@ -180,31 +180,19 @@ export default function FlipBook({
     );
   }
 
-  // ── Solo-page detection using explicit page roles ──
+  // ── Solo-page detection using currentPage (source of truth) ──
   const lastIdx = urls.length - 1;
-  const currentRole = pageRoles?.[displayPage];
   const lastRole = pageRoles?.[lastIdx];
 
-  const isShowingFrontCover = displayPage === 0;
-  const isShowingBackCover = lastRole === "back_cover_card" && displayPage >= lastIdx;
-  const isShowingLastSolo = lastRole !== "back_cover_card" && displayPage >= lastIdx;
+  const isShowingFrontCover = currentPage === 0;
+  const isShowingBackCover = lastRole === "back_cover_card" && currentPage >= lastIdx;
+  const isShowingLastSolo = lastRole !== "back_cover_card" && currentPage >= lastIdx;
   const isSoloPage = isShowingFrontCover || isShowingBackCover || isShowingLastSolo;
 
   // ── Layout geometry ──
-  // The library always renders a canvas 2*pageWidth wide.
-  // showCover=true makes first page appear on RIGHT half, last page on LEFT half.
-  // For solo pages we crop the viewport to pageWidth and shift the canvas.
   const spreadWidth = pageWidth * 2;
   const viewportWidth = isSoloPage ? pageWidth : spreadWidth;
-
-  // Front cover: page is on right half → shift canvas left to bring it into view
-  // Back cover: page is on left half → no shift needed
-  // Spread: no shift
   const canvasOffsetX = isShowingFrontCover ? -pageWidth : 0;
-
-  // ── Spine position relative to the sized wrapper ──
-  // The wrapper div below is exactly viewportWidth wide with position:relative,
-  // so BindingSpine's absolute positioning works correctly against the visible area.
   const spinePosition = isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center";
 
   return (
