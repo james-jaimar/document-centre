@@ -46,7 +46,7 @@ const FlipPage = forwardRef<
       <img
         src={url}
         alt={`Page ${pageNum}`}
-        className="w-full h-full object-contain"
+        className={`w-full h-full ${pageRole === "pvc_cover_front" ? "object-cover" : "object-contain"}`}
         style={{ filter: isColor ? "none" : "grayscale(100%)" }}
         loading="eager"
       />
