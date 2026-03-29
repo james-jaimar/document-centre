@@ -401,6 +401,7 @@ export default function PreviewPanel({
           pageLabels={pageLabels}
           pageColors={pageColors}
           tabPositions={tabPositions}
+          displayPageNumbers={displayPageNumbers}
         />
       </div>
 
