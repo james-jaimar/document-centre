@@ -112,11 +112,11 @@ export default function PreviewPanel({
       return "body";
     });
 
-    // Insert a physical PVC cover sheet at index 0 when a PVC front cover is selected.
-    // Must happen BEFORE parity logic so page count is correct for even/odd checks.
+    // ── Physical PVC front cover: TWO faces (outside + inside) ──
     const isPvc = isBound && effects?.frontCover && ["clear_pvc", "frosted_pvc", "matte_pvc"].includes(effects.frontCover);
     if (isPvc && fp.length > 0) {
       const frontThumb = fp[0]?.thumbnailUrl ?? "";
+      // Outside face: artwork with PVC overlay (solo cover when closed)
       fp.unshift({
         thumbnailUrl: frontThumb,
         pageIndex: 0,
@@ -124,18 +124,29 @@ export default function PreviewPanel({
         section: undefined,
         isColor: true,
       });
-      roles.unshift("pvc_cover");
+      roles.unshift("pvc_cover_front");
+      // Inside face: translucent reverse of the PVC sheet (left page when opened)
+      fp.splice(1, 0, {
+        thumbnailUrl: "",
+        pageIndex: 0,
+        documentName: "PVC Cover Inside",
+        section: undefined,
+        isColor: true,
+      });
+      roles.splice(1, 0, "pvc_cover_back");
     }
 
-    // For bound documents with showCover, the library treats the first AND last
-    // page as solo covers. Total page count must be EVEN for interior spreads to pair.
+    // ── Physical back cover card: TWO faces (inside + outside) ──
     const hasBackCover = isBound && effects?.backCover && effects.backCover !== "none";
-    
+
     if (isBound) {
-      const currentCount = fp.length;
-      
       if (hasBackCover) {
-        if (currentCount % 2 === 0) {
+        // Ensure even count BEFORE adding the two card faces.
+        // After adding inside + outside, total must be even for react-pageflip.
+        // inside_back_cover_card = right page of last spread, back_cover_card = solo final.
+        // Adding 2 pages: if current count is odd, we need one blank to make it even before
+        // the pair, resulting in odd+1+2 = even. If even, just add 2 = even.
+        if (fp.length % 2 !== 0) {
           fp.push({
             thumbnailUrl: "",
             pageIndex: 0,
@@ -145,6 +156,16 @@ export default function PreviewPanel({
           });
           roles.push("inside_back_blank");
         }
+        // Inside face of card (right side of last spread)
+        fp.push({
+          thumbnailUrl: "",
+          pageIndex: 0,
+          documentName: "Back Cover Inside",
+          section: undefined,
+          isColor: true,
+        });
+        roles.push("inside_back_cover_card");
+        // Outside face of card (solo back cover)
         fp.push({
           thumbnailUrl: "",
           pageIndex: 0,
@@ -154,7 +175,8 @@ export default function PreviewPanel({
         });
         roles.push("back_cover_card");
       } else {
-        if (currentCount % 2 !== 0) {
+        // No card back: just ensure even page count
+        if (fp.length % 2 !== 0) {
           fp.push({
             thumbnailUrl: "",
             pageIndex: 0,

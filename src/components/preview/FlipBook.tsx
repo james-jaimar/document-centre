@@ -25,7 +25,7 @@ const FlipPage = forwardRef<
   }
 >(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, tabIndex = 0, tabTotal = 1, pageRole }, ref) => {
   const isTab = sectionType === "tab";
-  const isCardCover = pageRole === "back_cover_card" || pageRole === "pvc_cover";
+  const isMaterial = pageRole === "back_cover_card" || pageRole === "inside_back_cover_card" || pageRole === "pvc_cover_front" || pageRole === "pvc_cover_back";
 
   return (
     <div
@@ -35,8 +35,8 @@ const FlipPage = forwardRef<
         width: "100%",
         height: "100%",
         position: "relative",
-        border: isCardCover ? "none" : "1px solid rgba(0,0,0,0.15)",
-        boxShadow: isCardCover ? "none" : "inset 0 0 8px rgba(0,0,0,0.10), inset 0 0 0 0.5px rgba(0,0,0,0.08)",
+        border: isMaterial ? "none" : "1px solid rgba(0,0,0,0.15)",
+        boxShadow: isMaterial ? "none" : "inset 0 0 8px rgba(0,0,0,0.10), inset 0 0 0 0.5px rgba(0,0,0,0.08)",
       }}
     >
       <PageEffects effects={effects} pageIndex={pageIndex} totalPages={totalPages} pageRole={pageRole}>
