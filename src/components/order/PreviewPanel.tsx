@@ -85,6 +85,7 @@ export default function PreviewPanel({
           documentName: "Tab Divider",
           section,
           isColor: true,
+          label: (section as any).label || undefined,
         });
         continue;
       }
