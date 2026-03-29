@@ -11,7 +11,7 @@ import {
   FileText,
 } from "lucide-react";
 import DocumentPreview from "@/components/preview/DocumentPreview";
-import type { ProductPreviewType, PreviewEffects } from "@/components/preview/previewTypes";
+import type { ProductPreviewType, PreviewEffects, TabPosition } from "@/components/preview/previewTypes";
 
 type Document = Tables<"documents">;
 type DocumentSection = Tables<"document_sections">;
