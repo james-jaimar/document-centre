@@ -10,6 +10,7 @@ export default function LooseSheetsPreview({
   height,
   pageAspectRatio,
   effects,
+  bleedFlags,
 }: PreviewComponentProps) {
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
   const ratio = pageAspectRatio ?? 0.707; // fallback to A4
@@ -17,6 +18,7 @@ export default function LooseSheetsPreview({
   const pageHeight = Math.min(height * 0.9, width * 0.65 * invRatio);
   const pageWidth = pageHeight * ratio;
   const url = urls[currentPage];
+  const bleedInsetPx = Math.round(pageWidth * 0.03);
 
   return (
     <div className="flex items-center justify-center" style={{ width, height }}>
