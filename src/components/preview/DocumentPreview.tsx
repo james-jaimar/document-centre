@@ -92,6 +92,7 @@ export default function DocumentPreview({
     effects,
     sectionTypes,
     pageRoles,
+    bleedFlags,
   };
 
   if (BOUND_TYPES.has(productType)) {
