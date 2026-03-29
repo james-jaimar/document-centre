@@ -131,15 +131,10 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
   }
 
   // ── 5. Standard paper page (front_cover, body, etc.) ──
-  const isFrontCover = role === "front_cover";
   const paperBg = PAPER_COLORS[effects.paperColor] ?? "#ffffff";
 
-  // Bleed: show white border based on scope
-  const isBleedForThisPage =
-    effects.bleed === "all" ||
-    (effects.bleed === "front_cover" && isFrontCover) ||
-    (effects.bleed === "covers" && isFrontCover);
-  const bleedPadding = isBleedForThisPage ? undefined : "3%";
+  // Bleed: use the explicit upstream flag and fixed pixel inset
+  const bleedPadding = allowBleed ? undefined : `${bleedInsetPx}px`;
 
   // Lamination sheen on front cover only (not PVC — that's a separate material)
   const showLamination = isFrontCover && effects.coverLamination !== "none";
