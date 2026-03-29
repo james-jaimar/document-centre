@@ -117,7 +117,9 @@ export default function PreviewPanel({
   const { finalPages, pageRoles: computedPageRoles } = useMemo(() => {
     const fp = [...pages];
     const roles: string[] = fp.map((p, i) => {
-      if (i === 0 && isBound) return "front_cover";
+      // Simplex blank backs inserted with pageIndex -1
+      if (p.pageIndex === -1 && p.thumbnailUrl === "") return "blank_back";
+      if (i === 0 && isBound && p.section?.section_type === "front_cover") return "front_cover";
       if (p.section?.section_type === "tab") return "body";
       return "body";
     });
