@@ -316,6 +316,8 @@ export default function FlipBook({
                     tabIndex={tabIndex}
                     tabTotal={tabTotal}
                     pageRole={pageRoles?.[i]}
+                    allowBleed={bleedFlags?.[i] ?? false}
+                    bleedInsetPx={bleedInsetPx}
                   />
                 );
               })}

@@ -38,6 +38,10 @@ interface PageEffectsProps {
   children: React.ReactNode;
   /** Explicit page role */
   pageRole?: string;
+  /** Whether this face renders edge-to-edge (no white margin) — computed upstream */
+  allowBleed: boolean;
+  /** Fixed pixel inset for non-bleed pages */
+  bleedInsetPx: number;
 }
 
 /**
