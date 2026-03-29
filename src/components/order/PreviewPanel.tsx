@@ -50,6 +50,7 @@ export default function PreviewPanel({
   effects,
 }: PreviewPanelProps) {
   const [currentPage, setCurrentPage] = useState(0);
+  const prevPageCount = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 500, height: 400 });
 
