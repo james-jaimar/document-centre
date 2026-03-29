@@ -219,6 +219,27 @@ export default function PreviewPanel({
     [finalPages]
   );
 
+  // Compute explicit bleed flags per physical face (once, upstream)
+  const bleedFlags = useMemo(() => {
+    const bleedScope = effects?.bleed ?? "none";
+    return computedPageRoles.map((role) => {
+      // Non-paper surfaces: PVC, card — never use paper margin logic
+      if (["pvc_cover_front", "pvc_cover_back", "inside_back_cover_card", "back_cover_card"].includes(role)) {
+        return true; // edge-to-edge, no white inset
+      }
+      // Blank pages: always show paper with margin (no bleed)
+      if (["blank_back", "inside_back_blank"].includes(role)) {
+        return false;
+      }
+      // Printed pages: depends on bleed scope
+      if (bleedScope === "all") return true;
+      if (bleedScope === "none") return false;
+      if (bleedScope === "front_cover" && role === "front_cover") return true;
+      if (bleedScope === "covers" && (role === "front_cover" || role === "back_cover")) return true;
+      return false;
+    });
+  }, [computedPageRoles, effects?.bleed]);
+
   // Derive aspect ratio from the first document's actual dimensions
   const pageAspectRatio = useMemo(() => {
     const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
