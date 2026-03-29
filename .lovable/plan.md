@@ -1,46 +1,86 @@
 
+## Simplified fix
 
-# Fix Unnecessary Blank Page Before Tab/Insert
+You are right: the rule should be simpler and more physical.
 
-## Problem
+If a user places a tab or insert **after page 6**, and page 6 is currently the **right-hand printed face**, then:
+1. page 6 remains as-is
+2. its reverse side continues as the natural back of that same sheet
+3. only **after that sheet is complete** do we insert the tab/insert sheet
 
-When a tab is placed "after page 6" in a simplex document, `buildPageSequence` already inserts a `blank_back` after page 6 (the physical back of that sheet). The tab front should naturally follow on the next RIGHT-side index. But the post-processor blindly checks if the tab front is at an odd index and injects **another** blank — creating a visible empty page that shouldn't exist.
+So the system should work from **sheet completion**, not from “odd/even preview index” patching.
 
-The sequence should be:
-```text
-... page6(RIGHT) → blank_back_of_6(LEFT) → tab_front(RIGHT) → tab_back(LEFT) ...
-```
+## What to change
 
-But currently it produces:
-```text
-... page6(RIGHT) → blank_back_of_6(LEFT) → EXTRA_BLANK(RIGHT) → tab_front(LEFT?!) ...
-```
+### 1. Move the rule into sequence building, not post-processing
+In `src/components/order/PreviewPanel.tsx`, simplify `buildPageSequence()` so it decides insertion timing correctly while building the page list.
 
-## Root cause
+Instead of:
+- building pages
+- then scanning for tab/insert roles
+- then injecting `blank_back` later to force even indices
 
-The post-processing alignment pass in `PreviewPanel.tsx` (lines ~217-240) doesn't account for the fact that a preceding `blank_back` already provides correct sheet-boundary alignment. It just checks `index % 2 !== 0` and inserts a blank, which can actually **break** the alignment rather than fix it.
+Do this:
+- append each body page
+- if the section is simplex, append its natural `blank_back`
+- then inject any anchored tab/insert items for that page
 
-## Fix
+That matches the rule you described exactly.
 
-In the post-processing loop, before inserting a `blank_back` to fix alignment, check whether the **previous** page is already a `blank_back`. If it is, the tab/insert is already correctly positioned after a sheet boundary — skip the insertion.
+### 2. Remove the alignment post-processor
+Delete the current post-processing block in `PreviewPanel.tsx` that says:
+- tab/insert fronts must be on even indices
+- inject `blank_back` before them if needed
 
-Specifically, change the condition from:
-```
-if (PHYSICAL_FRONT_ROLES.has(roles[i]) && i % 2 !== 0)
-```
-to also require:
-```
-&& roles[i - 1] !== "blank_back"
-```
+That logic is what is causing the extra blank and is the main source of overcomplication.
 
-If the preceding role is `blank_back`, the physical sheet's back face is already there — no padding needed.
+### 3. Keep duplex snapping only in the anchor stage
+Still keep the existing rule that for duplex documents, anchors must snap to valid sheet boundaries:
+- duplex: odd anchors snap to next even page
+- simplex: every page is valid, because the natural back is already added
 
-## File to edit
+This preserves physics without later “repair” logic.
 
-- `src/components/order/PreviewPanel.tsx` — update the post-processing alignment condition (~line 228)
+### 4. Preserve tab/insert as two-faced sheets
+Keep:
+- tab → `tab`
+- tab back → `tab_back`
+- insert → `insert`
+- insert back → `insert_back`
+
+That part is still correct. The issue is only when they are inserted.
+
+### 5. Leave the overlay/rendering alone for now
+`FlipBook.tsx` and `PageEffects.tsx` do not need another conceptual rewrite for this specific fix.
+The main correction is the page sequence generation in `PreviewPanel.tsx`.
 
 ## Expected result
 
-- Tab after page 6: page 6 (right), back of 6 (left), tab front (right), tab back (left) — no extra blank
-- Alignment still works correctly for cases where there's no preceding blank_back
+For simplex:
+```text
+Page 6 front
+Page 6 back (blank_back)
+Tab front
+Tab back
+Next document page
+```
 
+For duplex:
+```text
+Page 5 / Page 6 complete the current sheet
+Tab front starts at next valid sheet boundary
+Tab back follows
+```
+
+## File to update
+
+- `src/components/order/PreviewPanel.tsx`
+
+## Why this is the right simplification
+
+The preview should not “correct” physics afterward by looking at preview indices.
+It should build the physical sheet order correctly the first time:
+- finish the current sheet
+- then insert the next physical sheet
+
+That gives the behaviour you just described and removes the extra blank-page bug at the root.
