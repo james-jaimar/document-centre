@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useEffect, forwardRef, useState, useMemo } from "react";
+import React, { useRef, useCallback, useEffect, forwardRef, useMemo } from "react";
 import HTMLFlipBook from "react-pageflip";
 import type { FlipBookProps, PreviewEffects } from "./previewTypes";
 import { DEFAULT_PREVIEW_EFFECTS, TAB_COLORS } from "./previewTypes";
