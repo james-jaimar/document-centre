@@ -292,11 +292,11 @@ export default function FlipBook({
 
       {/* Page numbers below the spread */}
       <div className="flex items-center justify-center gap-8 text-xs text-muted-foreground">
-        {!isShowingFrontCover && displayPage > 0 && (
-          <span className="w-20 text-center">{displayPage}</span>
+        {!isShowingFrontCover && currentPage > 0 && (
+          <span className="w-20 text-center">{currentPage}</span>
         )}
-        {!isSoloPage && displayPage + 1 < urls.length && (
-          <span className="w-20 text-center">{displayPage + 1}</span>
+        {!isSoloPage && currentPage + 1 < urls.length && (
+          <span className="w-20 text-center">{currentPage + 1}</span>
         )}
         {isSoloPage && (
           <span className="w-20 text-center">
