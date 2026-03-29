@@ -250,6 +250,8 @@ export default function PreviewPanel({
     return undefined;
   }, [documents]);
 
+  const totalPages = finalPages.length;
+
   // Clamp currentPage when page count changes (e.g. cover options added/removed)
   useEffect(() => {
     if (prevPageCount.current !== 0 && totalPages > 0 && currentPage >= totalPages) {
@@ -257,8 +259,6 @@ export default function PreviewPanel({
     }
     prevPageCount.current = totalPages;
   }, [totalPages, currentPage]);
-
-  const totalPages = finalPages.length;
 
   // Derive what's visible in the current spread
   const isShowingFrontCover = isBound && currentPage === 0;
