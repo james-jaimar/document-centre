@@ -1,83 +1,91 @@
 
-Fix the preview by stabilizing the flipbook’s mount geometry instead of layering more page effects on top.
-
-## Do I know what the issue is?
-Yes.
+Do I know what the issue is? Yes.
 
 ## What the problem actually is
-The clear front + navy/black card back is not “breaking the margin logic” directly. It is exposing a deeper problem in `FlipBook.tsx`:
 
-1. `react-pageflip` is very sensitive to the size/position of the HTML pages when it mounts.
-2. We currently force a remount with `bookKey` whenever the physical sequence changes.
-3. At the same time, the book is mounted inside a wrapper whose width and canvas offset are changing (`viewportWidth`, `canvasOffsetX`, CSS transitions).
-4. So when PVC/card pages are added, the library remeasures the book while the stage is in a moving/cropped state.
-5. The printable inset then gets captured against the wrong page box, which is why the white borders become larger and drift toward the top/left.
+This is no longer a “bleed flag” problem first. The real issue is that the flipbook is still being measured inside a moving viewport.
 
-So the root cause is: the flipbook stage is not geometrically stable during remounts. The per-page bleed flags are only a secondary concern.
+In `src/components/preview/FlipBook.tsx`, the `HTMLFlipBook` stage is still tied to:
+- changing outer width (`viewportWidth`)
+- animated width transition
+- animated left offset
+- `clipPath` cropping on the same visual path
 
-## Implementation plan
+When PVC/card options are added, the physical page sequence changes, the book remounts, and `react-pageflip` / StPageFlip measures while that container is in a shifted/cropped state. That is why the “margins” appear to jump top/left and clip on bottom/right: the page box itself is being captured off-position.
 
-### 1. Make the flipbook stage fixed at all times
+There is a second issue making this worse:
+- `bookKey` remounts the whole flipbook for every `resolvedEffects` change, even visual-only changes
+- so the unstable measurement path happens far more often than it should
+
+The docs/search support this diagnosis:
+- StPageFlip measures parent block size (`getBlockWidth` / `getBlockHeight`)
+- the common fix for size changes is remounting with a `key`
+- that only works reliably if the measured container is geometrically stable at mount time
+
+## Clean fix
+
+### 1. Make the pageflip measurement container completely static
 In `src/components/preview/FlipBook.tsx`:
-- keep the `HTMLFlipBook` mount area at a constant `spreadWidth × pageHeight`
-- remove width animation and canvas translate animation from the book mount path
-- stop resizing the actual measurement container between solo/spread states
+- keep one permanent spread-sized stage for `HTMLFlipBook`
+- remove width transition, left transition, and clip-path logic from the measured stage path
+- do not animate or shift the element the library uses for sizing
 
-This gives `react-pageflip` one stable box to measure every time.
-
-### 2. Separate “measurement stage” from “what the user sees”
+### 2. Separate the viewer viewport from the measured stage
 Still in `FlipBook.tsx`:
-- keep the library mounted in a stable full-spread stage
-- handle solo front/back cover presentation with a static viewport mask/crop layer, not by moving/resizing the library canvas itself
-- no transition on the mount container while the book is being recreated
+- introduce a separate outer “viewer” wrapper that decides what the user sees
+- solo front/back cover display should be handled by a pure viewport mask/crop layer outside the measured stage
+- the flipbook stays mounted in the same coordinates every time
 
-That preserves the current solo-cover UX without corrupting page measurements.
+### 3. Stop remounting on every cosmetic effect change
+Refactor `bookKey` so it only changes for structural changes:
+- page count/order
+- page roles
+- geometry inputs
 
-### 3. Replace padding-based paper margins with an absolute printable frame
+Do not remount the book for visual-only changes like:
+- paper tint
+- lamination sheen
+- hole punch
+- bleed inset styling
+
+That prevents repeated full remeasurement during normal option tweaking.
+
+### 4. Keep one printable-frame implementation
 In `src/components/preview/PageEffects.tsx`:
-- stop using inner `padding` as the printable area mechanism
-- render printable paper pages with an absolutely positioned inner frame (`inset: bleedInsetPx`)
-- render bleed pages edge-to-edge by using `inset: 0`
+- keep the absolute inset model for paper pages
+- ensure margins are only rendered there, never in `FlipBook`
+- material faces (PVC/card) must bypass paper-frame logic entirely
 
-This makes the white margin a deterministic overlay/frame, not a box-model change.
+This makes page styling deterministic once the stage geometry is fixed.
 
-### 4. Keep material pages on their own rendering path
-In `PageEffects.tsx`:
-- PVC front/back and card faces remain fully edge-to-edge
-- blank simplex backs remain plain paper sheets
-- only printable paper pages get the printable-frame treatment
-
-That prevents material pages from ever influencing paper-page spacing.
-
-### 5. Tighten structural resets when the page model changes
-In `src/components/order/PreviewPanel.tsx` and/or `DocumentPreview.tsx`:
-- clamp/reset `currentPage` whenever the physical sequence length changes
-- ensure option changes that insert/remove PVC/card faces never leave the preview on an invalid or stale spread index
-
-This removes another source of odd spread state after cover changes.
+### 5. Tighten the role model so materials never affect layout
+Audit the current role handling:
+- PVC/card roles should only affect content/effects
+- they must never alter viewport math or page sizing logic
+- blank simplex backs stay plain paper faces with the same paper-shell path
 
 ## Files to update
-- `src/components/preview/FlipBook.tsx`
-- `src/components/preview/PageEffects.tsx`
-- `src/components/order/PreviewPanel.tsx`
-- `src/components/preview/DocumentPreview.tsx` (only if page-sync handling is cleaner there)
+- `src/components/preview/FlipBook.tsx` — main root-cause fix
+- `src/components/preview/PageEffects.tsx` — keep margin rendering single-source and layout-neutral
+- `src/components/preview/previewTypes.ts` — only if needed to split structural vs visual dependencies
+- `src/components/order/PreviewPanel.tsx` — only for minor structural metadata cleanup if required
 
 ## Expected result
-- clear/frosted PVC continues to behave correctly
-- selecting clear front + navy/black card back no longer blows out the margins
-- white borders stay symmetric and stable during repeated option changes
-- simplex blank backs still render as plain white sheets
-- card backs stay truly edge-to-edge
+- clear/matte/frosted front + card back no longer changes the visible paper margins
+- white borders stay symmetric and stable
+- bottom/right clipping disappears
+- repeated option changes remain stable because the book is no longer measured in a moving/cropped state
+- materials affect appearance only, not page geometry
 
 ## Technical note
-The key fix is not another overlay tweak. It is removing this unstable pattern from the flipbook mount path:
+The cleanest interpretation is:
 
 ```text
-sequence changes -> book remounts -> wrapper width/offset also changes -> pageflip measures an in-between box
+Current failure:
+option change -> book remounts -> stage width/offset/crop also changes -> pageflip measures wrong box
+
+Target:
+option change -> book remounts only when structure changes -> measured stage stays fixed -> viewport presentation changes separately
 ```
 
-After the fix, it becomes:
-
-```text
-sequence changes -> book remounts inside the same fixed stage every time
-```
+So yes: there is still legacy layering in the current implementation, but the root cause is specifically in `FlipBook.tsx` geometry and remount behavior, not in the per-page bleed styling itself.
