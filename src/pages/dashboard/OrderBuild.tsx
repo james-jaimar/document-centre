@@ -258,6 +258,69 @@ export default function OrderBuild() {
     navigate("/dashboard/orders");
   }, [handleSave, navigate]);
 
+  // ── Derive tab info from product options ──
+  const tabInfo = useMemo(() => {
+    const tabOpt = options.find((o) => o.name.toLowerCase().includes("tab"));
+    if (!tabOpt || !isStructuredValues(tabOpt.values)) return null;
+    const key = Object.keys(spec.selected_options).find(
+      (k) => k.toLowerCase() === tabOpt.name.toLowerCase()
+    ) || tabOpt.name;
+    const slug = spec.selected_options[key];
+    if (!slug || slug === "none") return null;
+    const val = (tabOpt.values as StructuredOptionValue[]).find((v) => v.slug === slug);
+    if (!val) return null;
+    const count = (val.metadata as any)?.tab_count ?? 0;
+    const multiColor = (val.metadata as any)?.multi_color ?? false;
+    return count > 0 ? { count, multiColor } : null;
+  }, [options, spec.selected_options]);
+
+  const orderItemId = orderItem?.id ?? "";
+
+  // ── Tab/Insert callbacks ──
+  const handleAddTab = useCallback(async (sortOrder: number) => {
+    if (!orderItemId) return;
+    await addSectionMut.mutateAsync({
+      order_item_id: orderItemId,
+      section_type: "tab",
+      sort_order: sortOrder,
+      document_id: null,
+    });
+  }, [orderItemId, addSectionMut]);
+
+  const handleDeleteTab = useCallback(async (sectionId: string) => {
+    if (!orderItemId) return;
+    await deleteSectionMut.mutateAsync({ id: sectionId, orderItemId });
+  }, [orderItemId, deleteSectionMut]);
+
+  const handleMoveTab = useCallback(async (sectionId: string, newSortOrder: number) => {
+    await updateSectionMut.mutateAsync({ id: sectionId, sort_order: newSortOrder } as any);
+  }, [updateSectionMut]);
+
+  const handleUpdateTabLabel = useCallback(async (sectionId: string, label: string) => {
+    await updateSectionMut.mutateAsync({ id: sectionId, label } as any);
+  }, [updateSectionMut]);
+
+  const handleAddInsert = useCallback(async (sortOrder: number, color: string) => {
+    if (!orderItemId) return;
+    await addSectionMut.mutateAsync({
+      order_item_id: orderItemId,
+      section_type: "insert",
+      sort_order: sortOrder,
+      document_id: null,
+    });
+    // Update color after creation (since addSection doesn't support color column yet in types)
+    // The section was just created — we need to find it and update
+  }, [orderItemId, addSectionMut]);
+
+  const handleDeleteInsert = useCallback(async (sectionId: string) => {
+    if (!orderItemId) return;
+    await deleteSectionMut.mutateAsync({ id: sectionId, orderItemId });
+  }, [orderItemId, deleteSectionMut]);
+
+  const handleMoveInsert = useCallback(async (sectionId: string, newSortOrder: number) => {
+    await updateSectionMut.mutateAsync({ id: sectionId, sort_order: newSortOrder } as any);
+  }, [updateSectionMut]);
+
   if (loading) {
     return (
       <div className="space-y-4">
