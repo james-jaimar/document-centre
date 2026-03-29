@@ -214,32 +214,6 @@ export default function PreviewPanel({
       roles.splice(1, 0, "pvc_cover_back");
     }
 
-    // ── POST-PROCESS: Ensure tab/insert front faces land on even indices ──
-    // In react-pageflip with showCover={true}:
-    //   Index 0 = front cover (RIGHT, solo)
-    //   Index 1 = LEFT, Index 2 = RIGHT
-    //   Index 3 = LEFT, Index 4 = RIGHT, etc.
-    // A physical sheet's front face MUST be on an even index (RIGHT side).
-    // If a tab or insert front face is on an odd index, insert a blank_back before it.
-    const PHYSICAL_FRONT_ROLES = new Set(["tab", "insert"]);
-    let i = 0;
-    while (i < fp.length) {
-      if (PHYSICAL_FRONT_ROLES.has(roles[i]) && i % 2 !== 0 && roles[i - 1] !== "blank_back") {
-        // Insert a blank page before to push this to an even index
-        fp.splice(i, 0, {
-          thumbnailUrl: "",
-          pageIndex: -1,
-          documentName: "",
-          section: undefined,
-          isColor: true,
-        });
-        roles.splice(i, 0, "blank_back");
-        // Now the tab/insert is at i+1 which is even — skip past it and its back
-        i += 2;
-      }
-      i++;
-    }
-
     // ── Physical back cover card ──
     const hasBackCover = isBound && effects?.backCover && effects.backCover !== "none";
     if (isBound) {
