@@ -22,6 +22,7 @@ const CONTENT_LESS_ROLES = new Set([
   "blank_back",
   "inside_back_blank",
   "insert",
+  "insert_back",
 ]);
 
 /**
