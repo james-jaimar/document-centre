@@ -89,15 +89,25 @@ export default function PreviewPanel({
         });
         continue;
       }
-      // Insert sheets — no document, blank colored divider page
+      // Insert sheets — physical two-sided sheet (front + back)
       if (section.section_type === "insert") {
+        const insertColor = (section as any).color || "white";
         result.push({
           thumbnailUrl: "",
           pageIndex: 0,
           documentName: "Insert Sheet",
           section,
           isColor: true,
-          color: (section as any).color || "white",
+          color: insertColor,
+        });
+        // Back face of the physical insert sheet
+        result.push({
+          thumbnailUrl: "",
+          pageIndex: -1,
+          documentName: "Insert Sheet Back",
+          section,
+          isColor: true,
+          color: insertColor,
         });
         continue;
       }
@@ -134,10 +144,12 @@ export default function PreviewPanel({
   const { finalPages, pageRoles: computedPageRoles } = useMemo(() => {
     const fp = [...pages];
     const roles: string[] = fp.map((p, i) => {
+      // Insert back face
+      if (p.pageIndex === -1 && p.section?.section_type === "insert") return "insert_back";
       // Simplex blank backs inserted with pageIndex -1
       if (p.pageIndex === -1 && p.thumbnailUrl === "") return "blank_back";
       if (i === 0 && isBound && p.section?.section_type === "front_cover") return "front_cover";
-      if (p.section?.section_type === "tab") return "body";
+      if (p.section?.section_type === "tab") return "tab";
       if (p.section?.section_type === "insert") return "insert";
       return "body";
     });

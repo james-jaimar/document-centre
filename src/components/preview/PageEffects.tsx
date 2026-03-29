@@ -134,7 +134,15 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
     );
   }
 
-  // ── 4. Insert sheet: solid colored divider ──
+  // ── 4a. Insert sheet back: plain paper same color ──
+  if (role === "insert_back") {
+    const insertBg = INSERT_COLORS[color || "white"] ?? INSERT_COLORS.white;
+    return (
+      <div className="w-full h-full" style={{ backgroundColor: insertBg, boxShadow: PAPER_SHADOW }} />
+    );
+  }
+
+  // ── 4b. Insert sheet front: solid colored divider ──
   if (role === "insert") {
     const insertBg = INSERT_COLORS[color || "white"] ?? INSERT_COLORS.white;
     return (

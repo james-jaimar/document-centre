@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useOrderData, useUpdateOrderItemSpec, useAddSection, useUpdateSection, useDeleteSection } from "@/hooks/useOrderBuilder";
 import { useProductOptions } from "@/hooks/useProductOptions";
@@ -11,11 +11,10 @@ import { DEFAULT_PREVIEW_EFFECTS } from "@/components/preview/previewTypes";
 import OptionsPanel from "@/components/order/OptionsPanel";
 import PreviewPanel from "@/components/order/PreviewPanel";
 import PriceSummary from "@/components/order/PriceSummary";
-import TabManager from "@/components/order/TabManager";
-import InsertManager from "@/components/order/InsertManager";
+import TabInsertDrawer from "@/components/order/TabInsertDrawer";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 
@@ -258,9 +257,8 @@ export default function OrderBuild() {
     navigate("/dashboard/orders");
   }, [handleSave, navigate]);
 
-  // ── Scroll refs for auto-scroll when managers appear ──
-  const tabManagerRef = useRef<HTMLDivElement>(null);
-  const insertManagerRef = useRef<HTMLDivElement>(null);
+  // ── Drawer state ──
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // ── Derive tab info from product options ──
   const tabInfo = useMemo(() => {
@@ -288,14 +286,6 @@ export default function OrderBuild() {
     const slug = spec.selected_options[key];
     return !!slug && slug !== "none" && slug !== "no-inserts" && slug !== "no_inserts";
   }, [options, spec.selected_options]);
-
-  // Auto-scroll to managers when they appear
-  useEffect(() => {
-    if (tabInfo) tabManagerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [tabInfo]);
-  useEffect(() => {
-    if (insertEnabled) insertManagerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [insertEnabled]);
 
   const orderItemId = orderItem?.id ?? "";
 
@@ -391,35 +381,17 @@ export default function OrderBuild() {
               onOptionChange={handleOptionChange}
             />
 
-            {/* Tab Dividers Manager */}
-            {tabInfo && (
-              <div ref={tabManagerRef} className="border border-accent rounded-lg bg-accent/10 p-3">
-                <TabManager
-                  sections={sections}
-                  documents={documents}
-                  orderItemId={orderItemId}
-                  tabCount={tabInfo.count}
-                  isMultiColor={tabInfo.multiColor}
-                  onAddTab={handleAddTab}
-                  onDeleteTab={handleDeleteTab}
-                  onMoveTab={handleMoveTab}
-                  onUpdateTabLabel={handleUpdateTabLabel}
-                />
-              </div>
-            )}
-
-            {/* Insert Sheets Manager */}
-            {insertEnabled && (
-              <div ref={insertManagerRef} className="border border-accent rounded-lg bg-accent/10 p-3">
-                <InsertManager
-                  sections={sections}
-                  documents={documents}
-                  orderItemId={orderItemId}
-                  onAddInsert={handleAddInsert}
-                  onDeleteInsert={handleDeleteInsert}
-                  onMoveInsert={handleMoveInsert}
-                />
-              </div>
+            {/* Manage Tabs & Inserts button */}
+            {(tabInfo || insertEnabled) && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full text-xs"
+                onClick={() => setDrawerOpen(true)}
+              >
+                <Settings2 className="h-3.5 w-3.5 mr-1.5" />
+                Manage Tabs & Inserts
+              </Button>
             )}
           </div>
           <div className="p-3 shrink-0">
@@ -438,6 +410,25 @@ export default function OrderBuild() {
           <PreviewPanel documents={documents} sections={sections} productType={productType} effects={previewEffects} />
         </div>
       </div>
+      {/* Tab/Insert Drawer */}
+      <TabInsertDrawer
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        sections={sections}
+        documents={documents}
+        orderItemId={orderItemId}
+        tabEnabled={!!tabInfo}
+        tabCount={tabInfo?.count ?? 0}
+        isMultiColor={tabInfo?.multiColor ?? false}
+        onAddTab={handleAddTab}
+        onDeleteTab={handleDeleteTab}
+        onMoveTab={handleMoveTab}
+        onUpdateTabLabel={handleUpdateTabLabel}
+        insertEnabled={insertEnabled}
+        onAddInsert={handleAddInsert}
+        onDeleteInsert={handleDeleteInsert}
+        onMoveInsert={handleMoveInsert}
+      />
     </div>
   );
 }
