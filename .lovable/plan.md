@@ -1,128 +1,42 @@
 
-Fix the preview by separating three concepts cleanly: physical page sequence, visual page role, and blank-page rendering.
 
-## What is actually wrong now
+# Fix PVC Cover White-at-Rest + Eliminate Margin Drift
 
-### 1. Blank simplex backs are inserted, but rendered like missing thumbnails
-In `PreviewPanel.tsx`, simplex backs are being added correctly with:
-- `thumbnailUrl: ""`
-- `pageIndex: -1`
+## Two bugs
 
-But in `FlipBook.tsx`, any page with no `url` falls into the generic placeholder UI:
-- file icon
-- “Page X” text
-- muted gray background
+### 1. PVC cover front renders solid white until hover
+`react-pageflip` renders pages to an internal canvas for the static (non-animating) state. The `PageEffects` wrapper for `pvc_cover_front` sets `backgroundColor: "transparent"` — but transparent on a canvas = white. The artwork image is there but the canvas doesn't pick it up at paint time because the background is transparent.
 
-That is why the back of a simplex front cover is not showing as a clean blank white sheet.
+**Fix**: Remove `backgroundColor: "transparent"` and instead don't set any explicit background on the PVC wrapper. The image itself fills the space. Also ensure the image for PVC uses `object-cover` instead of `object-contain` so there are no gaps for white to leak through.
 
-### 2. The inside back card is still being treated like a “paper page slot”
-`inside_back_cover_card` is rendered as solid colour in `PageEffects.tsx`, but the outer `FlipPage` wrapper still contributes layout styling that is tuned for normal pages:
-- the page border/shadow logic is only partly aware of material pages
-- the inner placeholder branch for blank/missing thumbnails can still influence visual perception on non-image pages
-- the standard page shell is not explicitly split between “paper sheet”, “material sheet”, and “intentional blank page”
+### 2. Margins jump and become asymmetric after option changes
+The spacing logic is split across TWO layers:
+- **FlipPage** (line 74): applies `border: 1px solid rgba(0,0,0,0.15)` on non-material pages
+- **PageEffects** (line 158): applies `padding: 3%` for bleed margin
 
-That is the most likely source of the white edge appearing intermittently on the inside back cover.
+The 1px border in FlipPage shrinks the available area by 2px total, making the PageEffects padding calculation relative to a slightly smaller box. When `react-pageflip` remounts (bookKey change), its internal size calculations can interact differently with this border, causing the asymmetric appearance. The border is also rendered at the FlipPage level which is captured by the library's canvas — if the library re-measures after mount, the border + padding combination drifts.
 
-### 3. Page-role logic is too coarse for bleed scope
-`PageEffects.tsx` currently only treats `front_cover` as a cover page:
-- `covers` bleed scope only applies to `front_cover`
-- the final printed back page is never identified as a printed back cover role
-- inserted simplex blanks inherit the default `body` behavior
+**Fix**: Move ALL visual edge styling into `PageEffects` only. Remove the border from FlipPage entirely. In PageEffects, for standard paper pages, render the border as an inset box-shadow (which doesn't affect layout) and keep the padding for bleed. This makes the entire visual treatment happen in one place with zero layout side-effects.
 
-So the margin logic is not being driven by true physical meaning. That makes it easier for borders to appear “wrong” after cover/material combinations change.
+## Changes
 
-### 4. Display metadata is still derived from page indices, not physical semantics
-The spread/page info in `PreviewPanel.tsx` still assumes:
-- first page = cover
-- middle pages = regular spreads
-- last page = back cover only if role is `back_cover_card`
+### `src/components/preview/FlipBook.tsx`
+- Remove `border` and `boxShadow` from FlipPage's outer div style (line 74-76) — make it a plain container for ALL page types
+- The outer div becomes just `width/height: 100%, position: relative, overflow: hidden` with no visual styling
 
-That is close, but not robust enough once the book includes:
-- PVC front outside
-- PVC front inside
-- simplex blank backs
-- inside back card
-- solo outer back card
+### `src/components/preview/PageEffects.tsx`
+- For standard pages (body, front_cover): add `boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.15), inset 0 0 8px rgba(0,0,0,0.10)"` to the outer wrapper — this gives the same visual border without affecting layout
+- For `pvc_cover_front`: remove `backgroundColor: "transparent"`, just let the content fill naturally
+- For material roles: no inset shadow (they already bypass)
+- For blank paper roles: add the same inset shadow as standard pages
 
-This is why the UI can look “nearly right” but still feel off when clients flick around.
+### Result
+- Border is purely cosmetic (inset shadow), so it never interacts with padding calculations
+- PVC front shows artwork through the overlay at rest, not white
+- All visual styling lives in ONE component — no split between FlipPage and PageEffects
+- Margin consistency is guaranteed because there's only one source of spacing
 
-## Clean fix
-
-### A. Add explicit page kinds for intentional blanks and printed cover faces
-In `PreviewPanel.tsx`, enrich the generated sequence so roles describe the physical face:
-- `front_cover`
-- `blank_back`
-- `body`
-- `pvc_cover_front`
-- `pvc_cover_back`
-- `inside_back_blank`
-- `inside_back_cover_card`
-- `back_cover_card`
-
-Most importantly:
-- simplex-inserted blank backs should get `blank_back`, not fall through as generic `body`
-- keep printed front cover distinct from PVC material faces
-
-This makes rendering deterministic.
-
-### B. Render blank backs as actual blank paper
-In `FlipBook.tsx`, stop using the file placeholder UI for every `url === ""`.
-
-Instead split blank rendering into:
-- intentional blank page (`blank_back`, `inside_back_blank`) → plain white/paper-colour sheet with no icon or text
-- tab page → tab UI
-- true missing image/fallback → placeholder icon
-
-That directly fixes the “Page 4” icon problem.
-
-### C. Make the outer page shell role-aware, not URL-aware
-Still in `FlipBook.tsx`, determine page styling from `pageRole` first:
-- material roles (`pvc_*`, `*_cover_card`) → no paper border/shadow
-- blank paper roles (`blank_back`, `inside_back_blank`) → normal paper shell, but blank content
-- printed pages → normal paper shell
-
-This removes the current ambiguity where a page without a thumbnail can accidentally look like a broken asset instead of a deliberate blank sheet.
-
-### D. Make bleed logic depend on real page roles
-In `PageEffects.tsx`, compute bleed scope using explicit roles instead of only `isFrontCover`:
-- `front_cover` should respect front-cover bleed
-- if later you add a printed back cover role, it can participate in `covers`
-- material sheets (`pvc_*`, card backs) should bypass paper bleed entirely
-- `blank_back` should behave like paper, usually with normal margins/background
-
-This should stop the white border logic from drifting between physical-material pages and paper pages.
-
-### E. Tighten physical-sequence construction in one place
-In `PreviewPanel.tsx`, keep the sequence builder as the single source of truth:
-```text
-[pvc_cover_front?]
-[pvc_cover_back?]
-[front_cover]
-[blank_back if simplex]
-[body pages with blank backs where simplex]
-[inside_back_blank if needed for parity]
-[inside_back_cover_card?]
-[back_cover_card?]
-```
-
-Also ensure the role array is built alongside the page array, not inferred later from index defaults. That will prevent “role drift” after option changes.
-
-### F. Update the page info display to use visible roles
-Still in `PreviewPanel.tsx`, derive label/status from the visible physical faces:
-- if visible face is `blank_back`, still show it as part of the front-cover section if it belongs to that simplex sheet
-- if visible face is `inside_back_cover_card`, show the back-cover section label correctly
-- avoid relying only on `currentPage + 1`
-
-This will make the preview text match the actual physical book structure.
-
-## Files to update
-- `src/components/order/PreviewPanel.tsx`
+## Files to edit
 - `src/components/preview/FlipBook.tsx`
 - `src/components/preview/PageEffects.tsx`
-- `src/components/preview/previewTypes.ts` (optional, to document the expanded role vocabulary)
 
-## Expected result
-- the back of a simplex cover renders as a plain blank white sheet, not an icon page
-- the inside navy/black card back renders edge-to-edge consistently, without stray white borders
-- changing front/back cover options repeatedly no longer knocks the margin logic out of alignment
-- page/spread info better reflects the real physical document the customer will receive
