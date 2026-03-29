@@ -200,7 +200,7 @@ export default function PreviewPanel({
     }
 
     return { finalPages: fp, pageRoles: roles };
-  }, [pages, effects?.backCover, effects?.frontCover, isBound]);
+  }, [pages, effects, isBound]);
 
   const thumbnailPaths = useMemo(
     () => finalPages.map((p) => p.thumbnailUrl),
