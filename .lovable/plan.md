@@ -1,95 +1,77 @@
 
-## Fix the physically impossible tab/insert spreads
+## Fix the tab/insert preview by enforcing a right-page start in the flipbook
 
-I inspected the current implementation, and the core problem is now clear:
+### What is actually wrong
+The sequence builder in `src/components/order/PreviewPanel.tsx` is already close to the correct physical model:
 
-- `buildPageSequence()` in `src/components/order/PreviewPanel.tsx` is already doing the right physical thing for simplex pages:
-  - printed page
-  - natural reverse face (`blank_back`)
-  - then tab/insert sheet
-- But the bound preview uses `react-pageflip` with `showCover={true}` in `src/components/preview/FlipBook.tsx`, which changes how page indices are displayed in spreads.
-- Right now the preview/navigation layer is still treating raw array indices as if they directly equal left/right physical page numbers, so the tab/insert sheet is being displayed as though it starts too early on the spread.
+- body page
+- reverse face of that sheet
+- then tab/insert front
+- then tab/insert back
 
-## What to change
+The real break is in `src/components/preview/FlipBook.tsx`:
+- `react-pageflip` is mounted with `showCover={true}`
+- that makes the first page a special solo cover page
+- but the rest of the code is still treating `currentPage` and `currentPage + 1` as a normal left/right spread model
 
-### 1. Separate physical face sequence from displayed page numbering
-In `src/components/order/PreviewPanel.tsx`:
+That mismatch is why tabs/inserts are being displayed as if they begin across a left/right spread instead of always beginning on the right-hand face of a new sheet.
 
-- keep `finalPages` exactly as a list of physical faces
-- add a second derived array for **display page numbers**
-- for simplex body sheets:
-  - front face gets printed page N
-  - `blank_back` gets printed page N+1
-- for tab/insert sheets:
-  - front gets the next printed page number
-  - back gets the following printed page number
+### Implementation approach
 
-This gives the preview a correct “printed page label” model instead of assuming `index + 1`.
-
-### 2. Pass explicit display numbers into the preview
-In `src/components/preview/DocumentPreview.tsx` and `src/components/preview/FlipBook.tsx`:
-
-- add a prop like `displayPageNumbers?: number[]`
-- stop deriving visible page numbers from `currentPage`, `currentPage + 1`, or `urls.length`
-- render the bottom page numbers from the explicit display-number array
-
-This is the piece currently making “page 7/8” appear where the physical sequence should actually be “page 8/9”.
-
-### 3. Fix spread info text to use displayed printed numbers
-In `src/components/order/PreviewPanel.tsx`:
-
-- replace `Pages ${currentPage + 1}–${currentPage + 2}` with text derived from the visible faces’ display page numbers
-- do the same for solo-page states
-
-That will align the caption under the preview with the actual physical/printed sequence.
-
-### 4. Keep the insertion rule exactly as sheet-completion
-Do not reintroduce any index patching.
-
-The rule should remain:
-
-```text
-after page 6 in simplex:
-page 6 front
-page 7 back of same sheet
-page 8 tab front
-page 9 tab back
-```
-
-and similarly for inserts.
-
-### 5. Verify bound preview assumptions around `showCover`
+#### 1. Make the flipbook use a single consistent physical spread model
 In `src/components/preview/FlipBook.tsx`:
+- remove the special cover-mode assumption from the bound viewer
+- stop relying on `showCover={true}` for normal page positioning
+- use a consistent spread model where each physical face index maps predictably to left/right placement
 
-- keep `showCover={true}` if needed for the solo front-cover behaviour
-- but make all visible numbering and spread labelling independent of the flipbook’s raw page index assumptions
+Goal:
+- a tab front or insert front must always render on the right page
+- its back must always render on the following left page
 
-That avoids another round of “fixing physics in the sequence” when the real bug is the display model.
+#### 2. Drive visible spread state from physical face parity, not ad hoc cover logic
+Still in `FlipBook.tsx`:
+- replace current `isShowingFrontCover`, `isSoloPage`, and visible-number assumptions with explicit left/right physical face calculation
+- define the active spread from the physical face sequence itself:
+  - right-starting sheet front
+  - following left-side back
+- ensure navigation advances by full spreads without making a tab/insert appear to “start left”
+
+#### 3. Align preview labels with the actual visible faces
+In `src/components/order/PreviewPanel.tsx`:
+- stop assuming `currentPage` is always the left visible page for bound products
+- compute the displayed page info from the actual spread model used by `FlipBook`
+- keep `displayPageNumbers`, but use it only as labels for already-correct physical faces
+
+#### 4. Keep the sequence builder simple
+In `src/components/order/PreviewPanel.tsx`:
+- keep tabs/inserts as two physical faces:
+  - `tab` + `tab_back`
+  - `insert` + `insert_back`
+- keep the “finish current sheet, then insert” rule
+- do not add any more post-processing or blank-page patch logic
+
+#### 5. Preserve tab overlay positioning after the spread-model fix
+In `src/components/preview/FlipBook.tsx`:
+- update `TabOverlay`’s ahead/behind/current logic so it uses the corrected visible spread boundaries
+- tabs ahead of the current spread stay on the right edge
+- tabs behind stay on the left edge
+- no tab should appear as the visible left start of a newly inserted sheet
 
 ## Files to update
-
-- `src/components/order/PreviewPanel.tsx`
-- `src/components/preview/DocumentPreview.tsx`
 - `src/components/preview/FlipBook.tsx`
+- `src/components/order/PreviewPanel.tsx`
 
 ## Expected result
+If a tab or insert is placed after page 6:
+- page 6 remains the right/front of its sheet
+- page 7 is the left/back of that same sheet
+- tab/insert front begins on the next right-hand page
+- tab/insert back is on the following left-hand page
 
-For a simplex job with a tab after page 6:
-
-```text
-physical faces:
-6 front
-7 back of same sheet
-8 tab front
-9 tab back
-```
-
-And the preview should show that correctly:
-- the spread before the tab still contains the reverse of the previous sheet
-- the tab starts on the next right-hand face
-- inserts follow the exact same rule
-- no tab or insert appears to start on the left side of a spread
+So in practical terms:
+- tabs never begin on a left page
+- inserts never begin on a left page
+- no divider sheet is visually split across an impossible spread
 
 ## Technical note
-
-The sequence builder is no longer the main bug. The current issue is that the viewer is displaying and labelling physical faces as if `array index === printed page number`. The implementation should preserve the current physical-face ordering and fix the preview’s numbering/spread interpretation layer so it matches the actual sheet model.
+This should be treated as a viewer/spread-mapping bug, not another sequence-building rewrite. The physical page list is mostly correct; the bound preview is interpreting and presenting it with the wrong left/right model.
