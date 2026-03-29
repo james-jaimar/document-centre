@@ -25,6 +25,7 @@ export interface DocumentPreviewProps {
   pageLabels?: string[];
   pageColors?: string[];
   tabPositions?: TabPosition[];
+  displayPageNumbers?: number[];
 }
 
 const BOUND_TYPES = new Set([
