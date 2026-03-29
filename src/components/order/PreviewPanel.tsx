@@ -104,7 +104,9 @@ function buildPageSequence(sections: DocumentSection[], documents: Document[]): 
         section,
         isColor: section.is_color,
       });
-      // Simplex blank back
+      // Simplex: push the natural reverse face of this sheet.
+      // This MUST come before any anchored items so the physical
+      // sheet is complete before a new sheet (tab/insert) begins.
       if (!section.is_duplex) {
         result.push({
           thumbnailUrl: "",
@@ -114,7 +116,8 @@ function buildPageSequence(sections: DocumentSection[], documents: Document[]): 
           isColor: section.is_color,
         });
       }
-      // Inject any tabs/inserts anchored after this page
+      // Now the physical sheet is complete — inject any tabs/inserts
+      // anchored "after page N". They start a new physical sheet.
       const anchored = anchorMap.get(pageNum);
       if (anchored) {
         for (const item of anchored) {
