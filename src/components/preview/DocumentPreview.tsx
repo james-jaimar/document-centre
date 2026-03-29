@@ -25,6 +25,7 @@ export interface DocumentPreviewProps {
   pageLabels?: string[];
   pageColors?: string[];
   tabPositions?: TabPosition[];
+  displayPageNumbers?: number[];
 }
 
 const BOUND_TYPES = new Set([
@@ -48,6 +49,7 @@ export default function DocumentPreview({
   pageLabels,
   pageColors,
   tabPositions,
+  displayPageNumbers,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
@@ -105,7 +107,7 @@ export default function DocumentPreview({
   };
 
   if (BOUND_TYPES.has(productType)) {
-    return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} />;
+    return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} displayPageNumbers={displayPageNumbers} />;
   }
 
   if (FOLD_TYPES.has(productType)) {

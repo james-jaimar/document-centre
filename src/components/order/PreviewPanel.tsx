@@ -254,6 +254,15 @@ export default function PreviewPanel({
   const pageLabels = useMemo(() => finalPages.map((p) => p.label ?? ""), [finalPages]);
   const pageColors = useMemo(() => finalPages.map((p) => p.color ?? ""), [finalPages]);
 
+  // Compute display page numbers — sequential 1-based labels for the physical face sequence
+  const displayPageNumbers = useMemo(() => {
+    let num = 0;
+    return finalPages.map((_, i) => {
+      num++;
+      return num;
+    });
+  }, [finalPages]);
+
   // Compute tab positions for persistent overlay
   const tabPositions = useMemo((): TabPosition[] => {
     const positions: TabPosition[] = [];
@@ -321,11 +330,17 @@ export default function PreviewPanel({
         return role === "pvc_cover_front" ? "Front Cover (PVC)" : "Front Cover";
       }
       if (isShowingBackCover) return "Back Cover";
-      if (isShowingLastSolo) return `Page ${totalPages} of ${totalPages}`;
-      return `Pages ${currentPage + 1}–${currentPage + 2}  (${totalPages} pages)`;
+      if (isShowingLastSolo) {
+        const dpn = displayPageNumbers[totalPages - 1] ?? totalPages;
+        return `Page ${dpn} of ${displayPageNumbers[totalPages - 1] ?? totalPages}`;
+      }
+      const leftNum = displayPageNumbers[currentPage] ?? (currentPage + 1);
+      const rightNum = displayPageNumbers[currentPage + 1] ?? (currentPage + 2);
+      return `Pages ${leftNum}–${rightNum}  (${displayPageNumbers[totalPages - 1] ?? totalPages} pages)`;
     }
-    return `Page ${currentPage + 1} of ${totalPages}`;
-  }, [currentPage, totalPages, isBound, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles]);
+    const dpn = displayPageNumbers[currentPage] ?? (currentPage + 1);
+    return `Page ${dpn} of ${displayPageNumbers[totalPages - 1] ?? totalPages}`;
+  }, [currentPage, totalPages, isBound, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers]);
 
   const colourStatus = useMemo(() => {
     if (totalPages === 0) return "";
@@ -386,6 +401,7 @@ export default function PreviewPanel({
           pageLabels={pageLabels}
           pageColors={pageColors}
           tabPositions={tabPositions}
+          displayPageNumbers={displayPageNumbers}
         />
       </div>
 

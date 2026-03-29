@@ -90,6 +90,7 @@ export interface TabPosition {
 export interface FlipBookProps extends PreviewComponentProps {
   bindingType: BindingType;
   tabPositions?: TabPosition[];
+  displayPageNumbers?: number[];
 }
 
 export interface FoldPreviewProps extends PreviewComponentProps {
