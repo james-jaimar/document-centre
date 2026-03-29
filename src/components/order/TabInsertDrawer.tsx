@@ -62,6 +62,7 @@ export default function TabInsertDrawer({
   sections,
   documents,
   orderItemId,
+  isDuplex,
   tabEnabled,
   tabCount,
   isMultiColor,
