@@ -395,6 +395,8 @@ export default function PreviewPanel({
           sectionTypes={sectionTypes}
           pageRoles={computedPageRoles}
           bleedFlags={bleedFlags}
+          pageLabels={pageLabels}
+          pageColors={pageColors}
         />
       </div>
 
