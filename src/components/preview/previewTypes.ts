@@ -71,8 +71,23 @@ export interface PreviewComponentProps {
 /** Multi-colour tab cycling palette */
 export const TAB_COLORS = ["#ef4444", "#3b82f6", "#22c55e", "#eab308", "#f97316"];
 
+/** Position metadata for a single tab in the document sequence */
+export interface TabPosition {
+  /** Page index in the full page sequence where the tab front face lives */
+  pageIndex: number;
+  /** User-defined label for this tab */
+  label: string;
+  /** 0-based index within the set of tabs */
+  tabIndex: number;
+  /** Total number of tabs in the document */
+  tabTotal: number;
+  /** Color for this tab */
+  color: string;
+}
+
 export interface FlipBookProps extends PreviewComponentProps {
   bindingType: BindingType;
+  tabPositions?: TabPosition[];
 }
 
 export interface FoldPreviewProps extends PreviewComponentProps {
