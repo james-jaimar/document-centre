@@ -89,15 +89,25 @@ export default function PreviewPanel({
         });
         continue;
       }
-      // Insert sheets — no document, blank colored divider page
+      // Insert sheets — physical two-sided sheet (front + back)
       if (section.section_type === "insert") {
+        const insertColor = (section as any).color || "white";
         result.push({
           thumbnailUrl: "",
           pageIndex: 0,
           documentName: "Insert Sheet",
           section,
           isColor: true,
-          color: (section as any).color || "white",
+          color: insertColor,
+        });
+        // Back face of the physical insert sheet
+        result.push({
+          thumbnailUrl: "",
+          pageIndex: -1,
+          documentName: "Insert Sheet Back",
+          section,
+          isColor: true,
+          color: insertColor,
         });
         continue;
       }
