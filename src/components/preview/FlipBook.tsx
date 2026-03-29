@@ -25,7 +25,7 @@ const FlipPage = forwardRef<
   }
 >(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, tabIndex = 0, tabTotal = 1, pageRole }, ref) => {
   const isTab = sectionType === "tab";
-  const isCardCover = pageRole === "back_cover_card";
+  const isCardCover = pageRole === "back_cover_card" || pageRole === "pvc_cover";
 
   return (
     <div

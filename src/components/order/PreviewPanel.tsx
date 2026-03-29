@@ -170,8 +170,23 @@ export default function PreviewPanel({
       }
     }
 
+    // Insert a physical PVC cover sheet at index 0 when a PVC front cover is selected
+    const isPvc = isBound && effects?.frontCover && ["clear_pvc", "frosted_pvc", "matte_pvc"].includes(effects.frontCover);
+    if (isPvc && fp.length > 0) {
+      // The PVC sheet shows the same thumbnail as the printed front cover underneath
+      const frontThumb = fp[0]?.thumbnailUrl ?? "";
+      fp.unshift({
+        thumbnailUrl: frontThumb,
+        pageIndex: 0,
+        documentName: "PVC Cover",
+        section: undefined,
+        isColor: true,
+      });
+      roles.unshift("pvc_cover");
+    }
+
     return { finalPages: fp, pageRoles: roles };
-  }, [pages, effects?.backCover, isBound]);
+  }, [pages, effects?.backCover, effects?.frontCover, isBound]);
 
   const thumbnailPaths = useMemo(
     () => finalPages.map((p) => p.thumbnailUrl),

@@ -122,36 +122,7 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
         </>
       )}
 
-      {/* PVC front cover overlay */}
-      {frontCoverOverlay === "clear_pvc" && (
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: "rgba(255,255,255,0.12)",
-            boxShadow: "inset 0 0 20px rgba(255,255,255,0.1)",
-          }}
-        />
-      )}
-      {frontCoverOverlay === "frosted_pvc" && (
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: "rgba(255,255,255,0.35)",
-            backdropFilter: "blur(1.5px)",
-            WebkitBackdropFilter: "blur(1.5px)",
-          }}
-        />
-      )}
-      {frontCoverOverlay === "matte_pvc" && (
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: "rgba(255,255,255,0.25)",
-            backdropFilter: "blur(0.5px)",
-            WebkitBackdropFilter: "blur(0.5px)",
-          }}
-        />
-      )}
+      {/* Old PVC front cover overlays removed — now handled by pvc_cover role above */}
 
       {/* Cover lamination sheen */}
       {showLamination && effects.coverLamination === "gloss" && (
