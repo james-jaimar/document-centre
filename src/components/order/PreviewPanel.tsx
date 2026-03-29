@@ -29,6 +29,8 @@ interface PageInfo {
   documentName: string;
   section?: DocumentSection;
   isColor: boolean;
+  label?: string;
+  color?: string;
 }
 
 const SECTION_LABELS: Record<string, string> = {
