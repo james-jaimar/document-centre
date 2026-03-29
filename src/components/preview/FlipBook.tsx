@@ -46,7 +46,7 @@ const FlipPage = forwardRef<
       <img
         src={url}
         alt={`Page ${pageNum}`}
-        className="w-full h-full object-contain"
+        className={`w-full h-full ${pageRole === "pvc_cover_front" ? "object-cover" : "object-contain"}`}
         style={{ filter: isColor ? "none" : "grayscale(100%)" }}
         loading="eager"
       />
@@ -71,8 +71,6 @@ const FlipPage = forwardRef<
         width: "100%",
         height: "100%",
         position: "relative",
-        border: isMaterial ? "none" : "1px solid rgba(0,0,0,0.15)",
-        boxShadow: isMaterial ? "none" : "inset 0 0 8px rgba(0,0,0,0.10), inset 0 0 0 0.5px rgba(0,0,0,0.08)",
       }}
     >
       <PageEffects effects={effects} pageIndex={pageIndex} totalPages={totalPages} pageRole={pageRole}>
