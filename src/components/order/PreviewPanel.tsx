@@ -137,7 +137,7 @@ export default function PreviewPanel({
       // Simplex blank backs inserted with pageIndex -1
       if (p.pageIndex === -1 && p.thumbnailUrl === "") return "blank_back";
       if (i === 0 && isBound && p.section?.section_type === "front_cover") return "front_cover";
-      if (p.section?.section_type === "tab") return "body";
+      if (p.section?.section_type === "tab") return "tab";
       if (p.section?.section_type === "insert") return "insert";
       return "body";
     });
