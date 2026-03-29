@@ -19,6 +19,7 @@ interface TabManagerProps {
   onAddTab: (sortOrder: number) => Promise<void>;
   onDeleteTab: (sectionId: string) => Promise<void>;
   onMoveTab: (sectionId: string, newSortOrder: number) => Promise<void>;
+  onUpdateTabLabel?: (sectionId: string, label: string) => Promise<void>;
 }
 
 export default function TabManager({
