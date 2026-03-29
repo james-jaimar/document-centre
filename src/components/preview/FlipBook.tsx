@@ -26,6 +26,42 @@ const FlipPage = forwardRef<
 >(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, tabIndex = 0, tabTotal = 1, pageRole }, ref) => {
   const isTab = sectionType === "tab";
   const isMaterial = pageRole === "back_cover_card" || pageRole === "inside_back_cover_card" || pageRole === "pvc_cover_front" || pageRole === "pvc_cover_back";
+  const isBlankPaper = pageRole === "blank_back" || pageRole === "inside_back_blank";
+
+  // Determine content to render inside PageEffects
+  let content: React.ReactNode;
+  if (isTab) {
+    content = (
+      <div className="w-full h-full flex items-center justify-center bg-card">
+        <div className="text-center text-muted-foreground/40">
+          <p className="text-sm font-medium">Tab {tabIndex + 1}</p>
+        </div>
+      </div>
+    );
+  } else if (isMaterial || isBlankPaper) {
+    // Material pages and intentional blanks: PageEffects handles the visual entirely
+    content = null;
+  } else if (url) {
+    content = (
+      <img
+        src={url}
+        alt={`Page ${pageNum}`}
+        className="w-full h-full object-contain"
+        style={{ filter: isColor ? "none" : "grayscale(100%)" }}
+        loading="eager"
+      />
+    );
+  } else {
+    // True missing thumbnail fallback
+    content = (
+      <div className="w-full h-full flex items-center justify-center bg-muted/30">
+        <div className="text-center text-muted-foreground">
+          <FileText className="h-8 w-8 mx-auto mb-1 opacity-30" />
+          <p className="text-xs">Page {pageNum}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -40,28 +76,7 @@ const FlipPage = forwardRef<
       }}
     >
       <PageEffects effects={effects} pageIndex={pageIndex} totalPages={totalPages} pageRole={pageRole}>
-        {isTab ? (
-          <div className="w-full h-full flex items-center justify-center bg-card">
-            <div className="text-center text-muted-foreground/40">
-              <p className="text-sm font-medium">Tab {tabIndex + 1}</p>
-            </div>
-          </div>
-        ) : url ? (
-          <img
-            src={url}
-            alt={`Page ${pageNum}`}
-            className="w-full h-full object-contain"
-            style={{ filter: isColor ? "none" : "grayscale(100%)" }}
-            loading="eager"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-muted/30">
-            <div className="text-center text-muted-foreground">
-              <FileText className="h-8 w-8 mx-auto mb-1 opacity-30" />
-              <p className="text-xs">Page {pageNum}</p>
-            </div>
-          </div>
-        )}
+        {content}
       </PageEffects>
 
       {/* Tab extension protruding from right edge */}
