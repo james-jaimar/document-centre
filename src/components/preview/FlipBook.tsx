@@ -42,8 +42,10 @@ const FlipPage = forwardRef<
     pageRole?: string;
     allowBleed: boolean;
     bleedInsetPx: number;
+    label?: string;
+    color?: string;
   }
->(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, tabIndex = 0, tabTotal = 1, pageRole, allowBleed, bleedInsetPx }, ref) => {
+>(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, tabIndex = 0, tabTotal = 1, pageRole, allowBleed, bleedInsetPx, label, color }, ref) => {
   const isTab = sectionType === "tab";
   const isInsert = sectionType === "insert" || pageRole === "insert";
   const isContentLess = CONTENT_LESS_ROLES.has(pageRole ?? "");
