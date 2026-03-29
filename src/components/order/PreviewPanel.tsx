@@ -111,6 +111,7 @@ function buildPageSequence(sections: DocumentSection[], documents: Document[]): 
       if (anchored) {
         for (const item of anchored) {
           if (item.section_type === "tab") {
+            // Front face of tab divider
             result.push({
               thumbnailUrl: "",
               pageIndex: 0,
@@ -118,6 +119,17 @@ function buildPageSequence(sections: DocumentSection[], documents: Document[]): 
               section: item,
               isColor: true,
               label: item.label || undefined,
+              color: item.color || undefined,
+            });
+            // Back face of tab divider (physical sheet)
+            result.push({
+              thumbnailUrl: "",
+              pageIndex: -1,
+              documentName: "Tab Divider Back",
+              section: item,
+              isColor: true,
+              label: item.label || undefined,
+              color: item.color || undefined,
             });
           } else if (item.section_type === "insert") {
             const insertColor = item.color || "white";
