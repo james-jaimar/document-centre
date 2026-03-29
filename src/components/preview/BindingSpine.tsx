@@ -10,10 +10,19 @@ interface BindingSpineProps {
   height: number;
   /** Whether the book is open (showing a two-page spread) */
   isOpen?: boolean;
+  /** Horizontal placement: left edge, center (spread), or right edge */
+  position?: "left" | "center" | "right";
 }
 
-export default function BindingSpine({ bindingType, height, isOpen = false }: BindingSpineProps) {
+export default function BindingSpine({ bindingType, height, isOpen = false, position = "center" }: BindingSpineProps) {
   if (bindingType === "none") return null;
+
+  const positionStyle: React.CSSProperties =
+    position === "left"
+      ? { left: 0, transform: "translateX(-50%)" }
+      : position === "right"
+        ? { right: 0, transform: "translateX(50%)" }
+        : { left: "50%", transform: "translateX(-50%)" };
 
   const isSpiral = bindingType === "coil" || bindingType === "wire" || bindingType === "comb";
 
@@ -29,9 +38,9 @@ export default function BindingSpine({ bindingType, height, isOpen = false }: Bi
 
     return (
       <div
-        className="absolute top-0 left-1/2 z-30 pointer-events-none"
+        className="absolute top-0 z-30 pointer-events-none"
         style={{
-          transform: "translateX(-50%)",
+          ...positionStyle,
           width: 36,
           height,
         }}
@@ -51,14 +60,14 @@ export default function BindingSpine({ bindingType, height, isOpen = false }: Bi
   const spineWidth = bindingType === "perfect" ? 10 : 6;
 
   return (
-    <div
-      className="absolute top-0 left-1/2 z-20 pointer-events-none"
-      style={{
-        transform: "translateX(-50%)",
-        width: spineWidth,
-        height,
-      }}
-    >
+      <div
+        className="absolute top-0 z-20 pointer-events-none"
+        style={{
+          ...positionStyle,
+          width: spineWidth,
+          height,
+        }}
+      >
       <div
         className="absolute inset-0"
         style={{
