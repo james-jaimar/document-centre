@@ -42,6 +42,7 @@ interface TabInsertDrawerProps {
   sections: DocumentSection[];
   documents: Document[];
   orderItemId: string;
+  isDuplex: boolean;
   tabEnabled: boolean;
   tabCount: number;
   isMultiColor: boolean;
@@ -61,6 +62,7 @@ export default function TabInsertDrawer({
   sections,
   documents,
   orderItemId,
+  isDuplex,
   tabEnabled,
   tabCount,
   isMultiColor,
@@ -76,6 +78,12 @@ export default function TabInsertDrawer({
   const [selectedInsertColor, setSelectedInsertColor] = useState("white");
 
   const bodyPages = useMemo(() => buildBodyPages(sections, documents), [sections, documents]);
+
+  // For duplex, only allow placement at sheet boundaries (even page numbers)
+  const validPages = useMemo(() => {
+    if (!isDuplex) return bodyPages;
+    return bodyPages.filter((p) => p.pageNumber % 2 === 0);
+  }, [bodyPages, isDuplex]);
 
   const tabSections = useMemo(
     () => sections.filter((s) => s.section_type === "tab"),
@@ -136,7 +144,7 @@ export default function TabInsertDrawer({
                       variant="outline"
                       size="sm"
                       className="text-xs h-7"
-                      onClick={() => onAddTab(bodyPages.length > 0 ? bodyPages[bodyPages.length - 1].pageNumber : 1)}
+                      onClick={() => onAddTab(validPages.length > 0 ? validPages[validPages.length - 1].pageNumber : 1)}
                     >
                       <Plus className="h-3 w-3 mr-1" /> Add
                     </Button>
@@ -173,7 +181,7 @@ export default function TabInsertDrawer({
                             <SelectValue>After Page {anchor}</SelectValue>
                           </SelectTrigger>
                           <SelectContent>
-                            {bodyPages.map((page) => (
+                            {validPages.map((page) => (
                               <SelectItem key={page.pageNumber} value={String(page.pageNumber)} className="text-xs">
                                 After {page.label}
                               </SelectItem>
@@ -211,7 +219,7 @@ export default function TabInsertDrawer({
                   size="sm"
                   className="text-xs h-7"
                   onClick={() => onAddInsert(
-                    bodyPages.length > 0 ? bodyPages[bodyPages.length - 1].pageNumber : 1,
+                    validPages.length > 0 ? validPages[validPages.length - 1].pageNumber : 1,
                     selectedInsertColor
                   )}
                 >
@@ -262,7 +270,7 @@ export default function TabInsertDrawer({
                             <SelectValue>After Page {anchor}</SelectValue>
                           </SelectTrigger>
                           <SelectContent>
-                            {bodyPages.map((page) => (
+                            {validPages.map((page) => (
                               <SelectItem key={page.pageNumber} value={String(page.pageNumber)} className="text-xs">
                                 After {page.label}
                               </SelectItem>

@@ -108,35 +108,40 @@ const FlipPage = forwardRef<
         {content}
       </PageEffects>
 
-      {/* Tab extension protruding from right edge */}
+      {/* Tab extension protruding from right edge — Mimeo-style */}
       {isTab && (
         <div
           className="absolute pointer-events-none"
           style={{
-            right: -12,
-            top: `${((tabIndex / Math.max(tabTotal, 1)) * 70) + 10}%`,
-            width: 18,
-            height: 32,
+            right: -30,
+            top: `${((tabIndex / Math.max(tabTotal, 1)) * 60) + 12}%`,
+            width: 30,
+            height: 50,
             backgroundColor: TAB_COLORS[tabIndex % TAB_COLORS.length],
-            borderRadius: "0 4px 4px 0",
-            border: "1px solid rgba(0,0,0,0.15)",
+            borderRadius: "0 6px 6px 0",
+            border: "1px solid rgba(0,0,0,0.18)",
             borderLeft: "none",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            boxShadow: "1px 1px 3px rgba(0,0,0,0.15)",
+            boxShadow: "2px 2px 6px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.3)",
+            background: `linear-gradient(180deg, ${TAB_COLORS[tabIndex % TAB_COLORS.length]}ee 0%, ${TAB_COLORS[tabIndex % TAB_COLORS.length]} 100%)`,
           }}
         >
           <span
             style={{
-              fontSize: 7,
+              fontSize: 10,
               color: "#fff",
               fontWeight: 700,
               writingMode: "vertical-rl",
               textOrientation: "mixed",
+              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+              letterSpacing: "0.5px",
+              maxHeight: 42,
+              overflow: "hidden",
             }}
           >
-            {tabIndex + 1}
+            {label || `Tab ${tabIndex + 1}`}
           </span>
         </div>
       )}
@@ -187,7 +192,7 @@ export default function FlipBook({
   const bleedInsetPx = Math.round(basePageWidth * 0.03);
 
   // ── CSS scale factor to fit into available container ──
-  const availableWidth = width - 40;
+  const availableWidth = width - 80; // extra gutter for tab protrusions
   const availableHeight = height - 60;
   const scaleX = availableWidth / baseSpreadWidth;
   const scaleY = availableHeight / basePageHeight;
