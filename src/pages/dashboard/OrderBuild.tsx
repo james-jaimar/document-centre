@@ -196,9 +196,12 @@ export default function OrderBuild() {
       return (val?.metadata as Record<string, any>) ?? null;
     };
 
-    // Print to Edge → bleed
+    // Print to Edge → bleed scope
     const edgeMeta = getMetadata("Print to Edge");
-    if (edgeMeta?.bleed === true) fx.bleed = true;
+    if (edgeMeta?.bleed === true) {
+      const scope = edgeMeta.scope as string | undefined;
+      fx.bleed = (scope === "all" || scope === "front_cover" || scope === "covers") ? scope : "all";
+    }
 
     // Covers → front + back
     const coverMeta = getMetadata("Covers");

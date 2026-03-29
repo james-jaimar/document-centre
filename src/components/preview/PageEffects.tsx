@@ -52,8 +52,12 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
   // Back cover card: solid color, edge-to-edge
   const backCoverColor = isBackCoverCard ? (BACK_COVER_COLORS[effects.backCover] ?? "#1a1a1a") : undefined;
 
-  // Bleed: show white border when bleed is off — but NOT for card covers (they're edge-to-edge)
-  const showBleedMargin = !effects.bleed && !isBackCoverCard;
+  // Bleed: show white border based on scope — card covers are always edge-to-edge
+  const isBleedForThisPage =
+    effects.bleed === "all" ||
+    (effects.bleed === "front_cover" && isFrontCover) ||
+    (effects.bleed === "covers" && isCoverPage);
+  const showBleedMargin = !isBleedForThisPage && !isBackCoverCard;
 
   // Front cover overlay type
   const frontCoverOverlay = isFrontCover && effects.frontCover !== "none" ? effects.frontCover : null;

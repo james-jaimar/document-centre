@@ -17,8 +17,8 @@ export type ProductPreviewType =
 
 /** Visual finishing effects derived from selected product options */
 export interface PreviewEffects {
-  /** True = print to edge (no margin), false = show ~5mm white border */
-  bleed: boolean;
+  /** Print-to-edge scope: which pages lose the white margin */
+  bleed: "none" | "all" | "front_cover" | "covers";
   /** Front cover material */
   frontCover: "none" | "clear_pvc" | "frosted_pvc" | "matte_pvc" | "white_card" | "silk_card" | "gloss_card";
   /** Back cover material/colour */
@@ -32,7 +32,7 @@ export interface PreviewEffects {
 }
 
 export const DEFAULT_PREVIEW_EFFECTS: PreviewEffects = {
-  bleed: false,
+  bleed: "none",
   frontCover: "none",
   backCover: "none",
   paperColor: "white",
