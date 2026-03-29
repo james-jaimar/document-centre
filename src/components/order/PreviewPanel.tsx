@@ -117,7 +117,9 @@ export default function PreviewPanel({
   const { finalPages, pageRoles: computedPageRoles } = useMemo(() => {
     const fp = [...pages];
     const roles: string[] = fp.map((p, i) => {
-      if (i === 0 && isBound) return "front_cover";
+      // Simplex blank backs inserted with pageIndex -1
+      if (p.pageIndex === -1 && p.thumbnailUrl === "") return "blank_back";
+      if (i === 0 && isBound && p.section?.section_type === "front_cover") return "front_cover";
       if (p.section?.section_type === "tab") return "body";
       return "body";
     });
@@ -243,20 +245,37 @@ export default function PreviewPanel({
   // Page info text
   const pageInfoText = useMemo(() => {
     if (totalPages === 0) return "";
+    // Use roles for descriptive labels
+    const leftRole = visibleLeft !== null ? computedPageRoles[visibleLeft] : null;
+    const rightRole = visibleRight !== null && visibleRight < totalPages ? computedPageRoles[visibleRight] : null;
+
     if (isBound) {
-      if (isShowingFrontCover) return `Page 1 of ${totalPages}`;
-      if (isShowingBackCover) {
-        return hasBackCoverCard ? `Back Cover` : `Page ${totalPages} of ${totalPages}`;
+      if (isShowingFrontCover) {
+        const role = computedPageRoles[0];
+        if (role === "pvc_cover_front") return "Front Cover (PVC)";
+        return "Front Cover";
       }
+      if (isShowingBackCover) return "Back Cover";
       if (isShowingLastSolo) return `Page ${totalPages} of ${totalPages}`;
-      const left = currentPage + 1;
-      const right = Math.min(currentPage + 2, totalPages);
-      return left === right
-        ? `Page ${left} of ${totalPages}`
-        : `Pages ${left}–${right} of ${totalPages}`;
+
+      // Build labels for left/right
+      const labels: string[] = [];
+      if (leftRole === "pvc_cover_back") labels.push("PVC Inside");
+      else if (leftRole === "blank_back") labels.push("Blank");
+      else if (leftRole === "inside_back_blank") labels.push("Blank");
+      else if (leftRole === "inside_back_cover_card") labels.push("Back Cover Inside");
+      else if (leftRole) labels.push(`Page ${currentPage + 1}`);
+
+      if (rightRole === "front_cover") labels.push("Front Cover");
+      else if (rightRole === "blank_back") labels.push("Blank");
+      else if (rightRole === "inside_back_blank") labels.push("Blank");
+      else if (rightRole === "inside_back_cover_card") labels.push("Back Cover Inside");
+      else if (rightRole) labels.push(`Page ${currentPage + 2}`);
+
+      return labels.length > 0 ? `${labels.join(" · ")}  (${totalPages} pages)` : `Page ${currentPage + 1} of ${totalPages}`;
     }
     return `Page ${currentPage + 1} of ${totalPages}`;
-  }, [currentPage, totalPages, isBound, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, hasBackCoverCard]);
+  }, [currentPage, totalPages, isBound, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, hasBackCoverCard, computedPageRoles, visibleLeft, visibleRight]);
 
   // Colour status for visible pages
   const colourStatus = useMemo(() => {

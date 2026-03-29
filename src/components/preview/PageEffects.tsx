@@ -30,6 +30,12 @@ const MATERIAL_ROLES = new Set([
   "back_cover_card",
 ]);
 
+/** Roles that are intentional blank paper pages */
+const BLANK_PAPER_ROLES = new Set([
+  "blank_back",
+  "inside_back_blank",
+]);
+
 interface PageEffectsProps {
   effects: PreviewEffects;
   pageIndex: number;
@@ -118,7 +124,18 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
     );
   }
 
-  // ── Standard pages (front_cover, body, blank, etc.) ──
+  // ── Intentional blank paper pages ──
+  if (BLANK_PAPER_ROLES.has(role)) {
+    const paperBg = PAPER_COLORS[effects.paperColor] ?? "#ffffff";
+    return (
+      <div className="relative w-full h-full" style={{ backgroundColor: paperBg }}>
+        {/* Hole punch marks on blank pages too */}
+        {effects.holePunch > 0 && <HolePunchMarks count={effects.holePunch as 2 | 4} />}
+      </div>
+    );
+  }
+
+  // ── Standard pages (front_cover, body, etc.) ──
   const isFrontCover = role === "front_cover";
   const isCoverPage = isFrontCover;
 
