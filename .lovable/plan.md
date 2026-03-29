@@ -1,69 +1,37 @@
 
 
-# Tab Dividers & Insert Sheets — Full UI/UX Implementation
+# Fix Tab Dividers & Insert Sheets UI Visibility
 
-## Current state
-- **TabManager** exists but only appears on OrderFiles page, and only when a "tab" product option is selected in the spec. On the OrderBuild page (where users configure), there is zero tab/insert UI.
-- **Insert sheets** can only be added via SectionActions which requires a file to be selected — but inserts are document-less. So users can never create them.
-- **FlipBook rendering** for tabs/inserts already exists (content-less pages), but no sections are ever created so nothing shows.
-- The `document_sections` table has no `label` column for tab text or `color` column for insert sheet color.
+## What's happening
 
-## Plan
+The code is correct structurally — `TabManager` renders when a tab option with `tab_count > 0` is selected, and `InsertManager` always renders. But there are two problems:
 
-### 1. Database: add label + color columns to document_sections
-Create a migration adding:
-- `label TEXT` — optional text for tab labels (e.g. "Section 1", "Appendix")
-- `color TEXT` — optional color value for insert sheets (e.g. "white", "yellow", "#e0e7ff")
+1. **InsertManager shows unconditionally** — it should only appear when an insert option other than "No Inserts" is selected (like how TabManager only appears when tabs are selected). Currently it just sits there saying "No insert sheets added yet" even when the user has "No Inserts" selected.
 
-Regenerate Supabase types after.
+2. **Both managers are buried below the options accordion** — when tabs or inserts are selected, the management UI appears below the last accordion item. On a laptop screen, this is likely below the visible fold inside the scrollable options column. There's no visual signal that new UI appeared.
 
-### 2. New component: InsertManager (mirrors TabManager pattern)
-Create `src/components/order/InsertManager.tsx`:
-- Shows list of existing insert sections with their position ("After Page X") and color
-- "Add Insert" button opens a popover: pick "After which page?" + pick a color (white, yellow, blue, green, pink)
-- Delete button per insert
-- "Auto-Insert" not needed for inserts (manual only)
+3. **The `multi_color` metadata key doesn't match** — the DB stores `"color": "multi"` but the code checks `metadata?.multi_color`. Minor but worth fixing.
 
-### 3. Enhance TabManager with label editing
-Update `src/components/order/TabManager.tsx`:
-- Add an inline text input per tab for the label (like Mimeo's editable tab text)
-- Save label via `onUpdateTab` callback that calls `useUpdateSection`
-- Keep existing "After Page X" dropdown and Auto-Insert
+## The fix
 
-### 4. Wire both managers into OrderBuild page
-Update `src/pages/dashboard/OrderBuild.tsx`:
-- Import TabManager + InsertManager
-- Add them below the OptionsPanel in the left column (inside a collapsible section)
-- Derive `tabInfo` the same way OrderFiles does (from product options metadata)
-- Wire up `onAddTab`, `onDeleteTab`, `onMoveTab`, `onAddInsert`, `onDeleteInsert` using existing hooks
+### Make InsertManager conditional (like TabManager)
+In `OrderBuild.tsx`, derive `insertInfo` from the Inserts option — check if the selected slug is not "no-inserts". Only render `InsertManager` when inserts are enabled.
 
-### 5. Fix SectionActions for document-less inserts/tabs
-Update `src/components/order/SectionActions.tsx`:
-- Remove "Insert" and "Tab Divider" from the file-based actions list (they don't need a file)
-- Or: make them work without a selected file by immediately creating a document-less section
+### Make both managers more prominent
+- When TabManager or InsertManager appear, render them as highlighted sections (with a subtle accent border or background) so they're visually distinct from the options accordion
+- Auto-scroll the options panel to show the newly-appeared manager when a tab/insert option is selected
 
-### 6. Update FlipBook rendering for labels + colors
-- `FlipBook.tsx`: Pass `label` and `color` from section data to FlipPage
-- `PageEffects.tsx`: Render tab labels on tab pages; use section color for insert pages instead of the hardcoded color map
+### Fix multi_color detection
+Check `metadata?.color === "multi"` instead of `metadata?.multi_color`.
 
-### 7. Update PreviewPanel to pass section metadata
-- Pass `label` and `color` through the page sequence so FlipBook can render them
+## Files to edit
 
-## Files to create/edit
-- **New migration**: `supabase/migrations/XXXX_add_section_label_color.sql`
-- **New file**: `src/components/order/InsertManager.tsx`
-- **Edit**: `src/components/order/TabManager.tsx` — add label input
-- **Edit**: `src/pages/dashboard/OrderBuild.tsx` — wire in both managers
-- **Edit**: `src/components/order/SectionActions.tsx` — remove insert/tab from file-dependent actions
-- **Edit**: `src/components/preview/FlipBook.tsx` — render labels + colors
-- **Edit**: `src/components/preview/PageEffects.tsx` — use dynamic color/label
-- **Edit**: `src/components/order/PreviewPanel.tsx` — pass label/color through page sequence
-- **Regenerate**: `src/integrations/supabase/types.ts`
+- `src/pages/dashboard/OrderBuild.tsx` — add `insertInfo` conditional logic (mirror `tabInfo` pattern), fix `multiColor` detection, add scroll-into-view behavior
+- No other files need changes
 
 ## Expected result
-- Users see a "Manage Tabs" section on the OrderBuild page with per-tab label editing and "After Page X" positioning
-- Users see an "Insert Sheets" section with add/delete and color picker
-- Tabs render in the flipbook with their label text visible
-- Insert sheets render as solid colored pages
-- Everything works like the Mimeo reference screenshot
+- Selecting "5-Tab Dividers (White)" from the dropdown immediately shows the TabManager panel below the options, scrolled into view
+- Selecting "Blank Coloured Divider Sheets" from the Inserts dropdown shows the InsertManager panel
+- Selecting "No Tab Dividers" or "No Inserts" hides the respective manager
+- Multi-colour tabs are correctly detected
 
