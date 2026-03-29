@@ -250,7 +250,7 @@ export default function FlipBook({
           width: displayedViewportWidth,
           height: displayedPageHeight,
           position: "relative",
-          overflow: "hidden",
+          overflow: "visible",
           transition: "width 0.4s ease-in-out",
           boxShadow: "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
         }}
