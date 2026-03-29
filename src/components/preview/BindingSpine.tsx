@@ -10,6 +10,8 @@ interface BindingSpineProps {
   height: number;
   /** Whether the book is open (showing a two-page spread) */
   isOpen?: boolean;
+  /** Horizontal placement: left edge, center (spread), or right edge */
+  position?: "left" | "center" | "right";
 }
 
 export default function BindingSpine({ bindingType, height, isOpen = false }: BindingSpineProps) {
