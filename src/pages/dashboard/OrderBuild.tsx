@@ -420,6 +420,7 @@ export default function OrderBuild() {
         sections={sections}
         documents={documents}
         orderItemId={orderItemId}
+        isDuplex={spec.is_duplex}
         tabEnabled={!!tabInfo}
         tabCount={tabInfo?.count ?? 0}
         isMultiColor={tabInfo?.multiColor ?? false}

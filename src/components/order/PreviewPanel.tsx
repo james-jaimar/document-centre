@@ -61,10 +61,17 @@ function buildPageSequence(sections: DocumentSection[], documents: Document[]): 
     (s) => s.section_type === "tab" || s.section_type === "insert"
   );
 
-  // Build anchor map: page number → list of sections to inject after that page
+  // Determine if any body section is duplex
+  const isDuplex = bodySections.some((s) => s.is_duplex);
+
+  // Build anchor map, snapping to valid sheet boundaries
   const anchorMap = new Map<number, DocumentSection[]>();
   for (const s of anchoredSections) {
-    const anchor = s.page_range_start ?? 0;
+    let anchor = s.page_range_start ?? 0;
+    // In duplex mode, snap odd anchors to next even page (sheet boundary)
+    if (isDuplex && anchor > 0 && anchor % 2 !== 0) {
+      anchor = anchor + 1;
+    }
     const list = anchorMap.get(anchor) || [];
     list.push(s);
     anchorMap.set(anchor, list);
