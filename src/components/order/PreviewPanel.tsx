@@ -107,7 +107,7 @@ function buildPageSequence(sections: DocumentSection[], documents: Document[]): 
       // Simplex: push the natural reverse face of this sheet.
       // This MUST come before any anchored items so the physical
       // sheet is complete before a new sheet (tab/insert) begins.
-      if (!section.is_duplex && section.section_type !== "front_cover") {
+      if (!section.is_duplex) {
         result.push({
           thumbnailUrl: "",
           pageIndex: -1,
