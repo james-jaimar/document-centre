@@ -1,56 +1,69 @@
 
 
-# Responsive Options Panel + Tab/Insert Placement UI + Preview Rendering
+# Tab Dividers & Insert Sheets — Full UI/UX Implementation
 
-## Three deliverables
+## Current state
+- **TabManager** exists but only appears on OrderFiles page, and only when a "tab" product option is selected in the spec. On the OrderBuild page (where users configure), there is zero tab/insert UI.
+- **Insert sheets** can only be added via SectionActions which requires a file to be selected — but inserts are document-less. So users can never create them.
+- **FlipBook rendering** for tabs/inserts already exists (content-less pages), but no sections are ever created so nothing shows.
+- The `document_sections` table has no `label` column for tab text or `color` column for insert sheet color.
 
-### 1. Compact options panel on smaller screens
-The left column in `OrderBuild.tsx` is fixed at `340px` (`lg:grid-cols-[340px_1fr]`). On laptop screens (1280-1440px), this eats too much space.
+## Plan
 
-**Changes to `OrderBuild.tsx`:**
-- Reduce the left column from `340px` to `300px` at `lg`, and use `xl:grid-cols-[340px_1fr]` for larger screens
-- Reduce inner padding from `p-4` to `p-3` in the options column
-- Make the accordion triggers and option selectors more compact (smaller text, tighter spacing)
+### 1. Database: add label + color columns to document_sections
+Create a migration adding:
+- `label TEXT` — optional text for tab labels (e.g. "Section 1", "Appendix")
+- `color TEXT` — optional color value for insert sheets (e.g. "white", "yellow", "#e0e7ff")
 
-**Changes to `OptionsPanel.tsx`:**
-- Reduce trigger padding from `py-3` to `py-2`
-- Reduce content padding from `pb-3` to `pb-2`
+Regenerate Supabase types after.
 
-### 2. Tab divider placement UI with "insert after page X" control
-The `TabManager` component exists and is wired up in `OrderFiles.tsx`, but tabs currently just get appended at the end with no page-position control. Users need to specify where each tab goes.
+### 2. New component: InsertManager (mirrors TabManager pattern)
+Create `src/components/order/InsertManager.tsx`:
+- Shows list of existing insert sections with their position ("After Page X") and color
+- "Add Insert" button opens a popover: pick "After which page?" + pick a color (white, yellow, blue, green, pink)
+- Delete button per insert
+- "Auto-Insert" not needed for inserts (manual only)
 
-**Changes to `TabManager.tsx`:**
-- Replace the current "Position {sort_order}" display with a dropdown: "Insert after Page X" using the existing `bodyPages` array (already computed but unused)
-- When a user picks a page from the dropdown, call `onMoveTab` to update the tab's sort_order to sit after that section
-- For "Add Tab" button, show a small popover or inline dropdown asking "After which page?" before inserting
-- Keep Auto-Insert as-is (it already distributes evenly)
+### 3. Enhance TabManager with label editing
+Update `src/components/order/TabManager.tsx`:
+- Add an inline text input per tab for the label (like Mimeo's editable tab text)
+- Save label via `onUpdateTab` callback that calls `useUpdateSection`
+- Keep existing "After Page X" dropdown and Auto-Insert
 
-### 3. Insert sheets (blank/colored dividers) — placement UI + preview rendering
-Inserts use `section_type: "insert"` and work similarly to tabs. They need:
+### 4. Wire both managers into OrderBuild page
+Update `src/pages/dashboard/OrderBuild.tsx`:
+- Import TabManager + InsertManager
+- Add them below the OptionsPanel in the left column (inside a collapsible section)
+- Derive `tabInfo` the same way OrderFiles does (from product options metadata)
+- Wire up `onAddTab`, `onDeleteTab`, `onMoveTab`, `onAddInsert`, `onDeleteInsert` using existing hooks
 
-**Changes to `SectionActions.tsx`:**
-- The "Insert" action already exists — no change needed
+### 5. Fix SectionActions for document-less inserts/tabs
+Update `src/components/order/SectionActions.tsx`:
+- Remove "Insert" and "Tab Divider" from the file-based actions list (they don't need a file)
+- Or: make them work without a selected file by immediately creating a document-less section
 
-**Changes to `SectionList.tsx`:**
-- For insert sections (which have no document), show a colored divider indicator instead of a missing-thumbnail icon
-- Add a "Position: after Page X" label similar to tabs
+### 6. Update FlipBook rendering for labels + colors
+- `FlipBook.tsx`: Pass `label` and `color` from section data to FlipPage
+- `PageEffects.tsx`: Render tab labels on tab pages; use section color for insert pages instead of the hardcoded color map
 
-**Changes to `PreviewPanel.tsx` (page sequence building):**
-- Insert sections currently get processed like regular doc sections but have no document — they need special handling like tabs
-- Add insert sections as blank colored pages in the sequence with a role of `"insert"`
+### 7. Update PreviewPanel to pass section metadata
+- Pass `label` and `color` through the page sequence so FlipBook can render them
 
-**Changes to `FlipBook.tsx` (rendering):**
-- Add `"insert"` to the content-less roles or render it as a colored card sheet
-- Render inserts as solid colored divider pages (similar to tab rendering but full-page, no protruding tab extension)
+## Files to create/edit
+- **New migration**: `supabase/migrations/XXXX_add_section_label_color.sql`
+- **New file**: `src/components/order/InsertManager.tsx`
+- **Edit**: `src/components/order/TabManager.tsx` — add label input
+- **Edit**: `src/pages/dashboard/OrderBuild.tsx` — wire in both managers
+- **Edit**: `src/components/order/SectionActions.tsx` — remove insert/tab from file-dependent actions
+- **Edit**: `src/components/preview/FlipBook.tsx` — render labels + colors
+- **Edit**: `src/components/preview/PageEffects.tsx` — use dynamic color/label
+- **Edit**: `src/components/order/PreviewPanel.tsx` — pass label/color through page sequence
+- **Regenerate**: `src/integrations/supabase/types.ts`
 
-**Changes to `PageEffects.tsx`:**
-- Add an `"insert"` role branch that renders as a solid colored sheet (white, or a configurable color)
-
-## Files to edit
-- `src/pages/dashboard/OrderBuild.tsx` — responsive grid column sizing
-- `src/components/order/OptionsPanel.tsx` — tighter accordion spacing
-- `src/components/order/TabManager.tsx` — "insert after page X" dropdown per tab
-- `src/components/order/PreviewPanel.tsx` — handle insert sections in page sequence
-- `src/components/preview/FlipBook.tsx` — render insert pages
-- `src/components/preview/PageEffects.tsx` — insert role visual treatment
+## Expected result
+- Users see a "Manage Tabs" section on the OrderBuild page with per-tab label editing and "After Page X" positioning
+- Users see an "Insert Sheets" section with add/delete and color picker
+- Tabs render in the flipbook with their label text visible
+- Insert sheets render as solid colored pages
+- Everything works like the Mimeo reference screenshot
 
