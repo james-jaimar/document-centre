@@ -240,7 +240,7 @@ export default function FlipBook({
   const spinePosition = isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center";
 
   return (
-    <div className="flex flex-col items-center justify-center gap-2 overflow-hidden" style={{ width, height }}>
+    <div className="flex flex-col items-center justify-center gap-2" style={{ width, height, overflow: "visible" }}>
       {/*
         VIEWER WRAPPER: visible viewport, animates width for solo/spread.
         Uses DISPLAYED (scaled) dimensions — purely cosmetic.
