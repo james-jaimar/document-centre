@@ -1,34 +1,101 @@
 
+Simplify the bound preview instead of layering more fixes on top.
 
-# Fix Binding Spine Position on Solo Pages + Back Cover Edge-to-Edge
+## What the docs confirm
 
-## Two remaining issues
+`react-pageflip` with `showCover={true}` already does this natively:
+- first page = single cover page
+- last page = single cover page
 
-### 1. Binding spine centered on solo page instead of at the edge
-Currently `BindingSpine` uses `left: 50%` always. On solo pages where the viewport is only one page wide, this puts the spine in the middle of the page. It should be:
-- **Front cover**: spine on the LEFT edge of the page (that's where the binding holes are)
-- **Back cover**: spine on the RIGHT edge of the page
-- **Spread**: spine in the center (current behavior, correct)
+So the remaining bugs are coming from our own wrapper logic around it, not from the library itself.
 
-### 2. Back cover card still has white border
-`FlipPage` (line 32) always applies `border: 1px solid rgba(0,0,0,0.15)`. For `back_cover_card` pages (solid navy/black card), this creates a visible white edge. The card should be truly edge-to-edge with no border.
+## What is currently conflicting
 
-## Changes
+### In `FlipBook.tsx`
+We are still overriding native cover behavior in a few ways:
+- cropping a full two-page canvas with custom `viewportWidth` and `canvasOffsetX`
+- deciding solo states with broad index checks instead of strict role checks
+- adding a spread-level outer shadow on the viewport, which makes hidden/empty areas visible
+- positioning the spine relative to the viewport box instead of the actual visible page edge
 
-### File: `src/components/preview/FlipBook.tsx`
+That explains:
+- white line/ghost edge on the front cover
+- spine sitting in the middle of a solo page
+- back cover looking correct as a full card, but still with the spine in the wrong place
 
-**A) Move BindingSpine positioning into FlipBook instead of relying on BindingSpine's internal `left-1/2`**
+### In `PreviewPanel.tsx`
+The page sequence is mostly reasonable now, but it still needs to be treated as a physical sequence only:
+- `front_cover`
+- interior/body pages
+- optional `inside_back_blank` only when physically required
+- optional `back_cover_card` as the real final page
 
-Pass a new `position` prop or calculate the spine's `left` style in FlipBook based on solo state:
-- `isShowingFrontCover` → spine at `left: 0` (left edge of viewport)
-- `isShowingBackCover || isShowingLastSolo` → spine at `right: 0` (right edge of viewport)  
-- spread → spine at `left: 50%` (center, as now)
+The renderer should not add extra visual assumptions on top of that.
 
-**B) Remove border on back_cover_card pages in FlipPage**
+## Cleanup plan
 
-In the FlipPage root div (line 32), conditionally remove the `border` when `pageRole === "back_cover_card"`. Keep the inset shadow for other pages.
+### 1. Strip `FlipBook.tsx` back to a minimal native-cover wrapper
+Refactor `FlipBook.tsx` so it does only three jobs:
+- size the book
+- pass real pages into `HTMLFlipBook`
+- detect whether the current page role is:
+  - `front_cover`
+  - interior spread
+  - `back_cover_card` / real last solo page
 
-### File: `src/components/preview/BindingSpine.tsx`
+Then remove the extra viewport/shadow logic that is faking layout around the library.
 
-Add a `position` prop (`"left" | "center" | "right"`) that controls horizontal placement instead of always using `left-1/2`. Default to `"center"` for backward compatibility.
+### 2. Replace index-based solo logic with explicit role-based logic
+Use `pageRoles[displayPage]` plus “is last page” as the source of truth.
 
+Target:
+- front cover solo only when current role is `front_cover`
+- back cover solo only when current role is `back_cover_card`, or when the real final page is intentionally solo
+- no generic `>= lastPageIndex` shortcuts
+
+This will make the renderer easier to reason about and stop accidental solo/spread mismatches.
+
+### 3. Re-anchor the spine to the visible page edge, not the viewport center
+Update the layout so the spine is positioned against the actual hinge of the currently visible page state:
+- front cover solo: left edge of the visible page
+- spread: center hinge
+- back cover solo: right edge of the visible page
+
+This should be calculated from the rendered page mode in `FlipBook.tsx`, with `BindingSpine.tsx` staying dumb/presentational.
+
+### 4. Remove spread-level framing that creates false edges
+Delete the outer box shadow/border treatment on the cropped viewport wrapper.
+Keep page-edge styling only on the real page surface.
+
+That should eliminate the front-cover white line and any remaining ghost-page framing.
+
+### 5. Keep back-cover card styling fully role-driven
+Leave `back_cover_card` as a true edge-to-edge material:
+- no bleed padding
+- no page border
+- no inset page shadow
+
+Only ordinary printed pages should get the printed-page edge styling.
+
+### 6. Lightly audit `PreviewPanel.tsx` after the cleanup
+Do one pass to ensure:
+- `inside_back_blank` is only inserted when physically needed
+- navigation labels still match the physical sequence
+- no UI text assumes every bound state is a two-page spread
+
+## Files to update
+
+- `src/components/preview/FlipBook.tsx`
+- `src/components/preview/BindingSpine.tsx`
+- `src/components/order/PreviewPanel.tsx`
+- possibly `src/components/preview/PageEffects.tsx` for any remaining printed-page-only styling split
+
+## Expected result
+
+After this cleanup:
+- front cover is a true single centered page
+- no extra white line / ghost left page
+- back cover remains a full solid card
+- spine sits on the correct edge in solo states
+- spread states still render normally
+- the implementation becomes simpler because we stop fighting `react-pageflip`’s native cover mode
