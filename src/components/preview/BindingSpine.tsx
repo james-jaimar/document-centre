@@ -60,14 +60,14 @@ export default function BindingSpine({ bindingType, height, isOpen = false, posi
   const spineWidth = bindingType === "perfect" ? 10 : 6;
 
   return (
-    <div
-      className="absolute top-0 left-1/2 z-20 pointer-events-none"
-      style={{
-        transform: "translateX(-50%)",
-        width: spineWidth,
-        height,
-      }}
-    >
+      <div
+        className="absolute top-0 z-20 pointer-events-none"
+        style={{
+          ...positionStyle,
+          width: spineWidth,
+          height,
+        }}
+      >
       <div
         className="absolute inset-0"
         style={{
