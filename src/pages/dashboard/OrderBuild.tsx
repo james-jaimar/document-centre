@@ -391,8 +391,15 @@ export default function OrderBuild() {
               <Button
                 variant="outline"
                 size="sm"
-                className="w-full text-xs"
-                onClick={() => setDrawerOpen(true)}
+                className={`w-full text-xs ${
+                  !hasOpenedDrawer && !drawerOpen
+                    ? "animate-pulse ring-2 ring-primary ring-offset-2 ring-offset-card"
+                    : ""
+                }`}
+                onClick={() => {
+                  setDrawerOpen(true);
+                  setHasOpenedDrawer(true);
+                }}
               >
                 <Settings2 className="h-3.5 w-3.5 mr-1.5" />
                 Manage Tabs & Inserts
