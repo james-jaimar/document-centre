@@ -105,6 +105,29 @@ FlipPage.displayName = "FlipPage";
  * Tabs ahead of the current spread stick out from the right edge.
  * Tabs behind the current spread stick out from the left edge.
  */
+/** Map color slugs to CSS colors */
+function resolveTabColor(colorSlug: string, tabIndex: number): string {
+  if (!colorSlug || colorSlug === "white" || colorSlug === "") {
+    return "#e5e7eb"; // light gray for white tabs
+  }
+  if (colorSlug === "multi" || colorSlug === "multicolor") {
+    return TAB_COLORS[tabIndex % TAB_COLORS.length];
+  }
+  // Named colors
+  const COLOR_MAP: Record<string, string> = {
+    red: "#ef4444", blue: "#3b82f6", green: "#22c55e", yellow: "#eab308",
+    orange: "#f97316", pink: "#ec4899", purple: "#8b5cf6", black: "#1f2937",
+    navy: "#1e3a5f", gray: "#9ca3af", grey: "#9ca3af",
+    pastel_blue: "#93c5fd", pastel_green: "#86efac", pastel_yellow: "#fde68a",
+    pastel_pink: "#fbcfe8",
+  };
+  return COLOR_MAP[colorSlug] ?? colorSlug;
+}
+
+/**
+ * Persistent tab overlay — renders tab protrusions visible from every page.
+ * Implements banking: max 10 tabs per bank, >10 splits into columns.
+ */
 function TabOverlay({
   tabPositions,
   currentPage,
@@ -122,15 +145,16 @@ function TabOverlay({
 }) {
   if (tabPositions.length === 0) return null;
 
-  // Tab protrusion dimensions (at base resolution)
-  const tabWidth = 22;
-  const tabHeight = Math.max(55, Math.min(80, pageHeight / (tabPositions[0].tabTotal + 1)));
-  const spreadWidth = isSoloPage ? pageWidth : pageWidth * 2;
+  const tabTotal = tabPositions[0].tabTotal;
+  const MAX_PER_BANK = 10;
+  const banks = Math.ceil(tabTotal / MAX_PER_BANK);
+  const bankSize = Math.ceil(tabTotal / banks);
 
-  // The right page edge of the visible spread
+  // Tab protrusion dimensions
+  const tabWidth = 22;
+  const tabHeight = Math.max(30, Math.min(80, (pageHeight - 10) / bankSize));
+  const spreadWidth = isSoloPage ? pageWidth : pageWidth * 2;
   const rightEdge = spreadWidth;
-  // The left page edge
-  const leftEdge = 0;
 
   return (
     <div
@@ -138,26 +162,31 @@ function TabOverlay({
       style={{ width: spreadWidth, height: pageHeight, overflow: "visible" }}
     >
       {tabPositions.map((tab) => {
-        // Determine if this tab is ahead or behind the current view
         const isAhead = tab.pageIndex > currentPage + (isSoloPage ? 0 : 1);
         const isBehind = tab.pageIndex <= currentPage;
-        // If the tab IS the current page, show it on the right
         const isCurrent = !isAhead && !isBehind;
 
-        // Calculate staggered vertical position
-        const segmentHeight = pageHeight / (tab.tabTotal + 1);
-        const topOffset = segmentHeight * (tab.tabIndex + 0.5) - tabHeight / 2;
+        // Banking: which bank and position within bank
+        const bankIndex = Math.floor(tab.tabIndex / bankSize);
+        const indexInBank = tab.tabIndex % bankSize;
 
-        const tabColor = TAB_COLORS[tab.tabIndex % TAB_COLORS.length];
+        // Vertical position: evenly distribute within the page height
+        const segmentHeight = pageHeight / bankSize;
+        const topOffset = segmentHeight * indexInBank + (segmentHeight - tabHeight) / 2;
+
+        // Horizontal offset for second+ banks (stack inward)
+        const bankOffset = bankIndex * (tabWidth + 2);
+
+        const tabColor = resolveTabColor(tab.color, tab.tabIndex);
+        const textColor = ["#e5e7eb", "#fde68a", "#ffffff"].includes(tabColor) ? "#374151" : "#ffffff";
 
         if (isAhead || isCurrent) {
-          // Tab protrudes from right edge
           return (
             <div
               key={`tab-r-${tab.tabIndex}`}
               className="absolute"
               style={{
-                left: rightEdge,
+                left: rightEdge + bankOffset,
                 top: topOffset,
                 width: tabWidth,
                 height: tabHeight,
@@ -181,8 +210,8 @@ function TabOverlay({
                   y={tabHeight / 2}
                   textAnchor="middle"
                   dominantBaseline="central"
-                  fill="#fff"
-                  fontSize="8"
+                  fill={textColor}
+                  fontSize={Math.max(6, Math.min(8, tabHeight * 0.12))}
                   fontWeight="700"
                   style={{ writingMode: "tb" } as any}
                   transform={`rotate(180, ${tabWidth / 2 + 1}, ${tabHeight / 2})`}
@@ -195,13 +224,12 @@ function TabOverlay({
         }
 
         if (isBehind && !isShowingFrontCover) {
-          // Tab protrudes from left edge
           return (
             <div
               key={`tab-l-${tab.tabIndex}`}
               className="absolute"
               style={{
-                left: -tabWidth,
+                left: -(tabWidth + bankOffset),
                 top: topOffset,
                 width: tabWidth,
                 height: tabHeight,
