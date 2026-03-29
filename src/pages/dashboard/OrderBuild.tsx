@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useOrderData, useUpdateOrderItemSpec, useAddSection, useUpdateSection, useDeleteSection } from "@/hooks/useOrderBuilder";
 import { useProductOptions } from "@/hooks/useProductOptions";
@@ -258,6 +258,10 @@ export default function OrderBuild() {
     navigate("/dashboard/orders");
   }, [handleSave, navigate]);
 
+  // ── Scroll refs for auto-scroll when managers appear ──
+  const tabManagerRef = useRef<HTMLDivElement>(null);
+  const insertManagerRef = useRef<HTMLDivElement>(null);
+
   // ── Derive tab info from product options ──
   const tabInfo = useMemo(() => {
     const tabOpt = options.find((o) => o.name.toLowerCase().includes("tab"));
@@ -270,9 +274,28 @@ export default function OrderBuild() {
     const val = (tabOpt.values as StructuredOptionValue[]).find((v) => v.slug === slug);
     if (!val) return null;
     const count = (val.metadata as any)?.tab_count ?? 0;
-    const multiColor = (val.metadata as any)?.multi_color ?? false;
+    const multiColor = (val.metadata as any)?.color === "multi";
     return count > 0 ? { count, multiColor } : null;
   }, [options, spec.selected_options]);
+
+  // ── Derive insert info from product options ──
+  const insertEnabled = useMemo(() => {
+    const insertOpt = options.find((o) => o.name.toLowerCase().includes("insert") || o.name.toLowerCase().includes("divider"));
+    if (!insertOpt || !isStructuredValues(insertOpt.values)) return false;
+    const key = Object.keys(spec.selected_options).find(
+      (k) => k.toLowerCase() === insertOpt.name.toLowerCase()
+    ) || insertOpt.name;
+    const slug = spec.selected_options[key];
+    return !!slug && slug !== "none" && slug !== "no-inserts" && slug !== "no_inserts";
+  }, [options, spec.selected_options]);
+
+  // Auto-scroll to managers when they appear
+  useEffect(() => {
+    if (tabInfo) tabManagerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [tabInfo]);
+  useEffect(() => {
+    if (insertEnabled) insertManagerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [insertEnabled]);
 
   const orderItemId = orderItem?.id ?? "";
 
@@ -370,28 +393,34 @@ export default function OrderBuild() {
 
             {/* Tab Dividers Manager */}
             {tabInfo && (
-              <TabManager
-                sections={sections}
-                documents={documents}
-                orderItemId={orderItemId}
-                tabCount={tabInfo.count}
-                isMultiColor={tabInfo.multiColor}
-                onAddTab={handleAddTab}
-                onDeleteTab={handleDeleteTab}
-                onMoveTab={handleMoveTab}
-                onUpdateTabLabel={handleUpdateTabLabel}
-              />
+              <div ref={tabManagerRef} className="border border-accent rounded-lg bg-accent/10 p-3">
+                <TabManager
+                  sections={sections}
+                  documents={documents}
+                  orderItemId={orderItemId}
+                  tabCount={tabInfo.count}
+                  isMultiColor={tabInfo.multiColor}
+                  onAddTab={handleAddTab}
+                  onDeleteTab={handleDeleteTab}
+                  onMoveTab={handleMoveTab}
+                  onUpdateTabLabel={handleUpdateTabLabel}
+                />
+              </div>
             )}
 
             {/* Insert Sheets Manager */}
-            <InsertManager
-              sections={sections}
-              documents={documents}
-              orderItemId={orderItemId}
-              onAddInsert={handleAddInsert}
-              onDeleteInsert={handleDeleteInsert}
-              onMoveInsert={handleMoveInsert}
-            />
+            {insertEnabled && (
+              <div ref={insertManagerRef} className="border border-accent rounded-lg bg-accent/10 p-3">
+                <InsertManager
+                  sections={sections}
+                  documents={documents}
+                  orderItemId={orderItemId}
+                  onAddInsert={handleAddInsert}
+                  onDeleteInsert={handleDeleteInsert}
+                  onMoveInsert={handleMoveInsert}
+                />
+              </div>
+            )}
           </div>
           <div className="p-3 shrink-0">
             <PriceSummary
