@@ -60,8 +60,23 @@ const BOUND_TYPES = new Set([
  * This function builds the sequence in one pass — no post-processing
  * alignment is needed or should be added.
  */
-function buildPageSequence(sections: DocumentSection[], documents: Document[]): PageInfo[] {
-  // Separate body sections from anchored items
+/**
+ * Build the physical face sequence, placing tabs/inserts at the next
+ * available RIGHT-hand slot after their anchor page.
+ *
+ * With react-pageflip's showCover={true}, index 0 is a solo right page,
+ * then spreads follow as [1,2], [3,4], etc.  Even indices = RIGHT.
+ *
+ * Rule: a tab or insert ALWAYS starts on a right-hand page (even index).
+ * If the anchor page's faces end on an odd index, the divider waits in a
+ * pending queue and is flushed as soon as the next body face restores
+ * even parity.  No post-processing alignment pass is needed.
+ */
+function buildPageSequence(
+  sections: DocumentSection[],
+  documents: Document[],
+  isBound: boolean,
+): PageInfo[] {
   const bodySections = sections.filter(
     (s) => s.section_type !== "tab" && s.section_type !== "insert"
   );
@@ -69,17 +84,11 @@ function buildPageSequence(sections: DocumentSection[], documents: Document[]): 
     (s) => s.section_type === "tab" || s.section_type === "insert"
   );
 
-  // Determine if any body section is duplex
-  const isDuplex = bodySections.some((s) => s.is_duplex);
-
-  // Build anchor map, snapping to valid sheet boundaries
+  // Build anchor map keyed by body-page number (no snapping — parity
+  // is handled by the pending-queue flush below)
   const anchorMap = new Map<number, DocumentSection[]>();
   for (const s of anchoredSections) {
-    let anchor = s.page_range_start ?? 0;
-    // In duplex mode, snap odd anchors to next even page (sheet boundary)
-    if (isDuplex && anchor > 0 && anchor % 2 !== 0) {
-      anchor = anchor + 1;
-    }
+    const anchor = s.page_range_start ?? 0;
     const list = anchorMap.get(anchor) || [];
     list.push(s);
     anchorMap.set(anchor, list);
@@ -87,6 +96,43 @@ function buildPageSequence(sections: DocumentSection[], documents: Document[]): 
 
   const result: PageInfo[] = [];
   let pageNum = 0;
+  let pending: DocumentSection[] = [];
+
+  // Push a tab or insert (two physical faces) into result
+  const emitDivider = (item: DocumentSection) => {
+    if (item.section_type === "tab") {
+      result.push({
+        thumbnailUrl: "", pageIndex: 0, documentName: "Tab Divider",
+        section: item, isColor: true,
+        label: item.label || undefined, color: item.color || undefined,
+      });
+      result.push({
+        thumbnailUrl: "", pageIndex: -1, documentName: "Tab Divider Back",
+        section: item, isColor: true,
+        label: item.label || undefined, color: item.color || undefined,
+      });
+    } else if (item.section_type === "insert") {
+      const insertColor = item.color || "white";
+      result.push({
+        thumbnailUrl: "", pageIndex: 0, documentName: "Insert Sheet",
+        section: item, isColor: true, color: insertColor,
+      });
+      result.push({
+        thumbnailUrl: "", pageIndex: -1, documentName: "Insert Sheet Back",
+        section: item, isColor: true, color: insertColor,
+      });
+    }
+  };
+
+  // Flush pending dividers only when the next slot is RIGHT (even index).
+  // For non-bound (loose sheets), flush immediately — no spread constraint.
+  const tryFlush = () => {
+    if (pending.length === 0) return;
+    if (!isBound || result.length % 2 === 0) {
+      for (const item of pending) emitDivider(item);
+      pending = [];
+    }
+  };
 
   for (const section of bodySections) {
     const doc = documents.find((d) => d.id === section.document_id);
@@ -96,6 +142,12 @@ function buildPageSequence(sections: DocumentSection[], documents: Document[]): 
 
     for (let i = 0; i < pageCount; i++) {
       pageNum++;
+
+      // Before this body page, try flushing any pending dividers
+      // (they may now land on a right-hand slot after the previous
+      // page's blank_back shifted parity)
+      tryFlush();
+
       // Push the body page
       result.push({
         thumbnailUrl: thumbnails[i] ?? "",
@@ -104,69 +156,29 @@ function buildPageSequence(sections: DocumentSection[], documents: Document[]): 
         section,
         isColor: section.is_color,
       });
-      // Simplex: push the natural reverse face of this sheet.
-      // This MUST come before any anchored items so the physical
-      // sheet is complete before a new sheet (tab/insert) begins.
+
+      // Simplex: push the natural reverse face of this sheet
       if (!section.is_duplex) {
         result.push({
-          thumbnailUrl: "",
-          pageIndex: -1,
-          documentName: "",
-          section,
-          isColor: section.is_color,
+          thumbnailUrl: "", pageIndex: -1, documentName: "",
+          section, isColor: section.is_color,
         });
       }
-      // Now the physical sheet is complete — inject any tabs/inserts
-      // anchored "after page N". They start a new physical sheet.
+
+      // Queue any dividers anchored after this page number
       const anchored = anchorMap.get(pageNum);
       if (anchored) {
-        for (const item of anchored) {
-          if (item.section_type === "tab") {
-            // Front face of tab divider
-            result.push({
-              thumbnailUrl: "",
-              pageIndex: 0,
-              documentName: "Tab Divider",
-              section: item,
-              isColor: true,
-              label: item.label || undefined,
-              color: item.color || undefined,
-            });
-            // Back face of tab divider (physical sheet)
-            result.push({
-              thumbnailUrl: "",
-              pageIndex: -1,
-              documentName: "Tab Divider Back",
-              section: item,
-              isColor: true,
-              label: item.label || undefined,
-              color: item.color || undefined,
-            });
-          } else if (item.section_type === "insert") {
-            const insertColor = item.color || "white";
-            // Front face
-            result.push({
-              thumbnailUrl: "",
-              pageIndex: 0,
-              documentName: "Insert Sheet",
-              section: item,
-              isColor: true,
-              color: insertColor,
-            });
-            // Back face (physical sheet)
-            result.push({
-              thumbnailUrl: "",
-              pageIndex: -1,
-              documentName: "Insert Sheet Back",
-              section: item,
-              isColor: true,
-              color: insertColor,
-            });
-          }
-        }
+        pending.push(...anchored);
       }
+
+      // Try to flush immediately (if parity is already correct)
+      tryFlush();
     }
   }
+
+  // Flush anything still pending at the end of all body pages
+  for (const item of pending) emitDivider(item);
+  pending = [];
 
   return result;
 }
