@@ -122,8 +122,8 @@ export default function FlipBook({
   // Build a stable key that changes when rendering-critical inputs change.
   // This forces react-pageflip to remount with fresh DOM nodes.
   const bookKey = useMemo(
-    () => JSON.stringify({ b: resolvedEffects.bleed, l: resolvedEffects.lamination, r: pageRoles, n: urls.length }),
-    [resolvedEffects.bleed, resolvedEffects.lamination, pageRoles, urls.length]
+    () => JSON.stringify({ b: resolvedEffects.bleed, r: pageRoles, n: urls.length }),
+    [resolvedEffects.bleed, pageRoles, urls.length]
   );
 
   // Reset displayPage when the book remounts (key changes)
