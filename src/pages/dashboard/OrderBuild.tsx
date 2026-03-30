@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { useParams, useNavigate, useBlocker } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useOrderData, useUpdateOrderItemSpec, useConfirmOrderItem, useAddSection, useUpdateSection, useDeleteSection } from "@/hooks/useOrderBuilder";
 import { useProductOptions } from "@/hooks/useProductOptions";
 import { useQuery } from "@tanstack/react-query";
@@ -118,8 +118,20 @@ export default function OrderBuild() {
   const initialSpecRef = useRef<string | null>(null);
   const [dirty, setDirty] = useState(false);
 
-  // useBlocker intercepts ALL navigation (sidebar, back button, etc.) when dirty
-  const blocker = useBlocker(dirty);
+  // Show save dialog state (replaces useBlocker which requires data router)
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const pendingNavigationRef = useRef<string | null>(null);
+
+  // Warn on browser close/refresh when dirty
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
 
   // Sync spec from DB on load
   useEffect(() => {
@@ -297,25 +309,40 @@ export default function OrderBuild() {
     }
   }, [handleSave, navigate, orderItem, order, spec, options, pricingRules, productFamily, confirmItem, reference]);
 
-  // Navigation guard — intercept all navigation via useBlocker
+  // Navigation guard — show dialog when dirty
+  const guardedNavigate = useCallback((path: string) => {
+    if (dirty) {
+      pendingNavigationRef.current = path;
+      setShowSaveDialog(true);
+    } else {
+      navigate(path);
+    }
+  }, [dirty, navigate]);
+
   const handleBackToFiles = useCallback(() => {
-    navigate(`/dashboard/orders/${orderId}/files`);
-  }, [orderId, navigate]);
+    guardedNavigate(`/dashboard/orders/${orderId}/files`);
+  }, [orderId, guardedNavigate]);
 
   const handleSaveAndLeave = useCallback(async (ref: string) => {
     if (!orderItem) return;
     try {
       await updateSpec.mutateAsync({ id: orderItem.id, spec });
       await supabase.from("order_items").update({ title: ref.trim() || null } as any).eq("id", orderItem.id);
-      blocker.proceed?.();
+      setShowSaveDialog(false);
+      const dest = pendingNavigationRef.current;
+      pendingNavigationRef.current = null;
+      if (dest) navigate(dest);
     } catch (err: any) {
       toast.error("Failed to save", { description: err.message });
     }
-  }, [orderItem, spec, updateSpec, blocker]);
+  }, [orderItem, spec, updateSpec, navigate]);
 
   const handleDiscardAndLeave = useCallback(() => {
-    blocker.proceed?.();
-  }, [blocker]);
+    setShowSaveDialog(false);
+    const dest = pendingNavigationRef.current;
+    pendingNavigationRef.current = null;
+    if (dest) navigate(dest);
+  }, [navigate]);
 
   // ── Drawer state ──
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -519,11 +546,11 @@ export default function OrderBuild() {
       )}
 
       <SaveConfirmDialog
-        open={blocker.state === "blocked"}
+        open={showSaveDialog}
         defaultReference={reference}
         onSave={handleSaveAndLeave}
         onDiscard={handleDiscardAndLeave}
-        onCancel={() => blocker.reset?.()}
+        onCancel={() => setShowSaveDialog(false)}
       />
     </div>
   );
