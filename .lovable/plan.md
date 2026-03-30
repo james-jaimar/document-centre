@@ -1,49 +1,45 @@
 
 
-# Paper Size Detection & Scaling Advisory
+# Stop auto-creating draft orders & add save/reference prompt
 
 ## Problem
-When users upload documents with non-standard sizes (e.g. US Letter 216×279mm), the system silently accepts them. In South Africa (and most of the world outside the US), standard sizes are ISO A-series. Users often don't realise their document is US Letter and would prefer to print on A4.
+Every time the user navigates to "Create", a new draft order is created in the database. Going in and out repeatedly creates dozens of empty drafts. There's also no way to name/reference an order.
 
-## How it works
+## Changes
 
-### 1. Detect non-ISO sizes after upload processing
-In `src/hooks/useDocumentUpload.ts`, after the document's `page_width_mm` and `page_height_mm` are known (line ~175), check if the dimensions match a known non-ISO size (US Letter, US Legal, US Tabloid, etc.) rather than an A-size.
+### 1. Add a "reference" field to the OrderBuild page
+**File: `src/pages/dashboard/OrderBuild.tsx`**
+- Add a text input at the top of the options panel (or header area) for "Order Reference" (e.g. "Marketing Brochure Q2")
+- Store this in local state, default to empty
+- On "Add to Cart", pass the reference to `confirmItem` so it gets saved to `orders.reference` or `order_items.title`
 
-A simple lookup table with ±2mm tolerance:
-```text
-US Letter: 216 × 279
-US Legal:  216 × 356
-US Tabloid: 279 × 432
-```
+### 2. Add unsaved-changes guard when leaving OrderBuild
+**File: `src/pages/dashboard/OrderBuild.tsx`**
+- Track a `dirty` flag — set to `true` whenever `spec` changes from its initial DB value
+- Intercept the "Back to Files" button click and browser back navigation
+- Show a confirmation dialog: "You have unsaved changes. Save before leaving?" with three options:
+  - **Save & Leave** — saves spec + reference, then navigates
+  - **Discard** — navigates without saving
+  - **Cancel** — stays on page
+- Use `react-router`'s `useBlocker` or a custom `beforeunload` handler
 
-If a match is found, store a flag on the document row (e.g. `preflight_data.detected_size: "US Letter"`).
+### 3. Create a SaveConfirmDialog component
+**File: `src/components/order/SaveConfirmDialog.tsx`** (new)
+- AlertDialog with the reference input field and Save/Discard/Cancel buttons
+- On save, calls `updateSpec` with current spec and updates the order item title/reference
 
-### 2. Show an advisory dialog
-Create a new component `src/components/order/PaperSizeAdvisory.tsx` — a dialog that:
-- Tells the user: "This document is US Letter size (216 × 279mm)"
-- Explains this is not a standard local size
-- Offers choices:
-  - **Keep original size** — print as-is (may require custom paper cutting, possible surcharge)
-  - **Scale to A4 (210 × 297mm)** — proportionally scale to fit A4
-  - **Scale to A3 / A5** — other A-size options if relevant
+### 4. Stop creating new orders when one already exists in draft
+**File: `src/pages/dashboard/NewOrder.tsx`**
+- Before creating a new order, check if there's already a draft order for this product family with no documents/sections
+- If so, navigate to the existing draft instead of creating a new one
+- This prevents the proliferation of empty drafts from repeated clicks
 
-### 3. Trigger the dialog
-In `src/pages/dashboard/OrderFiles.tsx`, after documents finish processing, check if any document has a detected non-ISO size. If so, show the `PaperSizeAdvisory` dialog automatically.
+### 5. Update confirmItem to accept a reference/title from user input
+**File: `src/hooks/useOrderBuilder.ts`**
+- The `useConfirmOrderItem` mutation already accepts a `title` parameter — use the user-provided reference if available, falling back to product family name
 
-### 4. If user chooses to scale
-- Call the existing `resize()` function in `src/lib/documentCentreApi.ts` with the target A-size dimensions and `fit_mode: "fit"` (proportional scaling)
-- Re-fetch thumbnails after the resize operation completes
-- Update the document's `page_width_mm` / `page_height_mm` to the new size
-- Update the `Document Size` option in the spec to match the chosen size
-
-### 5. If user keeps original size
-- Auto-select "US Letter" in the Document Size option (if available)
-- No resize needed
-
-## Files to create/edit
-- **Create** `src/components/order/PaperSizeAdvisory.tsx` — advisory dialog with size options
-- **Edit** `src/hooks/useDocumentUpload.ts` — detect non-ISO sizes after preflight, store in preflight_data
-- **Edit** `src/pages/dashboard/OrderFiles.tsx` — trigger advisory dialog when non-ISO documents are detected
-- **Edit** `src/pages/dashboard/OrderBuild.tsx` — if user reaches Step 2 without resolving, show a banner reminder
+## Summary
+- Reference field on the build page for naming orders
+- Unsaved changes dialog when navigating away
+- Reuse existing empty drafts instead of creating new ones on every "Create" click
 
