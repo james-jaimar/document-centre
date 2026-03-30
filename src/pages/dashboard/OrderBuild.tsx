@@ -442,7 +442,7 @@ export default function OrderBuild() {
         </div>
         <Button
           variant="ghost"
-          onClick={() => navigate(`/dashboard/orders/${orderId}/files`)}
+          onClick={handleBackToFiles}
         >
           <ArrowLeft className="h-4 w-4 mr-1" />
           Back to Files
