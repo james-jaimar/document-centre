@@ -453,8 +453,14 @@ export default function OrderBuild() {
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[300px_1fr] xl:grid-cols-[340px_1fr] gap-4 xl:gap-6 min-h-0">
         {/* Left: Options */}
         <div className="flex flex-col overflow-auto border border-border rounded-lg bg-card">
-          <div className="p-3 border-b border-border shrink-0">
+          <div className="p-3 border-b border-border shrink-0 space-y-2">
             <h2 className="font-semibold text-foreground text-sm">Options</h2>
+            <Input
+              placeholder="Order reference (e.g. Marketing Brochure Q2)"
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+              className="text-xs h-8"
+            />
           </div>
           <div className="flex-1 overflow-auto p-3 space-y-3">
             <OptionsPanel
