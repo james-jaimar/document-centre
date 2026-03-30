@@ -203,6 +203,8 @@ export function useDocumentUpload(orderItemId: string | undefined) {
               boxes: final_.asset.boxes,
               width_pt: final_.asset.width_pt,
               height_pt: final_.asset.height_pt,
+              effective_width_mm: final_.pageWidthMm,
+              effective_height_mm: final_.pageHeightMm,
               status: final_.asset.status,
               ...(detectedSize ? { detected_size: detectedSize } : {}),
             },
