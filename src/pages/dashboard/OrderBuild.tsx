@@ -126,15 +126,27 @@ export default function OrderBuild() {
   useEffect(() => {
     if (orderItem?.spec) {
       const s = orderItem.spec as unknown as ItemSpec;
-      setSpec({
+      const newSpec = {
         page_count: s.page_count ?? 0,
         quantity: s.quantity ?? 1,
         is_color: s.is_color ?? true,
         is_duplex: s.is_duplex ?? true,
         selected_options: s.selected_options ?? {},
-      });
+      };
+      setSpec(newSpec);
+      initialSpecRef.current = JSON.stringify(newSpec);
+      setDirty(false);
     }
-  }, [orderItem?.spec]);
+    if (orderItem?.title) {
+      setReference(orderItem.title);
+    }
+  }, [orderItem?.spec, orderItem?.title]);
+
+  // Track dirty state
+  useEffect(() => {
+    if (initialSpecRef.current === null) return;
+    setDirty(JSON.stringify(spec) !== initialSpecRef.current);
+  }, [spec]);
 
   // Calculate total page count from sections
   useEffect(() => {
