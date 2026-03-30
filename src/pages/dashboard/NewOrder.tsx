@@ -17,6 +17,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
 
 export default function NewOrder() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const createOrder = useCreateOrder();
 
   const { data: families, isLoading } = useQuery({
