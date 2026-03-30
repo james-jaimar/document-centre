@@ -1,42 +1,33 @@
 
 
-# Fix: Order title, status, and price not saved on "Add to Cart"
+# Ensure Tabs & Inserts drawer never auto-opens
 
-## Problems
+## Investigation
 
-1. **No title**: `order_items.title` is never set. The orders list shows "Untitled".
-2. **Status stays "draft"**: `handleAddToCart` saves the spec but never updates `order_status` or `build_status`.
-3. **Price not saved**: The calculated price is never written to `order_items.unit_price` or `orders.total_price`.
+The code already sets `drawerOpen` to `false` initially, and there is no `useEffect` or other logic that auto-opens it. The only trigger is the button's `onClick`. This suggests either a stale cached build was running, or there's a subtle race condition.
 
-## Changes
+## Defensive fix
+
+To guarantee the drawer cannot appear on page load, regardless of caching or timing:
 
 ### File: `src/pages/dashboard/OrderBuild.tsx`
 
-Update `handleAddToCart` to:
+1. **Don't render the `TabInsertDrawer` at all until the user has clicked the button.** Change the render from always mounting the `Sheet` (which can flash briefly on some browsers) to only mounting it after `hasOpenedDrawer` becomes `true`:
 
-1. **Calculate the price** using the existing `calculateItemPrice` function (already available via `PriceSummary` — just call it directly).
-2. **Update `order_items`**: Set `title` to the product family name (e.g. "Bound Document"), `unit_price` to the calculated per-unit price, `quantity` to `spec.quantity`, and `build_status` to `"confirmed"`.
-3. **Update `orders`**: Set `total_price` to the full total and `order_status` to `"quoted"` (or `"confirmed"` — moving it out of draft).
-4. **Navigate** to the orders list.
-
-### File: `src/hooks/useOrderBuilder.ts`
-
-Add a new mutation `useConfirmOrderItem` that:
-- Updates `order_items` with `title`, `unit_price`, `quantity`, `build_status = 'confirmed'`
-- Updates `orders` with `total_price`, `order_status = 'quoted'`
-
-### File: `src/pages/dashboard/CustomerOrders.tsx`
-
-The product column currently shows `item?.title || "Untitled"`. Once the title is set, this will display correctly. No changes needed if the title is written properly.
-
-## Summary of flow
-
-```text
-User clicks "Add to Cart"
-  → save spec to order_items
-  → calculate price
-  → update order_items: title, unit_price, quantity, build_status
-  → update orders: total_price, order_status
-  → navigate to /dashboard/orders
+```tsx
+{hasOpenedDrawer && (
+  <TabInsertDrawer
+    open={drawerOpen}
+    onOpenChange={setDrawerOpen}
+    ...
+  />
+)}
 ```
+
+2. This way the `Sheet` component is never in the DOM until the user explicitly clicks "Manage Tabs & Inserts", eliminating any possibility of it appearing on load.
+
+## What stays the same
+- The pulsing "Manage Tabs & Inserts" button still appears when tabs/inserts are enabled
+- Clicking it sets `hasOpenedDrawer = true` and `drawerOpen = true`
+- All drawer functionality remains identical
 
