@@ -118,8 +118,20 @@ export default function OrderBuild() {
   const initialSpecRef = useRef<string | null>(null);
   const [dirty, setDirty] = useState(false);
 
-  // useBlocker intercepts ALL navigation (sidebar, back button, etc.) when dirty
-  const blocker = useBlocker(dirty);
+  // Show save dialog state (replaces useBlocker which requires data router)
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const pendingNavigationRef = useRef<string | null>(null);
+
+  // Warn on browser close/refresh when dirty
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
 
   // Sync spec from DB on load
   useEffect(() => {
