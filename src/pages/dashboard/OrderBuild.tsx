@@ -13,7 +13,9 @@ import OptionsPanel from "@/components/order/OptionsPanel";
 import PreviewPanel from "@/components/order/PreviewPanel";
 import PriceSummary from "@/components/order/PriceSummary";
 import TabInsertDrawer from "@/components/order/TabInsertDrawer";
+import SaveConfirmDialog from "@/components/order/SaveConfirmDialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Settings2 } from "lucide-react";
 import { toast } from "sonner";
@@ -109,19 +111,42 @@ export default function OrderBuild() {
     selected_options: {},
   });
 
+  // Order reference / title
+  const [reference, setReference] = useState("");
+
+  // Dirty tracking
+  const initialSpecRef = useRef<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+
+  // Save-confirm dialog state
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const pendingNavigationRef = useRef<string | null>(null);
+
   // Sync spec from DB on load
   useEffect(() => {
     if (orderItem?.spec) {
       const s = orderItem.spec as unknown as ItemSpec;
-      setSpec({
+      const newSpec = {
         page_count: s.page_count ?? 0,
         quantity: s.quantity ?? 1,
         is_color: s.is_color ?? true,
         is_duplex: s.is_duplex ?? true,
         selected_options: s.selected_options ?? {},
-      });
+      };
+      setSpec(newSpec);
+      initialSpecRef.current = JSON.stringify(newSpec);
+      setDirty(false);
     }
-  }, [orderItem?.spec]);
+    if (orderItem?.title) {
+      setReference(orderItem.title);
+    }
+  }, [orderItem?.spec, orderItem?.title]);
+
+  // Track dirty state
+  useEffect(() => {
+    if (initialSpecRef.current === null) return;
+    setDirty(JSON.stringify(spec) !== initialSpecRef.current);
+  }, [spec]);
 
   // Calculate total page count from sections
   useEffect(() => {
@@ -261,7 +286,7 @@ export default function OrderBuild() {
       await confirmItem.mutateAsync({
         orderItemId: orderItem.id,
         orderId: order.id,
-        title: productFamily?.name ?? "Document",
+        title: reference.trim() || productFamily?.name || "Document",
         unitPrice: breakdown.subtotal_per_unit,
         quantity: spec.quantity,
         totalPrice: breakdown.total,
@@ -271,7 +296,36 @@ export default function OrderBuild() {
     } catch (err: any) {
       toast.error("Failed to add to cart", { description: err.message });
     }
-  }, [handleSave, navigate, orderItem, order, spec, options, pricingRules, productFamily, confirmItem]);
+  }, [handleSave, navigate, orderItem, order, spec, options, pricingRules, productFamily, confirmItem, reference]);
+
+  // Navigation guard — intercept "Back to Files"
+  const handleBackToFiles = useCallback(() => {
+    const dest = `/dashboard/orders/${orderId}/files`;
+    if (dirty) {
+      pendingNavigationRef.current = dest;
+      setShowSaveDialog(true);
+    } else {
+      navigate(dest);
+    }
+  }, [dirty, orderId, navigate]);
+
+  const handleSaveAndLeave = useCallback(async (ref: string) => {
+    if (!orderItem) return;
+    try {
+      await updateSpec.mutateAsync({ id: orderItem.id, spec });
+      // Save title/reference
+      await supabase.from("order_items").update({ title: ref.trim() || null } as any).eq("id", orderItem.id);
+      setShowSaveDialog(false);
+      if (pendingNavigationRef.current) navigate(pendingNavigationRef.current);
+    } catch (err: any) {
+      toast.error("Failed to save", { description: err.message });
+    }
+  }, [orderItem, spec, updateSpec, navigate]);
+
+  const handleDiscardAndLeave = useCallback(() => {
+    setShowSaveDialog(false);
+    if (pendingNavigationRef.current) navigate(pendingNavigationRef.current);
+  }, [navigate]);
 
   // ── Drawer state ──
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -388,7 +442,7 @@ export default function OrderBuild() {
         </div>
         <Button
           variant="ghost"
-          onClick={() => navigate(`/dashboard/orders/${orderId}/files`)}
+          onClick={handleBackToFiles}
         >
           <ArrowLeft className="h-4 w-4 mr-1" />
           Back to Files
@@ -399,8 +453,14 @@ export default function OrderBuild() {
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[300px_1fr] xl:grid-cols-[340px_1fr] gap-4 xl:gap-6 min-h-0">
         {/* Left: Options */}
         <div className="flex flex-col overflow-auto border border-border rounded-lg bg-card">
-          <div className="p-3 border-b border-border shrink-0">
+          <div className="p-3 border-b border-border shrink-0 space-y-2">
             <h2 className="font-semibold text-foreground text-sm">Options</h2>
+            <Input
+              placeholder="Order reference (e.g. Marketing Brochure Q2)"
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+              className="text-xs h-8"
+            />
           </div>
           <div className="flex-1 overflow-auto p-3 space-y-3">
             <OptionsPanel
@@ -467,6 +527,14 @@ export default function OrderBuild() {
         onMoveInsert={handleMoveInsert}
       />
       )}
+
+      <SaveConfirmDialog
+        open={showSaveDialog}
+        defaultReference={reference}
+        onSave={handleSaveAndLeave}
+        onDiscard={handleDiscardAndLeave}
+        onCancel={() => setShowSaveDialog(false)}
+      />
     </div>
   );
 }
