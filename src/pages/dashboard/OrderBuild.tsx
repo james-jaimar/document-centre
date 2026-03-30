@@ -466,6 +466,7 @@ export default function OrderBuild() {
         onDeleteInsert={handleDeleteInsert}
         onMoveInsert={handleMoveInsert}
       />
+      )}
     </div>
   );
 }
