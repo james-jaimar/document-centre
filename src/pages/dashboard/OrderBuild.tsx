@@ -111,6 +111,17 @@ export default function OrderBuild() {
     selected_options: {},
   });
 
+  // Order reference / title
+  const [reference, setReference] = useState("");
+
+  // Dirty tracking
+  const initialSpecRef = useRef<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+
+  // Save-confirm dialog state
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const pendingNavigationRef = useRef<string | null>(null);
+
   // Sync spec from DB on load
   useEffect(() => {
     if (orderItem?.spec) {
