@@ -50,10 +50,26 @@ export function useDocumentUpload(orderItemId: string | undefined) {
       })));
 
       const pageCount = asset.page_count ?? null;
-      const widthPt = asset.width_pt;
-      const heightPt = asset.height_pt;
-      const pageWidthMm = widthPt != null ? (widthPt * 25.4) / 72 : null;
-      const pageHeightMm = heightPt != null ? (heightPt * 25.4) / 72 : null;
+
+      // Use trim box for dimensions (actual finished size) if available,
+      // falling back through crop → media box (width_pt/height_pt)
+      const boxes = asset.boxes as Record<string, number[]> | null;
+      let effectiveWidthPt = asset.width_pt;
+      let effectiveHeightPt = asset.height_pt;
+
+      if (boxes) {
+        // Priority: TrimBox → CropBox → MediaBox → asset.width_pt/height_pt
+        const preferredBox = boxes.TrimBox ?? boxes.CropBox ?? boxes.MediaBox;
+        if (preferredBox && preferredBox.length === 4) {
+          const [x0, y0, x1, y1] = preferredBox;
+          effectiveWidthPt = Math.abs(x1 - x0);
+          effectiveHeightPt = Math.abs(y1 - y0);
+          console.log(`[upload] Using ${boxes.TrimBox ? 'TrimBox' : boxes.CropBox ? 'CropBox' : 'MediaBox'}: ${effectiveWidthPt}×${effectiveHeightPt}pt`);
+        }
+      }
+
+      const pageWidthMm = effectiveWidthPt != null ? (effectiveWidthPt * 25.4) / 72 : null;
+      const pageHeightMm = effectiveHeightPt != null ? (effectiveHeightPt * 25.4) / 72 : null;
 
       // Broad filter: accept any per-page image derived file
       const thumbnailFiles = derivedFiles
