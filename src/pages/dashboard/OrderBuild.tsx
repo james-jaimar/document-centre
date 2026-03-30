@@ -118,9 +118,8 @@ export default function OrderBuild() {
   const initialSpecRef = useRef<string | null>(null);
   const [dirty, setDirty] = useState(false);
 
-  // Save-confirm dialog state
-  const [showSaveDialog, setShowSaveDialog] = useState(false);
-  const pendingNavigationRef = useRef<string | null>(null);
+  // useBlocker intercepts ALL navigation (sidebar, back button, etc.) when dirty
+  const blocker = useBlocker(dirty);
 
   // Sync spec from DB on load
   useEffect(() => {
