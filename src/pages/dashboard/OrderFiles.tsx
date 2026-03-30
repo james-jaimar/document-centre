@@ -20,9 +20,14 @@ import { FileText, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
 import UploadProgressModal from "@/components/order/UploadProgressModal";
+import PaperSizeAdvisory from "@/components/order/PaperSizeAdvisory";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { resize, pollJob } from "@/lib/documentCentreApi";
+import type { PaperSize } from "@/lib/paperSizes";
+import { isLandscape } from "@/lib/paperSizes";
 
 export default function OrderFiles() {
   const { id: orderId } = useParams<{ id: string }>();
