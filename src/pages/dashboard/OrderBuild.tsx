@@ -519,11 +519,11 @@ export default function OrderBuild() {
       )}
 
       <SaveConfirmDialog
-        open={showSaveDialog}
+        open={blocker.state === "blocked"}
         defaultReference={reference}
         onSave={handleSaveAndLeave}
         onDiscard={handleDiscardAndLeave}
-        onCancel={() => setShowSaveDialog(false)}
+        onCancel={() => blocker.reset?.()}
       />
     </div>
   );
