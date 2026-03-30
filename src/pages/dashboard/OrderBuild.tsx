@@ -309,25 +309,40 @@ export default function OrderBuild() {
     }
   }, [handleSave, navigate, orderItem, order, spec, options, pricingRules, productFamily, confirmItem, reference]);
 
-  // Navigation guard — intercept all navigation via useBlocker
+  // Navigation guard — show dialog when dirty
+  const guardedNavigate = useCallback((path: string) => {
+    if (dirty) {
+      pendingNavigationRef.current = path;
+      setShowSaveDialog(true);
+    } else {
+      navigate(path);
+    }
+  }, [dirty, navigate]);
+
   const handleBackToFiles = useCallback(() => {
-    navigate(`/dashboard/orders/${orderId}/files`);
-  }, [orderId, navigate]);
+    guardedNavigate(`/dashboard/orders/${orderId}/files`);
+  }, [orderId, guardedNavigate]);
 
   const handleSaveAndLeave = useCallback(async (ref: string) => {
     if (!orderItem) return;
     try {
       await updateSpec.mutateAsync({ id: orderItem.id, spec });
       await supabase.from("order_items").update({ title: ref.trim() || null } as any).eq("id", orderItem.id);
-      blocker.proceed?.();
+      setShowSaveDialog(false);
+      const dest = pendingNavigationRef.current;
+      pendingNavigationRef.current = null;
+      if (dest) navigate(dest);
     } catch (err: any) {
       toast.error("Failed to save", { description: err.message });
     }
-  }, [orderItem, spec, updateSpec, blocker]);
+  }, [orderItem, spec, updateSpec, navigate]);
 
   const handleDiscardAndLeave = useCallback(() => {
-    blocker.proceed?.();
-  }, [blocker]);
+    setShowSaveDialog(false);
+    const dest = pendingNavigationRef.current;
+    pendingNavigationRef.current = null;
+    if (dest) navigate(dest);
+  }, [navigate]);
 
   // ── Drawer state ──
   const [drawerOpen, setDrawerOpen] = useState(false);
