@@ -10,6 +10,7 @@ import {
   pollJob,
 } from "@/lib/documentCentreApi";
 import { toStorageKey } from "@/lib/thumbnailUtils";
+import { detectNonIsoSize } from "@/lib/paperSizes";
 
 interface UploadProgress {
   fileName: string;
@@ -167,7 +168,13 @@ export function useDocumentUpload(orderItemId: string | undefined) {
 
         console.log("[upload] Final thumbnails:", final_.thumbnailPaths.length);
 
-        // 5. Update documents row with full metadata
+        // 5. Detect non-ISO paper size
+        const detectedSize =
+          final_.pageWidthMm != null && final_.pageHeightMm != null
+            ? detectNonIsoSize(final_.pageWidthMm, final_.pageHeightMm)
+            : null;
+
+        // 6. Update documents row with full metadata
         await supabase
           .from("documents")
           .update({
@@ -180,6 +187,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
               width_pt: final_.asset.width_pt,
               height_pt: final_.asset.height_pt,
               status: final_.asset.status,
+              ...(detectedSize ? { detected_size: detectedSize } : {}),
             },
             document_status: "ready",
           })
