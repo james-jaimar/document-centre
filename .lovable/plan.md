@@ -1,45 +1,36 @@
 
 
-# Stop auto-creating draft orders & add save/reference prompt
+# Fix: "Add to Cart" not updating status/price + navigation guard not working
 
-## Problem
-Every time the user navigates to "Create", a new draft order is created in the database. Going in and out repeatedly creates dozens of empty drafts. There's also no way to name/reference an order.
+## Two issues
+
+### Issue 1: "Add to Cart" appears to not work
+The `handleAddToCart` function calls `handleSave()` first (which updates the spec), then calls `confirmItem.mutateAsync()` which updates status to "quoted" and saves the price. The code looks correct structurally, but the `handleSave` call doesn't `await` properly — it catches errors internally with `toast.error` and returns `undefined` even on failure. If `handleSave` fails silently, `confirmItem` still runs but may use stale data. Additionally, the query invalidation uses `["orders"]` but the orders list queries with `["all_orders", userId]` — so the list doesn't refresh after confirmation.
+
+**Fix**: 
+- In `useConfirmOrderItem`'s `onSuccess`, also invalidate `["all_orders"]` to refresh the orders list
+- Ensure `handleAddToCart` propagates errors correctly
+
+### Issue 2: Navigation guard only works on "Back to Files" button
+The save/reference dialog only triggers when clicking the "Back to Files" button. Clicking sidebar links, browser back, or any other navigation bypasses it entirely.
+
+**Fix**: Use react-router-dom v6's `useBlocker` hook to intercept ALL navigation attempts when `dirty` is true. This catches sidebar clicks, browser back, and any programmatic navigation.
 
 ## Changes
 
-### 1. Add a "reference" field to the OrderBuild page
-**File: `src/pages/dashboard/OrderBuild.tsx`**
-- Add a text input at the top of the options panel (or header area) for "Order Reference" (e.g. "Marketing Brochure Q2")
-- Store this in local state, default to empty
-- On "Add to Cart", pass the reference to `confirmItem` so it gets saved to `orders.reference` or `order_items.title`
+### File: `src/pages/dashboard/OrderBuild.tsx`
+1. Import `useBlocker` from react-router-dom
+2. Replace the manual `handleBackToFiles` guard with `useBlocker(() => dirty, [dirty])`
+3. When `blocker.state === "blocked"`, show the `SaveConfirmDialog`
+4. On "Save & Leave" → save spec + reference, then call `blocker.proceed()`
+5. On "Discard" → call `blocker.proceed()`
+6. On "Cancel" → call `blocker.reset()`
+7. Remove `pendingNavigationRef` — no longer needed since `useBlocker` handles the destination
 
-### 2. Add unsaved-changes guard when leaving OrderBuild
-**File: `src/pages/dashboard/OrderBuild.tsx`**
-- Track a `dirty` flag — set to `true` whenever `spec` changes from its initial DB value
-- Intercept the "Back to Files" button click and browser back navigation
-- Show a confirmation dialog: "You have unsaved changes. Save before leaving?" with three options:
-  - **Save & Leave** — saves spec + reference, then navigates
-  - **Discard** — navigates without saving
-  - **Cancel** — stays on page
-- Use `react-router`'s `useBlocker` or a custom `beforeunload` handler
-
-### 3. Create a SaveConfirmDialog component
-**File: `src/components/order/SaveConfirmDialog.tsx`** (new)
-- AlertDialog with the reference input field and Save/Discard/Cancel buttons
-- On save, calls `updateSpec` with current spec and updates the order item title/reference
-
-### 4. Stop creating new orders when one already exists in draft
-**File: `src/pages/dashboard/NewOrder.tsx`**
-- Before creating a new order, check if there's already a draft order for this product family with no documents/sections
-- If so, navigate to the existing draft instead of creating a new one
-- This prevents the proliferation of empty drafts from repeated clicks
-
-### 5. Update confirmItem to accept a reference/title from user input
-**File: `src/hooks/useOrderBuilder.ts`**
-- The `useConfirmOrderItem` mutation already accepts a `title` parameter — use the user-provided reference if available, falling back to product family name
+### File: `src/hooks/useOrderBuilder.ts`
+1. In `useConfirmOrderItem`'s `onSuccess`, add `qc.invalidateQueries({ queryKey: ["all_orders"] })` so the orders list refreshes
 
 ## Summary
-- Reference field on the build page for naming orders
-- Unsaved changes dialog when navigating away
-- Reuse existing empty drafts instead of creating new ones on every "Create" click
+- `useBlocker` catches ALL navigation (sidebar, back button, URL changes) — not just one button
+- Query invalidation fix ensures the orders list shows updated status and price after "Add to Cart"
 
