@@ -1,36 +1,63 @@
 
 
-# Fix: "Add to Cart" not updating status/price + navigation guard not working
+# Use trim box for dimensions and thumbnail rendering
 
-## Two issues
+## Problem
+The PDF server extracts all PDF boxes (media, trim, crop, bleed) and returns them in the `boxes` field of the asset. However:
+1. The `width_pt` / `height_pt` reported on the asset use the **media box** — so documents with bleed show inflated dimensions (e.g. a document designed for A4 with 3mm bleed shows as 216×303mm instead of 210×297mm)
+2. Thumbnails are rasterized from the media box, so they include bleed/slug areas that the end customer shouldn't see
+3. The paper size detection then misidentifies the document (e.g. flags it as "non-ISO" when it's actually A4 + bleed)
 
-### Issue 1: "Add to Cart" appears to not work
-The `handleAddToCart` function calls `handleSave()` first (which updates the spec), then calls `confirmItem.mutateAsync()` which updates status to "quoted" and saves the price. The code looks correct structurally, but the `handleSave` call doesn't `await` properly — it catches errors internally with `toast.error` and returns `undefined` even on failure. If `handleSave` fails silently, `confirmItem` still runs but may use stale data. Additionally, the query invalidation uses `["orders"]` but the orders list queries with `["all_orders", userId]` — so the list doesn't refresh after confirmation.
+## Approach
 
-**Fix**: 
-- In `useConfirmOrderItem`'s `onSuccess`, also invalidate `["all_orders"]` to refresh the orders list
-- Ensure `handleAddToCart` propagates errors correctly
+### Step 1: Probe the server's rasterize capability
+Write a quick test to call the server and discover:
+- Whether `v1/operations/rasterize` exists and what parameters it accepts
+- What the `boxes` data actually looks like for an existing asset
+- Whether `createAsset` accepts a `render_box` parameter
 
-### Issue 2: Navigation guard only works on "Back to Files" button
-The save/reference dialog only triggers when clicking the "Back to Files" button. Clicking sidebar links, browser back, or any other navigation bypasses it entirely.
+This test will be added to `supabase/functions/pdf-api/probe.test.ts` and run once to gather intelligence.
 
-**Fix**: Use react-router-dom v6's `useBlocker` hook to intercept ALL navigation attempts when `dirty` is true. This catches sidebar clicks, browser back, and any programmatic navigation.
+### Step 2: Use trim box dimensions client-side (immediate fix)
+**File: `src/hooks/useDocumentUpload.ts`**
 
-## Changes
+In `fetchThumbnails`, after getting the asset:
+- Check `asset.boxes` for a `trim_box` or `TrimBox`
+- If present, calculate `pageWidthMm` and `pageHeightMm` from the trim box instead of `width_pt`/`height_pt`
+- This fixes the dimension display and paper size detection immediately, regardless of server thumbnail rendering
 
-### File: `src/pages/dashboard/OrderBuild.tsx`
-1. Import `useBlocker` from react-router-dom
-2. Replace the manual `handleBackToFiles` guard with `useBlocker(() => dirty, [dirty])`
-3. When `blocker.state === "blocked"`, show the `SaveConfirmDialog`
-4. On "Save & Leave" → save spec + reference, then call `blocker.proceed()`
-5. On "Discard" → call `blocker.proceed()`
-6. On "Cancel" → call `blocker.reset()`
-7. Remove `pendingNavigationRef` — no longer needed since `useBlocker` handles the destination
+```text
+Priority: trim_box → crop_box → media_box (width_pt/height_pt)
+```
 
-### File: `src/hooks/useOrderBuilder.ts`
-1. In `useConfirmOrderItem`'s `onSuccess`, add `qc.invalidateQueries({ queryKey: ["all_orders"] })` so the orders list refreshes
+### Step 3: Pass render_box to createAsset or call rasterize separately
+**Files: `src/lib/documentCentreApi.ts`, `src/hooks/useDocumentUpload.ts`**
 
-## Summary
-- `useBlocker` catches ALL navigation (sidebar, back button, URL changes) — not just one button
-- Query invalidation fix ensures the orders list shows updated status and price after "Add to Cart"
+Depending on what the probe reveals:
+- **If createAsset accepts `render_box`**: Add it to `CreateAssetPayload` and pass `render_box: "trim"` (falling back to "media") when registering assets
+- **If a separate rasterize operation is needed**: After the initial jobs complete and we have box data, call `v1/operations/rasterize` with the trim box specification, then poll for the new thumbnails
+- **If the server doesn't support box-specific rendering yet**: Use the client-side dimension fix from Step 2 and document the server enhancement needed
+
+### Step 4: Update the proxy allowlist if needed
+**File: `supabase/functions/pdf-api/index.ts`**
+
+If new paths are needed (e.g. `v1/operations/rasterize`), they're already covered by the `v1/operations` prefix.
+
+## Technical detail
+
+PDF box hierarchy:
+```text
+MediaBox  — full physical page (largest)
+BleedBox  — printable area + bleed margin
+TrimBox   — final trimmed page size (what the customer expects)
+CropBox   — default rendering area in viewers
+ArtBox    — meaningful content area (smallest)
+```
+
+For print workflows: TrimBox is the "real" page size. If no TrimBox exists, the document has no bleed and MediaBox = page size.
+
+## Execution order
+1. Run probe test to discover server capabilities
+2. Apply client-side trim box dimension fix (works immediately)
+3. Wire up server-side rendering if supported
 
