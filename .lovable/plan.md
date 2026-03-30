@@ -1,76 +1,42 @@
 
-## Simplify the divider placement rule
 
-You’re right: this got complicated because the code currently has two competing systems:
+# Fix: Order title, status, and price not saved on "Add to Cart"
 
-1. `buildPageSequence()` inserts tabs/inserts when it hits the anchor page
-2. a later “alignment pass” tries to repair bad left/right placement by inserting extra blanks
+## Problems
 
-That second step is what keeps causing nonsense.
+1. **No title**: `order_items.title` is never set. The orders list shows "Untitled".
+2. **Status stays "draft"**: `handleAddToCart` saves the spec but never updates `order_status` or `build_status`.
+3. **Price not saved**: The calculated price is never written to `order_items.unit_price` or `orders.total_price`.
 
-## What to change
+## Changes
 
-### 1. Make the anchor mean exactly this
-In `src/components/order/PreviewPanel.tsx`, change the tab/insert placement rule to:
+### File: `src/pages/dashboard/OrderBuild.tsx`
+
+Update `handleAddToCart` to:
+
+1. **Calculate the price** using the existing `calculateItemPrice` function (already available via `PriceSummary` — just call it directly).
+2. **Update `order_items`**: Set `title` to the product family name (e.g. "Bound Document"), `unit_price` to the calculated per-unit price, `quantity` to `spec.quantity`, and `build_status` to `"confirmed"`.
+3. **Update `orders`**: Set `total_price` to the full total and `order_status` to `"quoted"` (or `"confirmed"` — moving it out of draft).
+4. **Navigate** to the orders list.
+
+### File: `src/hooks/useOrderBuilder.ts`
+
+Add a new mutation `useConfirmOrderItem` that:
+- Updates `order_items` with `title`, `unit_price`, `quantity`, `build_status = 'confirmed'`
+- Updates `orders` with `total_price`, `order_status = 'quoted'`
+
+### File: `src/pages/dashboard/CustomerOrders.tsx`
+
+The product column currently shows `item?.title || "Untitled"`. Once the title is set, this will display correctly. No changes needed if the title is written properly.
+
+## Summary of flow
 
 ```text
-After page N, place the tab/insert at the next available RIGHT-hand slot.
+User clicks "Add to Cart"
+  → save spec to order_items
+  → calculate price
+  → update order_items: title, unit_price, quantity, build_status
+  → update orders: total_price, order_status
+  → navigate to /dashboard/orders
 ```
 
-Not:
-- immediately after page N
-- not “after current array index”
-- not “fix it later with a blank”
-
-### 2. Move the right-hand logic into `buildPageSequence()`
-Refactor `buildPageSequence()` so anchored tabs/inserts are queued once their anchor page is reached, but only flushed when the next physical face is a valid right-hand start.
-
-That means:
-- if page N is followed by a natural left/back face, let that face happen first
-- then insert the tab/insert sheet
-- if page N already ends on a left/back face, insert immediately at the next right page
-
-### 3. Remove the post-processing alignment hack
-Delete the bound-only alignment block in `PreviewPanel.tsx` that currently says:
-
-- “Ensure tab/insert fronts land on even indices”
-- and inserts `blank_back` before them
-
-That logic is the source of the phantom blanks and repeated regressions.
-
-### 4. Keep the existing physical sheet model
-Do not change:
-- simplex pages adding their natural `blank_back`
-- front cover blank back
-- tab = two faces (`tab`, `tab_back`)
-- insert = two faces (`insert`, `insert_back`)
-- PVC/back-cover handling
-
-Those are fine. The bug is only when the divider gets injected.
-
-## File to update
-- `src/components/order/PreviewPanel.tsx`
-
-## Expected behavior after the fix
-
-If the customer says “put a tab after page 6”:
-
-- page 6 stays where it is
-- whatever face must naturally come next still happens
-- the tab starts at the next RIGHT-hand slot
-- the tab back is the following LEFT-hand face
-
-So:
-- after a right-hand page, the left/back completes first, then the tab
-- after a left-hand page, the tab can start immediately on the next right
-- no fake padding blanks get inserted just to repair parity afterward
-
-## Technical note
-Implementation-wise, the clean approach is:
-
-- track anchored tabs/inserts as `pending`
-- after each emitted body face, check whether the next insertion index is a right-hand slot in the flipbook model
-- only then flush pending dividers
-- remove the later parity-correction loop entirely
-
-This makes the preview obey one simple physical rule from the start instead of rendering first and trying to patch mistakes afterward.
