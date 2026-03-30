@@ -527,6 +527,14 @@ export default function OrderBuild() {
         onMoveInsert={handleMoveInsert}
       />
       )}
+
+      <SaveConfirmDialog
+        open={showSaveDialog}
+        defaultReference={reference}
+        onSave={handleSaveAndLeave}
+        onDiscard={handleDiscardAndLeave}
+        onCancel={() => setShowSaveDialog(false)}
+      />
     </div>
   );
 }
