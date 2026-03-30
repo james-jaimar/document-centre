@@ -182,6 +182,7 @@ export function useConfirmOrderItem() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["all_orders"] });
     },
   });
 }
