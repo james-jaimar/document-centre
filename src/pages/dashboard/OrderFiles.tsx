@@ -73,6 +73,91 @@ export default function OrderFiles() {
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [advisoryDoc, setAdvisoryDoc] = useState<{
+    id: string;
+    fileName: string;
+    detectedSize: string;
+    widthMm: number;
+    heightMm: number;
+    backendAssetId: string | null;
+  } | null>(null);
+
+  // Check for non-ISO documents after upload completes
+  useEffect(() => {
+    if (uploadModalOpen) return; // Don't check while uploads are in progress
+    const nonIsoDoc = documents.find((d) => {
+      const preflight = d.preflight_data as Record<string, any> | null;
+      return preflight?.detected_size && !preflight?.size_resolved;
+    });
+    if (nonIsoDoc && !advisoryDoc) {
+      const preflight = nonIsoDoc.preflight_data as Record<string, any>;
+      setAdvisoryDoc({
+        id: nonIsoDoc.id,
+        fileName: nonIsoDoc.file_name,
+        detectedSize: preflight.detected_size,
+        widthMm: Number(nonIsoDoc.page_width_mm),
+        heightMm: Number(nonIsoDoc.page_height_mm),
+        backendAssetId: nonIsoDoc.backend_asset_id,
+      });
+    }
+  }, [documents, uploadModalOpen, advisoryDoc]);
+
+  const handleKeepOriginal = useCallback(async () => {
+    if (!advisoryDoc) return;
+    // Mark as resolved
+    const existing = documents.find((d) => d.id === advisoryDoc.id);
+    const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
+    await supabase
+      .from("documents")
+      .update({
+        preflight_data: { ...preflight, size_resolved: true, size_action: "keep" },
+      })
+      .eq("id", advisoryDoc.id);
+    setAdvisoryDoc(null);
+    refetchDocuments();
+    toast.success("Keeping original size");
+  }, [advisoryDoc, documents, refetchDocuments]);
+
+  const handleScaleTo = useCallback(async (target: PaperSize) => {
+    if (!advisoryDoc?.backendAssetId) {
+      toast.error("Cannot scale — document has no backend asset");
+      setAdvisoryDoc(null);
+      return;
+    }
+    try {
+      toast.info(`Scaling to ${target.name}…`);
+      const landscape = isLandscape(advisoryDoc.widthMm, advisoryDoc.heightMm);
+      const targetW = landscape ? target.heightMm : target.widthMm;
+      const targetH = landscape ? target.widthMm : target.heightMm;
+
+      const { job_id } = await resize(advisoryDoc.backendAssetId, targetW, targetH, "fit");
+      await pollJob(job_id);
+
+      // Update document dimensions
+      const existing = documents.find((d) => d.id === advisoryDoc.id);
+      const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
+      await supabase
+        .from("documents")
+        .update({
+          page_width_mm: targetW,
+          page_height_mm: targetH,
+          preflight_data: {
+            ...preflight,
+            size_resolved: true,
+            size_action: `scaled_to_${target.name}`,
+            original_width_mm: advisoryDoc.widthMm,
+            original_height_mm: advisoryDoc.heightMm,
+          },
+        })
+        .eq("id", advisoryDoc.id);
+
+      setAdvisoryDoc(null);
+      refetchDocuments();
+      toast.success(`Scaled to ${target.name} successfully`);
+    } catch (err: any) {
+      toast.error("Scaling failed", { description: err.message });
+    }
+  }, [advisoryDoc, documents, refetchDocuments]);
 
   // Determine which document to show in the middle preview
   const previewDoc = useMemo(() => {
