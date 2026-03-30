@@ -25,6 +25,7 @@ export default function OrderBuild() {
   const { order, orderItem, documents, sections, loading } =
     useOrderData(orderId);
   const updateSpec = useUpdateOrderItemSpec();
+  const confirmItem = useConfirmOrderItem();
   const addSectionMut = useAddSection();
   const updateSectionMut = useUpdateSection();
   const deleteSectionMut = useDeleteSection();
