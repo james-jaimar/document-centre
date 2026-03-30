@@ -10,6 +10,7 @@ import {
   pollJob,
 } from "@/lib/documentCentreApi";
 import { toStorageKey } from "@/lib/thumbnailUtils";
+import { detectNonIsoSize } from "@/lib/paperSizes";
 
 interface UploadProgress {
   fileName: string;
