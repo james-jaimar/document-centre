@@ -286,7 +286,7 @@ export default function OrderBuild() {
       await confirmItem.mutateAsync({
         orderItemId: orderItem.id,
         orderId: order.id,
-        title: productFamily?.name ?? "Document",
+        title: reference.trim() || productFamily?.name || "Document",
         unitPrice: breakdown.subtotal_per_unit,
         quantity: spec.quantity,
         totalPrice: breakdown.total,
@@ -296,7 +296,36 @@ export default function OrderBuild() {
     } catch (err: any) {
       toast.error("Failed to add to cart", { description: err.message });
     }
-  }, [handleSave, navigate, orderItem, order, spec, options, pricingRules, productFamily, confirmItem]);
+  }, [handleSave, navigate, orderItem, order, spec, options, pricingRules, productFamily, confirmItem, reference]);
+
+  // Navigation guard — intercept "Back to Files"
+  const handleBackToFiles = useCallback(() => {
+    const dest = `/dashboard/orders/${orderId}/files`;
+    if (dirty) {
+      pendingNavigationRef.current = dest;
+      setShowSaveDialog(true);
+    } else {
+      navigate(dest);
+    }
+  }, [dirty, orderId, navigate]);
+
+  const handleSaveAndLeave = useCallback(async (ref: string) => {
+    if (!orderItem) return;
+    try {
+      await updateSpec.mutateAsync({ id: orderItem.id, spec });
+      // Save title/reference
+      await supabase.from("order_items").update({ title: ref.trim() || null } as any).eq("id", orderItem.id);
+      setShowSaveDialog(false);
+      if (pendingNavigationRef.current) navigate(pendingNavigationRef.current);
+    } catch (err: any) {
+      toast.error("Failed to save", { description: err.message });
+    }
+  }, [orderItem, spec, updateSpec, navigate]);
+
+  const handleDiscardAndLeave = useCallback(() => {
+    setShowSaveDialog(false);
+    if (pendingNavigationRef.current) navigate(pendingNavigationRef.current);
+  }, [navigate]);
 
   // ── Drawer state ──
   const [drawerOpen, setDrawerOpen] = useState(false);
