@@ -422,6 +422,21 @@ export default function OrderFiles() {
         uploads={uploads}
         onContinue={handleUploadContinue}
       />
+
+      {/* Paper Size Advisory Dialog */}
+      {advisoryDoc && (
+        <PaperSizeAdvisory
+          open={!!advisoryDoc}
+          onOpenChange={(open) => { if (!open) setAdvisoryDoc(null); }}
+          detectedSize={advisoryDoc.detectedSize}
+          widthMm={advisoryDoc.widthMm}
+          heightMm={advisoryDoc.heightMm}
+          fileName={advisoryDoc.fileName}
+          documentId={advisoryDoc.id}
+          onKeepOriginal={handleKeepOriginal}
+          onScaleTo={handleScaleTo}
+        />
+      )}
     </div>
   );
 }
