@@ -149,6 +149,43 @@ export function useCreateOrder() {
   });
 }
 
+export function useConfirmOrderItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      orderItemId: string;
+      orderId: string;
+      title: string;
+      unitPrice: number;
+      quantity: number;
+      totalPrice: number;
+    }) => {
+      const { error: itemError } = await supabase
+        .from("order_items")
+        .update({
+          title: input.title,
+          unit_price: input.unitPrice,
+          quantity: input.quantity,
+          build_status: "ready",
+        })
+        .eq("id", input.orderItemId);
+      if (itemError) throw itemError;
+
+      const { error: orderError } = await supabase
+        .from("orders")
+        .update({
+          total_price: input.totalPrice,
+          order_status: "quoted",
+        })
+        .eq("id", input.orderId);
+      if (orderError) throw orderError;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["orders"] });
+    },
+  });
+}
+
 export function useUpdateOrderItemSpec() {
   const qc = useQueryClient();
   return useMutation({

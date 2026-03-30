@@ -254,10 +254,24 @@ export default function OrderBuild() {
   }, [orderItem, spec, updateSpec]);
 
   const handleAddToCart = useCallback(async () => {
+    if (!orderItem || !order) return;
     await handleSave();
-    toast.success("Added to cart!");
-    navigate("/dashboard/orders");
-  }, [handleSave, navigate]);
+    try {
+      const breakdown = calculateItemPrice(spec, options, pricingRules);
+      await confirmItem.mutateAsync({
+        orderItemId: orderItem.id,
+        orderId: order.id,
+        title: productFamily?.name ?? "Document",
+        unitPrice: breakdown.subtotal_per_unit,
+        quantity: spec.quantity,
+        totalPrice: breakdown.total,
+      });
+      toast.success("Added to cart!");
+      navigate("/dashboard/orders");
+    } catch (err: any) {
+      toast.error("Failed to add to cart", { description: err.message });
+    }
+  }, [handleSave, navigate, orderItem, order, spec, options, pricingRules, productFamily, confirmItem]);
 
   // ── Drawer state ──
   const [drawerOpen, setDrawerOpen] = useState(false);
