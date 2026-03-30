@@ -445,7 +445,8 @@ export default function OrderBuild() {
           <PreviewPanel documents={documents} sections={sections} productType={productType} effects={previewEffects} />
         </div>
       </div>
-      {/* Tab/Insert Drawer */}
+      {/* Tab/Insert Drawer — only mount after user clicks the button */}
+      {hasOpenedDrawer && (
       <TabInsertDrawer
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
@@ -465,6 +466,7 @@ export default function OrderBuild() {
         onDeleteInsert={handleDeleteInsert}
         onMoveInsert={handleMoveInsert}
       />
+      )}
     </div>
   );
 }
