@@ -82,6 +82,16 @@ const App = () => (
                   <AdminDashboard />
                 </ProtectedRoute>
               } />
+              <Route path="/admin/orders" element={
+                <ProtectedRoute allowedRoles={["head_office_admin", "platform_admin"]}>
+                  <AdminOrders />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/orders/:id" element={
+                <ProtectedRoute allowedRoles={["head_office_admin", "platform_admin"]}>
+                  <AdminOrderDetail />
+                </ProtectedRoute>
+              } />
               <Route path="/admin/branches" element={
                 <ProtectedRoute allowedRoles={["head_office_admin", "platform_admin"]}>
                   <AdminBranches />
