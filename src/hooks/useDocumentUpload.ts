@@ -72,7 +72,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
       const pageWidthMm = effectiveWidthPt != null ? (effectiveWidthPt * 25.4) / 72 : null;
       const pageHeightMm = effectiveHeightPt != null ? (effectiveHeightPt * 25.4) / 72 : null;
 
-      // Broad filter: accept any per-page image derived file
+      // Prefer cropped thumbnails if available, fall back to regular ones
       const thumbnailFiles = derivedFiles
         .filter((df) =>
           df.page != null &&
@@ -80,7 +80,13 @@ export function useDocumentUpload(orderItemId: string | undefined) {
           (df.media_type?.startsWith("image/") ||
            /thumbnail|preview|page|png/i.test(df.kind))
         )
-        .sort((a, b) => (a.page ?? 0) - (b.page ?? 0));
+        .sort((a, b) => {
+          // Prioritize cropped versions
+          const aIsCropped = a.kind.startsWith("cropped_") ? 0 : 1;
+          const bIsCropped = b.kind.startsWith("cropped_") ? 0 : 1;
+          if (aIsCropped !== bIsCropped) return aIsCropped - bIsCropped;
+          return (a.page ?? 0) - (b.page ?? 0);
+        });
 
       // Deduplicate by page number (take first per page)
       const thumbnailPaths: string[] = [];
