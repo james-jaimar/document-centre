@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import {
   createAsset,
+  cropRasterize,
   getAsset,
   getDerivedFiles,
   pollJob,
