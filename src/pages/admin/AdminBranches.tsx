@@ -37,6 +37,7 @@ const emptyForm: BranchFormData = {
 };
 
 const AdminBranches = () => {
+  const navigate = useNavigate();
   const { tenantId } = useTenantContext();
   const { data: branches, isLoading } = useBranches(tenantId);
   const createBranch = useCreateBranch();
