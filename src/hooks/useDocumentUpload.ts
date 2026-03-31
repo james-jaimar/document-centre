@@ -119,7 +119,6 @@ export function useDocumentUpload(orderItemId: string | undefined) {
           media_type: "application/pdf",
           source_storage_path: storagePath,
           auto_queue: true,
-          render_box: "trim", // Use trim box for thumbnails (actual finished size, not bleed)
         });
 
         console.log("[upload] Asset registered:", asset_id, "jobs:", job_ids);
