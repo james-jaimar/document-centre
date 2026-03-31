@@ -14,6 +14,33 @@ export type Database = {
   }
   public: {
     Tables: {
+      apps: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          slug: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          slug: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          slug?: string
+        }
+        Relationships: []
+      }
       assets: {
         Row: {
           boxes: Json | null
@@ -141,9 +168,11 @@ export type Database = {
         Row: {
           address: string | null
           city: string | null
+          code: string | null
           country: string
           created_at: string
           email: string | null
+          external_ref: string | null
           id: string
           is_active: boolean
           name: string
@@ -157,9 +186,11 @@ export type Database = {
         Insert: {
           address?: string | null
           city?: string | null
+          code?: string | null
           country?: string
           created_at?: string
           email?: string | null
+          external_ref?: string | null
           id?: string
           is_active?: boolean
           name: string
@@ -173,9 +204,11 @@ export type Database = {
         Update: {
           address?: string | null
           city?: string | null
+          code?: string | null
           country?: string
           created_at?: string
           email?: string | null
+          external_ref?: string | null
           id?: string
           is_active?: boolean
           name?: string
@@ -390,6 +423,96 @@ export type Database = {
           },
         ]
       }
+      job_proofs: {
+        Row: {
+          app_id: string
+          approval_token: string | null
+          approved_at: string | null
+          created_at: string
+          document_id: string | null
+          id: string
+          job_id: string
+          metadata: Json
+          order_id: string
+          proof_status: string
+          proof_type: string
+          rejected_at: string | null
+          tenant_id: string
+          viewer_type: string
+          viewer_url: string | null
+        }
+        Insert: {
+          app_id: string
+          approval_token?: string | null
+          approved_at?: string | null
+          created_at?: string
+          document_id?: string | null
+          id?: string
+          job_id: string
+          metadata?: Json
+          order_id: string
+          proof_status?: string
+          proof_type: string
+          rejected_at?: string | null
+          tenant_id: string
+          viewer_type: string
+          viewer_url?: string | null
+        }
+        Update: {
+          app_id?: string
+          approval_token?: string | null
+          approved_at?: string | null
+          created_at?: string
+          document_id?: string | null
+          id?: string
+          job_id?: string
+          metadata?: Json
+          order_id?: string
+          proof_status?: string
+          proof_type?: string
+          rejected_at?: string | null
+          tenant_id?: string
+          viewer_type?: string
+          viewer_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_proofs_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: false
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_proofs_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "order_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_proofs_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "order_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_proofs_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_proofs_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       jobs: {
         Row: {
           asset_id: string | null
@@ -449,6 +572,289 @@ export type Database = {
           },
         ]
       }
+      messages: {
+        Row: {
+          app_id: string
+          branch_id: string | null
+          created_at: string
+          id: string
+          is_internal: boolean
+          job_id: string | null
+          message_body: string
+          order_id: string | null
+          recipient_type: string
+          sender_profile_id: string | null
+          sender_type: string
+          tenant_id: string
+        }
+        Insert: {
+          app_id: string
+          branch_id?: string | null
+          created_at?: string
+          id?: string
+          is_internal?: boolean
+          job_id?: string | null
+          message_body: string
+          order_id?: string | null
+          recipient_type?: string
+          sender_profile_id?: string | null
+          sender_type: string
+          tenant_id: string
+        }
+        Update: {
+          app_id?: string
+          branch_id?: string | null
+          created_at?: string
+          id?: string
+          is_internal?: boolean
+          job_id?: string | null
+          message_body?: string
+          order_id?: string | null
+          recipient_type?: string
+          sender_profile_id?: string | null
+          sender_type?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: false
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "order_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      number_sequences: {
+        Row: {
+          app_id: string
+          id: string
+          last_value: number
+          prefix: string
+          sequence_type: string
+        }
+        Insert: {
+          app_id: string
+          id?: string
+          last_value?: number
+          prefix: string
+          sequence_type: string
+        }
+        Update: {
+          app_id?: string
+          id?: string
+          last_value?: number
+          prefix?: string
+          sequence_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "number_sequences_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: false
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      order_addresses: {
+        Row: {
+          address_type: string
+          city: string | null
+          company_name: string | null
+          contact_name: string | null
+          country: string | null
+          created_at: string
+          email: string | null
+          id: string
+          instructions: string | null
+          line1: string | null
+          line2: string | null
+          order_id: string
+          phone: string | null
+          postal_code: string | null
+          province: string | null
+          suburb: string | null
+        }
+        Insert: {
+          address_type: string
+          city?: string | null
+          company_name?: string | null
+          contact_name?: string | null
+          country?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          instructions?: string | null
+          line1?: string | null
+          line2?: string | null
+          order_id: string
+          phone?: string | null
+          postal_code?: string | null
+          province?: string | null
+          suburb?: string | null
+        }
+        Update: {
+          address_type?: string
+          city?: string | null
+          company_name?: string | null
+          contact_name?: string | null
+          country?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          instructions?: string | null
+          line1?: string | null
+          line2?: string | null
+          order_id?: string
+          phone?: string | null
+          postal_code?: string | null
+          province?: string | null
+          suburb?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_addresses_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      order_documents: {
+        Row: {
+          app_id: string
+          branch_id: string | null
+          created_at: string
+          created_by: string | null
+          document_type: string
+          file_name: string
+          file_size_bytes: number | null
+          id: string
+          is_customer_visible: boolean
+          job_id: string | null
+          metadata: Json
+          mime_type: string | null
+          order_id: string | null
+          public_url: string | null
+          source_app_managed: boolean
+          storage_bucket: string
+          storage_path: string
+          tenant_id: string
+          title: string | null
+          version_no: number
+        }
+        Insert: {
+          app_id: string
+          branch_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          document_type: string
+          file_name: string
+          file_size_bytes?: number | null
+          id?: string
+          is_customer_visible?: boolean
+          job_id?: string | null
+          metadata?: Json
+          mime_type?: string | null
+          order_id?: string | null
+          public_url?: string | null
+          source_app_managed?: boolean
+          storage_bucket?: string
+          storage_path: string
+          tenant_id: string
+          title?: string | null
+          version_no?: number
+        }
+        Update: {
+          app_id?: string
+          branch_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          document_type?: string
+          file_name?: string
+          file_size_bytes?: number | null
+          id?: string
+          is_customer_visible?: boolean
+          job_id?: string | null
+          metadata?: Json
+          mime_type?: string | null
+          order_id?: string | null
+          public_url?: string | null
+          source_app_managed?: boolean
+          storage_bucket?: string
+          storage_path?: string
+          tenant_id?: string
+          title?: string | null
+          version_no?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_documents_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: false
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_documents_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_documents_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "order_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_documents_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_documents_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_items: {
         Row: {
           build_status: Database["public"]["Enums"]["build_status"]
@@ -503,50 +909,359 @@ export type Database = {
           },
         ]
       }
+      order_jobs: {
+        Row: {
+          app_id: string
+          assigned_supplier_id: string | null
+          assigned_to_profile_id: string | null
+          branch_id: string | null
+          completed_at: string | null
+          configuration: Json
+          cost_price: number
+          created_at: string
+          customer_job_status: string
+          external_job_ref: string | null
+          external_product_key: string | null
+          file_status: string
+          gross_price: number
+          id: string
+          integration_payload: Json
+          job_name: string | null
+          job_number: string
+          job_status: string
+          net_price: number
+          order_id: string
+          product_category: string | null
+          product_name: string
+          product_snapshot: Json
+          production_specs: Json
+          proof_status: string
+          qty_remaining: number
+          qty_sent: number
+          quantity: number
+          ready_at: string | null
+          sequence_no: number
+          supplier_status: string | null
+          tenant_id: string
+          unit_label: string | null
+          updated_at: string
+          urgency: string
+          vat_rate: number
+          weight_kg: number | null
+        }
+        Insert: {
+          app_id: string
+          assigned_supplier_id?: string | null
+          assigned_to_profile_id?: string | null
+          branch_id?: string | null
+          completed_at?: string | null
+          configuration?: Json
+          cost_price?: number
+          created_at?: string
+          customer_job_status?: string
+          external_job_ref?: string | null
+          external_product_key?: string | null
+          file_status?: string
+          gross_price?: number
+          id?: string
+          integration_payload?: Json
+          job_name?: string | null
+          job_number: string
+          job_status?: string
+          net_price?: number
+          order_id: string
+          product_category?: string | null
+          product_name: string
+          product_snapshot?: Json
+          production_specs?: Json
+          proof_status?: string
+          qty_remaining?: number
+          qty_sent?: number
+          quantity?: number
+          ready_at?: string | null
+          sequence_no: number
+          supplier_status?: string | null
+          tenant_id: string
+          unit_label?: string | null
+          updated_at?: string
+          urgency?: string
+          vat_rate?: number
+          weight_kg?: number | null
+        }
+        Update: {
+          app_id?: string
+          assigned_supplier_id?: string | null
+          assigned_to_profile_id?: string | null
+          branch_id?: string | null
+          completed_at?: string | null
+          configuration?: Json
+          cost_price?: number
+          created_at?: string
+          customer_job_status?: string
+          external_job_ref?: string | null
+          external_product_key?: string | null
+          file_status?: string
+          gross_price?: number
+          id?: string
+          integration_payload?: Json
+          job_name?: string | null
+          job_number?: string
+          job_status?: string
+          net_price?: number
+          order_id?: string
+          product_category?: string | null
+          product_name?: string
+          product_snapshot?: Json
+          production_specs?: Json
+          proof_status?: string
+          qty_remaining?: number
+          qty_sent?: number
+          quantity?: number
+          ready_at?: string | null
+          sequence_no?: number
+          supplier_status?: string | null
+          tenant_id?: string
+          unit_label?: string | null
+          updated_at?: string
+          urgency?: string
+          vat_rate?: number
+          weight_kg?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_jobs_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: false
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_jobs_assigned_supplier_id_fkey"
+            columns: ["assigned_supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_jobs_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_jobs_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_jobs_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      order_pricing_snapshots: {
+        Row: {
+          amount_due: number
+          amount_paid: number
+          created_at: string
+          currency: string
+          delivery_amount: number
+          discount_amount: number
+          id: string
+          order_id: string
+          pricing_snapshot: Json
+          subtotal: number
+          total_amount: number
+          vat_amount: number
+          vat_rate: number
+          version_no: number
+        }
+        Insert: {
+          amount_due?: number
+          amount_paid?: number
+          created_at?: string
+          currency?: string
+          delivery_amount?: number
+          discount_amount?: number
+          id?: string
+          order_id: string
+          pricing_snapshot?: Json
+          subtotal: number
+          total_amount: number
+          vat_amount?: number
+          vat_rate?: number
+          version_no?: number
+        }
+        Update: {
+          amount_due?: number
+          amount_paid?: number
+          created_at?: string
+          currency?: string
+          delivery_amount?: number
+          discount_amount?: number
+          id?: string
+          order_id?: string
+          pricing_snapshot?: Json
+          subtotal?: number
+          total_amount?: number
+          vat_amount?: number
+          vat_rate?: number
+          version_no?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_pricing_snapshots_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       orders: {
         Row: {
+          admin_status: string
+          amount_due: number
+          amount_paid: number
+          app_id: string | null
           branch_id: string | null
+          company_name: string | null
+          completed_at: string | null
           created_at: string
+          currency: string
+          customer_email: string | null
+          customer_name: string | null
+          customer_status: string
+          date_required: string | null
+          delivery_amount: number
+          discount_amount: number
+          external_code: string | null
+          external_order_ref: string | null
           fulfillment_type:
             | Database["public"]["Enums"]["fulfillment_type"]
             | null
+          fulfilment_status: string
           id: string
+          metadata: Json
           notes: string | null
+          notes_customer: string | null
+          notes_internal: string | null
+          order_number: string | null
           order_status: Database["public"]["Enums"]["order_status"]
+          ordered_by_profile_id: string | null
+          payment_status: string
+          source_channel: string | null
+          storefront_name: string | null
+          submitted_at: string | null
+          subtotal: number
           tenant_id: string | null
+          total_amount: number
           total_price: number
+          turnaround_time_text: string | null
           updated_at: string
           user_id: string
+          vat_amount: number
         }
         Insert: {
+          admin_status?: string
+          amount_due?: number
+          amount_paid?: number
+          app_id?: string | null
           branch_id?: string | null
+          company_name?: string | null
+          completed_at?: string | null
           created_at?: string
+          currency?: string
+          customer_email?: string | null
+          customer_name?: string | null
+          customer_status?: string
+          date_required?: string | null
+          delivery_amount?: number
+          discount_amount?: number
+          external_code?: string | null
+          external_order_ref?: string | null
           fulfillment_type?:
             | Database["public"]["Enums"]["fulfillment_type"]
             | null
+          fulfilment_status?: string
           id?: string
+          metadata?: Json
           notes?: string | null
+          notes_customer?: string | null
+          notes_internal?: string | null
+          order_number?: string | null
           order_status?: Database["public"]["Enums"]["order_status"]
+          ordered_by_profile_id?: string | null
+          payment_status?: string
+          source_channel?: string | null
+          storefront_name?: string | null
+          submitted_at?: string | null
+          subtotal?: number
           tenant_id?: string | null
+          total_amount?: number
           total_price?: number
+          turnaround_time_text?: string | null
           updated_at?: string
           user_id: string
+          vat_amount?: number
         }
         Update: {
+          admin_status?: string
+          amount_due?: number
+          amount_paid?: number
+          app_id?: string | null
           branch_id?: string | null
+          company_name?: string | null
+          completed_at?: string | null
           created_at?: string
+          currency?: string
+          customer_email?: string | null
+          customer_name?: string | null
+          customer_status?: string
+          date_required?: string | null
+          delivery_amount?: number
+          discount_amount?: number
+          external_code?: string | null
+          external_order_ref?: string | null
           fulfillment_type?:
             | Database["public"]["Enums"]["fulfillment_type"]
             | null
+          fulfilment_status?: string
           id?: string
+          metadata?: Json
           notes?: string | null
+          notes_customer?: string | null
+          notes_internal?: string | null
+          order_number?: string | null
           order_status?: Database["public"]["Enums"]["order_status"]
+          ordered_by_profile_id?: string | null
+          payment_status?: string
+          source_channel?: string | null
+          storefront_name?: string | null
+          submitted_at?: string | null
+          subtotal?: number
           tenant_id?: string | null
+          total_amount?: number
           total_price?: number
+          turnaround_time_text?: string | null
           updated_at?: string
           user_id?: string
+          vat_amount?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "orders_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: false
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "orders_branch_id_fkey"
             columns: ["branch_id"]
@@ -556,6 +1271,82 @@ export type Database = {
           },
           {
             foreignKeyName: "orders_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payments: {
+        Row: {
+          amount: number
+          app_id: string
+          created_at: string
+          currency: string
+          id: string
+          initiated_at: string | null
+          metadata: Json
+          order_id: string
+          paid_at: string | null
+          payment_reference: string | null
+          provider: string
+          provider_transaction_id: string | null
+          raw_payload: Json
+          status: string
+          tenant_id: string
+        }
+        Insert: {
+          amount: number
+          app_id: string
+          created_at?: string
+          currency?: string
+          id?: string
+          initiated_at?: string | null
+          metadata?: Json
+          order_id: string
+          paid_at?: string | null
+          payment_reference?: string | null
+          provider: string
+          provider_transaction_id?: string | null
+          raw_payload?: Json
+          status: string
+          tenant_id: string
+        }
+        Update: {
+          amount?: number
+          app_id?: string
+          created_at?: string
+          currency?: string
+          id?: string
+          initiated_at?: string | null
+          metadata?: Json
+          order_id?: string
+          paid_at?: string | null
+          payment_reference?: string | null
+          provider?: string
+          provider_transaction_id?: string | null
+          raw_payload?: Json
+          status?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: false
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -707,7 +1498,13 @@ export type Database = {
           avatar_url: string | null
           created_at: string
           display_name: string | null
+          email: string | null
+          first_name: string | null
+          global_role: string
           id: string
+          is_active: boolean
+          last_name: string | null
+          phone: string | null
           tenant_id: string | null
           updated_at: string
         }
@@ -715,7 +1512,13 @@ export type Database = {
           avatar_url?: string | null
           created_at?: string
           display_name?: string | null
+          email?: string | null
+          first_name?: string | null
+          global_role?: string
           id: string
+          is_active?: boolean
+          last_name?: string | null
+          phone?: string | null
           tenant_id?: string | null
           updated_at?: string
         }
@@ -723,7 +1526,13 @@ export type Database = {
           avatar_url?: string | null
           created_at?: string
           display_name?: string | null
+          email?: string | null
+          first_name?: string | null
+          global_role?: string
           id?: string
+          is_active?: boolean
+          last_name?: string | null
+          phone?: string | null
           tenant_id?: string | null
           updated_at?: string
         }
@@ -737,9 +1546,173 @@ export type Database = {
           },
         ]
       }
+      status_history: {
+        Row: {
+          app_id: string
+          changed_by: string | null
+          created_at: string
+          entity_type: string
+          from_status: string | null
+          id: string
+          job_id: string | null
+          order_id: string | null
+          reason: string | null
+          tenant_id: string
+          to_status: string
+        }
+        Insert: {
+          app_id: string
+          changed_by?: string | null
+          created_at?: string
+          entity_type: string
+          from_status?: string | null
+          id?: string
+          job_id?: string | null
+          order_id?: string | null
+          reason?: string | null
+          tenant_id: string
+          to_status: string
+        }
+        Update: {
+          app_id?: string
+          changed_by?: string | null
+          created_at?: string
+          entity_type?: string
+          from_status?: string | null
+          id?: string
+          job_id?: string | null
+          order_id?: string | null
+          reason?: string | null
+          tenant_id?: string
+          to_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "status_history_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: false
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "status_history_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "order_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "status_history_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "status_history_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      suppliers: {
+        Row: {
+          contact_name: string | null
+          created_at: string
+          email: string | null
+          id: string
+          is_active: boolean
+          name: string
+          notes: string | null
+          phone: string | null
+        }
+        Insert: {
+          contact_name?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          notes?: string | null
+          phone?: string | null
+        }
+        Update: {
+          contact_name?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          notes?: string | null
+          phone?: string | null
+        }
+        Relationships: []
+      }
+      tenant_memberships: {
+        Row: {
+          app_id: string
+          branch_id: string | null
+          can_view_all_orders: boolean
+          created_at: string
+          id: string
+          is_active: boolean
+          profile_id: string
+          role: string
+          tenant_id: string
+        }
+        Insert: {
+          app_id: string
+          branch_id?: string | null
+          can_view_all_orders?: boolean
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          profile_id: string
+          role: string
+          tenant_id: string
+        }
+        Update: {
+          app_id?: string
+          branch_id?: string | null
+          can_view_all_orders?: boolean
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          profile_id?: string
+          role?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_memberships_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: false
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenant_memberships_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenant_memberships_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenants: {
         Row: {
+          app_id: string | null
           created_at: string
+          external_ref: string | null
           id: string
           is_active: boolean
           logo_url: string | null
@@ -749,7 +1722,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          app_id?: string | null
           created_at?: string
+          external_ref?: string | null
           id?: string
           is_active?: boolean
           logo_url?: string | null
@@ -759,7 +1734,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          app_id?: string | null
           created_at?: string
+          external_ref?: string | null
           id?: string
           is_active?: boolean
           logo_url?: string | null
@@ -768,7 +1745,102 @@ export type Database = {
           slug?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "tenants_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: false
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      timeline_events: {
+        Row: {
+          actor_name: string | null
+          actor_profile_id: string | null
+          actor_type: string
+          app_id: string
+          branch_id: string | null
+          created_at: string
+          description: string
+          event_type: string
+          id: string
+          job_id: string | null
+          metadata: Json
+          order_id: string | null
+          tenant_id: string
+          visibility: string
+        }
+        Insert: {
+          actor_name?: string | null
+          actor_profile_id?: string | null
+          actor_type: string
+          app_id: string
+          branch_id?: string | null
+          created_at?: string
+          description: string
+          event_type: string
+          id?: string
+          job_id?: string | null
+          metadata?: Json
+          order_id?: string | null
+          tenant_id: string
+          visibility?: string
+        }
+        Update: {
+          actor_name?: string | null
+          actor_profile_id?: string | null
+          actor_type?: string
+          app_id?: string
+          branch_id?: string | null
+          created_at?: string
+          description?: string
+          event_type?: string
+          id?: string
+          job_id?: string | null
+          metadata?: Json
+          order_id?: string | null
+          tenant_id?: string
+          visibility?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "timeline_events_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: false
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timeline_events_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timeline_events_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "order_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timeline_events_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timeline_events_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
@@ -814,12 +1886,43 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      generate_job_number: {
+        Args: { p_order_number: string; p_sequence_no: number }
+        Returns: string
+      }
+      generate_order_number: { Args: { p_app_id: string }; Returns: string }
       get_user_tenant_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      map_customer_job_status: {
+        Args: { p_job_status: string; p_payment_status?: string }
+        Returns: string
+      }
+      next_number: {
+        Args: { p_app_id: string; p_sequence_type: string }
+        Returns: number
+      }
+      rollup_order_status: { Args: { p_order_id: string }; Returns: undefined }
+      sync_order_amounts: { Args: { p_order_id: string }; Returns: undefined }
+      user_can_read_order: {
+        Args: {
+          p_app_id: string
+          p_ordered_by_profile_id: string
+          p_tenant_id: string
+        }
+        Returns: boolean
+      }
+      user_has_membership: {
+        Args: { p_app_id: string; p_tenant_id: string }
+        Returns: boolean
+      }
+      user_is_staff_for: {
+        Args: { p_app_id: string; p_tenant_id: string }
         Returns: boolean
       }
     }
