@@ -21,11 +21,7 @@ import NewOrder from "@/pages/dashboard/NewOrder";
 import OrderFiles from "@/pages/dashboard/OrderFiles";
 import OrderBuild from "@/pages/dashboard/OrderBuild";
 
-// Branch
-import BranchDashboard from "@/pages/branch/BranchDashboard";
-import BranchSettings from "@/pages/branch/BranchSettings";
-
-// Admin
+// Admin (includes former Branch pages)
 import AdminDashboard from "@/pages/admin/AdminDashboard";
 import AdminBranches from "@/pages/admin/AdminBranches";
 import AdminProducts from "@/pages/admin/AdminProducts";
@@ -34,12 +30,16 @@ import AdminUsers from "@/pages/admin/AdminUsers";
 import AdminSettings from "@/pages/admin/AdminSettings";
 import AdminOrders from "@/pages/admin/AdminOrders";
 import AdminOrderDetail from "@/pages/admin/AdminOrderDetail";
+import BranchDashboard from "@/pages/branch/BranchDashboard";
 
 // Platform
 import PlatformTenants from "@/pages/platform/PlatformTenants";
 import PlatformSettings from "@/pages/platform/PlatformSettings";
 
 const queryClient = new QueryClient();
+
+const adminRoles = ["head_office_admin", "platform_admin"] as const;
+const operationsRoles = ["branch_manager", "store_operator", "head_office_admin", "platform_admin"] as const;
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -64,58 +64,55 @@ const App = () => (
               <Route path="/dashboard/settings" element={<CustomerSettings />} />
             </Route>
 
-            {/* Admin / Branch / Platform — original layout */}
+            {/* Admin & Platform — shared AppLayout */}
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-              {/* Branch */}
-              <Route path="/branch" element={
-                <ProtectedRoute allowedRoles={["branch_manager", "store_operator", "head_office_admin", "platform_admin"]}>
-                  <BranchDashboard />
-                </ProtectedRoute>
-              } />
-              <Route path="/branch/settings" element={
-                <ProtectedRoute allowedRoles={["branch_manager", "head_office_admin", "platform_admin"]}>
-                  <BranchSettings />
-                </ProtectedRoute>
-              } />
-
-              {/* Admin */}
+              {/* Admin — Operations */}
               <Route path="/admin" element={
-                <ProtectedRoute allowedRoles={["head_office_admin", "platform_admin"]}>
+                <ProtectedRoute allowedRoles={[...operationsRoles]}>
                   <AdminDashboard />
                 </ProtectedRoute>
               } />
               <Route path="/admin/orders" element={
-                <ProtectedRoute allowedRoles={["head_office_admin", "platform_admin"]}>
+                <ProtectedRoute allowedRoles={[...operationsRoles]}>
                   <AdminOrders />
                 </ProtectedRoute>
               } />
               <Route path="/admin/orders/:id" element={
-                <ProtectedRoute allowedRoles={["head_office_admin", "platform_admin"]}>
+                <ProtectedRoute allowedRoles={[...operationsRoles]}>
                   <AdminOrderDetail />
                 </ProtectedRoute>
               } />
+              <Route path="/admin/production" element={
+                <ProtectedRoute allowedRoles={[...operationsRoles]}>
+                  <BranchDashboard />
+                </ProtectedRoute>
+              } />
+
+              {/* Admin — Configuration */}
               <Route path="/admin/branches" element={
-                <ProtectedRoute allowedRoles={["head_office_admin", "platform_admin"]}>
+                <ProtectedRoute allowedRoles={[...adminRoles]}>
                   <AdminBranches />
                 </ProtectedRoute>
               } />
               <Route path="/admin/products" element={
-                <ProtectedRoute allowedRoles={["head_office_admin", "platform_admin"]}>
+                <ProtectedRoute allowedRoles={[...adminRoles]}>
                   <AdminProducts />
                 </ProtectedRoute>
               } />
               <Route path="/admin/pricing" element={
-                <ProtectedRoute allowedRoles={["head_office_admin", "platform_admin"]}>
+                <ProtectedRoute allowedRoles={[...adminRoles]}>
                   <AdminPricing />
                 </ProtectedRoute>
               } />
               <Route path="/admin/users" element={
-                <ProtectedRoute allowedRoles={["head_office_admin", "platform_admin"]}>
+                <ProtectedRoute allowedRoles={[...adminRoles]}>
                   <AdminUsers />
                 </ProtectedRoute>
               } />
+
+              {/* Admin — Settings */}
               <Route path="/admin/settings" element={
-                <ProtectedRoute allowedRoles={["head_office_admin", "platform_admin"]}>
+                <ProtectedRoute allowedRoles={[...adminRoles]}>
                   <AdminSettings />
                 </ProtectedRoute>
               } />
@@ -135,6 +132,7 @@ const App = () => (
 
             {/* Redirects */}
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/branch" element={<Navigate to="/admin/production" replace />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
           </TenantProvider>

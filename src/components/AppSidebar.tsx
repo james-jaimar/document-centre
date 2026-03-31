@@ -6,14 +6,12 @@ import {
   Settings,
   Users,
   DollarSign,
-  Gauge,
   ChevronLeft,
-  ShoppingCart,
   Globe,
   Printer,
   LogOut,
-  Cog,
   ClipboardList,
+  Factory,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -35,37 +33,7 @@ interface NavSection {
   roles: AppRole[];
 }
 
-const NAV_SECTIONS: NavSection[] = [
-  {
-    heading: "Customer",
-    roles: ["customer", "store_operator", "branch_manager", "head_office_admin", "platform_admin"],
-    items: [
-      { to: "/dashboard", icon: <LayoutDashboard size={20} />, label: "Dashboard" },
-      { to: "/dashboard/orders", icon: <ShoppingCart size={20} />, label: "My Orders" },
-      { to: "/dashboard/settings", icon: <Settings size={20} />, label: "Account" },
-    ],
-  },
-  {
-    heading: "Branch",
-    roles: ["branch_manager", "store_operator", "head_office_admin", "platform_admin"],
-    items: [
-      { to: "/branch", icon: <Gauge size={20} />, label: "Branch Queue" },
-      { to: "/branch/settings", icon: <Cog size={20} />, label: "Branch Settings" },
-    ],
-  },
-  {
-    heading: "Administration",
-    roles: ["head_office_admin", "platform_admin"],
-    items: [
-      { to: "/admin", icon: <LayoutDashboard size={20} />, label: "Admin Home" },
-      { to: "/admin/orders", icon: <ClipboardList size={20} />, label: "Order Manager" },
-      { to: "/admin/branches", icon: <Building2 size={20} />, label: "Branches" },
-      { to: "/admin/products", icon: <Package size={20} />, label: "Products" },
-      { to: "/admin/pricing", icon: <DollarSign size={20} />, label: "Pricing" },
-      { to: "/admin/users", icon: <Users size={20} />, label: "Users & Roles" },
-      { to: "/admin/settings", icon: <Settings size={20} />, label: "Tenant Settings" },
-    ],
-  },
+const PLATFORM_SECTIONS: NavSection[] = [
   {
     heading: "Platform",
     roles: ["platform_admin"],
@@ -76,18 +44,51 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
+const ADMIN_SECTIONS: NavSection[] = [
+  {
+    heading: "Operations",
+    roles: ["head_office_admin", "platform_admin", "branch_manager", "store_operator"],
+    items: [
+      { to: "/admin", icon: <LayoutDashboard size={20} />, label: "Dashboard" },
+      { to: "/admin/orders", icon: <ClipboardList size={20} />, label: "Order Manager" },
+      { to: "/admin/production", icon: <Factory size={20} />, label: "Production Queue" },
+    ],
+  },
+  {
+    heading: "Configuration",
+    roles: ["head_office_admin", "platform_admin"],
+    items: [
+      { to: "/admin/branches", icon: <Building2 size={20} />, label: "Branches" },
+      { to: "/admin/products", icon: <Package size={20} />, label: "Products" },
+      { to: "/admin/pricing", icon: <DollarSign size={20} />, label: "Pricing" },
+      { to: "/admin/users", icon: <Users size={20} />, label: "Users & Roles" },
+    ],
+  },
+  {
+    heading: "Settings",
+    roles: ["head_office_admin", "platform_admin"],
+    items: [
+      { to: "/admin/settings", icon: <Settings size={20} />, label: "Tenant Settings" },
+    ],
+  },
+];
+
 export default function AppSidebar() {
   const location = useLocation();
   const { roles, signOut, user } = useAuth();
   const { tenantName, membershipRole } = useTenantContext();
   const [collapsed, setCollapsed] = useState(false);
 
-  const visibleSections = NAV_SECTIONS.filter((section) =>
+  const isPlatformArea = location.pathname.startsWith("/platform");
+
+  const sections = isPlatformArea ? PLATFORM_SECTIONS : ADMIN_SECTIONS;
+
+  const visibleSections = sections.filter((section) =>
     section.roles.some((r) => roles.includes(r))
   );
 
   const isActive = (path: string) => {
-    if (path === "/dashboard" || path === "/branch" || path === "/admin" || path === "/platform") {
+    if (path === "/admin" || path === "/platform") {
       return location.pathname === path;
     }
     return location.pathname.startsWith(path);
@@ -108,8 +109,12 @@ export default function AppSidebar() {
               <Printer size={18} />
             </div>
             <div>
-              <h1 className="text-base font-bold leading-tight">{tenantName || "PrintHub"}</h1>
-              <p className="text-xs text-sidebar-muted">{membershipRole || "Web to Print"}</p>
+              <h1 className="text-base font-bold leading-tight">
+                {isPlatformArea ? "PrintHub Platform" : tenantName || "PrintHub"}
+              </h1>
+              <p className="text-xs text-sidebar-muted">
+                {isPlatformArea ? "Platform Admin" : membershipRole || "Tenant Admin"}
+              </p>
             </div>
           </div>
         )}
@@ -123,6 +128,17 @@ export default function AppSidebar() {
           />
         </button>
       </div>
+
+      {/* Cross-portal link */}
+      {!collapsed && !isPlatformArea && roles.includes("platform_admin") && (
+        <Link
+          to="/platform"
+          className="mx-3 mt-3 flex items-center gap-2 rounded-md border border-sidebar-border px-3 py-2 text-xs font-medium text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        >
+          <Globe size={14} />
+          Back to Platform
+        </Link>
+      )}
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-4 px-2">

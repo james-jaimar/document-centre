@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useTenantContext } from "@/hooks/useTenantContext";
+import { Link } from "react-router-dom";
 import { useTenants, useUpdateTenant } from "@/hooks/useTenants";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,9 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Building2, Globe, Pencil } from "lucide-react";
+import { Building2, Pencil, ArrowRight } from "lucide-react";
 import type { Tenant } from "@/hooks/useTenants";
 
 const PlatformTenants = () => {
@@ -79,9 +78,16 @@ const PlatformTenants = () => {
               <CardContent className="pt-0">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>Created {new Date(t.created_at).toLocaleDateString()}</span>
-                  <Button variant="ghost" size="sm" onClick={() => openEdit(t)}>
-                    <Pencil size={14} className="mr-1" /> Edit
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => openEdit(t)}>
+                      <Pencil size={14} className="mr-1" /> Edit
+                    </Button>
+                    <Button variant="outline" size="sm" asChild>
+                      <Link to={`/admin?tenant=${t.id}`}>
+                        Manage <ArrowRight size={14} className="ml-1" />
+                      </Link>
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
