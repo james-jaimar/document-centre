@@ -30,6 +30,7 @@ import AdminUsers from "@/pages/admin/AdminUsers";
 import AdminSettings from "@/pages/admin/AdminSettings";
 import AdminOrders from "@/pages/admin/AdminOrders";
 import AdminOrderDetail from "@/pages/admin/AdminOrderDetail";
+import AdminBranchDetail from "@/pages/admin/AdminBranchDetail";
 import BranchDashboard from "@/pages/branch/BranchDashboard";
 
 // Platform
