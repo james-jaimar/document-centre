@@ -28,7 +28,8 @@ import { toast } from "@/hooks/use-toast";
 import { seedBoundDocument } from "@/lib/seedBoundDocument";
 
 const AdminProducts = () => {
-  const { data: families = [], isLoading } = useProductFamilies();
+  const { tenantId } = useTenantContext();
+  const { data: families = [], isLoading } = useProductFamilies(tenantId);
   const createFamily = useCreateProductFamily();
   const updateFamily = useUpdateProductFamily();
   const deleteFamily = useDeleteProductFamily();

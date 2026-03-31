@@ -34,8 +34,9 @@ const RULE_TYPE_LABELS: Record<string, string> = {
 };
 
 const AdminPricing = () => {
-  const { data: rules = [], isLoading } = usePricingRules();
-  const { data: families = [] } = useProductFamilies();
+  const { tenantId } = useTenantContext();
+  const { data: rules = [], isLoading } = usePricingRules(tenantId);
+  const { data: families = [] } = useProductFamilies(tenantId);
   const createRule = useCreatePricingRule();
   const updateRule = useUpdatePricingRule();
   const deleteRule = useDeletePricingRule();
