@@ -1,88 +1,72 @@
 
 
-# Plan: Restructure Navigation for Multi-Tenant SaaS
+# Plan: Enhance Users & Roles + Branch Detail Pages
 
 ## Problem
 
-The current sidebar mixes concerns across portals:
-- **Customer section** (Dashboard, My Orders, Account) appears in the admin sidebar — it shouldn't. Customers have their own `CustomerLayout` with `CustomerSidebar`.
-- **Branch** is a top-level section, but branches belong under a tenant. Branch queue/settings should be nested under admin.
-- **Administration** and **Platform** are peers, but the hierarchy should be: Platform → Tenants → (Branches, Users, Products, etc.)
-- Clicking a tenant on the Platform page should navigate into that tenant's admin, not just show an edit dialog.
+1. **AdminUsers page exists but has no "Add User" button** — only edit/delete. No way to invite or create new tenant members from the UI.
+2. **Branch detail is too thin** — just a card with address/phone. A franchise model (e.g. PostNet) needs each branch to show its own users, contact person, operational settings, and capabilities.
+3. **No branch-level user management** — the current users page shows all tenant members but doesn't support filtering by branch or managing branch-specific staff.
 
-## Target Navigation Structure
+## What we will build
 
-```text
-PLATFORM ADMIN SIDEBAR (when on /platform/*)
-─────────────────────────────
-Platform
-  ├── Tenants              /platform/tenants
-  └── Platform Settings    /platform/settings
+### 1. Add "Invite/Add Member" to AdminUsers
 
-TENANT ADMIN SIDEBAR (when on /admin/*)
-─────────────────────────────
-Operations
-  ├── Dashboard            /admin
-  ├── Order Manager        /admin/orders
-  └── Production Queue     /admin/production
+- Add an "Add Member" button that opens a dialog
+- Fields: email (to look up existing profile or invite), role selector, branch assignment, permissions toggles
+- Uses `useCreateTenantMember` mutation (already exists)
+- For v1: only assign existing profiles (by email lookup from profiles table). Invite flow can come later.
 
-Configuration
-  ├── Branches             /admin/branches
-  ├── Products             /admin/products
-  ├── Pricing              /admin/pricing
-  └── Users & Roles        /admin/users
+### 2. Expand Branch Detail into a dedicated page
 
-Settings
-  └── Tenant Settings      /admin/settings
+Replace the simple card grid with a **clickable branch list** that navigates to `/admin/branches/:id` — a detail page with tabs:
 
-CUSTOMER SIDEBAR (unchanged — /dashboard/*)
-─────────────────────────────
-  ├── Home
-  ├── Create
-  ├── Orders
-  └── Account Settings
-```
+- **Details** — name, code, address, contact person, email, phone, pickup/dispatch settings, active toggle (the current edit form, but inline)
+- **Users** — filtered list of `tenant_memberships` where `branch_id` matches; ability to assign/remove users to this branch
+- **Capabilities** — links to existing `branch_capabilities` table (product families this branch can handle, turnaround, min/max pages)
 
-## Key Changes
+### 3. Branch Users sub-view
 
-### 1. Remove Customer section from admin sidebar
-The admin `AppSidebar` currently shows Customer nav items (Dashboard, My Orders, Account). Remove them entirely. Customer portal is a separate layout and sidebar.
+- On the branch detail page, show members assigned to that branch
+- Allow assigning existing tenant members to the branch (change their `branch_id`)
+- Allow creating new members directly assigned to this branch
 
-### 2. Merge Branch into Admin
-Branch Queue and Branch Settings move under the admin sidebar as operational items. Routes stay at `/admin/production` (renamed from `/branch`) and branch settings become part of tenant config. Remove the standalone "Branch" section.
+## Files to create
 
-### 3. Restructure admin sidebar into logical groups
-Three groups: **Operations** (day-to-day work), **Configuration** (setup), **Settings** (tenant config). No "Branch" or "Customer" headings.
-
-### 4. Platform tenant click-through
-On the Platform Tenants page, clicking a tenant navigates to `/admin?tenant=<id>` (or a future `/platform/tenants/:id` detail page) instead of opening an inline edit dialog. For now, keep the edit dialog but add a "Manage" button that links to `/admin`.
-
-### 5. Update routing
-- Rename `/branch` → `/admin/production` (branch production queue)
-- Keep `/branch/settings` as `/admin/branches/:id` (future) or fold into existing `/admin/branches`
-- Update `ProtectedRoute` role checks accordingly
-
-### 6. Role-based sidebar visibility
-- `platform_admin` sees: Platform sidebar when on `/platform/*`, Tenant admin sidebar when on `/admin/*`
-- `head_office_admin` / `owner` / `admin` sees: Tenant admin sidebar only
-- `sales` / `production` / `accounts` sees: subset of Operations items
-- `customer` sees: Customer sidebar only (already separate)
+- `src/pages/admin/AdminBranchDetail.tsx` — tabbed branch detail page (Details, Users, Capabilities)
 
 ## Files to modify
 
-- **`src/components/AppSidebar.tsx`** — Remove Customer section, merge Branch into Admin, restructure into Operations/Configuration/Settings groups
-- **`src/App.tsx`** — Update route paths (rename `/branch` → `/admin/production`), consolidate role guards
-- **`src/pages/platform/PlatformTenants.tsx`** — Add "Manage" link per tenant card
-- **`src/components/ProtectedRoute.tsx`** — Support tenant membership roles alongside legacy `app_role` enum (allow `owner`, `admin`, `sales`, `production`, `accounts` as valid role checks)
+- `src/pages/admin/AdminBranches.tsx` — make branch cards clickable, navigate to `/admin/branches/:id`
+- `src/pages/admin/AdminUsers.tsx` — add "Add Member" dialog with email lookup + role + branch assignment
+- `src/App.tsx` — add route `/admin/branches/:id` pointing to `AdminBranchDetail`
 
-## Files unchanged
-- `src/components/CustomerSidebar.tsx` — Already correct and separate
-- `src/components/CustomerLayout.tsx` — Already correct
-- All `/dashboard/*` pages — Untouched
+## Technical details
+
+### AdminUsers "Add Member" flow
+- Input: email field that searches `profiles` table
+- On match: show profile name, let admin pick role + branch + permissions
+- On no match: show message "User not found — they need to sign up first" (invite flow is v2)
+- Uses existing `useCreateTenantMember` hook
+
+### AdminBranchDetail tabs
+- **Details tab**: inline editable form (reuse existing form fields from AdminBranches dialog), plus new fields: `contact_person`, pickup allowed toggle, dispatch origin toggle. These can use the existing `settings` JSONB column on branches.
+- **Users tab**: query `useTenantMembers` filtered client-side by `branch_id`, with "Assign User" button to move existing tenant members to this branch
+- **Capabilities tab**: query `branch_capabilities` filtered by `branch_id`, display product family capabilities (read-only for now, CRUD in v2)
+
+### Route addition
+```
+/admin/branches/:id → AdminBranchDetail
+```
+
+### No database changes needed
+- `branches` table already has `settings` JSONB for extensible config
+- `tenant_memberships` already has `branch_id` column
+- `branch_capabilities` table already exists
 
 ## Implementation order
-1. Update `AppSidebar.tsx` — new nav structure
-2. Update `App.tsx` — route consolidation
-3. Update `ProtectedRoute.tsx` — support membership roles
-4. Update `PlatformTenants.tsx` — add tenant manage link
+1. Add "Add Member" dialog to AdminUsers
+2. Create AdminBranchDetail page with 3 tabs
+3. Update AdminBranches to link to detail page
+4. Add route in App.tsx
 
