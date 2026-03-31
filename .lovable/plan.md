@@ -1,63 +1,54 @@
 
 
-# Use trim box for dimensions and thumbnail rendering
+# Fix thumbnail rendering to use Trim Box
 
 ## Problem
-The PDF server extracts all PDF boxes (media, trim, crop, bleed) and returns them in the `boxes` field of the asset. However:
-1. The `width_pt` / `height_pt` reported on the asset use the **media box** — so documents with bleed show inflated dimensions (e.g. a document designed for A4 with 3mm bleed shows as 216×303mm instead of 210×297mm)
-2. Thumbnails are rasterized from the media box, so they include bleed/slug areas that the end customer shouldn't see
-3. The paper size detection then misidentifies the document (e.g. flags it as "non-ISO" when it's actually A4 + bleed)
+The dimension detection is working correctly (210×297mm for the UICT profile). However, the **thumbnails still render from the MediaBox**, showing bleed and crop marks. The `render_box: "trim"` parameter sent to `createAsset` was silently ignored by the server — it's not a supported parameter on that endpoint.
 
-## Approach
+## Solution: Call rasterize operation after initial processing
 
-### Step 1: Probe the server's rasterize capability
-Write a quick test to call the server and discover:
-- Whether `v1/operations/rasterize` exists and what parameters it accepts
-- What the `boxes` data actually looks like for an existing asset
-- Whether `createAsset` accepts a `render_box` parameter
+The server has a `v1/operations/rasterize` endpoint (confirmed by existing test). After the initial jobs complete and we have the asset's box data, we call rasterize with the TrimBox coordinates to generate new thumbnails cropped to the finished size.
 
-This test will be added to `supabase/functions/pdf-api/probe.test.ts` and run once to gather intelligence.
+## Changes
 
-### Step 2: Use trim box dimensions client-side (immediate fix)
+### 1. Probe the rasterize endpoint to discover its parameters
+**File: `supabase/functions/pdf-api/index.test.ts`**
+- Add a test that calls `v1/operations/rasterize` with the known UICT asset ID and TrimBox coordinates
+- This tells us the exact parameter format the server expects
+- Run once to gather the response
+
+### 2. Add `rasterize` function to the API client
+**File: `src/lib/documentCentreApi.ts`**
+- Add a `rasterize()` function that calls `v1/operations/rasterize` with asset ID and box coordinates
+- Parameters: `asset_id`, `box` (the [x0, y0, x1, y1] trim box coordinates), and optionally `dpi`
+
+### 3. Re-rasterize after initial processing when TrimBox differs from MediaBox
 **File: `src/hooks/useDocumentUpload.ts`**
+- After initial jobs complete and we fetch the asset metadata, check if `TrimBox` exists and differs from `MediaBox`
+- If so, call `rasterize()` with the TrimBox coordinates, poll the resulting job, then re-fetch derived files for the new thumbnails
+- This replaces the media-box thumbnails with trim-box-cropped ones
+- Update status text: "Cropping to trim size..."
 
-In `fetchThumbnails`, after getting the asset:
-- Check `asset.boxes` for a `trim_box` or `TrimBox`
-- If present, calculate `pageWidthMm` and `pageHeightMm` from the trim box instead of `width_pt`/`height_pt`
-- This fixes the dimension display and paper size detection immediately, regardless of server thumbnail rendering
+### 4. Remove the unused `render_box` from `createAsset`
+**File: `src/lib/documentCentreApi.ts`** and **`src/hooks/useDocumentUpload.ts`**
+- Remove `render_box` from `CreateAssetPayload` since the server doesn't support it on that endpoint
+- Clean up the parameter from the `createAsset` call
+
+## Flow after fix
 
 ```text
-Priority: trim_box → crop_box → media_box (width_pt/height_pt)
+Upload → createAsset(auto_queue) → poll jobs → fetch asset metadata
+  ↓
+  Has TrimBox ≠ MediaBox?
+    YES → call rasterize(asset_id, trim_box) → poll job → fetch new thumbnails
+    NO  → use existing thumbnails as-is
+  ↓
+  Save to documents table
 ```
-
-### Step 3: Pass render_box to createAsset or call rasterize separately
-**Files: `src/lib/documentCentreApi.ts`, `src/hooks/useDocumentUpload.ts`**
-
-Depending on what the probe reveals:
-- **If createAsset accepts `render_box`**: Add it to `CreateAssetPayload` and pass `render_box: "trim"` (falling back to "media") when registering assets
-- **If a separate rasterize operation is needed**: After the initial jobs complete and we have box data, call `v1/operations/rasterize` with the trim box specification, then poll for the new thumbnails
-- **If the server doesn't support box-specific rendering yet**: Use the client-side dimension fix from Step 2 and document the server enhancement needed
-
-### Step 4: Update the proxy allowlist if needed
-**File: `supabase/functions/pdf-api/index.ts`**
-
-If new paths are needed (e.g. `v1/operations/rasterize`), they're already covered by the `v1/operations` prefix.
-
-## Technical detail
-
-PDF box hierarchy:
-```text
-MediaBox  — full physical page (largest)
-BleedBox  — printable area + bleed margin
-TrimBox   — final trimmed page size (what the customer expects)
-CropBox   — default rendering area in viewers
-ArtBox    — meaningful content area (smallest)
-```
-
-For print workflows: TrimBox is the "real" page size. If no TrimBox exists, the document has no bleed and MediaBox = page size.
 
 ## Execution order
-1. Run probe test to discover server capabilities
-2. Apply client-side trim box dimension fix (works immediately)
-3. Wire up server-side rendering if supported
+1. Probe rasterize endpoint with test to learn parameter format
+2. Add rasterize API function
+3. Wire up the re-rasterize step in the upload flow
+4. Clean up unused render_box parameter
 
