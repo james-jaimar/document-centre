@@ -83,7 +83,7 @@ function useRecentOrders(userId: string | undefined) {
       if (!userId) return [];
       const { data, error } = await supabase
         .from("orders")
-        .select("*, order_items(id, product_family_id, build_status, title, spec)")
+        .select("*, order_items(id, product_family_id, build_status, title, spec, documents(file_name))")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
         .limit(5);
@@ -117,6 +117,21 @@ function useTrackingOrders(userId: string | undefined) {
     },
     enabled: !!userId,
   });
+}
+
+/* ── Helpers ── */
+function getOrderDisplayName(order: any): string {
+  const items = order.order_items as any[] | undefined;
+  if (items?.length) {
+    // Try first document filename
+    const docs = items[0]?.documents as any[] | undefined;
+    if (docs?.length && docs[0]?.file_name) {
+      return docs[0].file_name;
+    }
+    // Fall back to item title
+    if (items[0]?.title) return items[0].title;
+  }
+  return `Order ${order.id.slice(0, 8)}`;
 }
 
 /* ── Component ── */
@@ -236,8 +251,8 @@ const CustomerDashboard = () => {
               <tbody>
                 {recentOrders.slice(0, 4).map((order) => (
                   <tr key={order.id}>
-                    <td className="max-w-[180px] truncate">
-                      {order.order_items?.[0]?.title || `Order ${order.id.slice(0, 8)}`}
+                    <td className="max-w-[180px] truncate" title={getOrderDisplayName(order)}>
+                      {getOrderDisplayName(order)}
                     </td>
                     <td className="text-muted-foreground">
                       {formatDistanceToNow(new Date(order.created_at), { addSuffix: true })}
@@ -274,8 +289,8 @@ const CustomerDashboard = () => {
               <tbody>
                 {recentOrders.slice(0, 3).map((order) => (
                   <tr key={order.id}>
-                    <td className="max-w-[160px] truncate">
-                      {order.order_items?.[0]?.title || `Order ${order.id.slice(0, 8)}`}
+                    <td className="max-w-[160px] truncate" title={getOrderDisplayName(order)}>
+                      {getOrderDisplayName(order)}
                     </td>
                     <td className="text-muted-foreground">
                       {formatDistanceToNow(new Date(order.updated_at), { addSuffix: true })}
@@ -311,8 +326,8 @@ const CustomerDashboard = () => {
               <tbody>
                 {recentOrders.slice(0, 4).map((order) => (
                   <tr key={order.id}>
-                    <td className="max-w-[180px] truncate">
-                      {order.order_items?.[0]?.title || `Order ${order.id.slice(0, 8)}`}
+                    <td className="max-w-[180px] truncate" title={getOrderDisplayName(order)}>
+                      {getOrderDisplayName(order)}
                     </td>
                     <td>
                       <button
