@@ -21,7 +21,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Pencil, Trash2, Shield, Users } from "lucide-react";
+import { Pencil, Trash2, Shield, Users, UserPlus } from "lucide-react";
+import { AddMemberDialog } from "@/components/admin/AddMemberDialog";
 
 const MEMBERSHIP_ROLES = ["owner", "admin", "sales", "production", "accounts", "customer"];
 
@@ -44,6 +45,7 @@ const AdminUsers = () => {
   const [editing, setEditing] = useState<TenantMemberRow | null>(null);
   const [editForm, setEditForm] = useState({ role: "", branch_id: "", is_active: true, can_view_all_orders: false });
   const [deleteTarget, setDeleteTarget] = useState<TenantMemberRow | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
 
   const openEdit = (m: TenantMemberRow) => {
     setEditing(m);
@@ -97,6 +99,9 @@ const AdminUsers = () => {
           <h1 className="text-2xl font-bold text-foreground">Users & Roles</h1>
           <p className="text-sm text-muted-foreground">Manage team members and their permissions</p>
         </div>
+        <Button onClick={() => setAddOpen(true)}>
+          <UserPlus size={16} className="mr-2" /> Add Member
+        </Button>
       </div>
 
       {isLoading ? (
@@ -223,6 +228,16 @@ const AdminUsers = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Add Member */}
+      {tenantId && appId && (
+        <AddMemberDialog
+          open={addOpen}
+          onOpenChange={setAddOpen}
+          tenantId={tenantId}
+          appId={appId}
+        />
+      )}
     </div>
   );
 };

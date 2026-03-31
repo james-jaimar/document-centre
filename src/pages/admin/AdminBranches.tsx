@@ -15,7 +15,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Building2, MapPin, Phone, Mail, Plus, Pencil, Trash2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Building2, MapPin, Phone, Mail, Plus, Pencil, Trash2, ChevronRight } from "lucide-react";
 
 interface BranchFormData {
   name: string;
@@ -36,6 +37,7 @@ const emptyForm: BranchFormData = {
 };
 
 const AdminBranches = () => {
+  const navigate = useNavigate();
   const { tenantId } = useTenantContext();
   const { data: branches, isLoading } = useBranches(tenantId);
   const createBranch = useCreateBranch();
@@ -183,10 +185,13 @@ const AdminBranches = () => {
                   </div>
                 )}
                 <div className="flex justify-end gap-1 pt-2">
-                  <Button variant="ghost" size="sm" onClick={() => openEdit(b)}>
+                  <Button variant="ghost" size="sm" onClick={() => navigate(`/admin/branches/${b.id}`)}>
+                    <ChevronRight size={14} className="mr-1" /> Manage
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openEdit(b); }}>
                     <Pencil size={14} className="mr-1" /> Edit
                   </Button>
-                  <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setDeleteTarget(b)}>
+                  <Button variant="ghost" size="sm" className="text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteTarget(b); }}>
                     <Trash2 size={14} className="mr-1" /> Delete
                   </Button>
                 </div>
