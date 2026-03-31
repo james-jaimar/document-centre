@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { useTenantContext } from "@/hooks/useTenantContext";
 import type { Database } from "@/integrations/supabase/types";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
@@ -78,6 +79,7 @@ const NAV_SECTIONS: NavSection[] = [
 export default function AppSidebar() {
   const location = useLocation();
   const { roles, signOut, user } = useAuth();
+  const { tenantName, membershipRole } = useTenantContext();
   const [collapsed, setCollapsed] = useState(false);
 
   const visibleSections = NAV_SECTIONS.filter((section) =>
@@ -106,8 +108,8 @@ export default function AppSidebar() {
               <Printer size={18} />
             </div>
             <div>
-              <h1 className="text-base font-bold leading-tight">PrintHub</h1>
-              <p className="text-xs text-sidebar-muted">Web to Print</p>
+              <h1 className="text-base font-bold leading-tight">{tenantName || "PrintHub"}</h1>
+              <p className="text-xs text-sidebar-muted">{membershipRole || "Web to Print"}</p>
             </div>
           </div>
         )}

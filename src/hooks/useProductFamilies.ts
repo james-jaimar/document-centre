@@ -8,14 +8,20 @@ export type ProductFamilyUpdate = TablesUpdate<"product_families">;
 
 const QUERY_KEY = ["product_families"];
 
-export function useProductFamilies() {
+export function useProductFamilies(tenantId?: string | null) {
   return useQuery({
-    queryKey: QUERY_KEY,
+    queryKey: [...QUERY_KEY, tenantId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("product_families")
         .select("*, product_options(count)")
         .order("sort_order", { ascending: true });
+
+      if (tenantId) {
+        query = query.or(`tenant_id.eq.${tenantId},tenant_id.is.null`);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return data as (ProductFamily & { product_options: { count: number }[] })[];
     },
