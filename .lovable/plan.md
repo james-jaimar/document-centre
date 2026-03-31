@@ -31,24 +31,26 @@
 
 ---
 
-## Phase 2: Edge Functions for Mutations — TODO
+## Phase 2: Edge Functions for Mutations ✅ COMPLETE
 
 ### Edge function: `order-engine`
-- [ ] createOrderWithJobs
-- [ ] updateJobStatus
-- [ ] recordPaymentEvent
-- [ ] attachOrderDocument
-- [ ] createJobProof
-- [ ] sendMessage
+- [x] createOrderWithJobs
+- [x] updateJobStatus
+- [x] recordPaymentEvent
+- [x] attachOrderDocument
+- [x] createJobProof
+- [x] sendMessage
 
 ---
 
-## Phase 3: Shared Library Layer — TODO
+## Phase 3: Shared Library Layer ✅ COMPLETE (partial — hooks in Phase 4)
 
-- [ ] `src/lib/orders/queries.ts`
-- [ ] `src/lib/orders/mutations.ts`
-- [ ] `src/hooks/useOrders.ts`
-- [ ] `src/hooks/useOrderDetail.ts`
+- [x] `src/lib/orders/types.ts`
+- [x] `src/lib/orders/status-maps.ts`
+- [x] `src/lib/orders/queries.ts`
+- [x] `src/lib/orders/mutations.ts`
+- [ ] `src/hooks/useOrders.ts` — will create with Phase 4 UI
+- [ ] `src/hooks/useOrderDetail.ts` — will create with Phase 4 UI
 
 ---
 
