@@ -261,6 +261,18 @@ export async function merge(
   });
 }
 
+export async function cropRasterize(
+  assetId: string,
+  box: [number, number, number, number],
+  dpi = 120
+): Promise<{ job_id: string }> {
+  return request("v1/operations/crop-rasterize", "POST", {
+    asset_id: assetId,
+    box,
+    dpi,
+  });
+}
+
 // ── Health ────────────────────────────────────────────────────────
 
 export async function health(): Promise<{
