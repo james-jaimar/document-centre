@@ -1,94 +1,113 @@
 
 
-# Plan: Wire Up Multi-Tenant Foundation
+# Plan: Build Tenant Settings System
 
-## Problem
+## What ChatGPT adds that we should incorporate
 
-The current app has two parallel systems that aren't connected:
+After comparing both recommendation sets, the key additions worth adopting:
 
-1. **Legacy system** — `useAuth` fetches roles from `user_roles` table (global roles like `platform_admin`, `head_office_admin`). Products/pricing use `tenant_id` from `profiles.tenant_id` via `get_user_tenant_id()`. No awareness of `apps` or `tenant_memberships`.
+1. **Setting inheritance model** — platform defaults cascade to app, tenant, branch, product. A `resolve_setting()` function merges layers, so tenants only store overrides.
+2. **Workflow templates** — named presets (`prepaid_no_proof`, `prepaid_with_proof`, `account_with_proof`, `account_no_proof`) instead of raw toggles. Simpler for tenant admins.
+3. **Tenant onboarding status** — track setup progress (`draft`, `setup_in_progress`, `ready`, `suspended`) on the tenants table.
+4. **Permission flags** — extend `tenant_memberships` with granular flags beyond role (e.g. `can_edit_prices`, `can_assign_jobs`, `can_mark_paid`).
+5. **Legal vs display name** — separate `legal_name`, `trading_name`, `vat_number`, `registration_number` on tenants.
+6. **Tenant-product enablement** — a mapping table so each tenant controls which products they sell, with overrides.
 
-2. **New order engine** — Uses `apps`, `tenant_memberships`, `tenant_id`/`app_id` on orders. RLS uses `user_is_staff_for()` and `user_can_read_order()` which check `tenant_memberships`.
+Items 1, 2, 3, 5 are high value for v1. Items 4 and 6 can come in v2.
 
-Products, pricing, branches, and the customer order builder all use the legacy `profiles.tenant_id` + `user_roles` pattern. The new order engine uses `tenant_memberships`. These two systems don't talk to each other — meaning admin screens for products/pricing won't filter by the right tenant, and the order engine can't find the user's membership context.
+## What we will build now
 
-## What Needs to Happen
+### Phase 1: Database changes
 
-### 1. Create a Tenant Context Provider
+**Extend `tenants` table** with new columns:
+- `legal_name`, `trading_name`, `vat_number`, `registration_number`
+- `billing_email`, `support_email`, `support_phone`, `website_url`
+- `default_currency` (default `'ZAR'`), `country` (default `'ZA'`), `timezone` (default `'Africa/Johannesburg'`), `locale` (default `'en-ZA'`)
+- `onboarding_status` (default `'draft'`) — values: `draft`, `setup_in_progress`, `ready`, `suspended`
+- `payment_mode` (default `'prepaid'`) — values: `prepaid`, `account`, `mixed`
+- `proof_mode` (default `'optional'`) — values: `always`, `optional`, `never`
+- `workflow_template` (default `'prepaid_no_proof'`) — values: `prepaid_no_proof`, `prepaid_with_proof`, `account_no_proof`, `account_with_proof`
 
-A new `useTenantContext` hook that loads the current user's tenant membership(s) on login and exposes:
-- `appId`, `tenantId`, `branchId`, `membershipRole`
-- Falls back gracefully if user only has legacy `user_roles` (during transition)
+**Create `tenant_settings` table** for flexible key-value config:
+```text
+tenant_settings
+├── id              uuid PK
+├── tenant_id       uuid FK → tenants (NOT NULL)
+├── category        text NOT NULL
+├── setting_key     text NOT NULL
+├── setting_value   jsonb NOT NULL DEFAULT '{}'
+├── value_type      text NOT NULL DEFAULT 'string'
+├── is_sensitive    boolean DEFAULT false
+├── sort_order      integer DEFAULT 0
+├── created_at      timestamptz
+├── updated_at      timestamptz
+└── UNIQUE(tenant_id, category, setting_key)
+```
 
-This replaces scattered `get_user_tenant_id()` calls on the client side with a single source of truth.
+RLS: select/update for tenant owner/admin via `user_is_tenant_admin()`, full access for `platform_admin`.
 
-### 2. Wire Auth to Load Memberships
+**Seed default settings** for the existing tenant across these categories:
+- `branding` — primary_color, secondary_color, accent_color
+- `workflow` — requires_payment_before_production, requires_proof_approval, allows_partial_dispatch, auto_accept_orders, allows_reorder, requires_admin_review
+- `uploads` — allowed_file_types, max_file_size_mb, require_customer_upload
+- `notifications` — order_confirmation, payment_received, proof_ready, order_dispatched, order_completed
+- `financial` — tax_label, tax_rate, tax_inclusive, invoice_prefix, invoice_next_number
+- `delivery` — methods_enabled, free_shipping_threshold
+- `documents` — proforma_prefix, delivery_note_prefix, legal_footer_text
 
-Update `useAuth.tsx` to also fetch the user's `tenant_memberships` alongside `user_roles`. Expose both so existing role checks still work while new membership checks are available.
+### Phase 2: Admin Settings UI
 
-### 3. Tenant-Scope All Admin Queries
+Build `/admin/settings` as a tabbed settings page with these tabs:
 
-Update these hooks to filter by `tenant_id` from context:
-- `useProductFamilies` — add `.eq("tenant_id", tenantId)` (or `.is("tenant_id", null)` for global)
-- `usePricingRules` — same pattern
-- `useAdminOrders` — pass `tenant_id` and `app_id` from context
-- `seedBoundDocument` — accept `tenant_id` parameter
+**General** — tenant profile fields (name, legal name, trading name, VAT, registration, contact details, currency, timezone, country, locale)
 
-### 4. Build Tenant & Branch Admin Pages
+**Branding** — logo upload, brand colors, portal name
 
-**Tenant Management** (`/platform` — platform_admin only):
-- List all tenants, create/edit tenant with name, slug, logo, settings
-- Assign apps to tenants
+**Workflow** — workflow template selector (4 presets), plus individual toggle overrides
 
-**Branch Management** (`/admin/branches` — head_office_admin+):
-- List branches for current tenant
-- Create/edit branch with name, address, code, contact info
-- Toggle active status
+**Financial** — tax config, invoice numbering, payment mode, bank details
 
-### 5. Build Users & Roles Page
+**Uploads & Proofs** — file types, size limits, proof mode
 
-**Users & Roles** (`/admin/users` — head_office_admin+):
-- List all `tenant_memberships` for current tenant (joined with profiles)
-- Invite user / assign membership role (owner, admin, sales, production, accounts, customer)
-- Assign to branch
-- Toggle `can_view_all_orders`
+**Notifications** — toggle which events send emails, sender name/email
 
-### 6. Ensure Seed Data Consistency
+**Documents** — numbering prefixes, legal footer, customer visibility rules
 
-The existing seed migration created an app, tenant, branch, and membership for the current user. Verify this is correctly wired so the admin pages show data.
+**Delivery** — enabled methods, fee rules, free shipping threshold
 
-## Technical Details
+Each tab reads/writes from a combination of `tenants` columns (for indexed/critical fields) and `tenant_settings` rows (for flexible config).
+
+### Phase 3: Setting inheritance helper
+
+Create a `resolve_tenant_setting(p_tenant_id, p_category, p_key)` SQL function that checks:
+1. Tenant-specific setting
+2. Falls back to a platform default (tenant_id IS NULL row)
+
+This keeps the system extensible for app-level and branch-level overrides later without changing the API.
+
+## Technical details
 
 ### New files
-- `src/hooks/useTenantContext.tsx` — React context providing `appId`, `tenantId`, `branchId`, `role` from `tenant_memberships`
-- `src/hooks/useTenants.ts` — CRUD hooks for tenants table
-- `src/hooks/useBranches.ts` — CRUD hooks for branches table
-- `src/hooks/useTenantMembers.ts` — hooks for listing/managing memberships
-- `src/pages/platform/PlatformTenants.tsx` — rewrite with full CRUD
-- `src/pages/admin/AdminBranches.tsx` — rewrite with full CRUD
-- `src/pages/admin/AdminUsers.tsx` — rewrite with membership management
+- `src/hooks/useTenantSettings.ts` — CRUD hooks for `tenant_settings` table
+- `src/pages/admin/AdminSettings.tsx` — rewrite with tabbed settings UI
+- `src/pages/admin/settings/GeneralTab.tsx`
+- `src/pages/admin/settings/BrandingTab.tsx`
+- `src/pages/admin/settings/WorkflowTab.tsx`
+- `src/pages/admin/settings/FinancialTab.tsx`
+- `src/pages/admin/settings/UploadsTab.tsx`
+- `src/pages/admin/settings/NotificationsTab.tsx`
+- `src/pages/admin/settings/DocumentsTab.tsx`
+- `src/pages/admin/settings/DeliveryTab.tsx`
 
 ### Modified files
-- `src/hooks/useAuth.tsx` — fetch `tenant_memberships` alongside `user_roles`, expose in context
-- `src/hooks/useProductFamilies.ts` — accept/use `tenantId` filter
-- `src/hooks/usePricingRules.ts` — accept/use `tenantId` filter
-- `src/hooks/useOrders.ts` — pass tenant context to queries
-- `src/lib/orders/queries.ts` — use `app_id`/`tenant_id` filters
-- `src/lib/seedBoundDocument.ts` — accept `tenantId` parameter
-- `src/App.tsx` — wrap routes with `TenantProvider`
-- `src/components/AppSidebar.tsx` — show current tenant name in header
+- `src/integrations/supabase/types.ts` — auto-updated after migration
 
-### Database migrations needed
-- Add RLS INSERT policies for `tenant_memberships` (staff can invite)
-- Add RLS INSERT/UPDATE/DELETE policies for `tenants` (currently only platform_admin can manage)
-- Possibly add INSERT policies for `branches` (head_office_admin)
+### Migration
+- One migration: extend `tenants`, create `tenant_settings`, add RLS, seed defaults, create `resolve_tenant_setting()` function
 
 ### Implementation order
-1. Database: add missing RLS policies for CRUD on tenants, branches, memberships
-2. `useTenantContext` provider + wire into `useAuth`
-3. Tenant-scope existing hooks (products, pricing, orders)
-4. Build Tenant Management page (platform level)
-5. Build Branch Management page (admin level)
-6. Build Users & Roles page (admin level)
-7. Update sidebar to show tenant context
+1. Database migration (extend tenants + create tenant_settings + seed + helper function)
+2. `useTenantSettings` hook
+3. Build tabbed AdminSettings page with all 8 tabs
+4. Wire each tab to read/write tenant columns and tenant_settings rows
 
