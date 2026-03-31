@@ -289,8 +289,8 @@ const CustomerDashboard = () => {
               <tbody>
                 {recentOrders.slice(0, 3).map((order) => (
                   <tr key={order.id}>
-                    <td className="max-w-[160px] truncate">
-                      {order.order_items?.[0]?.title || `Order ${order.id.slice(0, 8)}`}
+                    <td className="max-w-[160px] truncate" title={getOrderDisplayName(order)}>
+                      {getOrderDisplayName(order)}
                     </td>
                     <td className="text-muted-foreground">
                       {formatDistanceToNow(new Date(order.updated_at), { addSuffix: true })}
