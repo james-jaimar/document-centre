@@ -48,6 +48,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
+          <TenantProvider>
           <Routes>
             {/* Public */}
             <Route path="/auth" element={<Auth />} />
