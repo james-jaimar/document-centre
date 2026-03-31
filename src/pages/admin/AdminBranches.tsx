@@ -185,10 +185,13 @@ const AdminBranches = () => {
                   </div>
                 )}
                 <div className="flex justify-end gap-1 pt-2">
-                  <Button variant="ghost" size="sm" onClick={() => openEdit(b)}>
+                  <Button variant="ghost" size="sm" onClick={() => navigate(`/admin/branches/${b.id}`)}>
+                    <ChevronRight size={14} className="mr-1" /> Manage
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openEdit(b); }}>
                     <Pencil size={14} className="mr-1" /> Edit
                   </Button>
-                  <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setDeleteTarget(b)}>
+                  <Button variant="ghost" size="sm" className="text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteTarget(b); }}>
                     <Trash2 size={14} className="mr-1" /> Delete
                   </Button>
                 </div>

@@ -95,6 +95,11 @@ const App = () => (
                   <AdminBranches />
                 </ProtectedRoute>
               } />
+              <Route path="/admin/branches/:id" element={
+                <ProtectedRoute allowedRoles={[...adminRoles]}>
+                  <AdminBranchDetail />
+                </ProtectedRoute>
+              } />
               <Route path="/admin/products" element={
                 <ProtectedRoute allowedRoles={[...adminRoles]}>
                   <AdminProducts />

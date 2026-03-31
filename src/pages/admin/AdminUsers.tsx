@@ -228,6 +228,16 @@ const AdminUsers = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Add Member */}
+      {tenantId && appId && (
+        <AddMemberDialog
+          open={addOpen}
+          onOpenChange={setAddOpen}
+          tenantId={tenantId}
+          appId={appId}
+        />
+      )}
     </div>
   );
 };
