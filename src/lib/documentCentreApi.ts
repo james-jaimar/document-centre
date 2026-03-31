@@ -11,8 +11,6 @@ export interface CreateAssetPayload {
   source_storage_path: string;
   metadata?: Record<string, unknown>;
   auto_queue?: boolean;
-  /** Which PDF box to use for rasterization: "trim" (default), "crop", or "media" */
-  render_box?: "trim" | "crop" | "media";
 }
 
 export interface CreateAssetResponse {
