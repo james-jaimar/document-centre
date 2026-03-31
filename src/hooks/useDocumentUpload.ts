@@ -147,9 +147,45 @@ export function useDocumentUpload(orderItemId: string | undefined) {
           );
         }
 
-        updateUpload(fileName, { progress: 50, statusText: "Rendering pages…" });
+        updateUpload(fileName, { progress: 50, statusText: "Checking page dimensions…" });
 
-        // 4. Poll for thumbnails — they are generated asynchronously after initial jobs
+        // 4. Fetch asset to check for TrimBox ≠ MediaBox
+        const assetMeta = await getAsset(asset_id);
+        const boxes = assetMeta.boxes as Record<string, number[]> | null;
+        const trimBox = boxes?.TrimBox;
+        const mediaBox = boxes?.MediaBox;
+
+        const boxesDiffer = trimBox && mediaBox &&
+          trimBox.length === 4 && mediaBox.length === 4 &&
+          (Math.abs(trimBox[0] - mediaBox[0]) > 0.5 ||
+           Math.abs(trimBox[1] - mediaBox[1]) > 0.5 ||
+           Math.abs(trimBox[2] - mediaBox[2]) > 0.5 ||
+           Math.abs(trimBox[3] - mediaBox[3]) > 0.5);
+
+        if (boxesDiffer && trimBox) {
+          // 4a. Re-rasterize cropped to TrimBox for display thumbnails
+          console.log("[upload] TrimBox differs from MediaBox, cropping thumbnails to:", trimBox);
+          updateUpload(fileName, { progress: 55, statusText: "Cropping to trim size…" });
+
+          const { job_id: cropJobId } = await cropRasterize(
+            asset_id,
+            trimBox as [number, number, number, number]
+          );
+
+          await pollJob(cropJobId, (job) => {
+            if (job.status === "pending") {
+              updateUpload(fileName, { progress: 55, statusText: "Queued — cropping to trim size…" });
+            } else if (job.status === "running") {
+              updateUpload(fileName, { progress: 60, statusText: "Rendering trimmed pages…" });
+            }
+          });
+
+          console.log("[upload] Crop-rasterize complete, fetching new thumbnails");
+        }
+
+        updateUpload(fileName, { progress: 70, statusText: "Rendering pages…" });
+
+        // 5. Poll for thumbnails — they are generated asynchronously after initial jobs
         let final_ = await fetchThumbnails(asset_id);
         const MAX_THUMB_POLLS = 60; // ~3 minutes at 3s intervals
         const expectedPages = final_.pageCount ?? 1;
@@ -174,9 +210,8 @@ export function useDocumentUpload(orderItemId: string | undefined) {
           }
           lastCount = found;
 
-          // Trickle progress: 20% for actual pages + 20% for time elapsed
-          const progress = 50 + (found / expectedPages) * 20 + (i / MAX_THUMB_POLLS) * 20;
-          updateUpload(fileName, { progress: Math.min(90, progress), statusText: `Rendering pages… (${found}/${expectedPages})` });
+          const progress = 70 + (found / expectedPages) * 20 + (i / MAX_THUMB_POLLS) * 10;
+          updateUpload(fileName, { progress: Math.min(95, progress), statusText: `Rendering pages… (${found}/${expectedPages})` });
 
           await new Promise((r) => setTimeout(r, 3000));
           final_ = await fetchThumbnails(asset_id);
