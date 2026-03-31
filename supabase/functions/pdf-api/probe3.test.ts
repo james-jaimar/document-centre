@@ -23,8 +23,8 @@ Deno.test("fetch openapi docs directly from server", async () => {
         } else if (res.status === 200) {
           console.log(text.slice(0, 3000));
         }
-      } catch (e) {
-        console.log(`GET ${base}/${path}: ERROR ${e.message}`);
+      } catch (e: unknown) {
+        console.log(`GET ${base}/${path}: ERROR ${(e as Error).message}`);
       }
     }
   }
