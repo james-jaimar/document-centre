@@ -83,7 +83,7 @@ function useRecentOrders(userId: string | undefined) {
       if (!userId) return [];
       const { data, error } = await supabase
         .from("orders")
-        .select("*, order_items(id, product_family_id, build_status, title, spec)")
+        .select("*, order_items(id, product_family_id, build_status, title, spec, documents(file_name))")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
         .limit(5);
