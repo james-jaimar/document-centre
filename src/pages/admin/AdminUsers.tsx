@@ -99,6 +99,9 @@ const AdminUsers = () => {
           <h1 className="text-2xl font-bold text-foreground">Users & Roles</h1>
           <p className="text-sm text-muted-foreground">Manage team members and their permissions</p>
         </div>
+        <Button onClick={() => setAddOpen(true)}>
+          <UserPlus size={16} className="mr-2" /> Add Member
+        </Button>
       </div>
 
       {isLoading ? (
