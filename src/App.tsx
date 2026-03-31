@@ -31,6 +31,8 @@ import AdminProducts from "@/pages/admin/AdminProducts";
 import AdminPricing from "@/pages/admin/AdminPricing";
 import AdminUsers from "@/pages/admin/AdminUsers";
 import AdminSettings from "@/pages/admin/AdminSettings";
+import AdminOrders from "@/pages/admin/AdminOrders";
+import AdminOrderDetail from "@/pages/admin/AdminOrderDetail";
 
 // Platform
 import PlatformTenants from "@/pages/platform/PlatformTenants";
@@ -78,6 +80,16 @@ const App = () => (
               <Route path="/admin" element={
                 <ProtectedRoute allowedRoles={["head_office_admin", "platform_admin"]}>
                   <AdminDashboard />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/orders" element={
+                <ProtectedRoute allowedRoles={["head_office_admin", "platform_admin"]}>
+                  <AdminOrders />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/orders/:id" element={
+                <ProtectedRoute allowedRoles={["head_office_admin", "platform_admin"]}>
+                  <AdminOrderDetail />
                 </ProtectedRoute>
               } />
               <Route path="/admin/branches" element={

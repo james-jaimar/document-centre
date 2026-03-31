@@ -13,6 +13,7 @@ import {
   Printer,
   LogOut,
   Cog,
+  ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -56,6 +57,7 @@ const NAV_SECTIONS: NavSection[] = [
     roles: ["head_office_admin", "platform_admin"],
     items: [
       { to: "/admin", icon: <LayoutDashboard size={20} />, label: "Admin Home" },
+      { to: "/admin/orders", icon: <ClipboardList size={20} />, label: "Order Manager" },
       { to: "/admin/branches", icon: <Building2 size={20} />, label: "Branches" },
       { to: "/admin/products", icon: <Package size={20} />, label: "Products" },
       { to: "/admin/pricing", icon: <DollarSign size={20} />, label: "Pricing" },
