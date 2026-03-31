@@ -108,8 +108,8 @@ export default function AppSidebar() {
               <Printer size={18} />
             </div>
             <div>
-              <h1 className="text-base font-bold leading-tight">PrintHub</h1>
-              <p className="text-xs text-sidebar-muted">Web to Print</p>
+              <h1 className="text-base font-bold leading-tight">{tenantName || "PrintHub"}</h1>
+              <p className="text-xs text-sidebar-muted">{membershipRole || "Web to Print"}</p>
             </div>
           </div>
         )}

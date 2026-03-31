@@ -137,6 +137,7 @@ const App = () => (
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </TenantProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
