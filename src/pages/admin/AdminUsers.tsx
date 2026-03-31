@@ -21,7 +21,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Pencil, Trash2, Shield, Users } from "lucide-react";
+import { Pencil, Trash2, Shield, Users, UserPlus } from "lucide-react";
+import { AddMemberDialog } from "@/components/admin/AddMemberDialog";
 
 const MEMBERSHIP_ROLES = ["owner", "admin", "sales", "production", "accounts", "customer"];
 
