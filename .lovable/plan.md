@@ -1,82 +1,94 @@
 
-# Ecommerce Order Management Engine — Build Progress
 
-## Phase 1: Database Schema Evolution ✅ COMPLETE
+# Plan: Wire Up Multi-Tenant Foundation
 
-### Completed:
-- Created `apps`, `tenant_memberships`, `suppliers`, `number_sequences` tables
-- Created `order_jobs`, `order_addresses`, `order_pricing_snapshots` tables
-- Created `payments`, `order_documents`, `timeline_events`, `messages` tables
-- Created `job_proofs`, `status_history` tables
-- ALTERed `tenants` (added app_id, external_ref)
-- ALTERed `branches` (added code, external_ref)
-- ALTERed `profiles` (added email, first_name, last_name, phone, global_role, is_active)
-- ALTERed `orders` (added all financial, status, and metadata columns)
-- Created all functions: next_number, generate_order_number, generate_job_number, map_customer_job_status, rollup_order_status, sync_order_amounts, handle_order_jobs_after_write
-- Created membership security functions: user_has_membership, user_is_staff_for, user_can_read_order
-- Enabled RLS on all new tables with full policy set
-- Created triggers for order_jobs after insert/update
-- Created all indexes
+## Problem
 
-### Design decisions:
-- Kept existing `documents` table for file upload/processing pipeline
-- Created separate `order_documents` table for order engine documents (invoices, proofs, etc.)
-- Kept existing `user_roles` table for backward compatibility
-- New `tenant_memberships` table handles order-engine permissions
-- Orders table keeps both old `order_status` enum column and new text status columns
+The current app has two parallel systems that aren't connected:
 
-### Client types created:
-- `src/lib/orders/types.ts` — Full TypeScript type definitions
-- `src/lib/orders/status-maps.ts` — Status labels, colors for all status types
+1. **Legacy system** — `useAuth` fetches roles from `user_roles` table (global roles like `platform_admin`, `head_office_admin`). Products/pricing use `tenant_id` from `profiles.tenant_id` via `get_user_tenant_id()`. No awareness of `apps` or `tenant_memberships`.
 
----
+2. **New order engine** — Uses `apps`, `tenant_memberships`, `tenant_id`/`app_id` on orders. RLS uses `user_is_staff_for()` and `user_can_read_order()` which check `tenant_memberships`.
 
-## Phase 2: Edge Functions for Mutations ✅ COMPLETE
+Products, pricing, branches, and the customer order builder all use the legacy `profiles.tenant_id` + `user_roles` pattern. The new order engine uses `tenant_memberships`. These two systems don't talk to each other — meaning admin screens for products/pricing won't filter by the right tenant, and the order engine can't find the user's membership context.
 
-### Edge function: `order-engine`
-- [x] createOrderWithJobs
-- [x] updateJobStatus
-- [x] recordPaymentEvent
-- [x] attachOrderDocument
-- [x] createJobProof
-- [x] sendMessage
+## What Needs to Happen
 
----
+### 1. Create a Tenant Context Provider
 
-## Phase 3: Shared Library Layer ✅ COMPLETE (partial — hooks in Phase 4)
+A new `useTenantContext` hook that loads the current user's tenant membership(s) on login and exposes:
+- `appId`, `tenantId`, `branchId`, `membershipRole`
+- Falls back gracefully if user only has legacy `user_roles` (during transition)
 
-- [x] `src/lib/orders/types.ts`
-- [x] `src/lib/orders/status-maps.ts`
-- [x] `src/lib/orders/queries.ts`
-- [x] `src/lib/orders/mutations.ts`
-- [ ] `src/hooks/useOrders.ts` — will create with Phase 4 UI
-- [ ] `src/hooks/useOrderDetail.ts` — will create with Phase 4 UI
+This replaces scattered `get_user_tenant_id()` calls on the client side with a single source of truth.
 
----
+### 2. Wire Auth to Load Memberships
 
-## Phase 4: Admin Order Management UI ✅ COMPLETE
+Update `useAuth.tsx` to also fetch the user's `tenant_memberships` alongside `user_roles`. Expose both so existing role checks still work while new membership checks are available.
 
-- [x] `/admin/orders` — Order Manager grid with search, status chips, dense table, pagination
-- [x] `/admin/orders/:id` — Order Detail (3-column: summary/pricing/delivery/ordered-by tabs + job detail + timeline/messaging)
-- [x] Components: OrderStatusChips, StatusBadge, OrderSummaryTab, OrderPricingTab, OrderDeliveryTab, OrderedByTab, JobDetailPanel, TimelinePanel
-- [x] React Query hooks: useAdminOrders, useCustomerOrders, useOrderDetail
-- [x] Routes added to App.tsx
-- [x] Sidebar navigation updated with "Order Manager" link
+### 3. Tenant-Scope All Admin Queries
 
----
+Update these hooks to filter by `tenant_id` from context:
+- `useProductFamilies` — add `.eq("tenant_id", tenantId)` (or `.is("tenant_id", null)` for global)
+- `usePricingRules` — same pattern
+- `useAdminOrders` — pass `tenant_id` and `app_id` from context
+- `seedBoundDocument` — accept `tenant_id` parameter
 
-## Phase 5: Customer Order Views — TODO
+### 4. Build Tenant & Branch Admin Pages
 
-- [ ] `/dashboard/orders` — Enhanced order list
-- [ ] `/dashboard/orders/:id` — Order Detail (2-column)
+**Tenant Management** (`/platform` — platform_admin only):
+- List all tenants, create/edit tenant with name, slug, logo, settings
+- Assign apps to tenants
 
----
+**Branch Management** (`/admin/branches` — head_office_admin+):
+- List branches for current tenant
+- Create/edit branch with name, address, code, contact info
+- Toggle active status
 
-## Phase 6: Polish and Integration — TODO
+### 5. Build Users & Roles Page
 
-- [ ] Connect document upload flow
-- [ ] Wire product configurator
-- [ ] Proof approval flow
-- [ ] Payment integration hookpoints
-- [ ] Responsive behavior
-- [ ] Sidebar navigation updates
+**Users & Roles** (`/admin/users` — head_office_admin+):
+- List all `tenant_memberships` for current tenant (joined with profiles)
+- Invite user / assign membership role (owner, admin, sales, production, accounts, customer)
+- Assign to branch
+- Toggle `can_view_all_orders`
+
+### 6. Ensure Seed Data Consistency
+
+The existing seed migration created an app, tenant, branch, and membership for the current user. Verify this is correctly wired so the admin pages show data.
+
+## Technical Details
+
+### New files
+- `src/hooks/useTenantContext.tsx` — React context providing `appId`, `tenantId`, `branchId`, `role` from `tenant_memberships`
+- `src/hooks/useTenants.ts` — CRUD hooks for tenants table
+- `src/hooks/useBranches.ts` — CRUD hooks for branches table
+- `src/hooks/useTenantMembers.ts` — hooks for listing/managing memberships
+- `src/pages/platform/PlatformTenants.tsx` — rewrite with full CRUD
+- `src/pages/admin/AdminBranches.tsx` — rewrite with full CRUD
+- `src/pages/admin/AdminUsers.tsx` — rewrite with membership management
+
+### Modified files
+- `src/hooks/useAuth.tsx` — fetch `tenant_memberships` alongside `user_roles`, expose in context
+- `src/hooks/useProductFamilies.ts` — accept/use `tenantId` filter
+- `src/hooks/usePricingRules.ts` — accept/use `tenantId` filter
+- `src/hooks/useOrders.ts` — pass tenant context to queries
+- `src/lib/orders/queries.ts` — use `app_id`/`tenant_id` filters
+- `src/lib/seedBoundDocument.ts` — accept `tenantId` parameter
+- `src/App.tsx` — wrap routes with `TenantProvider`
+- `src/components/AppSidebar.tsx` — show current tenant name in header
+
+### Database migrations needed
+- Add RLS INSERT policies for `tenant_memberships` (staff can invite)
+- Add RLS INSERT/UPDATE/DELETE policies for `tenants` (currently only platform_admin can manage)
+- Possibly add INSERT policies for `branches` (head_office_admin)
+
+### Implementation order
+1. Database: add missing RLS policies for CRUD on tenants, branches, memberships
+2. `useTenantContext` provider + wire into `useAuth`
+3. Tenant-scope existing hooks (products, pricing, orders)
+4. Build Tenant Management page (platform level)
+5. Build Branch Management page (admin level)
+6. Build Users & Roles page (admin level)
+7. Update sidebar to show tenant context
+
