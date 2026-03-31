@@ -54,11 +54,14 @@
 
 ---
 
-## Phase 4: Admin Order Management UI — TODO
+## Phase 4: Admin Order Management UI ✅ COMPLETE
 
-- [ ] `/admin/orders` — Order Manager grid
-- [ ] `/admin/orders/:id` — Order Detail (3-column)
-- [ ] Components: grid, filters, timeline, messaging, pricing, proofs
+- [x] `/admin/orders` — Order Manager grid with search, status chips, dense table, pagination
+- [x] `/admin/orders/:id` — Order Detail (3-column: summary/pricing/delivery/ordered-by tabs + job detail + timeline/messaging)
+- [x] Components: OrderStatusChips, StatusBadge, OrderSummaryTab, OrderPricingTab, OrderDeliveryTab, OrderedByTab, JobDetailPanel, TimelinePanel
+- [x] React Query hooks: useAdminOrders, useCustomerOrders, useOrderDetail
+- [x] Routes added to App.tsx
+- [x] Sidebar navigation updated with "Order Manager" link
 
 ---
 
