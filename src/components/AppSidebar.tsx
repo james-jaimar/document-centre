@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { useTenantContext } from "@/hooks/useTenantContext";
 import type { Database } from "@/integrations/supabase/types";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
