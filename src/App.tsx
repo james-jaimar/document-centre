@@ -31,6 +31,8 @@ import AdminProducts from "@/pages/admin/AdminProducts";
 import AdminPricing from "@/pages/admin/AdminPricing";
 import AdminUsers from "@/pages/admin/AdminUsers";
 import AdminSettings from "@/pages/admin/AdminSettings";
+import AdminOrders from "@/pages/admin/AdminOrders";
+import AdminOrderDetail from "@/pages/admin/AdminOrderDetail";
 
 // Platform
 import PlatformTenants from "@/pages/platform/PlatformTenants";
