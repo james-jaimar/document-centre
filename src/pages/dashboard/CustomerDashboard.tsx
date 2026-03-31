@@ -119,6 +119,21 @@ function useTrackingOrders(userId: string | undefined) {
   });
 }
 
+/* ── Helpers ── */
+function getOrderDisplayName(order: any): string {
+  const items = order.order_items as any[] | undefined;
+  if (items?.length) {
+    // Try first document filename
+    const docs = items[0]?.documents as any[] | undefined;
+    if (docs?.length && docs[0]?.file_name) {
+      return docs[0].file_name;
+    }
+    // Fall back to item title
+    if (items[0]?.title) return items[0].title;
+  }
+  return `Order ${order.id.slice(0, 8)}`;
+}
+
 /* ── Component ── */
 const CustomerDashboard = () => {
   const navigate = useNavigate();
