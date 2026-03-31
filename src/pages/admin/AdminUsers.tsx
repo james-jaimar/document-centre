@@ -45,6 +45,7 @@ const AdminUsers = () => {
   const [editing, setEditing] = useState<TenantMemberRow | null>(null);
   const [editForm, setEditForm] = useState({ role: "", branch_id: "", is_active: true, can_view_all_orders: false });
   const [deleteTarget, setDeleteTarget] = useState<TenantMemberRow | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
 
   const openEdit = (m: TenantMemberRow) => {
     setEditing(m);
