@@ -15,7 +15,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Building2, MapPin, Phone, Mail, Plus, Pencil, Trash2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Building2, MapPin, Phone, Mail, Plus, Pencil, Trash2, ChevronRight } from "lucide-react";
 
 interface BranchFormData {
   name: string;
