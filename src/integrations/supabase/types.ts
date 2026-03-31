@@ -1708,42 +1708,137 @@ export type Database = {
           },
         ]
       }
+      tenant_settings: {
+        Row: {
+          category: string
+          created_at: string
+          id: string
+          is_sensitive: boolean
+          setting_key: string
+          setting_value: Json
+          sort_order: number
+          tenant_id: string
+          updated_at: string
+          value_type: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          id?: string
+          is_sensitive?: boolean
+          setting_key: string
+          setting_value?: Json
+          sort_order?: number
+          tenant_id: string
+          updated_at?: string
+          value_type?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          id?: string
+          is_sensitive?: boolean
+          setting_key?: string
+          setting_value?: Json
+          sort_order?: number
+          tenant_id?: string
+          updated_at?: string
+          value_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_settings_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenants: {
         Row: {
           app_id: string | null
+          billing_email: string | null
+          country: string
           created_at: string
+          default_currency: string
           external_ref: string | null
           id: string
           is_active: boolean
+          legal_name: string | null
+          locale: string
           logo_url: string | null
           name: string
+          onboarding_status: string
+          payment_mode: string
+          proof_mode: string
+          registration_number: string | null
           settings: Json
           slug: string
+          support_email: string | null
+          support_phone: string | null
+          timezone: string
+          trading_name: string | null
           updated_at: string
+          vat_number: string | null
+          website_url: string | null
+          workflow_template: string
         }
         Insert: {
           app_id?: string | null
+          billing_email?: string | null
+          country?: string
           created_at?: string
+          default_currency?: string
           external_ref?: string | null
           id?: string
           is_active?: boolean
+          legal_name?: string | null
+          locale?: string
           logo_url?: string | null
           name: string
+          onboarding_status?: string
+          payment_mode?: string
+          proof_mode?: string
+          registration_number?: string | null
           settings?: Json
           slug: string
+          support_email?: string | null
+          support_phone?: string | null
+          timezone?: string
+          trading_name?: string | null
           updated_at?: string
+          vat_number?: string | null
+          website_url?: string | null
+          workflow_template?: string
         }
         Update: {
           app_id?: string | null
+          billing_email?: string | null
+          country?: string
           created_at?: string
+          default_currency?: string
           external_ref?: string | null
           id?: string
           is_active?: boolean
+          legal_name?: string | null
+          locale?: string
           logo_url?: string | null
           name?: string
+          onboarding_status?: string
+          payment_mode?: string
+          proof_mode?: string
+          registration_number?: string | null
           settings?: Json
           slug?: string
+          support_email?: string | null
+          support_phone?: string | null
+          timezone?: string
+          trading_name?: string | null
           updated_at?: string
+          vat_number?: string | null
+          website_url?: string | null
+          workflow_template?: string
         }
         Relationships: [
           {
@@ -1906,6 +2001,10 @@ export type Database = {
       next_number: {
         Args: { p_app_id: string; p_sequence_type: string }
         Returns: number
+      }
+      resolve_tenant_setting: {
+        Args: { p_category: string; p_key: string; p_tenant_id: string }
+        Returns: Json
       }
       rollup_order_status: { Args: { p_order_id: string }; Returns: undefined }
       sync_order_amounts: { Args: { p_order_id: string }; Returns: undefined }
