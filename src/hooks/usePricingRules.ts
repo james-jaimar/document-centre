@@ -8,14 +8,20 @@ export type PricingRuleUpdate = TablesUpdate<"pricing_rules">;
 
 const QUERY_KEY = ["pricing_rules"];
 
-export function usePricingRules() {
+export function usePricingRules(tenantId?: string | null) {
   return useQuery({
-    queryKey: QUERY_KEY,
+    queryKey: [...QUERY_KEY, tenantId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("pricing_rules")
         .select("*, product_families(name)")
         .order("sort_order", { ascending: true });
+
+      if (tenantId) {
+        query = query.or(`tenant_id.eq.${tenantId},tenant_id.is.null`);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return data as (PricingRule & { product_families: { name: string } | null })[];
     },
