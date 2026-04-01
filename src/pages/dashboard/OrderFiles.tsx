@@ -185,7 +185,7 @@ export default function OrderFiles() {
   }, [clearUploads, refetchDocuments]);
 
   const handleAddAs = useCallback(
-    async (type: "front_cover" | "back_cover" | "body" | "insert" | "tab") => {
+    async (type: "front_cover" | "back_cover" | "body") => {
       if (!selectedDocId || !orderItem) return;
       try {
         await addSection.mutateAsync({
