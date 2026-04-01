@@ -497,6 +497,20 @@ export default function OrderBuild() {
     );
   }
 
+  // Empty state: no files uploaded yet
+  if (!loading && documents.length === 0 && sections.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 space-y-4">
+        <p className="text-muted-foreground text-lg">No files uploaded yet</p>
+        <p className="text-muted-foreground text-sm">Upload your documents first, then come back to configure options.</p>
+        <Button onClick={() => navigate(`/t/${slug}/orders/${orderId}/files`)}>
+          <ArrowLeft className="h-4 w-4 mr-1" />
+          Go to Upload Files
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 h-full flex flex-col">
       {/* Header */}
