@@ -49,7 +49,12 @@ export default function SectionList({
   const getDoc = (docId: string | null) =>
     documents.find((d) => d.id === docId);
 
-  if (sections.length === 0) {
+  // Filter out tabs and inserts — those belong on the Configure Options page
+  const fileSections = sections.filter(
+    (s) => s.section_type !== "tab" && s.section_type !== "insert"
+  );
+
+  if (fileSections.length === 0) {
     return (
       <div className="text-center py-8 text-muted-foreground">
         <FileText className="h-7 w-7 mx-auto mb-2 opacity-40" />
@@ -63,7 +68,7 @@ export default function SectionList({
 
   return (
     <div className="space-y-2">
-      {sections.map((section, idx) => {
+      {fileSections.map((section, idx) => {
         const doc = getDoc(section.document_id);
         const pageCount = doc?.page_count ?? 0;
         const isInsertOrTab = section.section_type === "insert" || section.section_type === "tab";
@@ -141,7 +146,7 @@ export default function SectionList({
                 </button>
                 <button
                   className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30"
-                  disabled={idx === sections.length - 1}
+                  disabled={idx === fileSections.length - 1}
                   onClick={(e) => {
                     e.stopPropagation();
                     onMove(section.id, "down");

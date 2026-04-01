@@ -11,11 +11,7 @@ import FileUploader from "@/components/order/FileUploader";
 import FileList from "@/components/order/FileList";
 import SectionActions from "@/components/order/SectionActions";
 import SectionList from "@/components/order/SectionList";
-import TabManager from "@/components/order/TabManager";
 import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
-import { useProductOptions } from "@/hooks/useProductOptions";
-import { isStructuredValues, type StructuredOptionValue } from "@/lib/productOptionTypes";
-import type { ItemSpec } from "@/lib/calculatePrice";
 import { FileText, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
@@ -47,27 +43,7 @@ export default function OrderFiles() {
   const updateSection = useUpdateSection();
   const deleteSection = useDeleteSection();
 
-  // Fetch product options to detect active tab dividers
-  const productFamilyId = orderItem?.product_family_id ?? null;
-  const { data: productOptions = [] } = useProductOptions(productFamilyId);
-  const spec = orderItem?.spec as unknown as ItemSpec | null;
 
-  // Derive tab info from selected options
-  const tabInfo = useMemo(() => {
-    const tabOption = productOptions.find((o) => o.name.toLowerCase().includes("tab"));
-    if (!tabOption || !isStructuredValues(tabOption.values)) return null;
-    const selectedSlug = spec?.selected_options?.[tabOption.name];
-    if (!selectedSlug) return null;
-    const selectedValue = (tabOption.values as StructuredOptionValue[]).find(
-      (v) => v.slug === selectedSlug
-    );
-    if (!selectedValue) return null;
-    const meta = selectedValue.metadata as Record<string, any> | undefined;
-    const tabCount = meta?.tab_count as number | undefined;
-    if (!tabCount || tabCount <= 0) return null;
-    const isMultiColor = selectedValue.slug.includes("multi") || !!meta?.multi_color;
-    return { tabCount, isMultiColor };
-  }, [productOptions, spec]);
 
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
@@ -189,7 +165,7 @@ export default function OrderFiles() {
   }, [clearUploads, refetchDocuments]);
 
   const handleAddAs = useCallback(
-    async (type: "front_cover" | "back_cover" | "body" | "insert" | "tab") => {
+    async (type: "front_cover" | "back_cover" | "body") => {
       if (!selectedDocId || !orderItem) return;
       try {
         await addSection.mutateAsync({
@@ -259,35 +235,6 @@ export default function OrderFiles() {
       ]);
     },
     [sections, updateSection]
-  );
-
-  // Tab management handlers
-  const handleAddTab = useCallback(
-    async (sortOrder: number) => {
-      if (!orderItem) return;
-      await addSection.mutateAsync({
-        order_item_id: orderItem.id,
-        document_id: null,
-        section_type: "tab",
-        sort_order: sortOrder,
-      });
-    },
-    [orderItem, addSection]
-  );
-
-  const handleDeleteTab = useCallback(
-    async (sectionId: string) => {
-      if (!orderItem) return;
-      await deleteSection.mutateAsync({ id: sectionId, orderItemId: orderItem.id });
-    },
-    [orderItem, deleteSection]
-  );
-
-  const handleMoveTab = useCallback(
-    async (sectionId: string, newSortOrder: number) => {
-      await updateSection.mutateAsync({ id: sectionId, sort_order: newSortOrder });
-    },
-    [updateSection]
   );
 
   const canContinue = sections.length > 0;
@@ -382,19 +329,6 @@ export default function OrderFiles() {
             onMove={handleMoveSection}
           />
 
-          {/* Tab Manager */}
-          {tabInfo && orderItem && (
-            <TabManager
-              sections={sections}
-              documents={documents}
-              orderItemId={orderItem.id}
-              tabCount={tabInfo.tabCount}
-              isMultiColor={tabInfo.isMultiColor}
-              onAddTab={handleAddTab}
-              onDeleteTab={handleDeleteTab}
-              onMoveTab={handleMoveTab}
-            />
-          )}
         </div>
       </div>
 
