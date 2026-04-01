@@ -64,6 +64,7 @@ function useUserOrders(userId: string | undefined) {
 
 const CustomerOrders = () => {
   const navigate = useNavigate();
+  const { slug } = useParams<{ slug: string }>();
   const { user } = useAuth();
   const { data: orders, isLoading } = useUserOrders(user?.id);
 
