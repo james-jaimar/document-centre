@@ -26,6 +26,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Plus, Pencil, Trash2, ChevronDown, Sparkles } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { seedBoundDocument } from "@/lib/seedBoundDocument";
+import { seedAllProducts } from "@/lib/seedAllProducts";
 
 const AdminProducts = () => {
   const { tenantId } = useTenantContext();
