@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useOrderData, useUpdateOrderItemSpec, useConfirmOrderItem, useAddSection, useUpdateSection, useDeleteSection } from "@/hooks/useOrderBuilder";
+import { useOrderData, useUpdateOrderItemSpec, useAddSection, useUpdateSection, useDeleteSection } from "@/hooks/useOrderBuilder";
+import { useAddItemToCart } from "@/hooks/useCart";
 import { useProductOptions } from "@/hooks/useProductOptions";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -35,7 +36,7 @@ export default function OrderBuild() {
   const { order, orderItem, documents, sections, loading } =
     useOrderData(orderId);
   const updateSpec = useUpdateOrderItemSpec();
-  const confirmItem = useConfirmOrderItem();
+  const addItemToCart = useAddItemToCart();
   const addSectionMut = useAddSection();
   const updateSectionMut = useUpdateSection();
   const deleteSectionMut = useDeleteSection();
@@ -340,26 +341,26 @@ export default function OrderBuild() {
     }
     setIsSubmitting(true);
     try {
-      await updateSpec.mutateAsync({ id: orderItem.id, spec });
       const breakdown = calculateItemPrice(spec, options, pricingRules);
-      await confirmItem.mutateAsync({
+      await addItemToCart.mutateAsync({
         orderItemId: orderItem.id,
-        orderId: order.id,
+        draftOrderId: order.id,
         title: ref,
         unitPrice: breakdown.subtotal_per_unit,
         quantity: spec.quantity,
         totalPrice: breakdown.total,
+        spec: spec as any,
       });
       setShowCartDialog(false);
       toast.success("Added to cart!");
-      navigate(`/t/${slug}/orders`);
+      navigate(`/t/${slug}/cart`);
     } catch (err: any) {
       console.error("handleAddToCart failed", err);
       toast.error("Failed to add to cart", { description: err.message });
     } finally {
       setIsSubmitting(false);
     }
-  }, [orderItem, order, isSubmitting, cartReference, spec, options, pricingRules, confirmItem, updateSpec, navigate, slug]);
+  }, [orderItem, order, isSubmitting, cartReference, spec, options, pricingRules, addItemToCart, navigate, slug]);
 
   // Navigation guard — show dialog when dirty
   const guardedNavigate = useCallback((path: string) => {

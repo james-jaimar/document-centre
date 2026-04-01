@@ -21,6 +21,9 @@ import CustomerSettings from "@/pages/dashboard/CustomerSettings";
 import NewOrder from "@/pages/dashboard/NewOrder";
 import OrderFiles from "@/pages/dashboard/OrderFiles";
 import OrderBuild from "@/pages/dashboard/OrderBuild";
+import Cart from "@/pages/dashboard/Cart";
+import Checkout from "@/pages/dashboard/Checkout";
+import OrderConfirmation from "@/pages/dashboard/OrderConfirmation";
 
 // Admin (includes former Branch pages)
 import AdminDashboard from "@/pages/admin/AdminDashboard";
@@ -63,6 +66,9 @@ const App = () => (
               <Route path="orders/new" element={<NewOrder />} />
               <Route path="orders/:id/files" element={<OrderFiles />} />
               <Route path="orders/:id/build" element={<OrderBuild />} />
+              <Route path="orders/:id/confirmation" element={<OrderConfirmation />} />
+              <Route path="cart" element={<Cart />} />
+              <Route path="checkout" element={<Checkout />} />
               <Route path="settings" element={<CustomerSettings />} />
             </Route>
 

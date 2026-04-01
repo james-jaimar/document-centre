@@ -8,17 +8,20 @@ import {
   HelpCircle,
   Package,
   PanelLeftClose,
+  ShoppingCart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
+import { useCartItemCount } from "@/hooks/useCart";
 
 const buildNavItems = (slug: string) => [
   { to: `/t/${slug}/dashboard`, icon: Home, label: "Home", exact: true },
   { to: `/t/${slug}/orders/new`, icon: Plus, label: "Create", exact: false },
   { to: `/t/${slug}/orders`, icon: ClipboardList, label: "Orders", exact: false },
+  { to: `/t/${slug}/cart`, icon: ShoppingCart, label: "Cart", exact: false, badge: true },
   { to: `/t/${slug}/settings`, icon: Settings, label: "Account Settings", exact: false },
 ];
 
@@ -26,6 +29,7 @@ export default function CustomerSidebar() {
   const location = useLocation();
   const { slug } = useParams<{ slug: string }>();
   const { user, signOut } = useAuth();
+  const cartCount = useCartItemCount();
   const navItems = buildNavItems(slug ?? "");
 
   const { data: profile } = useQuery({
@@ -84,6 +88,11 @@ export default function CustomerSidebar() {
             >
               <Icon className="h-5 w-5" />
               <span>{item.label}</span>
+              {(item as any).badge && cartCount > 0 && (
+                <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                  {cartCount}
+                </span>
+              )}
             </Link>
           );
         })}
