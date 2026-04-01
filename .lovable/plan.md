@@ -1,68 +1,50 @@
 
 
-# Plan: Tenant Storefront URL Strategy
+# Plan: Wire All Customer Portal Links to Slug-Based URLs
 
-## The three standard approaches for multi-tenant SaaS
+## Problem
 
-1. **Path-based** — `app.example.com/t/postnet/dashboard`
-2. **Subdomain-based** — `postnet.document-centre.app/dashboard`
-3. **Custom domain** — `print.postnet.co.za` → CNAME to platform
+The routing structure was updated to `/t/:slug/*` but all internal navigation and links within the customer portal still use hardcoded `/dashboard/...` paths. This means clicking buttons (New Order, Continue, Back, etc.) and sidebar links navigates to the legacy redirect URLs instead of staying within the slug-scoped storefront.
 
-## Recommendation: Path-based routing + custom domain support
+## Affected files and changes
 
-**Why not subdomains?** Lovable deploys to a single origin (`document-centre.lovable.app`). Wildcard subdomain routing requires DNS + server config that Lovable doesn't control. Subdomains are a non-starter on this hosting platform.
+### 1. `src/components/CustomerSidebar.tsx`
+The `NAV_ITEMS` array hardcodes `/dashboard`, `/dashboard/orders/new`, etc. These need to become dynamic using the current slug from the URL.
 
-**Path-based** is the pragmatic v1 — works immediately with current infrastructure. The customer portal URL becomes `/t/{tenant-slug}/dashboard` instead of `/dashboard`. The slug already exists on the `tenants` table.
+- Read `:slug` from `useParams`
+- Change NAV_ITEMS to a function that builds paths like `/t/${slug}/dashboard`, `/t/${slug}/orders`, etc.
 
-**Custom domains** are the premium tier — tenants point a CNAME/A record at the platform, and a lookup table maps the hostname to the tenant. This requires a reverse proxy layer (Cloudflare Workers, Vercel middleware, etc.) which is outside Lovable's current hosting but should be modeled in the database now so the data layer is ready.
+### 2. `src/pages/dashboard/CustomerDashboard.tsx`
+~10 navigate calls using `/dashboard/orders/...` patterns. All need to use `/t/${slug}/...` instead.
 
-## What we will build
+- Add `useParams` to get slug
+- Replace all `navigate("/dashboard/...")` with `navigate("/t/${slug}/...")`
 
-### 1. Database: add `custom_domain` column to tenants
-- `custom_domain TEXT` (nullable, unique) — e.g. `print.postnet.co.za`
-- `storefront_path TEXT` (generated or derived from slug) — e.g. `/t/postnet`
-- This is just a migration to add the column; no domain verification logic yet
+### 3. `src/pages/dashboard/CustomerOrders.tsx`
+Navigate to `/dashboard/orders/new` — needs slug prefix.
 
-### 2. Tenant resolution middleware (React-level)
-- Create a `useTenantFromUrl()` hook that:
-  - Checks if the URL starts with `/t/:slug/` → looks up tenant by slug
-  - Falls back to the existing `useTenantContext` membership-based resolution
-- This hook feeds into the existing `TenantProvider` so all downstream queries stay scoped
+- Add `useParams`, update navigate call
 
-### 3. Reroute customer portal under `/t/:slug/`
-- Current: `/dashboard`, `/dashboard/orders`, `/dashboard/orders/new`, etc.
-- New: `/t/:slug/dashboard`, `/t/:slug/orders`, `/t/:slug/orders/new`, etc.
-- Add a redirect from `/dashboard` → `/t/{user's-tenant-slug}/dashboard` for logged-in users
-- The `CustomerLayout` reads the slug param and sets the tenant context accordingly
+### 4. `src/pages/dashboard/NewOrder.tsx`
+Navigates to `/dashboard/orders/${id}/files` — needs slug prefix.
 
-### 4. Expose storefront URL in tenant admin settings
-- On the General tab of AdminSettings, show the tenant's storefront URL (read-only, derived from slug)
-- Add an editable `custom_domain` field for future use
-- Show both: "Platform URL: `document-centre.lovable.app/t/postnet`" and "Custom Domain: `print.postnet.co.za` (DNS setup required)"
+- Add `useParams`, update navigate calls
 
-### 5. Update PlatformTenants to show storefront URL
-- Display the `/t/{slug}` URL on each tenant card as a clickable link
+### 5. `src/pages/dashboard/OrderFiles.tsx`
+Navigates to `/dashboard/orders/new` and `/dashboard/orders/${id}/build` — needs slug prefix.
 
-## Files to create/modify
+- Add `useParams`, update navigate calls
 
-- **Migration**: Add `custom_domain` column to `tenants`
-- **`src/hooks/useTenantFromSlug.ts`** (new) — resolve tenant by URL slug
-- **`src/App.tsx`** — add `/t/:slug/*` route group wrapping CustomerLayout
-- **`src/components/CustomerLayout.tsx`** — read slug param, set tenant context
-- **`src/pages/admin/settings/GeneralTab.tsx`** — show storefront URL + custom domain field
-- **`src/pages/platform/PlatformTenants.tsx`** — show storefront link per tenant
-- **`src/integrations/supabase/types.ts`** — auto-updated after migration
+### 6. `src/pages/dashboard/OrderBuild.tsx`
+Navigates to `/dashboard/orders` and `/dashboard/orders/${id}/files` — needs slug prefix.
 
-## What this does NOT include (future work)
-- Actual custom domain verification/provisioning (requires infrastructure outside Lovable)
-- Wildcard subdomain routing
-- Public signup/registration per tenant storefront
-- Tenant-specific theming on the storefront (branding colors are stored but not yet applied)
+- Add `useParams`, update navigate and guardedNavigate calls
+
+## Approach
+
+Each file gets a one-line addition (`const { slug } = useParams()`) and all `/dashboard/` path prefixes become `/t/${slug}/`. This is a mechanical find-and-replace scoped to 6 files. No new components or hooks needed — the slug is already in the URL params from the route definition in App.tsx.
 
 ## Implementation order
-1. Database migration (add `custom_domain` to tenants)
-2. Create `useTenantFromSlug` hook
-3. Update App.tsx routing with `/t/:slug/*` paths
-4. Update CustomerLayout to consume slug
-5. Update GeneralTab and PlatformTenants to display URLs
+1. Update CustomerSidebar (nav links)
+2. Update all 5 dashboard pages (navigate calls)
 
