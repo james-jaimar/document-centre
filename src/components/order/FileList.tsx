@@ -1,5 +1,5 @@
 import type { Tables } from "@/integrations/supabase/types";
-import { FileText, Loader2, AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
+import { FileText, Loader2, AlertCircle, CheckCircle2, RefreshCw, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
@@ -11,6 +11,7 @@ interface FileListProps {
   selectedDocId: string | null;
   onSelect: (id: string) => void;
   onReprocess?: (doc: { id: string; file_path: string; file_name: string }) => Promise<void>;
+  onDelete?: (docId: string) => Promise<void>;
 }
 
 function ThumbnailImage({ storagePath, className }: { storagePath: string; className?: string }) {
