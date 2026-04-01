@@ -159,8 +159,8 @@ const CustomerDashboard = () => {
   };
 
   const handleUploadClick = useCallback(() => {
-    navigate("/dashboard/orders/new");
-  }, [navigate]);
+    navigate(`/t/${slug}/orders/new`);
+  }, [navigate, slug]);
 
   return (
     <div className="space-y-8">
