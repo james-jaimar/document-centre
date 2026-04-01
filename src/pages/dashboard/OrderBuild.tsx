@@ -555,7 +555,8 @@ export default function OrderBuild() {
               options={options}
               rules={pricingRules}
               onQuantityChange={handleQuantityChange}
-              onAddToCart={handleAddToCart}
+              onAddToCart={handleAddToCartClick}
+              isSubmitting={isSubmitting}
             />
           </div>
         </div>
