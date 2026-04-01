@@ -159,6 +159,51 @@ export function GeneralTab() {
 
       <Card>
         <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Globe className="h-5 w-5" /> Storefront URL</CardTitle>
+          <CardDescription>Customer-facing storefront links for this tenant</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label>Platform URL</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                value={`${window.location.origin}/t/${tenant.slug ?? ""}`}
+                readOnly
+                className="bg-muted font-mono text-sm"
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => {
+                  navigator.clipboard.writeText(`${window.location.origin}/t/${tenant.slug ?? ""}`);
+                  toast.success("Copied to clipboard");
+                }}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="icon" asChild>
+                <a href={`/t/${tenant.slug ?? ""}/dashboard`} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              </Button>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Custom Domain</Label>
+            <Input
+              value={(tenant as any).custom_domain ?? ""}
+              onChange={(e) => update("custom_domain", e.target.value)}
+              placeholder="e.g. print.postnet.co.za"
+            />
+            <p className="text-xs text-muted-foreground">
+              Point a CNAME or A record to the platform. Domain verification & SSL provisioning will be handled in a future update.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Onboarding Status</CardTitle>
           <CardDescription>Track tenant setup progress</CardDescription>
         </CardHeader>

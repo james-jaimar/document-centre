@@ -75,7 +75,18 @@ const PlatformTenants = () => {
                   </Badge>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0">
+              <CardContent className="pt-0 space-y-2">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-mono">
+                  <ExternalLink size={12} />
+                  <a
+                    href={`/t/${t.slug}/dashboard`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-primary underline underline-offset-2"
+                  >
+                    /t/{t.slug}
+                  </a>
+                </div>
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>Created {new Date(t.created_at).toLocaleDateString()}</span>
                   <div className="flex items-center gap-1">
