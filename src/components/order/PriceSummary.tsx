@@ -21,6 +21,7 @@ interface PriceSummaryProps {
   onQuantityChange: (qty: number) => void;
   onAddToCart: () => void;
   disabled?: boolean;
+  isSubmitting?: boolean;
 }
 
 export default function PriceSummary({
