@@ -303,8 +303,17 @@ export default function OrderBuild() {
   const [cartTotal, setCartTotal] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const canAddToCart = !!order && !!orderItem && sections.length > 0 && (spec?.page_count ?? 0) > 0;
+
   const handleAddToCartClick = useCallback(() => {
-    if (!orderItem || !order) return;
+    if (!orderItem || !order) {
+      toast.error("Order data is still loading. Please wait.");
+      return;
+    }
+    if (sections.length === 0 || (spec?.page_count ?? 0) === 0) {
+      toast.error("Please upload and assign at least one file before adding to cart.");
+      return;
+    }
     try {
       const breakdown = calculateItemPrice(spec, options, pricingRules);
       if (breakdown.lines.length === 0) {
@@ -317,10 +326,10 @@ export default function OrderBuild() {
       setCartReference(reference.trim() || productFamily?.name || "Document");
       setShowCartDialog(true);
     } catch (err: any) {
-      console.error("calculateItemPrice failed", err);
+      console.error("add_to_cart_failed", { orderId: order.id, orderItemId: orderItem.id, sections, spec, err });
       toast.error("Unable to calculate price", { description: err.message });
     }
-  }, [orderItem, order, spec, options, pricingRules, reference, productFamily]);
+  }, [orderItem, order, spec, options, pricingRules, reference, productFamily, sections]);
 
   const handleConfirmAddToCart = useCallback(async () => {
     if (!orderItem || !order || isSubmitting) return;
