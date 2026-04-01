@@ -218,7 +218,7 @@ const CustomerDashboard = () => {
           onDrop={(e) => {
             e.preventDefault();
             setDragOver(false);
-            navigate("/dashboard/orders/new");
+            navigate(`/t/${slug}/orders/new`);
           }}
           onClick={handleUploadClick}
         >
