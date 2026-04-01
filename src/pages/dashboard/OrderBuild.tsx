@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 
 export default function OrderBuild() {
-  const { id: orderId } = useParams<{ id: string }>();
+  const { id: orderId, slug } = useParams<{ id: string; slug: string }>();
   const navigate = useNavigate();
   const { order, orderItem, documents, sections, loading } =
     useOrderData(orderId);
