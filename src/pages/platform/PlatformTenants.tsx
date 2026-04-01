@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Building2, Pencil, ArrowRight } from "lucide-react";
+import { Building2, Pencil, ArrowRight, ExternalLink } from "lucide-react";
 import type { Tenant } from "@/hooks/useTenants";
 
 const PlatformTenants = () => {
@@ -75,7 +75,18 @@ const PlatformTenants = () => {
                   </Badge>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0">
+              <CardContent className="pt-0 space-y-2">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-mono">
+                  <ExternalLink size={12} />
+                  <a
+                    href={`/t/${t.slug}/dashboard`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-primary underline underline-offset-2"
+                  >
+                    /t/{t.slug}
+                  </a>
+                </div>
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>Created {new Date(t.created_at).toLocaleDateString()}</span>
                   <div className="flex items-center gap-1">

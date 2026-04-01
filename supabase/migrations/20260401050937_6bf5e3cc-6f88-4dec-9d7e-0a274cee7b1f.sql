@@ -1,0 +1,1 @@
+ALTER TABLE public.tenants ADD COLUMN custom_domain TEXT UNIQUE;
