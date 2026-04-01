@@ -17,6 +17,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
 
 export default function NewOrder() {
   const navigate = useNavigate();
+  const { slug } = useParams<{ slug: string }>();
   const { user } = useAuth();
   const createOrder = useCreateOrder();
 
