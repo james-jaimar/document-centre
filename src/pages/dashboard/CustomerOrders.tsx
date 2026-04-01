@@ -243,6 +243,9 @@ const CustomerOrders = () => {
                       </button>
                     )}
                     <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                    {isDraft && hasItems && (
+                      <span className="text-xs text-muted-foreground">Continue</span>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>
