@@ -68,7 +68,7 @@ export default function SectionList({
 
   return (
     <div className="space-y-2">
-      {sections.map((section, idx) => {
+      {fileSections.map((section, idx) => {
         const doc = getDoc(section.document_id);
         const pageCount = doc?.page_count ?? 0;
         const isInsertOrTab = section.section_type === "insert" || section.section_type === "tab";
