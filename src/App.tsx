@@ -56,15 +56,23 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/reset-password" element={<ResetPassword />} />
 
-            {/* Customer portal — dedicated layout */}
-            <Route element={<ProtectedRoute><CustomerLayout /></ProtectedRoute>}>
-              <Route path="/dashboard" element={<CustomerDashboard />} />
-              <Route path="/dashboard/orders" element={<CustomerOrders />} />
-              <Route path="/dashboard/orders/new" element={<NewOrder />} />
-              <Route path="/dashboard/orders/:id/files" element={<OrderFiles />} />
-              <Route path="/dashboard/orders/:id/build" element={<OrderBuild />} />
-              <Route path="/dashboard/settings" element={<CustomerSettings />} />
+            {/* Customer portal — slug-based storefront */}
+            <Route path="/t/:slug" element={<ProtectedRoute><CustomerLayout /></ProtectedRoute>}>
+              <Route path="dashboard" element={<CustomerDashboard />} />
+              <Route path="orders" element={<CustomerOrders />} />
+              <Route path="orders/new" element={<NewOrder />} />
+              <Route path="orders/:id/files" element={<OrderFiles />} />
+              <Route path="orders/:id/build" element={<OrderBuild />} />
+              <Route path="settings" element={<CustomerSettings />} />
             </Route>
+
+            {/* Legacy /dashboard redirects to slug-based URL */}
+            <Route path="/dashboard" element={<ProtectedRoute><StorefrontRedirect path="dashboard" /></ProtectedRoute>} />
+            <Route path="/dashboard/orders" element={<ProtectedRoute><StorefrontRedirect path="orders" /></ProtectedRoute>} />
+            <Route path="/dashboard/orders/new" element={<ProtectedRoute><StorefrontRedirect path="orders/new" /></ProtectedRoute>} />
+            <Route path="/dashboard/orders/:id/files" element={<ProtectedRoute><StorefrontRedirect path="orders" /></ProtectedRoute>} />
+            <Route path="/dashboard/orders/:id/build" element={<ProtectedRoute><StorefrontRedirect path="orders" /></ProtectedRoute>} />
+            <Route path="/dashboard/settings" element={<ProtectedRoute><StorefrontRedirect path="settings" /></ProtectedRoute>} />
 
             {/* Admin & Platform — shared AppLayout */}
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
