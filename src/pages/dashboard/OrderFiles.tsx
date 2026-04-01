@@ -196,6 +196,31 @@ export default function OrderFiles() {
     }
   }, [selectedSectionId, orderItem, deleteSection]);
 
+  const handleDeleteDocument = useCallback(
+    async (docId: string) => {
+      try {
+        const doc = documents.find((d) => d.id === docId);
+        // 1. Delete associated sections
+        await supabase.from("document_sections").delete().eq("document_id", docId);
+        // 2. Delete the document row
+        await supabase.from("documents").delete().eq("id", docId);
+        // 3. Remove file from storage
+        if (doc?.file_path) {
+          await supabase.storage.from("document-uploads").remove([doc.file_path]);
+        }
+        // 4. Clear selection if this doc was selected
+        if (selectedDocId === docId) setSelectedDocId(null);
+        // 5. Refresh
+        refetchDocuments();
+        refetchSections();
+        toast.success("File deleted");
+      } catch (err: any) {
+        toast.error("Failed to delete file", { description: err.message });
+      }
+    },
+    [documents, selectedDocId, refetchDocuments, refetchSections]
+  );
+
   const handleToggleColor = useCallback(
     async (section: (typeof sections)[0]) => {
       await updateSection.mutateAsync({
