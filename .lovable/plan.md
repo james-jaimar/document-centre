@@ -1,56 +1,46 @@
 
 
-# Plan: Fix Add-to-Cart Flow and Draft Reopening
+# Plan: Fix Add-to-Cart Silent Failures and Draft Reopening
 
-## Problems Identified
+## Root Causes
 
-1. **No reference prompt before checkout** — The reference input is a small field buried in the options panel header. Users miss it entirely. There's no prompt or validation before "Add to Cart".
+1. **Add to Cart silently does nothing**: `handleAddToCartClick` has a guard `if (!orderItem || !order) return;` with NO feedback. If data is still loading or the query failed, the button click is swallowed silently.
 
-2. **Add to Cart may silently fail** — `handleAddToCart` calls `calculateItemPrice()` which can throw if no pricing rules exist. The error may not surface clearly. Also, there's no loading state on the button.
+2. **No validation before Add to Cart**: Users can click "Add to Cart" with 0 pages (no sections assigned) or 0 documents. The price calculates but might be nonsensically low (just the setup fee). There should be validation requiring at least one document section.
 
-3. **Reopening a draft shows blank files** — When a draft order is clicked from the orders list, it navigates to `/t/${slug}/orders/${id}/files`. The `useOrderData` hook fetches documents by `order_item_id`. This should work IF the order item and documents exist. The likely issue: when `handleAddToCart` fails partway (spec saved but confirm didn't complete), the order stays "draft" but the UI doesn't indicate the error. When the user reopens via the orders list, documents should load. I need to verify the query chain isn't broken.
-
-4. **No actual cart** — "Add to Cart" just sets status to "quoted" and navigates to the orders list. There's no cart page, no checkout step. This is confusing UX.
+3. **Draft reopening shows blank files**: When clicking a draft from the orders list, it navigates to `/files`. The `useOrderData` hook loads documents via `order_item_id`. If the order item has no documents (empty draft), the page correctly shows nothing — but there's no guidance telling the user to upload files. The "blank preview" on the `/build` page happens because there are no sections to render.
 
 ## Changes
 
-### 1. `src/pages/dashboard/OrderBuild.tsx` — Prompt for reference before Add to Cart
+### 1. `src/pages/dashboard/OrderBuild.tsx` — Add validation and feedback
 
-- Modify `handleAddToCart` to show a dialog if `reference` is empty, asking for a name/reference before proceeding
-- Add a loading/disabled state to the Add to Cart button while the mutation runs
-- Add proper try/catch with clear error messages when `calculateItemPrice` fails (e.g. "No pricing rules configured")
-- Pass `isSubmitting` state down to `PriceSummary`
+- Add a toast/alert when `handleAddToCartClick` is called but `orderItem` or `order` is null: `toast.error("Order data is still loading. Please wait.")`
+- Add validation: if `sections.length === 0`, show `toast.error("Please upload and assign at least one file before adding to cart")` and return
+- Add validation: if `spec.page_count === 0`, show a warning toast
+- Add `console.log` breadcrumbs in `handleAddToCartClick` and `handleConfirmAddToCart` to aid future debugging
 
-### 2. `src/components/order/PriceSummary.tsx` — Loading state
+### 2. `src/pages/dashboard/OrderBuild.tsx` — Disable button when not ready
 
-- Accept `isSubmitting` prop to show spinner on the Add to Cart button while processing
+- Pass `disabled` prop to `PriceSummary` when `sections.length === 0` or `!orderItem` or `!order`
+- This prevents clicking "Add to Cart" before the document is configured
 
-### 3. `src/pages/dashboard/OrderBuild.tsx` — Add to Cart confirmation dialog
+### 3. `src/pages/dashboard/OrderBuild.tsx` — Fix draft reopening blank preview
 
-- Create a small confirmation dialog that:
-  - Shows the reference field (pre-filled if already entered)
-  - Shows the total price
-  - Has "Confirm" and "Cancel" buttons
-- Only after confirmation does the actual `confirmItem` mutation run
+- When `documents.length === 0` and `sections.length === 0` on the build page, show a message: "No files uploaded yet" with a button linking back to the files step
+- This prevents users from seeing a blank, confusing page
 
-### 4. `src/pages/dashboard/OrderBuild.tsx` — Fix silent failures
+### 4. `src/pages/dashboard/CustomerOrders.tsx` — Smarter draft navigation
 
-- Wrap `calculateItemPrice` in try/catch with user-friendly error
-- Add console logging to diagnose if the confirm mutation fails
-- Ensure navigation only happens after successful confirmation
-
-### 5. `src/pages/dashboard/CustomerOrders.tsx` — Draft navigation fix
-
-- When a "quoted" order is clicked, navigate to `/build` (already correct)
-- When a "draft" order is clicked, navigate to `/files` (already correct)
-- Add a check: if a draft has documents, show a "Continue" label instead of just the arrow
+- For drafts that have documents but no sections, navigate to `/files` (resume uploading)
+- For drafts that have sections, navigate to `/build` (resume configuring)
+- Show "Continue" text on rows with existing documents
 
 ## Files modified
-- `src/pages/dashboard/OrderBuild.tsx` — Add confirmation dialog, fix error handling, loading state
-- `src/components/order/PriceSummary.tsx` — Add `isSubmitting` prop for button state
+- `src/pages/dashboard/OrderBuild.tsx` — validation, disabled state, empty state messaging
+- `src/pages/dashboard/CustomerOrders.tsx` — smarter draft navigation with document check
 
 ## Implementation order
-1. Add confirmation dialog + loading state to OrderBuild
-2. Update PriceSummary for submitting state
-3. Improve error handling in handleAddToCart
+1. Add validation + feedback to OrderBuild's add-to-cart flow
+2. Add empty state UI on OrderBuild when no files exist
+3. Update CustomerOrders draft navigation logic
 
