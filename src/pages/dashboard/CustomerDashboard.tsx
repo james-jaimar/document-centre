@@ -261,7 +261,7 @@ const CustomerDashboard = () => {
                     <td>
                       <button
                         className="soft-button soft-button-gold"
-                        onClick={() => navigate(`/dashboard/orders/${order.id}/files`)}
+                        onClick={() => navigate(`/t/${slug}/orders/${order.id}/files`)}
                       >
                         Create
                       </button>
