@@ -88,6 +88,11 @@ export default function CustomerSidebar() {
             >
               <Icon className="h-5 w-5" />
               <span>{item.label}</span>
+              {(item as any).badge && cartCount > 0 && (
+                <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                  {cartCount}
+                </span>
+              )}
             </Link>
           );
         })}

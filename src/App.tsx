@@ -66,6 +66,9 @@ const App = () => (
               <Route path="orders/new" element={<NewOrder />} />
               <Route path="orders/:id/files" element={<OrderFiles />} />
               <Route path="orders/:id/build" element={<OrderBuild />} />
+              <Route path="orders/:id/confirmation" element={<OrderConfirmation />} />
+              <Route path="cart" element={<Cart />} />
+              <Route path="checkout" element={<Checkout />} />
               <Route path="settings" element={<CustomerSettings />} />
             </Route>
 

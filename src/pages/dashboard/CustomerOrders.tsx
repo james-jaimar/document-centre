@@ -119,17 +119,19 @@ const CustomerOrders = () => {
   const { data: orders, isLoading } = useUserOrders(user?.id);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
 
+  // Exclude cart orders from all views — they belong on the Cart page
+  const nonCartOrders = orders?.filter((o) => o.order_status !== "cart") ?? [];
+
   const filterOrders = (tab: string) => {
-    if (!orders) return [];
     switch (tab) {
       case "drafts":
-        return orders.filter((o) => DRAFT_STATUSES.includes(o.order_status));
+        return nonCartOrders.filter((o) => DRAFT_STATUSES.includes(o.order_status));
       case "active":
-        return orders.filter((o) => ACTIVE_STATUSES.includes(o.order_status));
+        return nonCartOrders.filter((o) => ACTIVE_STATUSES.includes(o.order_status));
       case "completed":
-        return orders.filter((o) => COMPLETED_STATUSES.includes(o.order_status));
+        return nonCartOrders.filter((o) => COMPLETED_STATUSES.includes(o.order_status));
       default:
-        return orders;
+        return nonCartOrders;
     }
   };
 

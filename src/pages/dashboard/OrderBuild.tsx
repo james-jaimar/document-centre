@@ -341,26 +341,26 @@ export default function OrderBuild() {
     }
     setIsSubmitting(true);
     try {
-      await updateSpec.mutateAsync({ id: orderItem.id, spec });
       const breakdown = calculateItemPrice(spec, options, pricingRules);
-      await confirmItem.mutateAsync({
+      await addItemToCart.mutateAsync({
         orderItemId: orderItem.id,
-        orderId: order.id,
+        draftOrderId: order.id,
         title: ref,
         unitPrice: breakdown.subtotal_per_unit,
         quantity: spec.quantity,
         totalPrice: breakdown.total,
+        spec: spec as any,
       });
       setShowCartDialog(false);
       toast.success("Added to cart!");
-      navigate(`/t/${slug}/orders`);
+      navigate(`/t/${slug}/cart`);
     } catch (err: any) {
       console.error("handleAddToCart failed", err);
       toast.error("Failed to add to cart", { description: err.message });
     } finally {
       setIsSubmitting(false);
     }
-  }, [orderItem, order, isSubmitting, cartReference, spec, options, pricingRules, confirmItem, updateSpec, navigate, slug]);
+  }, [orderItem, order, isSubmitting, cartReference, spec, options, pricingRules, addItemToCart, navigate, slug]);
 
   // Navigation guard — show dialog when dirty
   const guardedNavigate = useCallback((path: string) => {
