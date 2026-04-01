@@ -65,7 +65,7 @@ export default function NewOrder() {
       }
 
       const order = await createOrder.mutateAsync(familyId);
-      navigate(`/dashboard/orders/${order.id}/files`);
+      navigate(`/t/${slug}/orders/${order.id}/files`);
     } catch (err: any) {
       toast.error("Failed to create order", { description: err.message });
     }

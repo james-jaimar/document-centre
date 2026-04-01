@@ -320,8 +320,8 @@ export default function OrderBuild() {
   }, [dirty, navigate]);
 
   const handleBackToFiles = useCallback(() => {
-    guardedNavigate(`/dashboard/orders/${orderId}/files`);
-  }, [orderId, guardedNavigate]);
+    guardedNavigate(`/t/${slug}/orders/${orderId}/files`);
+  }, [orderId, slug, guardedNavigate]);
 
   const handleSaveAndLeave = useCallback(async (ref: string) => {
     if (!orderItem) return;

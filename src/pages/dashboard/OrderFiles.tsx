@@ -328,7 +328,7 @@ export default function OrderFiles() {
             </button>
             <button
               disabled={!canContinue}
-              onClick={() => navigate(`/dashboard/orders/${orderId}/build`)}
+              onClick={() => navigate(`/t/${slug}/orders/${orderId}/build`)}
               className="soft-button soft-button-primary flex items-center gap-1.5 text-sm rounded-xl disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Configure Options

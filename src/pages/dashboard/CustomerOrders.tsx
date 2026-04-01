@@ -152,7 +152,7 @@ const CustomerOrders = () => {
             View and manage all your print orders
           </p>
         </div>
-        <Button onClick={() => navigate("/dashboard/orders/new")}>
+        <Button onClick={() => navigate(`/t/${slug}/orders/new`)}>
           <Plus className="mr-1 h-4 w-4" />
           New Order
         </Button>

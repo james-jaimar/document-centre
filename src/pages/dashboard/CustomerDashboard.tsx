@@ -360,7 +360,7 @@ const CustomerDashboard = () => {
                 <div
                   key={order.id}
                   className="flex items-center justify-between px-4 py-3 hover:bg-secondary/30 transition-colors cursor-pointer"
-                  onClick={() => navigate(`/dashboard/orders/${order.id}/build`)}
+                  onClick={() => navigate(`/t/${slug}/orders/${order.id}/build`)}
                 >
                   <div className="flex items-center gap-3">
                     {order.order_status === "dispatched" ? (
