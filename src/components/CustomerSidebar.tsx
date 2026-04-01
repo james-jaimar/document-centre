@@ -29,6 +29,7 @@ export default function CustomerSidebar() {
   const location = useLocation();
   const { slug } = useParams<{ slug: string }>();
   const { user, signOut } = useAuth();
+  const cartCount = useCartItemCount();
   const navItems = buildNavItems(slug ?? "");
 
   const { data: profile } = useQuery({
