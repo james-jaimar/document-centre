@@ -25,8 +25,25 @@ export default function FileList({
   selectedDocId,
   onSelect,
   onReprocess,
+  onDelete,
 }: FileListProps) {
   const [reprocessingIds, setReprocessingIds] = useState<Set<string>>(new Set());
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+
+  const handleDelete = async (doc: Document) => {
+    if (!onDelete || deletingIds.has(doc.id)) return;
+    if (!window.confirm(`Delete "${doc.file_name}"? This cannot be undone.`)) return;
+    setDeletingIds((prev) => new Set(prev).add(doc.id));
+    try {
+      await onDelete(doc.id);
+    } finally {
+      setDeletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(doc.id);
+        return next;
+      });
+    }
+  };
 
   const handleReprocess = async (doc: Document) => {
     if (!onReprocess || reprocessingIds.has(doc.id)) return;
