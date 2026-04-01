@@ -1,63 +1,56 @@
 
 
-# Plan: Enable Customer Cleanup of Draft Orders and Files
+# Plan: Fix Add-to-Cart Flow and Draft Reopening
 
-## Problem
+## Problems Identified
 
-Customers have no way to delete uploaded files from the file list, or delete/discard draft orders they no longer need. There are no delete buttons anywhere in the customer portal.
+1. **No reference prompt before checkout** — The reference input is a small field buried in the options panel header. Users miss it entirely. There's no prompt or validation before "Add to Cart".
+
+2. **Add to Cart may silently fail** — `handleAddToCart` calls `calculateItemPrice()` which can throw if no pricing rules exist. The error may not surface clearly. Also, there's no loading state on the button.
+
+3. **Reopening a draft shows blank files** — When a draft order is clicked from the orders list, it navigates to `/t/${slug}/orders/${id}/files`. The `useOrderData` hook fetches documents by `order_item_id`. This should work IF the order item and documents exist. The likely issue: when `handleAddToCart` fails partway (spec saved but confirm didn't complete), the order stays "draft" but the UI doesn't indicate the error. When the user reopens via the orders list, documents should load. I need to verify the query chain isn't broken.
+
+4. **No actual cart** — "Add to Cart" just sets status to "quoted" and navigates to the orders list. There's no cart page, no checkout step. This is confusing UX.
 
 ## Changes
 
-### 1. Delete uploaded files — `FileList.tsx` + `OrderFiles.tsx`
+### 1. `src/pages/dashboard/OrderBuild.tsx` — Prompt for reference before Add to Cart
 
-Add a delete (trash) icon button on each file row in `FileList.tsx`:
-- New `onDelete` callback prop `(docId: string) => Promise<void>`
-- Small trash icon button next to the reprocess/status icons, only shown when file is ready
-- Confirmation via a simple `window.confirm` or inline toast
+- Modify `handleAddToCart` to show a dialog if `reference` is empty, asking for a name/reference before proceeding
+- Add a loading/disabled state to the Add to Cart button while the mutation runs
+- Add proper try/catch with clear error messages when `calculateItemPrice` fails (e.g. "No pricing rules configured")
+- Pass `isSubmitting` state down to `PriceSummary`
 
-In `OrderFiles.tsx`:
-- Add `handleDeleteDocument` function that:
-  1. Deletes associated `document_sections` referencing that document
-  2. Deletes the `documents` row
-  3. Removes the file from Supabase Storage (`document-uploads` bucket)
-  4. Refetches documents and sections
-- Pass it as `onDelete` to `FileList`
+### 2. `src/components/order/PriceSummary.tsx` — Loading state
 
-### 2. Delete draft orders — `CustomerOrders.tsx`
+- Accept `isSubmitting` prop to show spinner on the Add to Cart button while processing
 
-Add a delete button per row (trash icon) that only appears for **draft** orders:
-- On click, confirm with the user
-- Delete cascade: `document_sections` → `documents` → `order_items` → `orders`
-- Also clean up files from Storage bucket
-- Refetch orders after deletion
+### 3. `src/pages/dashboard/OrderBuild.tsx` — Add to Cart confirmation dialog
 
-Add a "Clear All Drafts" button in the Drafts tab header for bulk cleanup.
+- Create a small confirmation dialog that:
+  - Shows the reference field (pre-filled if already entered)
+  - Shows the total price
+  - Has "Confirm" and "Cancel" buttons
+- Only after confirmation does the actual `confirmItem` mutation run
 
-### 3. Database: RLS already allows it
+### 4. `src/pages/dashboard/OrderBuild.tsx` — Fix silent failures
 
-The existing RLS policies on `orders`, `order_items`, `documents`, and `document_sections` all grant full `ALL` access to `user_id = auth.uid()` (orders) or via the order ownership chain. No migration needed — the client can already delete these rows.
+- Wrap `calculateItemPrice` in try/catch with user-friendly error
+- Add console logging to diagnose if the confirm mutation fails
+- Ensure navigation only happens after successful confirmation
 
-For Storage, the `document-uploads` bucket RLS allows owners to delete their own files.
+### 5. `src/pages/dashboard/CustomerOrders.tsx` — Draft navigation fix
 
-## Technical detail
+- When a "quoted" order is clicked, navigate to `/build` (already correct)
+- When a "draft" order is clicked, navigate to `/files` (already correct)
+- Add a check: if a draft has documents, show a "Continue" label instead of just the arrow
 
-### Delete order cascade (client-side, in sequence):
-```
-1. supabase.from("document_sections").delete().in("document_id", docIds)
-2. supabase.from("documents").delete().eq("order_item_id", itemId)
-3. supabase.storage.from("document-uploads").remove(filePaths)
-4. supabase.from("order_items").delete().eq("order_id", orderId)
-5. supabase.from("orders").delete().eq("id", orderId)
-```
-
-### Files modified
-- `src/components/order/FileList.tsx` — add `onDelete` prop & trash button
-- `src/pages/dashboard/OrderFiles.tsx` — add delete document handler
-- `src/pages/dashboard/CustomerOrders.tsx` — add delete draft order with confirmation dialog
-
-### No database migration required
+## Files modified
+- `src/pages/dashboard/OrderBuild.tsx` — Add confirmation dialog, fix error handling, loading state
+- `src/components/order/PriceSummary.tsx` — Add `isSubmitting` prop for button state
 
 ## Implementation order
-1. Add file delete to FileList + OrderFiles
-2. Add draft order delete to CustomerOrders
+1. Add confirmation dialog + loading state to OrderBuild
+2. Update PriceSummary for submitting state
+3. Improve error handling in handleAddToCart
 
