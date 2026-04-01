@@ -58,7 +58,7 @@ export default function NewOrder() {
             .select("id", { count: "exact", head: true })
             .eq("order_item_id", firstItem.id);
           if (count === 0) {
-            navigate(`/dashboard/orders/${existingDraft.id}/files`);
+            navigate(`/t/${slug}/orders/${existingDraft.id}/files`);
             return;
           }
         }
