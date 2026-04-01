@@ -1,46 +1,128 @@
 
 
-# Plan: Fix Add-to-Cart Silent Failures and Draft Reopening
+# Plan: Seed All Remaining Product Families
 
-## Root Causes
+## Overview
 
-1. **Add to Cart silently does nothing**: `handleAddToCartClick` has a guard `if (!orderItem || !order) return;` with NO feedback. If data is still loading or the query failed, the button click is swallowed silently.
+We already have **Bound Documents** (13 option categories, 100+ values, 8 pricing rules). We now need to create 7 more product families, each as a seed function following the same pattern. All are seeded at the app level (no `tenant_id`).
 
-2. **No validation before Add to Cart**: Users can click "Add to Cart" with 0 pages (no sections assigned) or 0 documents. The price calculates but might be nonsensically low (just the setup fee). There should be validation requiring at least one document section.
+## Product Families to Create
 
-3. **Draft reopening shows blank files**: When clicking a draft from the orders list, it navigates to `/files`. The `useOrderData` hook loads documents via `order_item_id`. If the order item has no documents (empty draft), the page correctly shows nothing — but there's no guidance telling the user to upload files. The "blank preview" on the `/build` page happens because there are no sections to render.
+### 1. Presentations
+Identical to Bound Documents but landscape/short-edge binding. Sizes: A5, A4, A3 landscape (binds on short edge — 297mm max for A3).
 
-## Changes
+- **Options reused from Bound Documents**: Binding, Covers, Cover Lamination, Paper Stock, Print Colour, Print Sides, Print to Edge, Page Lamination, Hole Punching, Tab Dividers, Inserts, Finishing
+- **Changed**: Document Size → A5 Landscape, A4 Landscape, A3 Landscape (short-edge bind, 297mm)
+- **Metadata addition**: `orientation: "landscape"`, `binding_edge: "short"` on all size values
 
-### 1. `src/pages/dashboard/OrderBuild.tsx` — Add validation and feedback
+### 2. Ring Binders
+Subset of Bound Documents focused on ring binder binding only.
 
-- Add a toast/alert when `handleAddToCartClick` is called but `orderItem` or `order` is null: `toast.error("Order data is still loading. Please wait.")`
-- Add validation: if `sections.length === 0`, show `toast.error("Please upload and assign at least one file before adding to cart")` and return
-- Add validation: if `spec.page_count === 0`, show a warning toast
-- Add `console.log` breadcrumbs in `handleAddToCartClick` and `handleConfirmAddToCart` to aid future debugging
+- **Binding**: Only the Ring Binder options (D-Ring 25mm–65mm)
+- **Covers**: Subset — No Cover, Clear/Frosted (front only matters less), Printed Covers
+- **Reused**: Paper Stock, Print Colour, Print Sides, Document Size (portrait only), Hole Punching (default 4-hole), Tab Dividers, Inserts
+- **Removed**: Cover Lamination (binder has own cover), Print to Edge, Page Lamination, Finishing (no stapling on ring binder)
 
-### 2. `src/pages/dashboard/OrderBuild.tsx` — Disable button when not ready
+### 3. Stapled & Loose Pages
+Simple product — no binding or covers.
 
-- Pass `disabled` prop to `PriceSummary` when `sections.length === 0` or `!orderItem` or `!order`
-- This prevents clicking "Add to Cart" before the document is configured
+- **Document Size**: A4, A5, A3, US Letter
+- **Paper Stock**: Full set from Bound Documents
+- **Print Colour**: B&W, Full Colour, Mixed
+- **Print Sides**: Simplex, Duplex, Mixed
+- **Finishing**: Staple options + Collate & Rubber Band, Shrink Wrap, No Staple (loose)
+- **Hole Punching**: Optional
+- **No**: Binding, Covers, Cover Lamination, Print to Edge, Page Lamination, Tabs, Inserts
 
-### 3. `src/pages/dashboard/OrderBuild.tsx` — Fix draft reopening blank preview
+### 4. Posters
+Very limited set — single sheet, no binding.
 
-- When `documents.length === 0` and `sections.length === 0` on the build page, show a message: "No files uploaded yet" with a button linking back to the files step
-- This prevents users from seeing a blank, confusing page
+- **Document Size**: A3, A2, A1, A0, custom (wide format)
+- **Paper Stock**: Limited — 120gsm Silk, 160gsm Silk, 200gsm Silk Card, 250gsm Gloss Card, Photo Paper
+- **Print Colour**: Full Colour only (default), B&W
+- **Print Sides**: Single Sided only
+- **Page Lamination**: Gloss, Matt, Encapsulated, None
+- **No**: Binding, Covers, Print to Edge, Hole Punching, Tabs, Inserts, Finishing
 
-### 4. `src/pages/dashboard/CustomerOrders.tsx` — Smarter draft navigation
+### 5. Booklets (Saddle Stitched)
+Similar to Bound Documents but saddle-stitched (stapled spine). Max ~64 pages.
 
-- For drafts that have documents but no sections, navigate to `/files` (resume uploading)
-- For drafts that have sections, navigate to `/build` (resume configuring)
-- Show "Continue" text on rows with existing documents
+- **Binding**: Fixed — Saddle Stitched (no choice, implicit)
+- **Document Size**: A5, A4 (folds to A5), A4 landscape
+- **Covers**: Printed Cover options (same stock or heavier), No separate cover
+- **Cover Lamination**: Full set
+- **Paper Stock**: Subset (80gsm–160gsm, coated options)
+- **Print Colour**: B&W, Full Colour
+- **Print Sides**: Always Duplex (implicit for booklets)
+- **Print to Edge**: None, Entire Document, Covers Only
+- **No**: Hole Punching, Tab Dividers, Inserts, Finishing (binding is the finish)
 
-## Files modified
-- `src/pages/dashboard/OrderBuild.tsx` — validation, disabled state, empty state messaging
-- `src/pages/dashboard/CustomerOrders.tsx` — smarter draft navigation with document check
+### 6. Flyers
+Single or double-sided sheets, no binding. Focus on heavier stocks and lamination.
 
-## Implementation order
-1. Add validation + feedback to OrderBuild's add-to-cart flow
-2. Add empty state UI on OrderBuild when no files exist
-3. Update CustomerOrders draft navigation logic
+- **Document Size**: A6, A5, A4, A3, DL (99×210mm)
+- **Paper Stock**: Heavier stocks — 130gsm Silk, 160gsm Silk, 200gsm Silk, 250gsm Silk, 300gsm Silk, Gloss equivalents
+- **Print Colour**: Full Colour (default), B&W
+- **Print Sides**: Single Sided, Double Sided
+- **Page Lamination**: Gloss, Matt, Soft Touch, None
+- **Print to Edge**: None, Full Bleed (default for flyers)
+- **No**: Binding, Covers, Hole Punching, Tabs, Inserts
+
+### 7. Brochures / Folded Leaflets
+Folded sheets — bi-fold, tri-fold, z-fold, gate-fold.
+
+- **Fold Type** (new option): Bi-Fold, Tri-Fold, Z-Fold, Gate-Fold
+- **Document Size**: A4 (folds to DL/A5), A3 (folds to A4)
+- **Paper Stock**: Heavier stocks same as Flyers
+- **Print Colour**: Full Colour (default), B&W
+- **Print Sides**: Always Double Sided (implicit)
+- **Page Lamination**: Gloss, Matt, Soft Touch, None
+- **Print to Edge**: None, Full Bleed
+- **No**: Binding, Covers, Hole Punching, Tabs, Inserts
+
+## Implementation
+
+### New file: `src/lib/seedAllProducts.ts`
+- Contains 7 individual seed functions (`seedPresentations`, `seedRingBinders`, etc.)
+- Each follows the exact same pattern as `seedBoundDocument`: create family → insert options → insert pricing rules
+- Reuses option value arrays where possible (imported from shared constants)
+- Each is idempotent (checks slug before inserting)
+
+### Refactor: `src/lib/productOptionValues.ts` (new shared file)
+- Extract common option value arrays (Paper Stock, Print Colour, Print Sides, etc.) from `seedBoundDocument.ts` into a shared module
+- Both `seedBoundDocument.ts` and `seedAllProducts.ts` import from this shared file
+- Avoids duplicating 200+ lines of option definitions
+
+### Update: `src/pages/admin/AdminProducts.tsx`
+- Add a "Seed All Products" button alongside the existing "Seed Bound Document" button
+- Calls each seed function in sequence, skipping any that already exist
+- Shows progress toast for each product family created
+
+### Update: `src/pages/dashboard/NewOrder.tsx`
+- Add more icons to `ICON_MAP` for the new product families (Presentation, Scissors, Image, BookText, FileSpreadsheet, Layers)
+
+## Pricing Rules per Product
+
+Each product family gets its own pricing rules (same structure as Bound Documents):
+- B&W and Colour per-page base rates
+- Setup fee (varies by product — posters higher, flyers lower)
+- Volume discounts
+- Product-specific surcharges where needed
+
+## Files Summary
+
+| File | Action |
+|------|--------|
+| `src/lib/productOptionValues.ts` | New — shared option value arrays |
+| `src/lib/seedAllProducts.ts` | New — 7 seed functions |
+| `src/lib/seedBoundDocument.ts` | Modify — import shared values |
+| `src/pages/admin/AdminProducts.tsx` | Modify — add "Seed All" button |
+| `src/pages/dashboard/NewOrder.tsx` | Modify — expand icon map |
+
+## Implementation Order
+1. Extract shared option values into `productOptionValues.ts`
+2. Refactor `seedBoundDocument.ts` to use shared values
+3. Create `seedAllProducts.ts` with all 7 product seed functions
+4. Update AdminProducts with "Seed All Products" button
+5. Update NewOrder icon map
 
