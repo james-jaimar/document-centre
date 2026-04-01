@@ -17,7 +17,15 @@ import SaveConfirmDialog from "@/components/order/SaveConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Settings2 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { ArrowLeft, Settings2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 
@@ -289,25 +297,60 @@ export default function OrderBuild() {
     }
   }, [orderItem, spec, updateSpec]);
 
-  const handleAddToCart = useCallback(async () => {
+  // ── Add to Cart confirmation dialog state ──
+  const [showCartDialog, setShowCartDialog] = useState(false);
+  const [cartReference, setCartReference] = useState("");
+  const [cartTotal, setCartTotal] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleAddToCartClick = useCallback(() => {
     if (!orderItem || !order) return;
-    await handleSave();
     try {
+      const breakdown = calculateItemPrice(spec, options, pricingRules);
+      if (breakdown.lines.length === 0) {
+        toast.error("No pricing rules configured", {
+          description: "Please contact the administrator to set up pricing for this product.",
+        });
+        return;
+      }
+      setCartTotal(breakdown.total);
+      setCartReference(reference.trim() || productFamily?.name || "Document");
+      setShowCartDialog(true);
+    } catch (err: any) {
+      console.error("calculateItemPrice failed", err);
+      toast.error("Unable to calculate price", { description: err.message });
+    }
+  }, [orderItem, order, spec, options, pricingRules, reference, productFamily]);
+
+  const handleConfirmAddToCart = useCallback(async () => {
+    if (!orderItem || !order || isSubmitting) return;
+    const ref = cartReference.trim();
+    if (!ref) {
+      toast.error("Please enter a reference name");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await updateSpec.mutateAsync({ id: orderItem.id, spec });
       const breakdown = calculateItemPrice(spec, options, pricingRules);
       await confirmItem.mutateAsync({
         orderItemId: orderItem.id,
         orderId: order.id,
-        title: reference.trim() || productFamily?.name || "Document",
+        title: ref,
         unitPrice: breakdown.subtotal_per_unit,
         quantity: spec.quantity,
         totalPrice: breakdown.total,
       });
+      setShowCartDialog(false);
       toast.success("Added to cart!");
       navigate(`/t/${slug}/orders`);
     } catch (err: any) {
+      console.error("handleAddToCart failed", err);
       toast.error("Failed to add to cart", { description: err.message });
+    } finally {
+      setIsSubmitting(false);
     }
-  }, [handleSave, navigate, orderItem, order, spec, options, pricingRules, productFamily, confirmItem, reference]);
+  }, [orderItem, order, isSubmitting, cartReference, spec, options, pricingRules, confirmItem, updateSpec, navigate, slug]);
 
   // Navigation guard — show dialog when dirty
   const guardedNavigate = useCallback((path: string) => {
@@ -512,7 +555,8 @@ export default function OrderBuild() {
               options={options}
               rules={pricingRules}
               onQuantityChange={handleQuantityChange}
-              onAddToCart={handleAddToCart}
+              onAddToCart={handleAddToCartClick}
+              isSubmitting={isSubmitting}
             />
           </div>
         </div>
@@ -552,6 +596,48 @@ export default function OrderBuild() {
         onDiscard={handleDiscardAndLeave}
         onCancel={() => setShowSaveDialog(false)}
       />
+
+      {/* Add to Cart confirmation dialog */}
+      <Dialog open={showCartDialog} onOpenChange={(open) => !isSubmitting && setShowCartDialog(open)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm Order</DialogTitle>
+            <DialogDescription>
+              Give this item a reference name and confirm to add it to your cart.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Reference</label>
+              <Input
+                value={cartReference}
+                onChange={(e) => setCartReference(e.target.value)}
+                placeholder="e.g. Marketing Brochure Q2"
+                autoFocus
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-border p-3 bg-muted/50">
+              <span className="text-sm text-muted-foreground">Total</span>
+              <span className="text-xl font-bold text-foreground">R{cartTotal.toFixed(2)}</span>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCartDialog(false)} disabled={isSubmitting}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmAddToCart} disabled={isSubmitting || !cartReference.trim()}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Processing…
+                </>
+              ) : (
+                "Confirm & Add to Cart"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

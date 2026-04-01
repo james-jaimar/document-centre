@@ -21,6 +21,7 @@ interface PriceSummaryProps {
   onQuantityChange: (qty: number) => void;
   onAddToCart: () => void;
   disabled?: boolean;
+  isSubmitting?: boolean;
 }
 
 export default function PriceSummary({
@@ -30,6 +31,7 @@ export default function PriceSummary({
   onQuantityChange,
   onAddToCart,
   disabled,
+  isSubmitting,
 }: PriceSummaryProps) {
   const breakdown = useMemo(
     () => calculateItemPrice(spec, options, rules),
@@ -120,11 +122,11 @@ export default function PriceSummary({
       <Button
         className="w-full gap-2"
         size="lg"
-        disabled={disabled}
+        disabled={disabled || isSubmitting}
         onClick={onAddToCart}
       >
         <ShoppingCart className="h-4 w-4" />
-        Add to Cart
+        {isSubmitting ? "Processing…" : "Add to Cart"}
       </Button>
     </div>
   );
