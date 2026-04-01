@@ -24,7 +24,9 @@ const buildNavItems = (slug: string) => [
 
 export default function CustomerSidebar() {
   const location = useLocation();
+  const { slug } = useParams<{ slug: string }>();
   const { user, signOut } = useAuth();
+  const navItems = buildNavItems(slug ?? "");
 
   const { data: profile } = useQuery({
     queryKey: ["profile", user?.id],
