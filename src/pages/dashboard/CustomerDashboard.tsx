@@ -137,6 +137,7 @@ function getOrderDisplayName(order: any): string {
 /* ── Component ── */
 const CustomerDashboard = () => {
   const navigate = useNavigate();
+  const { slug } = useParams<{ slug: string }>();
   const { user } = useAuth();
   const createOrder = useCreateOrder();
   const { data: families, isLoading: familiesLoading } = useProductFamiliesActive();
