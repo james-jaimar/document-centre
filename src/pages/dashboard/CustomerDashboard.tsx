@@ -299,7 +299,7 @@ const CustomerDashboard = () => {
                     <td>
                       <button
                         className="soft-button soft-button-primary"
-                        onClick={() => navigate(`/dashboard/orders/${order.id}/build`)}
+                        onClick={() => navigate(`/t/${slug}/orders/${order.id}/build`)}
                       >
                         Continue
                       </button>
