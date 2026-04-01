@@ -26,6 +26,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Plus, Pencil, Trash2, ChevronDown, Sparkles } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { seedBoundDocument } from "@/lib/seedBoundDocument";
+import { seedAllProducts } from "@/lib/seedAllProducts";
 
 const AdminProducts = () => {
   const { tenantId } = useTenantContext();
@@ -39,6 +40,7 @@ const AdminProducts = () => {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
+  const [seedingAll, setSeedingAll] = useState(false);
 
   function handleCreate() {
     setEditingFamily(null);
@@ -93,6 +95,26 @@ const AdminProducts = () => {
     }
   }
 
+  async function handleSeedAllProducts() {
+    setSeedingAll(true);
+    try {
+      const result = await seedAllProducts();
+      if (result.seeded.length === 0) {
+        toast({ title: "All products already exist", description: `Skipped: ${result.skipped.join(", ")}` });
+      } else {
+        toast({
+          title: "Products seeded",
+          description: `Created ${result.seeded.length} families (${result.totalOptions} options, ${result.totalRules} rules). Skipped: ${result.skipped.length}`,
+        });
+        window.location.reload();
+      }
+    } catch (e: any) {
+      toast({ title: "Seed failed", description: e.message, variant: "destructive" });
+    } finally {
+      setSeedingAll(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -101,7 +123,11 @@ const AdminProducts = () => {
           <p className="text-sm text-muted-foreground">Manage product types and their configurable options.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handleSeedBoundDocument} disabled={seeding}>
+          <Button variant="outline" onClick={handleSeedAllProducts} disabled={seedingAll || seeding}>
+            <Sparkles className="h-4 w-4 mr-2" />
+            {seedingAll ? "Seeding All…" : "Seed All Products"}
+          </Button>
+          <Button variant="outline" onClick={handleSeedBoundDocument} disabled={seeding || seedingAll}>
             <Sparkles className="h-4 w-4 mr-2" />
             {seeding ? "Seeding…" : "Seed Bound Document"}
           </Button>

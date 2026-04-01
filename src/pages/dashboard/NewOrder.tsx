@@ -5,7 +5,7 @@ import { useCreateOrder } from "@/hooks/useOrderBuilder";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BookOpen, FileText, Layers, Printer } from "lucide-react";
+import { BookOpen, FileText, Layers, Printer, Presentation, Image, Newspaper } from "lucide-react";
 import { toast } from "sonner";
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -13,6 +13,10 @@ const ICON_MAP: Record<string, React.ElementType> = {
   FileText,
   Layers,
   Printer,
+  Presentation,
+  Image,
+  BookText: FileText,
+  Newspaper,
 };
 
 export default function NewOrder() {
