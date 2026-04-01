@@ -15,11 +15,11 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 
-const NAV_ITEMS = [
-  { to: "/dashboard", icon: Home, label: "Home", exact: true },
-  { to: "/dashboard/orders/new", icon: Plus, label: "Create", exact: false },
-  { to: "/dashboard/orders", icon: ClipboardList, label: "Orders", exact: false },
-  { to: "/dashboard/settings", icon: Settings, label: "Account Settings", exact: false },
+const buildNavItems = (slug: string) => [
+  { to: `/t/${slug}/dashboard`, icon: Home, label: "Home", exact: true },
+  { to: `/t/${slug}/orders/new`, icon: Plus, label: "Create", exact: false },
+  { to: `/t/${slug}/orders`, icon: ClipboardList, label: "Orders", exact: false },
+  { to: `/t/${slug}/settings`, icon: Settings, label: "Account Settings", exact: false },
 ];
 
 export default function CustomerSidebar() {
