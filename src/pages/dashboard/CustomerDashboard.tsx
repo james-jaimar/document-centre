@@ -333,7 +333,7 @@ const CustomerDashboard = () => {
                     <td>
                       <button
                         className="soft-button soft-button-gold"
-                        onClick={() => navigate(`/dashboard/orders/${order.id}/build`)}
+                        onClick={() => navigate(`/t/${slug}/orders/${order.id}/build`)}
                       >
                         Reorder
                       </button>
