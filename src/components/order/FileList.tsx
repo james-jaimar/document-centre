@@ -109,6 +109,19 @@ export default function FileList({
             </div>
 
             <div className="shrink-0 flex items-center gap-1">
+              {onDelete && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(doc);
+                  }}
+                  disabled={deletingIds.has(doc.id)}
+                  className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                  title="Delete file"
+                >
+                  <Trash2 className={cn("h-3.5 w-3.5", deletingIds.has(doc.id) && "animate-pulse")} />
+                </button>
+              )}
               {isReady && !hasThumbnails && onReprocess && (
                 <button
                   onClick={(e) => {

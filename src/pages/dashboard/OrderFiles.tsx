@@ -296,6 +296,7 @@ export default function OrderFiles() {
             selectedDocId={selectedDocId}
             onSelect={setSelectedDocId}
             onReprocess={reprocessDocument}
+            onDelete={handleDeleteDocument}
           />
         </div>
 
