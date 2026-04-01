@@ -2051,6 +2051,7 @@ export type Database = {
       fulfillment_type: "collection" | "delivery" | "courier"
       node_type: "branch" | "hub" | "partner"
       order_status:
+        | "cart"
         | "draft"
         | "quoted"
         | "confirmed"
@@ -2207,6 +2208,7 @@ export const Constants = {
       fulfillment_type: ["collection", "delivery", "courier"],
       node_type: ["branch", "hub", "partner"],
       order_status: [
+        "cart",
         "draft",
         "quoted",
         "confirmed",
