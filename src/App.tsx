@@ -12,6 +12,7 @@ import CustomerLayout from "@/components/CustomerLayout";
 import Auth from "@/pages/Auth";
 import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "@/pages/NotFound";
+import { StorefrontRedirect } from "@/components/StorefrontRedirect";
 
 // Customer
 import CustomerDashboard from "@/pages/dashboard/CustomerDashboard";
