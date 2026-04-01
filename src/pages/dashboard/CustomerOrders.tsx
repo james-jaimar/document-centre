@@ -195,6 +195,7 @@ const CustomerOrders = () => {
           {items.map((order) => {
             const item = order.order_items?.[0];
             const isDraft = order.order_status === "draft";
+            const hasItems = (order.order_items?.length ?? 0) > 0;
             const dest = isDraft
               ? `/t/${slug}/orders/${order.id}/files`
               : `/t/${slug}/orders/${order.id}/build`;
