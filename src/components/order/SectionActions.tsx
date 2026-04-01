@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 
 interface SectionActionsProps {
   hasSelectedFile: boolean;
-  onAddAs: (type: "front_cover" | "back_cover" | "body" | "insert" | "tab") => void;
+  onAddAs: (type: "front_cover" | "back_cover" | "body") => void;
   hasSelectedSection: boolean;
   onRemoveSection: () => void;
 }

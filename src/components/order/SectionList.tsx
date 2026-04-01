@@ -146,7 +146,7 @@ export default function SectionList({
                 </button>
                 <button
                   className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30"
-                  disabled={idx === sections.length - 1}
+                  disabled={idx === fileSections.length - 1}
                   onClick={(e) => {
                     e.stopPropagation();
                     onMove(section.id, "down");
