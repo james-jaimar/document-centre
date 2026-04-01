@@ -40,6 +40,7 @@ const AdminProducts = () => {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
+  const [seedingAll, setSeedingAll] = useState(false);
 
   function handleCreate() {
     setEditingFamily(null);
