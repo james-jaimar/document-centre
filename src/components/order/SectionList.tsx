@@ -49,7 +49,12 @@ export default function SectionList({
   const getDoc = (docId: string | null) =>
     documents.find((d) => d.id === docId);
 
-  if (sections.length === 0) {
+  // Filter out tabs and inserts — those belong on the Configure Options page
+  const fileSections = sections.filter(
+    (s) => s.section_type !== "tab" && s.section_type !== "insert"
+  );
+
+  if (fileSections.length === 0) {
     return (
       <div className="text-center py-8 text-muted-foreground">
         <FileText className="h-7 w-7 mx-auto mb-2 opacity-40" />
