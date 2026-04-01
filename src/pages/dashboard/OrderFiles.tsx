@@ -30,7 +30,7 @@ import type { PaperSize } from "@/lib/paperSizes";
 import { isLandscape } from "@/lib/paperSizes";
 
 export default function OrderFiles() {
-  const { id: orderId } = useParams<{ id: string }>();
+  const { id: orderId, slug } = useParams<{ id: string; slug: string }>();
   const navigate = useNavigate();
   const {
     order,
