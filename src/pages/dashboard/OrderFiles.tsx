@@ -320,7 +320,7 @@ export default function OrderFiles() {
           </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => navigate("/dashboard/orders/new")}
+              onClick={() => navigate(`/t/${slug}/orders/new`)}
               className="soft-button flex items-center gap-1.5 text-sm"
             >
               <ArrowLeft className="h-4 w-4" />
