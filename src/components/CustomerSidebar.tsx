@@ -73,7 +73,7 @@ export default function CustomerSidebar() {
 
       {/* Nav */}
       <nav className="flex flex-1 flex-col gap-2">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.to, item.exact);
           return (
