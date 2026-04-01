@@ -122,11 +122,11 @@ export default function PriceSummary({
       <Button
         className="w-full gap-2"
         size="lg"
-        disabled={disabled}
+        disabled={disabled || isSubmitting}
         onClick={onAddToCart}
       >
         <ShoppingCart className="h-4 w-4" />
-        Add to Cart
+        {isSubmitting ? "Processing…" : "Add to Cart"}
       </Button>
     </div>
   );

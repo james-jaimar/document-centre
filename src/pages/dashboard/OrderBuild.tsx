@@ -596,6 +596,48 @@ export default function OrderBuild() {
         onDiscard={handleDiscardAndLeave}
         onCancel={() => setShowSaveDialog(false)}
       />
+
+      {/* Add to Cart confirmation dialog */}
+      <Dialog open={showCartDialog} onOpenChange={(open) => !isSubmitting && setShowCartDialog(open)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm Order</DialogTitle>
+            <DialogDescription>
+              Give this item a reference name and confirm to add it to your cart.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Reference</label>
+              <Input
+                value={cartReference}
+                onChange={(e) => setCartReference(e.target.value)}
+                placeholder="e.g. Marketing Brochure Q2"
+                autoFocus
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-border p-3 bg-muted/50">
+              <span className="text-sm text-muted-foreground">Total</span>
+              <span className="text-xl font-bold text-foreground">R{cartTotal.toFixed(2)}</span>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCartDialog(false)} disabled={isSubmitting}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmAddToCart} disabled={isSubmitting || !cartReference.trim()}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Processing…
+                </>
+              ) : (
+                "Confirm & Add to Cart"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
