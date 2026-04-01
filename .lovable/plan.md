@@ -1,50 +1,31 @@
 
 
-# Plan: Wire All Customer Portal Links to Slug-Based URLs
+# Plan: Remove Tabs & Inserts from OrderFiles Page
 
 ## Problem
 
-The routing structure was updated to `/t/:slug/*` but all internal navigation and links within the customer portal still use hardcoded `/dashboard/...` paths. This means clicking buttons (New Order, Continue, Back, etc.) and sidebar links navigates to the legacy redirect URLs instead of staying within the slug-scoped storefront.
+The "Your Document" column on the Upload & Organise Files page (Step 1) currently shows tab dividers and insert sheets alongside actual file sections. These non-file items belong on the Configure Options page (Step 2), not the file management step.
 
-## Affected files and changes
+## Changes
 
-### 1. `src/components/CustomerSidebar.tsx`
-The `NAV_ITEMS` array hardcodes `/dashboard`, `/dashboard/orders/new`, etc. These need to become dynamic using the current slug from the URL.
+### 1. `src/pages/dashboard/OrderFiles.tsx`
+- Remove the `TabManager` component and all its related code (tab handler callbacks, `tabInfo` derivation, product options imports)
+- Remove `SectionActions` "tab" option from `handleAddAs` — only allow `front_cover`, `back_cover`, `body`, `insert`
+- Remove insert from `handleAddAs` as well since inserts are also non-file dividers
 
-- Read `:slug` from `useParams`
-- Change NAV_ITEMS to a function that builds paths like `/t/${slug}/dashboard`, `/t/${slug}/orders`, etc.
+### 2. `src/components/order/SectionList.tsx`
+- Filter out sections where `section_type` is `"tab"` or `"insert"` so they don't render in the list
+- This keeps the "Your Document" column purely file-based (front cover, body, back cover)
 
-### 2. `src/pages/dashboard/CustomerDashboard.tsx`
-~10 navigate calls using `/dashboard/orders/...` patterns. All need to use `/t/${slug}/...` instead.
+### 3. `src/components/order/SectionActions.tsx`
+- Remove the "Tab" button from the "Add Selected File As" options (tabs aren't file-backed)
+- Confirm whether "Insert" should also be removed (inserts are colored sheets, not uploaded files)
 
-- Add `useParams` to get slug
-- Replace all `navigate("/dashboard/...")` with `navigate("/t/${slug}/...")`
-
-### 3. `src/pages/dashboard/CustomerOrders.tsx`
-Navigate to `/dashboard/orders/new` — needs slug prefix.
-
-- Add `useParams`, update navigate call
-
-### 4. `src/pages/dashboard/NewOrder.tsx`
-Navigates to `/dashboard/orders/${id}/files` — needs slug prefix.
-
-- Add `useParams`, update navigate calls
-
-### 5. `src/pages/dashboard/OrderFiles.tsx`
-Navigates to `/dashboard/orders/new` and `/dashboard/orders/${id}/build` — needs slug prefix.
-
-- Add `useParams`, update navigate calls
-
-### 6. `src/pages/dashboard/OrderBuild.tsx`
-Navigates to `/dashboard/orders` and `/dashboard/orders/${id}/files` — needs slug prefix.
-
-- Add `useParams`, update navigate and guardedNavigate calls
-
-## Approach
-
-Each file gets a one-line addition (`const { slug } = useParams()`) and all `/dashboard/` path prefixes become `/t/${slug}/`. This is a mechanical find-and-replace scoped to 6 files. No new components or hooks needed — the slug is already in the URL params from the route definition in App.tsx.
+## Scope check needed
+Before implementing, I need to verify what SectionActions currently offers.
 
 ## Implementation order
-1. Update CustomerSidebar (nav links)
-2. Update all 5 dashboard pages (navigate calls)
+1. Filter tabs/inserts out of SectionList rendering
+2. Remove TabManager block and related imports/handlers from OrderFiles
+3. Clean up SectionActions buttons if needed
 
