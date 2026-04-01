@@ -1,5 +1,5 @@
 import type { Tables } from "@/integrations/supabase/types";
-import { FileText, Loader2, AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
+import { FileText, Loader2, AlertCircle, CheckCircle2, RefreshCw, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
@@ -11,6 +11,7 @@ interface FileListProps {
   selectedDocId: string | null;
   onSelect: (id: string) => void;
   onReprocess?: (doc: { id: string; file_path: string; file_name: string }) => Promise<void>;
+  onDelete?: (docId: string) => Promise<void>;
 }
 
 function ThumbnailImage({ storagePath, className }: { storagePath: string; className?: string }) {
@@ -24,8 +25,25 @@ export default function FileList({
   selectedDocId,
   onSelect,
   onReprocess,
+  onDelete,
 }: FileListProps) {
   const [reprocessingIds, setReprocessingIds] = useState<Set<string>>(new Set());
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+
+  const handleDelete = async (doc: Document) => {
+    if (!onDelete || deletingIds.has(doc.id)) return;
+    if (!window.confirm(`Delete "${doc.file_name}"? This cannot be undone.`)) return;
+    setDeletingIds((prev) => new Set(prev).add(doc.id));
+    try {
+      await onDelete(doc.id);
+    } finally {
+      setDeletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(doc.id);
+        return next;
+      });
+    }
+  };
 
   const handleReprocess = async (doc: Document) => {
     if (!onReprocess || reprocessingIds.has(doc.id)) return;
@@ -91,6 +109,19 @@ export default function FileList({
             </div>
 
             <div className="shrink-0 flex items-center gap-1">
+              {onDelete && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(doc);
+                  }}
+                  disabled={deletingIds.has(doc.id)}
+                  className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                  title="Delete file"
+                >
+                  <Trash2 className={cn("h-3.5 w-3.5", deletingIds.has(doc.id) && "animate-pulse")} />
+                </button>
+              )}
               {isReady && !hasThumbnails && onReprocess && (
                 <button
                   onClick={(e) => {
