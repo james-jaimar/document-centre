@@ -1761,6 +1761,7 @@ export type Database = {
           billing_email: string | null
           country: string
           created_at: string
+          custom_domain: string | null
           default_currency: string
           external_ref: string | null
           id: string
@@ -1789,6 +1790,7 @@ export type Database = {
           billing_email?: string | null
           country?: string
           created_at?: string
+          custom_domain?: string | null
           default_currency?: string
           external_ref?: string | null
           id?: string
@@ -1817,6 +1819,7 @@ export type Database = {
           billing_email?: string | null
           country?: string
           created_at?: string
+          custom_domain?: string | null
           default_currency?: string
           external_ref?: string | null
           id?: string
