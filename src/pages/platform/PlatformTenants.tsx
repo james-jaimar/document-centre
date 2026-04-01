@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Building2, Pencil, ArrowRight } from "lucide-react";
+import { Building2, Pencil, ArrowRight, ExternalLink } from "lucide-react";
 import type { Tenant } from "@/hooks/useTenants";
 
 const PlatformTenants = () => {
