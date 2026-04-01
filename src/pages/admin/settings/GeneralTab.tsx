@@ -8,7 +8,7 @@ import { useTenantContext } from "@/hooks/useTenantContext";
 import { useUpdateTenant, type Tenant } from "@/hooks/useTenants";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Save } from "lucide-react";
+import { Save, Globe, ExternalLink, Copy } from "lucide-react";
 
 const CURRENCIES = ["ZAR", "USD", "GBP", "EUR", "AUD", "CAD", "NZD"];
 const COUNTRIES = [
