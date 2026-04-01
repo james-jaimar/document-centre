@@ -152,7 +152,7 @@ const CustomerDashboard = () => {
     setCreatingFamily(familyId);
     try {
       const order = await createOrder.mutateAsync(familyId);
-      navigate(`/dashboard/orders/${order.id}/files`);
+      navigate(`/t/${slug}/orders/${order.id}/files`);
     } finally {
       setCreatingFamily(null);
     }
