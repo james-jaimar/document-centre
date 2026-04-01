@@ -21,6 +21,9 @@ import CustomerSettings from "@/pages/dashboard/CustomerSettings";
 import NewOrder from "@/pages/dashboard/NewOrder";
 import OrderFiles from "@/pages/dashboard/OrderFiles";
 import OrderBuild from "@/pages/dashboard/OrderBuild";
+import Cart from "@/pages/dashboard/Cart";
+import Checkout from "@/pages/dashboard/Checkout";
+import OrderConfirmation from "@/pages/dashboard/OrderConfirmation";
 
 // Admin (includes former Branch pages)
 import AdminDashboard from "@/pages/admin/AdminDashboard";
