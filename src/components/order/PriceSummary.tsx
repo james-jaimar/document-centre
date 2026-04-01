@@ -31,6 +31,7 @@ export default function PriceSummary({
   onQuantityChange,
   onAddToCart,
   disabled,
+  isSubmitting,
 }: PriceSummaryProps) {
   const breakdown = useMemo(
     () => calculateItemPrice(spec, options, rules),
