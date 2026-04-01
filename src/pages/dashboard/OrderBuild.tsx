@@ -303,7 +303,7 @@ export default function OrderBuild() {
         totalPrice: breakdown.total,
       });
       toast.success("Added to cart!");
-      navigate("/dashboard/orders");
+      navigate(`/t/${slug}/orders`);
     } catch (err: any) {
       toast.error("Failed to add to cart", { description: err.message });
     }
