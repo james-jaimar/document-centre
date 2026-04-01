@@ -297,25 +297,60 @@ export default function OrderBuild() {
     }
   }, [orderItem, spec, updateSpec]);
 
-  const handleAddToCart = useCallback(async () => {
+  // ── Add to Cart confirmation dialog state ──
+  const [showCartDialog, setShowCartDialog] = useState(false);
+  const [cartReference, setCartReference] = useState("");
+  const [cartTotal, setCartTotal] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleAddToCartClick = useCallback(() => {
     if (!orderItem || !order) return;
-    await handleSave();
     try {
+      const breakdown = calculateItemPrice(spec, options, pricingRules);
+      if (breakdown.lines.length === 0) {
+        toast.error("No pricing rules configured", {
+          description: "Please contact the administrator to set up pricing for this product.",
+        });
+        return;
+      }
+      setCartTotal(breakdown.total);
+      setCartReference(reference.trim() || productFamily?.name || "Document");
+      setShowCartDialog(true);
+    } catch (err: any) {
+      console.error("calculateItemPrice failed", err);
+      toast.error("Unable to calculate price", { description: err.message });
+    }
+  }, [orderItem, order, spec, options, pricingRules, reference, productFamily]);
+
+  const handleConfirmAddToCart = useCallback(async () => {
+    if (!orderItem || !order || isSubmitting) return;
+    const ref = cartReference.trim();
+    if (!ref) {
+      toast.error("Please enter a reference name");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await updateSpec.mutateAsync({ id: orderItem.id, spec });
       const breakdown = calculateItemPrice(spec, options, pricingRules);
       await confirmItem.mutateAsync({
         orderItemId: orderItem.id,
         orderId: order.id,
-        title: reference.trim() || productFamily?.name || "Document",
+        title: ref,
         unitPrice: breakdown.subtotal_per_unit,
         quantity: spec.quantity,
         totalPrice: breakdown.total,
       });
+      setShowCartDialog(false);
       toast.success("Added to cart!");
       navigate(`/t/${slug}/orders`);
     } catch (err: any) {
+      console.error("handleAddToCart failed", err);
       toast.error("Failed to add to cart", { description: err.message });
+    } finally {
+      setIsSubmitting(false);
     }
-  }, [handleSave, navigate, orderItem, order, spec, options, pricingRules, productFamily, confirmItem, reference]);
+  }, [orderItem, order, isSubmitting, cartReference, spec, options, pricingRules, confirmItem, updateSpec, navigate, slug]);
 
   // Navigation guard — show dialog when dirty
   const guardedNavigate = useCallback((path: string) => {
