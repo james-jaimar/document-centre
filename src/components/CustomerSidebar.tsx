@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import {
   Home,
   Plus,
@@ -15,16 +15,18 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 
-const NAV_ITEMS = [
-  { to: "/dashboard", icon: Home, label: "Home", exact: true },
-  { to: "/dashboard/orders/new", icon: Plus, label: "Create", exact: false },
-  { to: "/dashboard/orders", icon: ClipboardList, label: "Orders", exact: false },
-  { to: "/dashboard/settings", icon: Settings, label: "Account Settings", exact: false },
+const buildNavItems = (slug: string) => [
+  { to: `/t/${slug}/dashboard`, icon: Home, label: "Home", exact: true },
+  { to: `/t/${slug}/orders/new`, icon: Plus, label: "Create", exact: false },
+  { to: `/t/${slug}/orders`, icon: ClipboardList, label: "Orders", exact: false },
+  { to: `/t/${slug}/settings`, icon: Settings, label: "Account Settings", exact: false },
 ];
 
 export default function CustomerSidebar() {
   const location = useLocation();
+  const { slug } = useParams<{ slug: string }>();
   const { user, signOut } = useAuth();
+  const navItems = buildNavItems(slug ?? "");
 
   const { data: profile } = useQuery({
     queryKey: ["profile", user?.id],
@@ -71,7 +73,7 @@ export default function CustomerSidebar() {
 
       {/* Nav */}
       <nav className="flex flex-1 flex-col gap-2">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.to, item.exact);
           return (

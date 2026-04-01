@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 
 export default function OrderBuild() {
-  const { id: orderId } = useParams<{ id: string }>();
+  const { id: orderId, slug } = useParams<{ id: string; slug: string }>();
   const navigate = useNavigate();
   const { order, orderItem, documents, sections, loading } =
     useOrderData(orderId);
@@ -303,7 +303,7 @@ export default function OrderBuild() {
         totalPrice: breakdown.total,
       });
       toast.success("Added to cart!");
-      navigate("/dashboard/orders");
+      navigate(`/t/${slug}/orders`);
     } catch (err: any) {
       toast.error("Failed to add to cart", { description: err.message });
     }
@@ -320,8 +320,8 @@ export default function OrderBuild() {
   }, [dirty, navigate]);
 
   const handleBackToFiles = useCallback(() => {
-    guardedNavigate(`/dashboard/orders/${orderId}/files`);
-  }, [orderId, guardedNavigate]);
+    guardedNavigate(`/t/${slug}/orders/${orderId}/files`);
+  }, [orderId, slug, guardedNavigate]);
 
   const handleSaveAndLeave = useCallback(async (ref: string) => {
     if (!orderItem) return;

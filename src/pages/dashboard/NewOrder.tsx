@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useCreateOrder } from "@/hooks/useOrderBuilder";
@@ -17,6 +17,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
 
 export default function NewOrder() {
   const navigate = useNavigate();
+  const { slug } = useParams<{ slug: string }>();
   const { user } = useAuth();
   const createOrder = useCreateOrder();
 
@@ -57,14 +58,14 @@ export default function NewOrder() {
             .select("id", { count: "exact", head: true })
             .eq("order_item_id", firstItem.id);
           if (count === 0) {
-            navigate(`/dashboard/orders/${existingDraft.id}/files`);
+            navigate(`/t/${slug}/orders/${existingDraft.id}/files`);
             return;
           }
         }
       }
 
       const order = await createOrder.mutateAsync(familyId);
-      navigate(`/dashboard/orders/${order.id}/files`);
+      navigate(`/t/${slug}/orders/${order.id}/files`);
     } catch (err: any) {
       toast.error("Failed to create order", { description: err.message });
     }

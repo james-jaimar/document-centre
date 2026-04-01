@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -137,6 +137,7 @@ function getOrderDisplayName(order: any): string {
 /* ── Component ── */
 const CustomerDashboard = () => {
   const navigate = useNavigate();
+  const { slug } = useParams<{ slug: string }>();
   const { user } = useAuth();
   const createOrder = useCreateOrder();
   const { data: families, isLoading: familiesLoading } = useProductFamiliesActive();
@@ -151,15 +152,15 @@ const CustomerDashboard = () => {
     setCreatingFamily(familyId);
     try {
       const order = await createOrder.mutateAsync(familyId);
-      navigate(`/dashboard/orders/${order.id}/files`);
+      navigate(`/t/${slug}/orders/${order.id}/files`);
     } finally {
       setCreatingFamily(null);
     }
   };
 
   const handleUploadClick = useCallback(() => {
-    navigate("/dashboard/orders/new");
-  }, [navigate]);
+    navigate(`/t/${slug}/orders/new`);
+  }, [navigate, slug]);
 
   return (
     <div className="space-y-8">
@@ -217,7 +218,7 @@ const CustomerDashboard = () => {
           onDrop={(e) => {
             e.preventDefault();
             setDragOver(false);
-            navigate("/dashboard/orders/new");
+            navigate(`/t/${slug}/orders/new`);
           }}
           onClick={handleUploadClick}
         >
@@ -260,7 +261,7 @@ const CustomerDashboard = () => {
                     <td>
                       <button
                         className="soft-button soft-button-gold"
-                        onClick={() => navigate(`/dashboard/orders/${order.id}/files`)}
+                        onClick={() => navigate(`/t/${slug}/orders/${order.id}/files`)}
                       >
                         Create
                       </button>
@@ -298,7 +299,7 @@ const CustomerDashboard = () => {
                     <td>
                       <button
                         className="soft-button soft-button-primary"
-                        onClick={() => navigate(`/dashboard/orders/${order.id}/build`)}
+                        onClick={() => navigate(`/t/${slug}/orders/${order.id}/build`)}
                       >
                         Continue
                       </button>
@@ -332,7 +333,7 @@ const CustomerDashboard = () => {
                     <td>
                       <button
                         className="soft-button soft-button-gold"
-                        onClick={() => navigate(`/dashboard/orders/${order.id}/build`)}
+                        onClick={() => navigate(`/t/${slug}/orders/${order.id}/build`)}
                       >
                         Reorder
                       </button>
@@ -359,7 +360,7 @@ const CustomerDashboard = () => {
                 <div
                   key={order.id}
                   className="flex items-center justify-between px-4 py-3 hover:bg-secondary/30 transition-colors cursor-pointer"
-                  onClick={() => navigate(`/dashboard/orders/${order.id}/build`)}
+                  onClick={() => navigate(`/t/${slug}/orders/${order.id}/build`)}
                 >
                   <div className="flex items-center gap-3">
                     {order.order_status === "dispatched" ? (

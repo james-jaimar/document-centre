@@ -30,7 +30,7 @@ import type { PaperSize } from "@/lib/paperSizes";
 import { isLandscape } from "@/lib/paperSizes";
 
 export default function OrderFiles() {
-  const { id: orderId } = useParams<{ id: string }>();
+  const { id: orderId, slug } = useParams<{ id: string; slug: string }>();
   const navigate = useNavigate();
   const {
     order,
@@ -320,7 +320,7 @@ export default function OrderFiles() {
           </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => navigate("/dashboard/orders/new")}
+              onClick={() => navigate(`/t/${slug}/orders/new`)}
               className="soft-button flex items-center gap-1.5 text-sm"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -328,7 +328,7 @@ export default function OrderFiles() {
             </button>
             <button
               disabled={!canContinue}
-              onClick={() => navigate(`/dashboard/orders/${orderId}/build`)}
+              onClick={() => navigate(`/t/${slug}/orders/${orderId}/build`)}
               className="soft-button soft-button-primary flex items-center gap-1.5 text-sm rounded-xl disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Configure Options

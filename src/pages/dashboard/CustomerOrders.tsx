@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -64,6 +64,7 @@ function useUserOrders(userId: string | undefined) {
 
 const CustomerOrders = () => {
   const navigate = useNavigate();
+  const { slug } = useParams<{ slug: string }>();
   const { user } = useAuth();
   const { data: orders, isLoading } = useUserOrders(user?.id);
 
@@ -106,8 +107,8 @@ const CustomerOrders = () => {
             const item = order.order_items?.[0];
             const dest =
               order.order_status === "draft"
-                ? `/dashboard/orders/${order.id}/files`
-                : `/dashboard/orders/${order.id}/build`;
+                ? `/t/${slug}/orders/${order.id}/files`
+                : `/t/${slug}/orders/${order.id}/build`;
             return (
               <TableRow
                 key={order.id}
@@ -151,7 +152,7 @@ const CustomerOrders = () => {
             View and manage all your print orders
           </p>
         </div>
-        <Button onClick={() => navigate("/dashboard/orders/new")}>
+        <Button onClick={() => navigate(`/t/${slug}/orders/new`)}>
           <Plus className="mr-1 h-4 w-4" />
           New Order
         </Button>
