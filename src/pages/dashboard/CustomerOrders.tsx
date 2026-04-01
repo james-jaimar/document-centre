@@ -107,8 +107,8 @@ const CustomerOrders = () => {
             const item = order.order_items?.[0];
             const dest =
               order.order_status === "draft"
-                ? `/dashboard/orders/${order.id}/files`
-                : `/dashboard/orders/${order.id}/build`;
+                ? `/t/${slug}/orders/${order.id}/files`
+                : `/t/${slug}/orders/${order.id}/build`;
             return (
               <TableRow
                 key={order.id}
