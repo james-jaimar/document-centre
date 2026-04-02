@@ -107,6 +107,20 @@ export default function SectionActions({
         </>
       )}
 
+      {showPanelAssign && (
+        <>
+          <button
+            onClick={onAutoAssignPanels}
+            className="flex items-center gap-2.5 w-full px-3 py-2 rounded-xl text-sm font-medium transition-all text-left bg-primary/10 text-primary hover:bg-primary/20"
+          >
+            <Wand2 className="h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1">Auto-assign panels ({selectedFilePageCount}-page layout)</span>
+            <ArrowRight className="h-3 w-3 opacity-40" />
+          </button>
+          <div className="border-t border-border/40 my-1" />
+        </>
+      )}
+
       {actions.map(({ type, label, icon: Icon }) => (
         <button
           key={type}
