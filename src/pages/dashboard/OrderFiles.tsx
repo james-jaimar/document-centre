@@ -560,6 +560,14 @@ export default function OrderFiles() {
         />
       )}
 
+      {/* Image Size Selector Dialog */}
+      <ImageSizeDialog
+        open={imageSizeDialogOpen}
+        imageFile={pendingImageFile}
+        onConfirm={handleImageSizeConfirm}
+        onCancel={handleImageSizeCancel}
+      />
+
       {/* Upload Progress Modal */}
       <UploadProgressModal
         open={uploadModalOpen}
