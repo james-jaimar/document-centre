@@ -26,6 +26,8 @@ export interface DocumentPreviewProps {
   pageColors?: string[];
   tabPositions?: TabPosition[];
   displayPageNumbers?: number[];
+  /** Binding edge: left (default) or top (for landscape presentations) */
+  bindingEdge?: "left" | "top";
 }
 
 const BOUND_TYPES = new Set([
