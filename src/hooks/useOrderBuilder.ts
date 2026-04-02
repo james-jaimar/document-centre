@@ -215,6 +215,7 @@ export function useAddSection() {
       section_type: "body" | "front_cover" | "back_cover" | "insert" | "tab";
       sort_order: number;
       page_range_start?: number | null;
+      page_range_end?: number | null;
       is_duplex?: boolean;
       is_color?: boolean;
     }) => {

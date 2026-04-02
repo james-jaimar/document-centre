@@ -78,3 +78,59 @@ export function useSignedThumbnailUrl(rawPath: string | null): string | null {
 
   return url;
 }
+
+const composedCache = new Map<string, string>();
+
+/**
+ * Stitch multiple panel thumbnail images side-by-side into a single
+ * composite image using an off-screen canvas. Returns a data-URL.
+ * Results are cached by a key derived from the input URLs.
+ */
+export async function composePanelImages(
+  signedUrls: string[],
+): Promise<string> {
+  if (signedUrls.length === 0) return "";
+  if (signedUrls.length === 1) return signedUrls[0];
+
+  const cacheKey = signedUrls.join("|");
+  const cached = composedCache.get(cacheKey);
+  if (cached) return cached;
+
+  // Load all images
+  const images = await Promise.all(
+    signedUrls.map(
+      (url) =>
+        new Promise<HTMLImageElement>((resolve, reject) => {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.onload = () => resolve(img);
+          img.onerror = reject;
+          img.src = url;
+        }),
+    ),
+  );
+
+  // All panels should be the same height; use the max height and scale each panel proportionally
+  const maxHeight = Math.max(...images.map((img) => img.naturalHeight));
+  const totalWidth = images.reduce((sum, img) => {
+    const scale = maxHeight / img.naturalHeight;
+    return sum + Math.round(img.naturalWidth * scale);
+  }, 0);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = totalWidth;
+  canvas.height = maxHeight;
+  const ctx = canvas.getContext("2d")!;
+
+  let x = 0;
+  for (const img of images) {
+    const scale = maxHeight / img.naturalHeight;
+    const w = Math.round(img.naturalWidth * scale);
+    ctx.drawImage(img, x, 0, w, maxHeight);
+    x += w;
+  }
+
+  const dataUrl = canvas.toDataURL("image/png");
+  composedCache.set(cacheKey, dataUrl);
+  return dataUrl;
+}

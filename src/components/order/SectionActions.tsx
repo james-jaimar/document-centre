@@ -19,6 +19,7 @@ interface SectionActionsProps {
   familySlug?: string | null;
   selectedFilePageCount?: number;
   onAutoAssignBrochure?: () => void;
+  onAutoAssignPanels?: () => void;
 }
 
 interface ActionDef {
@@ -72,13 +73,21 @@ export default function SectionActions({
   familySlug,
   selectedFilePageCount,
   onAutoAssignBrochure,
+  onAutoAssignPanels,
 }: SectionActionsProps) {
   const actions = getActions(familySlug);
   const showAutoAssign =
     hasSelectedFile &&
     familySlug === "brochures" &&
     (selectedFilePageCount ?? 0) >= 2 &&
+    (selectedFilePageCount ?? 0) < 4 &&
     !!onAutoAssignBrochure;
+
+  const showPanelAssign =
+    hasSelectedFile &&
+    familySlug === "brochures" &&
+    (selectedFilePageCount ?? 0) >= 4 &&
+    !!onAutoAssignPanels;
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -92,6 +101,20 @@ export default function SectionActions({
           >
             <Wand2 className="h-3.5 w-3.5 shrink-0" />
             <span className="flex-1">Auto-assign Outside + Inside</span>
+            <ArrowRight className="h-3 w-3 opacity-40" />
+          </button>
+          <div className="border-t border-border/40 my-1" />
+        </>
+      )}
+
+      {showPanelAssign && (
+        <>
+          <button
+            onClick={onAutoAssignPanels}
+            className="flex items-center gap-2.5 w-full px-3 py-2 rounded-xl text-sm font-medium transition-all text-left bg-primary/10 text-primary hover:bg-primary/20"
+          >
+            <Wand2 className="h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1">Auto-assign panels ({selectedFilePageCount}-page layout)</span>
             <ArrowRight className="h-3 w-3 opacity-40" />
           </button>
           <div className="border-t border-border/40 my-1" />
