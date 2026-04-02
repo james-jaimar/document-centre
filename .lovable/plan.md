@@ -1,54 +1,29 @@
 
 
-# Plan: Accept Image Uploads and Convert to PDF
+# Plan: Fix Image Upload Progress Tracking After PDF Conversion
 
 ## Problem
 
-The file uploader only accepts `application/pdf`. Image files (JPEG, PNG, WEBP, TIFF) are rejected at both the `<input accept>` attribute and the drag-and-drop filter. There's no image-to-PDF conversion in the codebase.
+When an image is uploaded, the progress tracker creates an entry keyed by the original filename (e.g., `2.png`) at 5%. After conversion to PDF, `file.name` changes to `2.pdf`, and all subsequent `updateUpload` calls create a **second** entry under `2.pdf`. The original `2.png` entry stays permanently stuck at "Converting image to PDF… 5%".
 
-## Solution
+The modal shows both entries — one stuck, one complete — and the "all done" check never passes for the stuck one, keeping the user blocked.
 
-### 1. Update FileUploader to accept images
+## Fix
 
-**`src/components/order/FileUploader.tsx`**:
-- Change `accept` to `"application/pdf,image/jpeg,image/png,image/webp,image/tiff"`
-- Update drag-and-drop filter to allow both PDF and image MIME types
-- Update label text: "Drop PDF or image files here"
+**`src/hooks/useDocumentUpload.ts`** — After converting the image to PDF, continue using `originalName` as the tracking key instead of `fileName`:
 
-### 2. Create image-to-PDF conversion utility
+1. After `imageFileToPdf`, remove the stuck entry and re-key it, OR simply use `originalName` throughout instead of `fileName` for all `updateUpload` calls
+2. The simplest fix: after conversion, update the existing entry's `fileName` display text but keep the same key
 
-**New file: `src/lib/imageToPage.ts`**:
-- Uses the `jspdf` library (lightweight, already browser-compatible)
-- Function `imageFileToPdf(file: File): Promise<File>` that:
-  1. Reads the image as a data URL
-  2. Gets natural dimensions
-  3. Creates a PDF page sized to match the image aspect ratio
-  4. Embeds the image full-bleed on the page
-  5. Returns a new `File` object with `.pdf` extension and `application/pdf` MIME type
-- Handles JPEG, PNG, WEBP (TIFF converted to PNG via canvas first)
+Concretely: change all `updateUpload(fileName, ...)` calls after the conversion to use `originalName` instead, so there's only ever one tracking entry per file.
 
-### 3. Add conversion step before upload
+## Changes
 
-**`src/hooks/useDocumentUpload.ts`**:
-- Import `imageFileToPdf`
-- In `uploadFile`, before uploading to storage: if `file.type` starts with `"image/"`, convert to PDF first
-- Update progress status text to "Converting image to PDF…" during conversion
-- The rest of the pipeline (storage upload, asset registration, thumbnailing) proceeds unchanged since it receives a PDF
-
-### 4. Install jspdf
-
-- Add `jspdf` dependency
-
-## Files
-
-| File | Action |
+| File | Change |
 |------|--------|
-| `src/components/order/FileUploader.tsx` | Modify — accept images, update labels |
-| `src/lib/imageToPage.ts` | New — image-to-PDF conversion |
-| `src/hooks/useDocumentUpload.ts` | Modify — convert images before upload |
+| `src/hooks/useDocumentUpload.ts` | Use `originalName` as the consistent tracking key throughout `uploadFile`. Update the entry's display `fileName` to show the `.pdf` name but keep the dictionary key as `originalName`. |
 
-## Implementation Order
-1. Install jspdf, create `imageToPage.ts`
-2. Update FileUploader accept types and labels
-3. Add conversion step in useDocumentUpload
+## Implementation
+- Line ~287: keep `fileName` for storage path but use `originalName` for all `updateUpload` calls
+- Lines 296, 310+, etc.: replace `updateUpload(fileName, ...)` → `updateUpload(originalName, ...)`
 
