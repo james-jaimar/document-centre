@@ -225,6 +225,24 @@ export default function OrderBuild() {
         return BINDING_METHOD_TO_PREVIEW[bindingMethod];
       }
     }
+    // Check for Fold Type option (brochures / flyers)
+    const foldOption = options.find((o) => o.name.toLowerCase() === "fold type");
+    if (foldOption && isStructuredValues(foldOption.values)) {
+      const foldKey = Object.keys(spec.selected_options).find(
+        (k) => k.toLowerCase() === foldOption.name.toLowerCase()
+      ) || foldOption.name;
+      const selectedFoldSlug = spec.selected_options[foldKey];
+      if (selectedFoldSlug) {
+        const matchedFold = (foldOption.values as StructuredOptionValue[]).find(
+          (v) => v.slug === selectedFoldSlug
+        );
+        const foldType = matchedFold?.metadata?.fold_type as string | undefined;
+        if (foldType && SLUG_TO_PREVIEW[foldType]) {
+          return SLUG_TO_PREVIEW[foldType];
+        }
+      }
+    }
+
     const slugResult = (productFamily?.slug && SLUG_TO_PREVIEW[productFamily.slug]) || "loose_sheets";
     console.log("[PreviewType] falling back to slug:", productFamily?.slug, "→", slugResult);
     return slugResult;
