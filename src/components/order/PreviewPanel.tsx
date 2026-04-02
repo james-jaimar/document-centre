@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import type { Tables } from "@/integrations/supabase/types";
 import { Button } from "@/components/ui/button";
+import { composePanelImages } from "@/lib/thumbnailUtils";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import {
