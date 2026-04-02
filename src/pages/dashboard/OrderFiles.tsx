@@ -555,6 +555,7 @@ export default function OrderFiles() {
             onToggleColor={handleToggleColor}
             onToggleDuplex={handleToggleDuplex}
             onMove={handleMoveSection}
+            familySlug={familySlug}
           />
 
         </div>
