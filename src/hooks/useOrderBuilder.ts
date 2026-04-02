@@ -214,6 +214,9 @@ export function useAddSection() {
       document_id?: string | null;
       section_type: "body" | "front_cover" | "back_cover" | "insert" | "tab";
       sort_order: number;
+      page_range_start?: number | null;
+      is_duplex?: boolean;
+      is_color?: boolean;
     }) => {
       const { data, error } = await supabase
         .from("document_sections")
