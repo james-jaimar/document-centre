@@ -220,36 +220,100 @@ export default function PreviewPanel({
   }, []);
 
   // For fold types, build outside/inside from assigned sections
-  const foldThumbnails = useMemo(() => {
+  // Supports single-page, 2-page, and multi-panel (4/6-page) layouts
+  const [composedFoldThumbnails, setComposedFoldThumbnails] = useState<string[] | null>(null);
+
+  const foldSectionData = useMemo(() => {
     if (!isFold) return null;
 
-    // Find sections assigned as front_cover (outside) and back_cover (inside)
     const outsideSection = sections.find((s) => s.section_type === "front_cover");
     const insideSection = sections.find((s) => s.section_type === "back_cover");
 
-    const getThumb = (section: DocumentSection | undefined): string | null => {
-      if (!section || !section.document_id) return null;
+    if (!outsideSection && !insideSection) return { outside: null, inside: null, isMultiPanel: false };
+
+    const getThumbsForSection = (section: DocumentSection | undefined): { urls: string[]; isMultiPanel: boolean } => {
+      if (!section || !section.document_id) return { urls: [], isMultiPanel: false };
       const doc = documents.find((d) => d.id === section.document_id);
-      if (!doc) return null;
+      if (!doc) return { urls: [], isMultiPanel: false };
       const thumbs = Array.isArray(doc.thumbnail_urls) ? (doc.thumbnail_urls as string[]) : [];
-      // Use page_range_start to pick the correct thumbnail when both sections share a document
-      const pageIdx = section.page_range_start ?? 0;
-      return thumbs[pageIdx] ?? thumbs[0] ?? null;
+
+      const start = section.page_range_start ?? 0;
+      const end = section.page_range_end;
+
+      // Multi-panel: has both start and end, and they differ
+      if (end != null && end !== start) {
+        // For bi-fold outside (pages 0 and 3): non-contiguous
+        const pageCount = doc.page_count ?? thumbs.length;
+        if (pageCount === 4 && start === 0 && end === 3) {
+          // Bi-fold outside: pages 0, 3
+          return { urls: [thumbs[0], thumbs[3]].filter(Boolean) as string[], isMultiPanel: true };
+        }
+        if (pageCount === 4 && start === 1 && end === 2) {
+          // Bi-fold inside: pages 1, 2
+          return { urls: [thumbs[1], thumbs[2]].filter(Boolean) as string[], isMultiPanel: true };
+        }
+        // Contiguous range (tri-fold etc.)
+        const rangeUrls: string[] = [];
+        for (let i = start; i <= end && i < thumbs.length; i++) {
+          if (thumbs[i]) rangeUrls.push(thumbs[i]);
+        }
+        return { urls: rangeUrls, isMultiPanel: rangeUrls.length > 1 };
+      }
+
+      // Single page
+      return { urls: thumbs[start] ? [thumbs[start]] : thumbs[0] ? [thumbs[0]] : [], isMultiPanel: false };
     };
 
-    const outside = getThumb(outsideSection);
-    const inside = getThumb(insideSection);
+    const outside = getThumbsForSection(outsideSection);
+    const inside = getThumbsForSection(insideSection);
+    const isMultiPanel = outside.isMultiPanel || inside.isMultiPanel;
 
-    // No sections assigned yet — return empty so empty state shows
-    if (!outside && !inside) {
-      return [];
+    return { outside, inside, isMultiPanel };
+  }, [documents, sections, isFold]);
+
+  // Compose multi-panel thumbnails into single surface images
+  useEffect(() => {
+    if (!isFold || !foldSectionData) {
+      setComposedFoldThumbnails(null);
+      return;
     }
 
-    const result: string[] = [];
-    if (outside) result.push(outside);
-    if (inside) result.push(inside);
-    return result;
-  }, [documents, sections, isFold]);
+    const { outside, inside, isMultiPanel } = foldSectionData;
+    if (!outside && !inside) {
+      setComposedFoldThumbnails([]);
+      return;
+    }
+
+    if (!isMultiPanel) {
+      // Simple case: single URL per surface
+      const result: string[] = [];
+      if (outside?.urls[0]) result.push(outside.urls[0]);
+      if (inside?.urls[0]) result.push(inside.urls[0]);
+      setComposedFoldThumbnails(result.length > 0 ? result : []);
+      return;
+    }
+
+    // Multi-panel: compose via canvas
+    let cancelled = false;
+    (async () => {
+      const result: string[] = [];
+      if (outside && outside.urls.length > 0) {
+        const composed = await composePanelImages(outside.urls);
+        if (cancelled) return;
+        result.push(composed);
+      }
+      if (inside && inside.urls.length > 0) {
+        const composed = await composePanelImages(inside.urls);
+        if (cancelled) return;
+        result.push(composed);
+      }
+      if (!cancelled) setComposedFoldThumbnails(result.length > 0 ? result : []);
+    })();
+
+    return () => { cancelled = true; };
+  }, [isFold, foldSectionData]);
+
+  const foldThumbnails = composedFoldThumbnails;
 
   // Build flat page list using anchor-based injection (only for non-fold types)
   const pages = useMemo(() => {
