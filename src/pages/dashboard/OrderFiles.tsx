@@ -302,11 +302,45 @@ export default function OrderFiles() {
 
   const handleFiles = useCallback(
     async (files: File[]) => {
+      const hasImages = files.some(isImageFile);
+      if (hasImages) {
+        // Stash files and show size picker
+        pendingFilesRef.current = files;
+        const firstImage = files.find(isImageFile) ?? null;
+        setPendingImageFile(firstImage);
+        setImageSizeDialogOpen(true);
+        return;
+      }
+      // All PDFs — upload directly
       setUploadModalOpen(true);
       await uploadFiles(files);
     },
     [uploadFiles]
   );
+
+  const handleImageSizeConfirm = useCallback(
+    async (selection: ImageSizeSelection) => {
+      setImageSizeDialogOpen(false);
+      setPendingImageFile(null);
+      const files = pendingFilesRef.current;
+      pendingFilesRef.current = [];
+      if (files.length === 0) return;
+
+      const targetSize = selection.target
+        ? { widthMm: selection.target.widthMm, heightMm: selection.target.heightMm }
+        : undefined;
+
+      setUploadModalOpen(true);
+      await uploadFiles(files, targetSize);
+    },
+    [uploadFiles]
+  );
+
+  const handleImageSizeCancel = useCallback(() => {
+    setImageSizeDialogOpen(false);
+    setPendingImageFile(null);
+    pendingFilesRef.current = [];
+  }, []);
 
   const handleUploadContinue = useCallback(() => {
     setUploadModalOpen(false);
