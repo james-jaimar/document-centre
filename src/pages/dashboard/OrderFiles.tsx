@@ -542,6 +542,20 @@ export default function OrderFiles() {
           onScaleTo={handleScaleTo}
         />
       )}
+
+      {/* Orientation Advisory Dialog (presentations only) */}
+      {orientationDoc && (
+        <OrientationAdvisory
+          open={!!orientationDoc}
+          onOpenChange={(open) => { if (!open) setOrientationDoc(null); }}
+          fileName={orientationDoc.fileName}
+          widthMm={orientationDoc.widthMm}
+          heightMm={orientationDoc.heightMm}
+          onRotate={handleRotateToLandscape}
+          onSwitchProduct={handleSwitchToBoundDocs}
+          isRotating={isRotating}
+        />
+      )}
     </div>
   );
 }
