@@ -429,11 +429,18 @@ export default function OrderBuild() {
     return !!slug && slug !== "none" && slug !== "no-inserts" && slug !== "no_inserts";
   }, [options, spec.selected_options]);
 
-  // Track whether tabs/inserts have been enabled (for pulse highlight on button)
+  // Auto-open drawer when tabs or inserts become enabled
   useEffect(() => {
     const prev = prevTabInsertRef.current;
-    prev.hadTabs = !!tabInfo;
-    prev.hadInserts = insertEnabled;
+    const nowHasTabs = !!tabInfo;
+    const nowHasInserts = insertEnabled;
+    // If tabs or inserts were just enabled, auto-open the drawer
+    if ((nowHasTabs && !prev.hadTabs) || (nowHasInserts && !prev.hadInserts)) {
+      setDrawerOpen(true);
+      setHasOpenedDrawer(true);
+    }
+    prev.hadTabs = nowHasTabs;
+    prev.hadInserts = nowHasInserts;
   }, [tabInfo, insertEnabled]);
 
   const orderItemId = orderItem?.id ?? "";
