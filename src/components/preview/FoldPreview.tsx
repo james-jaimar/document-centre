@@ -6,15 +6,13 @@ import { FoldVertical, UnfoldVertical, RotateCw } from "lucide-react";
 import { FileText } from "lucide-react";
 
 /**
- * Fold preview: shows one side of a sheet at a time, with fold-line overlays
- * and CSS 3D fold/unfold animation.
+ * Fold preview: shows one side of a physical sheet at a time.
  *
- * Users upload one image per side:
- *   urls[0] = outside (front)
- *   urls[1] = inside (back)
+ * urls[0] = outside (front side of the sheet)
+ * urls[1] = inside  (back side of the sheet)
  *
- * Each panel clips its portion from the full-width image using
- * overflow:hidden + negative margin-left.
+ * Unfolded: one continuous sheet with dashed fold-line overlays.
+ * Folded:   panels animate with CSS 3D transforms.
  */
 
 export default function FoldPreview({
@@ -27,12 +25,12 @@ export default function FoldPreview({
   const [side, setSide] = useState<"front" | "back">("front");
   const geometry = FOLD_GEOMETRY[foldType];
 
-  const hasTwoPages = urls.length >= 2;
-  const sheetUrl = hasTwoPages ? (side === "front" ? urls[0] : urls[1]) : urls[0];
+  const hasTwoSides = urls.length >= 2;
+  const sheetUrl = hasTwoSides ? (side === "front" ? urls[0] : urls[1]) : urls[0];
 
-  // Container sizing
-  const containerW = width * 0.9;
-  const containerH = Math.min(height * 0.65, containerW * 1.414);
+  // Container sizing — landscape-ish ratio for a sheet
+  const containerW = width * 0.88;
+  const containerH = Math.min(height * 0.6, containerW * 0.7);
 
   // Cumulative left offsets for each panel (fraction of total width)
   const cumLefts: number[] = [];
@@ -42,47 +40,9 @@ export default function FoldPreview({
     acc += w;
   }
 
-  /**
-   * For back side, reverse panel visual order but each panel still clips
-   * its original portion of the back image.
-   */
   const panelIndices = Array.from({ length: geometry.panels }, (_, i) => i);
+  // For back side, reverse the visual order
   const displayOrder = side === "back" ? [...panelIndices].reverse() : panelIndices;
-
-  function getFoldTransform(panelIndex: number): React.CSSProperties {
-    if (!folded) return {};
-
-    const n = geometry.panels;
-
-    if (foldType === "bi_fold") {
-      if (panelIndex === 1) {
-        return { transform: "rotateY(-180deg)", transformOrigin: "left center", zIndex: 2 };
-      }
-      return { zIndex: 1 };
-    }
-
-    if (foldType === "tri_fold") {
-      // Roll fold: right folds onto center, then left folds over both
-      if (panelIndex === 2) return { transform: "rotateY(-180deg)", transformOrigin: "left center", zIndex: 3 };
-      if (panelIndex === 0) return { transform: "rotateY(180deg)", transformOrigin: "right center", zIndex: 2 };
-      return { zIndex: 1 };
-    }
-
-    if (foldType === "z_fold") {
-      // Accordion: alternating directions
-      if (panelIndex === 2) return { transform: "rotateY(-180deg)", transformOrigin: "left center", zIndex: 3 };
-      if (panelIndex === 0) return { transform: "rotateY(180deg)", transformOrigin: "right center", zIndex: 2 };
-      return { zIndex: 1 };
-    }
-
-    if (foldType === "gate_fold") {
-      if (panelIndex === 0) return { transform: "rotateY(180deg)", transformOrigin: "right center", zIndex: 2 };
-      if (panelIndex === n - 1) return { transform: "rotateY(-180deg)", transformOrigin: "left center", zIndex: 2 };
-      return { zIndex: 1 };
-    }
-
-    return {};
-  }
 
   // Compute display-order cumulative lefts for positioning
   const displayCumLefts: number[] = [];
@@ -92,10 +52,42 @@ export default function FoldPreview({
     dAcc += geometry.widths[idx];
   }
 
+  function getFoldTransform(panelIndex: number): React.CSSProperties {
+    if (!folded) return {};
+
+    if (foldType === "bi_fold") {
+      if (panelIndex === 1) {
+        return { transform: "rotateY(-180deg)", transformOrigin: "left center", zIndex: 2 };
+      }
+      return { zIndex: 1 };
+    }
+
+    if (foldType === "tri_fold") {
+      if (panelIndex === 2) return { transform: "rotateY(-180deg)", transformOrigin: "left center", zIndex: 3 };
+      if (panelIndex === 0) return { transform: "rotateY(180deg)", transformOrigin: "right center", zIndex: 2 };
+      return { zIndex: 1 };
+    }
+
+    if (foldType === "z_fold") {
+      if (panelIndex === 2) return { transform: "rotateY(-180deg)", transformOrigin: "left center", zIndex: 3 };
+      if (panelIndex === 0) return { transform: "rotateY(180deg)", transformOrigin: "right center", zIndex: 2 };
+      return { zIndex: 1 };
+    }
+
+    if (foldType === "gate_fold") {
+      if (panelIndex === 0) return { transform: "rotateY(180deg)", transformOrigin: "right center", zIndex: 2 };
+      if (panelIndex === geometry.panels - 1) return { transform: "rotateY(-180deg)", transformOrigin: "left center", zIndex: 2 };
+      return { zIndex: 1 };
+    }
+
+    return {};
+  }
+
   return (
     <div className="flex flex-col items-center justify-center gap-4" style={{ width, height }}>
+      {/* Sheet container — single outer border/shadow */}
       <div
-        className="relative"
+        className="relative rounded-sm border border-border shadow-lg overflow-hidden bg-background"
         style={{ perspective: 1200, width: containerW, height: containerH }}
       >
         <div className="relative w-full h-full" style={{ transformStyle: "preserve-3d" }}>
@@ -104,7 +96,7 @@ export default function FoldPreview({
             const panelW = containerW * panelFraction;
             const leftPx = displayCumLefts[displayPos] * containerW;
 
-            // Image clipping: the img is full container width, shifted so only this panel's slice shows
+            // Image clipping: full container width, shifted so only this panel's slice shows
             const imgWidthPx = containerW;
             const imgMarginLeft = -(cumLefts[origIdx] * containerW);
 
@@ -113,13 +105,12 @@ export default function FoldPreview({
             return (
               <div
                 key={origIdx}
-                className="absolute top-0 overflow-hidden border border-border shadow-md"
+                className="absolute top-0 overflow-hidden"
                 style={{
                   width: panelW,
                   height: containerH,
                   left: leftPx,
                   transition: "transform 0.8s ease-in-out",
-                  backfaceVisibility: "hidden",
                   ...foldStyle,
                 }}
               >
@@ -157,9 +148,9 @@ export default function FoldPreview({
                   className="absolute top-0 pointer-events-none"
                   style={{
                     left: frac * containerW - 1,
-                    width: 2,
+                    width: 0,
                     height: containerH,
-                    borderLeft: "2px dashed hsl(var(--muted-foreground) / 0.4)",
+                    borderLeft: "2px dashed hsl(var(--muted-foreground) / 0.35)",
                     zIndex: 10,
                   }}
                 />
@@ -169,6 +160,7 @@ export default function FoldPreview({
         </div>
       </div>
 
+      {/* Controls */}
       <div className="flex items-center gap-2">
         <Button
           variant="outline"
@@ -180,7 +172,7 @@ export default function FoldPreview({
           {folded ? "Unfold" : "Fold"}
         </Button>
 
-        {hasTwoPages && (
+        {hasTwoSides && (
           <Button
             variant="outline"
             size="sm"
@@ -193,7 +185,7 @@ export default function FoldPreview({
         )}
       </div>
 
-      {hasTwoPages && (
+      {hasTwoSides && (
         <p className="text-xs text-muted-foreground">
           Viewing {side === "front" ? "outside" : "inside"} of sheet
         </p>
