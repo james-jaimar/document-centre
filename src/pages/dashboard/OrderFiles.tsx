@@ -46,7 +46,22 @@ export default function OrderFiles() {
   const updateSection = useUpdateSection();
   const deleteSection = useDeleteSection();
 
-
+  // Fetch product family slug for orientation checks
+  const productFamilyId = orderItem?.product_family_id ?? null;
+  const { data: productFamily } = useQuery({
+    queryKey: ["product_family", productFamilyId],
+    queryFn: async () => {
+      if (!productFamilyId) return null;
+      const { data, error } = await supabase
+        .from("product_families")
+        .select("slug")
+        .eq("id", productFamilyId)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!productFamilyId,
+  });
 
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
@@ -60,6 +75,16 @@ export default function OrderFiles() {
     heightMm: number;
     backendAssetId: string | null;
   } | null>(null);
+
+  // Orientation advisory state for presentations
+  const [orientationDoc, setOrientationDoc] = useState<{
+    id: string;
+    fileName: string;
+    widthMm: number;
+    heightMm: number;
+    backendAssetId: string | null;
+  } | null>(null);
+  const [isRotating, setIsRotating] = useState(false);
 
   // Check for non-ISO documents after upload completes
   useEffect(() => {
