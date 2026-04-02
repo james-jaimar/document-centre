@@ -1,128 +1,161 @@
 
 
-# Plan: Seed All Remaining Product Families
+# Plan: Product Preflight, Orientation & Preview Enhancements
 
 ## Overview
 
-We already have **Bound Documents** (13 option categories, 100+ values, 8 pricing rules). We now need to create 7 more product families, each as a seed function following the same pattern. All are seeded at the app level (no `tenant_id`).
+Five interconnected improvements to the product workflow: US paper size handling, presentation orientation enforcement, binding edge support in previews, ring binder cover sizing, and brochure fold panel handling.
 
-## Product Families to Create
+---
 
-### 1. Presentations
-Identical to Bound Documents but landscape/short-edge binding. Sizes: A5, A4, A3 landscape (binds on short edge — 297mm max for A3).
+## 1. US Paper Size Advisory — Wire Up Properly
 
-- **Options reused from Bound Documents**: Binding, Covers, Cover Lamination, Paper Stock, Print Colour, Print Sides, Print to Edge, Page Lamination, Hole Punching, Tab Dividers, Inserts, Finishing
-- **Changed**: Document Size → A5 Landscape, A4 Landscape, A3 Landscape (short-edge bind, 297mm)
-- **Metadata addition**: `orientation: "landscape"`, `binding_edge: "short"` on all size values
+**Current state**: Detection exists (`detectNonIsoSize`), advisory dialog exists (`PaperSizeAdvisory`), scaling via `resize()` API exists. The flow already triggers after upload and offers "Scale to A4" or "Keep original". 
 
-### 2. Ring Binders
-Subset of Bound Documents focused on ring binder binding only.
+**What's missing**: After scaling, thumbnails aren't regenerated from the scaled PDF. The system updates dimensions in the DB but the preview still shows the original rasterized pages.
 
-- **Binding**: Only the Ring Binder options (D-Ring 25mm–65mm)
-- **Covers**: Subset — No Cover, Clear/Frosted (front only matters less), Printed Covers
-- **Reused**: Paper Stock, Print Colour, Print Sides, Document Size (portrait only), Hole Punching (default 4-hole), Tab Dividers, Inserts
-- **Removed**: Cover Lamination (binder has own cover), Print to Edge, Page Lamination, Finishing (no stapling on ring binder)
+### Changes
 
-### 3. Stapled & Loose Pages
-Simple product — no binding or covers.
+**`src/hooks/useDocumentUpload.ts`** — After `resize()` completes, re-trigger `cropRasterize` + thumbnail polling on the new asset output, then update `thumbnail_urls` in the documents row.
 
-- **Document Size**: A4, A5, A3, US Letter
-- **Paper Stock**: Full set from Bound Documents
-- **Print Colour**: B&W, Full Colour, Mixed
-- **Print Sides**: Simplex, Duplex, Mixed
-- **Finishing**: Staple options + Collate & Rubber Band, Shrink Wrap, No Staple (loose)
-- **Hole Punching**: Optional
-- **No**: Binding, Covers, Cover Lamination, Print to Edge, Page Lamination, Tabs, Inserts
+**`src/pages/dashboard/OrderFiles.tsx`** — In `handleScaleTo`, after the resize job completes:
+1. Call `reprocessDocument` or a new `reThumbnail` helper that fetches fresh derived files from the resized asset
+2. Update `thumbnail_urls` in the DB with the new paths
+3. Invalidate queries so the preview refreshes
 
-### 4. Posters
-Very limited set — single sheet, no binding.
+This ensures the entire pipeline honors the new size: PDF scaled → new thumbnails → preview updates → pricing uses correct dimensions.
 
-- **Document Size**: A3, A2, A1, A0, custom (wide format)
-- **Paper Stock**: Limited — 120gsm Silk, 160gsm Silk, 200gsm Silk Card, 250gsm Gloss Card, Photo Paper
-- **Print Colour**: Full Colour only (default), B&W
-- **Print Sides**: Single Sided only
-- **Page Lamination**: Gloss, Matt, Encapsulated, None
-- **No**: Binding, Covers, Print to Edge, Hole Punching, Tabs, Inserts, Finishing
+---
 
-### 5. Booklets (Saddle Stitched)
-Similar to Bound Documents but saddle-stitched (stapled spine). Max ~64 pages.
+## 2. Presentation Orientation Enforcement
 
-- **Binding**: Fixed — Saddle Stitched (no choice, implicit)
-- **Document Size**: A5, A4 (folds to A5), A4 landscape
-- **Covers**: Printed Cover options (same stock or heavier), No separate cover
-- **Cover Lamination**: Full set
-- **Paper Stock**: Subset (80gsm–160gsm, coated options)
-- **Print Colour**: B&W, Full Colour
-- **Print Sides**: Always Duplex (implicit for booklets)
-- **Print to Edge**: None, Entire Document, Covers Only
-- **No**: Hole Punching, Tab Dividers, Inserts, Finishing (binding is the finish)
+**Current state**: Presentations are seeded with landscape sizes but nothing validates that uploaded files are actually landscape.
 
-### 6. Flyers
-Single or double-sided sheets, no binding. Focus on heavier stocks and lamination.
+### Changes
 
-- **Document Size**: A6, A5, A4, A3, DL (99×210mm)
-- **Paper Stock**: Heavier stocks — 130gsm Silk, 160gsm Silk, 200gsm Silk, 250gsm Silk, 300gsm Silk, Gloss equivalents
-- **Print Colour**: Full Colour (default), B&W
-- **Print Sides**: Single Sided, Double Sided
-- **Page Lamination**: Gloss, Matt, Soft Touch, None
-- **Print to Edge**: None, Full Bleed (default for flyers)
-- **No**: Binding, Covers, Hole Punching, Tabs, Inserts
+**`src/pages/dashboard/OrderFiles.tsx`** — New orientation check after upload processing:
+- If the product family slug is `"presentations"` and the uploaded document's `page_width_mm < page_height_mm` (portrait), show a new **`OrientationAdvisory`** dialog
+- Options: **"Rotate to Landscape"** (calls `rotate(assetId, 90)` → re-thumbnail) or **"Switch to Bound Documents"** (navigates to product selection with the file)
 
-### 7. Brochures / Folded Leaflets
-Folded sheets — bi-fold, tri-fold, z-fold, gate-fold.
+**New component: `src/components/order/OrientationAdvisory.tsx`**
+- Warning dialog: "This file is portrait. Presentations require landscape orientation."
+- Two buttons: "Rotate 90°" and "Use Bound Documents instead"
+- On rotate: call `rotate()` API, poll job, re-fetch thumbnails, update dimensions (swap w/h), update `preflight_data`
 
-- **Fold Type** (new option): Bi-Fold, Tri-Fold, Z-Fold, Gate-Fold
-- **Document Size**: A4 (folds to DL/A5), A3 (folds to A4)
-- **Paper Stock**: Heavier stocks same as Flyers
-- **Print Colour**: Full Colour (default), B&W
-- **Print Sides**: Always Double Sided (implicit)
-- **Page Lamination**: Gloss, Matt, Soft Touch, None
-- **Print to Edge**: None, Full Bleed
-- **No**: Binding, Covers, Hole Punching, Tabs, Inserts
+---
 
-## Implementation
+## 3. Binding Edge Support (Top vs Left/Short Edge)
 
-### New file: `src/lib/seedAllProducts.ts`
-- Contains 7 individual seed functions (`seedPresentations`, `seedRingBinders`, etc.)
-- Each follows the exact same pattern as `seedBoundDocument`: create family → insert options → insert pricing rules
-- Reuses option value arrays where possible (imported from shared constants)
-- Each is idempotent (checks slug before inserting)
+**Current state**: FlipBook always renders binding on the left edge. Presentations need top-edge binding for A4/A5 and left-edge (short-edge) binding for A3.
 
-### Refactor: `src/lib/productOptionValues.ts` (new shared file)
-- Extract common option value arrays (Paper Stock, Print Colour, Print Sides, etc.) from `seedBoundDocument.ts` into a shared module
-- Both `seedBoundDocument.ts` and `seedAllProducts.ts` import from this shared file
-- Avoids duplicating 200+ lines of option definitions
+### Changes
 
-### Update: `src/pages/admin/AdminProducts.tsx`
-- Add a "Seed All Products" button alongside the existing "Seed Bound Document" button
-- Calls each seed function in sequence, skipping any that already exist
-- Shows progress toast for each product family created
+**`src/components/preview/previewTypes.ts`**:
+- Add `bindingEdge?: "left" | "top"` to `FlipBookProps` and `PreviewComponentProps`
 
-### Update: `src/pages/dashboard/NewOrder.tsx`
-- Add more icons to `ICON_MAP` for the new product families (Presentation, Scissors, Image, BookText, FileSpreadsheet, Layers)
+**`src/components/preview/FlipBook.tsx`**:
+- Accept `bindingEdge` prop
+- When `bindingEdge === "top"`:
+  - Rotate the entire flipbook container 90° via CSS transform
+  - Spine image renders horizontally across the top
+  - Page flip direction changes to vertical (react-pageflip doesn't natively support vertical — we use CSS rotation of the container as a workaround)
+- When `bindingEdge === "left"` (default): current behavior
 
-## Pricing Rules per Product
+**`src/components/preview/BindingSpine.tsx`**:
+- Add horizontal rendering mode for top-edge binding (spine image rotated 90°)
 
-Each product family gets its own pricing rules (same structure as Bound Documents):
-- B&W and Colour per-page base rates
-- Setup fee (varies by product — posters higher, flyers lower)
-- Volume discounts
-- Product-specific surcharges where needed
+**`src/pages/dashboard/OrderBuild.tsx`**:
+- Derive `bindingEdge` from the selected Document Size option metadata:
+  - If metadata contains `binding_edge: "top"` → pass `bindingEdge="top"`
+  - If metadata contains `binding_edge: "short"` → pass `bindingEdge="left"` (short edge = left for landscape)
+  - Default: `"left"`
+- Pass through to `DocumentPreview` → `FlipBook`
+
+**`src/components/preview/DocumentPreview.tsx`**:
+- Accept and forward `bindingEdge` prop to `FlipBook`
+
+**Note**: You mentioned you'll supply rotated binding images for top-bound — the code will reference asset paths like `coil_binding_black_closed_horizontal.png` which you can drop in later.
+
+---
+
+## 4. Ring Binder Cover Background
+
+**Current state**: Ring binder uses the same FlipBook preview as other bound types. No binder-specific visuals.
+
+### Changes
+
+**`src/components/preview/FlipBook.tsx`** / new **`RingBinderPreview.tsx`**:
+- When `bindingType === "wire"` AND product family is `"ring_binders"`:
+  - Render a binder background image (placeholder initially) behind the page stack
+  - Cover page renders at ~270×320mm aspect ratio (you'll provide the exact dimensions)
+  - Inner pages render at standard A4 within the binder frame
+  - The binder image acts as a static background with pages overlaid
+
+**Deferred until you provide**:
+- Exact cover dimensions (you mentioned ~270×320mm)
+- Binder background image asset
+
+**Immediate work**: Add the `ringBinderCoverMm` config to previewTypes and the rendering shell in a new `RingBinderPreview` component, with a placeholder gray binder outline until assets arrive.
+
+---
+
+## 5. Brochure/Folded Leaflet Panel Handling
+
+**Current state**: `FoldPreview.tsx` shows panels using `urls[0..N]` mapped to fold geometry. It assumes one thumbnail per panel.
+
+### Analysis of what the backend can do
+
+The Document Centre API has these relevant operations:
+- `resize` — scale pages
+- `nup` — impose multiple pages onto sheets
+- `imposeSheet` / `booklet` — rearrange for print imposition
+
+**For brochures, the approach should be**:
+
+A brochure is typically a **single sheet printed both sides**. A bi-fold A4 = 1 sheet, 4 panels (2 per side). The uploaded PDF should have 2 pages (front and back of the sheet), and each page shows 2 panels side by side.
+
+### Changes
+
+**`src/components/preview/FoldPreview.tsx`**:
+- Enhanced to handle the actual panel/page mapping:
+  - **Bi-fold**: 2-page PDF → Page 1 = outside (panels 1,4), Page 2 = inside (panels 2,3). Split each page thumbnail into panel regions using CSS `object-position` + `object-fit: cover` clipping
+  - **Tri-fold**: 2-page PDF → 3 panels per side, 6 panels total. Each panel clips 1/3 of the page width
+  - **Z-fold**: Same as tri-fold but fold direction differs (handled in animation)
+  - **Gate-fold**: 2-page PDF → 4 panels per side. Panel widths follow FOLD_GEOMETRY ratios
+
+- Add a "Front" / "Back" toggle to show both sides of the sheet
+- CSS-based panel clipping from full-page thumbnails (no need to split PDFs server-side)
+
+**`src/components/preview/previewTypes.ts`**:
+- Document that brochure thumbnails use full-page images, with panel extraction done client-side via CSS clipping
+
+---
 
 ## Files Summary
 
 | File | Action |
 |------|--------|
-| `src/lib/productOptionValues.ts` | New — shared option value arrays |
-| `src/lib/seedAllProducts.ts` | New — 7 seed functions |
-| `src/lib/seedBoundDocument.ts` | Modify — import shared values |
-| `src/pages/admin/AdminProducts.tsx` | Modify — add "Seed All" button |
-| `src/pages/dashboard/NewOrder.tsx` | Modify — expand icon map |
+| `src/hooks/useDocumentUpload.ts` | Modify — add post-resize re-thumbnail logic |
+| `src/pages/dashboard/OrderFiles.tsx` | Modify — wire up re-thumbnail after scale, add orientation check |
+| `src/components/order/OrientationAdvisory.tsx` | New — portrait warning dialog for presentations |
+| `src/components/preview/previewTypes.ts` | Modify — add `bindingEdge` prop |
+| `src/components/preview/DocumentPreview.tsx` | Modify — forward `bindingEdge` |
+| `src/components/preview/FlipBook.tsx` | Modify — support top-edge binding via CSS rotation |
+| `src/components/preview/BindingSpine.tsx` | Modify — horizontal mode for top binding |
+| `src/pages/dashboard/OrderBuild.tsx` | Modify — derive `bindingEdge` from option metadata |
+| `src/components/preview/RingBinderPreview.tsx` | New — placeholder binder shell (awaiting assets) |
+| `src/components/preview/FoldPreview.tsx` | Modify — CSS panel clipping, front/back toggle |
 
 ## Implementation Order
-1. Extract shared option values into `productOptionValues.ts`
-2. Refactor `seedBoundDocument.ts` to use shared values
-3. Create `seedAllProducts.ts` with all 7 product seed functions
-4. Update AdminProducts with "Seed All Products" button
-5. Update NewOrder icon map
+1. Fix post-resize thumbnail regeneration (US paper size flow)
+2. Add orientation advisory for presentations
+3. Add binding edge support to preview system
+4. Create ring binder preview shell (placeholder)
+5. Enhance fold preview with panel clipping
+
+## Things You Flagged That I Should Note
+
+- **Binding images for top-bound**: You'll supply rotated coil/wire images — code will reference them and fall back to current images until provided
+- **Ring binder cover dimensions**: ~270×320mm — you'll confirm exact size and provide a binder background image
+- **One thing you may have missed**: The brochure fold preview should probably also validate page count on upload — a bi-fold should be exactly 2 pages, tri-fold exactly 2 pages, etc. If the user uploads a 10-page PDF into a brochure product, we should warn them. I'll add that validation alongside the orientation check.
 
