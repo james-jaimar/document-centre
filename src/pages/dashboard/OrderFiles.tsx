@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   useOrderData,
@@ -18,6 +18,8 @@ import PreviewLightbox from "@/components/order/PreviewLightbox";
 import UploadProgressModal from "@/components/order/UploadProgressModal";
 import PaperSizeAdvisory from "@/components/order/PaperSizeAdvisory";
 import OrientationAdvisory from "@/components/order/OrientationAdvisory";
+import ImageSizeDialog, { type ImageSizeSelection } from "@/components/order/ImageSizeDialog";
+import { isImageFile } from "@/lib/imageToPage";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
