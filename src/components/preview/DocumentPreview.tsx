@@ -52,6 +52,7 @@ export default function DocumentPreview({
   pageColors,
   tabPositions,
   displayPageNumbers,
+  bindingEdge,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
