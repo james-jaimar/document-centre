@@ -201,6 +201,7 @@ export default function PreviewPanel({
   const [containerSize, setContainerSize] = useState({ width: 500, height: 400 });
 
   const isBound = BOUND_TYPES.has(productType);
+  const isFold = FOLD_TYPES.has(productType);
   const step = isBound ? 2 : 1;
 
   // Measure container
