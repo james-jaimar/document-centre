@@ -293,7 +293,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
           .upload(storagePath, file, { upsert: true });
 
         if (uploadError) throw uploadError;
-        updateUpload(fileName, { progress: 30 });
+        updateUpload(originalName, { progress: 30, fileName: originalName });
 
         // 2. Create documents row
         const { data: doc, error: docError } = await supabase
@@ -310,10 +310,10 @@ export function useDocumentUpload(orderItemId: string | undefined) {
           .single();
 
         if (docError) throw docError;
-        updateUpload(fileName, { status: "analyzing", progress: 40 });
+        updateUpload(originalName, { status: "analyzing", progress: 40 });
 
         // 3. Register + process via Document Centre API
-        const processed = await processDocument(doc.id, storagePath, fileName);
+        const processed = await processDocument(doc.id, storagePath, originalName);
 
         if (!processed) {
           // Mark as ready even if processing failed (file is uploaded)
@@ -324,7 +324,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
             .in("document_status", ["processing", "pending"]);
         }
 
-        updateUpload(fileName, { status: "done", progress: 100 });
+        updateUpload(originalName, { status: "done", progress: 100 });
         qc.invalidateQueries({ queryKey: ["documents", orderItemId] });
         return doc;
       } catch (err: any) {
