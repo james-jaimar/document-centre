@@ -410,7 +410,7 @@ export default function PreviewPanel({
   const goPrev = () => setCurrentPage((p) => Math.max(0, p - step));
   const goNext = () => setCurrentPage((p) => Math.min(totalPages - 1, p + step));
 
-  if (totalPages === 0) {
+  if (totalPages === 0 && (!foldThumbnails || foldThumbnails.length === 0)) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground py-20">
         <FileText className="h-16 w-16 opacity-20 mb-4" />
