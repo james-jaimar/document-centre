@@ -73,13 +73,21 @@ export default function SectionActions({
   familySlug,
   selectedFilePageCount,
   onAutoAssignBrochure,
+  onAutoAssignPanels,
 }: SectionActionsProps) {
   const actions = getActions(familySlug);
   const showAutoAssign =
     hasSelectedFile &&
     familySlug === "brochures" &&
     (selectedFilePageCount ?? 0) >= 2 &&
+    (selectedFilePageCount ?? 0) < 4 &&
     !!onAutoAssignBrochure;
+
+  const showPanelAssign =
+    hasSelectedFile &&
+    familySlug === "brochures" &&
+    (selectedFilePageCount ?? 0) >= 4 &&
+    !!onAutoAssignPanels;
 
   return (
     <div className="flex flex-col gap-1.5">
