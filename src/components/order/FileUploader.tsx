@@ -17,7 +17,7 @@ export default function FileUploader({ onFiles, disabled }: FileUploaderProps) {
       setDragOver(false);
       if (disabled) return;
       const files = Array.from(e.dataTransfer.files).filter(
-        (f) => f.type === "application/pdf"
+        (f) => f.type === "application/pdf" || f.type.startsWith("image/")
       );
       if (files.length) onFiles(files);
     },
