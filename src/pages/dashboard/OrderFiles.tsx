@@ -570,6 +570,8 @@ export default function OrderFiles() {
               hasSelectedSection={!!selectedSectionId}
               onRemoveSection={handleRemoveSection}
               familySlug={familySlug}
+              selectedFilePageCount={selectedDocId ? (documents.find(d => d.id === selectedDocId)?.page_count ?? 0) : 0}
+              onAutoAssignBrochure={handleAutoAssignBrochure}
             />
           </div>
         </div>
