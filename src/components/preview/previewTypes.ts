@@ -91,7 +91,12 @@ export interface FlipBookProps extends PreviewComponentProps {
   bindingType: BindingType;
   tabPositions?: TabPosition[];
   displayPageNumbers?: number[];
+  /** Binding edge: left (default) or top (for landscape presentations) */
+  bindingEdge?: "left" | "top";
 }
+
+/** Ring binder cover dimensions in mm (placeholder — user to confirm exact size) */
+export const RING_BINDER_COVER_MM = { width: 270, height: 320 };
 
 export interface FoldPreviewProps extends PreviewComponentProps {
   foldType: FoldType;

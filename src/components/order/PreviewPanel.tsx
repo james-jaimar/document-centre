@@ -21,6 +21,7 @@ interface PreviewPanelProps {
   sections: DocumentSection[];
   productType?: ProductPreviewType;
   effects?: PreviewEffects;
+  bindingEdge?: "left" | "top";
 }
 
 interface PageInfo {
@@ -188,6 +189,7 @@ export default function PreviewPanel({
   sections,
   productType = "loose_sheets",
   effects,
+  bindingEdge,
 }: PreviewPanelProps) {
   const [currentPage, setCurrentPage] = useState(0);
   const prevPageCount = useRef(0);
@@ -417,6 +419,7 @@ export default function PreviewPanel({
           pageColors={pageColors}
           tabPositions={tabPositions}
           displayPageNumbers={displayPageNumbers}
+          bindingEdge={bindingEdge}
         />
       </div>
 

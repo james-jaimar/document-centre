@@ -12,9 +12,11 @@ interface BindingSpineProps {
   isOpen?: boolean;
   /** Horizontal placement: left edge, center (spread), or right edge */
   position?: "left" | "center" | "right";
+  /** Binding edge: left (default) or top (horizontal spine for presentations) */
+  bindingEdge?: "left" | "top";
 }
 
-export default function BindingSpine({ bindingType, height, isOpen = false, position = "center" }: BindingSpineProps) {
+export default function BindingSpine({ bindingType, height, isOpen = false, position = "center", bindingEdge = "left" }: BindingSpineProps) {
   if (bindingType === "none") return null;
 
   const positionStyle: React.CSSProperties =

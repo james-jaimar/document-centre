@@ -2,8 +2,16 @@ import { useState } from "react";
 import type { FoldPreviewProps } from "./previewTypes";
 import { FOLD_GEOMETRY } from "./previewTypes";
 import { Button } from "@/components/ui/button";
-import { FoldVertical, UnfoldVertical } from "lucide-react";
+import { FoldVertical, UnfoldVertical, RotateCw } from "lucide-react";
 import { FileText } from "lucide-react";
+
+/**
+ * Enhanced fold preview with CSS-based panel clipping from full-page thumbnails.
+ *
+ * Brochure convention: a brochure is a single sheet printed both sides.
+ * The uploaded PDF should have 2 pages (front/back of the sheet).
+ * Each page is split into panels using CSS object-position clipping.
+ */
 
 export default function FoldPreview({
   urls,
@@ -12,11 +20,16 @@ export default function FoldPreview({
   foldType,
 }: FoldPreviewProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [side, setSide] = useState<"front" | "back">("front");
   const geometry = FOLD_GEOMETRY[foldType];
+
+  // Determine if we have a 2-page PDF (front/back sheet)
+  const hasTwoPages = urls.length >= 2;
+  const sheetUrl = hasTwoPages ? (side === "front" ? urls[0] : urls[1]) : urls[0];
 
   // Scale panels to fit container
   const totalPanelWidth = isOpen ? width * 0.95 : width * 0.5;
-  const panelHeight = Math.min(height * 0.85, totalPanelWidth * 1.414);
+  const panelHeight = Math.min(height * 0.75, totalPanelWidth * 1.414);
 
   return (
     <div className="flex flex-col items-center justify-center gap-4" style={{ width, height }}>
@@ -74,6 +87,11 @@ export default function FoldPreview({
               }
             }
 
+            // CSS clipping: calculate which portion of the full-page thumbnail this panel shows
+            // cumulative left offset as fraction of full width
+            const cumLeft = geometry.widths.slice(0, i).reduce((s, w) => s + w, 0);
+            const panelFraction = relWidth;
+
             return (
               <div
                 key={i}
@@ -89,12 +107,24 @@ export default function FoldPreview({
                   backfaceVisibility: "hidden",
                 }}
               >
-                {urls[i] ? (
-                  <img
-                    src={urls[i]}
-                    alt={`Panel ${i + 1}`}
-                    className="w-full h-full object-contain"
-                  />
+                {sheetUrl ? (
+                  <div className="w-full h-full overflow-hidden" style={{ position: "relative" }}>
+                    <img
+                      src={sheetUrl}
+                      alt={`Panel ${i + 1}`}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: `${(1 / panelFraction) * 100}%`,
+                        height: "100%",
+                        objectFit: "cover",
+                        objectPosition: `${cumLeft * 100}% 0`,
+                        transform: `translateX(-${(cumLeft / panelFraction) * 100}%)`,
+                      }}
+                      draggable={false}
+                    />
+                  </div>
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-muted/30">
                     <div className="text-center text-muted-foreground">
@@ -109,15 +139,35 @@ export default function FoldPreview({
         </div>
       </div>
 
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => setIsOpen(!isOpen)}
-        className="gap-2"
-      >
-        {isOpen ? <FoldVertical className="h-4 w-4" /> : <UnfoldVertical className="h-4 w-4" />}
-        {isOpen ? "Fold" : "Unfold"}
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setIsOpen(!isOpen)}
+          className="gap-2"
+        >
+          {isOpen ? <FoldVertical className="h-4 w-4" /> : <UnfoldVertical className="h-4 w-4" />}
+          {isOpen ? "Fold" : "Unfold"}
+        </Button>
+
+        {hasTwoPages && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setSide(side === "front" ? "back" : "front")}
+            className="gap-2"
+          >
+            <RotateCw className="h-4 w-4" />
+            {side === "front" ? "Show Back" : "Show Front"}
+          </Button>
+        )}
+      </div>
+
+      {hasTwoPages && (
+        <p className="text-xs text-muted-foreground">
+          Viewing {side === "front" ? "outside" : "inside"} of sheet
+        </p>
+      )}
     </div>
   );
 }

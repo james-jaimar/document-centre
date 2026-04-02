@@ -17,13 +17,16 @@ import { cn } from "@/lib/utils";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
 import UploadProgressModal from "@/components/order/UploadProgressModal";
 import PaperSizeAdvisory from "@/components/order/PaperSizeAdvisory";
+import OrientationAdvisory from "@/components/order/OrientationAdvisory";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { resize, pollJob } from "@/lib/documentCentreApi";
+import { resize, rotate, pollJob, cropRasterize, getAsset, getDerivedFiles } from "@/lib/documentCentreApi";
+import { toStorageKey } from "@/lib/thumbnailUtils";
 import type { PaperSize } from "@/lib/paperSizes";
 import { isLandscape } from "@/lib/paperSizes";
+import { useQuery } from "@tanstack/react-query";
 
 export default function OrderFiles() {
   const { id: orderId, slug } = useParams<{ id: string; slug: string }>();
@@ -43,7 +46,22 @@ export default function OrderFiles() {
   const updateSection = useUpdateSection();
   const deleteSection = useDeleteSection();
 
-
+  // Fetch product family slug for orientation checks
+  const productFamilyId = orderItem?.product_family_id ?? null;
+  const { data: productFamily } = useQuery({
+    queryKey: ["product_family", productFamilyId],
+    queryFn: async () => {
+      if (!productFamilyId) return null;
+      const { data, error } = await supabase
+        .from("product_families")
+        .select("slug")
+        .eq("id", productFamilyId)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!productFamilyId,
+  });
 
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
@@ -57,6 +75,16 @@ export default function OrderFiles() {
     heightMm: number;
     backendAssetId: string | null;
   } | null>(null);
+
+  // Orientation advisory state for presentations
+  const [orientationDoc, setOrientationDoc] = useState<{
+    id: string;
+    fileName: string;
+    widthMm: number;
+    heightMm: number;
+    backendAssetId: string | null;
+  } | null>(null);
+  const [isRotating, setIsRotating] = useState(false);
 
   // Check for non-ISO documents after upload completes
   useEffect(() => {
@@ -78,9 +106,76 @@ export default function OrderFiles() {
     }
   }, [documents, uploadModalOpen, advisoryDoc]);
 
+  // Check for portrait orientation on presentation uploads
+  useEffect(() => {
+    if (uploadModalOpen || advisoryDoc || orientationDoc) return;
+    if (productFamily?.slug !== "presentations") return;
+    const portraitDoc = documents.find((d) => {
+      const preflight = d.preflight_data as Record<string, any> | null;
+      if (preflight?.orientation_resolved) return false;
+      const w = Number(d.page_width_mm);
+      const h = Number(d.page_height_mm);
+      return w > 0 && h > 0 && w < h; // portrait = width < height
+    });
+    if (portraitDoc) {
+      setOrientationDoc({
+        id: portraitDoc.id,
+        fileName: portraitDoc.file_name,
+        widthMm: Number(portraitDoc.page_width_mm),
+        heightMm: Number(portraitDoc.page_height_mm),
+        backendAssetId: portraitDoc.backend_asset_id,
+      });
+    }
+  }, [documents, uploadModalOpen, advisoryDoc, orientationDoc, productFamily?.slug]);
+
+  /** Re-generate thumbnails from a (possibly transformed) asset and update the documents row */
+  const reThumbnail = useCallback(async (docId: string, assetId: string) => {
+    // Trigger crop-rasterize on the asset (re-generates all page thumbnails)
+    const asset = await getAsset(assetId);
+    const boxes = asset.boxes as Record<string, number[]> | null;
+    const trimBox = boxes?.TrimBox ?? boxes?.CropBox ?? boxes?.MediaBox;
+
+    if (trimBox && trimBox.length === 4) {
+      const { job_id: cropJobId } = await cropRasterize(assetId, trimBox as [number, number, number, number]);
+      await pollJob(cropJobId);
+    }
+
+    // Fetch fresh derived files
+    const derivedFiles = await getDerivedFiles(assetId);
+    const thumbnailFiles = derivedFiles
+      .filter((df) => df.page != null && df.storage_path && (df.media_type?.startsWith("image/") || /thumbnail|preview|page|png/i.test(df.kind)))
+      .sort((a, b) => {
+        const aIsCropped = a.kind.startsWith("cropped_") ? 0 : 1;
+        const bIsCropped = b.kind.startsWith("cropped_") ? 0 : 1;
+        if (aIsCropped !== bIsCropped) return aIsCropped - bIsCropped;
+        return (a.page ?? 0) - (b.page ?? 0);
+      });
+
+    const thumbnailPaths: string[] = [];
+    const seenPages = new Set<number>();
+    for (const df of thumbnailFiles) {
+      const pg = df.page ?? 0;
+      if (!seenPages.has(pg)) {
+        seenPages.add(pg);
+        thumbnailPaths.push(toStorageKey(df.storage_path));
+      }
+    }
+
+    // Fallback
+    if (thumbnailPaths.length === 0 && asset.thumbnail_storage_path) {
+      thumbnailPaths.push(toStorageKey(asset.thumbnail_storage_path));
+    }
+
+    await supabase
+      .from("documents")
+      .update({ thumbnail_urls: thumbnailPaths })
+      .eq("id", docId);
+
+    return thumbnailPaths;
+  }, []);
+
   const handleKeepOriginal = useCallback(async () => {
     if (!advisoryDoc) return;
-    // Mark as resolved
     const existing = documents.find((d) => d.id === advisoryDoc.id);
     const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
     await supabase
@@ -109,6 +204,10 @@ export default function OrderFiles() {
       const { job_id } = await resize(advisoryDoc.backendAssetId, targetW, targetH, "fit");
       await pollJob(job_id);
 
+      // Re-generate thumbnails from the scaled PDF
+      toast.info("Regenerating preview…");
+      await reThumbnail(advisoryDoc.id, advisoryDoc.backendAssetId);
+
       // Update document dimensions
       const existing = documents.find((d) => d.id === advisoryDoc.id);
       const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
@@ -133,7 +232,53 @@ export default function OrderFiles() {
     } catch (err: any) {
       toast.error("Scaling failed", { description: err.message });
     }
-  }, [advisoryDoc, documents, refetchDocuments]);
+  }, [advisoryDoc, documents, refetchDocuments, reThumbnail]);
+
+  // Orientation handlers
+  const handleRotateToLandscape = useCallback(async () => {
+    if (!orientationDoc?.backendAssetId) {
+      toast.error("Cannot rotate — document has no backend asset");
+      setOrientationDoc(null);
+      return;
+    }
+    setIsRotating(true);
+    try {
+      toast.info("Rotating to landscape…");
+      const { job_id } = await rotate(orientationDoc.backendAssetId, 90);
+      await pollJob(job_id);
+
+      // Re-generate thumbnails
+      toast.info("Regenerating preview…");
+      await reThumbnail(orientationDoc.id, orientationDoc.backendAssetId);
+
+      // Swap dimensions
+      const existing = documents.find((d) => d.id === orientationDoc.id);
+      const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
+      await supabase
+        .from("documents")
+        .update({
+          page_width_mm: orientationDoc.heightMm,
+          page_height_mm: orientationDoc.widthMm,
+          preflight_data: { ...preflight, orientation_resolved: true, orientation_action: "rotated" },
+        })
+        .eq("id", orientationDoc.id);
+
+      setOrientationDoc(null);
+      refetchDocuments();
+      toast.success("Rotated to landscape");
+    } catch (err: any) {
+      toast.error("Rotation failed", { description: err.message });
+    } finally {
+      setIsRotating(false);
+    }
+  }, [orientationDoc, documents, refetchDocuments, reThumbnail]);
+
+  const handleSwitchToBoundDocs = useCallback(() => {
+    setOrientationDoc(null);
+    // Navigate back to product selection
+    navigate(`/t/${slug}/orders/new`);
+    toast.info("Please select Bound Documents for portrait files");
+  }, [navigate, slug]);
 
   // Determine which document to show in the middle preview
   const previewDoc = useMemo(() => {
@@ -395,6 +540,20 @@ export default function OrderFiles() {
           documentId={advisoryDoc.id}
           onKeepOriginal={handleKeepOriginal}
           onScaleTo={handleScaleTo}
+        />
+      )}
+
+      {/* Orientation Advisory Dialog (presentations only) */}
+      {orientationDoc && (
+        <OrientationAdvisory
+          open={!!orientationDoc}
+          onOpenChange={(open) => { if (!open) setOrientationDoc(null); }}
+          fileName={orientationDoc.fileName}
+          widthMm={orientationDoc.widthMm}
+          heightMm={orientationDoc.heightMm}
+          onRotate={handleRotateToLandscape}
+          onSwitchProduct={handleSwitchToBoundDocs}
+          isRotating={isRotating}
         />
       )}
     </div>

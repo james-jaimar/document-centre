@@ -5,6 +5,7 @@ import { getBindingType } from "./previewTypes";
 import FlipBook from "./FlipBook";
 import FoldPreview from "./FoldPreview";
 import LooseSheetsPreview from "./LooseSheetsPreview";
+import RingBinderPreview from "./RingBinderPreview";
 import { Loader2 } from "lucide-react";
 
 import type { PreviewEffects, TabPosition } from "./previewTypes";
@@ -26,6 +27,8 @@ export interface DocumentPreviewProps {
   pageColors?: string[];
   tabPositions?: TabPosition[];
   displayPageNumbers?: number[];
+  /** Binding edge: left (default) or top (for landscape presentations) */
+  bindingEdge?: "left" | "top";
 }
 
 const BOUND_TYPES = new Set([
@@ -50,6 +53,7 @@ export default function DocumentPreview({
   pageColors,
   tabPositions,
   displayPageNumbers,
+  bindingEdge,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
@@ -107,7 +111,7 @@ export default function DocumentPreview({
   };
 
   if (BOUND_TYPES.has(productType)) {
-    return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} displayPageNumbers={displayPageNumbers} />;
+    return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} displayPageNumbers={displayPageNumbers} bindingEdge={bindingEdge} />;
   }
 
   if (FOLD_TYPES.has(productType)) {

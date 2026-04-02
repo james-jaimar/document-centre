@@ -276,6 +276,7 @@ export default function FlipBook({
   pageColors,
   tabPositions,
   displayPageNumbers,
+  bindingEdge = "left",
 }: FlipBookProps) {
   const flipBookRef = useRef<any>(null);
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
@@ -358,8 +359,33 @@ export default function FlipBook({
   // Tab overlay gutter (extra space for tabs to protrude)
   const tabGutter = (tabPositions?.length ?? 0) > 0 ? 30 * scaleFactor : 0;
 
+  // For top-edge binding, rotate the entire container 90° clockwise
+  const isTopBound = bindingEdge === "top";
+  const outerTransform = isTopBound ? "rotate(90deg)" : undefined;
+  const outerWidth = isTopBound ? height : width;
+  const outerHeight = isTopBound ? width : height;
+
   return (
-    <div className="flex flex-col items-center justify-center gap-2" style={{ width, height, overflow: "visible" }}>
+    <div
+      className="flex flex-col items-center justify-center gap-2"
+      style={{
+        width,
+        height,
+        overflow: "visible",
+      }}
+    >
+      <div
+        style={{
+          ...(isTopBound ? { transform: outerTransform, transformOrigin: "center center" } : {}),
+          width: isTopBound ? outerWidth : undefined,
+          height: isTopBound ? outerHeight : undefined,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+        }}
+      >
       {/*
         VIEWER WRAPPER: visible viewport, animates width for solo/spread.
         Uses DISPLAYED (scaled) dimensions — purely cosmetic.
@@ -391,6 +417,7 @@ export default function FlipBook({
             height={displayedPageHeight}
             isOpen={!isSoloPage}
             position={spinePosition}
+            bindingEdge={bindingEdge}
           />
 
           {/* Tab overlay — persistent, visible from every page */}
@@ -524,6 +551,7 @@ export default function FlipBook({
             {isShowingFrontCover ? (displayPageNumbers?.[0] ?? 1) : (displayPageNumbers?.[lastIdx] ?? urls.length)}
           </span>
         )}
+      </div>
       </div>
     </div>
   );
