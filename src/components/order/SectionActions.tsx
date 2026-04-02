@@ -19,6 +19,7 @@ interface SectionActionsProps {
   familySlug?: string | null;
   selectedFilePageCount?: number;
   onAutoAssignBrochure?: () => void;
+  onAutoAssignPanels?: () => void;
 }
 
 interface ActionDef {
