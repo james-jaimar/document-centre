@@ -564,6 +564,36 @@ export default function OrderFiles() {
               onClick={() => lightboxThumbnails.length > 0 && setLightboxOpen(true)}
             />
             <div className="border-t border-border/60" />
+            <SectionActions
+              hasSelectedFile={!!selectedDocId}
+              onAddAs={handleAddAs}
+              hasSelectedSection={!!selectedSectionId}
+              onRemoveSection={handleRemoveSection}
+              familySlug={familySlug}
+              selectedFilePageCount={selectedDocId ? (documents.find(d => d.id === selectedDocId)?.page_count ?? 0) : 0}
+              onAutoAssignBrochure={handleAutoAssignBrochure}
+            />
+          </div>
+        </div>
+
+        {/* Right: Document Sections */}
+        <div className="section-card p-5 space-y-4">
+          <h2 className="section-header">Your Document</h2>
+          <SectionList
+            sections={sections}
+            documents={documents}
+            selectedSectionId={selectedSectionId}
+            onSelect={setSelectedSectionId}
+            onToggleColor={handleToggleColor}
+            onToggleDuplex={handleToggleDuplex}
+            onMove={handleMoveSection}
+            familySlug={familySlug}
+          />
+        </div>
+      </div>
+
+      {/* Mobile actions */}
+      <div className="lg:hidden glass-card p-4">
         <SectionActions
           hasSelectedFile={!!selectedDocId}
           onAddAs={handleAddAs}
