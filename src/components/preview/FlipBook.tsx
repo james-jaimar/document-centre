@@ -417,6 +417,7 @@ export default function FlipBook({
             height={displayedPageHeight}
             isOpen={!isSoloPage}
             position={spinePosition}
+            bindingEdge={bindingEdge}
           />
 
           {/* Tab overlay — persistent, visible from every page */}
