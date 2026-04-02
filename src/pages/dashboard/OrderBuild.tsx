@@ -276,6 +276,21 @@ export default function OrderBuild() {
     return fx;
   }, [options, spec.selected_options]);
 
+  // Derive binding edge from Document Size option metadata
+  const bindingEdge: "left" | "top" = useMemo(() => {
+    const sizeOpt = options.find((o) => o.name.toLowerCase() === "document size");
+    if (!sizeOpt || !isStructuredValues(sizeOpt.values)) return "left";
+    const key = Object.keys(spec.selected_options).find(
+      (k) => k.toLowerCase() === sizeOpt.name.toLowerCase()
+    ) || sizeOpt.name;
+    const slug = spec.selected_options[key];
+    if (!slug) return "left";
+    const val = (sizeOpt.values as StructuredOptionValue[]).find((v) => v.slug === slug);
+    const edge = (val?.metadata as Record<string, any>)?.binding_edge;
+    if (edge === "top") return "top";
+    return "left";
+  }, [options, spec.selected_options]);
+
   const handleOptionChange = useCallback((optionName: string, slug: string) => {
     setSpec((prev) => ({
       ...prev,
