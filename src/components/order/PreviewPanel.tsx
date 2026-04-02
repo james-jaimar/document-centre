@@ -21,6 +21,7 @@ interface PreviewPanelProps {
   sections: DocumentSection[];
   productType?: ProductPreviewType;
   effects?: PreviewEffects;
+  bindingEdge?: "left" | "top";
 }
 
 interface PageInfo {
