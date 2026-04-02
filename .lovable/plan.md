@@ -1,54 +1,51 @@
 
 
-# Plan: Fix Fold Preview for Brochures
+# Plan: Adapt Upload UI for Product Type (Brochures, Flyers, Posters)
 
 ## Problems
 
-### 1. Page sequence pollution
-`PreviewPanel` runs ALL pages through `buildPageSequence`, which adds `blank_back` faces for simplex sections. A 2-page brochure PDF becomes 4 entries (page1, blank_back, page2, blank_back). `FoldPreview` receives 4 thumbnail paths — 2 real + 2 empty — and the panel clipping breaks.
+From the screenshots, when uploading files for brochures:
 
-### 2. FoldPreview receives wrong data
-`FoldPreview` expects exactly 2 URLs: `urls[0]` = front of sheet, `urls[1]` = back of sheet. It uses CSS clipping to split each full-page thumbnail into panels. With extra blank entries, it shows broken/empty panels.
-
-### 3. Fold animation issues
-- `backfaceVisibility: "hidden"` prevents seeing the back side when panels fold over
-- Z-fold panels need different fold directions (accordion-style) vs tri-fold (roll-fold)
-- The "Show Back" button works but the back-side panel order should be reversed (mirror of front)
+1. **Confusing labeling**: Each uploaded page shows "1 page" — but for brochures it's a single sheet with an outside and inside. Users don't understand the relationship.
+2. **Duplex toggle on single pages**: A 1-page PDF can't be duplex. The toggle shouldn't appear, and brochures are inherently double-sided anyway.
+3. **Wrong section actions**: "Front Cover / Body Pages / Back Cover" is for bound documents. Brochures need "Outside (front)" and "Inside (back)". Flyers need just "Front" / "Back". Posters need nothing — just auto-assign.
 
 ## Solution
 
-### PreviewPanel: bypass page sequence for fold types
-When `isFold` is true, skip `buildPageSequence` entirely. Instead, extract raw thumbnail URLs directly from documents — just the actual PDF page thumbnails (page 1 = front sheet, page 2 = back sheet). Pass these directly to `DocumentPreview`.
+Pass the `productFamily.slug` into `SectionActions` and `SectionList` to adapt their UI per product type.
 
-### FoldPreview: fix animations and panel rendering
+### Section Actions by Product Family
 
-**Bi-fold** (1 fold, 4 panels = 2 per side):
-- Front: 2 panels side by side. Right panel folds onto left (like closing a book)
-- Back: 2 panels, mirrored order
+| Family | Actions shown |
+|--------|--------------|
+| `bound_documents`, `presentations`, `ring_binders`, `booklets`, `stapled_loose` | Front Cover, Body Pages, Back Cover (current) |
+| `brochures` | Outside (front of sheet), Inside (back of sheet) |
+| `flyers` | Front, Back (optional) |
+| `posters` | Auto-add as single sheet (no picker needed, or just "Add as Print") |
 
-**Tri-fold / Roll-fold** (2 folds, 6 panels = 3 per side):
-- Front: 3 panels. Right panel folds left over center, then left panel folds right over both
-- The key difference from Z-fold is that panels fold in the same direction (roll)
+### Section List Adaptations
 
-**Z-fold / Accordion** (2 folds, 6 panels = 3 per side):
-- Front: 3 panels. Right panel folds left, left panel folds right (accordion/zigzag)
-- Panels fold in alternating directions
+| Family | Changes |
+|--------|---------|
+| `brochures` | Hide duplex toggle (always duplex). Label sections as "Outside" / "Inside" instead of "Body Pages". |
+| `flyers` | Hide duplex toggle for single-sided flyers, or show it labeled "Double-sided". Label as "Front" / "Back". |
+| `posters` | Hide both colour and duplex toggles (always colour, always simplex). |
+| Default (bound docs) | Keep current behaviour |
 
-**Gate-fold** (2 folds, 4–6 panels):
-- Left and right "gate" panels fold inward over the center
+### Auto-assign for simple products
 
-**Back side**: When viewing back, reverse the panel order (panels are mirrored when you flip a sheet) and use `urls[1]` for clipping.
-
-**Remove `backfaceVisibility: "hidden"`** — it prevents seeing content when panels rotate past 90°. Instead, use proper z-index management during animation.
+For brochures: when 2 files are uploaded, auto-suggest "Outside" for first, "Inside" for second. Or when a single 2-page PDF is uploaded, auto-assign page 1 = outside, page 2 = inside with no section picker needed.
 
 ## Changes
 
 | File | Change |
 |------|--------|
-| `src/components/order/PreviewPanel.tsx` | When `isFold`, build `thumbnailPaths` directly from document `thumbnail_urls` (no blank_back injection). Skip all bound-document post-processing. |
-| `src/components/preview/FoldPreview.tsx` | Rewrite fold animations: remove `backfaceVisibility`, fix z-index layering during fold/unfold transitions, reverse panel order for back side, improve fold geometry for each type. |
+| `src/components/order/SectionActions.tsx` | Accept `familySlug` prop. Render different action sets based on product family. Map brochure sections to `outside`/`inside` types, flyers to `front`/`back`, posters to `print_sheet`. |
+| `src/components/order/SectionList.tsx` | Accept `familySlug` prop. Add labels for new section types (`outside`, `inside`, `front`, `back`, `print_sheet`). Conditionally hide duplex toggle for brochures/posters. Hide colour toggle for posters. |
+| `src/pages/dashboard/OrderFiles.tsx` | Pass `productFamily?.slug` to both `SectionActions` and `SectionList`. For brochures, auto-set `is_duplex: true` when adding sections. For posters, auto-set `is_color: true, is_duplex: false`. |
 
 ## Implementation Order
-1. Fix PreviewPanel to bypass page sequence for folds
-2. Rewrite FoldPreview with correct fold mechanics
+1. Update `SectionActions` with family-aware action sets
+2. Update `SectionList` with family-aware labels and toggle visibility
+3. Wire `familySlug` through from `OrderFiles`
 
