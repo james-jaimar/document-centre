@@ -676,19 +676,19 @@ export const FINISHING_STAPLED: StructuredOptionValue[] = [
 export const FOLD_TYPE: StructuredOptionValue[] = [
   createOptionValue("Bi-Fold (1 fold, 4 panels)", "Fold Type", {
     is_default: true,
-    metadata: { folds: 1, panels: 4 },
+    metadata: { folds: 1, panels: 4, fold_type: "bi_fold" },
   }),
   createOptionValue("Tri-Fold (2 folds, 6 panels)", "Fold Type", {
     price_impact: 1.0, price_type: "per_document",
-    metadata: { folds: 2, panels: 6 },
+    metadata: { folds: 2, panels: 6, fold_type: "tri_fold" },
   }),
   createOptionValue("Z-Fold (2 folds, 6 panels)", "Fold Type", {
     price_impact: 1.0, price_type: "per_document",
-    metadata: { folds: 2, panels: 6, fold_style: "z" },
+    metadata: { folds: 2, panels: 6, fold_type: "z_fold" },
   }),
   createOptionValue("Gate-Fold (2 folds, 4 panels)", "Fold Type", {
     price_impact: 2.0, price_type: "per_document",
-    metadata: { folds: 2, panels: 4, fold_style: "gate" },
+    metadata: { folds: 2, panels: 4, fold_type: "gate_fold" },
   }),
 ];
 
