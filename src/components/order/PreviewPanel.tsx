@@ -218,15 +218,41 @@ export default function PreviewPanel({
     return () => obs.disconnect();
   }, []);
 
-  // For fold types, extract raw thumbnail URLs directly — no page sequence needed
+  // For fold types, build outside/inside from assigned sections
   const foldThumbnails = useMemo(() => {
     if (!isFold) return null;
-    // Each document is one side of the sheet (page 1 = front, page 2 = back)
-    return documents.flatMap((d) => {
-      const thumbs = Array.isArray(d.thumbnail_urls) ? (d.thumbnail_urls as string[]) : [];
-      return thumbs;
-    });
-  }, [documents, isFold]);
+
+    // Find sections assigned as front_cover (outside) and back_cover (inside)
+    const outsideSection = sections.find((s) => s.section_type === "front_cover");
+    const insideSection = sections.find((s) => s.section_type === "back_cover");
+
+    const getFirstThumb = (section: DocumentSection | undefined): string | null => {
+      if (!section || !section.document_id) return null;
+      const doc = documents.find((d) => d.id === section.document_id);
+      if (!doc) return null;
+      const thumbs = Array.isArray(doc.thumbnail_urls) ? (doc.thumbnail_urls as string[]) : [];
+      return thumbs[0] ?? null;
+    };
+
+    const outside = getFirstThumb(outsideSection);
+    const inside = getFirstThumb(insideSection);
+
+    // If no sections assigned yet, fall back to first two documents
+    if (!outside && !inside) {
+      const fallback: string[] = [];
+      for (const d of documents) {
+        const thumbs = Array.isArray(d.thumbnail_urls) ? (d.thumbnail_urls as string[]) : [];
+        if (thumbs[0]) fallback.push(thumbs[0]);
+        if (fallback.length >= 2) break;
+      }
+      return fallback;
+    }
+
+    const result: string[] = [];
+    if (outside) result.push(outside);
+    if (inside) result.push(inside);
+    return result;
+  }, [documents, sections, isFold]);
 
   // Build flat page list using anchor-based injection (only for non-fold types)
   const pages = useMemo(() => {
