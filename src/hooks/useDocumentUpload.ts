@@ -12,6 +12,7 @@ import {
 } from "@/lib/documentCentreApi";
 import { toStorageKey } from "@/lib/thumbnailUtils";
 import { detectNonIsoSize } from "@/lib/paperSizes";
+import { isImageFile, imageFileToPdf } from "@/lib/imageToPage";
 
 interface UploadProgress {
   fileName: string;
@@ -273,10 +274,18 @@ export function useDocumentUpload(orderItemId: string | undefined) {
     async (file: File) => {
       if (!orderItemId || !user) return null;
 
-      const fileName = file.name;
-      updateUpload(fileName, { fileName, status: "uploading", progress: 0 });
+      const originalName = file.name;
+      updateUpload(originalName, { fileName: originalName, status: "uploading", progress: 0 });
 
       try {
+        // 0. Convert images to PDF before uploading
+        if (isImageFile(file)) {
+          updateUpload(originalName, { progress: 5, statusText: "Converting image to PDF…" });
+          file = await imageFileToPdf(file);
+        }
+
+        const fileName = file.name;
+
         // 1. Upload to Supabase Storage
         const storagePath = `${user.id}/${orderItemId}/${fileName}`;
         const { error: uploadError } = await supabase.storage
@@ -320,7 +329,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         return doc;
       } catch (err: any) {
         console.error("[upload] Upload failed:", err);
-        updateUpload(fileName, {
+        updateUpload(originalName, {
           status: "error",
           error: err.message || "Upload failed",
         });
