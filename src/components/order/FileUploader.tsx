@@ -54,9 +54,9 @@ export default function FileUploader({ onFiles, disabled }: FileUploaderProps) {
         <Cloud className="h-5 w-5 text-primary" />
       </div>
       <div className="text-center">
-        <p className="font-medium text-sm text-foreground">Drop PDF files here</p>
+        <p className="font-medium text-sm text-foreground">Drop PDF or image files here</p>
         <p className="text-xs text-muted-foreground mt-0.5">
-          or click to browse
+          or click to browse (PDF, JPG, PNG, WEBP)
         </p>
       </div>
       <input
