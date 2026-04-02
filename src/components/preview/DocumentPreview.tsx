@@ -5,6 +5,7 @@ import { getBindingType } from "./previewTypes";
 import FlipBook from "./FlipBook";
 import FoldPreview from "./FoldPreview";
 import LooseSheetsPreview from "./LooseSheetsPreview";
+import RingBinderPreview from "./RingBinderPreview";
 import { Loader2 } from "lucide-react";
 
 import type { PreviewEffects, TabPosition } from "./previewTypes";
