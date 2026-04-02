@@ -348,22 +348,39 @@ export default function OrderFiles() {
     refetchDocuments();
   }, [clearUploads, refetchDocuments]);
 
+  const familySlug = productFamily?.slug ?? null;
+
   const handleAddAs = useCallback(
     async (type: "front_cover" | "back_cover" | "body") => {
       if (!selectedDocId || !orderItem) return;
+      // Auto-set defaults per product family
+      const extraFields: Record<string, boolean> = {};
+      if (familySlug === "brochures") {
+        extraFields.is_duplex = true;
+        extraFields.is_color = true;
+      } else if (familySlug === "posters") {
+        extraFields.is_duplex = false;
+        extraFields.is_color = true;
+      }
       try {
         await addSection.mutateAsync({
           order_item_id: orderItem.id,
           document_id: selectedDocId,
           section_type: type,
           sort_order: sections.length,
+          ...extraFields,
         });
-        toast.success(`Added as ${type.replace("_", " ")}`);
+        const labelMap: Record<string, string> = {
+          front_cover: familySlug === "brochures" ? "Outside" : familySlug === "flyers" ? "Front" : "Front Cover",
+          back_cover: familySlug === "brochures" ? "Inside" : familySlug === "flyers" ? "Back" : "Back Cover",
+          body: "Body Pages",
+        };
+        toast.success(`Added as ${labelMap[type] ?? type.replace("_", " ")}`);
       } catch (err: any) {
         toast.error("Failed to add section", { description: err.message });
       }
     },
-    [selectedDocId, orderItem, sections.length, addSection]
+    [selectedDocId, orderItem, sections.length, addSection, familySlug]
   );
 
   const handleRemoveSection = useCallback(async () => {
