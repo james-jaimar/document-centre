@@ -368,10 +368,10 @@ export function useDocumentUpload(orderItemId: string | undefined) {
   /* ── Upload multiple files ── */
 
   const uploadFiles = useCallback(
-    async (files: FileList | File[]) => {
+    async (files: FileList | File[], targetSize?: TargetSize) => {
       const results = [];
       for (const file of Array.from(files)) {
-        const result = await uploadFile(file);
+        const result = await uploadFile(file, targetSize);
         results.push(result);
       }
       return results;
