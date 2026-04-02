@@ -236,8 +236,8 @@ export default function PreviewPanel({
       return thumbs[pageIdx] ?? thumbs[0] ?? null;
     };
 
-    const outside = getFirstThumb(outsideSection);
-    const inside = getFirstThumb(insideSection);
+    const outside = getThumb(outsideSection);
+    const inside = getThumb(insideSection);
 
     // No sections assigned yet — return empty so empty state shows
     if (!outside && !inside) {
