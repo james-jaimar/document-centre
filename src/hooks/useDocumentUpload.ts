@@ -329,7 +329,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         return doc;
       } catch (err: any) {
         console.error("[upload] Upload failed:", err);
-        updateUpload(fileName, {
+        updateUpload(originalName, {
           status: "error",
           error: err.message || "Upload failed",
         });
