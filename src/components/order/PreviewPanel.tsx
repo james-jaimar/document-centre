@@ -189,6 +189,7 @@ export default function PreviewPanel({
   sections,
   productType = "loose_sheets",
   effects,
+  bindingEdge,
 }: PreviewPanelProps) {
   const [currentPage, setCurrentPage] = useState(0);
   const prevPageCount = useRef(0);
