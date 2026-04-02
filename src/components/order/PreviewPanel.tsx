@@ -226,16 +226,18 @@ export default function PreviewPanel({
     const outsideSection = sections.find((s) => s.section_type === "front_cover");
     const insideSection = sections.find((s) => s.section_type === "back_cover");
 
-    const getFirstThumb = (section: DocumentSection | undefined): string | null => {
+    const getThumb = (section: DocumentSection | undefined): string | null => {
       if (!section || !section.document_id) return null;
       const doc = documents.find((d) => d.id === section.document_id);
       if (!doc) return null;
       const thumbs = Array.isArray(doc.thumbnail_urls) ? (doc.thumbnail_urls as string[]) : [];
-      return thumbs[0] ?? null;
+      // Use page_range_start to pick the correct thumbnail when both sections share a document
+      const pageIdx = section.page_range_start ?? 0;
+      return thumbs[pageIdx] ?? thumbs[0] ?? null;
     };
 
-    const outside = getFirstThumb(outsideSection);
-    const inside = getFirstThumb(insideSection);
+    const outside = getThumb(outsideSection);
+    const inside = getThumb(insideSection);
 
     // No sections assigned yet — return empty so empty state shows
     if (!outside && !inside) {

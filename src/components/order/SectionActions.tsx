@@ -5,6 +5,7 @@ import {
   Trash2,
   Layers,
   Image,
+  Wand2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +17,8 @@ interface SectionActionsProps {
   hasSelectedSection: boolean;
   onRemoveSection: () => void;
   familySlug?: string | null;
+  selectedFilePageCount?: number;
+  onAutoAssignBrochure?: () => void;
 }
 
 interface ActionDef {
@@ -67,12 +70,33 @@ export default function SectionActions({
   hasSelectedSection,
   onRemoveSection,
   familySlug,
+  selectedFilePageCount,
+  onAutoAssignBrochure,
 }: SectionActionsProps) {
   const actions = getActions(familySlug);
+  const showAutoAssign =
+    hasSelectedFile &&
+    familySlug === "brochures" &&
+    (selectedFilePageCount ?? 0) >= 2 &&
+    !!onAutoAssignBrochure;
 
   return (
     <div className="flex flex-col gap-1.5">
       <p className="section-header mb-1">Add Selected File As</p>
+
+      {showAutoAssign && (
+        <>
+          <button
+            onClick={onAutoAssignBrochure}
+            className="flex items-center gap-2.5 w-full px-3 py-2 rounded-xl text-sm font-medium transition-all text-left bg-primary/10 text-primary hover:bg-primary/20"
+          >
+            <Wand2 className="h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1">Auto-assign Outside + Inside</span>
+            <ArrowRight className="h-3 w-3 opacity-40" />
+          </button>
+          <div className="border-t border-border/40 my-1" />
+        </>
+      )}
 
       {actions.map(({ type, label, icon: Icon }) => (
         <button
