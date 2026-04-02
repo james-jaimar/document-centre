@@ -271,7 +271,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
   /* ── Upload a single file ── */
 
   const uploadFile = useCallback(
-    async (file: File) => {
+    async (file: File, targetSize?: TargetSize) => {
       if (!orderItemId || !user) return null;
 
       const originalName = file.name;
