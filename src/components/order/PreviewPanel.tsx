@@ -419,6 +419,7 @@ export default function PreviewPanel({
           pageColors={pageColors}
           tabPositions={tabPositions}
           displayPageNumbers={displayPageNumbers}
+          bindingEdge={bindingEdge}
         />
       </div>
 
