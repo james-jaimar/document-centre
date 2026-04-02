@@ -17,13 +17,16 @@ import { cn } from "@/lib/utils";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
 import UploadProgressModal from "@/components/order/UploadProgressModal";
 import PaperSizeAdvisory from "@/components/order/PaperSizeAdvisory";
+import OrientationAdvisory from "@/components/order/OrientationAdvisory";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { resize, pollJob } from "@/lib/documentCentreApi";
+import { resize, rotate, pollJob, cropRasterize, getAsset, getDerivedFiles } from "@/lib/documentCentreApi";
+import { toStorageKey } from "@/lib/thumbnailUtils";
 import type { PaperSize } from "@/lib/paperSizes";
 import { isLandscape } from "@/lib/paperSizes";
+import { useQuery } from "@tanstack/react-query";
 
 export default function OrderFiles() {
   const { id: orderId, slug } = useParams<{ id: string; slug: string }>();
