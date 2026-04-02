@@ -281,7 +281,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         // 0. Convert images to PDF before uploading
         if (isImageFile(file)) {
           updateUpload(originalName, { progress: 5, statusText: "Converting image to PDF…" });
-          file = await imageFileToPdf(file);
+          file = await imageFileToPdf(file, targetSize);
         }
 
         const fileName = file.name;
