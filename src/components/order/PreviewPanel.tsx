@@ -218,8 +218,21 @@ export default function PreviewPanel({
     return () => obs.disconnect();
   }, []);
 
-  // Build flat page list using anchor-based injection
-  const pages = useMemo(() => buildPageSequence(sections, documents, isBound), [sections, documents, isBound]);
+  // For fold types, extract raw thumbnail URLs directly — no page sequence needed
+  const foldThumbnails = useMemo(() => {
+    if (!isFold) return null;
+    // Each document is one side of the sheet (page 1 = front, page 2 = back)
+    return documents.flatMap((d) => {
+      const thumbs = Array.isArray(d.thumbnail_urls) ? (d.thumbnail_urls as string[]) : [];
+      return thumbs;
+    });
+  }, [documents, isFold]);
+
+  // Build flat page list using anchor-based injection (only for non-fold types)
+  const pages = useMemo(() => {
+    if (isFold) return [];
+    return buildPageSequence(sections, documents, isBound);
+  }, [sections, documents, isBound, isFold]);
 
   // Build final page sequence with explicit roles + enforce physical alignment
   const { finalPages, pageRoles: computedPageRoles } = useMemo(() => {
@@ -270,7 +283,10 @@ export default function PreviewPanel({
     return { finalPages: fp, pageRoles: roles };
   }, [pages, effects, isBound]);
 
-  const thumbnailPaths = useMemo(() => finalPages.map((p) => p.thumbnailUrl), [finalPages]);
+  const thumbnailPaths = useMemo(() => {
+    if (isFold && foldThumbnails) return foldThumbnails;
+    return finalPages.map((p) => p.thumbnailUrl);
+  }, [finalPages, isFold, foldThumbnails]);
   const colorFlags = useMemo(() => finalPages.map((p) => p.isColor), [finalPages]);
   const sectionTypes = useMemo(() => finalPages.map((p) => p.section?.section_type ?? "body"), [finalPages]);
   const pageLabels = useMemo(() => finalPages.map((p) => p.label ?? ""), [finalPages]);

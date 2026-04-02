@@ -11,6 +11,8 @@ import { FileText } from "lucide-react";
  * Brochure convention: a brochure is a single sheet printed both sides.
  * The uploaded PDF should have 2 pages (front/back of the sheet).
  * Each page is split into panels using CSS object-position clipping.
+ *
+ * Back side: panel order is reversed (mirrored) relative to front.
  */
 
 export default function FoldPreview({
@@ -19,17 +21,73 @@ export default function FoldPreview({
   height,
   foldType,
 }: FoldPreviewProps) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(true);
   const [side, setSide] = useState<"front" | "back">("front");
   const geometry = FOLD_GEOMETRY[foldType];
 
-  // Determine if we have a 2-page PDF (front/back sheet)
   const hasTwoPages = urls.length >= 2;
   const sheetUrl = hasTwoPages ? (side === "front" ? urls[0] : urls[1]) : urls[0];
 
   // Scale panels to fit container
-  const totalPanelWidth = isOpen ? width * 0.95 : width * 0.5;
-  const panelHeight = Math.min(height * 0.75, totalPanelWidth * 1.414);
+  const totalPanelWidth = isOpen ? width * 0.9 : width * 0.45;
+  const panelHeight = Math.min(height * 0.65, totalPanelWidth * 1.414);
+
+  // When viewing back, reverse panel order (mirror of front)
+  const panelIndices = Array.from({ length: geometry.panels }, (_, i) => i);
+  const displayIndices = side === "back" ? [...panelIndices].reverse() : panelIndices;
+
+  /**
+   * Compute fold transform for each panel when folded (closed).
+   * Each fold type has specific mechanics.
+   */
+  function getFoldTransform(panelIndex: number) {
+    if (isOpen) return { transform: "rotateY(0deg)", transformOrigin: "left center", zIndex: 1 };
+
+    const n = geometry.panels;
+
+    if (foldType === "bi_fold") {
+      // Right panel folds onto left
+      if (panelIndex === 1) {
+        return { transform: "rotateY(-160deg)", transformOrigin: "left center", zIndex: 2 };
+      }
+      return { transform: "rotateY(0deg)", transformOrigin: "left center", zIndex: 1 };
+    }
+
+    if (foldType === "tri_fold") {
+      // Roll fold: right panel folds left over center, then left panel folds right over both
+      if (panelIndex === 2) {
+        return { transform: "rotateY(-160deg)", transformOrigin: "left center", zIndex: 3 };
+      }
+      if (panelIndex === 0) {
+        return { transform: "rotateY(160deg)", transformOrigin: "right center", zIndex: 2 };
+      }
+      return { transform: "rotateY(0deg)", transformOrigin: "left center", zIndex: 1 };
+    }
+
+    if (foldType === "z_fold") {
+      // Accordion: alternating fold directions
+      if (panelIndex === 2) {
+        return { transform: "rotateY(-160deg)", transformOrigin: "left center", zIndex: 3 };
+      }
+      if (panelIndex === 0) {
+        return { transform: "rotateY(160deg)", transformOrigin: "right center", zIndex: 2 };
+      }
+      return { transform: "rotateY(0deg)", transformOrigin: "left center", zIndex: 1 };
+    }
+
+    if (foldType === "gate_fold") {
+      // Gate panels fold inward
+      if (panelIndex === 0) {
+        return { transform: "rotateY(160deg)", transformOrigin: "right center", zIndex: 2 };
+      }
+      if (panelIndex === n - 1) {
+        return { transform: "rotateY(-160deg)", transformOrigin: "left center", zIndex: 2 };
+      }
+      return { transform: "rotateY(0deg)", transformOrigin: "left center", zIndex: 1 };
+    }
+
+    return { transform: "rotateY(0deg)", transformOrigin: "left center", zIndex: 1 };
+  }
 
   return (
     <div className="flex flex-col items-center justify-center gap-4" style={{ width, height }}>
@@ -45,56 +103,25 @@ export default function FoldPreview({
           className="relative w-full h-full"
           style={{ transformStyle: "preserve-3d" }}
         >
-          {geometry.widths.map((relWidth, i) => {
+          {displayIndices.map((originalIdx, displayPos) => {
+            const relWidth = geometry.widths[originalIdx];
             const panelW = totalPanelWidth * relWidth;
-            const leftOffset = geometry.widths
-              .slice(0, i)
-              .reduce((sum, w) => sum + w * totalPanelWidth, 0);
 
-            // Calculate fold transforms
-            let transform = "rotateY(0deg)";
-            let transformOrigin = "left center";
-            let zIndex = geometry.panels - i;
+            // Position panels left-to-right based on display order
+            const leftOffset = displayIndices
+              .slice(0, displayPos)
+              .reduce((sum, idx) => sum + geometry.widths[idx] * totalPanelWidth, 0);
 
-            if (!isOpen) {
-              if (foldType === "bi_fold" && i === 1) {
-                transform = "rotateY(-170deg)";
-                transformOrigin = "left center";
-              } else if (foldType === "tri_fold") {
-                if (i === 2) {
-                  transform = "rotateY(-170deg)";
-                  transformOrigin = "left center";
-                } else if (i === 0) {
-                  transform = "rotateY(170deg)";
-                  transformOrigin = "right center";
-                }
-              } else if (foldType === "z_fold") {
-                if (i === 2) {
-                  transform = "rotateY(-170deg)";
-                  transformOrigin = "left center";
-                } else if (i === 0) {
-                  transform = "rotateY(170deg)";
-                  transformOrigin = "right center";
-                }
-              } else if (foldType === "gate_fold") {
-                if (i === 0) {
-                  transform = "rotateY(170deg)";
-                  transformOrigin = "right center";
-                } else if (i === 3) {
-                  transform = "rotateY(-170deg)";
-                  transformOrigin = "left center";
-                }
-              }
-            }
+            const { transform, transformOrigin, zIndex } = getFoldTransform(originalIdx);
 
             // CSS clipping: calculate which portion of the full-page thumbnail this panel shows
-            // cumulative left offset as fraction of full width
-            const cumLeft = geometry.widths.slice(0, i).reduce((s, w) => s + w, 0);
+            // Use original index for clipping (always maps to the source image)
+            const cumLeft = geometry.widths.slice(0, originalIdx).reduce((s, w) => s + w, 0);
             const panelFraction = relWidth;
 
             return (
               <div
-                key={i}
+                key={originalIdx}
                 className="absolute top-0 bg-card border border-border overflow-hidden shadow-md"
                 style={{
                   width: panelW,
@@ -104,14 +131,13 @@ export default function FoldPreview({
                   transformOrigin,
                   transition: "transform 0.8s ease-in-out",
                   zIndex,
-                  backfaceVisibility: "hidden",
                 }}
               >
                 {sheetUrl ? (
                   <div className="w-full h-full overflow-hidden" style={{ position: "relative" }}>
                     <img
                       src={sheetUrl}
-                      alt={`Panel ${i + 1}`}
+                      alt={`Panel ${originalIdx + 1}`}
                       style={{
                         position: "absolute",
                         top: 0,
@@ -129,7 +155,7 @@ export default function FoldPreview({
                   <div className="w-full h-full flex items-center justify-center bg-muted/30">
                     <div className="text-center text-muted-foreground">
                       <FileText className="h-6 w-6 mx-auto mb-1 opacity-30" />
-                      <p className="text-xs">Panel {i + 1}</p>
+                      <p className="text-xs">Panel {originalIdx + 1}</p>
                     </div>
                   </div>
                 )}
