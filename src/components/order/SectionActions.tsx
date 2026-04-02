@@ -89,9 +89,20 @@ export default function SectionActions({
     (selectedFilePageCount ?? 0) >= 4 &&
     !!onAutoAssignPanels;
 
+  const showBrochureHint =
+    hasSelectedFile &&
+    familySlug === "brochures" &&
+    (selectedFilePageCount ?? 0) === 1;
+
   return (
     <div className="flex flex-col gap-1.5">
       <p className="section-header mb-1">Add Selected File As</p>
+
+      {showBrochureHint && (
+        <p className="text-xs text-muted-foreground px-3 pb-1">
+          Assign this image as the Outside or Inside of your brochure.
+        </p>
+      )}
 
       {showAutoAssign && (
         <>

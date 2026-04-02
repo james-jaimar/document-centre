@@ -63,17 +63,40 @@ export default function DocumentPreview({
   const setPage = controlledOnPageChange ?? setInternalPage;
 
   // Batch sign all URLs on mount / when paths change
+  // Data URLs (from canvas composition) and already-signed https URLs are passed through directly.
   useEffect(() => {
     if (thumbnailPaths.length === 0) {
       setUrls([]);
       setLoading(false);
       return;
     }
+
+    const needsSigning: string[] = [];
+    const directUrls = new Map<number, string>();
+
+    thumbnailPaths.forEach((p, i) => {
+      if (p.startsWith("data:") || p.startsWith("http://") || p.startsWith("https://")) {
+        directUrls.set(i, p);
+      } else if (p) {
+        needsSigning.push(p);
+      }
+    });
+
+    if (needsSigning.length === 0) {
+      // All paths are direct URLs or empty — no signing needed
+      setUrls(thumbnailPaths.map((p, i) => directUrls.get(i) || ""));
+      setLoading(false);
+      return;
+    }
+
     let cancelled = false;
     setLoading(true);
-    batchSignUrls(thumbnailPaths).then((map) => {
+    batchSignUrls(needsSigning).then((map) => {
       if (cancelled) return;
-      const resolved = thumbnailPaths.map((p) => map.get(p) || "");
+      const resolved = thumbnailPaths.map((p, i) => {
+        if (directUrls.has(i)) return directUrls.get(i)!;
+        return map.get(p) || "";
+      });
       setUrls(resolved);
       setLoading(false);
     });
