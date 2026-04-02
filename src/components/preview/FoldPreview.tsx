@@ -11,7 +11,7 @@ import { FileText } from "lucide-react";
  * urls[0] = outside (front side of the sheet)
  * urls[1] = inside  (back side of the sheet)
  *
- * Unfolded: one continuous sheet with dashed fold-line overlays.
+ * Unfolded: one full-side image with dashed fold-line overlays.
  * Folded:   panels animate with CSS 3D transforms.
  */
 
@@ -28,9 +28,17 @@ export default function FoldPreview({
   const hasTwoSides = urls.length >= 2;
   const sheetUrl = hasTwoSides ? (side === "front" ? urls[0] : urls[1]) : urls[0];
 
-  // Container sizing — landscape-ish ratio for a sheet
-  const containerW = width * 0.88;
-  const containerH = Math.min(height * 0.6, containerW * 0.7);
+  // Sheet sizing — landscape ratio typical of a brochure open flat
+  const maxW = width * 0.92;
+  const maxH = height * 0.65;
+  // Use a 3:2 landscape ratio for the open sheet
+  const sheetRatio = 3 / 2;
+  let containerW = maxW;
+  let containerH = containerW / sheetRatio;
+  if (containerH > maxH) {
+    containerH = maxH;
+    containerW = containerH * sheetRatio;
+  }
 
   // Cumulative left offsets for each panel (fraction of total width)
   const cumLefts: number[] = [];
@@ -38,18 +46,6 @@ export default function FoldPreview({
   for (const w of geometry.widths) {
     cumLefts.push(acc);
     acc += w;
-  }
-
-  const panelIndices = Array.from({ length: geometry.panels }, (_, i) => i);
-  // For back side, reverse the visual order
-  const displayOrder = side === "back" ? [...panelIndices].reverse() : panelIndices;
-
-  // Compute display-order cumulative lefts for positioning
-  const displayCumLefts: number[] = [];
-  let dAcc = 0;
-  for (const idx of displayOrder) {
-    displayCumLefts.push(dAcc);
-    dAcc += geometry.widths[idx];
   }
 
   function getFoldTransform(panelIndex: number): React.CSSProperties {
@@ -63,14 +59,16 @@ export default function FoldPreview({
     }
 
     if (foldType === "tri_fold") {
+      // Roll fold: panel 2 folds left onto panel 1, then panel 0 folds right over
       if (panelIndex === 2) return { transform: "rotateY(-180deg)", transformOrigin: "left center", zIndex: 3 };
       if (panelIndex === 0) return { transform: "rotateY(180deg)", transformOrigin: "right center", zIndex: 2 };
       return { zIndex: 1 };
     }
 
     if (foldType === "z_fold") {
+      // Accordion: panel 2 folds left, panel 0 folds left too (opposite direction from tri)
       if (panelIndex === 2) return { transform: "rotateY(-180deg)", transformOrigin: "left center", zIndex: 3 };
-      if (panelIndex === 0) return { transform: "rotateY(180deg)", transformOrigin: "right center", zIndex: 2 };
+      if (panelIndex === 0) return { transform: "rotateY(-180deg)", transformOrigin: "right center", zIndex: 2 };
       return { zIndex: 1 };
     }
 
@@ -83,81 +81,103 @@ export default function FoldPreview({
     return {};
   }
 
+  // Placeholder when no artwork uploaded
+  const emptyPlaceholder = (
+    <div className="w-full h-full flex items-center justify-center bg-muted/30">
+      <div className="text-center text-muted-foreground">
+        <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
+        <p className="text-sm">No artwork assigned</p>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex flex-col items-center justify-center gap-4" style={{ width, height }}>
-      {/* Sheet container — single outer border/shadow */}
+      {/* Sheet container — single outer border, NO rounded corners */}
       <div
-        className="relative rounded-sm border border-border shadow-lg overflow-hidden bg-background"
-        style={{ perspective: 1200, width: containerW, height: containerH }}
+        className="relative border border-border shadow-lg overflow-hidden bg-background"
+        style={{ width: containerW, height: containerH, perspective: 1200 }}
       >
-        <div className="relative w-full h-full" style={{ transformStyle: "preserve-3d" }}>
-          {displayOrder.map((origIdx, displayPos) => {
-            const panelFraction = geometry.widths[origIdx];
-            const panelW = containerW * panelFraction;
-            const leftPx = displayCumLefts[displayPos] * containerW;
+        {!folded ? (
+          /* ── UNFOLDED: single full-side image + fold guides ── */
+          <div className="relative w-full h-full">
+            {sheetUrl ? (
+              <img
+                src={sheetUrl}
+                alt={side === "front" ? "Outside" : "Inside"}
+                className="block w-full h-full"
+                style={{ objectFit: "cover" }}
+                draggable={false}
+              />
+            ) : (
+              emptyPlaceholder
+            )}
 
-            // Image clipping: full container width, shifted so only this panel's slice shows
-            const imgWidthPx = containerW;
-            const imgMarginLeft = -(cumLefts[origIdx] * containerW);
-
-            const foldStyle = getFoldTransform(origIdx);
-
-            return (
+            {/* Fold guide overlays */}
+            {cumLefts.slice(1).map((frac, i) => (
               <div
-                key={origIdx}
-                className="absolute top-0 overflow-hidden"
+                key={`fold-guide-${i}`}
+                className="absolute top-0 pointer-events-none"
                 style={{
-                  width: panelW,
+                  left: frac * containerW - 1,
+                  width: 0,
                   height: containerH,
-                  left: leftPx,
-                  transition: "transform 0.8s ease-in-out",
-                  ...foldStyle,
+                  borderLeft: "2px dashed hsl(var(--muted-foreground) / 0.35)",
+                  zIndex: 10,
                 }}
-              >
-                {sheetUrl ? (
-                  <img
-                    src={sheetUrl}
-                    alt={`Panel ${origIdx + 1}`}
-                    style={{
-                      width: imgWidthPx,
-                      height: containerH,
-                      marginLeft: imgMarginLeft,
-                      objectFit: "cover",
-                      display: "block",
-                    }}
-                    draggable={false}
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-muted/30">
-                    <div className="text-center text-muted-foreground">
-                      <FileText className="h-6 w-6 mx-auto mb-1 opacity-30" />
-                      <p className="text-xs">Panel {origIdx + 1}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+              />
+            ))}
+          </div>
+        ) : (
+          /* ── FOLDED: panel windows with 3D transforms ── */
+          <div className="relative w-full h-full" style={{ transformStyle: "preserve-3d" }}>
+            {Array.from({ length: geometry.panels }, (_, origIdx) => {
+              const panelFraction = geometry.widths[origIdx];
+              const panelW = containerW * panelFraction;
+              const leftPx = cumLefts[origIdx] * containerW;
 
-          {/* Fold lines overlay (only when unfolded) */}
-          {!folded && (
-            <>
-              {cumLefts.slice(1).map((frac, i) => (
+              // Each panel clips its slice from the full-width image
+              const imgWidthPx = containerW;
+              const imgMarginLeft = -(cumLefts[origIdx] * containerW);
+
+              const foldStyle = getFoldTransform(origIdx);
+
+              return (
                 <div
-                  key={`fold-line-${i}`}
-                  className="absolute top-0 pointer-events-none"
+                  key={origIdx}
+                  className="absolute top-0 overflow-hidden"
                   style={{
-                    left: frac * containerW - 1,
-                    width: 0,
+                    width: panelW,
                     height: containerH,
-                    borderLeft: "2px dashed hsl(var(--muted-foreground) / 0.35)",
-                    zIndex: 10,
+                    left: leftPx,
+                    transition: "transform 0.8s ease-in-out",
+                    backfaceVisibility: "hidden",
+                    ...foldStyle,
                   }}
-                />
-              ))}
-            </>
-          )}
-        </div>
+                >
+                  {sheetUrl ? (
+                    <img
+                      src={sheetUrl}
+                      alt={`Panel ${origIdx + 1}`}
+                      style={{
+                        width: imgWidthPx,
+                        height: containerH,
+                        marginLeft: imgMarginLeft,
+                        objectFit: "cover",
+                        display: "block",
+                      }}
+                      draggable={false}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-muted/30">
+                      <p className="text-xs text-muted-foreground">Panel {origIdx + 1}</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Controls */}

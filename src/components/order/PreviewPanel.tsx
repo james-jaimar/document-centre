@@ -237,15 +237,9 @@ export default function PreviewPanel({
     const outside = getFirstThumb(outsideSection);
     const inside = getFirstThumb(insideSection);
 
-    // If no sections assigned yet, fall back to first two documents
+    // No sections assigned yet — return empty so empty state shows
     if (!outside && !inside) {
-      const fallback: string[] = [];
-      for (const d of documents) {
-        const thumbs = Array.isArray(d.thumbnail_urls) ? (d.thumbnail_urls as string[]) : [];
-        if (thumbs[0]) fallback.push(thumbs[0]);
-        if (fallback.length >= 2) break;
-      }
-      return fallback;
+      return [];
     }
 
     const result: string[] = [];
