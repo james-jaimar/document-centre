@@ -568,6 +568,7 @@ export default function OrderFiles() {
           onAddAs={handleAddAs}
           hasSelectedSection={!!selectedSectionId}
           onRemoveSection={handleRemoveSection}
+          familySlug={familySlug}
         />
       </div>
 
