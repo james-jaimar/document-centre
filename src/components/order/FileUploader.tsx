@@ -62,7 +62,7 @@ export default function FileUploader({ onFiles, disabled }: FileUploaderProps) {
       <input
         ref={inputRef}
         type="file"
-        accept="application/pdf"
+        accept="application/pdf,image/jpeg,image/png,image/webp,image/tiff"
         multiple
         onChange={handleChange}
         className="hidden"

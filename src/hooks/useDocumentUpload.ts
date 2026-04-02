@@ -274,10 +274,18 @@ export function useDocumentUpload(orderItemId: string | undefined) {
     async (file: File) => {
       if (!orderItemId || !user) return null;
 
-      const fileName = file.name;
-      updateUpload(fileName, { fileName, status: "uploading", progress: 0 });
+      const originalName = file.name;
+      updateUpload(originalName, { fileName: originalName, status: "uploading", progress: 0 });
 
       try {
+        // 0. Convert images to PDF before uploading
+        if (isImageFile(file)) {
+          updateUpload(originalName, { progress: 5, statusText: "Converting image to PDF…" });
+          file = await imageFileToPdf(file);
+        }
+
+        const fileName = file.name;
+
         // 1. Upload to Supabase Storage
         const storagePath = `${user.id}/${orderItemId}/${fileName}`;
         const { error: uploadError } = await supabase.storage
