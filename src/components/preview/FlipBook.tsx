@@ -552,6 +552,7 @@ export default function FlipBook({
           </span>
         )}
       </div>
+      </div>
     </div>
   );
 }
