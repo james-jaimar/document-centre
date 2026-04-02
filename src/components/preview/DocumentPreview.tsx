@@ -110,7 +110,7 @@ export default function DocumentPreview({
   };
 
   if (BOUND_TYPES.has(productType)) {
-    return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} displayPageNumbers={displayPageNumbers} />;
+    return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} displayPageNumbers={displayPageNumbers} bindingEdge={bindingEdge} />;
   }
 
   if (FOLD_TYPES.has(productType)) {

@@ -16,7 +16,7 @@ interface BindingSpineProps {
   bindingEdge?: "left" | "top";
 }
 
-export default function BindingSpine({ bindingType, height, isOpen = false, position = "center" }: BindingSpineProps) {
+export default function BindingSpine({ bindingType, height, isOpen = false, position = "center", bindingEdge = "left" }: BindingSpineProps) {
   if (bindingType === "none") return null;
 
   const positionStyle: React.CSSProperties =
