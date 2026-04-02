@@ -12,7 +12,7 @@ import {
 } from "@/lib/documentCentreApi";
 import { toStorageKey } from "@/lib/thumbnailUtils";
 import { detectNonIsoSize } from "@/lib/paperSizes";
-import { isImageFile, imageFileToPdf } from "@/lib/imageToPage";
+import { isImageFile, imageFileToPdf, type TargetSize } from "@/lib/imageToPage";
 
 interface UploadProgress {
   fileName: string;
