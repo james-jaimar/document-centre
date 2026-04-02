@@ -428,31 +428,35 @@ export default function PreviewPanel({
         />
       </div>
 
-      <div className="text-center">
-        <p className="text-sm font-medium text-foreground">{pageInfoText}</p>
-        {sectionLabel && (
-          <div className="flex items-center justify-center gap-2 mt-1">
-            <Badge variant="secondary" className="text-xs">{sectionLabel}</Badge>
-            <span className="text-xs text-muted-foreground">{colourStatus} · {duplexStatus}</span>
+      {!isFold && (
+        <>
+          <div className="text-center">
+            <p className="text-sm font-medium text-foreground">{pageInfoText}</p>
+            {sectionLabel && (
+              <div className="flex items-center justify-center gap-2 mt-1">
+                <Badge variant="secondary" className="text-xs">{sectionLabel}</Badge>
+                <span className="text-xs text-muted-foreground">{colourStatus} · {duplexStatus}</span>
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      <div className="flex items-center gap-2 w-full max-w-md">
-        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={currentPage === 0} onClick={goFirst}>
-          <ChevronsLeft className="h-4 w-4" />
-        </Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={currentPage === 0} onClick={goPrev}>
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <Slider value={[currentPage]} min={0} max={Math.max(0, totalPages - 1)} step={1} onValueChange={([v]) => setCurrentPage(v)} className="flex-1" />
-        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={currentPage >= totalPages - 1} onClick={goNext}>
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={currentPage >= totalPages - 1} onClick={goLast}>
-          <ChevronsRight className="h-4 w-4" />
-        </Button>
-      </div>
+          <div className="flex items-center gap-2 w-full max-w-md">
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={currentPage === 0} onClick={goFirst}>
+              <ChevronsLeft className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={currentPage === 0} onClick={goPrev}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Slider value={[currentPage]} min={0} max={Math.max(0, totalPages - 1)} step={1} onValueChange={([v]) => setCurrentPage(v)} className="flex-1" />
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={currentPage >= totalPages - 1} onClick={goNext}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={currentPage >= totalPages - 1} onClick={goLast}>
+              <ChevronsRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
