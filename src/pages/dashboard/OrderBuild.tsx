@@ -81,6 +81,7 @@ export default function OrderBuild() {
     gate_fold: "gate_fold",
     loose_sheets: "loose_sheets",
     poster: "poster",
+    brochures: "bi_fold",
   };
 
   const BINDING_METHOD_TO_PREVIEW: Record<string, ProductPreviewType> = {
