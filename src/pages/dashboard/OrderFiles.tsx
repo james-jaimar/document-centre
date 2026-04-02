@@ -383,6 +383,36 @@ export default function OrderFiles() {
     [selectedDocId, orderItem, sections.length, addSection, familySlug]
   );
 
+  // Auto-assign a 2+ page document as Outside (page 1) + Inside (page 2) for brochures
+  const handleAutoAssignBrochure = useCallback(async () => {
+    if (!selectedDocId || !orderItem) return;
+    const doc = documents.find((d) => d.id === selectedDocId);
+    if (!doc || (doc.page_count ?? 0) < 2) return;
+    try {
+      await addSection.mutateAsync({
+        order_item_id: orderItem.id,
+        document_id: selectedDocId,
+        section_type: "front_cover" as any,
+        sort_order: sections.length,
+        page_range_start: 0,
+        is_duplex: true,
+        is_color: true,
+      });
+      await addSection.mutateAsync({
+        order_item_id: orderItem.id,
+        document_id: selectedDocId,
+        section_type: "back_cover" as any,
+        sort_order: sections.length + 1,
+        page_range_start: 1,
+        is_duplex: true,
+        is_color: true,
+      });
+      toast.success("Auto-assigned Outside + Inside from pages 1 & 2");
+    } catch (err: any) {
+      toast.error("Failed to auto-assign", { description: err.message });
+    }
+  }, [selectedDocId, orderItem, documents, sections.length, addSection]);
+
   const handleRemoveSection = useCallback(async () => {
     if (!selectedSectionId || !orderItem) return;
     try {
