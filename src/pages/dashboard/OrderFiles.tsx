@@ -69,6 +69,9 @@ export default function OrderFiles() {
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [imageSizeDialogOpen, setImageSizeDialogOpen] = useState(false);
+  const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
+  const pendingFilesRef = useRef<File[]>([]);
   const [advisoryDoc, setAdvisoryDoc] = useState<{
     id: string;
     fileName: string;
