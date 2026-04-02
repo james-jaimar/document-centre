@@ -283,7 +283,10 @@ export default function PreviewPanel({
     return { finalPages: fp, pageRoles: roles };
   }, [pages, effects, isBound]);
 
-  const thumbnailPaths = useMemo(() => finalPages.map((p) => p.thumbnailUrl), [finalPages]);
+  const thumbnailPaths = useMemo(() => {
+    if (isFold && foldThumbnails) return foldThumbnails;
+    return finalPages.map((p) => p.thumbnailUrl);
+  }, [finalPages, isFold, foldThumbnails]);
   const colorFlags = useMemo(() => finalPages.map((p) => p.isColor), [finalPages]);
   const sectionTypes = useMemo(() => finalPages.map((p) => p.section?.section_type ?? "body"), [finalPages]);
   const pageLabels = useMemo(() => finalPages.map((p) => p.label ?? ""), [finalPages]);
