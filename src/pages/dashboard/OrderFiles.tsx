@@ -383,7 +383,7 @@ export default function OrderFiles() {
     [selectedDocId, orderItem, sections.length, addSection, familySlug]
   );
 
-  // Auto-assign a 2+ page document as Outside (page 1) + Inside (page 2) for brochures
+  // Auto-assign a 2-3 page document as Outside (page 1) + Inside (page 2) for brochures
   const handleAutoAssignBrochure = useCallback(async () => {
     if (!selectedDocId || !orderItem) return;
     const doc = documents.find((d) => d.id === selectedDocId);
@@ -410,6 +410,50 @@ export default function OrderFiles() {
       toast.success("Auto-assigned Outside + Inside from pages 1 & 2");
     } catch (err: any) {
       toast.error("Failed to auto-assign", { description: err.message });
+    }
+  }, [selectedDocId, orderItem, documents, sections.length, addSection]);
+
+  // Auto-assign a 4+ page PDF where each page is a panel
+  // Bi-fold (4 pages): Outside = pages [0, 3], Inside = pages [1, 2]
+  // Tri-fold (6 pages): Outside = pages [0, 1, 2], Inside = pages [3, 4, 5]
+  const handleAutoAssignPanels = useCallback(async () => {
+    if (!selectedDocId || !orderItem) return;
+    const doc = documents.find((d) => d.id === selectedDocId);
+    const pageCount = doc?.page_count ?? 0;
+    if (!doc || pageCount < 4) return;
+
+    try {
+      // For 4-page bi-fold: outside = pages 0,3; inside = pages 1,2
+      // For 6-page tri-fold: outside = pages 0,1,2; inside = pages 3,4,5
+      const half = Math.floor(pageCount / 2);
+      // Outside section covers the first half of panels
+      // For bi-fold (4pg): page_range_start=0, page_range_end=3 (pages 0 and 3)
+      // For tri-fold (6pg): page_range_start=0, page_range_end=2 (pages 0,1,2)
+      const isNonContiguous = pageCount === 4; // bi-fold has non-contiguous outside pages
+
+      await addSection.mutateAsync({
+        order_item_id: orderItem.id,
+        document_id: selectedDocId,
+        section_type: "front_cover" as any,
+        sort_order: sections.length,
+        page_range_start: 0,
+        page_range_end: isNonContiguous ? pageCount - 1 : half - 1,
+        is_duplex: true,
+        is_color: true,
+      });
+      await addSection.mutateAsync({
+        order_item_id: orderItem.id,
+        document_id: selectedDocId,
+        section_type: "back_cover" as any,
+        sort_order: sections.length + 1,
+        page_range_start: isNonContiguous ? 1 : half,
+        page_range_end: isNonContiguous ? pageCount - 2 : pageCount - 1,
+        is_duplex: true,
+        is_color: true,
+      });
+      toast.success(`Auto-assigned ${pageCount}-page panel layout`);
+    } catch (err: any) {
+      toast.error("Failed to auto-assign panels", { description: err.message });
     }
   }, [selectedDocId, orderItem, documents, sections.length, addSection]);
 
