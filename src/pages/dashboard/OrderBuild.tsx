@@ -610,7 +610,7 @@ export default function OrderBuild() {
 
         {/* Right: Preview */}
         <div className="border border-border rounded-lg bg-card p-4 overflow-auto">
-          <PreviewPanel documents={documents} sections={sections} productType={productType} effects={previewEffects} />
+          <PreviewPanel documents={documents} sections={sections} productType={productType} effects={previewEffects} bindingEdge={bindingEdge} />
         </div>
       </div>
       {/* Tab/Insert Drawer — only mount after user clicks the button */}
