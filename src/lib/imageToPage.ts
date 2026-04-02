@@ -11,17 +11,45 @@ export function isImageFile(file: File): boolean {
   return ACCEPTED_IMAGE_TYPES.includes(file.type);
 }
 
-/** Convert an image File to a single-page PDF File sized to the image dimensions. */
-export async function imageFileToPdf(file: File): Promise<File> {
-  const dataUrl = await readAsDataUrl(file);
+export interface TargetSize {
+  widthMm: number;
+  heightMm: number;
+}
 
-  // Decode dimensions via an offscreen image element
+/** Convert an image File to a single-page PDF File.
+ *  If `targetSize` is provided the PDF page is that size and the image is
+ *  scaled proportionally to fit (centred, no crop, white background).
+ *  Otherwise the page matches the image's native dimensions at 72 DPI. */
+export async function imageFileToPdf(
+  file: File,
+  targetSize?: TargetSize
+): Promise<File> {
+  const dataUrl = await readAsDataUrl(file);
   const { width, height } = await getImageDimensions(dataUrl);
 
-  // Convert px → mm (assume 72 DPI for sizing the PDF page)
   const PX_TO_MM = 25.4 / 72;
-  const pageW = width * PX_TO_MM;
-  const pageH = height * PX_TO_MM;
+  const imgW = width * PX_TO_MM;
+  const imgH = height * PX_TO_MM;
+
+  let pageW: number;
+  let pageH: number;
+  let drawX = 0;
+  let drawY = 0;
+  let drawW = imgW;
+  let drawH = imgH;
+
+  if (targetSize) {
+    pageW = targetSize.widthMm;
+    pageH = targetSize.heightMm;
+    const scale = Math.min(pageW / imgW, pageH / imgH);
+    drawW = imgW * scale;
+    drawH = imgH * scale;
+    drawX = (pageW - drawW) / 2;
+    drawY = (pageH - drawH) / 2;
+  } else {
+    pageW = imgW;
+    pageH = imgH;
+  }
 
   const orientation = pageW > pageH ? "l" : "p";
   const doc = new jsPDF({
@@ -30,9 +58,8 @@ export async function imageFileToPdf(file: File): Promise<File> {
     format: [pageW, pageH],
   });
 
-  // jsPDF addImage needs a format string
   const fmt = jspdfFormat(file.type);
-  doc.addImage(dataUrl, fmt, 0, 0, pageW, pageH);
+  doc.addImage(dataUrl, fmt, drawX, drawY, drawW, drawH);
 
   const pdfBlob = doc.output("blob");
   const pdfName = file.name.replace(/\.[^.]+$/, "") + ".pdf";

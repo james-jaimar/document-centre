@@ -12,7 +12,7 @@ import {
 } from "@/lib/documentCentreApi";
 import { toStorageKey } from "@/lib/thumbnailUtils";
 import { detectNonIsoSize } from "@/lib/paperSizes";
-import { isImageFile, imageFileToPdf } from "@/lib/imageToPage";
+import { isImageFile, imageFileToPdf, type TargetSize } from "@/lib/imageToPage";
 
 interface UploadProgress {
   fileName: string;
@@ -271,7 +271,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
   /* ── Upload a single file ── */
 
   const uploadFile = useCallback(
-    async (file: File) => {
+    async (file: File, targetSize?: TargetSize) => {
       if (!orderItemId || !user) return null;
 
       const originalName = file.name;
@@ -281,7 +281,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         // 0. Convert images to PDF before uploading
         if (isImageFile(file)) {
           updateUpload(originalName, { progress: 5, statusText: "Converting image to PDF…" });
-          file = await imageFileToPdf(file);
+          file = await imageFileToPdf(file, targetSize);
         }
 
         const fileName = file.name;
@@ -368,10 +368,10 @@ export function useDocumentUpload(orderItemId: string | undefined) {
   /* ── Upload multiple files ── */
 
   const uploadFiles = useCallback(
-    async (files: FileList | File[]) => {
+    async (files: FileList | File[], targetSize?: TargetSize) => {
       const results = [];
       for (const file of Array.from(files)) {
-        const result = await uploadFile(file);
+        const result = await uploadFile(file, targetSize);
         results.push(result);
       }
       return results;
