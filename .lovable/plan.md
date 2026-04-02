@@ -1,69 +1,64 @@
 
+Fix the brochure preview to use a sheet model instead of a page model.
 
-# Plan: Fix Fold Preview — Show One Side at a Time with Correct Animation
+What’s actually wrong
+1. `src/components/order/PreviewPanel.tsx` still builds fold preview input from `documents.flatMap(thumbnail_urls)`. That treats uploaded thumbnails like normal pages, instead of using the sections the customer assigned as Outside and Inside.
+2. `src/components/preview/FoldPreview.tsx` renders each fold panel as its own bordered/shadowed card. In the flat state this visually reads as “2 pages side by side” (or 3/4 cards), which is exactly the wrong mental model.
+3. For brochures, the preview should represent one physical sheet with two surfaces:
+   - Outside
+   - Inside  
+   Fold type should only change fold guides and animation, not create a multi-page look.
 
-## Problem
+Best-practice behavior
+- Bi-fold, tri-fold, Z-fold, and gate-fold are all one sheet.
+- Customer sees one side at a time.
+- Flat view = one continuous sheet.
+- Folded view = animated panels of that same sheet.
+- “Show Inside” switches surfaces, not pages.
 
-The fold preview incorrectly clips each uploaded image into sub-panels using CSS `object-position`. This assumes uploads are pre-composed print-ready sheets with all panels laid out on a single page. In reality, users upload one image per side:
+Changes
+1. `src/components/order/PreviewPanel.tsx`
+   - Stop sourcing fold preview from all document thumbnails.
+   - Build fold preview data from assigned sections only:
+     - `front_cover` = outside
+     - `back_cover` = inside
+   - Use only the first thumbnail from each assigned brochure-side document.
+   - Ignore unassigned docs and extra thumbnails for fold rendering.
+   - Pass exactly 1–2 sheet surfaces in outside/inside order.
 
-- Image 1 (Outside) = the full front of the sheet
-- Image 2 (Inside) = the full back of the sheet
+2. `src/components/preview/DocumentPreview.tsx`
+   - Normalize fold input into explicit brochure-side semantics before rendering `FoldPreview`.
+   - Prevent fold products from being treated like generic page arrays.
 
-Each image already represents one complete side. The CSS clipping splits a single-side image into 2–4 sub-images, producing garbled output. The user sees both sides displayed simultaneously in partial fragments instead of one coherent side at a time.
+3. `src/components/preview/FoldPreview.tsx`
+   - Redraw the unfolded state as one single sheet with one outer border/shadow.
+   - Remove per-panel borders/shadows in the flat state.
+   - Keep internal panels only for clipping and 3D transforms.
+   - Overlay fold guides on the single sheet.
+   - Keep Outside/Inside toggle only when an inside surface exists.
+   - Ensure changing fold type visibly changes the geometry/guides/animation.
 
-## How It Should Work
-
-A brochure is a single sheet printed both sides, then folded. The preview should:
-
-1. **Show one side at a time** — the full image for that side
-2. **Overlay fold lines** — dashed lines showing where the folds go
-3. **Animate the fold** — when "Fold" is clicked, CSS 3D transforms fold the sheet along the fold lines
-4. **Flip between sides** — "Show Back" swaps to the other image
-
-### Fold mechanics per type
-
-**Bi-fold**: One vertical fold line at center. Right half folds onto left (or vice versa).
-
-**Tri-fold (roll)**: Two vertical fold lines at 1/3 and 2/3. Right panel folds left over center, then left panel folds right over both.
-
-**Z-fold (accordion)**: Two vertical fold lines at 1/3 and 2/3. Right panel folds left, left panel folds right — alternating directions (zigzag).
-
-**Gate-fold**: Two fold lines. Left and right "gate" panels fold inward over the center.
-
-### Panel rendering approach
-
-Instead of CSS clipping from a full-page image, each panel is a `div` that contains the full image positioned so only that panel's portion is visible. The key difference from current code:
-
-- Each panel's `div` has `overflow: hidden` and a width equal to its fraction of the container
-- The `img` inside is sized to the full container width and offset with `margin-left` so only the correct slice shows
-- This is simpler and more reliable than `object-position` + `object-fit: cover`
-
-```
-Panel 0 (left 1/3):   img width=300%, margin-left=0
-Panel 1 (center 1/3): img width=300%, margin-left=-100%
-Panel 2 (right 1/3):  img width=300%, margin-left=-200%
-```
-
-## Changes
-
-| File | Change |
-|------|--------|
-| `src/components/preview/FoldPreview.tsx` | Rewrite panel rendering: use simple `overflow:hidden` + negative `margin-left` clipping instead of `object-position`. Fix fold transforms to use panel-relative origins. Add fold-line overlay when unfolded. Ensure only one side (front OR back) is shown at a time. |
-
-## Technical Detail
-
+Technical detail
 ```text
-┌─────────┬─────────┬─────────┐
-│ Panel 0 │ Panel 1 │ Panel 2 │  ← tri-fold, unfolded
-│  31%    │  38%    │  31%    │
-└─────────┴─────────┴─────────┘
-    Each panel clips from the SAME full-width image (urls[0] or urls[1])
-    using overflow:hidden + sized img with margin offset.
+Correct flat brochure preview:
+┌──────────────────────────────────────┐
+│          one continuous side         │
+│      full artwork spans the sheet    │
+│        with fold guide overlays      │
+└──────────────────────────────────────┘
 
-Fold animation:
-  Panel 2 rotates -180° around its LEFT edge (folds onto Panel 1)
-  Panel 0 rotates +180° around its RIGHT edge (folds onto stack)
-
-Back side: panels render in REVERSED order from urls[1]
+Wrong current impression:
+┌──────┐ ┌──────┐
+│page? │ │page? │
+└──────┘ └──────┘
 ```
 
+Notes
+- This matches print reality: brochures are sheet-based, not page-turn based.
+- If a brochure-side document has multiple pages, preview should use page 1 only for now; stricter validation can be added separately.
+- The fold selector wiring in `OrderBuild.tsx` looks broadly correct; the bigger issue is the preview data model and the way the sheet is visually composed.
+
+Implementation order
+1. Fix `PreviewPanel` to map sections to Outside/Inside surfaces.
+2. Normalize fold input in `DocumentPreview`.
+3. Rework `FoldPreview` so unfolded = one sheet, folded = animated sheet panels.
