@@ -1,42 +1,54 @@
 
 
-# Plan: Fix Fold Type Selection Not Updating Preview
+# Plan: Accept Image Uploads and Convert to PDF
 
 ## Problem
 
-When user selects Z-Fold (or any fold type) in the brochures configurator, the preview doesn't switch to the fold panel view. It stays as loose sheets.
+The file uploader only accepts `application/pdf`. Image files (JPEG, PNG, WEBP, TIFF) are rejected at both the `<input accept>` attribute and the drag-and-drop filter. There's no image-to-PDF conversion in the codebase.
 
-## Root Cause
+## Solution
 
-The `productType` derivation in `OrderBuild.tsx` only checks for a "Binding" option to determine preview type. For brochures:
-- Product family slug is `"brochures"` — not in `SLUG_TO_PREVIEW`
-- Falls back to `"loose_sheets"`
-- The "Fold Type" option is never consulted
+### 1. Update FileUploader to accept images
 
-The fold type option slugs are auto-generated from labels (e.g. `"z_fold_2_folds_6_panels"`), so they don't match the preview type codes (`"z_fold"`).
+**`src/components/order/FileUploader.tsx`**:
+- Change `accept` to `"application/pdf,image/jpeg,image/png,image/webp,image/tiff"`
+- Update drag-and-drop filter to allow both PDF and image MIME types
+- Update label text: "Drop PDF or image files here"
 
-## Fix
+### 2. Create image-to-PDF conversion utility
 
-**`src/pages/dashboard/OrderBuild.tsx`** — Extend the `productType` derivation:
+**New file: `src/lib/imageToPage.ts`**:
+- Uses the `jspdf` library (lightweight, already browser-compatible)
+- Function `imageFileToPdf(file: File): Promise<File>` that:
+  1. Reads the image as a data URL
+  2. Gets natural dimensions
+  3. Creates a PDF page sized to match the image aspect ratio
+  4. Embeds the image full-bleed on the page
+  5. Returns a new `File` object with `.pdf` extension and `application/pdf` MIME type
+- Handles JPEG, PNG, WEBP (TIFF converted to PNG via canvas first)
 
-1. After the binding option check, add a "Fold Type" option check
-2. Look at the selected fold type value's metadata (`fold_style`) or match the slug prefix to map to the correct `ProductPreviewType`:
-   - Slug starts with `"bi_fold"` → `"bi_fold"`
-   - Slug starts with `"tri_fold"` → `"tri_fold"`
-   - Slug starts with `"z_fold"` → `"z_fold"`
-   - Slug starts with `"gate_fold"` → `"gate_fold"`
-3. Add `"brochures"` to `SLUG_TO_PREVIEW` as a default fallback to `"bi_fold"` (the default fold type)
+### 3. Add conversion step before upload
 
-Alternatively, add explicit `fold_type` metadata to each fold option value in `productOptionValues.ts` (e.g. `metadata: { fold_type: "z_fold" }`) for cleaner mapping.
+**`src/hooks/useDocumentUpload.ts`**:
+- Import `imageFileToPdf`
+- In `uploadFile`, before uploading to storage: if `file.type` starts with `"image/"`, convert to PDF first
+- Update progress status text to "Converting image to PDF…" during conversion
+- The rest of the pipeline (storage upload, asset registration, thumbnailing) proceeds unchanged since it receives a PDF
 
-## Changes
+### 4. Install jspdf
 
-| File | Change |
+- Add `jspdf` dependency
+
+## Files
+
+| File | Action |
 |------|--------|
-| `src/lib/productOptionValues.ts` | Add `fold_type` key to each fold option's metadata (e.g. `fold_type: "bi_fold"`) |
-| `src/pages/dashboard/OrderBuild.tsx` | Add fold type option lookup in `productType` derivation — check "Fold Type" option, read `metadata.fold_type`, map to `ProductPreviewType` |
+| `src/components/order/FileUploader.tsx` | Modify — accept images, update labels |
+| `src/lib/imageToPage.ts` | New — image-to-PDF conversion |
+| `src/hooks/useDocumentUpload.ts` | Modify — convert images before upload |
 
 ## Implementation Order
-1. Add `fold_type` metadata to fold option values
-2. Update `productType` derivation to check fold type option
+1. Install jspdf, create `imageToPage.ts`
+2. Update FileUploader accept types and labels
+3. Add conversion step in useDocumentUpload
 
