@@ -293,21 +293,30 @@ export default function PreviewPanel({
       return;
     }
 
-    // Multi-panel: compose via canvas
+    // Multi-panel: resolve storage keys → signed URLs, then compose via canvas
     let cancelled = false;
     (async () => {
-      const result: string[] = [];
-      if (outside && outside.urls.length > 0) {
-        const composed = await composePanelImages(outside.urls);
-        if (cancelled) return;
-        result.push(composed);
+      try {
+        const result: string[] = [];
+        if (outside && outside.urls.length > 0) {
+          const resolved = await resolveUrls(outside.urls);
+          if (cancelled) return;
+          const composed = await composePanelImages(resolved);
+          if (cancelled) return;
+          result.push(composed);
+        }
+        if (inside && inside.urls.length > 0) {
+          const resolved = await resolveUrls(inside.urls);
+          if (cancelled) return;
+          const composed = await composePanelImages(resolved);
+          if (cancelled) return;
+          result.push(composed);
+        }
+        if (!cancelled) setComposedFoldThumbnails(result.length > 0 ? result : []);
+      } catch (err) {
+        console.error("[brochure-preview] panel composition failed:", err);
+        if (!cancelled) setComposedFoldThumbnails([]);
       }
-      if (inside && inside.urls.length > 0) {
-        const composed = await composePanelImages(inside.urls);
-        if (cancelled) return;
-        result.push(composed);
-      }
-      if (!cancelled) setComposedFoldThumbnails(result.length > 0 ? result : []);
     })();
 
     return () => { cancelled = true; };
