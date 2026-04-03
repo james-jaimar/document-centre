@@ -83,10 +83,11 @@ export default function SectionActions({
     (selectedFilePageCount ?? 0) < 4 &&
     !!onAutoAssignBrochure;
 
+  const pc = selectedFilePageCount ?? 0;
   const showPanelAssign =
     hasSelectedFile &&
     familySlug === "brochures" &&
-    (selectedFilePageCount ?? 0) >= 4 &&
+    (pc === 4 || pc === 6) &&
     !!onAutoAssignPanels;
 
   const showBrochureHint =
