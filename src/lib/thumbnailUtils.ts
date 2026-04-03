@@ -4,6 +4,46 @@ import { supabase } from "@/integrations/supabase/client";
 const BUCKET = "document-uploads";
 const signedUrlCache = new Map<string, string>();
 
+/**
+ * Returns true when the value is already a loadable URL (data-URI or HTTP).
+ */
+function isDirectUrl(v: string): boolean {
+  return v.startsWith("data:") || v.startsWith("http://") || v.startsWith("https://");
+}
+
+/**
+ * Resolve an array of raw paths (storage keys OR direct URLs) into
+ * loadable URLs.  Storage keys are signed; direct URLs pass through.
+ * Order is preserved.
+ */
+export async function resolveUrls(rawPaths: string[]): Promise<string[]> {
+  if (rawPaths.length === 0) return [];
+
+  const direct = new Map<number, string>();
+  const needsSigning: string[] = [];
+  const signingIndices: number[] = [];
+
+  rawPaths.forEach((p, i) => {
+    if (!p) return;
+    if (isDirectUrl(p)) {
+      direct.set(i, p);
+    } else {
+      needsSigning.push(p);
+      signingIndices.push(i);
+    }
+  });
+
+  let signedMap = new Map<string, string>();
+  if (needsSigning.length > 0) {
+    signedMap = await batchSignUrls(needsSigning);
+  }
+
+  return rawPaths.map((p, i) => {
+    if (direct.has(i)) return direct.get(i)!;
+    return signedMap.get(p) || "";
+  });
+}
+
 export function toStorageKey(raw: string): string {
   let val = raw.split("?")[0];
   const marker = `${BUCKET}/`;
