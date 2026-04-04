@@ -1,75 +1,69 @@
 
-Do I know what the issue is? Yes.
 
-## What’s actually going wrong
+# Plan: Fix Fold Preview — Proper Folded State Behavior
 
-This is not mainly a FoldPreview rendering problem now. The current failure is in the multi-panel brochure compose path.
+## What's wrong
 
-- `src/components/order/PreviewPanel.tsx` builds `outside.urls` / `inside.urls` from `document.thumbnail_urls`
-- those values are raw Supabase storage keys, not direct image URLs
-- for 4/6-page brochure layouts, `PreviewPanel` calls `composePanelImages(...)` before `DocumentPreview` gets a chance to sign those paths
-- `src/lib/thumbnailUtils.ts` then does `new Image().src = url` with those raw keys
-- the browser treats them as relative URLs on the current app route, which matches the `...png 404` errors in the console screenshot
-- the `Uncaught (in promise) Event` is the failed image load bubbling out of that same compose step
+Two issues:
 
-I also checked the dev-server log: no Vite/build failure is showing there. So this is a client-side asset-resolution bug, not a broken build.
+### 1. Folded state shows all panels side-by-side instead of the folded result
+When clicking "Fold", the current code applies CSS 3D rotateY transforms to panels but keeps them at their original positions. The container stays full-width. Result: panels appear side-by-side with some rotated (invisible due to `backfaceVisibility: hidden`). 
 
-The other console items are not the main blocker:
-- `A listener indicated an asynchronous response...` = browser extension noise
-- stylesheet MIME warning = separate route/resource issue, not the brochure preview path
+**Expected**: Folded bi-fold shows ONE HALF of the sheet (the front panel). Folded tri-fold shows ONE THIRD. The container should shrink to the folded size, showing only what you'd physically see — the outermost panel face.
 
-## Plan
+### 2. Changing to tri-fold does nothing
+The fold type dropdown updates `productType` via `SLUG_TO_PREVIEW` mapping. This part works (confirmed: `tri_fold` maps correctly). But `FoldPreview` renders identically regardless because the folded state just rotates panels — no visual distinction between fold types since hidden panels all disappear the same way.
 
-### 1. Fix thumbnail resolution before canvas composition
-Create one shared resolver in `src/lib/thumbnailUtils.ts` that:
-- passes through `data:`, `http://`, `https://`
-- signs Supabase storage keys
-- preserves input order
+## Solution: Replace CSS 3D folding with a simple folded-state model
 
-Then use that resolver for the multi-panel compose flow instead of sending raw storage keys into `new Image()`.
+The CSS 3D perspective approach is fundamentally wrong for this use case. Physical folding doesn't work like CSS rotateY — panels stack on top of each other and only the outermost face is visible.
 
-### 2. Fix the brochure compose path
-Update `src/components/order/PreviewPanel.tsx` so the fold effect:
-- resolves `outside.urls` and `inside.urls` to real loadable URLs first
-- only then calls `composePanelImages(...)`
-- wraps the async compose block in `try/catch`
-- logs a brochure-preview-specific error instead of leaving an unhandled rejected promise
+### New folded behavior
 
-This should remove both:
-- the PNG 404s
-- the `Uncaught (in promise) Event`
+**Folded state** = show a single panel-sized view of the outermost visible face, clipped from the full sheet image. The container shrinks to panel width.
 
-### 3. Tighten auto-assign rules
-Right now the panel auto-assign button shows for any brochure file with `>= 4` pages, which is too loose.
+| Fold Type | Folded Width | Visible Panel |
+|-----------|-------------|---------------|
+| Bi-fold   | 50% of sheet | Right half (panel 1) — this is the "front cover" of the folded brochure |
+| Tri-fold  | ~31% of sheet | Right panel (panel 2) — the flap that faces outward |
+| Z-fold    | ~33% of sheet | Right panel (panel 2) |
+| Gate-fold | ~28% of sheet | Center panels visible, gates closed over them — show center |
 
-Update:
-- `src/components/order/SectionActions.tsx`
-- `src/pages/dashboard/OrderFiles.tsx`
+**Unfolded state** = unchanged (full sheet with dashed fold guides).
 
-So auto-assign is only offered for supported brochure layouts, for example:
-- 2 pages = full Outside + Inside
-- 4 pages = 2-panel sheet layout
-- 6 pages = 3-panel sheet layout
-- unsupported counts should not show “clever” auto-assign
+### File changes
 
-Instead, unsupported counts should show a short guidance hint.
+**`src/components/preview/FoldPreview.tsx`** — Complete rework of folded state:
+- Remove all `getFoldTransform` / CSS 3D logic
+- Folded state: resize container to single-panel width, clip the visible panel from the sheet image using `object-fit: none` + `object-position`
+- Add smooth width transition between folded/unfolded states
+- Each fold type defines which panel index is the "cover" panel when folded
+- No rounded corners (already enforced, just verify)
 
-### 4. Verify panel ordering explicitly
-Once images load again, confirm the actual panel order used for composition.
+### Folded panel clipping approach
 
-Current logic groups pages, but the physical left/right order still needs to be made explicit for the supported designer convention. That should be verified instead of guessed silently.
+Instead of rendering N panel divs with transforms, render ONE image element sized to the panel dimensions, using CSS `object-fit: none` and `object-position` to show only the correct slice of the full sheet:
 
-## Files to update
+```text
+Unfolded (bi-fold):
+┌──────────┬──────────┐
+│ Panel 0  │ Panel 1  │  ← full sheet image, dashed fold line
+└──────────┴──────────┘
+  containerW = full width
 
-- `src/lib/thumbnailUtils.ts`
-- `src/components/order/PreviewPanel.tsx`
-- `src/components/order/SectionActions.tsx`
-- `src/pages/dashboard/OrderFiles.tsx`
+Folded (bi-fold):
+     ┌──────────┐
+     │ Panel 1  │  ← same image, clipped to right half
+     └──────────┘
+  containerW = half width
+```
 
-## Expected result
+For tri-fold folded:
+```text
+     ┌───────┐
+     │Panel 2│  ← rightmost panel (~31% width)
+     └───────┘
+```
 
-After this implementation:
-- brochure panel images stop 404ing
-- multi-panel previews render again
-- the console stops throwing the image-load promise error
-- auto-assign only appears when the uploaded brochure file matches a supported layout
+No animation of panels folding in 3D — just a clean transition between full sheet and folded result.
+
