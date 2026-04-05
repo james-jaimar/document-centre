@@ -19,8 +19,6 @@ const ICON_MAP: Record<string, React.ElementType> = {
 export default function NewOrder() {
   const navigate = useNavigate();
   const { slug } = useParams<{ slug: string }>();
-  const { user } = useAuth();
-  const createOrder = useCreateOrder();
 
   const { data: families, isLoading } = useQuery({
     queryKey: ["product_families_active"],
