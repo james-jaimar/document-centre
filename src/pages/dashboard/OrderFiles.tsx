@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   useOrderData,
+  useCreateOrder,
   useAddSection,
   useUpdateSection,
   useDeleteSection,
@@ -31,8 +32,15 @@ import { isLandscape } from "@/lib/paperSizes";
 import { useQuery } from "@tanstack/react-query";
 
 export default function OrderFiles() {
-  const { id: orderId, slug } = useParams<{ id: string; slug: string }>();
+  const { id: orderId, familyId: routeFamilyId, slug } = useParams<{ id: string; familyId: string; slug: string }>();
   const navigate = useNavigate();
+  const createOrder = useCreateOrder();
+
+  // Track whether we're in "new order" mode (no order created yet)
+  const isNewMode = !orderId && !!routeFamilyId;
+  const [createdOrderId, setCreatedOrderId] = useState<string | null>(null);
+  const effectiveOrderId = orderId ?? createdOrderId ?? undefined;
+
   const {
     order,
     orderItem,
@@ -41,7 +49,7 @@ export default function OrderFiles() {
     loading,
     refetchDocuments,
     refetchSections,
-  } = useOrderData(orderId);
+  } = useOrderData(effectiveOrderId);
 
   const { uploads, uploadFiles, reprocessDocument, clearUploads } = useDocumentUpload(orderItem?.id);
   const addSection = useAddSection();
@@ -49,7 +57,7 @@ export default function OrderFiles() {
   const deleteSection = useDeleteSection();
 
   // Fetch product family slug for orientation checks
-  const productFamilyId = orderItem?.product_family_id ?? null;
+  const productFamilyId = orderItem?.product_family_id ?? routeFamilyId ?? null;
   const { data: productFamily } = useQuery({
     queryKey: ["product_family", productFamilyId],
     queryFn: async () => {
@@ -64,6 +72,31 @@ export default function OrderFiles() {
     },
     enabled: !!productFamilyId,
   });
+
+  // Helper: ensure an order exists before uploading, returns the orderItemId
+  const ensureOrder = useCallback(async (): Promise<string> => {
+    // Already have an order
+    if (orderItem?.id) return orderItem.id;
+
+    if (!routeFamilyId) throw new Error("No product family selected");
+
+    const order = await createOrder.mutateAsync(routeFamilyId);
+    setCreatedOrderId(order.id);
+
+    // Fetch the order item that was just created
+    const { data: newItem, error } = await supabase
+      .from("order_items")
+      .select("id")
+      .eq("order_id", order.id)
+      .limit(1)
+      .single();
+    if (error || !newItem) throw new Error("Failed to create order item");
+
+    // Replace URL so browser shows the real order ID (no history push — use replace)
+    navigate(`/t/${slug}/orders/${order.id}/files`, { replace: true });
+
+    return newItem.id;
+  }, [orderItem?.id, routeFamilyId, createOrder, slug, navigate]);
 
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
@@ -302,6 +335,14 @@ export default function OrderFiles() {
 
   const handleFiles = useCallback(
     async (files: File[]) => {
+      // Ensure order exists before uploading
+      try {
+        await ensureOrder();
+      } catch (err: any) {
+        toast.error("Failed to create order", { description: err.message });
+        return;
+      }
+
       const hasImages = files.some(isImageFile);
       if (hasImages) {
         // Stash files and show size picker
@@ -315,7 +356,7 @@ export default function OrderFiles() {
       setUploadModalOpen(true);
       await uploadFiles(files);
     },
-    [uploadFiles]
+    [uploadFiles, ensureOrder]
   );
 
   const handleImageSizeConfirm = useCallback(
@@ -539,7 +580,7 @@ export default function OrderFiles() {
 
   const canContinue = sections.length > 0;
 
-  if (loading) {
+  if (loading && !isNewMode) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-48" />
@@ -574,8 +615,8 @@ export default function OrderFiles() {
               Back
             </button>
             <button
-              disabled={!canContinue}
-              onClick={() => navigate(`/t/${slug}/orders/${orderId}/build`)}
+              disabled={!canContinue || !effectiveOrderId}
+              onClick={() => navigate(`/t/${slug}/orders/${effectiveOrderId}/build`)}
               className="soft-button soft-button-primary flex items-center gap-1.5 text-sm rounded-xl disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Configure Options

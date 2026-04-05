@@ -1,12 +1,9 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useCreateOrder } from "@/hooks/useOrderBuilder";
-import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BookOpen, FileText, Layers, Printer, Presentation, Image, Newspaper } from "lucide-react";
-import { toast } from "sonner";
 
 const ICON_MAP: Record<string, React.ElementType> = {
   BookOpen,
@@ -22,8 +19,6 @@ const ICON_MAP: Record<string, React.ElementType> = {
 export default function NewOrder() {
   const navigate = useNavigate();
   const { slug } = useParams<{ slug: string }>();
-  const { user } = useAuth();
-  const createOrder = useCreateOrder();
 
   const { data: families, isLoading } = useQuery({
     queryKey: ["product_families_active"],
@@ -38,41 +33,10 @@ export default function NewOrder() {
     },
   });
 
-  const handleSelect = async (familyId: string) => {
-    try {
-      // Check for existing empty draft for this product family
-      if (!user) throw new Error("Not authenticated");
-      const { data: existingOrders } = await supabase
-        .from("orders")
-        .select("id, order_items(id, product_family_id)")
-        .eq("user_id", user.id)
-        .eq("order_status", "draft")
-        .order("created_at", { ascending: false });
-
-      const existingDraft = existingOrders?.find((o: any) =>
-        o.order_items?.some((item: any) => item.product_family_id === familyId)
-      );
-
-      if (existingDraft) {
-        // Check if it has no documents (empty draft)
-        const firstItem = (existingDraft as any).order_items?.[0];
-        if (firstItem) {
-          const { count } = await supabase
-            .from("documents")
-            .select("id", { count: "exact", head: true })
-            .eq("order_item_id", firstItem.id);
-          if (count === 0) {
-            navigate(`/t/${slug}/orders/${existingDraft.id}/files`);
-            return;
-          }
-        }
-      }
-
-      const order = await createOrder.mutateAsync(familyId);
-      navigate(`/t/${slug}/orders/${order.id}/files`);
-    } catch (err: any) {
-      toast.error("Failed to create order", { description: err.message });
-    }
+  const handleSelect = (familyId: string) => {
+    // Don't create an order yet — just navigate to the file upload page
+    // The order will be created when the user actually uploads their first file
+    navigate(`/t/${slug}/orders/new/${familyId}`);
   };
 
   return (
