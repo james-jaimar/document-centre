@@ -162,6 +162,7 @@ export default function OrderFiles() {
   }, [fromOrderId, isNewMode, ensureOrder, refetchDocuments, setSearchParams]);
 
 
+  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
