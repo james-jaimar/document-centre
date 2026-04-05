@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   useOrderData,
+  useCreateOrder,
   useAddSection,
   useUpdateSection,
   useDeleteSection,
@@ -31,8 +32,15 @@ import { isLandscape } from "@/lib/paperSizes";
 import { useQuery } from "@tanstack/react-query";
 
 export default function OrderFiles() {
-  const { id: orderId, slug } = useParams<{ id: string; slug: string }>();
+  const { id: orderId, familyId: routeFamilyId, slug } = useParams<{ id: string; familyId: string; slug: string }>();
   const navigate = useNavigate();
+  const createOrder = useCreateOrder();
+
+  // Track whether we're in "new order" mode (no order created yet)
+  const isNewMode = !orderId && !!routeFamilyId;
+  const [createdOrderId, setCreatedOrderId] = useState<string | null>(null);
+  const effectiveOrderId = orderId ?? createdOrderId ?? undefined;
+
   const {
     order,
     orderItem,
@@ -41,7 +49,7 @@ export default function OrderFiles() {
     loading,
     refetchDocuments,
     refetchSections,
-  } = useOrderData(orderId);
+  } = useOrderData(effectiveOrderId);
 
   const { uploads, uploadFiles, reprocessDocument, clearUploads } = useDocumentUpload(orderItem?.id);
   const addSection = useAddSection();
