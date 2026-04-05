@@ -335,6 +335,14 @@ export default function OrderFiles() {
 
   const handleFiles = useCallback(
     async (files: File[]) => {
+      // Ensure order exists before uploading
+      try {
+        await ensureOrder();
+      } catch (err: any) {
+        toast.error("Failed to create order", { description: err.message });
+        return;
+      }
+
       const hasImages = files.some(isImageFile);
       if (hasImages) {
         // Stash files and show size picker
@@ -348,7 +356,7 @@ export default function OrderFiles() {
       setUploadModalOpen(true);
       await uploadFiles(files);
     },
-    [uploadFiles]
+    [uploadFiles, ensureOrder]
   );
 
   const handleImageSizeConfirm = useCallback(
