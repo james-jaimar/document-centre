@@ -1,12 +1,9 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useCreateOrder } from "@/hooks/useOrderBuilder";
-import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BookOpen, FileText, Layers, Printer, Presentation, Image, Newspaper } from "lucide-react";
-import { toast } from "sonner";
 
 const ICON_MAP: Record<string, React.ElementType> = {
   BookOpen,
