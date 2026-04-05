@@ -57,7 +57,7 @@ export default function OrderFiles() {
   const deleteSection = useDeleteSection();
 
   // Fetch product family slug for orientation checks
-  const productFamilyId = orderItem?.product_family_id ?? null;
+  const productFamilyId = orderItem?.product_family_id ?? routeFamilyId ?? null;
   const { data: productFamily } = useQuery({
     queryKey: ["product_family", productFamilyId],
     queryFn: async () => {
@@ -72,6 +72,31 @@ export default function OrderFiles() {
     },
     enabled: !!productFamilyId,
   });
+
+  // Helper: ensure an order exists before uploading, returns the orderItemId
+  const ensureOrder = useCallback(async (): Promise<string> => {
+    // Already have an order
+    if (orderItem?.id) return orderItem.id;
+
+    if (!routeFamilyId) throw new Error("No product family selected");
+
+    const order = await createOrder.mutateAsync(routeFamilyId);
+    setCreatedOrderId(order.id);
+
+    // Fetch the order item that was just created
+    const { data: newItem, error } = await supabase
+      .from("order_items")
+      .select("id")
+      .eq("order_id", order.id)
+      .limit(1)
+      .single();
+    if (error || !newItem) throw new Error("Failed to create order item");
+
+    // Replace URL so browser shows the real order ID (no history push — use replace)
+    navigate(`/t/${slug}/orders/${order.id}/files`, { replace: true });
+
+    return newItem.id;
+  }, [orderItem?.id, routeFamilyId, createOrder, slug, navigate]);
 
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
