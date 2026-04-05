@@ -1,25 +1,35 @@
 
 
-# Plan: Product Picker for "Recently Uploaded Files" Create Button
+# Plan: Pass Uploaded File Through "Create" Flow
 
 ## Problem
-Clicking "Create" next to a recently uploaded file navigates directly to the old order's file page. It should instead prompt the user to choose which product they want to create using that file.
+When clicking "Create" on a recently uploaded file and selecting a product, the navigation goes to `/t/:slug/orders/new/:familyId` but the existing document is not carried over. The OrderFiles page starts blank with no files.
 
 ## Solution
-Add a small product-picker popover/dialog that appears when clicking "Create". It shows the same product family grid from the top of the dashboard. On selection, navigate to the lazy-creation route `/t/:slug/orders/new/:familyId` (which only creates the DB record on first upload — but here the file already exists, so we may need to handle re-association separately later).
+Pass the source order ID as a query parameter. On the OrderFiles page, after lazy-creating the new order, copy the document(s) from the source order into the new order item.
 
 ## Changes
 
 ### `src/pages/dashboard/CustomerDashboard.tsx`
-1. Add a `Popover` (from shadcn) anchored to the "Create" button for each row
-2. Inside the popover, render the product families as a compact grid (icon + name)
-3. On product selection, navigate to `/t/:slug/orders/new/:familyId` — the file re-use/association can be wired in a follow-up
-4. Remove the current direct `navigate` to the old order's files page
+- Update the product selection `onClick` to include the source order ID as a query param:
+  ```
+  /t/${slug}/orders/new/${f.id}?from=${order.id}
+  ```
 
-### UI behavior
-- Click "Create" → popover opens with product options (same families from the top picker)
-- Click a product → popover closes, navigates to the new order flow for that product
-- Click outside → popover dismisses
+### `src/pages/dashboard/OrderFiles.tsx`
+1. Read the `from` query parameter using `useSearchParams`
+2. After `ensureOrder()` creates the new order and order item, if `from` is present:
+   - Query `documents` from the source order's order item
+   - For each document, insert a copy into the new order item (same `storage_key`, `file_name`, `page_count`, `thumbnail_urls`, `page_width_mm`, `page_height_mm`, `preflight_data`)
+   - Refetch documents so they appear in the file list
+3. Clear the `from` param from the URL after copying (to prevent re-copying on refresh)
 
-No new files needed. Single file edit.
+### Document copy logic
+The documents reference files in Supabase Storage by `storage_key`. We don't need to duplicate the actual file — just create new `documents` rows pointing to the same storage objects. This is fast and avoids storage duplication.
+
+## Flow
+1. User clicks "Create" on a recent file → picks product → navigates to `/t/:slug/orders/new/:familyId?from=<sourceOrderId>`
+2. OrderFiles detects `from` param, auto-triggers `ensureOrder()` immediately (no need to wait for file drop)
+3. Copies documents from source order into new order item
+4. File list populates with the copied documents, ready for section assignment
 
