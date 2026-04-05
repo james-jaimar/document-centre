@@ -580,7 +580,7 @@ export default function OrderFiles() {
 
   const canContinue = sections.length > 0;
 
-  if (loading) {
+  if (loading && !isNewMode) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-48" />
