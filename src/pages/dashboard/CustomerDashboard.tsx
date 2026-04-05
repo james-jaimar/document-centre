@@ -275,7 +275,7 @@ const CustomerDashboard = () => {
                                 <button
                                   key={f.id}
                                   className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-secondary transition-colors text-left"
-                                  onClick={() => navigate(`/t/${slug}/orders/new/${f.id}`)}
+                                  onClick={() => navigate(`/t/${slug}/orders/new/${f.id}?from=${order.id}`)}
                                 >
                                   <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
                                   {f.name}
