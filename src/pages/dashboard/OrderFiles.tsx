@@ -100,7 +100,68 @@ export default function OrderFiles() {
     return newItem.id;
   }, [orderItem?.id, routeFamilyId, createOrder, slug, navigate]);
 
-  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  // Auto-create order and copy documents when arriving from "Recently Uploaded Files"
+  const copyTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (!fromOrderId || !isNewMode || copyTriggeredRef.current) return;
+    copyTriggeredRef.current = true;
+
+    (async () => {
+      try {
+        const newItemId = await ensureOrder();
+
+        // Fetch documents from the source order
+        const { data: sourceItems } = await supabase
+          .from("order_items")
+          .select("id")
+          .eq("order_id", fromOrderId);
+
+        if (!sourceItems?.length) return;
+
+        const sourceItemIds = sourceItems.map((i) => i.id);
+        const { data: sourceDocs } = await supabase
+          .from("documents")
+          .select("*")
+          .in("order_item_id", sourceItemIds)
+          .order("sort_order", { ascending: true });
+
+        if (!sourceDocs?.length) return;
+
+        // Copy each document to the new order item
+        for (const doc of sourceDocs) {
+          await supabase.from("documents").insert({
+            order_item_id: newItemId,
+            file_name: doc.file_name,
+            file_path: doc.file_path,
+            file_size: doc.file_size,
+            mime_type: doc.mime_type,
+            page_count: doc.page_count,
+            page_width_mm: doc.page_width_mm,
+            page_height_mm: doc.page_height_mm,
+            document_status: doc.document_status,
+            preflight_data: doc.preflight_data,
+            thumbnail_urls: doc.thumbnail_urls,
+            backend_asset_id: doc.backend_asset_id,
+            sort_order: doc.sort_order,
+          });
+        }
+
+        // Clear the ?from param so refresh doesn't re-copy
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete("from");
+          return next;
+        }, { replace: true });
+
+        refetchDocuments();
+        toast.success(`Copied ${sourceDocs.length} file(s) from previous order`);
+      } catch (err: any) {
+        toast.error("Failed to copy files", { description: err.message });
+      }
+    })();
+  }, [fromOrderId, isNewMode, ensureOrder, refetchDocuments, setSearchParams]);
+
+
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
