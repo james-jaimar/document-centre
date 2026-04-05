@@ -260,12 +260,31 @@ const CustomerDashboard = () => {
                       {formatDistanceToNow(new Date(order.created_at), { addSuffix: true })}
                     </td>
                     <td>
-                      <button
-                        className="soft-button soft-button-gold"
-                        onClick={() => navigate(`/t/${slug}/orders/${order.id}/files`)}
-                      >
-                        Create
-                      </button>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button className="soft-button soft-button-gold">
+                            Create
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent align="end" className="w-56 p-2">
+                          <p className="px-2 pb-2 text-xs font-medium text-muted-foreground">Choose a product</p>
+                          <div className="grid gap-1">
+                            {families?.map((f) => {
+                              const Icon = ICON_MAP[f.icon ?? ""] ?? Package;
+                              return (
+                                <button
+                                  key={f.id}
+                                  className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-secondary transition-colors text-left"
+                                  onClick={() => navigate(`/t/${slug}/orders/new/${f.id}`)}
+                                >
+                                  <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
+                                  {f.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     </td>
                   </tr>
                 ))}
