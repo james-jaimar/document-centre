@@ -82,7 +82,10 @@ function buildPageSequence(
   sections: DocumentSection[],
   documents: Document[],
   isBound: boolean,
+  productType?: ProductPreviewType,
 ): PageInfo[] {
+  // Saddle-stitched booklets are always duplex — skip blank_back injection
+  const forceDuplex = productType === "saddle_stitched";
   const bodySections = sections.filter(
     (s) => s.section_type !== "tab" && s.section_type !== "insert"
   );

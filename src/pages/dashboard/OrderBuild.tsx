@@ -179,6 +179,9 @@ export default function OrderBuild() {
   }, [sections, documents]);
 
   // Initialize defaults from product options
+  // Track whether auto-size-match has fired so it only runs once
+  const autoSizeMatchedRef = useRef(false);
+
   useEffect(() => {
     if (options.length === 0) return;
     setSpec((prev) => {
@@ -201,6 +204,40 @@ export default function OrderBuild() {
       return { ...prev, selected_options: selected };
     });
   }, [options]);
+
+  // Auto-match Document Size from uploaded document dimensions
+  useEffect(() => {
+    if (autoSizeMatchedRef.current) return;
+    if (options.length === 0 || documents.length === 0) return;
+
+    const sizeOpt = options.find((o) => o.name.toLowerCase() === "document size");
+    if (!sizeOpt || !isStructuredValues(sizeOpt.values)) return;
+
+    const doc = documents[0];
+    const docW = doc.page_width_mm ? Number(doc.page_width_mm) : null;
+    const docH = doc.page_height_mm ? Number(doc.page_height_mm) : null;
+    if (!docW || !docH) return;
+
+    const TOLERANCE = 3; // mm
+    const matched = (sizeOpt.values as StructuredOptionValue[]).find((v) => {
+      const meta = v.metadata as Record<string, any>;
+      const w = Number(meta?.width_mm ?? 0);
+      const h = Number(meta?.height_mm ?? 0);
+      if (!w || !h) return false;
+      // Check both portrait and landscape
+      const portrait = Math.abs(docW - w) <= TOLERANCE && Math.abs(docH - h) <= TOLERANCE;
+      const landscape = Math.abs(docW - h) <= TOLERANCE && Math.abs(docH - w) <= TOLERANCE;
+      return portrait || landscape;
+    });
+
+    if (matched) {
+      autoSizeMatchedRef.current = true;
+      setSpec((prev) => ({
+        ...prev,
+        selected_options: { ...prev.selected_options, [sizeOpt.name]: matched.slug },
+      }));
+    }
+  }, [options, documents]);
 
   // Derive preview type from binding option metadata or product family slug
   const productType: ProductPreviewType = useMemo(() => {
