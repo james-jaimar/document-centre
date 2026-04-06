@@ -239,7 +239,7 @@ const CustomerDashboard = () => {
         {/* Recently Uploaded Files */}
         <div className="section-card overflow-hidden">
           <div className="section-header">Recently Uploaded Files</div>
-          {!recentOrders?.length ? (
+          {!recentDocs?.length ? (
             <div className="status-empty">No uploads yet</div>
           ) : (
             <table className="metric-table">
@@ -251,13 +251,13 @@ const CustomerDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {recentOrders.slice(0, 4).map((order) => (
-                  <tr key={order.id}>
-                    <td className="max-w-[180px] truncate" title={getOrderDisplayName(order)}>
-                      {getOrderDisplayName(order)}
+                {recentDocs.slice(0, 4).map((doc) => (
+                  <tr key={doc.id}>
+                    <td className="max-w-[180px] truncate" title={doc.file_name}>
+                      {doc.file_name}
                     </td>
                     <td className="text-muted-foreground">
-                      {formatDistanceToNow(new Date(order.created_at), { addSuffix: true })}
+                      {formatDistanceToNow(new Date(doc.created_at), { addSuffix: true })}
                     </td>
                     <td>
                       <Popover>
@@ -275,7 +275,7 @@ const CustomerDashboard = () => {
                                 <button
                                   key={f.id}
                                   className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-secondary transition-colors text-left"
-                                  onClick={() => navigate(`/t/${slug}/orders/new/${f.id}?from=${order.id}`)}
+                                  onClick={() => navigate(`/t/${slug}/orders/new/${f.id}?fromDoc=${doc.id}`)}
                                 >
                                   <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
                                   {f.name}
@@ -296,7 +296,7 @@ const CustomerDashboard = () => {
         {/* Recently Modified */}
         <div className="section-card overflow-hidden">
           <div className="section-header">Recently Modified</div>
-          {!recentOrders?.length ? (
+          {!recentDocs?.length ? (
             <div className="status-empty">No recent items</div>
           ) : (
             <table className="metric-table">
@@ -308,13 +308,13 @@ const CustomerDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {recentOrders.slice(0, 3).map((order) => (
-                  <tr key={order.id}>
-                    <td className="max-w-[160px] truncate" title={getOrderDisplayName(order)}>
-                      {getOrderDisplayName(order)}
+                {recentDocs.slice(0, 3).map((doc) => (
+                  <tr key={doc.id}>
+                    <td className="max-w-[160px] truncate" title={doc.file_name}>
+                      {doc.file_name}
                     </td>
                     <td className="text-muted-foreground">
-                      {formatDistanceToNow(new Date(order.updated_at), { addSuffix: true })}
+                      {formatDistanceToNow(new Date(doc.updated_at), { addSuffix: true })}
                     </td>
                     <td>
                       <button
@@ -334,7 +334,7 @@ const CustomerDashboard = () => {
         {/* Frequently Ordered */}
         <div className="section-card overflow-hidden">
           <div className="section-header">Frequently Ordered</div>
-          {!recentOrders?.length ? (
+          {!recentDocs?.length ? (
             <div className="status-empty">No items yet</div>
           ) : (
             <table className="metric-table">
@@ -345,10 +345,10 @@ const CustomerDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {recentOrders.slice(0, 4).map((order) => (
-                  <tr key={order.id}>
-                    <td className="max-w-[180px] truncate" title={getOrderDisplayName(order)}>
-                      {getOrderDisplayName(order)}
+                {recentDocs.slice(0, 4).map((doc) => (
+                  <tr key={doc.id}>
+                    <td className="max-w-[180px] truncate" title={doc.file_name}>
+                      {doc.file_name}
                     </td>
                     <td>
                       <button
