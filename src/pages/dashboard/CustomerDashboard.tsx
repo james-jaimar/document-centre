@@ -142,7 +142,7 @@ const CustomerDashboard = () => {
   const { user } = useAuth();
   const createOrder = useCreateOrder();
   const { data: families, isLoading: familiesLoading } = useProductFamiliesActive();
-  const { data: recentOrders } = useRecentOrders(user?.id);
+  const { data: recentDocs } = useRecentDocuments(user?.id);
   const { data: trackingOrders } = useTrackingOrders(user?.id);
   const [creatingFamily, setCreatingFamily] = useState<string | null>(null);
 
