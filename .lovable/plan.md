@@ -1,35 +1,33 @@
 
 
-# Plan: Pass Uploaded File Through "Create" Flow
+# Plan: Fix "Recently Uploaded Files" to Show Individual Files, Not Whole Orders
 
 ## Problem
-When clicking "Create" on a recently uploaded file and selecting a product, the navigation goes to `/t/:slug/orders/new/:familyId` but the existing document is not carried over. The OrderFiles page starts blank with no files.
+"Recently Uploaded Files" currently lists **orders** (which may contain multiple documents). Clicking "Create" passes `?from=<orderId>`, which copies **all** documents from that order into the new one. That's why selecting "Booklet" produced 4 files — the source order had 4 documents.
 
 ## Solution
-Pass the source order ID as a query parameter. On the OrderFiles page, after lazy-creating the new order, copy the document(s) from the source order into the new order item.
-
-## Changes
+Change the "Recently Uploaded Files" section to list individual **documents** instead of orders. Pass the specific document ID (not order ID) when cloning.
 
 ### `src/pages/dashboard/CustomerDashboard.tsx`
-- Update the product selection `onClick` to include the source order ID as a query param:
-  ```
-  /t/${slug}/orders/new/${f.id}?from=${order.id}
-  ```
+1. Replace `useRecentOrders` with a new `useRecentDocuments` query that fetches from the `documents` table directly (joined to `order_items` to get tenant context), limited to the current user's documents, ordered by `created_at desc`, limit 5
+2. Each row shows the document's `file_name`, page count, and upload date
+3. "Create" popover passes `?fromDoc=<documentId>` instead of `?from=<orderId>`
 
 ### `src/pages/dashboard/OrderFiles.tsx`
-1. Read the `from` query parameter using `useSearchParams`
-2. After `ensureOrder()` creates the new order and order item, if `from` is present:
-   - Query `documents` from the source order's order item
-   - For each document, insert a copy into the new order item (same `storage_key`, `file_name`, `page_count`, `thumbnail_urls`, `page_width_mm`, `page_height_mm`, `preflight_data`)
-   - Refetch documents so they appear in the file list
-3. Clear the `from` param from the URL after copying (to prevent re-copying on refresh)
+1. Read `fromDoc` query param instead of `from`
+2. In the copy effect, fetch the single source document by ID
+3. Clone just that one document into the new order item
+4. Clear `fromDoc` after copy
 
-### Document copy logic
-The documents reference files in Supabase Storage by `storage_key`. We don't need to duplicate the actual file — just create new `documents` rows pointing to the same storage objects. This is fast and avoids storage duplication.
+### Query for recent documents
+```sql
+SELECT d.* FROM documents d
+JOIN order_items oi ON oi.id = d.order_item_id
+JOIN orders o ON o.id = oi.order_id
+WHERE o.user_id = :userId
+ORDER BY d.created_at DESC
+LIMIT 5
+```
 
-## Flow
-1. User clicks "Create" on a recent file → picks product → navigates to `/t/:slug/orders/new/:familyId?from=<sourceOrderId>`
-2. OrderFiles detects `from` param, auto-triggers `ensureOrder()` immediately (no need to wait for file drop)
-3. Copies documents from source order into new order item
-4. File list populates with the copied documents, ready for section assignment
+This ensures each row = one file, and "Create" copies exactly that one file.
 
