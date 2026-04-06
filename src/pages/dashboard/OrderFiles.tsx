@@ -35,7 +35,7 @@ export default function OrderFiles() {
   const { id: orderId, familyId: routeFamilyId, slug } = useParams<{ id: string; familyId: string; slug: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const fromOrderId = searchParams.get("from");
+  const fromDocId = searchParams.get("fromDoc");
   const createOrder = useCreateOrder();
 
   // Track whether we're in "new order" mode (no order created yet)

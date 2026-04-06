@@ -77,15 +77,15 @@ function useProductFamiliesActive() {
   });
 }
 
-function useRecentOrders(userId: string | undefined) {
+function useRecentDocuments(userId: string | undefined) {
   return useQuery({
-    queryKey: ["recent_orders", userId],
+    queryKey: ["recent_documents", userId],
     queryFn: async () => {
       if (!userId) return [];
       const { data, error } = await supabase
-        .from("orders")
-        .select("*, order_items(id, product_family_id, build_status, title, spec, documents(file_name))")
-        .eq("user_id", userId)
+        .from("documents")
+        .select("*, order_items!inner(id, orders!inner(user_id))")
+        .eq("order_items.orders.user_id", userId)
         .order("created_at", { ascending: false })
         .limit(5);
       if (error) throw error;
