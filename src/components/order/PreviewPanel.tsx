@@ -167,7 +167,8 @@ function buildPageSequence(
       });
 
       // Simplex: push the natural reverse face of this sheet
-      if (!section.is_duplex) {
+      // (skip for booklets — saddle-stitched is always duplex)
+      if (!section.is_duplex && !forceDuplex) {
         result.push({
           thumbnailUrl: "", pageIndex: -1, documentName: "",
           section, isColor: section.is_color,
@@ -330,8 +331,8 @@ export default function PreviewPanel({
   // Build flat page list using anchor-based injection (only for non-fold types)
   const pages = useMemo(() => {
     if (isFold) return [];
-    return buildPageSequence(sections, documents, isBound);
-  }, [sections, documents, isBound, isFold]);
+    return buildPageSequence(sections, documents, isBound, productType);
+  }, [sections, documents, isBound, isFold, productType]);
 
   // Build final page sequence with explicit roles + enforce physical alignment
   const { finalPages, pageRoles: computedPageRoles } = useMemo(() => {
