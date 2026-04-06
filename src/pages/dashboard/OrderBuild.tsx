@@ -82,6 +82,7 @@ export default function OrderBuild() {
     loose_sheets: "loose_sheets",
     poster: "poster",
     brochures: "bi_fold",
+    booklets: "saddle_stitched",
   };
 
   const BINDING_METHOD_TO_PREVIEW: Record<string, ProductPreviewType> = {
