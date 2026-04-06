@@ -35,7 +35,7 @@ export default function OrderFiles() {
   const { id: orderId, familyId: routeFamilyId, slug } = useParams<{ id: string; familyId: string; slug: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const fromOrderId = searchParams.get("from");
+  const fromDocId = searchParams.get("fromDoc");
   const createOrder = useCreateOrder();
 
   // Track whether we're in "new order" mode (no order created yet)
@@ -100,66 +100,59 @@ export default function OrderFiles() {
     return newItem.id;
   }, [orderItem?.id, routeFamilyId, createOrder, slug, navigate]);
 
-  // Auto-create order and copy documents when arriving from "Recently Uploaded Files"
+  // Auto-create order and copy a single document when arriving from "Recently Uploaded Files"
   const copyTriggeredRef = useRef(false);
   useEffect(() => {
-    if (!fromOrderId || !isNewMode || copyTriggeredRef.current) return;
+    if (!fromDocId || !isNewMode || copyTriggeredRef.current) return;
     copyTriggeredRef.current = true;
 
     (async () => {
       try {
         const newItemId = await ensureOrder();
 
-        // Fetch documents from the source order
-        const { data: sourceItems } = await supabase
-          .from("order_items")
-          .select("id")
-          .eq("order_id", fromOrderId);
-
-        if (!sourceItems?.length) return;
-
-        const sourceItemIds = sourceItems.map((i) => i.id);
-        const { data: sourceDocs } = await supabase
+        // Fetch the single source document
+        const { data: sourceDoc, error } = await supabase
           .from("documents")
           .select("*")
-          .in("order_item_id", sourceItemIds)
-          .order("sort_order", { ascending: true });
+          .eq("id", fromDocId)
+          .single();
 
-        if (!sourceDocs?.length) return;
-
-        // Copy each document to the new order item
-        for (const doc of sourceDocs) {
-          await supabase.from("documents").insert({
-            order_item_id: newItemId,
-            file_name: doc.file_name,
-            file_path: doc.file_path,
-            file_size: doc.file_size,
-            mime_type: doc.mime_type,
-            page_count: doc.page_count,
-            page_width_mm: doc.page_width_mm,
-            page_height_mm: doc.page_height_mm,
-            document_status: doc.document_status,
-            preflight_data: doc.preflight_data,
-            thumbnail_urls: doc.thumbnail_urls,
-            backend_asset_id: doc.backend_asset_id,
-            sort_order: doc.sort_order,
-          });
+        if (error || !sourceDoc) {
+          toast.error("Source file not found");
+          return;
         }
 
-        // Clear the ?from param so refresh doesn't re-copy
+        // Copy the document to the new order item
+        await supabase.from("documents").insert({
+          order_item_id: newItemId,
+          file_name: sourceDoc.file_name,
+          file_path: sourceDoc.file_path,
+          file_size: sourceDoc.file_size,
+          mime_type: sourceDoc.mime_type,
+          page_count: sourceDoc.page_count,
+          page_width_mm: sourceDoc.page_width_mm,
+          page_height_mm: sourceDoc.page_height_mm,
+          document_status: sourceDoc.document_status,
+          preflight_data: sourceDoc.preflight_data,
+          thumbnail_urls: sourceDoc.thumbnail_urls,
+          backend_asset_id: sourceDoc.backend_asset_id,
+          sort_order: sourceDoc.sort_order,
+        });
+
+        // Clear the ?fromDoc param so refresh doesn't re-copy
         setSearchParams((prev) => {
           const next = new URLSearchParams(prev);
-          next.delete("from");
+          next.delete("fromDoc");
           return next;
         }, { replace: true });
 
         refetchDocuments();
-        toast.success(`Copied ${sourceDocs.length} file(s) from previous order`);
+        toast.success(`Copied "${sourceDoc.file_name}" into new order`);
       } catch (err: any) {
-        toast.error("Failed to copy files", { description: err.message });
+        toast.error("Failed to copy file", { description: err.message });
       }
     })();
-  }, [fromOrderId, isNewMode, ensureOrder, refetchDocuments, setSearchParams]);
+  }, [fromDocId, isNewMode, ensureOrder, refetchDocuments, setSearchParams]);
 
 
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);

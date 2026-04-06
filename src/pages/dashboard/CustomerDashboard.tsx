@@ -77,15 +77,15 @@ function useProductFamiliesActive() {
   });
 }
 
-function useRecentOrders(userId: string | undefined) {
+function useRecentDocuments(userId: string | undefined) {
   return useQuery({
-    queryKey: ["recent_orders", userId],
+    queryKey: ["recent_documents", userId],
     queryFn: async () => {
       if (!userId) return [];
       const { data, error } = await supabase
-        .from("orders")
-        .select("*, order_items(id, product_family_id, build_status, title, spec, documents(file_name))")
-        .eq("user_id", userId)
+        .from("documents")
+        .select("*, order_items!inner(id, orders!inner(user_id))")
+        .eq("order_items.orders.user_id", userId)
         .order("created_at", { ascending: false })
         .limit(5);
       if (error) throw error;
@@ -142,7 +142,7 @@ const CustomerDashboard = () => {
   const { user } = useAuth();
   const createOrder = useCreateOrder();
   const { data: families, isLoading: familiesLoading } = useProductFamiliesActive();
-  const { data: recentOrders } = useRecentOrders(user?.id);
+  const { data: recentDocs } = useRecentDocuments(user?.id);
   const { data: trackingOrders } = useTrackingOrders(user?.id);
   const [creatingFamily, setCreatingFamily] = useState<string | null>(null);
 
@@ -239,7 +239,7 @@ const CustomerDashboard = () => {
         {/* Recently Uploaded Files */}
         <div className="section-card overflow-hidden">
           <div className="section-header">Recently Uploaded Files</div>
-          {!recentOrders?.length ? (
+          {!recentDocs?.length ? (
             <div className="status-empty">No uploads yet</div>
           ) : (
             <table className="metric-table">
@@ -251,13 +251,13 @@ const CustomerDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {recentOrders.slice(0, 4).map((order) => (
-                  <tr key={order.id}>
-                    <td className="max-w-[180px] truncate" title={getOrderDisplayName(order)}>
-                      {getOrderDisplayName(order)}
+                {recentDocs.slice(0, 4).map((doc) => (
+                  <tr key={doc.id}>
+                    <td className="max-w-[180px] truncate" title={doc.file_name}>
+                      {doc.file_name}
                     </td>
                     <td className="text-muted-foreground">
-                      {formatDistanceToNow(new Date(order.created_at), { addSuffix: true })}
+                      {formatDistanceToNow(new Date(doc.created_at), { addSuffix: true })}
                     </td>
                     <td>
                       <Popover>
@@ -275,7 +275,7 @@ const CustomerDashboard = () => {
                                 <button
                                   key={f.id}
                                   className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-secondary transition-colors text-left"
-                                  onClick={() => navigate(`/t/${slug}/orders/new/${f.id}?from=${order.id}`)}
+                                  onClick={() => navigate(`/t/${slug}/orders/new/${f.id}?fromDoc=${doc.id}`)}
                                 >
                                   <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
                                   {f.name}
@@ -296,7 +296,7 @@ const CustomerDashboard = () => {
         {/* Recently Modified */}
         <div className="section-card overflow-hidden">
           <div className="section-header">Recently Modified</div>
-          {!recentOrders?.length ? (
+          {!recentDocs?.length ? (
             <div className="status-empty">No recent items</div>
           ) : (
             <table className="metric-table">
@@ -308,18 +308,18 @@ const CustomerDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {recentOrders.slice(0, 3).map((order) => (
-                  <tr key={order.id}>
-                    <td className="max-w-[160px] truncate" title={getOrderDisplayName(order)}>
-                      {getOrderDisplayName(order)}
+                {recentDocs.slice(0, 3).map((doc) => (
+                  <tr key={doc.id}>
+                    <td className="max-w-[160px] truncate" title={doc.file_name}>
+                      {doc.file_name}
                     </td>
                     <td className="text-muted-foreground">
-                      {formatDistanceToNow(new Date(order.updated_at), { addSuffix: true })}
+                      {formatDistanceToNow(new Date(doc.updated_at), { addSuffix: true })}
                     </td>
                     <td>
                       <button
                         className="soft-button soft-button-primary"
-                        onClick={() => navigate(`/t/${slug}/orders/${order.id}/build`)}
+                        onClick={() => navigate(`/t/${slug}/orders/new?fromDoc=${doc.id}`)}
                       >
                         Continue
                       </button>
@@ -334,7 +334,7 @@ const CustomerDashboard = () => {
         {/* Frequently Ordered */}
         <div className="section-card overflow-hidden">
           <div className="section-header">Frequently Ordered</div>
-          {!recentOrders?.length ? (
+          {!recentDocs?.length ? (
             <div className="status-empty">No items yet</div>
           ) : (
             <table className="metric-table">
@@ -345,15 +345,15 @@ const CustomerDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {recentOrders.slice(0, 4).map((order) => (
-                  <tr key={order.id}>
-                    <td className="max-w-[180px] truncate" title={getOrderDisplayName(order)}>
-                      {getOrderDisplayName(order)}
+                {recentDocs.slice(0, 4).map((doc) => (
+                  <tr key={doc.id}>
+                    <td className="max-w-[180px] truncate" title={doc.file_name}>
+                      {doc.file_name}
                     </td>
                     <td>
                       <button
                         className="soft-button soft-button-gold"
-                        onClick={() => navigate(`/t/${slug}/orders/${order.id}/build`)}
+                        onClick={() => navigate(`/t/${slug}/orders/new?fromDoc=${doc.id}`)}
                       >
                         Reorder
                       </button>
