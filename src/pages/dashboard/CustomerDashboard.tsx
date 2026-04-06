@@ -319,7 +319,7 @@ const CustomerDashboard = () => {
                     <td>
                       <button
                         className="soft-button soft-button-primary"
-                        onClick={() => navigate(`/t/${slug}/orders/${order.id}/build`)}
+                        onClick={() => navigate(`/t/${slug}/orders/new?fromDoc=${doc.id}`)}
                       >
                         Continue
                       </button>
@@ -353,7 +353,7 @@ const CustomerDashboard = () => {
                     <td>
                       <button
                         className="soft-button soft-button-gold"
-                        onClick={() => navigate(`/t/${slug}/orders/${order.id}/build`)}
+                        onClick={() => navigate(`/t/${slug}/orders/new?fromDoc=${doc.id}`)}
                       >
                         Reorder
                       </button>
