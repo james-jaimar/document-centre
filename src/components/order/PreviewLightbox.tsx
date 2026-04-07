@@ -2,46 +2,55 @@ import { useEffect, useState, useCallback } from "react";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import DocumentPreview from "@/components/preview/DocumentPreview";
+import type { DocumentPreviewProps } from "@/components/preview/DocumentPreview";
 import type { ProductPreviewType } from "@/components/preview/previewTypes";
 
-interface PreviewLightboxProps {
+type ExtraProps = Omit<DocumentPreviewProps, "thumbnailPaths" | "productType" | "width" | "height" | "currentPage" | "onPageChange">;
+
+interface PreviewLightboxProps extends Partial<ExtraProps> {
   thumbnailPaths: string[];
   initialPage?: number;
   productType?: ProductPreviewType;
-  onClose: () => void;
+  onClose: (page: number) => void;
 }
+
+const BOUND_TYPES = new Set([
+  "wire_bound", "comb_bound", "saddle_stitched", "perfect_bound", "ring_binder",
+]);
 
 export default function PreviewLightbox({
   thumbnailPaths,
   initialPage = 0,
   productType = "loose_sheets",
   onClose,
+  ...extraProps
 }: PreviewLightboxProps) {
   const [page, setPage] = useState(initialPage);
   const total = thumbnailPaths.length;
+  const step = BOUND_TYPES.has(productType) ? 2 : 1;
 
-  const goNext = useCallback(() => setPage((p) => Math.min(p + 1, total - 1)), [total]);
-  const goPrev = useCallback(() => setPage((p) => Math.max(p - 1, 0)), []);
+  const goNext = useCallback(() => setPage((p) => Math.min(p + step, total - 1)), [total, step]);
+  const goPrev = useCallback(() => setPage((p) => Math.max(p - step, 0)), [step]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onClose(page);
       if (e.key === "ArrowRight") goNext();
       if (e.key === "ArrowLeft") goPrev();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onClose, goNext, goPrev]);
+  }, [onClose, goNext, goPrev, page]);
 
   if (total === 0) return null;
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
-      onClick={onClose}
+      onClick={() => onClose(page)}
     >
       <button
-        onClick={onClose}
+        onClick={() => onClose(page)}
         className="absolute top-4 right-4 h-10 w-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
       >
         <X className="h-5 w-5" />
@@ -68,6 +77,7 @@ export default function PreviewLightbox({
           height={window.innerHeight * 0.8}
           currentPage={page}
           onPageChange={setPage}
+          {...extraProps}
         />
       </div>
 

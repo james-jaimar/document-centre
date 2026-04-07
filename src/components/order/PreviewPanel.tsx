@@ -10,7 +10,9 @@ import {
   ChevronRight,
   ChevronsRight,
   FileText,
+  Maximize2,
 } from "lucide-react";
+import PreviewLightbox from "@/components/order/PreviewLightbox";
 import DocumentPreview from "@/components/preview/DocumentPreview";
 import type { ProductPreviewType, PreviewEffects, TabPosition } from "@/components/preview/previewTypes";
 
@@ -201,6 +203,7 @@ export default function PreviewPanel({
   bindingEdge,
 }: PreviewPanelProps) {
   const [currentPage, setCurrentPage] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const prevPageCount = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 500, height: 400 });
@@ -522,7 +525,14 @@ export default function PreviewPanel({
 
   return (
     <div className="flex flex-col items-center gap-4 h-full">
-      <div ref={containerRef} className="flex-1 flex items-center justify-center w-full overflow-hidden">
+      <div ref={containerRef} className="relative flex-1 flex items-center justify-center w-full overflow-hidden">
+        <button
+          onClick={() => setLightboxOpen(true)}
+          className="absolute top-2 right-2 z-10 h-8 w-8 flex items-center justify-center rounded-md bg-background/80 hover:bg-background text-foreground shadow-sm border border-border transition-colors"
+          title="Fullscreen preview"
+        >
+          <Maximize2 className="h-4 w-4" />
+        </button>
         <DocumentPreview
           thumbnailPaths={thumbnailPaths}
           productType={productType}
@@ -543,6 +553,26 @@ export default function PreviewPanel({
           bindingEdge={bindingEdge}
         />
       </div>
+
+      {lightboxOpen && (
+        <PreviewLightbox
+          thumbnailPaths={thumbnailPaths}
+          initialPage={currentPage}
+          productType={productType}
+          onClose={(p) => { setCurrentPage(p); setLightboxOpen(false); }}
+          colorFlags={colorFlags}
+          pageAspectRatio={pageAspectRatio}
+          effects={effects}
+          sectionTypes={sectionTypes}
+          pageRoles={computedPageRoles}
+          bleedFlags={bleedFlags}
+          pageLabels={pageLabels}
+          pageColors={pageColors}
+          tabPositions={tabPositions}
+          displayPageNumbers={displayPageNumbers}
+          bindingEdge={bindingEdge}
+        />
+      )}
 
       {!isFold && (
         <>
