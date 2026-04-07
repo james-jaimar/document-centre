@@ -1,15 +1,37 @@
 
 
-# Plan: Fix Fold Preview — Folded State Shows Blank
+# Plan: Fix Fold Preview — Folded State Renders Blank
 
 ## Root Cause
 
-The `FoldPreview` component uses `objectFit: "cover"` on the image. When the composed panel image's aspect ratio doesn't match the assumed 3:2 container ratio, `objectFit: cover` scales and **centers** the image content within the element box, shifting the panel positions. The `marginLeft` clipping math assumes the image fills the element width exactly — but with `cover`, it doesn't. Result: the folded view clips to the wrong region and shows blank.
+The current folding technique uses `marginLeft: -(coverLeftFraction * unfoldedW)` on an `<img>` with `width: unfoldedW` inside a container with `overflow: hidden` and `width: foldedW`. This relies on the browser rendering the image wider than its container — which is fragile. The image can get clipped or collapsed before the negative margin takes effect, resulting in the visible panel showing blank.
 
 ## Fix
 
-**`src/components/preview/FoldPreview.tsx`**:
-1. Change `objectFit: "cover"` to `objectFit: "fill"` on both the folded and unfolded `<img>` elements. This ensures the image stretches to exactly match the container dimensions, so the fractional panel positions align correctly with the `marginLeft` clipping math.
+Replace the `marginLeft` clipping model with a **CSS `background-image` approach** for the folded state. A `<div>` with `background-image`, `background-size`, and `background-position` is a reliable way to "window" into a specific region of an image without needing the element to exceed its container.
 
-Single-line change in two places — the folded img (line 101) and the unfolded img (line 113).
+### `src/components/preview/FoldPreview.tsx`
+
+**Folded state** — replace the `<img>` with a styled `<div>`:
+```tsx
+<div
+  style={{
+    width: "100%",
+    height: "100%",
+    backgroundImage: `url(${sheetUrl})`,
+    backgroundSize: `${unfoldedW}px ${containerH}px`,
+    backgroundPosition: `${-(coverLeftFraction * unfoldedW)}px 0`,
+    backgroundRepeat: "no-repeat",
+  }}
+/>
+```
+
+This renders the full sheet image at `unfoldedW × containerH` as a background, then positions it so only the cover panel is visible within the `foldedW × foldedH` container. The container's `overflow: hidden` is no longer needed for this to work — `background-image` naturally clips to the element bounds.
+
+**Unfolded state** — keep as-is (the `<img>` with `objectFit: "fill"` works fine when the image fills its container 1:1).
+
+### Single file change
+| File | Change |
+|------|--------|
+| `src/components/preview/FoldPreview.tsx` | Replace folded-state `<img>` with a `background-image` div |
 
