@@ -95,6 +95,25 @@ function useRecentDocuments(userId: string | undefined) {
   });
 }
 
+function useRecentOrderItems(userId: string | undefined) {
+  return useQuery({
+    queryKey: ["recent_order_items", userId],
+    queryFn: async () => {
+      if (!userId) return [];
+      const { data, error } = await supabase
+        .from("order_items")
+        .select("id, title, updated_at, order_id, build_status, orders!inner(user_id, order_status)")
+        .eq("orders.user_id", userId)
+        .in("orders.order_status", ["draft", "quoted"])
+        .order("updated_at", { ascending: false })
+        .limit(5);
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!userId,
+  });
+}
+
 function useTrackingOrders(userId: string | undefined) {
   return useQuery({
     queryKey: ["tracking_orders", userId],
@@ -144,6 +163,7 @@ const CustomerDashboard = () => {
   const { data: families, isLoading: familiesLoading } = useProductFamiliesActive();
   const { data: recentDocs } = useRecentDocuments(user?.id);
   const { data: trackingOrders } = useTrackingOrders(user?.id);
+  const { data: recentItems } = useRecentOrderItems(user?.id);
   const [creatingFamily, setCreatingFamily] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -296,7 +316,7 @@ const CustomerDashboard = () => {
         {/* Recently Modified */}
         <div className="section-card overflow-hidden">
           <div className="section-header">Recently Modified</div>
-          {!recentDocs?.length ? (
+          {!recentItems?.length ? (
             <div className="status-empty">No recent items</div>
           ) : (
             <table className="metric-table">
@@ -308,18 +328,24 @@ const CustomerDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {recentDocs.slice(0, 3).map((doc) => (
-                  <tr key={doc.id}>
-                    <td className="max-w-[160px] truncate" title={doc.file_name}>
-                      {doc.file_name}
+                {recentItems.slice(0, 3).map((item) => (
+                  <tr key={item.id}>
+                    <td className="max-w-[160px] truncate" title={item.title || `Item ${item.id.slice(0, 8)}`}>
+                      {item.title || `Item ${item.id.slice(0, 8)}`}
                     </td>
                     <td className="text-muted-foreground">
-                      {formatDistanceToNow(new Date(doc.updated_at), { addSuffix: true })}
+                      {formatDistanceToNow(new Date(item.updated_at), { addSuffix: true })}
                     </td>
                     <td>
                       <button
                         className="soft-button soft-button-primary"
-                        onClick={() => navigate(`/t/${slug}/orders/new?fromDoc=${doc.id}`)}
+                        onClick={() => {
+                          const status = item.build_status;
+                          const path = status === "draft" || status === "building"
+                            ? `/t/${slug}/orders/${item.order_id}/files`
+                            : `/t/${slug}/orders/${item.order_id}/build`;
+                          navigate(path);
+                        }}
                       >
                         Continue
                       </button>
