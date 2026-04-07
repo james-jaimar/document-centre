@@ -98,7 +98,7 @@ export default function FoldPreview({
                 display: "block",
                 width: unfoldedW,        // render at full sheet width
                 height: containerH,
-                objectFit: "cover",
+                objectFit: "fill",
                 marginLeft: -(coverLeftFraction * unfoldedW), // shift left to show cover panel
               }}
             />
@@ -109,7 +109,7 @@ export default function FoldPreview({
                 src={sheetUrl}
                 alt={side === "front" ? "Outside" : "Inside"}
                 className="block w-full h-full"
-                style={{ objectFit: "cover" }}
+                style={{ objectFit: "fill" }}
                 draggable={false}
               />
               {/* Fold guide overlays */}
