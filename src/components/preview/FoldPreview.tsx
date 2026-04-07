@@ -89,17 +89,17 @@ export default function FoldPreview({
       >
         {sheetUrl ? (
           folded ? (
-            /* ── FOLDED: clip one panel from the full sheet ── */
-            <img
-              src={sheetUrl}
-              alt={side === "front" ? "Outside (folded)" : "Inside (folded)"}
-              draggable={false}
+            /* ── FOLDED: background-image approach for reliable panel clipping ── */
+            <div
+              role="img"
+              aria-label={side === "front" ? "Outside (folded)" : "Inside (folded)"}
               style={{
-                display: "block",
-                width: unfoldedW,        // render at full sheet width
-                height: containerH,
-                objectFit: "fill",
-                marginLeft: -(coverLeftFraction * unfoldedW), // shift left to show cover panel
+                width: "100%",
+                height: "100%",
+                backgroundImage: `url(${sheetUrl})`,
+                backgroundSize: `${unfoldedW}px ${containerH}px`,
+                backgroundPosition: `${-(coverLeftFraction * unfoldedW)}px 0`,
+                backgroundRepeat: "no-repeat",
               }}
             />
           ) : (
