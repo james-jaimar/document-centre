@@ -21,7 +21,11 @@ export default function OptionsPanel({
   selectedOptions,
   onOptionChange,
 }: OptionsPanelProps) {
-  const sortedOptions = [...options].sort((a, b) => a.sort_order - b.sort_order);
+  // Filter out options that are controlled per-section at the upload stage
+  const SECTION_CONTROLLED = new Set(["Print Colour", "Print Sides"]);
+  const sortedOptions = [...options]
+    .filter((o) => !SECTION_CONTROLLED.has(o.name))
+    .sort((a, b) => a.sort_order - b.sort_order);
 
   // Get current display value for an option
   const getDisplayValue = (option: ProductOption) => {
