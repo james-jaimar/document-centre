@@ -22,26 +22,30 @@ interface UploadProgressModalProps {
   open: boolean;
   uploads: Record<string, UploadProgress>;
   onContinue: () => void;
+  onCancel?: () => void;
 }
 
 export default function UploadProgressModal({
   open,
   uploads,
   onContinue,
+  onCancel,
 }: UploadProgressModalProps) {
   const entries = Object.values(uploads);
   const uploading = entries.filter((u) => u.status === "uploading").length;
   const analyzing = entries.filter((u) => u.status === "analyzing").length;
   const completed = entries.filter((u) => u.status === "done").length;
   const errors = entries.filter((u) => u.status === "error").length;
-  const allDone = entries.length > 0 && entries.every((u) => u.status === "done" || u.status === "error");
+  const isEmpty = entries.length === 0;
+  const allDone = isEmpty || entries.every((u) => u.status === "done" || u.status === "error");
+  const hasActiveUploads = uploading > 0 || analyzing > 0;
 
   return (
-    <Dialog open={open} onOpenChange={() => {}}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v && !hasActiveUploads) (onCancel ?? onContinue)(); }}>
       <DialogContent
         className="sm:max-w-md"
-        onPointerDownOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
+        onPointerDownOutside={(e) => { if (hasActiveUploads) e.preventDefault(); }}
+        onEscapeKeyDown={(e) => { if (hasActiveUploads) e.preventDefault(); }}
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -79,6 +83,12 @@ export default function UploadProgressModal({
         </div>
 
         {/* File list */}
+        {isEmpty && (
+          <div className="py-8 text-center text-sm text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2 text-primary" />
+            Preparing upload…
+          </div>
+        )}
         <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
           {entries.map((upload) => (
             <div
@@ -132,7 +142,15 @@ export default function UploadProgressModal({
           ))}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex gap-2 sm:gap-2">
+          {hasActiveUploads && onCancel && (
+            <button
+              onClick={onCancel}
+              className="soft-button w-full rounded-xl text-sm py-2.5 transition-all border border-border text-muted-foreground hover:bg-muted"
+            >
+              Cancel
+            </button>
+          )}
           <button
             onClick={onContinue}
             disabled={!allDone}

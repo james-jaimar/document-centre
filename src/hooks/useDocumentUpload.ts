@@ -271,8 +271,9 @@ export function useDocumentUpload(orderItemId: string | undefined) {
   /* ── Upload a single file ── */
 
   const uploadFile = useCallback(
-    async (file: File, targetSize?: TargetSize) => {
-      if (!orderItemId || !user) return null;
+    async (file: File, targetSize?: TargetSize, overrideOrderItemId?: string) => {
+      const effectiveId = overrideOrderItemId || orderItemId;
+      if (!effectiveId || !user) return null;
 
       const originalName = file.name;
       updateUpload(originalName, { fileName: originalName, status: "uploading", progress: 0 });
@@ -287,7 +288,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         const fileName = file.name;
 
         // 1. Upload to Supabase Storage
-        const storagePath = `${user.id}/${orderItemId}/${fileName}`;
+        const storagePath = `${user.id}/${effectiveId}/${fileName}`;
         const { error: uploadError } = await supabase.storage
           .from("document-uploads")
           .upload(storagePath, file, { upsert: true });
@@ -299,7 +300,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         const { data: doc, error: docError } = await supabase
           .from("documents")
           .insert({
-            order_item_id: orderItemId,
+            order_item_id: effectiveId,
             file_name: fileName,
             file_path: storagePath,
             file_size: file.size,
@@ -325,7 +326,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         }
 
         updateUpload(originalName, { status: "done", progress: 100 });
-        qc.invalidateQueries({ queryKey: ["documents", orderItemId] });
+        qc.invalidateQueries({ queryKey: ["documents", effectiveId] });
         return doc;
       } catch (err: any) {
         console.error("[upload] Upload failed:", err);
@@ -368,10 +369,10 @@ export function useDocumentUpload(orderItemId: string | undefined) {
   /* ── Upload multiple files ── */
 
   const uploadFiles = useCallback(
-    async (files: FileList | File[], targetSize?: TargetSize) => {
+    async (files: FileList | File[], targetSize?: TargetSize, overrideOrderItemId?: string) => {
       const results = [];
       for (const file of Array.from(files)) {
-        const result = await uploadFile(file, targetSize);
+        const result = await uploadFile(file, targetSize, overrideOrderItemId);
         results.push(result);
       }
       return results;
