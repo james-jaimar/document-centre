@@ -1,12 +1,13 @@
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, RotateCw } from "lucide-react";
+import type { Surface } from "./brochure-types";
 
 interface BrochureControlsProps {
   stateLabels: string[];
   currentIndex: number;
   onChangeIndex: (i: number) => void;
-  showBack: boolean;
-  onToggleBack: () => void;
+  surface: Surface;
+  onToggleSurface: () => void;
   hasTwoSides: boolean;
 }
 
@@ -14,8 +15,8 @@ export default function BrochureControls({
   stateLabels,
   currentIndex,
   onChangeIndex,
-  showBack,
-  onToggleBack,
+  surface,
+  onToggleSurface,
   hasTwoSides,
 }: BrochureControlsProps) {
   const canPrev = currentIndex > 0;
@@ -53,11 +54,11 @@ export default function BrochureControls({
         <Button
           variant="outline"
           size="sm"
-          onClick={onToggleBack}
+          onClick={onToggleSurface}
           className="gap-2 ml-2"
         >
           <RotateCw className="h-4 w-4" />
-          {showBack ? "Show Outside" : "Show Inside"}
+          {surface === "outside" ? "Show Inside" : "Show Outside"}
         </Button>
       )}
     </div>

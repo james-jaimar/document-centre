@@ -2,13 +2,12 @@ import { useState, useEffect, useCallback } from "react";
 import type { FoldPreviewProps } from "./previewTypes";
 import { FOLD_GEOMETRY } from "./previewTypes";
 import { buildSpecForFoldType } from "./brochure/brochure-specs";
-import type { BrochureSpec } from "./brochure/brochure-types";
+import type { BrochureSpec, Panel } from "./brochure/brochure-types";
 import BrochureViewer from "./brochure/BrochureViewer";
 import { FileText } from "lucide-react";
 
 /**
- * Slices a composed surface image (data-URL or signed URL) into
- * individual per-panel image data-URLs using a canvas.
+ * Slices a composed surface image into per-panel data-URLs using canvas.
  */
 function sliceImageIntoPanels(
   imageUrl: string,
@@ -39,6 +38,43 @@ function sliceImageIntoPanels(
   });
 }
 
+/**
+ * Assigns artwork to panels for a given surface.
+ *
+ * Outside surface: slices map left-to-right to panels (front = outside face, back = inside face).
+ * Inside surface: when you flip a physical sheet, the panel order reverses.
+ *   Panel[0] on outside corresponds to Panel[N-1] on inside.
+ *   So inside slices[i] → panel[N-1-i].front, and outside slices[N-1-i] → panel[N-1-i].back.
+ */
+function buildPanelsWithArtwork(
+  basePanels: Panel[],
+  outsideSlices: string[],
+  insideSlices: string[] | null
+): { outsidePanels: Panel[]; insidePanels: Panel[] | null } {
+  const n = basePanels.length;
+
+  // Outside panels: front = outside artwork, back = inside artwork (mirrored)
+  const outsidePanels = basePanels.map((panel, i) => ({
+    ...panel,
+    front: { ...panel.front, imageUrl: outsideSlices[i] },
+    back: insideSlices
+      ? { ...panel.back, imageUrl: insideSlices[n - 1 - i] }
+      : panel.back,
+  }));
+
+  if (!insideSlices) return { outsidePanels, insidePanels: null };
+
+  // Inside panels: physically flipped sheet — panel order reverses
+  // insidePanels[i] shows insideSlices[i] on front, outsideSlices[n-1-i] on back
+  const insidePanels = basePanels.map((panel, i) => ({
+    ...panel,
+    front: { ...panel.front, imageUrl: insideSlices[i] },
+    back: { ...panel.back, imageUrl: outsideSlices[n - 1 - i] },
+  }));
+
+  return { outsidePanels, insidePanels };
+}
+
 export default function FoldPreview({
   urls,
   width,
@@ -47,7 +83,6 @@ export default function FoldPreview({
 }: FoldPreviewProps) {
   const [outsideSpec, setOutsideSpec] = useState<BrochureSpec | null>(null);
   const [insideSpec, setInsideSpec] = useState<BrochureSpec | null>(null);
-  const [showBack, setShowBack] = useState(false);
 
   const geometry = FOLD_GEOMETRY[foldType];
   const hasTwoSides = urls.length >= 2;
@@ -63,33 +98,27 @@ export default function FoldPreview({
     const widths = geometry.widths;
 
     try {
-      // Slice the outside surface
       const outsideSlices = await sliceImageIntoPanels(urls[0], widths);
+      let insideSlices: string[] | null = null;
 
-      // Build outside spec — panel CSS-fronts = outside slices left-to-right
-      const outsidePanels = base.panels.map((panel, i) => ({
-        ...panel,
-        front: { ...panel.front, imageUrl: outsideSlices[i] },
-        back: panel.back, // back face not used for outside view
-      }));
+      if (hasTwoSides && urls[1]) {
+        insideSlices = await sliceImageIntoPanels(urls[1], widths);
+      }
+
+      const { outsidePanels, insidePanels } = buildPanelsWithArtwork(
+        base.panels,
+        outsideSlices,
+        insideSlices
+      );
+
       setOutsideSpec({ ...base, panels: outsidePanels });
 
-      // Build inside spec if we have an inside surface
-      if (hasTwoSides && urls[1]) {
-        const insideSlices = await sliceImageIntoPanels(urls[1], widths);
-        // When viewing inside: physically flip the sheet, so panels are reversed
-        const reversedInsideSlices = [...insideSlices].reverse();
-        const insidePanels = base.panels.map((panel, i) => ({
-          ...panel,
-          front: { ...panel.front, imageUrl: reversedInsideSlices[i] },
-          back: panel.back,
-        }));
+      if (insidePanels) {
         setInsideSpec({ ...base, panels: insidePanels });
       } else {
         setInsideSpec(null);
       }
     } catch {
-      // Fallback: show spec without images
       setOutsideSpec(base);
       setInsideSpec(null);
     }
@@ -113,9 +142,7 @@ export default function FoldPreview({
     );
   }
 
-  const activeSpec = showBack && insideSpec ? insideSpec : outsideSpec;
-
-  if (!activeSpec) {
+  if (!outsideSpec) {
     return (
       <div
         className="flex items-center justify-center"
@@ -128,12 +155,11 @@ export default function FoldPreview({
 
   return (
     <BrochureViewer
-      spec={activeSpec}
+      outsideSpec={outsideSpec}
+      insideSpec={insideSpec}
       width={width}
       height={height}
-      hasTwoSides={hasTwoSides}
-      showBack={showBack}
-      onToggleBack={() => setShowBack((b) => !b)}
+      foldType={foldType}
     />
   );
 }

@@ -1,31 +1,27 @@
 import type { Panel } from "./brochure-types";
 
 interface FoldNodeProps {
-  /** Panel to render */
   panel: Panel;
-  /** Y-axis rotation in degrees */
   rotationY: number;
-  /** Width in px */
   width: number;
-  /** Height in px */
   height: number;
-  /** Child node (next panel in the hinge chain) */
-  child?: React.ReactNode;
+  /** Child attached at the LEFT edge (panel to the left of this one) */
+  leftChild?: React.ReactNode;
+  /** Child attached at the RIGHT edge (panel to the right of this one) */
+  rightChild?: React.ReactNode;
 }
 
 /**
- * Recursive hinge-panel node.
- *
- * Renders a single panel with front/back faces using CSS 3D,
- * then places the child (next panel) at its right edge so that
- * rotating this node carries all children with it.
+ * A single panel with front/back faces using CSS 3D transforms.
+ * Children are attached at left or right edges to form hinge chains.
  */
 export default function FoldNode({
   panel,
   rotationY,
   width,
   height,
-  child,
+  leftChild,
+  rightChild,
 }: FoldNodeProps) {
   const isFolded = Math.abs(rotationY) > 10;
 
@@ -140,8 +136,23 @@ export default function FoldNode({
         />
       )}
 
-      {/* Child panel positioned at right edge */}
-      {child && (
+      {/* Left child positioned at left edge, hinged from right */}
+      {leftChild && (
+        <div
+          style={{
+            position: "absolute",
+            right: width, // place to the left
+            top: 0,
+            transformStyle: "preserve-3d",
+            transformOrigin: "right center",
+          }}
+        >
+          {leftChild}
+        </div>
+      )}
+
+      {/* Right child positioned at right edge */}
+      {rightChild && (
         <div
           style={{
             position: "absolute",
@@ -150,7 +161,7 @@ export default function FoldNode({
             transformStyle: "preserve-3d",
           }}
         >
-          {child}
+          {rightChild}
         </div>
       )}
     </div>
