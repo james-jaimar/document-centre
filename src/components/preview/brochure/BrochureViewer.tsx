@@ -4,10 +4,13 @@ import BrochureStage from "./BrochureStage";
 import BrochureControls from "./BrochureControls";
 
 interface BrochureViewerProps {
+  /** Spec for the currently-viewed surface (outside or inside) */
   spec: BrochureSpec;
   width: number;
   height: number;
   hasTwoSides: boolean;
+  showBack: boolean;
+  onToggleBack: () => void;
 }
 
 export default function BrochureViewer({
@@ -15,23 +18,23 @@ export default function BrochureViewer({
   width,
   height,
   hasTwoSides,
+  showBack,
+  onToggleBack,
 }: BrochureViewerProps) {
   const [stateIndex, setStateIndex] = useState(0);
-  const [showBack, setShowBack] = useState(false);
 
   const currentState = spec.states[stateIndex];
 
   return (
     <div
-      className="flex flex-col items-center justify-center gap-4"
+      className="flex flex-col items-center justify-center gap-3"
       style={{ width, height }}
     >
       <BrochureStage
         spec={spec}
         state={currentState}
         maxWidth={width}
-        maxHeight={height - 80}
-        showBack={showBack}
+        maxHeight={height - 64}
       />
 
       <BrochureControls
@@ -39,7 +42,7 @@ export default function BrochureViewer({
         currentIndex={stateIndex}
         onChangeIndex={setStateIndex}
         showBack={showBack}
-        onToggleBack={() => setShowBack((b) => !b)}
+        onToggleBack={onToggleBack}
         hasTwoSides={hasTwoSides}
       />
 
