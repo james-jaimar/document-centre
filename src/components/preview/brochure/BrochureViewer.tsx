@@ -1,29 +1,44 @@
-import { useState } from "react";
-import type { BrochureSpec } from "./brochure-types";
+import { useState, useEffect } from "react";
+import type { BrochureSpec, Surface } from "./brochure-types";
 import BrochureStage from "./BrochureStage";
 import BrochureControls from "./BrochureControls";
 
 interface BrochureViewerProps {
-  /** Spec for the currently-viewed surface (outside or inside) */
-  spec: BrochureSpec;
+  outsideSpec: BrochureSpec;
+  insideSpec: BrochureSpec | null;
   width: number;
   height: number;
-  hasTwoSides: boolean;
-  showBack: boolean;
-  onToggleBack: () => void;
+  foldType: string;
 }
 
 export default function BrochureViewer({
-  spec,
+  outsideSpec,
+  insideSpec,
   width,
   height,
-  hasTwoSides,
-  showBack,
-  onToggleBack,
+  foldType,
 }: BrochureViewerProps) {
+  const [surface, setSurface] = useState<Surface>("outside");
   const [stateIndex, setStateIndex] = useState(0);
 
-  const currentState = spec.states[stateIndex];
+  // Reset when fold type changes
+  useEffect(() => {
+    setSurface("outside");
+    setStateIndex(0);
+  }, [foldType]);
+
+  const hasTwoSides = insideSpec !== null;
+  const activeSpec = surface === "inside" && insideSpec ? insideSpec : outsideSpec;
+  const states = surface === "inside" ? activeSpec.insideStates : activeSpec.outsideStates;
+
+  // Clamp index
+  const safeIndex = Math.min(stateIndex, states.length - 1);
+  const currentState = states[safeIndex];
+
+  const handleToggleSurface = () => {
+    setSurface((s) => (s === "outside" ? "inside" : "outside"));
+    setStateIndex(0);
+  };
 
   return (
     <div
@@ -31,24 +46,24 @@ export default function BrochureViewer({
       style={{ width, height }}
     >
       <BrochureStage
-        spec={spec}
+        spec={activeSpec}
         state={currentState}
         maxWidth={width}
         maxHeight={height - 64}
       />
 
       <BrochureControls
-        stateLabels={spec.states.map((s) => s.label)}
-        currentIndex={stateIndex}
+        stateLabels={states.map((s) => s.label)}
+        currentIndex={safeIndex}
         onChangeIndex={setStateIndex}
-        showBack={showBack}
-        onToggleBack={onToggleBack}
+        surface={surface}
+        onToggleSurface={handleToggleSurface}
         hasTwoSides={hasTwoSides}
       />
 
       {hasTwoSides && (
         <p className="text-xs text-muted-foreground">
-          Viewing {showBack ? "inside" : "outside"} of sheet
+          Viewing {surface === "inside" ? "inside" : "outside"} of sheet
         </p>
       )}
     </div>

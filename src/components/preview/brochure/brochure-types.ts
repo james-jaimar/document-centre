@@ -25,15 +25,25 @@ export interface Hinge {
   direction: FoldDirection;
 }
 
+/** Which surface of the physical sheet we are looking at */
+export type Surface = "outside" | "inside";
+
 /** Named view state — rotation angles (degrees) per panel id */
 export interface FoldState {
   label: string;
   rotations: Record<string, number>;
+  /** Which surface this state naturally shows (for labelling) */
+  surface?: Surface;
 }
 
 /** Complete specification for rendering a folded brochure */
 export interface BrochureSpec {
   panels: Panel[];
   hinges: Hinge[];
-  states: FoldState[];
+  /** All discrete fold states for the outside surface */
+  outsideStates: FoldState[];
+  /** All discrete fold states for the inside surface */
+  insideStates: FoldState[];
+  /** Index into panels[] that serves as the fixed root for the fold tree */
+  rootPanelIndex: number;
 }
