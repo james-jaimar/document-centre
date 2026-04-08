@@ -1,125 +1,110 @@
 
+Yes — it makes sense. The current preview is close, but it is still mixing up three different ideas:
+1. which surface of the sheet we are looking at (outside vs inside),
+2. which panel is actually visible when a fold is closed,
+3. how different fold types hinge and stack.
 
-# Physical Properties of Folded Brochures — and What's Wrong
+## Why it is still wrong
 
-## The physics, explained simply
+- `src/components/preview/FoldPreview.tsx` slices the sheet, then reverses the inside array unconditionally. For a half-fold that is wrong: the inside spread is already `[left panel | right panel]`, so reversing it swaps the two A5 inside panels.
+- `src/components/preview/FoldPreview.tsx` only assigns artwork to `panel.front`; `panel.back` is empty. Any fold state that exposes a reverse face shows blank (`p2 back`).
+- `src/components/preview/brochure/BrochureStage.tsx` always builds the fold tree from the leftmost panel as the fixed root. That means the engine can only collapse toward the left, which is why half-fold closed cannot naturally show the front cover first.
+- `src/components/preview/brochure/FoldNode.tsx` ignores `hinge.direction`, so tri-fold C, Z-fold, and gate-fold do not get distinct mechanics.
+- The viewer state is too generic and not reset/remapped for fold-specific closed views, so changing fold type can appear to do nothing or land in the wrong state.
 
-### Half-fold (Bi-fold)
+## Physical model to implement
 
-One A4 landscape sheet, folded once in the middle to create an A5 portrait leaflet.
+### Half-fold
+- Open outside = back cover | front cover
+- Open inside = inside left | inside right
+- Closed front = front cover only
+- Closed back = back cover only
+- There is no meaningful “closed inside” state
 
-```text
-FLAT SHEET (A4 landscape, printed both sides):
-
-    OUTSIDE (Side 1)              INSIDE (Side 2)
-┌──────────┬──────────┐     ┌──────────┬──────────┐
-│          │          │     │          │          │
-│  BACK    │  FRONT   │     │ INSIDE   │ INSIDE   │
-│  COVER   │  COVER   │     │  LEFT    │  RIGHT   │
-│          │          │     │          │          │
-└──────────┴──────────┘     └──────────┴──────────┘
-  Panel 1     Panel 2         Panel 1     Panel 2
-              ↑ fold
-```
-
-When you fold Panel 2 onto Panel 1 (fold at centre):
-- **Closed, viewing from front**: You see the FRONT COVER (Outside Panel 2 = right half of Outside surface)
-- **Closed, viewing from back**: You see the BACK COVER (Outside Panel 1 = left half of Outside surface)
-- **Open, viewing inside**: You see the full Inside surface (left-to-right)
-- **Open, viewing outside**: You see the full Outside surface (left-to-right)
-
-Key insight: **When closed, you can only see one panel-sized face at a time** — either the front cover or the back cover. You do NOT see the inside at all.
-
-### Tri-fold C-fold
-
-One sheet with 3 panels. The right flap folds inward first, then the left panel folds over it.
-
-```text
-OUTSIDE:                        INSIDE:
-┌────────┬────────┬────────┐   ┌────────┬────────┬────────┐
-│ BACK   │INSIDE  │ FRONT  │   │INSIDE  │INSIDE  │INSIDE  │
-│ COVER  │ FLAP   │ COVER  │   │ LEFT   │CENTRE  │ RIGHT  │
-│(narrow)│        │        │   │(narrow)│        │(=flap) │
-└────────┴────────┴────────┘   └────────┴────────┴────────┘
-```
-
-Closed: front = Outside Panel 3 (rightmost), back = Outside Panel 1 (leftmost).
+### Tri-fold C
+- Open outside = back cover | outer flap | front cover
+- Open inside = inside left | inside centre | inside right
+- Intermediate fold closes the flap first
+- Final closed view needs separate front-cover and back-cover views
 
 ### Z-fold
-
-Three equal panels, alternating fold direction.
+- 3 panels with alternating hinge directions
+- Open inside/outside stay 3-up, but the fold sequence differs from C-fold
 
 ### Gate-fold
+- Closed front shows the two gates meeting in the middle
+- It should not be forced into a half-fold-style single-cover closed state
 
-Four panels — two outer flaps fold inward to meet at centre.
+## Plan
 
----
+### 1. Rebuild brochure panel mapping around physical faces
+File: `src/components/preview/FoldPreview.tsx`
 
-## What's wrong in the current code
+- Slice outside and inside surfaces once per fold type using the configured width fractions.
+- For half-fold inside, crop exactly:
+  - left panel = left 50%
+  - right panel = right 50%
+- Remove the blanket inside reversal.
+- Make inside/outside panel order an explicit per-fold mapping instead of hardcoded reversal.
+- Populate both `front` and `back` artwork for each panel so reverse faces are never blank.
 
-### Problem 1: "Show Inside" rotates the entire scene 180° — wrong model
+### 2. Make fold specs explicit per fold type
+Files: `src/components/preview/brochure/brochure-specs.ts`, `src/components/preview/brochure/brochure-types.ts`
 
-`BrochureStage` does `transform: showBack ? "rotateY(180deg)" : undefined`. This flips the entire 3D scene around the Y axis, which means you're seeing the CSS back-faces of every panel — but those back-faces contain the *back of each individual panel*, not the "inside surface" of the sheet.
+- Replace the current generic states with physically correct states per fold type.
+- Add explicit closed-front / closed-back states where that makes sense.
+- Store hinge direction plus any needed “which panel stays visible when closed” metadata in the spec.
 
-The correct behaviour: "Show Inside" should swap which surface image is mapped to panel fronts vs backs. When viewing the inside, panel fronts should show inside-surface artwork, and the folding logic stays the same.
+### 3. Fix the 3D engine so non-half-folds actually behave differently
+Files: `src/components/preview/brochure/BrochureStage.tsx`, `src/components/preview/brochure/FoldNode.tsx`
 
-### Problem 2: Panel image assignment is wrong
+- Stop assuming panel 0 is always the fixed/root panel.
+- Respect hinge direction (`inward` / `outward`) when building transforms.
+- Allow the closed state to anchor on the correct visible cover panel, so half-fold closed outside shows the front cover first.
+- Fix stacking/z-index so the correct flap sits on top during folds.
 
-Currently in `FoldPreview.tsx`:
-- `front` of each panel = slice from Outside surface (urls[0])
-- `back` of each panel = slice from Inside surface (urls[1])
+### 4. Separate sheet side from cover side in the controls
+Files: `src/components/preview/brochure/BrochureViewer.tsx`, `src/components/preview/brochure/BrochureControls.tsx`
 
-But physically, "front" and "back" of a CSS panel with `backface-visibility: hidden` are about which CSS face is visible based on rotation — NOT about which print surface they belong to.
+- Keep “Show Outside / Show Inside” for the sheet surface.
+- Add a separate closed cover view when applicable:
+  - Front cover
+  - Back cover
+- For half-fold, the end result should let the user move between:
+  - Open outside
+  - Front cover
+  - Back cover
+  - Open inside
+- Reset the active state whenever `foldType` changes so switching fold type immediately updates the preview.
 
-For the Outside surface (viewing from outside):
-- Panel faces visible when flat = the CSS "front" face
+### 5. Add fold-type validation
+Relevant flow: fold preview input / viewer state
 
-For the Inside surface (viewing from inside):
-- The panels are in **reverse order** when viewed from the other side (because you flip the physical sheet)
-- Panel 1's Inside content appears where Panel N is when you flip the sheet
+- If the selected fold type expects a different panel count than the uploaded brochure layout provides, show a clear mismatch message instead of rendering a misleading fold.
+- This prevents “changing fold type does nothing” when the source artwork layout and selected fold type do not match.
 
-### Problem 3: Space utilisation
+## Files to change
 
-The stage uses `maxWidth * 0.92` and caps height at `maxHeight * 0.65`. This wastes ~35% of the vertical space.
+- `src/components/preview/FoldPreview.tsx`
+- `src/components/preview/brochure/brochure-specs.ts`
+- `src/components/preview/brochure/brochure-types.ts`
+- `src/components/preview/brochure/BrochureStage.tsx`
+- `src/components/preview/brochure/FoldNode.tsx`
+- `src/components/preview/brochure/BrochureViewer.tsx`
+- `src/components/preview/brochure/BrochureControls.tsx`
 
----
+## Expected result
 
-## Fix plan
+- Half-fold inside crops are correct.
+- Closed outside defaults to the front cover.
+- Back cover is available as a distinct closed view.
+- Reverse faces no longer appear blank.
+- Tri-fold, Z-fold, and gate-fold finally have visibly different mechanics instead of behaving like the same left-collapsing model.
+- The preview uses more of the available space without breaking the physical logic.
 
-### 1. Replace "Show Inside/Outside" with surface swap (not scene rotation)
+## Technical note
 
-**`BrochureViewer.tsx`**: Remove the `showBack` prop from `BrochureStage`. Instead, when "Show Inside" is toggled, rebuild the spec with swapped panel images:
-- Outside mode: panel CSS-fronts = Outside surface slices (left-to-right)
-- Inside mode: panel CSS-fronts = Inside surface slices (**reversed** order, because flipping a physical sheet mirrors the panel sequence)
+This is not just a cropping fix. The real issue is the model:
 
-**`BrochureStage.tsx`**: Remove the `rotateY(180deg)` transform entirely.
-
-### 2. Fix image assignment in `FoldPreview.tsx`
-
-Pass both surface URL arrays and the current viewing side down. When building the spec:
-- **Viewing Outside**: `front` of panel[i] = outsideSlices[i]
-- **Viewing Inside**: `front` of panel[i] = insideSlices[panelCount - 1 - i] (reversed)
-
-No panel needs a `back` image — we only ever show one surface at a time, controlled by the toggle. This eliminates the broken `rotateY(180deg)` scene flip entirely.
-
-### 3. Fix closed state for half-fold
-
-When closed, only ONE panel face is visible. The current rotation `{ p1: 0, p2: -180 }` is correct mechanically, but the user should understand:
-- Closed + Outside = Front Cover (panel 2's front face)
-- Closed + "flip to back" = Back Cover (panel 1's front face, but viewed from behind)
-
-Since we're removing the scene flip, for "closed back cover" view we can add a third state or note that the back cover is simply panel 1 visible behind panel 2.
-
-### 4. Use more available space
-
-**`BrochureStage.tsx`**: Change `maxWidth * 0.92` to `maxWidth * 0.95` and `maxHeight * 0.65` to `maxHeight * 0.85`. Remove hardcoded 3:2 aspect ratio — derive it from the actual panel images or use the `pageAspectRatio` prop.
-
-### Files to change
-
-| File | Change |
-|------|--------|
-| `src/components/preview/FoldPreview.tsx` | Accept `showBack` state, rebuild spec with swapped/reversed panel images per surface |
-| `src/components/preview/brochure/BrochureViewer.tsx` | Own the `showBack` state, pass it to FoldPreview's spec builder instead of to BrochureStage |
-| `src/components/preview/brochure/BrochureStage.tsx` | Remove `showBack` / scene-flip logic; increase space utilisation |
-| `src/components/preview/brochure/BrochureControls.tsx` | No changes needed (toggle button already works) |
-
+- current code = one-sided images + left-rooted folds + ignored hinge directions
+- needed code = two-sided panel faces + fold-specific hinge rules + explicit front/back closed views
