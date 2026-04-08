@@ -45,13 +45,17 @@ export default function FoldPreview({
   height,
   foldType,
 }: FoldPreviewProps) {
-  const [spec, setSpec] = useState<BrochureSpec | null>(null);
+  const [outsideSpec, setOutsideSpec] = useState<BrochureSpec | null>(null);
+  const [insideSpec, setInsideSpec] = useState<BrochureSpec | null>(null);
+  const [showBack, setShowBack] = useState(false);
+
   const geometry = FOLD_GEOMETRY[foldType];
   const hasTwoSides = urls.length >= 2;
 
-  const buildSpec = useCallback(async () => {
+  const buildSpecs = useCallback(async () => {
     if (!urls.length || !urls[0]) {
-      setSpec(null);
+      setOutsideSpec(null);
+      setInsideSpec(null);
       return;
     }
 
@@ -60,33 +64,40 @@ export default function FoldPreview({
 
     try {
       // Slice the outside surface
-      const frontPanels = await sliceImageIntoPanels(urls[0], widths);
+      const outsideSlices = await sliceImageIntoPanels(urls[0], widths);
 
-      // Slice the inside surface if available
-      let backPanels: string[] | null = null;
-      if (hasTwoSides && urls[1]) {
-        backPanels = await sliceImageIntoPanels(urls[1], widths);
-      }
-
-      // Assign panel face images
-      const updatedPanels = base.panels.map((panel, i) => ({
+      // Build outside spec — panel CSS-fronts = outside slices left-to-right
+      const outsidePanels = base.panels.map((panel, i) => ({
         ...panel,
-        front: { ...panel.front, imageUrl: frontPanels[i] },
-        back: backPanels
-          ? { ...panel.back, imageUrl: backPanels[i] }
-          : panel.back,
+        front: { ...panel.front, imageUrl: outsideSlices[i] },
+        back: panel.back, // back face not used for outside view
       }));
+      setOutsideSpec({ ...base, panels: outsidePanels });
 
-      setSpec({ ...base, panels: updatedPanels });
+      // Build inside spec if we have an inside surface
+      if (hasTwoSides && urls[1]) {
+        const insideSlices = await sliceImageIntoPanels(urls[1], widths);
+        // When viewing inside: physically flip the sheet, so panels are reversed
+        const reversedInsideSlices = [...insideSlices].reverse();
+        const insidePanels = base.panels.map((panel, i) => ({
+          ...panel,
+          front: { ...panel.front, imageUrl: reversedInsideSlices[i] },
+          back: panel.back,
+        }));
+        setInsideSpec({ ...base, panels: insidePanels });
+      } else {
+        setInsideSpec(null);
+      }
     } catch {
       // Fallback: show spec without images
-      setSpec(base);
+      setOutsideSpec(base);
+      setInsideSpec(null);
     }
   }, [urls, foldType, geometry.widths, hasTwoSides]);
 
   useEffect(() => {
-    buildSpec();
-  }, [buildSpec]);
+    buildSpecs();
+  }, [buildSpecs]);
 
   if (!urls.length || !urls[0]) {
     return (
@@ -102,7 +113,9 @@ export default function FoldPreview({
     );
   }
 
-  if (!spec) {
+  const activeSpec = showBack && insideSpec ? insideSpec : outsideSpec;
+
+  if (!activeSpec) {
     return (
       <div
         className="flex items-center justify-center"
@@ -115,10 +128,12 @@ export default function FoldPreview({
 
   return (
     <BrochureViewer
-      spec={spec}
+      spec={activeSpec}
       width={width}
       height={height}
       hasTwoSides={hasTwoSides}
+      showBack={showBack}
+      onToggleBack={() => setShowBack((b) => !b)}
     />
   );
 }
