@@ -390,11 +390,15 @@ export default function OrderFiles() {
     return Array.isArray(previewDoc.thumbnail_urls) ? (previewDoc.thumbnail_urls as string[]) : [];
   }, [previewDoc]);
 
+  const ensuredItemIdRef = useRef<string | null>(null);
+
   const handleFiles = useCallback(
     async (files: File[]) => {
-      // Ensure order exists before uploading
+      // Ensure order exists before uploading — capture the ID directly
+      let itemId: string;
       try {
-        await ensureOrder();
+        itemId = await ensureOrder();
+        ensuredItemIdRef.current = itemId;
       } catch (err: any) {
         toast.error("Failed to create order", { description: err.message });
         return;
@@ -409,9 +413,9 @@ export default function OrderFiles() {
         setImageSizeDialogOpen(true);
         return;
       }
-      // All PDFs — upload directly
+      // All PDFs — upload directly, passing the guaranteed itemId
       setUploadModalOpen(true);
-      await uploadFiles(files);
+      await uploadFiles(files, undefined, itemId);
     },
     [uploadFiles, ensureOrder]
   );
@@ -429,7 +433,7 @@ export default function OrderFiles() {
         : undefined;
 
       setUploadModalOpen(true);
-      await uploadFiles(files, targetSize);
+      await uploadFiles(files, targetSize, ensuredItemIdRef.current ?? undefined);
     },
     [uploadFiles]
   );
