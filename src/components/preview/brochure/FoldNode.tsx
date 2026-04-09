@@ -144,14 +144,13 @@ export default function FoldNode({
         />
       )}
 
-      {/* Left child positioned at left edge — FIXED: give it explicit width */}
+      {/* Left child: position its RIGHT edge at this panel's LEFT edge */}
       {leftChild && (
         <div
           style={{
             position: "absolute",
             right: width,
             top: 0,
-            width: 9999, // allow children to expand leftward
             transformStyle: "preserve-3d",
           }}
         >
