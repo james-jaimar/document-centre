@@ -7,15 +7,18 @@ interface FoldNodeProps {
   height: number;
   /** Which edge this panel is hinged on */
   hingeEdge?: "left" | "right";
-  /** Child attached at the LEFT edge (panel to the left of this one) */
+  /** Child attached at the LEFT edge */
   leftChild?: React.ReactNode;
-  /** Child attached at the RIGHT edge (panel to the right of this one) */
+  /** Child attached at the RIGHT edge */
   rightChild?: React.ReactNode;
 }
 
 /**
  * A single panel with front/back faces using CSS 3D transforms.
- * Children are attached at left or right edges to form hinge chains.
+ *
+ * Key fix for left-child positioning: the leftChild container is placed
+ * at `right: width` (i.e. to the left of this panel) but also needs
+ * explicit width so it doesn't collapse to zero.
  */
 export default function FoldNode({
   panel,
@@ -141,13 +144,14 @@ export default function FoldNode({
         />
       )}
 
-      {/* Left child positioned at left edge */}
+      {/* Left child positioned at left edge — FIXED: give it explicit width */}
       {leftChild && (
         <div
           style={{
             position: "absolute",
-            right: width, // place to the left
+            right: width,
             top: 0,
+            width: 9999, // allow children to expand leftward
             transformStyle: "preserve-3d",
           }}
         >
