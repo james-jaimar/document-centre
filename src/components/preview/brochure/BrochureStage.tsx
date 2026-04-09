@@ -71,6 +71,9 @@ export default function BrochureStage({
 
   const flipScene = state.flipScene ?? false;
 
+  // Total width of the flat sheet for centering the flip
+  const totalSheetW = panelWidths.reduce((a, b) => a + b, 0);
+
   return (
     <div
       style={{
@@ -78,30 +81,38 @@ export default function BrochureStage({
         height: totalH,
         perspective: "1800px",
         position: "relative",
-        transformStyle: "preserve-3d",
       }}
     >
+      {/* Camera wrapper — rotates the whole scene for back-cover views */}
       <div
         style={{
           position: "absolute",
-          left: flipScene ? undefined : rootOffsetX,
-          right: flipScene ? rootOffsetX : undefined,
-          top: 0,
+          inset: 0,
           transformStyle: "preserve-3d",
-          transform: flipScene ? "rotateY(180deg)" : undefined,
+          transform: flipScene ? `rotateY(180deg)` : undefined,
+          transformOrigin: `${totalSheetW / 2}px center`,
           transition: "transform 700ms ease",
         }}
       >
-        <FoldNode
-          key={panels[rootPanelIndex].id}
-          panel={panels[rootPanelIndex]}
-          rotationY={rootRotY}
-          width={panelWidths[rootPanelIndex]}
-          height={totalH}
-          hingeEdge="left"
-          leftChild={leftTree}
-          rightChild={rightTree}
-        />
+        <div
+          style={{
+            position: "absolute",
+            left: rootOffsetX,
+            top: 0,
+            transformStyle: "preserve-3d",
+          }}
+        >
+          <FoldNode
+            key={panels[rootPanelIndex].id}
+            panel={panels[rootPanelIndex]}
+            rotationY={rootRotY}
+            width={panelWidths[rootPanelIndex]}
+            height={totalH}
+            hingeEdge="left"
+            leftChild={leftTree}
+            rightChild={rightTree}
+          />
+        </div>
       </div>
     </div>
   );

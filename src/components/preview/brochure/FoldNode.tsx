@@ -128,18 +128,20 @@ export default function FoldNode({
           style={{
             position: "absolute",
             top: 0,
-            left: 0,
+            [hingeEdge]: 0,
             width: 16,
             height: "100%",
             pointerEvents: "none",
             background:
-              "linear-gradient(to right, rgba(0,0,0,0.12), transparent)",
+              hingeEdge === "left"
+                ? "linear-gradient(to right, rgba(0,0,0,0.12), transparent)"
+                : "linear-gradient(to left, rgba(0,0,0,0.12), transparent)",
             zIndex: 30,
           }}
         />
       )}
 
-      {/* Left child positioned at left edge, hinged from right */}
+      {/* Left child positioned at left edge */}
       {leftChild && (
         <div
           style={{
@@ -147,7 +149,6 @@ export default function FoldNode({
             right: width, // place to the left
             top: 0,
             transformStyle: "preserve-3d",
-            transformOrigin: "right center",
           }}
         >
           {leftChild}
