@@ -2,16 +2,9 @@ import type { BrochureSpec } from "./brochure-types";
 
 /**
  * Half-fold (bi-fold): 2 equal panels.
- *
- * Physical model (A4 landscape folded to A5 portrait):
- * - Outside flat: [Panel 0 (left) | Panel 1 (right)]
- * - Fold at centre, Panel 1 folds onto Panel 0
- *
- * When folded, the TOP surface facing the viewer is Panel 1's back face.
- * For standard print layout: left = back cover, right = front cover.
- *
- * Root = Panel 0 (stays fixed), Panel 1 rotates -180 to close.
- * "Closed" = folded. Then "Front Cover" flips scene to show the other side.
+ * Root = Panel 0 (back cover, stays fixed). Panel 1 = front cover.
+ * Closed: Panel 1 folds -180 over Panel 0.
+ * Front Cover: same fold + flipScene to see the front.
  */
 export function buildHalfFoldSpec(): BrochureSpec {
   return {
@@ -36,10 +29,18 @@ export function buildHalfFoldSpec(): BrochureSpec {
 
 /**
  * Tri-fold C-fold (letter fold):
+ * 3 panels: [p0 left flap | p1 centre (root) | p2 right flap]
  *
- * Outside flat: [Panel 0 (left flap) | Panel 1 (centre) | Panel 2 (right flap)]
- * Panel 2 (right flap) folds inward first, then Panel 0 (left) folds over.
+ * Outside folding:
+ *   Open → Right flap folds in (-180) → Left flap folds over (180)
+ *   Back Cover = closed + flipScene
+ *
+ * Inside folding:
+ *   Open → Right panel folds in (-180) → Left panel folds over (180)
+ *
  * Root = Panel 1 (centre stays fixed).
+ * Left panels use hingeEdge="right" (fold around their right edge).
+ * Right panels use hingeEdge="left" (fold around their left edge).
  */
 export function buildTriFoldCSpec(): BrochureSpec {
   return {
@@ -55,12 +56,14 @@ export function buildTriFoldCSpec(): BrochureSpec {
     rootPanelIndex: 1,
     outsideStates: [
       { label: "Open", rotations: { p0: 0, p1: 0, p2: 0 } },
-      { label: "Flap In", rotations: { p0: 0, p1: 0, p2: -180 } },
+      { label: "Right Flap In", rotations: { p0: 0, p1: 0, p2: -180 } },
       { label: "Closed", rotations: { p0: 180, p1: 0, p2: -180 } },
-      { label: "Back", rotations: { p0: 180, p1: 0, p2: -180 }, flipScene: true },
+      { label: "Back Cover", rotations: { p0: 180, p1: 0, p2: -180 }, flipScene: true },
     ],
     insideStates: [
       { label: "Open", rotations: { p0: 0, p1: 0, p2: 0 } },
+      { label: "Right Panel In", rotations: { p0: 0, p1: 0, p2: -180 } },
+      { label: "Closed", rotations: { p0: 180, p1: 0, p2: -180 } },
     ],
   };
 }
@@ -68,7 +71,14 @@ export function buildTriFoldCSpec(): BrochureSpec {
 /**
  * Z-fold: 3 equal panels, alternating fold directions.
  * Root = Panel 1 (centre).
- * Panel 2 folds inward (-180), Panel 0 folds outward (-180 from the other side).
+ *
+ * The Z-fold differs from the C-fold: the left panel folds OUTWARD (away
+ * from the viewer), creating the characteristic Z shape.
+ *
+ * Outside:
+ *   Open → Right panel folds in (-180) → Left panel folds outward (-180)
+ * Inside:
+ *   Open → Right panel folds in (-180) → Left panel folds outward (-180)
  */
 export function buildTriFoldZSpec(): BrochureSpec {
   return {
@@ -86,17 +96,24 @@ export function buildTriFoldZSpec(): BrochureSpec {
       { label: "Open", rotations: { p0: 0, p1: 0, p2: 0 } },
       { label: "Right Fold", rotations: { p0: 0, p1: 0, p2: -180 } },
       { label: "Closed", rotations: { p0: -180, p1: 0, p2: -180 } },
-      { label: "Back", rotations: { p0: -180, p1: 0, p2: -180 }, flipScene: true },
+      { label: "Back Cover", rotations: { p0: -180, p1: 0, p2: -180 }, flipScene: true },
     ],
     insideStates: [
       { label: "Open", rotations: { p0: 0, p1: 0, p2: 0 } },
+      { label: "Right Fold", rotations: { p0: 0, p1: 0, p2: -180 } },
+      { label: "Closed", rotations: { p0: -180, p1: 0, p2: -180 } },
     ],
   };
 }
 
 /**
  * Gate-fold: 4 panels, outer flaps fold inward.
- * Root = Panel 1 (left-centre, stays fixed along with Panel 2).
+ * [p0 left flap | p1 left-centre (root) | p2 right-centre | p3 right flap]
+ *
+ * Outside:
+ *   Open → Gates closed (both flaps fold in) → Back Cover (flipScene)
+ * Inside:
+ *   Open → Gates closed
  */
 export function buildGateFoldSpec(): BrochureSpec {
   return {
@@ -115,10 +132,11 @@ export function buildGateFoldSpec(): BrochureSpec {
     outsideStates: [
       { label: "Open", rotations: { p0: 0, p1: 0, p2: 0, p3: 0 } },
       { label: "Gates Closed", rotations: { p0: 180, p1: 0, p2: 0, p3: -180 } },
-      { label: "Back", rotations: { p0: 180, p1: 0, p2: 0, p3: -180 }, flipScene: true },
+      { label: "Back Cover", rotations: { p0: 180, p1: 0, p2: 0, p3: -180 }, flipScene: true },
     ],
     insideStates: [
       { label: "Open", rotations: { p0: 0, p1: 0, p2: 0, p3: 0 } },
+      { label: "Gates Closed", rotations: { p0: 180, p1: 0, p2: 0, p3: -180 } },
     ],
   };
 }
