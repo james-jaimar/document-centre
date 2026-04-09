@@ -5,6 +5,8 @@ interface FoldNodeProps {
   rotationY: number;
   width: number;
   height: number;
+  /** Which edge this panel is hinged on */
+  hingeEdge?: "left" | "right";
   /** Child attached at the LEFT edge (panel to the left of this one) */
   leftChild?: React.ReactNode;
   /** Child attached at the RIGHT edge (panel to the right of this one) */
@@ -20,6 +22,7 @@ export default function FoldNode({
   rotationY,
   width,
   height,
+  hingeEdge = "left",
   leftChild,
   rightChild,
 }: FoldNodeProps) {
@@ -34,7 +37,7 @@ export default function FoldNode({
         width,
         height,
         transformStyle: "preserve-3d",
-        transformOrigin: "left center",
+        transformOrigin: `${hingeEdge} center`,
         transform: `rotateY(${rotationY}deg)`,
         transition: "transform 700ms ease",
         zIndex: isFolded ? 20 : 10,

@@ -53,23 +53,22 @@ function buildPanelsWithArtwork(
 ): { outsidePanels: Panel[]; insidePanels: Panel[] | null } {
   const n = basePanels.length;
 
-  // Outside panels: front = outside artwork, back = inside artwork (mirrored)
+  // Outside panels: front = outside artwork, back = SAME outside artwork
+  // (when a panel folds -180° the CSS back-face becomes visible —
+  //  physically that's still the same printed surface seen from behind)
   const outsidePanels = basePanels.map((panel, i) => ({
     ...panel,
     front: { ...panel.front, imageUrl: outsideSlices[i] },
-    back: insideSlices
-      ? { ...panel.back, imageUrl: insideSlices[n - 1 - i] }
-      : panel.back,
+    back: { ...panel.back, imageUrl: outsideSlices[i] },
   }));
 
   if (!insideSlices) return { outsidePanels, insidePanels: null };
 
-  // Inside panels: physically flipped sheet — panel order reverses
-  // insidePanels[i] shows insideSlices[i] on front, outsideSlices[n-1-i] on back
+  // Inside panels: front = inside artwork, back = same inside artwork
   const insidePanels = basePanels.map((panel, i) => ({
     ...panel,
     front: { ...panel.front, imageUrl: insideSlices[i] },
-    back: { ...panel.back, imageUrl: outsideSlices[n - 1 - i] },
+    back: { ...panel.back, imageUrl: insideSlices[i] },
   }));
 
   return { outsidePanels, insidePanels };

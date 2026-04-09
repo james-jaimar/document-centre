@@ -34,6 +34,8 @@ export interface FoldState {
   rotations: Record<string, number>;
   /** Which surface this state naturally shows (for labelling) */
   surface?: Surface;
+  /** When true the whole scene is rotated 180° so the viewer sees the back */
+  flipScene?: boolean;
 }
 
 /** Complete specification for rendering a folded brochure */
