@@ -71,8 +71,11 @@ export default function BrochureStage({
 
   const flipScene = state.flipScene ?? false;
 
-  // Total width of the flat sheet for centering the flip
-  const totalSheetW = panelWidths.reduce((a, b) => a + b, 0);
+  // For the flip, calculate the center of the FOLDED brochure (not the flat sheet).
+  // When folded, all panels stack over the root panel area.
+  // The visual center of the folded object = rootOffsetX + rootPanelWidth/2
+  const rootPanelWidth = panelWidths[rootPanelIndex];
+  const foldedCenterX = rootOffsetX + rootPanelWidth / 2;
 
   return (
     <div
@@ -90,7 +93,7 @@ export default function BrochureStage({
           inset: 0,
           transformStyle: "preserve-3d",
           transform: flipScene ? `rotateY(180deg)` : undefined,
-          transformOrigin: `${totalSheetW / 2}px center`,
+          transformOrigin: `${foldedCenterX}px center`,
           transition: "transform 700ms ease",
         }}
       >

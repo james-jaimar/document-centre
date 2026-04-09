@@ -275,7 +275,12 @@ export default function OrderBuild() {
         const matchedFold = (foldOption.values as StructuredOptionValue[]).find(
           (v) => v.slug === selectedFoldSlug
         );
-        const foldType = matchedFold?.metadata?.fold_type as string | undefined;
+        // Try metadata.fold_type first, then the option slug itself, then the label lowercased
+        const foldType =
+          (matchedFold?.metadata?.fold_type as string | undefined) ||
+          selectedFoldSlug ||
+          matchedFold?.label?.toLowerCase().replace(/[\s-]+/g, "_");
+        console.log("[PreviewType] fold resolution:", { selectedFoldSlug, metadataFoldType: matchedFold?.metadata?.fold_type, resolvedFoldType: foldType });
         if (foldType && SLUG_TO_PREVIEW[foldType]) {
           return SLUG_TO_PREVIEW[foldType];
         }

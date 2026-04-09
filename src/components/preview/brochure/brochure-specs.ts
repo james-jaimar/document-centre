@@ -3,13 +3,15 @@ import type { BrochureSpec } from "./brochure-types";
 /**
  * Half-fold (bi-fold): 2 equal panels.
  *
- * Physical model:
- * - Outside flat: [Back Cover | Front Cover]  (Panel 0 = left, Panel 1 = right)
+ * Physical model (A4 landscape folded to A5 portrait):
+ * - Outside flat: [Panel 0 (left) | Panel 1 (right)]
  * - Fold at centre, Panel 1 folds onto Panel 0
- * - Closed front = Panel 1 front face (the right half of outside)
- * - Closed back  = Panel 0 front face (the left half of outside)
+ *
+ * When folded, the TOP surface facing the viewer is Panel 1's back face.
+ * For standard print layout: left = back cover, right = front cover.
  *
  * Root = Panel 0 (stays fixed), Panel 1 rotates -180 to close.
+ * "Closed" = folded. Then "Front Cover" flips scene to show the other side.
  */
 export function buildHalfFoldSpec(): BrochureSpec {
   return {
@@ -23,8 +25,8 @@ export function buildHalfFoldSpec(): BrochureSpec {
     rootPanelIndex: 0,
     outsideStates: [
       { label: "Open", rotations: { p0: 0, p1: 0 } },
-      { label: "Front Cover", rotations: { p0: 0, p1: -180 } },
-      { label: "Back Cover", rotations: { p0: 0, p1: -180 }, flipScene: true },
+      { label: "Closed", rotations: { p0: 0, p1: -180 } },
+      { label: "Front Cover", rotations: { p0: 0, p1: -180 }, flipScene: true },
     ],
     insideStates: [
       { label: "Open", rotations: { p0: 0, p1: 0 } },
@@ -66,7 +68,7 @@ export function buildTriFoldCSpec(): BrochureSpec {
 /**
  * Z-fold: 3 equal panels, alternating fold directions.
  * Root = Panel 1 (centre).
- * Panel 2 folds inward (-180), Panel 0 folds outward (+180).
+ * Panel 2 folds inward (-180), Panel 0 folds outward (-180 from the other side).
  */
 export function buildTriFoldZSpec(): BrochureSpec {
   return {
