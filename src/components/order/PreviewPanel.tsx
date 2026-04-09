@@ -249,17 +249,7 @@ export default function PreviewPanel({
 
       // Multi-panel: has both start and end, and they differ
       if (end != null && end !== start) {
-        // For bi-fold outside (pages 0 and 3): non-contiguous
-        const pageCount = doc.page_count ?? thumbs.length;
-        if (pageCount === 4 && start === 0 && end === 3) {
-          // Bi-fold outside: pages 0, 3
-          return { urls: [thumbs[0], thumbs[3]].filter(Boolean) as string[], isMultiPanel: true };
-        }
-        if (pageCount === 4 && start === 1 && end === 2) {
-          // Bi-fold inside: pages 1, 2
-          return { urls: [thumbs[1], thumbs[2]].filter(Boolean) as string[], isMultiPanel: true };
-        }
-        // Contiguous range (tri-fold etc.)
+        // Collect all pages in the assigned range
         const rangeUrls: string[] = [];
         for (let i = start; i <= end && i < thumbs.length; i++) {
           if (thumbs[i]) rangeUrls.push(thumbs[i]);
