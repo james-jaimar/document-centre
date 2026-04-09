@@ -22,12 +22,12 @@ export function buildHalfFoldSpec(): BrochureSpec {
     ],
     rootPanelIndex: 0,
     outsideStates: [
-      { label: "Open", rotations: { p0: 0, p1: 0 }, surface: "outside" },
-      { label: "Front Cover", rotations: { p0: 0, p1: -180 }, surface: "outside" },
-      { label: "Back Cover", rotations: { p0: 0, p1: -180 }, surface: "outside", flipScene: true },
+      { label: "Open", rotations: { p0: 0, p1: 0 } },
+      { label: "Front Cover", rotations: { p0: 0, p1: -180 } },
+      { label: "Back Cover", rotations: { p0: 0, p1: -180 }, flipScene: true },
     ],
     insideStates: [
-      { label: "Open", rotations: { p0: 0, p1: 0 }, surface: "inside" },
+      { label: "Open", rotations: { p0: 0, p1: 0 } },
     ],
   };
 }
@@ -35,7 +35,7 @@ export function buildHalfFoldSpec(): BrochureSpec {
 /**
  * Tri-fold C-fold (letter fold):
  *
- * Outside flat: [Back Cover (narrow) | Middle | Front Cover]
+ * Outside flat: [Panel 0 (left flap) | Panel 1 (centre) | Panel 2 (right flap)]
  * Panel 2 (right flap) folds inward first, then Panel 0 (left) folds over.
  * Root = Panel 1 (centre stays fixed).
  */
@@ -52,12 +52,13 @@ export function buildTriFoldCSpec(): BrochureSpec {
     ],
     rootPanelIndex: 1,
     outsideStates: [
-      { label: "Open", rotations: { p0: 0, p1: 0, p2: 0 }, surface: "outside" },
-      { label: "Flap Closed", rotations: { p0: 0, p1: 0, p2: -180 }, surface: "outside" },
-      { label: "Front Cover", rotations: { p0: 180, p1: 0, p2: -180 }, surface: "outside" },
+      { label: "Open", rotations: { p0: 0, p1: 0, p2: 0 } },
+      { label: "Flap In", rotations: { p0: 0, p1: 0, p2: -180 } },
+      { label: "Closed", rotations: { p0: 180, p1: 0, p2: -180 } },
+      { label: "Back", rotations: { p0: 180, p1: 0, p2: -180 }, flipScene: true },
     ],
     insideStates: [
-      { label: "Open", rotations: { p0: 0, p1: 0, p2: 0 }, surface: "inside" },
+      { label: "Open", rotations: { p0: 0, p1: 0, p2: 0 } },
     ],
   };
 }
@@ -65,6 +66,7 @@ export function buildTriFoldCSpec(): BrochureSpec {
 /**
  * Z-fold: 3 equal panels, alternating fold directions.
  * Root = Panel 1 (centre).
+ * Panel 2 folds inward (-180), Panel 0 folds outward (+180).
  */
 export function buildTriFoldZSpec(): BrochureSpec {
   return {
@@ -79,12 +81,13 @@ export function buildTriFoldZSpec(): BrochureSpec {
     ],
     rootPanelIndex: 1,
     outsideStates: [
-      { label: "Open", rotations: { p0: 0, p1: 0, p2: 0 }, surface: "outside" },
-      { label: "Right Closed", rotations: { p0: 0, p1: 0, p2: -180 }, surface: "outside" },
-      { label: "Closed", rotations: { p0: -180, p1: 0, p2: -180 }, surface: "outside" },
+      { label: "Open", rotations: { p0: 0, p1: 0, p2: 0 } },
+      { label: "Right Fold", rotations: { p0: 0, p1: 0, p2: -180 } },
+      { label: "Closed", rotations: { p0: -180, p1: 0, p2: -180 } },
+      { label: "Back", rotations: { p0: -180, p1: 0, p2: -180 }, flipScene: true },
     ],
     insideStates: [
-      { label: "Open", rotations: { p0: 0, p1: 0, p2: 0 }, surface: "inside" },
+      { label: "Open", rotations: { p0: 0, p1: 0, p2: 0 } },
     ],
   };
 }
@@ -108,11 +111,12 @@ export function buildGateFoldSpec(): BrochureSpec {
     ],
     rootPanelIndex: 1,
     outsideStates: [
-      { label: "Open", rotations: { p0: 0, p1: 0, p2: 0, p3: 0 }, surface: "outside" },
-      { label: "Gates Closed", rotations: { p0: 180, p1: 0, p2: 0, p3: -180 }, surface: "outside" },
+      { label: "Open", rotations: { p0: 0, p1: 0, p2: 0, p3: 0 } },
+      { label: "Gates Closed", rotations: { p0: 180, p1: 0, p2: 0, p3: -180 } },
+      { label: "Back", rotations: { p0: 180, p1: 0, p2: 0, p3: -180 }, flipScene: true },
     ],
     insideStates: [
-      { label: "Open", rotations: { p0: 0, p1: 0, p2: 0, p3: 0 }, surface: "inside" },
+      { label: "Open", rotations: { p0: 0, p1: 0, p2: 0, p3: 0 } },
     ],
   };
 }

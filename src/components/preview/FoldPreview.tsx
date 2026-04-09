@@ -39,23 +39,19 @@ function sliceImageIntoPanels(
 }
 
 /**
- * Assigns artwork to panels for a given surface.
+ * Assigns artwork to panels for outside and inside surfaces.
  *
- * Outside surface: slices map left-to-right to panels (front = outside face, back = inside face).
- * Inside surface: when you flip a physical sheet, the panel order reverses.
- *   Panel[0] on outside corresponds to Panel[N-1] on inside.
- *   So inside slices[i] → panel[N-1-i].front, and outside slices[N-1-i] → panel[N-1-i].back.
+ * Key insight: each panel's CSS "back" face is what becomes visible when that
+ * panel is rotated -180°. Physically, flipping a panel over still shows the
+ * SAME surface (outside stays outside). So for outside panels, both front and
+ * back get the outside artwork. Same for inside panels.
  */
 function buildPanelsWithArtwork(
   basePanels: Panel[],
   outsideSlices: string[],
   insideSlices: string[] | null
 ): { outsidePanels: Panel[]; insidePanels: Panel[] | null } {
-  const n = basePanels.length;
-
-  // Outside panels: front = outside artwork, back = SAME outside artwork
-  // (when a panel folds -180° the CSS back-face becomes visible —
-  //  physically that's still the same printed surface seen from behind)
+  // Outside panels: front = outside artwork, back = same outside artwork
   const outsidePanels = basePanels.map((panel, i) => ({
     ...panel,
     front: { ...panel.front, imageUrl: outsideSlices[i] },
