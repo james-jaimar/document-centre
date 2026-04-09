@@ -24,6 +24,7 @@ export function buildHalfFoldSpec(): BrochureSpec {
     outsideStates: [
       { label: "Open", rotations: { p0: 0, p1: 0 }, surface: "outside" },
       { label: "Front Cover", rotations: { p0: 0, p1: -180 }, surface: "outside" },
+      { label: "Back Cover", rotations: { p0: 0, p1: -180 }, surface: "outside", flipScene: true },
     ],
     insideStates: [
       { label: "Open", rotations: { p0: 0, p1: 0 }, surface: "inside" },

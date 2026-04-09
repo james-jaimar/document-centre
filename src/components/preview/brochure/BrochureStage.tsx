@@ -8,11 +8,6 @@ interface BrochureStageProps {
   maxHeight: number;
 }
 
-/**
- * Builds a hinge tree rooted at spec.rootPanelIndex.
- * Panels to the left of root become leftChild chain.
- * Panels to the right of root become rightChild chain.
- */
 export default function BrochureStage({
   spec,
   state,
@@ -43,6 +38,7 @@ export default function BrochureStage({
         rotationY={rotY}
         width={panelWidths[i]}
         height={totalH}
+        hingeEdge="left"
         rightChild={rightTree}
       />
     );
@@ -59,6 +55,7 @@ export default function BrochureStage({
         rotationY={rotY}
         width={panelWidths[i]}
         height={totalH}
+        hingeEdge="right"
         leftChild={leftTree}
       />
     );
@@ -71,6 +68,8 @@ export default function BrochureStage({
   for (let i = 0; i < rootPanelIndex; i++) {
     rootOffsetX += panelWidths[i];
   }
+
+  const flipScene = state.flipScene ?? false;
 
   return (
     <div
@@ -85,9 +84,12 @@ export default function BrochureStage({
       <div
         style={{
           position: "absolute",
-          left: rootOffsetX,
+          left: flipScene ? undefined : rootOffsetX,
+          right: flipScene ? rootOffsetX : undefined,
           top: 0,
           transformStyle: "preserve-3d",
+          transform: flipScene ? "rotateY(180deg)" : undefined,
+          transition: "transform 700ms ease",
         }}
       >
         <FoldNode
@@ -96,6 +98,7 @@ export default function BrochureStage({
           rotationY={rootRotY}
           width={panelWidths[rootPanelIndex]}
           height={totalH}
+          hingeEdge="left"
           leftChild={leftTree}
           rightChild={rightTree}
         />
