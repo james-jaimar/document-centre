@@ -1,100 +1,102 @@
 
-You are right: for a bi-fold this should be straightforward. The current preview is failing because the code is mixing up 3 different things that should be separate:
+You are right — this is not a rendering mystery. I traced the flow from the Fold Type selector to the preview, and the immediate reason the other folds “do nothing” is:
 
-- sheet surface: outside vs inside
-- fold progress: open vs folded
-- viewing side of the folded brochure: front vs back
+## What is actually going on
 
-That mix-up is why the preview now feels inconsistent.
+The preview engine already has separate specs for:
+- `bi_fold`
+- `tri_fold`
+- `z_fold`
+- `gate_fold`
 
-What is actually going on
+But the live app is almost certainly never reaching those non-bi-fold values.
 
-1. Fold type can silently stay on bi-fold
-- In `src/pages/dashboard/OrderBuild.tsx`, the preview only switches fold type if the selected Fold Type option exposes `metadata.fold_type`.
-- If that metadata is missing/stale in the live product option data, the code falls back to the family slug, and brochures resolve to `bi_fold`.
-- That cleanly explains “choosing any other fold does nothing”.
+### Root cause I confirmed
+In the live Supabase data for brochure product options, the Fold Type values do **not** match what the preview code expects:
 
-2. Front/back are being treated as states, not as views
-- In `src/components/preview/brochure/brochure-specs.ts`, half-fold has separate states called `Front Cover` and `Back Cover`.
-- Physically, that is wrong. A half-fold has one closed state; front and back are just opposite views of that same closed object.
-- Because the code models them as separate states and also uses `flipScene`, the labels can end up reversed.
+- the seed code expects `metadata.fold_type` like `tri_fold`
+- the live DB currently has slugs like `tri-fold-2-folds-6-panels`
+- the live DB brochure options are missing `metadata.fold_type`
 
-3. Brochure naming is muddy upstream
-- In `src/components/order/PreviewPanel.tsx`, brochure sections use `front_cover` to mean “outside” and `back_cover` to mean “inside”.
-- Then the renderer also uses front/back to mean the closed brochure’s front/back cover.
-- So “front/back” is being used for two different concepts, which makes wiring it backwards very easy.
+Then in `src/pages/dashboard/OrderBuild.tsx`, fold resolution currently does:
 
-4. Source composition is still too generic
-- `PreviewPanel.tsx` grabs contiguous page ranges for multi-panel layouts.
-- `src/pages/dashboard/OrderFiles.tsx` also hardcodes 4-page panel assignment in a bi-fold-style way.
-- So even with renderer fixes, some non-bi-fold layouts cannot compose correctly.
+1. `metadata.fold_type`
+2. selected slug
+3. normalized label
+4. fallback to product family slug
 
-Plan to fix it properly
+But because the selected slug is always present, step 3 never really helps.  
+So for Tri-fold / Z-fold / Gate-fold the code gets a slug like:
 
-1. Fix fold-type resolution first
-- Update `src/pages/dashboard/OrderBuild.tsx` so brochure fold type resolves in this order:
-  1. `metadata.fold_type`
-  2. selected option slug
-  3. selected option label
-- Add a temporary visible “active fold type” indicator near the preview while fixing this.
-- Key/remount the preview by resolved `productType` so a fold change cannot stay visually stale.
+- `tri-fold-2-folds-6-panels`
 
-2. Separate “outside/inside” from “front/back”
-- In `src/components/order/PreviewPanel.tsx`, normalize brochure inputs immediately to:
-  - outside surface
-  - inside surface
-- Keep `front_cover/back_cover` only as legacy section types in storage, not as renderer concepts.
+That does **not** match `SLUG_TO_PREVIEW`, so it falls back to:
 
-3. Correct the half-fold physics
-- In `src/components/preview/brochure/BrochureViewer.tsx` and `brochure-specs.ts`, make half-fold use:
-  - Open
-  - Closed
-- Then add a separate viewer-side choice for the closed object:
-  - View front
-  - View back
-- This removes the current front/back inversion.
+- product family slug `brochures`
+- which maps to `bi_fold`
 
-4. Fix the stage camera instead of relabeling states
-- In `src/components/preview/brochure/BrochureStage.tsx`, rotate the whole folded object from a centered camera wrapper.
-- Closed front should show the front cover.
-- The same closed fold, flipped, should show the back cover.
+So the preview keeps receiving `bi_fold`, which is why only half-fold appears to work.
 
-5. Make other fold types mechanically distinct
-- In `src/components/preview/brochure/BrochureStage.tsx`, `FoldNode.tsx`, and `brochure-specs.ts`, make fold order and hinge direction drive the render.
-- C-fold, Z-fold, and gate-fold need their own real sequences, not just different labels.
+## Plan to fix it
 
-6. Make composition match the selected fold
-- In `src/components/order/PreviewPanel.tsx`, support both:
-  - 2-page outside/inside files
-  - panel-per-page files
-- In `src/pages/dashboard/OrderFiles.tsx`, make auto-assign recipes depend on the selected fold, not just page count.
-- Show a clear mismatch warning when the uploaded layout does not match the chosen fold.
+### 1. Fix fold resolution in `OrderBuild.tsx`
+Make fold detection robust instead of relying on one exact DB shape.
 
-7. Stop hiding failures
-- In `src/components/preview/FoldPreview.tsx`, stop swallowing slice/build errors silently.
-- Show a small inline preview error if panel slicing/composition fails.
+Resolution order should become:
 
-Files to update
+1. `metadata.fold_type`
+2. infer from metadata (`fold_style`, `folds`, `panels`)
+3. infer from slug text (`tri`, `z`, `gate`, `bi`)
+4. infer from label text
+5. only then fall back to family slug
+
+This will make the preview switch correctly even if the DB uses descriptive slugs.
+
+### 2. Add a temporary visible “resolved fold type” indicator
+Add a small badge near the preview so we can immediately see whether the UI is actually on:
+- `bi_fold`
+- `tri_fold`
+- `z_fold`
+- `gate_fold`
+
+This removes guesswork while verifying the fix.
+
+### 3. Force the brochure preview to remount when fold type changes
+Key the fold preview by resolved fold type so React cannot keep stale brochure state when the fold selection changes.
+
+### 4. Normalize the live brochure option data
+Repair the underlying brochure `product_options.values` data so each Fold Type option includes canonical metadata such as:
+
+- `metadata.fold_type = "bi_fold"`
+- `metadata.fold_type = "tri_fold"`
+- `metadata.fold_type = "z_fold"`
+- `metadata.fold_type = "gate_fold"`
+
+This makes the system consistent with the seed data and prevents this from breaking again.
+
+### 5. Re-test non-bi-folds only after the fold type is truly propagating
+Once the resolved type is correct, verify:
+- Tri-fold visibly shows 3 panels and multi-step folding
+- Z-fold uses its own fold sequence
+- Gate-fold shows the two outer flaps folding inward
+
+If one of those still looks wrong after that, then it becomes a renderer issue. Right now the primary blocker is upstream fold-type resolution.
+
+## Files / data to update
+
 - `src/pages/dashboard/OrderBuild.tsx`
-- `src/pages/dashboard/OrderFiles.tsx`
-- `src/components/order/PreviewPanel.tsx`
-- `src/components/preview/FoldPreview.tsx`
-- `src/components/preview/brochure/BrochureViewer.tsx`
-- `src/components/preview/brochure/BrochureControls.tsx`
-- `src/components/preview/brochure/BrochureStage.tsx`
-- `src/components/preview/brochure/FoldNode.tsx`
-- `src/components/preview/brochure/brochure-specs.ts`
-- `src/components/preview/brochure/brochure-types.ts`
+- optionally `src/components/order/PreviewPanel.tsx` for the temporary debug badge
+- brochure `product_options` data in Supabase (via migration/data repair)
 
-Expected result
-- Bi-fold closed front shows the real front cover.
-- Bi-fold closed back shows the real back cover.
-- Changing fold type visibly changes the preview because it no longer silently falls back to bi-fold.
-- Tri-fold, Z-fold, and gate-fold each behave differently.
-- Unsupported file/fold combinations show a clear warning instead of appearing broken.
+## Technical details
 
-Implementation order
-1. Fix resolved fold type and force preview remount
-2. Fix bi-fold front/back physics
-3. Fix fold-aware source composition
-4. Re-enable and verify tri-fold, Z-fold, and gate-fold on the corrected model
+- `src/components/preview/brochure/brochure-specs.ts` already contains spec builders for tri-fold, z-fold, and gate-fold.
+- `src/components/preview/FoldPreview.tsx` already rebuilds specs from `foldType`.
+- So the most likely reason “nothing changes” is not the 3D engine itself — it is that `productType` is collapsing back to `bi_fold` before the renderer is even called.
+- I confirmed the live DB mismatch directly: brochure Fold Type options are missing `metadata.fold_type`, and their slugs are descriptive labels rather than canonical preview keys.
+
+## Expected result after this fix
+
+- Half-fold keeps working
+- Tri-fold, Z-fold, and Gate-fold finally change the preview immediately
+- We’ll be able to tell whether any remaining issue is real fold physics, instead of the fold selector silently forcing everything back to bi-fold
