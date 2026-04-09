@@ -275,14 +275,36 @@ export default function OrderBuild() {
         const matchedFold = (foldOption.values as StructuredOptionValue[]).find(
           (v) => v.slug === selectedFoldSlug
         );
-        // Try metadata.fold_type first, then the option slug itself, then the label lowercased
-        const foldType =
-          (matchedFold?.metadata?.fold_type as string | undefined) ||
-          selectedFoldSlug ||
-          matchedFold?.label?.toLowerCase().replace(/[\s-]+/g, "_");
-        console.log("[PreviewType] fold resolution:", { selectedFoldSlug, metadataFoldType: matchedFold?.metadata?.fold_type, resolvedFoldType: foldType });
-        if (foldType && SLUG_TO_PREVIEW[foldType]) {
-          return SLUG_TO_PREVIEW[foldType];
+        // 1. metadata.fold_type (canonical)
+        const metaFoldType = matchedFold?.metadata?.fold_type as string | undefined;
+        if (metaFoldType && SLUG_TO_PREVIEW[metaFoldType]) {
+          console.log("[PreviewType] fold from metadata.fold_type:", metaFoldType);
+          return SLUG_TO_PREVIEW[metaFoldType];
+        }
+
+        // 2. metadata.fold_style (e.g. "z", "gate")
+        const foldStyle = matchedFold?.metadata?.fold_style as string | undefined;
+        if (foldStyle) {
+          const styleMap: Record<string, ProductPreviewType> = { z: "z_fold", gate: "gate_fold", c: "tri_fold", tri: "tri_fold", bi: "bi_fold", half: "bi_fold" };
+          if (styleMap[foldStyle]) {
+            console.log("[PreviewType] fold from metadata.fold_style:", foldStyle, "→", styleMap[foldStyle]);
+            return styleMap[foldStyle];
+          }
+        }
+
+        // 3. Infer from slug or label keywords
+        const textToSearch = `${selectedFoldSlug} ${matchedFold?.label ?? ""}`.toLowerCase();
+        const inferFold = (text: string): ProductPreviewType | null => {
+          if (/gate/i.test(text)) return "gate_fold";
+          if (/z[\s-]?fold/i.test(text)) return "z_fold";
+          if (/tri/i.test(text)) return "tri_fold";
+          if (/bi|half/i.test(text)) return "bi_fold";
+          return null;
+        };
+        const inferred = inferFold(textToSearch);
+        if (inferred) {
+          console.log("[PreviewType] fold inferred from text:", textToSearch, "→", inferred);
+          return inferred;
         }
       }
     }
