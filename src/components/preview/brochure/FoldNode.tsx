@@ -38,7 +38,6 @@ export default function FoldNode({
         transformOrigin: hingeEdge === "none" ? "center center" : `${hingeEdge} center`,
         transform: `rotateY(${rotationY}deg)`,
         transition: "transform 700ms ease",
-        zIndex: isFolded ? 20 : 10,
       }}
     >
       {/* Front face */}
