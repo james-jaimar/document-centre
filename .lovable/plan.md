@@ -1,31 +1,45 @@
 
 
-## Fix: "Show Inside" displays same images as outside
+## Problem
 
-### Root cause
+The fold angles in `brochure-specs.ts` are incorrect for C-fold and Z-fold, causing panels to fold in the wrong direction.
 
-The `BrochureViewer` does two conflicting things when toggling to "inside":
-1. Swaps to `insideSpec` (whose front faces have inside artwork, back faces have outside artwork)
-2. Flips the entire scene 180° via `flipScene`, which makes **back faces** visible
+Using CSS 3D transform conventions:
+- `rotateY(+180)` on a **left-hinged** panel swings the right edge AWAY (behind the screen)
+- `rotateY(-180)` on a **left-hinged** panel swings the right edge TOWARD the viewer
+- `rotateY(+180)` on a **right-hinged** panel swings the left edge TOWARD the viewer
+- `rotateY(-180)` on a **right-hinged** panel swings the left edge AWAY (behind)
 
-These cancel out: flipping reveals the back faces of `insideSpec`, which contain **outside** artwork. The user sees the same images.
+### Physical fold behavior per type
 
-### Solution
+**C-fold (Roll fold) from outside:** Right panel folds BEHIND center (away), then left panel folds BEHIND on top (away). Both go behind.  
+**C-fold from inside (scene flipped):** Both panels fold TOWARD viewer (inward to centre).
 
-Always use `outsideSpec`. The 180° scene flip already handles the inside view correctly:
-- Back faces of `outsideSpec` panels contain inside artwork at reversed indices
-- The scene flip reverses the visual panel order, un-reversing the indices
-- Result: inside artwork displays left-to-right in the correct order
+**Z-fold from outside:** Right panel folds BEHIND (away), left panel folds TOWARD (forward). Accordion zigzag.  
+**Z-fold from inside:** Right panel folds AWAY, left panel folds TOWARD.
 
-### Changes
+**Gate fold and Half fold:** Already correct.
 
-**`src/components/preview/brochure/BrochureViewer.tsx`**
-- Line 32: Change `activeSpec` to always use `outsideSpec` regardless of surface
-- Remove the conditional `insideSpec` selection
+### Current vs corrected angles
 
-**`src/components/preview/FoldPreview.tsx`** (cleanup)
-- Still build `insideSpec` and pass it (for `hasTwoSides` detection), but it won't be rendered
-- Alternatively, simplify by passing a `hasTwoSides` boolean prop instead of `insideSpec`
+| Fold | Panel | Hinge | outside (current→fix) | inside (current→fix) |
+|------|-------|-------|----------------------|---------------------|
+| C-fold | p0 | right | +180 → **-180** | +180 → **+180** (same) |
+| C-fold | p2 | left | -180 → **+180** | -180 → **-180** (same) |
+| Z-fold | p0 | right | -180 → **+180** | -180 → **-180** (same) |
+| Z-fold | p2 | left | -180 → **+180** | -180 → **-180** (same) |
 
-This is a one-line fix in the viewer.
+## Fix
+
+**One file: `src/components/preview/brochure/brochure-specs.ts`**
+
+Update `buildTriFoldCSpec()`:
+- p0: `outsideFoldedAngle: -180`, `insideFoldedAngle: +180`
+- p2: `outsideFoldedAngle: +180`, `insideFoldedAngle: -180`
+
+Update `buildTriFoldZSpec()`:
+- p0: `outsideFoldedAngle: +180`, `insideFoldedAngle: -180`
+- p2: `outsideFoldedAngle: +180`, `insideFoldedAngle: -180`
+
+No changes to half fold, gate fold, FoldNode, BrochureViewer, or BrochureStage.
 
