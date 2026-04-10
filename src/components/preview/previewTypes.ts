@@ -117,7 +117,7 @@ export function getBindingType(productType: ProductPreviewType): BindingType {
 /** Fold geometry: panel count and relative widths */
 export const FOLD_GEOMETRY: Record<FoldType, { panels: number; widths: number[] }> = {
   bi_fold: { panels: 2, widths: [0.5, 0.5] },
-  tri_fold: { panels: 3, widths: [0.31, 0.38, 0.31] },
+  tri_fold: { panels: 3, widths: [0.333, 0.334, 0.333] },
   z_fold: { panels: 3, widths: [0.333, 0.334, 0.333] },
-  gate_fold: { panels: 4, widths: [0.22, 0.28, 0.28, 0.22] },
+  gate_fold: { panels: 4, widths: [0.25, 0.25, 0.25, 0.25] },
 };
