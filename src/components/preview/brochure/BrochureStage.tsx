@@ -1,31 +1,30 @@
-import { useMemo } from "react";
-import type { BrochureSpec, FoldState } from "./brochure-types";
+import type { BrochureSpec } from "./brochure-types";
 import FoldNode from "./FoldNode";
 
 interface BrochureStageProps {
   spec: BrochureSpec;
-  state: FoldState;
+  /** Current rotation per panel id */
+  rotations: Record<string, number>;
+  /** Flip the whole scene 180° to show the back */
+  flipScene: boolean;
   maxWidth: number;
   maxHeight: number;
 }
 
 /**
- * Lays out the panel tree flat then applies fold rotations.
- *
- * Key fix: every panel gets an explicit `left` position based on the sum of
- * preceding panel widths, so all panels are visible in the open state.
- * The root panel is the transform anchor; left/right children are nested
- * inside it at their hinge edges.
+ * Flat sibling layout — all panels are absolutely positioned side by side.
+ * Each foldable panel's transform-origin is its hinge edge.
  */
 export default function BrochureStage({
   spec,
-  state,
+  rotations,
+  flipScene,
   maxWidth,
   maxHeight,
 }: BrochureStageProps) {
-  const { panels, rootPanelIndex } = spec;
+  const { panels, foldConfigs } = spec;
 
-  // Fit sheet into available area using landscape ratio
+  // Fit sheet into available area (landscape 3:2 ratio)
   const sheetRatio = 3 / 2;
   let totalW = maxWidth * 0.95;
   let totalH = totalW / sheetRatio;
@@ -34,59 +33,17 @@ export default function BrochureStage({
     totalW = totalH * sheetRatio;
   }
 
+  // Pre-compute pixel widths and left positions
   const panelWidths = panels.map((p) => p.widthFraction * totalW);
-
-  // Build right chain: rootIndex+1 → end, innermost first
-  const rightTree = useMemo(() => {
-    let tree: React.ReactNode = null;
-    for (let i = panels.length - 1; i > rootPanelIndex; i--) {
-      const rotY = state.rotations[panels[i].id] ?? 0;
-      tree = (
-        <FoldNode
-          key={panels[i].id}
-          panel={panels[i]}
-          rotationY={rotY}
-          width={panelWidths[i]}
-          height={totalH}
-          hingeEdge="left"
-          rightChild={tree}
-        />
-      );
-    }
-    return tree;
-  }, [panels, rootPanelIndex, state.rotations, panelWidths, totalH]);
-
-  // Build left chain: 0 → rootIndex-1, innermost first
-  const leftTree = useMemo(() => {
-    let tree: React.ReactNode = null;
-    for (let i = 0; i < rootPanelIndex; i++) {
-      const rotY = state.rotations[panels[i].id] ?? 0;
-      tree = (
-        <FoldNode
-          key={panels[i].id}
-          panel={panels[i]}
-          rotationY={rotY}
-          width={panelWidths[i]}
-          height={totalH}
-          hingeEdge="right"
-          leftChild={tree}
-        />
-      );
-    }
-    return tree;
-  }, [panels, rootPanelIndex, state.rotations, panelWidths, totalH]);
-
-  const rootRotY = state.rotations[panels[rootPanelIndex].id] ?? 0;
-
-  // Calculate offset so the root panel starts at the correct x position
-  let rootOffsetX = 0;
-  for (let i = 0; i < rootPanelIndex; i++) {
-    rootOffsetX += panelWidths[i];
+  const panelLefts: number[] = [];
+  let accum = 0;
+  for (const w of panelWidths) {
+    panelLefts.push(accum);
+    accum += w;
   }
 
-  const flipScene = state.flipScene ?? false;
-  const rootPanelWidth = panelWidths[rootPanelIndex];
-  const foldedCenterX = rootOffsetX + rootPanelWidth / 2;
+  // Build a lookup: panelId → foldConfig
+  const foldLookup = new Map(foldConfigs.map((fc) => [fc.panelId, fc]));
 
   return (
     <div
@@ -97,36 +54,34 @@ export default function BrochureStage({
         position: "relative",
       }}
     >
-      {/* Camera wrapper — rotates the whole scene for back views */}
+      {/* Camera wrapper — rotates the whole scene for inside view */}
       <div
         style={{
           position: "absolute",
           inset: 0,
           transformStyle: "preserve-3d",
           transform: flipScene ? `rotateY(180deg)` : undefined,
-          transformOrigin: `${foldedCenterX}px center`,
+          transformOrigin: `${totalW / 2}px center`,
           transition: "transform 700ms ease",
         }}
       >
-        <div
-          style={{
-            position: "absolute",
-            left: rootOffsetX,
-            top: 0,
-            transformStyle: "preserve-3d",
-          }}
-        >
-          <FoldNode
-            key={panels[rootPanelIndex].id}
-            panel={panels[rootPanelIndex]}
-            rotationY={rootRotY}
-            width={panelWidths[rootPanelIndex]}
-            height={totalH}
-            hingeEdge="left"
-            leftChild={leftTree}
-            rightChild={rightTree}
-          />
-        </div>
+        {panels.map((panel, i) => {
+          const fc = foldLookup.get(panel.id);
+          const rotY = rotations[panel.id] ?? 0;
+          const hingeEdge = fc ? fc.hingeEdge : "none";
+
+          return (
+            <FoldNode
+              key={panel.id}
+              panel={panel}
+              width={panelWidths[i]}
+              height={totalH}
+              left={panelLefts[i]}
+              rotationY={rotY}
+              hingeEdge={hingeEdge}
+            />
+          );
+        })}
       </div>
     </div>
   );

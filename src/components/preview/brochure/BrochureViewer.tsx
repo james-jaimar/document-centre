@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { BrochureSpec, Surface } from "./brochure-types";
 import BrochureStage from "./BrochureStage";
 import BrochureControls from "./BrochureControls";
@@ -19,26 +19,42 @@ export default function BrochureViewer({
   foldType,
 }: BrochureViewerProps) {
   const [surface, setSurface] = useState<Surface>("outside");
-  const [stateIndex, setStateIndex] = useState(0);
+  // Track which panels are folded (true = folded, false = open)
+  const [foldedPanels, setFoldedPanels] = useState<Record<string, boolean>>({});
 
   // Reset when fold type changes
   useEffect(() => {
     setSurface("outside");
-    setStateIndex(0);
+    setFoldedPanels({});
   }, [foldType]);
 
   const hasTwoSides = insideSpec !== null;
   const activeSpec = surface === "inside" && insideSpec ? insideSpec : outsideSpec;
-  const states = surface === "inside" ? activeSpec.insideStates : activeSpec.outsideStates;
+  const { foldConfigs } = activeSpec;
 
-  // Clamp index
-  const safeIndex = Math.min(stateIndex, states.length - 1);
-  const currentState = states[safeIndex];
+  // Compute rotation per panel
+  const rotations: Record<string, number> = {};
+  for (const fc of foldConfigs) {
+    const isFolded = foldedPanels[fc.panelId] ?? false;
+    const angle = surface === "inside" ? fc.insideFoldedAngle : fc.outsideFoldedAngle;
+    rotations[fc.panelId] = isFolded ? angle : 0;
+  }
 
-  const handleToggleSurface = () => {
+  const flipScene = surface === "inside";
+
+  const handleToggleFold = useCallback((panelId: string) => {
+    setFoldedPanels((prev) => ({ ...prev, [panelId]: !prev[panelId] }));
+  }, []);
+
+  const handleToggleSurface = useCallback(() => {
     setSurface((s) => (s === "outside" ? "inside" : "outside"));
-    setStateIndex(0);
-  };
+    setFoldedPanels({});
+  }, []);
+
+  const foldToggles = foldConfigs.map((fc) => ({
+    config: fc,
+    isFolded: foldedPanels[fc.panelId] ?? false,
+  }));
 
   return (
     <div
@@ -47,15 +63,15 @@ export default function BrochureViewer({
     >
       <BrochureStage
         spec={activeSpec}
-        state={currentState}
+        rotations={rotations}
+        flipScene={flipScene}
         maxWidth={width}
         maxHeight={height - 64}
       />
 
       <BrochureControls
-        stateLabels={states.map((s) => s.label)}
-        currentIndex={safeIndex}
-        onChangeIndex={setStateIndex}
+        foldToggles={foldToggles}
+        onToggleFold={handleToggleFold}
         surface={surface}
         onToggleSurface={handleToggleSurface}
         hasTwoSides={hasTwoSides}
