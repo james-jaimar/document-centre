@@ -1,54 +1,41 @@
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, RotateCw } from "lucide-react";
-import type { Surface } from "./brochure-types";
+import { RotateCw, FoldVertical } from "lucide-react";
+import type { PanelFoldConfig, Surface } from "./brochure-types";
+
+interface FoldToggle {
+  config: PanelFoldConfig;
+  isFolded: boolean;
+}
 
 interface BrochureControlsProps {
-  stateLabels: string[];
-  currentIndex: number;
-  onChangeIndex: (i: number) => void;
+  foldToggles: FoldToggle[];
+  onToggleFold: (panelId: string) => void;
   surface: Surface;
   onToggleSurface: () => void;
   hasTwoSides: boolean;
 }
 
 export default function BrochureControls({
-  stateLabels,
-  currentIndex,
-  onChangeIndex,
+  foldToggles,
+  onToggleFold,
   surface,
   onToggleSurface,
   hasTwoSides,
 }: BrochureControlsProps) {
-  const canPrev = currentIndex > 0;
-  const canNext = currentIndex < stateLabels.length - 1;
-
   return (
-    <div className="flex items-center gap-2">
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={!canPrev}
-        onClick={() => onChangeIndex(currentIndex - 1)}
-        className="gap-1"
-      >
-        <ChevronLeft className="h-4 w-4" />
-        {canPrev ? stateLabels[currentIndex - 1] : ""}
-      </Button>
-
-      <span className="text-xs text-muted-foreground px-2">
-        {stateLabels[currentIndex]}
-      </span>
-
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={!canNext}
-        onClick={() => onChangeIndex(currentIndex + 1)}
-        className="gap-1"
-      >
-        {canNext ? stateLabels[currentIndex + 1] : ""}
-        <ChevronRight className="h-4 w-4" />
-      </Button>
+    <div className="flex items-center gap-2 flex-wrap justify-center">
+      {foldToggles.map(({ config, isFolded }) => (
+        <Button
+          key={config.panelId}
+          variant="outline"
+          size="sm"
+          onClick={() => onToggleFold(config.panelId)}
+          className="gap-1.5"
+        >
+          <FoldVertical className="h-4 w-4" />
+          {isFolded ? `Open ${config.label}` : `Fold ${config.label}`}
+        </Button>
+      ))}
 
       {hasTwoSides && (
         <Button

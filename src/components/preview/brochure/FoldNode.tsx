@@ -2,32 +2,27 @@ import type { Panel } from "./brochure-types";
 
 interface FoldNodeProps {
   panel: Panel;
-  rotationY: number;
   width: number;
   height: number;
-  /** Which edge this panel is hinged on */
-  hingeEdge?: "left" | "right";
-  /** Child attached at the LEFT edge */
-  leftChild?: React.ReactNode;
-  /** Child attached at the RIGHT edge */
-  rightChild?: React.ReactNode;
+  /** CSS left position */
+  left: number;
+  /** Current rotation in degrees */
+  rotationY: number;
+  /** Which edge this panel hinges on */
+  hingeEdge: "left" | "right" | "none";
 }
 
 /**
  * A single panel with front/back faces using CSS 3D transforms.
- *
- * Key fix for left-child positioning: the leftChild container is placed
- * at `right: width` (i.e. to the left of this panel) but also needs
- * explicit width so it doesn't collapse to zero.
+ * No child nesting — all panels are flat siblings in the stage.
  */
 export default function FoldNode({
   panel,
-  rotationY,
   width,
   height,
-  hingeEdge = "left",
-  leftChild,
-  rightChild,
+  left,
+  rotationY,
+  hingeEdge,
 }: FoldNodeProps) {
   const isFolded = Math.abs(rotationY) > 10;
 
@@ -35,12 +30,12 @@ export default function FoldNode({
     <div
       style={{
         position: "absolute",
-        left: 0,
+        left,
         top: 0,
         width,
         height,
         transformStyle: "preserve-3d",
-        transformOrigin: `${hingeEdge} center`,
+        transformOrigin: hingeEdge === "none" ? "center center" : `${hingeEdge} center`,
         transform: `rotateY(${rotationY}deg)`,
         transition: "transform 700ms ease",
         zIndex: isFolded ? 20 : 10,
@@ -126,7 +121,7 @@ export default function FoldNode({
       </div>
 
       {/* Fold-edge shadow (visible when folded) */}
-      {isFolded && (
+      {isFolded && hingeEdge !== "none" && (
         <div
           style={{
             position: "absolute",
@@ -142,34 +137,6 @@ export default function FoldNode({
             zIndex: 30,
           }}
         />
-      )}
-
-      {/* Left child: position its RIGHT edge at this panel's LEFT edge */}
-      {leftChild && (
-        <div
-          style={{
-            position: "absolute",
-            right: width,
-            top: 0,
-            transformStyle: "preserve-3d",
-          }}
-        >
-          {leftChild}
-        </div>
-      )}
-
-      {/* Right child positioned at right edge */}
-      {rightChild && (
-        <div
-          style={{
-            position: "absolute",
-            left: width,
-            top: 0,
-            transformStyle: "preserve-3d",
-          }}
-        >
-          {rightChild}
-        </div>
       )}
     </div>
   );

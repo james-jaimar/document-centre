@@ -14,38 +14,27 @@ export interface Panel {
   back: PanelFaceContent;
 }
 
-/** Fold direction at a hinge between two panels */
-export type FoldDirection = "inward" | "outward";
-
-/** A hinge connecting two adjacent panels */
-export interface Hinge {
-  id: string;
-  leftPanelId: string;
-  rightPanelId: string;
-  direction: FoldDirection;
-}
-
 /** Which surface of the physical sheet we are looking at */
 export type Surface = "outside" | "inside";
 
-/** Named view state — rotation angles (degrees) per panel id */
-export interface FoldState {
+/** Per-panel fold configuration */
+export interface PanelFoldConfig {
+  panelId: string;
+  /** Which edge this panel hinges on */
+  hingeEdge: "left" | "right";
+  /** Rotation angle (degrees) when folded on the outside surface */
+  outsideFoldedAngle: number;
+  /** Rotation angle (degrees) when folded on the inside surface */
+  insideFoldedAngle: number;
+  /** Label for the fold toggle button */
   label: string;
-  rotations: Record<string, number>;
-  /** Which surface this state naturally shows (for labelling) */
-  surface?: Surface;
-  /** When true the whole scene is rotated 180° so the viewer sees the back */
-  flipScene?: boolean;
 }
 
 /** Complete specification for rendering a folded brochure */
 export interface BrochureSpec {
   panels: Panel[];
-  hinges: Hinge[];
-  /** All discrete fold states for the outside surface */
-  outsideStates: FoldState[];
-  /** All discrete fold states for the inside surface */
-  insideStates: FoldState[];
+  /** Which panels can fold and their fold config. Root/fixed panels are excluded. */
+  foldConfigs: PanelFoldConfig[];
   /** Index into panels[] that serves as the fixed root for the fold tree */
   rootPanelIndex: number;
 }
