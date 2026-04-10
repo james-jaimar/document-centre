@@ -1,45 +1,34 @@
 
 
-## Problem
+## Problem Analysis
 
-The fold angles in `brochure-specs.ts` are incorrect for C-fold and Z-fold, causing panels to fold in the wrong direction.
+There are two issues:
 
-Using CSS 3D transform conventions:
-- `rotateY(+180)` on a **left-hinged** panel swings the right edge AWAY (behind the screen)
-- `rotateY(-180)` on a **left-hinged** panel swings the right edge TOWARD the viewer
-- `rotateY(+180)` on a **right-hinged** panel swings the left edge TOWARD the viewer
-- `rotateY(-180)` on a **right-hinged** panel swings the left edge AWAY (behind)
+### Issue 1: Wrong `insideFoldedAngle` values
+The scene flip (`rotateY(180deg)` on the container) already **inverts** the visual direction of all child rotations. So to make a fold appear to go in the SAME visual direction on both surfaces, you need the SAME angle. To make it appear OPPOSITE, you flip the sign.
 
-### Physical fold behavior per type
+Currently the `insideFoldedAngle` values use opposite signs from `outsideFoldedAngle`, which means both surfaces animate identically (the flip + sign-change cancel out). The user wants:
 
-**C-fold (Roll fold) from outside:** Right panel folds BEHIND center (away), then left panel folds BEHIND on top (away). Both go behind.  
-**C-fold from inside (scene flipped):** Both panels fold TOWARD viewer (inward to centre).
+- **C-fold**: Outside folds AWAY, inside folds TOWARD. Since the scene flip already inverts direction, using the **same** angles as outside will make them visually fold toward on inside. Fix: set `insideFoldedAngle` = `outsideFoldedAngle` for both panels.
 
-**Z-fold from outside:** Right panel folds BEHIND (away), left panel folds TOWARD (forward). Accordion zigzag.  
-**Z-fold from inside:** Right panel folds AWAY, left panel folds TOWARD.
+- **Z-fold**: Same logic — the accordion shape viewed from the back should maintain its physical Z, just mirrored. Fix: set `insideFoldedAngle` = `outsideFoldedAngle` for both panels.
 
-**Gate fold and Half fold:** Already correct.
+### Issue 2: Z-fold right panel shows visual change when it shouldn't
+When the right panel folds AWAY (+180 on left hinge), it goes behind the center panel. But `FoldNode` sets `zIndex: 20` on any folded panel, causing behind-panels to render on top of the center panel. With `preserve-3d`, the browser should handle depth sorting — the explicit `zIndex` interferes with this.
 
-### Current vs corrected angles
+## Changes
 
-| Fold | Panel | Hinge | outside (current→fix) | inside (current→fix) |
-|------|-------|-------|----------------------|---------------------|
-| C-fold | p0 | right | +180 → **-180** | +180 → **+180** (same) |
-| C-fold | p2 | left | -180 → **+180** | -180 → **-180** (same) |
-| Z-fold | p0 | right | -180 → **+180** | -180 → **-180** (same) |
-| Z-fold | p2 | left | -180 → **+180** | -180 → **-180** (same) |
+### File 1: `src/components/preview/brochure/brochure-specs.ts`
 
-## Fix
+**C-fold** — change `insideFoldedAngle` to match `outsideFoldedAngle`:
+- p0: `insideFoldedAngle: 180` → `-180`
+- p2: `insideFoldedAngle: -180` → `180`
 
-**One file: `src/components/preview/brochure/brochure-specs.ts`**
+**Z-fold** — same fix:
+- p0: `insideFoldedAngle: -180` → `180`
+- p2: `insideFoldedAngle: -180` → `180`
 
-Update `buildTriFoldCSpec()`:
-- p0: `outsideFoldedAngle: -180`, `insideFoldedAngle: +180`
-- p2: `outsideFoldedAngle: +180`, `insideFoldedAngle: -180`
+### File 2: `src/components/preview/brochure/FoldNode.tsx`
 
-Update `buildTriFoldZSpec()`:
-- p0: `outsideFoldedAngle: +180`, `insideFoldedAngle: -180`
-- p2: `outsideFoldedAngle: +180`, `insideFoldedAngle: -180`
-
-No changes to half fold, gate fold, FoldNode, BrochureViewer, or BrochureStage.
+Remove the `zIndex` from the panel wrapper. Let CSS 3D depth sorting handle which panels appear in front/behind naturally. This fixes the Z-fold right panel appearing on top when it should be behind.
 
