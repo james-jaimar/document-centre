@@ -29,7 +29,7 @@ export default function BrochureViewer({
   }, [foldType]);
 
   const hasTwoSides = insideSpec !== null;
-  const activeSpec = surface === "inside" && insideSpec ? insideSpec : outsideSpec;
+  const activeSpec = outsideSpec;
   const { foldConfigs } = activeSpec;
 
   // Compute rotation per panel
