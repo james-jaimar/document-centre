@@ -1,22 +1,31 @@
 
 
-## Problem
+## Fix: "Show Inside" displays same images as outside
 
-The paper size advisory modal appears twice because of a race condition:
+### Root cause
 
-1. User clicks "Scale to A5" (or "Keep Original")
-2. Handler writes `size_resolved: true` to the database, then calls `setAdvisoryDoc(null)` and `refetchDocuments()`
-3. The `refetchDocuments()` call can return before the DB write fully propagates, so the `useEffect` sees the same document still lacking `size_resolved: true` and re-opens the modal
+The `BrochureViewer` does two conflicting things when toggling to "inside":
+1. Swaps to `insideSpec` (whose front faces have inside artwork, back faces have outside artwork)
+2. Flips the entire scene 180° via `flipScene`, which makes **back faces** visible
 
-## Fix
+These cancel out: flipping reveals the back faces of `insideSpec`, which contain **outside** artwork. The user sees the same images.
 
-**File: `src/pages/dashboard/OrderFiles.tsx`**
+### Solution
 
-Track resolved document IDs locally so the `useEffect` never re-triggers for the same document:
+Always use `outsideSpec`. The 180° scene flip already handles the inside view correctly:
+- Back faces of `outsideSpec` panels contain inside artwork at reversed indices
+- The scene flip reverses the visual panel order, un-reversing the indices
+- Result: inside artwork displays left-to-right in the correct order
 
-1. Add a `useRef<Set<string>>` called `resolvedDocIds` to track IDs that have been handled
-2. In `handleKeepOriginal` and `handleScaleTo`, add the doc ID to the set before clearing `advisoryDoc`
-3. In the `useEffect` that detects non-ISO docs, skip any document whose ID is in `resolvedDocIds`
+### Changes
 
-This is a one-file, ~6-line change that eliminates the race without changing any other behavior.
+**`src/components/preview/brochure/BrochureViewer.tsx`**
+- Line 32: Change `activeSpec` to always use `outsideSpec` regardless of surface
+- Remove the conditional `insideSpec` selection
+
+**`src/components/preview/FoldPreview.tsx`** (cleanup)
+- Still build `insideSpec` and pass it (for `hasTwoSides` detection), but it won't be rendered
+- Alternatively, simplify by passing a `hasTwoSides` boolean prop instead of `insideSpec`
+
+This is a one-line fix in the viewer.
 
