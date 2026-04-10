@@ -43,14 +43,14 @@ export function buildTriFoldCSpec(): BrochureSpec {
       {
         panelId: "p0",
         hingeEdge: "right",
-        outsideFoldedAngle: 180,
+        outsideFoldedAngle: -180,
         insideFoldedAngle: 180,
         label: "Left",
       },
       {
         panelId: "p2",
         hingeEdge: "left",
-        outsideFoldedAngle: -180,
+        outsideFoldedAngle: 180,
         insideFoldedAngle: -180,
         label: "Right",
       },
@@ -77,14 +77,14 @@ export function buildTriFoldZSpec(): BrochureSpec {
       {
         panelId: "p0",
         hingeEdge: "right",
-        outsideFoldedAngle: -180,
+        outsideFoldedAngle: 180,
         insideFoldedAngle: -180,
         label: "Left",
       },
       {
         panelId: "p2",
         hingeEdge: "left",
-        outsideFoldedAngle: -180,
+        outsideFoldedAngle: 180,
         insideFoldedAngle: -180,
         label: "Right",
       },
