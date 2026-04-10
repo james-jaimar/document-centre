@@ -162,6 +162,7 @@ export default function OrderFiles() {
   const [imageSizeDialogOpen, setImageSizeDialogOpen] = useState(false);
   const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
   const pendingFilesRef = useRef<File[]>([]);
+  const resolvedDocIds = useRef<Set<string>>(new Set());
   const [advisoryDoc, setAdvisoryDoc] = useState<{
     id: string;
     fileName: string;
