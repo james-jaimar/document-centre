@@ -186,6 +186,7 @@ export default function OrderFiles() {
   useEffect(() => {
     if (uploadModalOpen) return; // Don't check while uploads are in progress
     const nonIsoDoc = documents.find((d) => {
+      if (resolvedDocIds.current.has(d.id)) return false;
       const preflight = d.preflight_data as Record<string, any> | null;
       return preflight?.detected_size && !preflight?.size_resolved;
     });
@@ -280,6 +281,7 @@ export default function OrderFiles() {
         preflight_data: { ...preflight, size_resolved: true, size_action: "keep" },
       })
       .eq("id", advisoryDoc.id);
+    resolvedDocIds.current.add(advisoryDoc.id);
     setAdvisoryDoc(null);
     refetchDocuments();
     toast.success("Keeping original size");
@@ -322,6 +324,7 @@ export default function OrderFiles() {
         })
         .eq("id", advisoryDoc.id);
 
+      resolvedDocIds.current.add(advisoryDoc.id);
       setAdvisoryDoc(null);
       refetchDocuments();
       toast.success(`Scaled to ${target.name} successfully`);
