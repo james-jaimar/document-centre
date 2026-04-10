@@ -50,18 +50,25 @@ function buildPanelsWithArtwork(
   outsideSlices: string[],
   insideSlices: string[] | null
 ): { outsidePanels: Panel[]; insidePanels: Panel[] | null } {
+  const n = basePanels.length;
+
+  // Outside panels: front = outside artwork, back = reversed inside artwork
   const outsidePanels = basePanels.map((panel, i) => ({
     ...panel,
     front: { ...panel.front, imageUrl: outsideSlices[i] },
-    back: { ...panel.back, imageUrl: outsideSlices[i] },
+    back: {
+      ...panel.back,
+      imageUrl: insideSlices ? insideSlices[n - 1 - i] : undefined,
+    },
   }));
 
   if (!insideSlices) return { outsidePanels, insidePanels: null };
 
+  // Inside panels: front = inside artwork, back = reversed outside artwork
   const insidePanels = basePanels.map((panel, i) => ({
     ...panel,
     front: { ...panel.front, imageUrl: insideSlices[i] },
-    back: { ...panel.back, imageUrl: insideSlices[i] },
+    back: { ...panel.back, imageUrl: outsideSlices[n - 1 - i] },
   }));
 
   return { outsidePanels, insidePanels };
