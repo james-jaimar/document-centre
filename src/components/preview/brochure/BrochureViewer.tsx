@@ -46,8 +46,11 @@ export default function BrochureViewer({
   // Outside: default shows front (needs 180° extra), toggle shows back (0°)
   // Inside: scene is already flipped, so default front = 0°, toggle back = 180°
   const showingBack = anyFolded && rotatedFolded;
+  const isHalfFold = foldType === "bi_fold";
   const extraRotation = anyFolded
-    ? (surface === "outside" ? (showingBack ? 0 : 180) : (showingBack ? 180 : 0))
+    ? isHalfFold
+      ? (surface === "outside" ? (showingBack ? 0 : 180) : (showingBack ? 180 : 0))
+      : (rotatedFolded ? 180 : 0)
     : 0;
 
   const handleToggleFold = useCallback((panelId: string) => {
