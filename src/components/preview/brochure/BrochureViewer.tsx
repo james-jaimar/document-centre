@@ -42,7 +42,8 @@ export default function BrochureViewer({
   }
 
   const flipScene = surface === "inside";
-  const extraRotation = rotatedFolded ? 180 : 0;
+  const anyFolded = Object.values(foldedPanels).some(Boolean);
+  const extraRotation = anyFolded && !rotatedFolded ? 180 : 0;
 
   const handleToggleFold = useCallback((panelId: string) => {
     setFoldedPanels((prev) => {
@@ -66,8 +67,6 @@ export default function BrochureViewer({
     config: fc,
     isFolded: foldedPanels[fc.panelId] ?? false,
   }));
-
-  const anyFolded = Object.values(foldedPanels).some(Boolean);
 
   return (
     <div
