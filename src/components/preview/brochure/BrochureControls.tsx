@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { RotateCw, FoldVertical } from "lucide-react";
+import { RotateCw, FoldVertical, RefreshCw } from "lucide-react";
 import type { PanelFoldConfig, Surface } from "./brochure-types";
 
 interface FoldToggle {
@@ -13,6 +13,9 @@ interface BrochureControlsProps {
   surface: Surface;
   onToggleSurface: () => void;
   hasTwoSides: boolean;
+  anyFolded: boolean;
+  rotatedFolded: boolean;
+  onToggleRotate: () => void;
 }
 
 export default function BrochureControls({
@@ -21,6 +24,9 @@ export default function BrochureControls({
   surface,
   onToggleSurface,
   hasTwoSides,
+  anyFolded,
+  rotatedFolded,
+  onToggleRotate,
 }: BrochureControlsProps) {
   return (
     <div className="flex items-center gap-2 flex-wrap justify-center">
@@ -36,6 +42,18 @@ export default function BrochureControls({
           {isFolded ? `Open ${config.label}` : `Fold ${config.label}`}
         </Button>
       ))}
+
+      {anyFolded && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onToggleRotate}
+          className="gap-1.5"
+        >
+          <RefreshCw className="h-4 w-4" />
+          {rotatedFolded ? "View Front" : "View Back"}
+        </Button>
+      )}
 
       {hasTwoSides && (
         <Button
