@@ -68,8 +68,6 @@ export default function BrochureViewer({
     isFolded: foldedPanels[fc.panelId] ?? false,
   }));
 
-  const anyFolded = Object.values(foldedPanels).some(Boolean);
-
   return (
     <div
       className="flex flex-col items-center justify-center gap-3"
