@@ -1,77 +1,29 @@
 
 
-## Fix All Fold Types -- Definitive Spec
+## Fix: Half-fold "View Back" shows wrong image
 
-### Root Cause Analysis
+### Root Cause
 
-Two independent bugs:
+When the half-fold is folded and the user clicks "View Back", the scene rotation goes to 0°. At 0°, we're looking at the front side of the stage. Panel p1 (folded -180°) exposes its CSS **back face**, which contains inside artwork (mapped via `insideSlices[n-1-i]`). The user expects to see the **outside left panel** (p0's front face = back cover), but instead sees inside artwork.
 
-1. **Wrong fold angles** on several panels (they fold toward viewer instead of away, or vice versa)
-2. **Depth offsets flip direction** when the scene wrapper is rotated 180° (for inside view or half-fold's auto-rotation). A panel with `translateZ(+2)` inside a scene rotated 180° visually appears BEHIND the base panel, not in front. This causes the folded panel to hide behind (or show through) the base panel incorrectly.
+No amount of scene rotation fixes this because the CSS back face of p1 will always contain inside artwork (that's how the inside view works — flip scene 180° to reveal back faces with inside images).
 
-### CSS 3D Angle Reference (verified)
+### Fix
 
-| Hinge edge | Positive angle | Negative angle |
-|---|---|---|
-| Left | AWAY from viewer | TOWARD viewer |
-| Right | TOWARD viewer | AWAY from viewer |
+Use the same approach as Z-fold: when the half-fold is folded and showing the "back", render a **static single-panel view** of p0's front face (outside left = back cover) instead of trying to use 3D rotation. When showing the "front", render p1's front face (outside right = front cover).
 
-When the scene is flipped 180° (inside view), visual directions reverse.
+**`src/components/preview/brochure/BrochureViewer.tsx`**
 
-### Z-Fold Simplification
+Add a static view block for half-fold when folded (before the main return), similar to the Z-fold block:
 
-Per your spec: Z-fold is fully-open or fully-folded, no partial state. When folded, show a static single-panel image (front cover or back cover), not the 3D stacked panels. This avoids all the 3D stacking headaches for this fold type.
+- When `isHalfFold && anyFolded`:
+  - `showingFront = !rotatedFolded` → display p1's front face (front cover)
+  - `showingBack = rotatedFolded` → display p0's front face (back cover)
+  - Render as a static single panel with shadow, same pattern as the Z-fold folded view
+  - Include controls and a label ("Front/Back of folded brochure")
+  - Panel aspect ratio: `sheetRatio * 0.5` (half the sheet width)
 
-- Front of folded brochure = right panel's outside face
-- Back of folded brochure = left panel's outside face
+Remove the `extraRotation` half-fold branch entirely since half-fold folded state is now handled by the static view. The `extraRotation` simplifies to just `rotatedFolded ? 180 : 0` for tri/gate folds.
 
----
-
-### File Changes
-
-**1. `src/components/preview/brochure/brochure-specs.ts`**
-
-Roll/C fold:
-- p0 `outsideFoldedAngle`: `180` → `-180` (right hinge, was folding toward, needs to fold away)
-
-Gate fold:
-- p0 `outsideFoldedAngle`: `180` → `-180` (right hinge, fold away not toward)
-- p0 `insideFoldedAngle`: `180` → `-180` (right hinge, with scene flip: -180 normally=away, flip→toward ✓)
-- p3 `insideFoldedAngle`: `-180` → `180` (left hinge, with scene flip: +180 normally=away, flip→toward ✓)
-
-Half-fold and Z-fold specs: **no angle changes** (half-fold angles are correct; Z-fold won't use animated folding)
-
-**2. `src/components/preview/brochure/BrochureStage.tsx`**
-
-Fix depth direction: negate `depthOffset` when `totalRotation` is effectively 180° (mod 360). This accounts for the scene flip reversing the Z-axis direction.
-
-```typescript
-const sceneFlipped = (Math.round(Math.abs(totalRotation) / 180) % 2) === 1;
-// In the render loop:
-const effectiveDepth = sceneFlipped ? -depthOffset : depthOffset;
-```
-
-**3. `src/components/preview/brochure/BrochureViewer.tsx`**
-
-- Z-fold behavior: single boolean `isFullyFolded` state (not per-panel). When folded, render a static single-panel view instead of `BrochureStage`:
-  - Shows front image by default (`outsideSpec.panels[2].front.imageUrl`)
-  - "View Back" swaps to back image (`outsideSpec.panels[0].front.imageUrl`)
-  - Surface toggle hidden when folded (folded brochure is one physical object)
-- Keep existing bi_fold extraRotation logic unchanged (confirmed working)
-- Keep existing roll/gate fold extraRotation logic unchanged (`rotatedFolded ? 180 : 0`)
-
-**4. `src/components/preview/brochure/BrochureControls.tsx`**
-
-- Accept `foldType` prop
-- For `z_fold`: render single "Fold" / "Open" button instead of per-panel fold buttons
-- Everything else unchanged
-
-### Expected Results
-
-| Fold | Outside | Inside |
-|---|---|---|
-| Half fold | Folds toward viewer, auto-shows front. "View Back" works | Folds toward viewer (via flip), auto-shows front |
-| Roll/C fold | Both panels fold AWAY (behind). Right first, left second | Both panels fold TOWARD viewer. Right first, left second |
-| Z-fold | Single "Fold" button → shows front cover. Flip for back | Same behavior (same physical object) |
-| Gate fold | Both gates fold AWAY (behind) | Both gates fold TOWARD (in front) |
+One file change.
 
