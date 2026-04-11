@@ -42,7 +42,7 @@ export default function BrochureViewer({
   }
 
   const flipScene = surface === "inside";
-  const extraRotation = rotatedFolded ? 180 : 0;
+  const extraRotation = rotatedFolded ? 0 : 180;
 
   const handleToggleFold = useCallback((panelId: string) => {
     setFoldedPanels((prev) => {
