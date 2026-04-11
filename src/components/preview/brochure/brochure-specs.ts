@@ -16,7 +16,7 @@ export function buildHalfFoldSpec(): BrochureSpec {
         panelId: "p1",
         hingeEdge: "left",
         outsideFoldedAngle: -180,
-        insideFoldedAngle: -180,
+        insideFoldedAngle: 180,
         outsideLayer: "front",
         insideLayer: "front",
         foldSequence: 1,
