@@ -1,28 +1,38 @@
 
 
-## Fix: Extra rotation only for half-fold
+## Fix Fold Directions and Panel Layering for Tri/Z/Gate Folds
 
-### Root cause
-Lines 49-51 in `BrochureViewer.tsx` apply 180° `extraRotation` whenever ANY panel is folded. This was needed for half-fold (to show front cover instead of back face after folding), but tri/z/gate folds don't need it — the centre panel stays visible and correct.
+### Root Causes
 
-### Fix
+**1. Wrong fold angles (3 panels have inverted outside angles)**
 
-**`src/components/preview/brochure/BrochureViewer.tsx`**
+CSS 3D `rotateY` with a specific `transformOrigin`:
+- Right hinge + positive angle = panel goes AWAY from viewer
+- Right hinge + negative angle = panel comes TOWARD viewer
+- Left hinge + positive angle = panel goes AWAY from viewer
+- Left hinge + negative angle = panel comes TOWARD viewer
 
-The automatic 180° scene rotation should only apply to `bi_fold`. For other fold types, `extraRotation` should only come from the manual "View Back/Front" toggle.
+Three panels currently fold the wrong direction on outside view:
 
-```
-const isHalfFold = foldType === "bi_fold";
-const extraRotation = anyFolded
-  ? isHalfFold
-    ? (surface === "outside" ? (showingBack ? 0 : 180) : (showingBack ? 180 : 0))
-    : (rotatedFolded ? 180 : 0)
-  : 0;
-```
+| Fold | Panel | Current | Correct | Why |
+|------|-------|---------|---------|-----|
+| Tri-fold | p0 (left, right hinge) | -180 (toward) | +180 (away) | Should fold away on outside |
+| Z-fold | p0 (left, right hinge) | +180 (away) | -180 (toward) | Should fold toward viewer on outside |
+| Gate fold | p3 (right, left hinge) | -180 (toward) | +180 (away) | Should fold away on outside |
 
-This means:
-- **Half-fold**: keeps current working behavior (auto-show front, toggle to back)
-- **Tri/Z/Gate**: no auto-spin on fold; "View Back" button still works for manual rotation
+**2. translateZ depth offset is inverted after rotation**
 
-One file change only.
+In FoldNode the transform is `rotateY(180deg) translateZ(-2px)`. After a 180° rotation, the local Z-axis flips, so negative translateZ actually pushes the panel TOWARD the viewer -- opposite of intent. Swapping the order to `translateZ(-2px) rotateY(180deg)` applies the depth in world space before rotation.
+
+### Changes
+
+**`src/components/preview/brochure/brochure-specs.ts`**
+- Tri-fold p0: `outsideFoldedAngle: -180` to `180`
+- Z-fold p0: `outsideFoldedAngle: 180` to `-180`
+- Gate fold p3: `outsideFoldedAngle: -180` to `180`
+
+**`src/components/preview/brochure/FoldNode.tsx`** (line 48)
+- Swap transform order from `rotateY(...) translateZ(...)` to `translateZ(...) rotateY(...)` so depth offsets work correctly in world space
+
+Inside views remain untouched (user confirmed they work).
 
