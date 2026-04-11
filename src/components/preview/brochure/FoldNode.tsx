@@ -45,7 +45,7 @@ export default function FoldNode({
         height,
         transformStyle: "preserve-3d",
         transformOrigin: hingeEdge === "none" ? "center center" : `${hingeEdge} center`,
-        transform: `rotateY(${rotationY}deg) translateZ(${translateZ}px)`,
+        transform: `translateZ(${translateZ}px) rotateY(${rotationY}deg)`,
         transition: "transform 700ms ease",
       }}
     >

@@ -50,7 +50,7 @@ export function buildTriFoldCSpec(): BrochureSpec {
       {
         panelId: "p0",
         hingeEdge: "right",
-        outsideFoldedAngle: -180,
+        outsideFoldedAngle: 180,
         insideFoldedAngle: -180,
         outsideLayer: "behind",
         insideLayer: "front",
@@ -95,7 +95,7 @@ export function buildTriFoldZSpec(): BrochureSpec {
       {
         panelId: "p0",
         hingeEdge: "right",
-        outsideFoldedAngle: 180,
+        outsideFoldedAngle: -180,
         insideFoldedAngle: 180,
         outsideLayer: "front",
         insideLayer: "behind",
@@ -146,7 +146,7 @@ export function buildGateFoldSpec(): BrochureSpec {
       {
         panelId: "p3",
         hingeEdge: "left",
-        outsideFoldedAngle: -180,
+        outsideFoldedAngle: 180,
         insideFoldedAngle: -180,
         outsideLayer: "behind",
         insideLayer: "front",
