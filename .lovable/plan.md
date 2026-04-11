@@ -1,34 +1,62 @@
 
+The next fix is not another angle tweak — it is a stacking/physics fix.
 
-## Problem Analysis
+What is actually going wrong
+- The fold motion is mostly correct now.
+- The bad behavior happens at the end of the fold: once a flap reaches 180°, it becomes coplanar with the centre panel again.
+- In `BrochureStage.tsx`, panels are still rendered in their original left-to-right DOM order, so browser paint order wins when two panels occupy the same plane.
+- That is why a panel that should have gone behind can suddenly paint on top and “replace” the visible customer view.
 
-There are two issues:
+Implementation plan
 
-### Issue 1: Wrong `insideFoldedAngle` values
-The scene flip (`rotateY(180deg)` on the container) already **inverts** the visual direction of all child rotations. So to make a fold appear to go in the SAME visual direction on both surfaces, you need the SAME angle. To make it appear OPPOSITE, you flip the sign.
+1. Make folded front/back placement explicit
+- Update `src/components/preview/brochure/brochure-types.ts`.
+- Extend `PanelFoldConfig` with per-surface folded layer data instead of relying only on angle:
+  - whether the folded result ends in front of the visible sheet or behind it
+  - optional fold sequence rank for cases where two folded flaps can overlap
 
-Currently the `insideFoldedAngle` values use opposite signs from `outsideFoldedAngle`, which means both surfaces animate identically (the flip + sign-change cancel out). The user wants:
+2. Encode the real tri-panel physics in the specs
+- Update `src/components/preview/brochure/brochure-specs.ts`.
+- Use your described rules as the source of truth:
+  - C-fold / roll-fold:
+    - outside: folded flaps finish behind the visible face
+    - inside: folded flaps finish in front of the visible face
+    - when both are folded, the second fold must sit above the first on the visible side
+  - Z-fold:
+    - left panel finishes in front
+    - right panel finishes behind
+    - verify that this stays true on inside view too
+  - gate fold: keep the same explicit front/behind rules so it cannot regress
+  - half-fold: regression-check and keep current correct behavior
 
-- **C-fold**: Outside folds AWAY, inside folds TOWARD. Since the scene flip already inverts direction, using the **same** angles as outside will make them visually fold toward on inside. Fix: set `insideFoldedAngle` = `outsideFoldedAngle` for both panels.
+3. Render panels by physical layer, not spread order
+- Update `src/components/preview/brochure/BrochureViewer.tsx` and `src/components/preview/brochure/BrochureStage.tsx`.
+- Compute each panel’s active folded layer from:
+  - current surface
+  - open/folded state
+  - panel fold config
+- Render back-layer panels first, base sheet next, front-layer panels last.
+- This prevents a “behind” flap from ever painting over the visible front panel at rest.
 
-- **Z-fold**: Same logic — the accordion shape viewed from the back should maintain its physical Z, just mirrored. Fix: set `insideFoldedAngle` = `outsideFoldedAngle` for both panels.
+4. Add a tiny depth offset for folded resting states
+- Update `src/components/preview/brochure/FoldNode.tsx`.
+- Apply a very small `translateZ` based on the computed layer when a panel is folded.
+- This avoids coplanar z-fighting at 180° and keeps the final resting stack stable.
 
-### Issue 2: Z-fold right panel shows visual change when it shouldn't
-When the right panel folds AWAY (+180 on left hinge), it goes behind the center panel. But `FoldNode` sets `zIndex: 20` on any folded panel, causing behind-panels to render on top of the center panel. With `preserve-3d`, the browser should handle depth sorting — the explicit `zIndex` interferes with this.
+Technical details
+- Files to update:
+  - `src/components/preview/brochure/brochure-types.ts`
+  - `src/components/preview/brochure/brochure-specs.ts`
+  - `src/components/preview/brochure/BrochureViewer.tsx`
+  - `src/components/preview/brochure/BrochureStage.tsx`
+  - `src/components/preview/brochure/FoldNode.tsx`
+- `src/components/preview/FoldPreview.tsx` does not need a logic change for this issue; the artwork slicing/mapping is already the right model.
+- The key correction is: final folded visibility must be explicit data, not an accidental side effect of CSS 3D painter order.
 
-## Changes
-
-### File 1: `src/components/preview/brochure/brochure-specs.ts`
-
-**C-fold** — change `insideFoldedAngle` to match `outsideFoldedAngle`:
-- p0: `insideFoldedAngle: 180` → `-180`
-- p2: `insideFoldedAngle: -180` → `180`
-
-**Z-fold** — same fix:
-- p0: `insideFoldedAngle: -180` → `180`
-- p2: `insideFoldedAngle: -180` → `180`
-
-### File 2: `src/components/preview/brochure/FoldNode.tsx`
-
-Remove the `zIndex` from the panel wrapper. Let CSS 3D depth sorting handle which panels appear in front/behind naturally. This fixes the Z-fold right panel appearing on top when it should be behind.
-
+Verification
+- Test each flap individually and then both together for:
+  - tri-fold / C-fold
+  - Z-fold
+  - gate fold
+- Confirm that any flap folding “to the back” stays hidden behind the currently visible surface when the animation finishes.
+- Re-check inside/outside toggles after each fold type so the resting stack matches the physical fold pattern you described.
