@@ -1,23 +1,32 @@
-import type { BrochureSpec } from "./brochure-types";
+import type { BrochureSpec, Surface, FoldedLayer } from "./brochure-types";
 import FoldNode from "./FoldNode";
 
 interface BrochureStageProps {
   spec: BrochureSpec;
   /** Current rotation per panel id */
   rotations: Record<string, number>;
+  /** Which panels are currently folded */
+  foldedPanels: Record<string, boolean>;
+  /** Current viewing surface */
+  surface: Surface;
   /** Flip the whole scene 180° to show the back */
   flipScene: boolean;
   maxWidth: number;
   maxHeight: number;
 }
 
+/** Depth offset per layer per sequence rank (px) */
+const DEPTH_STEP = 2;
+
 /**
- * Flat sibling layout — all panels are absolutely positioned side by side.
- * Each foldable panel's transform-origin is its hinge edge.
+ * Renders panels sorted by their physical layer so that
+ * "behind" panels paint before "base" panels paint before "front" panels.
  */
 export default function BrochureStage({
   spec,
   rotations,
+  foldedPanels,
+  surface,
   flipScene,
   maxWidth,
   maxHeight,
@@ -42,8 +51,37 @@ export default function BrochureStage({
     accum += w;
   }
 
-  // Build a lookup: panelId → foldConfig
+  // Build lookups
   const foldLookup = new Map(foldConfigs.map((fc) => [fc.panelId, fc]));
+
+  // Compute render layer and depth offset for each panel
+  type PanelRenderInfo = {
+    index: number;
+    layer: number; // -1 = behind, 0 = base, 1 = front
+    depthOffset: number;
+  };
+
+  const renderInfos: PanelRenderInfo[] = panels.map((panel, i) => {
+    const fc = foldLookup.get(panel.id);
+    const isFolded = foldedPanels[panel.id] ?? false;
+
+    if (!fc || !isFolded) {
+      // Base / root panel or unfolded panel
+      return { index: i, layer: 0, depthOffset: 0 };
+    }
+
+    const foldedLayer: FoldedLayer =
+      surface === "inside" ? fc.insideLayer : fc.outsideLayer;
+
+    const layerNum = foldedLayer === "front" ? 1 : -1;
+    // Depth offset: "front" panels get positive Z, "behind" get negative Z
+    const depthOffset = layerNum * fc.foldSequence * DEPTH_STEP;
+
+    return { index: i, layer: layerNum, depthOffset };
+  });
+
+  // Sort: behind (-1) first, base (0), front (1) last
+  const sorted = [...renderInfos].sort((a, b) => a.layer - b.layer);
 
   return (
     <div
@@ -65,7 +103,8 @@ export default function BrochureStage({
           transition: "transform 700ms ease",
         }}
       >
-        {panels.map((panel, i) => {
+        {sorted.map(({ index, depthOffset }) => {
+          const panel = panels[index];
           const fc = foldLookup.get(panel.id);
           const rotY = rotations[panel.id] ?? 0;
           const hingeEdge = fc ? fc.hingeEdge : "none";
@@ -74,11 +113,12 @@ export default function BrochureStage({
             <FoldNode
               key={panel.id}
               panel={panel}
-              width={panelWidths[i]}
+              width={panelWidths[index]}
               height={totalH}
-              left={panelLefts[i]}
+              left={panelLefts[index]}
               rotationY={rotY}
               hingeEdge={hingeEdge}
+              depthOffset={depthOffset}
             />
           );
         })}

@@ -10,6 +10,11 @@ interface FoldNodeProps {
   rotationY: number;
   /** Which edge this panel hinges on */
   hingeEdge: "left" | "right" | "none";
+  /**
+   * Depth offset in px applied via translateZ when folded.
+   * Positive = closer to viewer, negative = further away.
+   */
+  depthOffset: number;
 }
 
 /**
@@ -23,8 +28,12 @@ export default function FoldNode({
   left,
   rotationY,
   hingeEdge,
+  depthOffset,
 }: FoldNodeProps) {
   const isFolded = Math.abs(rotationY) > 10;
+
+  // Apply depth offset only when folded to prevent coplanar z-fighting
+  const translateZ = isFolded ? depthOffset : 0;
 
   return (
     <div
@@ -36,7 +45,7 @@ export default function FoldNode({
         height,
         transformStyle: "preserve-3d",
         transformOrigin: hingeEdge === "none" ? "center center" : `${hingeEdge} center`,
-        transform: `rotateY(${rotationY}deg)`,
+        transform: `rotateY(${rotationY}deg) translateZ(${translateZ}px)`,
         transition: "transform 700ms ease",
       }}
     >

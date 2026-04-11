@@ -17,6 +17,9 @@ export interface Panel {
 /** Which surface of the physical sheet we are looking at */
 export type Surface = "outside" | "inside";
 
+/** Where a folded panel ends up relative to the base sheet */
+export type FoldedLayer = "front" | "behind";
+
 /** Per-panel fold configuration */
 export interface PanelFoldConfig {
   panelId: string;
@@ -26,6 +29,15 @@ export interface PanelFoldConfig {
   outsideFoldedAngle: number;
   /** Rotation angle (degrees) when folded on the inside surface */
   insideFoldedAngle: number;
+  /** Where this panel ends up when folded, viewing the outside surface */
+  outsideLayer: FoldedLayer;
+  /** Where this panel ends up when folded, viewing the inside surface */
+  insideLayer: FoldedLayer;
+  /**
+   * Stacking rank when multiple panels are folded on the same layer.
+   * Higher rank = further from the base sheet (i.e. on top if "front", further behind if "behind").
+   */
+  foldSequence: number;
   /** Label for the fold toggle button */
   label: string;
 }
