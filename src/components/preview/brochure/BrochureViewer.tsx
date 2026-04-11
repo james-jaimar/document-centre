@@ -61,9 +61,12 @@ export default function BrochureViewer({
 
   const handleToggleSurface = useCallback(() => {
     setSurface((s) => (s === "outside" ? "inside" : "outside"));
-    setFoldedPanels({});
+    // Preserve folded state for tri-fold when all folds are closed
+    if (!(isTriFold && allFoldsClosed)) {
+      setFoldedPanels({});
+    }
     setRotatedFolded(false);
-  }, []);
+  }, [isTriFold, allFoldsClosed]);
 
   const handleToggleRotate = useCallback(() => {
     setRotatedFolded((r) => !r);
