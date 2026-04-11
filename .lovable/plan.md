@@ -1,29 +1,37 @@
 
+Roll/C-fold fix plan
 
-## Fix: Half-fold "View Back" shows wrong image
+What I found
+- I should not touch `brochure-specs.ts` again for tri-fold: your current outside open view and outside folded default view are already correct.
+- The remaining bugs come from two places:
+  1. `BrochureStage.tsx` only sorts panels by coarse layer (`behind/base/front`), so in the inside view the left flap is not guaranteed to sit on top of the right flap when both are folded.
+  2. `BrochureViewer.tsx` still uses whole-scene rotation to show the “other side” of a folded roll fold. That exposes `panel.back` (inside artwork), which is why `View Back` and folded `Show Outside` can show the wrong face.
 
-### Root Cause
+Implementation
+1. Fix tri-fold stacking in `src/components/preview/brochure/BrochureStage.tsx`
+- Keep the current tri-fold angles.
+- Change render ordering so same-layer folded panels are also sorted by fold depth / `foldSequence`.
+- Result: inside view will correctly behave as “right folds first, left folds second, left sits on top”.
 
-When the half-fold is folded and the user clicks "View Back", the scene rotation goes to 0°. At 0°, we're looking at the front side of the stage. Panel p1 (folded -180°) exposes its CSS **back face**, which contains inside artwork (mapped via `insideSlices[n-1-i]`). The user expects to see the **outside left panel** (p0's front face = back cover), but instead sees inside artwork.
+2. Add explicit closed-face mapping in `src/components/preview/brochure/BrochureViewer.tsx`
+- Detect when `foldType === "tri_fold"` and all foldable panels are closed.
+- Treat the closed roll-fold as a 2-face object instead of relying on rotated back-faces:
+  - closed outside face = centre outside panel (`p1.front`)
+  - opposite closed face = left outside panel (`p0.front`)
+- When the user asks to see the opposite side of a fully closed brochure (`View Back`, or switching side while closed), show these explicit faces instead of rotating into inside artwork.
 
-No amount of scene rotation fixes this because the CSS back face of p1 will always contain inside artwork (that's how the inside view works — flip scene 180° to reveal back faces with inside images).
+3. Preserve the closed state when switching outside/inside on a fully closed roll fold
+- Special-case `handleToggleSurface` so a fully closed tri-fold stays closed when switching sides.
+- Keep the current reset-to-open behavior for open or partially folded states.
 
-### Fix
+Expected result
+- Outside open: unchanged.
+- Outside folded default: unchanged.
+- Inside open: unchanged.
+- Inside folded: right flap folds in first, left flap folds in second and ends up on top.
+- Outside folded + `View Back`: shows the correct opposite closed face, not inside artwork.
+- Inside fully folded + `Show Outside`: shows the correct closed outside face, not the wrong panel/face.
 
-Use the same approach as Z-fold: when the half-fold is folded and showing the "back", render a **static single-panel view** of p0's front face (outside left = back cover) instead of trying to use 3D rotation. When showing the "front", render p1's front face (outside right = front cover).
-
-**`src/components/preview/brochure/BrochureViewer.tsx`**
-
-Add a static view block for half-fold when folded (before the main return), similar to the Z-fold block:
-
-- When `isHalfFold && anyFolded`:
-  - `showingFront = !rotatedFolded` → display p1's front face (front cover)
-  - `showingBack = rotatedFolded` → display p0's front face (back cover)
-  - Render as a static single panel with shadow, same pattern as the Z-fold folded view
-  - Include controls and a label ("Front/Back of folded brochure")
-  - Panel aspect ratio: `sheetRatio * 0.5` (half the sheet width)
-
-Remove the `extraRotation` half-fold branch entirely since half-fold folded state is now handled by the static view. The `extraRotation` simplifies to just `rotatedFolded ? 180 : 0` for tri/gate folds.
-
-One file change.
-
+Files to update
+- `src/components/preview/brochure/BrochureStage.tsx`
+- `src/components/preview/brochure/BrochureViewer.tsx`
