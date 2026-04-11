@@ -21,17 +21,21 @@ export default function BrochureViewer({
   const [surface, setSurface] = useState<Surface>("outside");
   const [foldedPanels, setFoldedPanels] = useState<Record<string, boolean>>({});
   const [rotatedFolded, setRotatedFolded] = useState(false);
+  const [isZFolded, setIsZFolded] = useState(false);
 
   // Reset when fold type changes
   useEffect(() => {
     setSurface("outside");
     setFoldedPanels({});
     setRotatedFolded(false);
+    setIsZFolded(false);
   }, [foldType]);
 
   const hasTwoSides = insideSpec !== null;
   const activeSpec = outsideSpec;
   const { foldConfigs } = activeSpec;
+  const isZFold = foldType === "z_fold";
+  const isHalfFold = foldType === "bi_fold";
 
   // Compute rotation per panel
   const rotations: Record<string, number> = {};
@@ -43,10 +47,7 @@ export default function BrochureViewer({
 
   const flipScene = surface === "inside";
   const anyFolded = Object.values(foldedPanels).some(Boolean);
-  // Outside: default shows front (needs 180° extra), toggle shows back (0°)
-  // Inside: scene is already flipped, so default front = 0°, toggle back = 180°
   const showingBack = anyFolded && rotatedFolded;
-  const isHalfFold = foldType === "bi_fold";
   const extraRotation = anyFolded
     ? isHalfFold
       ? (surface === "outside" ? (showingBack ? 0 : 180) : (showingBack ? 180 : 0))
@@ -71,10 +72,98 @@ export default function BrochureViewer({
     setRotatedFolded((r) => !r);
   }, []);
 
+  const handleToggleZFold = useCallback(() => {
+    setIsZFolded((prev) => !prev);
+    setRotatedFolded(false);
+  }, []);
+
   const foldToggles = foldConfigs.map((fc) => ({
     config: fc,
     isFolded: foldedPanels[fc.panelId] ?? false,
   }));
+
+  // Z-fold: when folded, show a static single-panel view
+  if (isZFold && isZFolded) {
+    // Front of folded brochure = right panel (p2) outside face
+    // Back of folded brochure = left panel (p0) outside face
+    const frontPanel = outsideSpec.panels[2];
+    const backPanel = outsideSpec.panels[0];
+    const showingFront = !rotatedFolded;
+    const displayPanel = showingFront ? frontPanel : backPanel;
+    const displayFace = displayPanel.front;
+
+    const sheetRatio = 3 / 2;
+    const panelRatio = sheetRatio * (displayPanel.widthFraction || 1/3);
+    let panelW = Math.min(width * 0.4, (height - 64) * 0.85 * panelRatio);
+    let panelH = panelW / panelRatio;
+    if (panelH > (height - 64) * 0.85) {
+      panelH = (height - 64) * 0.85;
+      panelW = panelH * panelRatio;
+    }
+
+    return (
+      <div
+        className="flex flex-col items-center justify-center gap-3"
+        style={{ width, height }}
+      >
+        <div
+          style={{
+            width: panelW,
+            height: panelH,
+            background: "hsl(var(--background))",
+            border: "1px solid hsl(var(--border))",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+            overflow: "hidden",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {displayFace.imageUrl ? (
+            <img
+              src={displayFace.imageUrl}
+              alt=""
+              draggable={false}
+              style={{ width: "100%", height: "100%", objectFit: "fill", display: "block" }}
+            />
+          ) : (
+            <div
+              style={{
+                width: "100%",
+                height: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: displayFace.backgroundColor || "hsl(var(--muted))",
+                color: "hsl(var(--muted-foreground))",
+                fontSize: 14,
+              }}
+            >
+              {showingFront ? "Front Cover" : "Back Cover"}
+            </div>
+          )}
+        </div>
+
+        <BrochureControls
+          foldToggles={foldToggles}
+          onToggleFold={handleToggleFold}
+          surface={surface}
+          onToggleSurface={handleToggleSurface}
+          hasTwoSides={hasTwoSides}
+          anyFolded={anyFolded}
+          rotatedFolded={rotatedFolded}
+          onToggleRotate={handleToggleRotate}
+          foldType={foldType}
+          isZFolded={isZFolded}
+          onToggleZFold={handleToggleZFold}
+        />
+
+        <p className="text-xs text-muted-foreground">
+          {showingFront ? "Front" : "Back"} of folded brochure
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -101,6 +190,9 @@ export default function BrochureViewer({
         anyFolded={anyFolded}
         rotatedFolded={rotatedFolded}
         onToggleRotate={handleToggleRotate}
+        foldType={foldType}
+        isZFolded={isZFolded}
+        onToggleZFold={handleToggleZFold}
       />
 
       {hasTwoSides && (

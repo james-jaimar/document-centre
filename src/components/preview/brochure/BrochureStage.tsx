@@ -70,6 +70,7 @@ export default function BrochureStage({
   const sorted = [...renderInfos].sort((a, b) => a.layer - b.layer);
 
   const totalRotation = (flipScene ? 180 : 0) + extraRotation;
+  const sceneFlipped = (Math.round(Math.abs(totalRotation) / 180) % 2) === 1;
 
   return (
     <div
@@ -90,7 +91,8 @@ export default function BrochureStage({
           transition: "transform 700ms ease",
         }}
       >
-        {sorted.map(({ index, depthOffset }) => {
+        {sorted.map(({ index, depthOffset: rawDepth }) => {
+          const depthOffset = sceneFlipped ? -rawDepth : rawDepth;
           const panel = panels[index];
           const fc = foldLookup.get(panel.id);
           const rotY = rotations[panel.id] ?? 0;
