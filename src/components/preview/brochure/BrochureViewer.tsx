@@ -19,13 +19,14 @@ export default function BrochureViewer({
   foldType,
 }: BrochureViewerProps) {
   const [surface, setSurface] = useState<Surface>("outside");
-  // Track which panels are folded (true = folded, false = open)
   const [foldedPanels, setFoldedPanels] = useState<Record<string, boolean>>({});
+  const [rotatedFolded, setRotatedFolded] = useState(false);
 
   // Reset when fold type changes
   useEffect(() => {
     setSurface("outside");
     setFoldedPanels({});
+    setRotatedFolded(false);
   }, [foldType]);
 
   const hasTwoSides = insideSpec !== null;
@@ -41,20 +42,32 @@ export default function BrochureViewer({
   }
 
   const flipScene = surface === "inside";
+  const extraRotation = rotatedFolded ? 180 : 0;
 
   const handleToggleFold = useCallback((panelId: string) => {
-    setFoldedPanels((prev) => ({ ...prev, [panelId]: !prev[panelId] }));
+    setFoldedPanels((prev) => {
+      const next = { ...prev, [panelId]: !prev[panelId] };
+      return next;
+    });
+    setRotatedFolded(false);
   }, []);
 
   const handleToggleSurface = useCallback(() => {
     setSurface((s) => (s === "outside" ? "inside" : "outside"));
     setFoldedPanels({});
+    setRotatedFolded(false);
+  }, []);
+
+  const handleToggleRotate = useCallback(() => {
+    setRotatedFolded((r) => !r);
   }, []);
 
   const foldToggles = foldConfigs.map((fc) => ({
     config: fc,
     isFolded: foldedPanels[fc.panelId] ?? false,
   }));
+
+  const anyFolded = Object.values(foldedPanels).some(Boolean);
 
   return (
     <div
@@ -67,6 +80,7 @@ export default function BrochureViewer({
         foldedPanels={foldedPanels}
         surface={surface}
         flipScene={flipScene}
+        extraRotation={extraRotation}
         maxWidth={width}
         maxHeight={height - 64}
       />
@@ -77,6 +91,9 @@ export default function BrochureViewer({
         surface={surface}
         onToggleSurface={handleToggleSurface}
         hasTwoSides={hasTwoSides}
+        anyFolded={anyFolded}
+        rotatedFolded={rotatedFolded}
+        onToggleRotate={handleToggleRotate}
       />
 
       {hasTwoSides && (
