@@ -64,6 +64,8 @@ export default function BrochureViewer({
       <BrochureStage
         spec={activeSpec}
         rotations={rotations}
+        foldedPanels={foldedPanels}
+        surface={surface}
         flipScene={flipScene}
         maxWidth={width}
         maxHeight={height - 64}
