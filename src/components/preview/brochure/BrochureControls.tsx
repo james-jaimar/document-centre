@@ -51,7 +51,7 @@ export default function BrochureControls({
           className="gap-1.5"
         >
           <RefreshCw className="h-4 w-4" />
-          {rotatedFolded ? "View Back" : "View Front"}
+          {rotatedFolded ? "View Front" : "View Back"}
         </Button>
       )}
 
