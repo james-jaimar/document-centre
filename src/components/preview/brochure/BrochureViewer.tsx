@@ -36,6 +36,7 @@ export default function BrochureViewer({
   const { foldConfigs } = activeSpec;
   const isZFold = foldType === "z_fold";
   const isHalfFold = foldType === "bi_fold";
+  const isTriFold = foldType === "tri_fold";
 
   // Compute rotation per panel
   const rotations: Record<string, number> = {};
