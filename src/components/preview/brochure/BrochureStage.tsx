@@ -67,7 +67,15 @@ export default function BrochureStage({
     return { index: i, layer: layerNum, depthOffset };
   });
 
-  const sorted = [...renderInfos].sort((a, b) => a.layer - b.layer);
+  const sorted = [...renderInfos].sort((a, b) => {
+    if (a.layer !== b.layer) return a.layer - b.layer;
+    // Within same layer, sort by foldSequence so later folds render on top
+    const aFc = foldLookup.get(panels[a.index].id);
+    const bFc = foldLookup.get(panels[b.index].id);
+    const aSeq = aFc ? aFc.foldSequence : 0;
+    const bSeq = bFc ? bFc.foldSequence : 0;
+    return aSeq - bSeq;
+  });
 
   const totalRotation = (flipScene ? 180 : 0) + extraRotation;
   const sceneFlipped = (Math.round(Math.abs(totalRotation) / 180) % 2) === 1;
