@@ -139,7 +139,65 @@ export default function BrochureViewer({
     );
   }
 
-  // Z-fold: when folded, show a static single-panel view
+  // Tri-fold / Roll-fold: when fully closed, show static single-panel view
+  if (isTriFold && allFoldsClosed) {
+    // Front of closed brochure = centre outside panel (p1 = back cover area visually, but it's what you see)
+    // Back of closed brochure = left outside panel (p0)
+    const frontPanel = outsideSpec.panels[1]; // centre = visible front of closed
+    const backPanel = outsideSpec.panels[0];  // left = visible back of closed
+    const showingFront = !rotatedFolded;
+    const displayPanel = showingFront ? frontPanel : backPanel;
+    const displayFace = displayPanel.front;
+
+    const sheetRatio = 3 / 2;
+    const panelRatio = sheetRatio * (displayPanel.widthFraction || 1/3);
+    let panelW = Math.min(width * 0.4, (height - 64) * 0.85 * panelRatio);
+    let panelH = panelW / panelRatio;
+    if (panelH > (height - 64) * 0.85) {
+      panelH = (height - 64) * 0.85;
+      panelW = panelH * panelRatio;
+    }
+
+    return (
+      <div className="flex flex-col items-center justify-center gap-3" style={{ width, height }}>
+        <div
+          style={{
+            width: panelW, height: panelH,
+            background: "hsl(var(--background))",
+            border: "1px solid hsl(var(--border))",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+            overflow: "hidden",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          {displayFace.imageUrl ? (
+            <img src={displayFace.imageUrl} alt="" draggable={false}
+              style={{ width: "100%", height: "100%", objectFit: "fill", display: "block" }} />
+          ) : (
+            <div style={{
+              width: "100%", height: "100%",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              backgroundColor: displayFace.backgroundColor || "hsl(var(--muted))",
+              color: "hsl(var(--muted-foreground))", fontSize: 14,
+            }}>
+              {showingFront ? "Front" : "Back"}
+            </div>
+          )}
+        </div>
+        <BrochureControls
+          foldToggles={foldToggles} onToggleFold={handleToggleFold}
+          surface={surface} onToggleSurface={handleToggleSurface}
+          hasTwoSides={hasTwoSides} anyFolded={anyFolded}
+          rotatedFolded={rotatedFolded} onToggleRotate={handleToggleRotate}
+          foldType={foldType} isZFolded={isZFolded} onToggleZFold={handleToggleZFold}
+        />
+        <p className="text-xs text-muted-foreground">
+          {showingFront ? "Front" : "Back"} of folded brochure
+        </p>
+      </div>
+    );
+  }
+
   if (isZFold && isZFolded) {
     // Front of folded brochure = right panel (p2) outside face
     // Back of folded brochure = left panel (p0) outside face
