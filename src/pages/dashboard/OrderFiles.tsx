@@ -941,6 +941,20 @@ export default function OrderFiles() {
           isRotating={isRotating}
         />
       )}
+
+      {/* Bleed Advisory Dialog */}
+      {bleedDoc && (
+        <BleedAdvisory
+          open={!!bleedDoc}
+          onOpenChange={(open) => { if (!open) setBleedDoc(null); }}
+          fileName={bleedDoc.fileName}
+          widthMm={bleedDoc.widthMm}
+          heightMm={bleedDoc.heightMm}
+          nearMatch={bleedDoc.nearMatch}
+          isApplying={isApplyingBleed}
+          onConfirm={handleBleedConfirm}
+        />
+      )}
     </div>
   );
 }
