@@ -415,10 +415,102 @@ export default function OrderFiles() {
 
   const handleSwitchToBoundDocs = useCallback(() => {
     setOrientationDoc(null);
-    // Navigate back to product selection
     navigate(`/t/${slug}/orders/new`);
     toast.info("Please select Bound Documents for portrait files");
   }, [navigate, slug]);
+
+  // Bleed advisory handler
+  const handleBleedConfirm = useCallback(async (choice: "match" | "custom" | "keep", customBleedMm?: number) => {
+    if (!bleedDoc) return;
+
+    if (choice === "keep") {
+      const existing = documents.find((d) => d.id === bleedDoc.id);
+      const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
+      await supabase
+        .from("documents")
+        .update({
+          preflight_data: { ...preflight, bleed_resolved: true, bleed_action: "keep" },
+        })
+        .eq("id", bleedDoc.id);
+      resolvedDocIds.current.add(bleedDoc.id);
+      setBleedDoc(null);
+      refetchDocuments();
+      toast.success("Keeping full size");
+      return;
+    }
+
+    if (!bleedDoc.backendAssetId) {
+      toast.error("Cannot trim — document has no backend asset");
+      setBleedDoc(null);
+      return;
+    }
+
+    setIsApplyingBleed(true);
+    try {
+      // Calculate the trim box in points from bleed values
+      const bleedMm = choice === "custom" && customBleedMm
+        ? customBleedMm
+        : (bleedDoc.nearMatch.bleedW + bleedDoc.nearMatch.bleedH) / 2;
+
+      // Convert bleed from mm to points (1 mm = 72/25.4 pt)
+      const bleedPt = bleedMm * (72 / 25.4);
+
+      // Get the asset's media box to compute trim box
+      const asset = await getAsset(bleedDoc.backendAssetId);
+      const boxes = asset.boxes as Record<string, number[]> | null;
+      const mediaBox = boxes?.MediaBox ?? [0, 0, asset.width_pt ?? 595, asset.height_pt ?? 842];
+
+      // TrimBox = MediaBox inset by bleed on all sides
+      const trimBox: [number, number, number, number] = [
+        mediaBox[0] + bleedPt,
+        mediaBox[1] + bleedPt,
+        mediaBox[2] - bleedPt,
+        mediaBox[3] - bleedPt,
+      ];
+
+      toast.info("Trimming to finished size…");
+      const { job_id: cropJobId } = await cropRasterize(bleedDoc.backendAssetId, trimBox);
+      await pollJob(cropJobId);
+
+      // Re-generate thumbnails
+      toast.info("Regenerating preview…");
+      await reThumbnail(bleedDoc.id, bleedDoc.backendAssetId);
+
+      // Calculate new dimensions
+      const trimWidthPt = Math.abs(trimBox[2] - trimBox[0]);
+      const trimHeightPt = Math.abs(trimBox[3] - trimBox[1]);
+      const newWidthMm = (trimWidthPt * 25.4) / 72;
+      const newHeightMm = (trimHeightPt * 25.4) / 72;
+
+      const existing = documents.find((d) => d.id === bleedDoc.id);
+      const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
+      await supabase
+        .from("documents")
+        .update({
+          page_width_mm: Math.round(newWidthMm * 10) / 10,
+          page_height_mm: Math.round(newHeightMm * 10) / 10,
+          preflight_data: {
+            ...preflight,
+            bleed_resolved: true,
+            bleed_action: choice === "custom" ? `custom_${bleedMm}mm` : `trimmed_to_${bleedDoc.nearMatch.matchedSize.name}`,
+            bleed_mm: bleedMm,
+            original_width_mm: bleedDoc.widthMm,
+            original_height_mm: bleedDoc.heightMm,
+            trim_box_pt: trimBox,
+          },
+        })
+        .eq("id", bleedDoc.id);
+
+      resolvedDocIds.current.add(bleedDoc.id);
+      setBleedDoc(null);
+      refetchDocuments();
+      toast.success(`Trimmed to ${Math.round(newWidthMm)} × ${Math.round(newHeightMm)}mm`);
+    } catch (err: any) {
+      toast.error("Trimming failed", { description: err.message });
+    } finally {
+      setIsApplyingBleed(false);
+    }
+  }, [bleedDoc, documents, refetchDocuments, reThumbnail]);
 
   // Determine which document to show in the middle preview
   const previewDoc = useMemo(() => {
