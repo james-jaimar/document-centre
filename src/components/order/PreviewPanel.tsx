@@ -385,14 +385,29 @@ export default function PreviewPanel({
   const pageLabels = useMemo(() => finalPages.map((p) => p.label ?? ""), [finalPages]);
   const pageColors = useMemo(() => finalPages.map((p) => p.color ?? ""), [finalPages]);
 
-  // Compute display page numbers — sequential 1-based labels for the physical face sequence
+  // Roles that do NOT get a content page number — they are material / blank faces
+  const NON_CONTENT_ROLES = new Set([
+    "tab", "tab_back", "insert", "insert_back", "blank_back",
+    "pvc_cover_front", "pvc_cover_back",
+    "inside_back_cover_card", "back_cover_card", "inside_back_blank",
+  ]);
+
+  // Compute display page numbers — only body/cover content faces get numbered.
+  // Non-content faces (tabs, inserts, blank backs, material covers) get null.
   const displayPageNumbers = useMemo(() => {
     let num = 0;
-    return finalPages.map((_, i) => {
+    return computedPageRoles.map((role) => {
+      if (NON_CONTENT_ROLES.has(role)) return null;
       num++;
       return num;
     });
-  }, [finalPages]);
+  }, [computedPageRoles]);
+
+  // Total content pages (for "of N" display)
+  const totalContentPages = useMemo(
+    () => displayPageNumbers.filter((n) => n !== null).length,
+    [displayPageNumbers],
+  );
 
   // Compute tab positions for persistent overlay
   const tabPositions = useMemo((): TabPosition[] => {
@@ -453,6 +468,29 @@ export default function PreviewPanel({
   const visibleLeft = isSoloState && isShowingFrontCover ? null : currentPage;
   const visibleRight = isShowingFrontCover ? 0 : (isSoloState ? null : currentPage + 1);
 
+  /** Human-friendly label for a role when it has no page number */
+  const roleFriendlyName = (role: string): string => {
+    switch (role) {
+      case "tab": return "Tab Divider";
+      case "tab_back": return "Tab Divider (Back)";
+      case "insert": return "Insert Sheet";
+      case "insert_back": return "Insert Sheet (Back)";
+      case "blank_back": return "Blank (Back)";
+      case "pvc_cover_front": return "Front Cover (PVC)";
+      case "pvc_cover_back": return "PVC Cover (Inside)";
+      case "inside_back_cover_card": return "Back Cover (Inside)";
+      case "back_cover_card": return "Back Cover";
+      case "inside_back_blank": return "Blank (Inside Back)";
+      default: return "";
+    }
+  };
+
+  const faceLabel = (idx: number): string => {
+    const dpn = displayPageNumbers[idx];
+    if (dpn !== null) return `Page ${dpn}`;
+    return roleFriendlyName(computedPageRoles[idx]);
+  };
+
   const pageInfoText = useMemo(() => {
     if (totalPages === 0) return "";
     if (isBound) {
@@ -462,16 +500,14 @@ export default function PreviewPanel({
       }
       if (isShowingBackCover) return "Back Cover";
       if (isShowingLastSolo) {
-        const dpn = displayPageNumbers[totalPages - 1] ?? totalPages;
-        return `Page ${dpn} of ${displayPageNumbers[totalPages - 1] ?? totalPages}`;
+        return `${faceLabel(totalPages - 1)} of ${totalContentPages}`;
       }
-      const leftNum = displayPageNumbers[currentPage] ?? (currentPage + 1);
-      const rightNum = displayPageNumbers[currentPage + 1] ?? (currentPage + 2);
-      return `Pages ${leftNum}–${rightNum}  (${displayPageNumbers[totalPages - 1] ?? totalPages} pages)`;
+      const leftLabel = faceLabel(currentPage);
+      const rightLabel = faceLabel(currentPage + 1);
+      return `${leftLabel} – ${rightLabel}  (${totalContentPages} pages)`;
     }
-    const dpn = displayPageNumbers[currentPage] ?? (currentPage + 1);
-    return `Page ${dpn} of ${displayPageNumbers[totalPages - 1] ?? totalPages}`;
-  }, [currentPage, totalPages, isBound, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers]);
+    return `${faceLabel(currentPage)} of ${totalContentPages}`;
+  }, [currentPage, totalPages, totalContentPages, isBound, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers]);
 
   const colourStatus = useMemo(() => {
     if (totalPages === 0) return "";
