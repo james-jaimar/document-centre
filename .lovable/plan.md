@@ -1,28 +1,24 @@
 
 
-## Fix: Align page numbering between preview and Tab/Insert drawer
+## Fix: Page numbering in preview footer shows raw indices for tabs/inserts
 
 ### Problem
-The preview numbers every physical face sequentially (tabs, blank backs, inserts all get numbers), while the Tab & Insert drawer only counts body document pages. So "After Page 6" in the drawer might be "Page 14" in the preview. Users can't tell where to place tabs/inserts.
-
-### Root Cause
-`displayPageNumbers` in `PreviewPanel.tsx` does a simple `num++` for every face in `finalPages`, including tab faces, insert faces, blank backs, and cover material pages. The drawer's `buildBodyPages` correctly counts only body document pages, but those numbers don't match what the user sees in the preview.
+The content-only numbering logic was added to `displayPageNumbers` (returns `null` for tabs, inserts, blank backs), but the FlipBook footer uses `displayPageNumbers?.[idx] ?? currentPage` — so when a face is `null`, it falls back to the raw 0-based array index. This produces confusing numbers like 4,4 or 6,8 or 9,7.
 
 ### Fix
-One file change: `src/components/order/PreviewPanel.tsx`
 
-Update `displayPageNumbers` computation to only increment the counter for actual body content faces (not tabs, tab backs, inserts, insert backs, blank backs, cover material faces). Non-content faces get `null`/`0` so the footer skips showing a number for them.
+**`src/components/preview/FlipBook.tsx`** — Update the footer to display friendly role labels for non-content faces instead of falling back to raw indices.
 
-Specifically:
-- Check `computedPageRoles[i]` for each face
-- Only increment the page counter for roles that represent actual printed content pages (body pages, front/back cover content)
-- Tab, tab_back, insert, insert_back, blank_back, pvc_cover_back, inside_back_cover_card, back_cover_card, inside_back_blank → get `null` (no number displayed)
-- Update the footer label logic to handle `null` entries gracefully — when on a non-numbered face, show the role name (e.g. "Tab Divider", "Insert Sheet") instead of "Page X"
+1. Accept `pageRoles` (or a `faceLabels: string[]`) as a new prop alongside `displayPageNumbers`
+2. Create a helper that returns either `"Page N"` (when displayPageNumbers entry is a number) or a friendly role name like `"Tab Divider"`, `"Insert Sheet"`, `"Blank"` (when null)
+3. Update the three footer `<span>` elements to use this helper instead of the `?? currentPage` fallback
 
-This means the preview will show "Page 6" on the same body page that the drawer calls "After Page 6" — they use the same counting logic (body pages only).
+**`src/components/preview/DocumentPreview.tsx`** — Thread the new prop from PreviewPanel through to FlipBook.
 
-### What stays the same
-- The drawer's `buildBodyPages` numbering — it's already correct
-- The physical sequence and spread alignment logic
-- Tab/insert placement anchoring (uses `page_range_start` which stores body page numbers)
+**`src/components/order/PreviewPanel.tsx`** — Compute a `faceLabels: string[]` array (one entry per face) using the existing `faceLabel()` function, and pass it down to DocumentPreview.
+
+### Result
+- Content pages show "Page 4", "Page 5", etc. — matching the Tab/Insert drawer numbering
+- Tab faces show "Tab Divider", insert faces show "Insert Sheet", blank backs show "Blank"
+- Left and right sides of a spread each show their own correct label
 
