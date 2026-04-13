@@ -114,6 +114,22 @@ export function useAddItemToCart() {
         .eq("id", input.orderItemId);
       if (itemError) throw itemError;
 
+      // If this edit replaces an existing cart item, delete the original
+      if (input.replacesCartItemId) {
+        // Delete sections, documents, storage files for the replaced item
+        await supabase.from("document_sections").delete().eq("order_item_id", input.replacesCartItemId);
+        const { data: oldDocs } = await supabase
+          .from("documents")
+          .select("id, file_path")
+          .eq("order_item_id", input.replacesCartItemId);
+        const oldPaths = oldDocs?.map((d) => d.file_path).filter(Boolean) ?? [];
+        await supabase.from("documents").delete().eq("order_item_id", input.replacesCartItemId);
+        if (oldPaths.length > 0) {
+          await supabase.storage.from("document-uploads").remove(oldPaths);
+        }
+        await supabase.from("order_items").delete().eq("id", input.replacesCartItemId);
+      }
+
       // Recalculate cart total
       const { data: cartItems } = await supabase
         .from("order_items")
