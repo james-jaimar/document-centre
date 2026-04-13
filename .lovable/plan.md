@@ -1,24 +1,22 @@
 
 
-## Fix: Page numbering in preview footer shows raw indices for tabs/inserts
+## Fix: Remove duplicate footer numbering in FlipBook
 
 ### Problem
-The content-only numbering logic was added to `displayPageNumbers` (returns `null` for tabs, inserts, blank backs), but the FlipBook footer uses `displayPageNumbers?.[idx] ?? currentPage` — so when a face is `null`, it falls back to the raw 0-based array index. This produces confusing numbers like 4,4 or 6,8 or 9,7.
+There are TWO footer numbering systems fighting each other:
+1. **FlipBook footer** (lines 542-555 of FlipBook.tsx) — renders `faceLabels` below each spread side
+2. **PreviewPanel footer** (line 607 of PreviewPanel.tsx) — renders `pageInfoText` with the correct content-only numbering
+
+The FlipBook footer is showing raw numbers for tabs/inserts (e.g. "9", "12") instead of labels. Meanwhile, the PreviewPanel footer already produces the correct combined display like "Page 8 – Tab Divider (20 pages)".
 
 ### Fix
 
-**`src/components/preview/FlipBook.tsx`** — Update the footer to display friendly role labels for non-content faces instead of falling back to raw indices.
+**`src/components/preview/FlipBook.tsx`** — Remove the FlipBook's own page number footer entirely (lines 542-555). The PreviewPanel footer already handles this correctly with the `pageInfoText` that shows content-only page numbers, friendly role names for tabs/inserts, and total page count. Having two footers causes confusion and the FlipBook one is the buggy one.
 
-1. Accept `pageRoles` (or a `faceLabels: string[]`) as a new prop alongside `displayPageNumbers`
-2. Create a helper that returns either `"Page N"` (when displayPageNumbers entry is a number) or a friendly role name like `"Tab Divider"`, `"Insert Sheet"`, `"Blank"` (when null)
-3. Update the three footer `<span>` elements to use this helper instead of the `?? currentPage` fallback
-
-**`src/components/preview/DocumentPreview.tsx`** — Thread the new prop from PreviewPanel through to FlipBook.
-
-**`src/components/order/PreviewPanel.tsx`** — Compute a `faceLabels: string[]` array (one entry per face) using the existing `faceLabel()` function, and pass it down to DocumentPreview.
+This is a simple deletion — remove the `<div>` block that renders `faceLabels` below the spread. The PreviewPanel's footer (Page info + slider + nav buttons) remains as the single source of truth.
 
 ### Result
-- Content pages show "Page 4", "Page 5", etc. — matching the Tab/Insert drawer numbering
-- Tab faces show "Tab Divider", insert faces show "Insert Sheet", blank backs show "Blank"
-- Left and right sides of a spread each show their own correct label
+- One consistent footer showing correct info: "Page 4 – Page 5 (20 pages)" for body spreads, "Page 8 – Tab Divider (20 pages)" for mixed spreads
+- No more confusing duplicate numbers
+- Tab/insert page numbering matches the drawer exactly
 
