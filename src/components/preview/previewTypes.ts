@@ -91,6 +91,7 @@ export interface FlipBookProps extends PreviewComponentProps {
   bindingType: BindingType;
   tabPositions?: TabPosition[];
   displayPageNumbers?: number[];
+  faceLabels?: string[];
   /** Binding edge: left (default) or top (for landscape presentations) */
   bindingEdge?: "left" | "top";
 }

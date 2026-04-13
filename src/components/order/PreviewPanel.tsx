@@ -576,6 +576,7 @@ export default function PreviewPanel({
           pageColors={pageColors}
           tabPositions={tabPositions}
           displayPageNumbers={displayPageNumbers}
+          faceLabels={computedPageRoles.map((_, i) => faceLabel(i))}
           bindingEdge={bindingEdge}
         />
       </div>
