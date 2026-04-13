@@ -1,37 +1,33 @@
 
-Roll/C-fold fix plan
 
-What I found
-- I should not touch `brochure-specs.ts` again for tri-fold: your current outside open view and outside folded default view are already correct.
-- The remaining bugs come from two places:
-  1. `BrochureStage.tsx` only sorts panels by coarse layer (`behind/base/front`), so in the inside view the left flap is not guaranteed to sit on top of the right flap when both are folded.
-  2. `BrochureViewer.tsx` still uses whole-scene rotation to show the “other side” of a folded roll fold. That exposes `panel.back` (inside artwork), which is why `View Back` and folded `Show Outside` can show the wrong face.
+## Add "Edit" functionality for cart items
 
-Implementation
-1. Fix tri-fold stacking in `src/components/preview/brochure/BrochureStage.tsx`
-- Keep the current tri-fold angles.
-- Change render ordering so same-layer folded panels are also sorted by fold depth / `foldSequence`.
-- Result: inside view will correctly behave as “right folds first, left folds second, left sits on top”.
+### Problem
+Once an item is added to cart, the user has no way to go back and edit its configuration, quantity, or files. This is a critical usability gap.
 
-2. Add explicit closed-face mapping in `src/components/preview/brochure/BrochureViewer.tsx`
-- Detect when `foldType === "tri_fold"` and all foldable panels are closed.
-- Treat the closed roll-fold as a 2-face object instead of relying on rotated back-faces:
-  - closed outside face = centre outside panel (`p1.front`)
-  - opposite closed face = left outside panel (`p0.front`)
-- When the user asks to see the opposite side of a fully closed brochure (`View Back`, or switching side while closed), show these explicit faces instead of rotating into inside artwork.
+### Approach
+Create an "Edit" flow that moves a cart item back to a temporary draft order so the existing OrderBuild page can handle it. When the user finishes editing and clicks "Add to Cart" again, it moves back to the cart — exactly the same flow as the first time.
 
-3. Preserve the closed state when switching outside/inside on a fully closed roll fold
-- Special-case `handleToggleSurface` so a fully closed tri-fold stays closed when switching sides.
-- Keep the current reset-to-open behavior for open or partially folded states.
+### Changes
 
-Expected result
-- Outside open: unchanged.
-- Outside folded default: unchanged.
-- Inside open: unchanged.
-- Inside folded: right flap folds in first, left flap folds in second and ends up on top.
-- Outside folded + `View Back`: shows the correct opposite closed face, not inside artwork.
-- Inside fully folded + `Show Outside`: shows the correct closed outside face, not the wrong panel/face.
+**1. `src/hooks/useCart.ts`** — Add `useEditCartItem` mutation
+- Creates a new temporary draft order for the user
+- Moves the selected `order_item` (and its linked `documents` and `document_sections`) back to the new draft order by updating `order_id`
+- Recalculates the cart total after removing the item
+- Sets `build_status` back to `building` so OrderBuild treats it as editable
+- Returns the new draft order ID for navigation
 
-Files to update
-- `src/components/preview/brochure/BrochureStage.tsx`
-- `src/components/preview/brochure/BrochureViewer.tsx`
+**2. `src/pages/dashboard/Cart.tsx`** — Add Edit button per row
+- Add a pencil/edit icon button next to each item (alongside the existing delete button)
+- On click, calls `useEditCartItem`, then navigates to `/t/:slug/orders/:newDraftId/build`
+- Shows a loading spinner while the mutation runs
+
+**3. `src/pages/dashboard/OrderBuild.tsx`** — Minor tweak
+- The page already works correctly for this flow since it loads order → first order_item → documents/sections. No changes needed unless the `build_status = "ready"` blocks editing (it doesn't based on current code).
+
+### User flow
+1. User sees cart with an Edit (pencil) icon on each row
+2. Clicks Edit → item is moved to a new draft order → navigates to the build/configure page
+3. User makes changes, clicks "Add to Cart" again → item moves back to cart with updated config
+4. The old empty draft order is cleaned up automatically (existing logic in `useAddItemToCart`)
+
