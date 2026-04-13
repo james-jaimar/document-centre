@@ -441,6 +441,8 @@ export default function OrderBuild() {
     setIsSubmitting(true);
     try {
       const breakdown = calculateItemPrice(spec, options, pricingRules);
+      // Check if this draft was created by editing a cart item
+      const replacesCartItemId = (order.metadata as any)?.replaces_cart_item_id;
       await addItemToCart.mutateAsync({
         orderItemId: orderItem.id,
         draftOrderId: order.id,
@@ -449,6 +451,7 @@ export default function OrderBuild() {
         quantity: spec.quantity,
         totalPrice: breakdown.total,
         spec: spec as any,
+        replacesCartItemId: replacesCartItemId || undefined,
       });
       setShowCartDialog(false);
       toast.success("Added to cart!");
