@@ -119,8 +119,17 @@ const CustomerOrders = () => {
   const { data: orders, isLoading } = useUserOrders(user?.id);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
 
-  // Exclude cart orders from all views — they belong on the Cart page
-  const nonCartOrders = orders?.filter((o) => o.order_status !== "cart") ?? [];
+  // Exclude cart orders and unsaved drafts (all items still in build_status 'draft')
+  const nonCartOrders = orders?.filter((o) => {
+    if (o.order_status === "cart") return false;
+    // Hide draft orders that haven't been explicitly saved yet
+    if (o.order_status === "draft") {
+      const items = o.order_items ?? [];
+      const allUnsaved = items.length === 0 || items.every((i: any) => i.build_status === "draft");
+      if (allUnsaved) return false;
+    }
+    return true;
+  }) ?? [];
 
   const filterOrders = (tab: string) => {
     switch (tab) {
