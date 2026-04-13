@@ -10,7 +10,7 @@ import { FileText, Loader2 } from "lucide-react";
  * Fixed internal resolution for the flipbook.
  * The library always renders at this size; CSS transform scales it to fit.
  */
-const BASE_PAGE_WIDTH = 350;
+const BASE_PAGE_WIDTH = 400;
 
 /**
  * Roles where content is handled entirely by PageEffects (no image).

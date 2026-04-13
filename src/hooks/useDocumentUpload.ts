@@ -6,6 +6,7 @@ import { toast } from "@/hooks/use-toast";
 import {
   createAsset,
   cropRasterize,
+  rasterize,
   getAsset,
   getDerivedFiles,
   pollJob,
@@ -154,7 +155,23 @@ export function useDocumentUpload(orderItemId: string | undefined) {
           );
         }
 
-        updateUpload(fileName, { progress: 50, statusText: "Checking page dimensions…" });
+        updateUpload(fileName, { progress: 48, statusText: "Rendering high-res previews…" });
+
+        // 3b. Re-rasterize at 150 DPI for crisp FlipBook previews
+        try {
+          const { job_id: rasterJobId } = await rasterize(asset_id, 150);
+          await pollJob(rasterJobId, (job) => {
+            if (job.status === "running") {
+              updateUpload(fileName, { progress: 50, statusText: "Rendering high-res previews…" });
+            }
+          });
+          console.log("[upload] High-res rasterize complete");
+        } catch (rasterErr) {
+          // Non-fatal: fall back to default-res thumbnails
+          console.warn("[upload] High-res rasterize failed, using default:", rasterErr);
+        }
+
+        updateUpload(fileName, { progress: 52, statusText: "Checking page dimensions…" });
 
         // 4. Fetch asset to check for TrimBox ≠ MediaBox
         const assetMeta = await getAsset(asset_id);

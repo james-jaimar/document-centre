@@ -264,11 +264,21 @@ export async function merge(
 export async function cropRasterize(
   assetId: string,
   box: [number, number, number, number],
-  dpi = 120
+  dpi = 150
 ): Promise<{ job_id: string }> {
   return request("v1/operations/crop-rasterize", "POST", {
     asset_id: assetId,
     box,
+    dpi,
+  });
+}
+
+export async function rasterize(
+  assetId: string,
+  dpi = 150
+): Promise<{ job_id: string }> {
+  return request("v1/operations/rasterize", "POST", {
+    asset_id: assetId,
     dpi,
   });
 }
