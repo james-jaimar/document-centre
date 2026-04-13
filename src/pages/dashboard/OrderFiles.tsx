@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
 import UploadProgressModal from "@/components/order/UploadProgressModal";
 import PaperSizeAdvisory from "@/components/order/PaperSizeAdvisory";
+import BleedAdvisory from "@/components/order/BleedAdvisory";
 import OrientationAdvisory from "@/components/order/OrientationAdvisory";
 import ImageSizeDialog, { type ImageSizeSelection } from "@/components/order/ImageSizeDialog";
 import { isImageFile } from "@/lib/imageToPage";
@@ -27,8 +28,8 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { resize, rotate, pollJob, cropRasterize, getAsset, getDerivedFiles } from "@/lib/documentCentreApi";
 import { toStorageKey } from "@/lib/thumbnailUtils";
-import type { PaperSize } from "@/lib/paperSizes";
-import { isLandscape } from "@/lib/paperSizes";
+import type { PaperSize, NearIsoMatch } from "@/lib/paperSizes";
+import { isLandscape, ISO_SIZES } from "@/lib/paperSizes";
 import { useQuery } from "@tanstack/react-query";
 
 export default function OrderFiles() {
@@ -182,6 +183,17 @@ export default function OrderFiles() {
   } | null>(null);
   const [isRotating, setIsRotating] = useState(false);
 
+  // Bleed advisory state
+  const [bleedDoc, setBleedDoc] = useState<{
+    id: string;
+    fileName: string;
+    widthMm: number;
+    heightMm: number;
+    backendAssetId: string | null;
+    nearMatch: NearIsoMatch;
+  } | null>(null);
+  const [isApplyingBleed, setIsApplyingBleed] = useState(false);
+
   // Check for non-ISO documents after upload completes
   useEffect(() => {
     if (uploadModalOpen) return; // Don't check while uploads are in progress
@@ -203,9 +215,38 @@ export default function OrderFiles() {
     }
   }, [documents, uploadModalOpen, advisoryDoc]);
 
+  // Check for near-ISO bleed documents after upload completes
+  useEffect(() => {
+    if (uploadModalOpen || advisoryDoc || bleedDoc || orientationDoc) return;
+    const nearIsoDoc = documents.find((d) => {
+      if (resolvedDocIds.current.has(d.id)) return false;
+      const preflight = d.preflight_data as Record<string, any> | null;
+      return preflight?.near_iso_match && !preflight?.bleed_resolved;
+    });
+    if (nearIsoDoc) {
+      const preflight = nearIsoDoc.preflight_data as Record<string, any>;
+      const matchedSize = ISO_SIZES.find((s) => s.name === preflight.near_iso_match);
+      if (matchedSize) {
+        setBleedDoc({
+          id: nearIsoDoc.id,
+          fileName: nearIsoDoc.file_name,
+          widthMm: Number(nearIsoDoc.page_width_mm),
+          heightMm: Number(nearIsoDoc.page_height_mm),
+          backendAssetId: nearIsoDoc.backend_asset_id,
+          nearMatch: {
+            matchedSize,
+            bleedW: preflight.estimated_bleed_w,
+            bleedH: preflight.estimated_bleed_h,
+            landscape: !!preflight.near_iso_landscape,
+          },
+        });
+      }
+    }
+  }, [documents, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc]);
+
   // Check for portrait orientation on presentation uploads
   useEffect(() => {
-    if (uploadModalOpen || advisoryDoc || orientationDoc) return;
+    if (uploadModalOpen || advisoryDoc || orientationDoc || bleedDoc) return;
     if (productFamily?.slug !== "presentations") return;
     const portraitDoc = documents.find((d) => {
       const preflight = d.preflight_data as Record<string, any> | null;
@@ -223,7 +264,7 @@ export default function OrderFiles() {
         backendAssetId: portraitDoc.backend_asset_id,
       });
     }
-  }, [documents, uploadModalOpen, advisoryDoc, orientationDoc, productFamily?.slug]);
+  }, [documents, uploadModalOpen, advisoryDoc, orientationDoc, bleedDoc, productFamily?.slug]);
 
   /** Re-generate thumbnails from a (possibly transformed) asset and update the documents row */
   const reThumbnail = useCallback(async (docId: string, assetId: string) => {
