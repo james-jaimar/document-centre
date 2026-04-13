@@ -27,6 +27,7 @@ export interface DocumentPreviewProps {
   pageColors?: string[];
   tabPositions?: TabPosition[];
   displayPageNumbers?: number[];
+  faceLabels?: string[];
   /** Binding edge: left (default) or top (for landscape presentations) */
   bindingEdge?: "left" | "top";
 }
@@ -53,6 +54,7 @@ export default function DocumentPreview({
   pageColors,
   tabPositions,
   displayPageNumbers,
+  faceLabels,
   bindingEdge,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
@@ -134,7 +136,7 @@ export default function DocumentPreview({
   };
 
   if (BOUND_TYPES.has(productType)) {
-    return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} displayPageNumbers={displayPageNumbers} bindingEdge={bindingEdge} />;
+    return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} displayPageNumbers={displayPageNumbers} faceLabels={faceLabels} bindingEdge={bindingEdge} />;
   }
 
   if (FOLD_TYPES.has(productType)) {

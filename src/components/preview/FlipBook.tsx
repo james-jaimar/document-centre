@@ -276,6 +276,7 @@ export default function FlipBook({
   pageColors,
   tabPositions,
   displayPageNumbers,
+  faceLabels,
   bindingEdge = "left",
 }: FlipBookProps) {
   const flipBookRef = useRef<any>(null);
