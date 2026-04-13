@@ -108,6 +108,7 @@ export default function Cart() {
         <TableBody>
           {items.map((item: any) => {
             const isRemoving = removingIds.has(item.id);
+            const isEditing = editingIds.has(item.id);
             const productName = item.product_families?.name ?? "Document";
             return (
               <TableRow key={item.id}>
