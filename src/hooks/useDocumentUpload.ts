@@ -270,12 +270,28 @@ export function useDocumentUpload(orderItemId: string | undefined) {
 
   /* ── Upload a single file ── */
 
+  const MAX_FILE_SIZE_MB = 100;
+  const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
   const uploadFile = useCallback(
     async (file: File, targetSize?: TargetSize, overrideOrderItemId?: string) => {
       const effectiveId = overrideOrderItemId || orderItemId;
       if (!effectiveId || !user) return null;
 
       const originalName = file.name;
+
+      // Client-side file size check
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+        updateUpload(originalName, {
+          fileName: originalName,
+          status: "error",
+          progress: 0,
+          error: `File is ${sizeMb} MB — maximum allowed is ${MAX_FILE_SIZE_MB} MB`,
+        });
+        return null;
+      }
+
       updateUpload(originalName, { fileName: originalName, status: "uploading", progress: 0 });
 
       try {
