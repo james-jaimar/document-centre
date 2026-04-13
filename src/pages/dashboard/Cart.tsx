@@ -125,18 +125,32 @@ export default function Cart() {
                   R{(Number(item.unit_price) * item.quantity).toFixed(2)}
                 </TableCell>
                 <TableCell>
-                  <button
-                    onClick={() => handleRemove(item.id)}
-                    disabled={isRemoving}
-                    className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
-                    title="Remove item"
-                  >
-                    {isRemoving ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-4 w-4" />
-                    )}
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleEdit(item.id)}
+                      disabled={isEditing || isRemoving}
+                      className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
+                      title="Edit item"
+                    >
+                      {isEditing ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Pencil className="h-4 w-4" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => handleRemove(item.id)}
+                      disabled={isRemoving || isEditing}
+                      className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                      title="Remove item"
+                    >
+                      {isRemoving ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
                 </TableCell>
               </TableRow>
             );
