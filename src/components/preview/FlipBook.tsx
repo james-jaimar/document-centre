@@ -539,20 +539,6 @@ export default function FlipBook({
         </div>
       </div>
 
-      {/* Page numbers below the spread */}
-      <div className="flex items-center justify-center gap-8 text-xs text-muted-foreground">
-        {!isShowingFrontCover && currentPage > 0 && (
-          <span className="w-20 text-center">{faceLabels?.[currentPage] ?? `Page ${currentPage + 1}`}</span>
-        )}
-        {!isSoloPage && currentPage + 1 < urls.length && (
-          <span className="w-20 text-center">{faceLabels?.[currentPage + 1] ?? `Page ${currentPage + 2}`}</span>
-        )}
-        {isSoloPage && (
-          <span className="w-20 text-center">
-            {isShowingFrontCover ? (faceLabels?.[0] ?? "Cover") : (faceLabels?.[lastIdx] ?? `Page ${urls.length}`)}
-          </span>
-        )}
-      </div>
       </div>
     </div>
   );
