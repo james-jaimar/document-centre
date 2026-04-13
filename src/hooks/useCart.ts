@@ -150,6 +150,77 @@ export function useAddItemToCart() {
 }
 
 /**
+ * Move a cart item back to a new draft order for editing.
+ * Returns the new draft order ID so the caller can navigate to the build page.
+ */
+export function useEditCartItem() {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ orderItemId, cartOrderId }: { orderItemId: string; cartOrderId: string }) => {
+      if (!user) throw new Error("Not authenticated");
+
+      // Get user's tenant_id
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("tenant_id")
+        .eq("id", user.id)
+        .single();
+
+      // Create a new temporary draft order
+      const { data: draftOrder, error: draftErr } = await supabase
+        .from("orders")
+        .insert({
+          user_id: user.id,
+          tenant_id: profile?.tenant_id ?? null,
+          order_status: "draft" as any,
+          total_price: 0,
+        })
+        .select("id")
+        .single();
+      if (draftErr) throw draftErr;
+
+      // Move the order item to the draft order and set back to building
+      const { error: moveErr } = await supabase
+        .from("order_items")
+        .update({ order_id: draftOrder.id, build_status: "building" as any })
+        .eq("id", orderItemId);
+      if (moveErr) throw moveErr;
+
+      // Move linked documents
+      await supabase
+        .from("documents")
+        .update({ order_item_id: orderItemId } as any)
+        .eq("order_item_id", orderItemId);
+
+      // Recalculate cart total
+      const { data: cartItems } = await supabase
+        .from("order_items")
+        .select("unit_price, quantity")
+        .eq("order_id", cartOrderId);
+
+      const cartTotal = (cartItems ?? []).reduce(
+        (sum, item) => sum + Number(item.unit_price) * item.quantity,
+        0
+      );
+
+      await supabase
+        .from("orders")
+        .update({ total_price: cartTotal })
+        .eq("id", cartOrderId);
+
+      return draftOrder.id;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["cart"] });
+      qc.invalidateQueries({ queryKey: ["all_orders"] });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+    },
+  });
+}
+
+/**
  * Remove an item from the cart. Deletes associated documents, sections, storage files.
  */
 export function useRemoveCartItem() {

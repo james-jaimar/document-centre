@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "react-router-dom";
-import { useCart, useRemoveCartItem } from "@/hooks/useCart";
+import { useCart, useRemoveCartItem, useEditCartItem } from "@/hooks/useCart";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Trash2, ShoppingBag, ArrowRight, Plus, Loader2 } from "lucide-react";
+import { Trash2, ShoppingBag, ArrowRight, Plus, Loader2, Pencil } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
