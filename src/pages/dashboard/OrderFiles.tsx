@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
 import UploadProgressModal from "@/components/order/UploadProgressModal";
 import PaperSizeAdvisory from "@/components/order/PaperSizeAdvisory";
+import BleedAdvisory from "@/components/order/BleedAdvisory";
 import OrientationAdvisory from "@/components/order/OrientationAdvisory";
 import ImageSizeDialog, { type ImageSizeSelection } from "@/components/order/ImageSizeDialog";
 import { isImageFile } from "@/lib/imageToPage";
@@ -27,8 +28,8 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { resize, rotate, pollJob, cropRasterize, getAsset, getDerivedFiles } from "@/lib/documentCentreApi";
 import { toStorageKey } from "@/lib/thumbnailUtils";
-import type { PaperSize } from "@/lib/paperSizes";
-import { isLandscape } from "@/lib/paperSizes";
+import type { PaperSize, NearIsoMatch } from "@/lib/paperSizes";
+import { isLandscape, ISO_SIZES } from "@/lib/paperSizes";
 import { useQuery } from "@tanstack/react-query";
 
 export default function OrderFiles() {
@@ -182,6 +183,17 @@ export default function OrderFiles() {
   } | null>(null);
   const [isRotating, setIsRotating] = useState(false);
 
+  // Bleed advisory state
+  const [bleedDoc, setBleedDoc] = useState<{
+    id: string;
+    fileName: string;
+    widthMm: number;
+    heightMm: number;
+    backendAssetId: string | null;
+    nearMatch: NearIsoMatch;
+  } | null>(null);
+  const [isApplyingBleed, setIsApplyingBleed] = useState(false);
+
   // Check for non-ISO documents after upload completes
   useEffect(() => {
     if (uploadModalOpen) return; // Don't check while uploads are in progress
@@ -203,9 +215,38 @@ export default function OrderFiles() {
     }
   }, [documents, uploadModalOpen, advisoryDoc]);
 
+  // Check for near-ISO bleed documents after upload completes
+  useEffect(() => {
+    if (uploadModalOpen || advisoryDoc || bleedDoc || orientationDoc) return;
+    const nearIsoDoc = documents.find((d) => {
+      if (resolvedDocIds.current.has(d.id)) return false;
+      const preflight = d.preflight_data as Record<string, any> | null;
+      return preflight?.near_iso_match && !preflight?.bleed_resolved;
+    });
+    if (nearIsoDoc) {
+      const preflight = nearIsoDoc.preflight_data as Record<string, any>;
+      const matchedSize = ISO_SIZES.find((s) => s.name === preflight.near_iso_match);
+      if (matchedSize) {
+        setBleedDoc({
+          id: nearIsoDoc.id,
+          fileName: nearIsoDoc.file_name,
+          widthMm: Number(nearIsoDoc.page_width_mm),
+          heightMm: Number(nearIsoDoc.page_height_mm),
+          backendAssetId: nearIsoDoc.backend_asset_id,
+          nearMatch: {
+            matchedSize,
+            bleedW: preflight.estimated_bleed_w,
+            bleedH: preflight.estimated_bleed_h,
+            landscape: !!preflight.near_iso_landscape,
+          },
+        });
+      }
+    }
+  }, [documents, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc]);
+
   // Check for portrait orientation on presentation uploads
   useEffect(() => {
-    if (uploadModalOpen || advisoryDoc || orientationDoc) return;
+    if (uploadModalOpen || advisoryDoc || orientationDoc || bleedDoc) return;
     if (productFamily?.slug !== "presentations") return;
     const portraitDoc = documents.find((d) => {
       const preflight = d.preflight_data as Record<string, any> | null;
@@ -223,7 +264,7 @@ export default function OrderFiles() {
         backendAssetId: portraitDoc.backend_asset_id,
       });
     }
-  }, [documents, uploadModalOpen, advisoryDoc, orientationDoc, productFamily?.slug]);
+  }, [documents, uploadModalOpen, advisoryDoc, orientationDoc, bleedDoc, productFamily?.slug]);
 
   /** Re-generate thumbnails from a (possibly transformed) asset and update the documents row */
   const reThumbnail = useCallback(async (docId: string, assetId: string) => {
@@ -374,10 +415,102 @@ export default function OrderFiles() {
 
   const handleSwitchToBoundDocs = useCallback(() => {
     setOrientationDoc(null);
-    // Navigate back to product selection
     navigate(`/t/${slug}/orders/new`);
     toast.info("Please select Bound Documents for portrait files");
   }, [navigate, slug]);
+
+  // Bleed advisory handler
+  const handleBleedConfirm = useCallback(async (choice: "match" | "custom" | "keep", customBleedMm?: number) => {
+    if (!bleedDoc) return;
+
+    if (choice === "keep") {
+      const existing = documents.find((d) => d.id === bleedDoc.id);
+      const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
+      await supabase
+        .from("documents")
+        .update({
+          preflight_data: { ...preflight, bleed_resolved: true, bleed_action: "keep" },
+        })
+        .eq("id", bleedDoc.id);
+      resolvedDocIds.current.add(bleedDoc.id);
+      setBleedDoc(null);
+      refetchDocuments();
+      toast.success("Keeping full size");
+      return;
+    }
+
+    if (!bleedDoc.backendAssetId) {
+      toast.error("Cannot trim — document has no backend asset");
+      setBleedDoc(null);
+      return;
+    }
+
+    setIsApplyingBleed(true);
+    try {
+      // Calculate the trim box in points from bleed values
+      const bleedMm = choice === "custom" && customBleedMm
+        ? customBleedMm
+        : (bleedDoc.nearMatch.bleedW + bleedDoc.nearMatch.bleedH) / 2;
+
+      // Convert bleed from mm to points (1 mm = 72/25.4 pt)
+      const bleedPt = bleedMm * (72 / 25.4);
+
+      // Get the asset's media box to compute trim box
+      const asset = await getAsset(bleedDoc.backendAssetId);
+      const boxes = asset.boxes as Record<string, number[]> | null;
+      const mediaBox = boxes?.MediaBox ?? [0, 0, asset.width_pt ?? 595, asset.height_pt ?? 842];
+
+      // TrimBox = MediaBox inset by bleed on all sides
+      const trimBox: [number, number, number, number] = [
+        mediaBox[0] + bleedPt,
+        mediaBox[1] + bleedPt,
+        mediaBox[2] - bleedPt,
+        mediaBox[3] - bleedPt,
+      ];
+
+      toast.info("Trimming to finished size…");
+      const { job_id: cropJobId } = await cropRasterize(bleedDoc.backendAssetId, trimBox);
+      await pollJob(cropJobId);
+
+      // Re-generate thumbnails
+      toast.info("Regenerating preview…");
+      await reThumbnail(bleedDoc.id, bleedDoc.backendAssetId);
+
+      // Calculate new dimensions
+      const trimWidthPt = Math.abs(trimBox[2] - trimBox[0]);
+      const trimHeightPt = Math.abs(trimBox[3] - trimBox[1]);
+      const newWidthMm = (trimWidthPt * 25.4) / 72;
+      const newHeightMm = (trimHeightPt * 25.4) / 72;
+
+      const existing = documents.find((d) => d.id === bleedDoc.id);
+      const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
+      await supabase
+        .from("documents")
+        .update({
+          page_width_mm: Math.round(newWidthMm * 10) / 10,
+          page_height_mm: Math.round(newHeightMm * 10) / 10,
+          preflight_data: {
+            ...preflight,
+            bleed_resolved: true,
+            bleed_action: choice === "custom" ? `custom_${bleedMm}mm` : `trimmed_to_${bleedDoc.nearMatch.matchedSize.name}`,
+            bleed_mm: bleedMm,
+            original_width_mm: bleedDoc.widthMm,
+            original_height_mm: bleedDoc.heightMm,
+            trim_box_pt: trimBox,
+          },
+        })
+        .eq("id", bleedDoc.id);
+
+      resolvedDocIds.current.add(bleedDoc.id);
+      setBleedDoc(null);
+      refetchDocuments();
+      toast.success(`Trimmed to ${Math.round(newWidthMm)} × ${Math.round(newHeightMm)}mm`);
+    } catch (err: any) {
+      toast.error("Trimming failed", { description: err.message });
+    } finally {
+      setIsApplyingBleed(false);
+    }
+  }, [bleedDoc, documents, refetchDocuments, reThumbnail]);
 
   // Determine which document to show in the middle preview
   const previewDoc = useMemo(() => {
@@ -806,6 +939,20 @@ export default function OrderFiles() {
           onRotate={handleRotateToLandscape}
           onSwitchProduct={handleSwitchToBoundDocs}
           isRotating={isRotating}
+        />
+      )}
+
+      {/* Bleed Advisory Dialog */}
+      {bleedDoc && (
+        <BleedAdvisory
+          open={!!bleedDoc}
+          onOpenChange={(open) => { if (!open) setBleedDoc(null); }}
+          fileName={bleedDoc.fileName}
+          widthMm={bleedDoc.widthMm}
+          heightMm={bleedDoc.heightMm}
+          nearMatch={bleedDoc.nearMatch}
+          isApplying={isApplyingBleed}
+          onConfirm={handleBleedConfirm}
         />
       )}
     </div>
