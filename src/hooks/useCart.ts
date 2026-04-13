@@ -185,7 +185,15 @@ export function useEditCartItem() {
         .eq("id", user.id)
         .single();
 
-      // Create a new temporary draft order
+      // Get the original cart item details
+      const { data: sourceItem, error: srcErr } = await supabase
+        .from("order_items")
+        .select("*")
+        .eq("id", orderItemId)
+        .single();
+      if (srcErr || !sourceItem) throw srcErr ?? new Error("Item not found");
+
+      // Create a new temporary draft order, storing the source cart item ID in metadata
       const { data: draftOrder, error: draftErr } = await supabase
         .from("orders")
         .insert({
@@ -193,39 +201,89 @@ export function useEditCartItem() {
           tenant_id: profile?.tenant_id ?? null,
           order_status: "draft" as any,
           total_price: 0,
+          metadata: { replaces_cart_item_id: orderItemId },
         })
         .select("id")
         .single();
       if (draftErr) throw draftErr;
 
-      // Move the order item to the draft order and set back to building
-      const { error: moveErr } = await supabase
+      // Clone the order item into the draft order
+      const { data: clonedItem, error: cloneErr } = await supabase
         .from("order_items")
-        .update({ order_id: draftOrder.id, build_status: "building" as any })
-        .eq("id", orderItemId);
-      if (moveErr) throw moveErr;
+        .insert({
+          order_id: draftOrder.id,
+          product_family_id: sourceItem.product_family_id,
+          quantity: sourceItem.quantity,
+          unit_price: sourceItem.unit_price,
+          build_status: "building" as any,
+          spec: sourceItem.spec,
+          title: sourceItem.title,
+        })
+        .select("id")
+        .single();
+      if (cloneErr) throw cloneErr;
 
-      // Move linked documents
-      await supabase
+      // Clone linked documents
+      const { data: docs } = await supabase
         .from("documents")
-        .update({ order_item_id: orderItemId } as any)
+        .select("*")
         .eq("order_item_id", orderItemId);
 
-      // Recalculate cart total
-      const { data: cartItems } = await supabase
-        .from("order_items")
-        .select("unit_price, quantity")
-        .eq("order_id", cartOrderId);
+      if (docs && docs.length > 0) {
+        const docInserts = docs.map((d) => ({
+          order_item_id: clonedItem.id,
+          file_name: d.file_name,
+          file_path: d.file_path,
+          file_size: d.file_size,
+          mime_type: d.mime_type,
+          page_count: d.page_count,
+          page_width_mm: d.page_width_mm,
+          page_height_mm: d.page_height_mm,
+          document_status: d.document_status,
+          preflight_data: d.preflight_data,
+          thumbnail_urls: d.thumbnail_urls,
+          sort_order: d.sort_order,
+          backend_asset_id: d.backend_asset_id,
+        }));
+        const { data: newDocs } = await supabase
+          .from("documents")
+          .insert(docInserts)
+          .select("id");
 
-      const cartTotal = (cartItems ?? []).reduce(
-        (sum, item) => sum + Number(item.unit_price) * item.quantity,
-        0
-      );
+        // Clone document sections, mapping old doc IDs to new ones
+        const docIdMap = new Map<string, string>();
+        if (newDocs) {
+          docs.forEach((old, i) => {
+            if (newDocs[i]) docIdMap.set(old.id, newDocs[i].id);
+          });
+        }
 
-      await supabase
-        .from("orders")
-        .update({ total_price: cartTotal })
-        .eq("id", cartOrderId);
+        const { data: sections } = await supabase
+          .from("document_sections")
+          .select("*")
+          .eq("order_item_id", orderItemId);
+
+        if (sections && sections.length > 0) {
+          const secInserts = sections.map((s) => ({
+            order_item_id: clonedItem.id,
+            document_id: s.document_id ? (docIdMap.get(s.document_id) ?? s.document_id) : null,
+            section_type: s.section_type,
+            page_range_start: s.page_range_start,
+            page_range_end: s.page_range_end,
+            paper_stock: s.paper_stock,
+            paper_weight_gsm: s.paper_weight_gsm,
+            is_color: s.is_color,
+            is_duplex: s.is_duplex,
+            lamination: s.lamination,
+            sort_order: s.sort_order,
+            label: s.label,
+            color: s.color,
+          }));
+          await supabase.from("document_sections").insert(secInserts);
+        }
+      }
+
+      // Cart total stays unchanged since we didn't remove anything
 
       return draftOrder.id;
     },
