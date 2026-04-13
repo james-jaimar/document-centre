@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "react-router-dom";
-import { useCart, useRemoveCartItem } from "@/hooks/useCart";
+import { useCart, useRemoveCartItem, useEditCartItem } from "@/hooks/useCart";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Trash2, ShoppingBag, ArrowRight, Plus, Loader2 } from "lucide-react";
+import { Trash2, ShoppingBag, ArrowRight, Plus, Loader2, Pencil } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -19,7 +19,9 @@ export default function Cart() {
   const navigate = useNavigate();
   const { data: cart, isLoading } = useCart();
   const removeItem = useRemoveCartItem();
+  const editItem = useEditCartItem();
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
+  const [editingIds, setEditingIds] = useState<Set<string>>(new Set());
 
   const items = (cart?.order_items as any[]) ?? [];
 
@@ -38,6 +40,22 @@ export default function Cart() {
       toast.error("Failed to remove item", { description: err.message });
     } finally {
       setRemovingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(itemId);
+        return next;
+      });
+    }
+  };
+
+  const handleEdit = async (itemId: string) => {
+    if (!cart) return;
+    setEditingIds((prev) => new Set(prev).add(itemId));
+    try {
+      const draftOrderId = await editItem.mutateAsync({ orderItemId: itemId, cartOrderId: cart.id });
+      navigate(`/t/${slug}/orders/${draftOrderId}/build`);
+    } catch (err: any) {
+      toast.error("Failed to edit item", { description: err.message });
+      setEditingIds((prev) => {
         const next = new Set(prev);
         next.delete(itemId);
         return next;
@@ -90,6 +108,7 @@ export default function Cart() {
         <TableBody>
           {items.map((item: any) => {
             const isRemoving = removingIds.has(item.id);
+            const isEditing = editingIds.has(item.id);
             const productName = item.product_families?.name ?? "Document";
             return (
               <TableRow key={item.id}>
@@ -107,18 +126,32 @@ export default function Cart() {
                   R{(Number(item.unit_price) * item.quantity).toFixed(2)}
                 </TableCell>
                 <TableCell>
-                  <button
-                    onClick={() => handleRemove(item.id)}
-                    disabled={isRemoving}
-                    className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
-                    title="Remove item"
-                  >
-                    {isRemoving ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-4 w-4" />
-                    )}
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleEdit(item.id)}
+                      disabled={isEditing || isRemoving}
+                      className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
+                      title="Edit item"
+                    >
+                      {isEditing ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Pencil className="h-4 w-4" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => handleRemove(item.id)}
+                      disabled={isRemoving || isEditing}
+                      className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                      title="Remove item"
+                    >
+                      {isRemoving ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
                 </TableCell>
               </TableRow>
             );
