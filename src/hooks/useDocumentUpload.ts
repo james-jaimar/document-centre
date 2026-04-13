@@ -11,7 +11,7 @@ import {
   pollJob,
 } from "@/lib/documentCentreApi";
 import { toStorageKey } from "@/lib/thumbnailUtils";
-import { detectNonIsoSize } from "@/lib/paperSizes";
+import { detectNonIsoSize, detectNearIsoWithBleed } from "@/lib/paperSizes";
 import { isImageFile, imageFileToPdf, type TargetSize } from "@/lib/imageToPage";
 
 interface UploadProgress {
@@ -227,10 +227,15 @@ export function useDocumentUpload(orderItemId: string | undefined) {
 
         console.log("[upload] Final thumbnails:", final_.thumbnailPaths.length);
 
-        // 5. Detect non-ISO paper size
+        // 5. Detect non-ISO paper size or near-ISO with bleed
         const detectedSize =
           final_.pageWidthMm != null && final_.pageHeightMm != null
             ? detectNonIsoSize(final_.pageWidthMm, final_.pageHeightMm)
+            : null;
+
+        const nearIsoMatch =
+          !detectedSize && final_.pageWidthMm != null && final_.pageHeightMm != null
+            ? detectNearIsoWithBleed(final_.pageWidthMm, final_.pageHeightMm)
             : null;
 
         // 6. Update documents row with full metadata
@@ -249,6 +254,12 @@ export function useDocumentUpload(orderItemId: string | undefined) {
               effective_height_mm: final_.pageHeightMm,
               status: final_.asset.status,
               ...(detectedSize ? { detected_size: detectedSize } : {}),
+              ...(nearIsoMatch ? {
+                near_iso_match: nearIsoMatch.matchedSize.name,
+                estimated_bleed_w: nearIsoMatch.bleedW,
+                estimated_bleed_h: nearIsoMatch.bleedH,
+                near_iso_landscape: nearIsoMatch.landscape,
+              } : {}),
             },
             document_status: "ready",
           })
