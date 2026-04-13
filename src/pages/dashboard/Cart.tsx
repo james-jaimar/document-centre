@@ -19,7 +19,9 @@ export default function Cart() {
   const navigate = useNavigate();
   const { data: cart, isLoading } = useCart();
   const removeItem = useRemoveCartItem();
+  const editItem = useEditCartItem();
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
+  const [editingIds, setEditingIds] = useState<Set<string>>(new Set());
 
   const items = (cart?.order_items as any[]) ?? [];
 
