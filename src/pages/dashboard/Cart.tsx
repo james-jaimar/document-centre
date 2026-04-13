@@ -47,6 +47,22 @@ export default function Cart() {
     }
   };
 
+  const handleEdit = async (itemId: string) => {
+    if (!cart) return;
+    setEditingIds((prev) => new Set(prev).add(itemId));
+    try {
+      const draftOrderId = await editItem.mutateAsync({ orderItemId: itemId, cartOrderId: cart.id });
+      navigate(`/t/${slug}/orders/${draftOrderId}/build`);
+    } catch (err: any) {
+      toast.error("Failed to edit item", { description: err.message });
+      setEditingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(itemId);
+        return next;
+      });
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-4">
