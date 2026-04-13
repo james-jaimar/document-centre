@@ -1,33 +1,28 @@
 
 
-## Add "Edit" functionality for cart items
+## Fix: Align page numbering between preview and Tab/Insert drawer
 
 ### Problem
-Once an item is added to cart, the user has no way to go back and edit its configuration, quantity, or files. This is a critical usability gap.
+The preview numbers every physical face sequentially (tabs, blank backs, inserts all get numbers), while the Tab & Insert drawer only counts body document pages. So "After Page 6" in the drawer might be "Page 14" in the preview. Users can't tell where to place tabs/inserts.
 
-### Approach
-Create an "Edit" flow that moves a cart item back to a temporary draft order so the existing OrderBuild page can handle it. When the user finishes editing and clicks "Add to Cart" again, it moves back to the cart — exactly the same flow as the first time.
+### Root Cause
+`displayPageNumbers` in `PreviewPanel.tsx` does a simple `num++` for every face in `finalPages`, including tab faces, insert faces, blank backs, and cover material pages. The drawer's `buildBodyPages` correctly counts only body document pages, but those numbers don't match what the user sees in the preview.
 
-### Changes
+### Fix
+One file change: `src/components/order/PreviewPanel.tsx`
 
-**1. `src/hooks/useCart.ts`** — Add `useEditCartItem` mutation
-- Creates a new temporary draft order for the user
-- Moves the selected `order_item` (and its linked `documents` and `document_sections`) back to the new draft order by updating `order_id`
-- Recalculates the cart total after removing the item
-- Sets `build_status` back to `building` so OrderBuild treats it as editable
-- Returns the new draft order ID for navigation
+Update `displayPageNumbers` computation to only increment the counter for actual body content faces (not tabs, tab backs, inserts, insert backs, blank backs, cover material faces). Non-content faces get `null`/`0` so the footer skips showing a number for them.
 
-**2. `src/pages/dashboard/Cart.tsx`** — Add Edit button per row
-- Add a pencil/edit icon button next to each item (alongside the existing delete button)
-- On click, calls `useEditCartItem`, then navigates to `/t/:slug/orders/:newDraftId/build`
-- Shows a loading spinner while the mutation runs
+Specifically:
+- Check `computedPageRoles[i]` for each face
+- Only increment the page counter for roles that represent actual printed content pages (body pages, front/back cover content)
+- Tab, tab_back, insert, insert_back, blank_back, pvc_cover_back, inside_back_cover_card, back_cover_card, inside_back_blank → get `null` (no number displayed)
+- Update the footer label logic to handle `null` entries gracefully — when on a non-numbered face, show the role name (e.g. "Tab Divider", "Insert Sheet") instead of "Page X"
 
-**3. `src/pages/dashboard/OrderBuild.tsx`** — Minor tweak
-- The page already works correctly for this flow since it loads order → first order_item → documents/sections. No changes needed unless the `build_status = "ready"` blocks editing (it doesn't based on current code).
+This means the preview will show "Page 6" on the same body page that the drawer calls "After Page 6" — they use the same counting logic (body pages only).
 
-### User flow
-1. User sees cart with an Edit (pencil) icon on each row
-2. Clicks Edit → item is moved to a new draft order → navigates to the build/configure page
-3. User makes changes, clicks "Add to Cart" again → item moves back to cart with updated config
-4. The old empty draft order is cleaned up automatically (existing logic in `useAddItemToCart`)
+### What stays the same
+- The drawer's `buildBodyPages` numbering — it's already correct
+- The physical sequence and spread alignment logic
+- Tab/insert placement anchoring (uses `page_range_start` which stores body page numbers)
 
