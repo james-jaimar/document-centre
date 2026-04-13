@@ -90,3 +90,71 @@ export function getSuggestedIsoSizes(
 export function isLandscape(widthMm: number, heightMm: number): boolean {
   return widthMm > heightMm;
 }
+
+// ── Near-ISO bleed detection ─────────────────────────────────────
+
+export interface NearIsoMatch {
+  matchedSize: PaperSize;
+  /** Estimated bleed per side on the width axis (mm) */
+  bleedW: number;
+  /** Estimated bleed per side on the height axis (mm) */
+  bleedH: number;
+  /** Whether the document is landscape relative to the matched size */
+  landscape: boolean;
+}
+
+const BLEED_MIN_MM = 3;
+const BLEED_MAX_MM = 15;
+
+/**
+ * Detect if dimensions are close to an ISO A-series size with unset bleed.
+ * Returns the best match if the excess per side falls within 3–15 mm.
+ * Only fires when the document does NOT already match an ISO or US size exactly.
+ */
+export function detectNearIsoWithBleed(
+  widthMm: number,
+  heightMm: number
+): NearIsoMatch | null {
+  // Skip if already an exact ISO or US match
+  for (const iso of ISO_SIZES) {
+    if (matchesSize(widthMm, heightMm, iso)) return null;
+  }
+  for (const us of NON_ISO_SIZES) {
+    if (matchesSize(widthMm, heightMm, us)) return null;
+  }
+
+  let best: NearIsoMatch | null = null;
+  let bestArea = Infinity;
+
+  for (const iso of ISO_SIZES) {
+    // Try portrait orientation
+    const bleedWP = (widthMm - iso.widthMm) / 2;
+    const bleedHP = (heightMm - iso.heightMm) / 2;
+    if (
+      bleedWP >= BLEED_MIN_MM && bleedWP <= BLEED_MAX_MM &&
+      bleedHP >= BLEED_MIN_MM && bleedHP <= BLEED_MAX_MM
+    ) {
+      const diff = Math.abs(bleedWP - bleedHP);
+      if (!best || diff < bestArea) {
+        best = { matchedSize: iso, bleedW: Math.round(bleedWP * 10) / 10, bleedH: Math.round(bleedHP * 10) / 10, landscape: false };
+        bestArea = diff;
+      }
+    }
+
+    // Try landscape orientation
+    const bleedWL = (widthMm - iso.heightMm) / 2;
+    const bleedHL = (heightMm - iso.widthMm) / 2;
+    if (
+      bleedWL >= BLEED_MIN_MM && bleedWL <= BLEED_MAX_MM &&
+      bleedHL >= BLEED_MIN_MM && bleedHL <= BLEED_MAX_MM
+    ) {
+      const diff = Math.abs(bleedWL - bleedHL);
+      if (!best || diff < bestArea) {
+        best = { matchedSize: iso, bleedW: Math.round(bleedWL * 10) / 10, bleedH: Math.round(bleedHL * 10) / 10, landscape: true };
+        bestArea = diff;
+      }
+    }
+  }
+
+  return best;
+}
