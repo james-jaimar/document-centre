@@ -6,6 +6,7 @@ import { toast } from "@/hooks/use-toast";
 import {
   createAsset,
   cropRasterize,
+  rasterize,
   getAsset,
   getDerivedFiles,
   pollJob,
