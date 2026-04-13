@@ -87,6 +87,7 @@ export function useAddItemToCart() {
       quantity: number;
       totalPrice: number;
       spec: any;
+      replacesCartItemId?: string;
     }) => {
       if (!user) throw new Error("Not authenticated");
 
