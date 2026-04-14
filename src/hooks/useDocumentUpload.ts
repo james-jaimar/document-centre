@@ -11,7 +11,7 @@ import {
   getDerivedFiles,
   pollJob,
 } from "@/lib/documentCentreApi";
-import { toStorageKey } from "@/lib/thumbnailUtils";
+import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import { detectNonIsoSize, detectNearIsoWithBleed } from "@/lib/paperSizes";
 import { isImageFile, imageFileToPdf, type TargetSize } from "@/lib/imageToPage";
 
@@ -74,39 +74,18 @@ export function useDocumentUpload(orderItemId: string | undefined) {
       const pageWidthMm = effectiveWidthPt != null ? (effectiveWidthPt * 25.4) / 72 : null;
       const pageHeightMm = effectiveHeightPt != null ? (effectiveHeightPt * 25.4) / 72 : null;
 
-      // Prefer cropped thumbnails if available, fall back to regular ones
-      const thumbnailFiles = derivedFiles
-        .filter((df) =>
-          df.page != null &&
-          df.storage_path &&
-          (df.media_type?.startsWith("image/") ||
-           /thumbnail|preview|page|png/i.test(df.kind))
-        )
-        .sort((a, b) => {
-          // Prioritize cropped versions
-          const aIsCropped = a.kind.startsWith("cropped_") ? 0 : 1;
-          const bIsCropped = b.kind.startsWith("cropped_") ? 0 : 1;
-          if (aIsCropped !== bIsCropped) return aIsCropped - bIsCropped;
-          return (a.page ?? 0) - (b.page ?? 0);
-        });
+      // Pick the highest-resolution candidate per page (prefers cropped, then largest width)
+      const thumbnailPaths = pickBestPerPage(
+        derivedFiles,
+        asset.thumbnail_storage_path,
+        asset.preview_storage_path,
+      );
 
-      // Deduplicate by page number (take first per page)
-      const thumbnailPaths: string[] = [];
-      const seenPages = new Set<number>();
-      for (const df of thumbnailFiles) {
-        const pg = df.page ?? 0;
-        if (!seenPages.has(pg)) {
-          seenPages.add(pg);
-          thumbnailPaths.push(toStorageKey(df.storage_path));
-        }
-      }
-
-      // Fallback to asset-level thumbnail/preview if no per-page files found
-      if (thumbnailPaths.length === 0 && asset.thumbnail_storage_path) {
-        thumbnailPaths.push(toStorageKey(asset.thumbnail_storage_path));
-      }
-      if (thumbnailPaths.length === 0 && asset.preview_storage_path) {
-        thumbnailPaths.push(toStorageKey(asset.preview_storage_path));
+      // Log selected resolution for diagnostics
+      const bestFile = derivedFiles.find(df => df.storage_path && toStorageKey(df.storage_path) === thumbnailPaths[0]);
+      if (bestFile) {
+        const effectiveDpi = bestFile.width && pageWidthMm ? bestFile.width / (pageWidthMm / 25.4) : null;
+        console.log(`[upload] Best thumbnail: ${bestFile.width}×${bestFile.height}px, ~${effectiveDpi?.toFixed(0)} DPI`);
       }
 
       return { asset, pageCount, pageWidthMm, pageHeightMm, thumbnailPaths };
