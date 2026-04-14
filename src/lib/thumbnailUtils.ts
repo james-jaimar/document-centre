@@ -119,6 +119,90 @@ export function useSignedThumbnailUrl(rawPath: string | null): string | null {
   return url;
 }
 
+/**
+ * Derived-file entry shape (subset of DerivedFile from documentCentreApi).
+ */
+interface DerivedFileCandidate {
+  kind: string;
+  page: number | null;
+  storage_path: string;
+  media_type: string;
+  width: number | null;
+  height: number | null;
+}
+
+/**
+ * From a list of derived image files, pick the highest-resolution candidate
+ * per page.  Cropped variants (`cropped_*`) are preferred when available;
+ * among equal-kind files the one with the largest pixel width wins.
+ *
+ * Returns storage keys (not full URLs) in page order.
+ */
+export function pickBestPerPage(
+  derivedFiles: DerivedFileCandidate[],
+  fallbackThumbnailPath?: string | null,
+  fallbackPreviewPath?: string | null,
+): string[] {
+  // Filter to image-like files with a page number
+  const candidates = derivedFiles.filter(
+    (df) =>
+      df.page != null &&
+      df.storage_path &&
+      (df.media_type?.startsWith("image/") ||
+        /thumbnail|preview|page|png/i.test(df.kind)),
+  );
+
+  // Group by page
+  const byPage = new Map<number, DerivedFileCandidate[]>();
+  for (const df of candidates) {
+    const pg = df.page ?? 0;
+    if (!byPage.has(pg)) byPage.set(pg, []);
+    byPage.get(pg)!.push(df);
+  }
+
+  // For each page pick the best file:
+  //   1. Prefer cropped_ variants
+  //   2. Among same-tier, prefer largest width
+  const pages = Array.from(byPage.keys()).sort((a, b) => a - b);
+  const result: string[] = [];
+
+  for (const pg of pages) {
+    const group = byPage.get(pg)!;
+    group.sort((a, b) => {
+      const aCropped = a.kind.startsWith("cropped_") ? 0 : 1;
+      const bCropped = b.kind.startsWith("cropped_") ? 0 : 1;
+      if (aCropped !== bCropped) return aCropped - bCropped;
+      // Larger width wins (desc)
+      return (b.width ?? 0) - (a.width ?? 0);
+    });
+    result.push(toStorageKey(group[0].storage_path));
+  }
+
+  // Fallbacks when no per-page files exist
+  if (result.length === 0 && fallbackThumbnailPath) {
+    result.push(toStorageKey(fallbackThumbnailPath));
+  }
+  if (result.length === 0 && fallbackPreviewPath) {
+    result.push(toStorageKey(fallbackPreviewPath));
+  }
+
+  return result;
+}
+
+/**
+ * Invalidate signed-URL cache entries whose keys start with a given prefix.
+ * Call after re-rasterising an asset so the browser fetches fresh images.
+ */
+export function clearSignedUrlCache(prefixOrPaths?: string[]) {
+  if (!prefixOrPaths) {
+    signedUrlCache.clear();
+    return;
+  }
+  for (const p of prefixOrPaths) {
+    signedUrlCache.delete(p);
+  }
+}
+
 const composedCache = new Map<string, string>();
 
 /**
