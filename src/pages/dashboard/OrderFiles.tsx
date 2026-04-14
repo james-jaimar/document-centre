@@ -27,7 +27,7 @@ import { ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { resize, rotate, pollJob, cropRasterize, getAsset, getDerivedFiles } from "@/lib/documentCentreApi";
-import { toStorageKey } from "@/lib/thumbnailUtils";
+import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import type { PaperSize, NearIsoMatch } from "@/lib/paperSizes";
 import { isLandscape, ISO_SIZES } from "@/lib/paperSizes";
 import { useQuery } from "@tanstack/react-query";
@@ -267,42 +267,26 @@ export default function OrderFiles() {
   }, [documents, uploadModalOpen, advisoryDoc, orientationDoc, bleedDoc, productFamily?.slug]);
 
   /** Re-generate thumbnails from a (possibly transformed) asset and update the documents row */
+  /** Re-generate thumbnails from a (possibly transformed) asset and update the documents row */
   const reThumbnail = useCallback(async (docId: string, assetId: string) => {
-    // Trigger crop-rasterize on the asset (re-generates all page thumbnails)
     const asset = await getAsset(assetId);
     const boxes = asset.boxes as Record<string, number[]> | null;
     const trimBox = boxes?.TrimBox ?? boxes?.CropBox ?? boxes?.MediaBox;
 
     if (trimBox && trimBox.length === 4) {
-      const { job_id: cropJobId } = await cropRasterize(assetId, trimBox as [number, number, number, number]);
+      const { job_id: cropJobId } = await cropRasterize(assetId, trimBox as [number, number, number, number], 150);
       await pollJob(cropJobId);
     }
 
-    // Fetch fresh derived files
+    // Fetch fresh derived files and pick best per page
     const derivedFiles = await getDerivedFiles(assetId);
-    const thumbnailFiles = derivedFiles
-      .filter((df) => df.page != null && df.storage_path && (df.media_type?.startsWith("image/") || /thumbnail|preview|page|png/i.test(df.kind)))
-      .sort((a, b) => {
-        const aIsCropped = a.kind.startsWith("cropped_") ? 0 : 1;
-        const bIsCropped = b.kind.startsWith("cropped_") ? 0 : 1;
-        if (aIsCropped !== bIsCropped) return aIsCropped - bIsCropped;
-        return (a.page ?? 0) - (b.page ?? 0);
-      });
+    const thumbnailPaths = pickBestPerPage(
+      derivedFiles,
+      asset.thumbnail_storage_path,
+    );
 
-    const thumbnailPaths: string[] = [];
-    const seenPages = new Set<number>();
-    for (const df of thumbnailFiles) {
-      const pg = df.page ?? 0;
-      if (!seenPages.has(pg)) {
-        seenPages.add(pg);
-        thumbnailPaths.push(toStorageKey(df.storage_path));
-      }
-    }
-
-    // Fallback
-    if (thumbnailPaths.length === 0 && asset.thumbnail_storage_path) {
-      thumbnailPaths.push(toStorageKey(asset.thumbnail_storage_path));
-    }
+    // Invalidate signed-URL cache so the browser fetches the new images
+    clearSignedUrlCache(thumbnailPaths);
 
     await supabase
       .from("documents")
