@@ -482,7 +482,7 @@ export default function OrderBuild() {
     if (!orderItem) return;
     try {
       await updateSpec.mutateAsync({ id: orderItem.id, spec });
-      await supabase.from("order_items").update({ title: ref.trim() || null } as any).eq("id", orderItem.id);
+      await supabase.from("order_items").update({ title: ref.trim() || null, build_status: "building" } as any).eq("id", orderItem.id);
       setShowSaveDialog(false);
       const dest = pendingNavigationRef.current;
       pendingNavigationRef.current = null;
