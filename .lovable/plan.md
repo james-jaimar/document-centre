@@ -1,25 +1,68 @@
+<final-text>
+## Fix plan: enforce a real minimum preview resolution for FlipBook
 
+### What I found
+The code is already asking the backend for high-res previews:
+- `useDocumentUpload.ts` calls `rasterize(asset_id, 150)`
+- `cropRasterize()` defaults to `150`
+- `FlipBook.tsx` already uses `BASE_PAGE_WIDTH = 400`
 
-## Fix: "Save & Leave" doesn't persist draft as visible order
+So the issue is probably not “we forgot to request higher DPI”.
 
-### Problem
-When the user clicks "Back to Files" and chooses "Save & Leave" with a reference name, the `handleSaveAndLeave` function saves the spec and title but leaves `build_status` as `'draft'`. The recent change to CustomerOrders filters out orders where all items have `build_status: 'draft'`, so the saved order becomes invisible.
+The more likely problem is thumbnail selection:
+- `fetchThumbnails()` and `reThumbnail()` currently take the **first derived image per page**
+- they do **not** prefer the biggest/highest-resolution file
+- if the backend returns old low-res auto-queue thumbnails before the newer 150 DPI ones, the UI keeps using the soft version
 
-### Fix
+### Resolution target
+Because the FlipBook never displays pages larger than about **400px wide**, the practical minimum for “decent” quality is roughly:
+- **A5:** about **420px wide** (72 DPI equivalent)
+- **A4:** about **595px wide** (72 DPI equivalent)
 
-**`src/pages/dashboard/OrderBuild.tsx`** — In `handleSaveAndLeave` (line ~485), after updating the title, also set `build_status: 'building'` on the order item. This marks the item as actively worked on, making it visible in the orders list and the "Recently Modified" dashboard section.
+So your “at least 72 DPI” requirement is reasonable for the inline FlipBook.
+I would still keep backend rendering at **150 DPI**, but enforce a **72 DPI minimum acceptance threshold** in the frontend selection logic.
 
-```typescript
-await supabase
-  .from("order_items")
-  .update({ title: ref.trim() || null, build_status: "building" } as any)
-  .eq("id", orderItem.id);
+### Changes to make
+
+**1) `src/hooks/useDocumentUpload.ts`**
+- Replace the current “first thumbnail per page wins” logic
+- Group derived files by page
+- Pick the **best candidate per page** by:
+  - cropped/trimmed version first when appropriate
+  - then **largest `width` / `height`**
+- Compute effective preview DPI from:
+  - selected image width
+  - page width in mm
+- If the selected result is below **72 DPI equivalent**, force a fresh rasterize and refetch before saving `thumbnail_urls`
+
+**2) `src/pages/dashboard/OrderFiles.tsx`**
+- Apply the same “pick highest-resolution candidate per page” logic in `reThumbnail()`
+- This keeps bleed/orientation reprocessing from falling back to soft previews
+
+**3) `src/lib/thumbnailUtils.ts`** (hardening)
+- If re-rendered thumbnails reuse the same storage path, clear or bypass the signed URL cache after reprocessing
+- This avoids the browser showing a stale low-res image after a higher-res render replaces it
+
+### Expected result
+- FlipBook uses the sharpest derived file available for each page
+- Anything below a **72 DPI equivalent floor** is rejected and re-rendered
+- Existing 150 DPI backend rendering stays in place
+- Inline preview should look properly crisp on a normal desktop screen
+
+### Technical details
+Suggested selection rule per page:
+```text
+1. Prefer cropped_* if trim preview is intended
+2. Otherwise compare candidates by width desc, then height desc
+3. Save only the best path for each page
+4. Compute effective dpi = pixel_width / (page_width_mm / 25.4)
+5. If dpi < 72, trigger rasterize/crop-rasterize and refetch
 ```
 
-This is a one-line addition to the existing update call. The `'building'` status correctly represents "user has started configuring this item and explicitly saved progress."
-
-### Result
-- Orders saved via "Save & Leave" appear in the orders list and dashboard
-- Unsaved preview-only drafts (never explicitly saved) remain hidden
-- The "Continue" button routes correctly since `'building'` maps to Step 1 (File Management)
-
+### Verification
+After implementation, test with one A5 and one A4 PDF and confirm:
+- chosen thumbnail widths are at least ~420px (A5) / ~595px (A4)
+- FlipBook looks crisp in the normal preview
+- reprocessed files stay crisp too
+- no stale low-res image remains after trim/orientation changes
+</final-text>
