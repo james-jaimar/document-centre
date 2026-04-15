@@ -309,9 +309,10 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         }
 
         const fileName = file.name;
+        const safeFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
 
         // 1. Upload to S3
-        const storagePath = `${user.id}/${effectiveId}/${fileName}`;
+        const storagePath = `${user.id}/${effectiveId}/${safeFileName}`;
         const { uploadToS3 } = await import("@/lib/s3Storage");
         await uploadToS3(storagePath, file);
         updateUpload(originalName, { progress: 30, fileName: originalName });
