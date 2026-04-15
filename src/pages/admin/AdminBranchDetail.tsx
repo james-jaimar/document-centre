@@ -2,8 +2,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useBranches, useUpdateBranch } from "@/hooks/useBranches";
 import { useTenantMembers, useUpdateTenantMember } from "@/hooks/useTenantMembers";
+import BranchProductToggles from "@/components/branch/BranchProductToggles";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,9 +20,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { ArrowLeft, Building2, Users, Settings2, Shield, UserPlus } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 
 const AdminBranchDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -39,20 +38,6 @@ const AdminBranchDetail = () => {
 
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState("");
-
-  // Branch capabilities
-  const { data: capabilities } = useQuery({
-    queryKey: ["branch-capabilities", id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("branch_capabilities")
-        .select("*, product_families:product_family_id (name)")
-        .eq("branch_id", id!);
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!id,
-  });
 
   // Editable form state
   const [editing, setEditing] = useState(false);
@@ -299,51 +284,7 @@ const AdminBranchDetail = () => {
 
         {/* ─── CAPABILITIES TAB ─── */}
         <TabsContent value="capabilities">
-          <Card>
-            <CardHeader>
-              <CardTitle>Production Capabilities</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              {!capabilities?.length ? (
-                <div className="py-8 text-center text-sm text-muted-foreground">
-                  No capabilities configured for this branch.
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Product Family</TableHead>
-                      <TableHead>Enabled</TableHead>
-                      <TableHead>Color</TableHead>
-                      <TableHead>Pages</TableHead>
-                      <TableHead>Quantity</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {capabilities.map((cap: any) => (
-                      <TableRow key={cap.id}>
-                        <TableCell className="font-medium">
-                          {cap.product_families?.name || "Unknown"}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={cap.is_enabled ? "default" : "secondary"}>
-                            {cap.is_enabled ? "Yes" : "No"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{cap.supports_color ? "Color" : "B&W only"}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {cap.min_pages}–{cap.max_pages}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {cap.min_quantity}–{cap.max_quantity}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+          {id && <BranchProductToggles branchId={id} />}
         </TabsContent>
       </Tabs>
 
