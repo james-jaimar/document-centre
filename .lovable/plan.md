@@ -1,34 +1,42 @@
 
 
-## Fix: S3 Upload SignatureDoesNotMatch
+## Fix: S3 Upload Fails for Filenames with Spaces
 
-### Root Cause
+### Root Cause (Confirmed)
 
-In `src/lib/s3Storage.ts`, the `uploadToS3` function adds a `Content-Type` header to the PUT request. However, the presigned URL from the gateway was signed with only the `host` header. Any additional header not included in the signing causes AWS to reject the request with `SignatureDoesNotMatch`.
+The Lovable connector gateway has a URL-encoding issue with spaces in `object_path`. When the path contains spaces, the gateway signs the URL with one encoding but S3 expects another, causing `SignatureDoesNotMatch`.
+
+**Proof:**
+- `test/diagnostic.txt` → **200 OK**
+- `test/PriceList2026.pdf` → **200 OK**
+- `test/Price List 2026_Impress.pdf` → **403 SignatureDoesNotMatch**
+- `test/Price%20List%202026.pdf` (pre-encoded) → **403 SignatureDoesNotMatch**
+
+This is a gateway-level bug. Credentials and permissions are fine.
 
 ### Fix
 
-**File: `src/lib/s3Storage.ts`** — Remove the `Content-Type` header from the PUT request so only the signed headers are sent:
+**File: `src/hooks/useDocumentUpload.ts`** — Sanitize the filename in the S3 object key before uploading. Replace spaces and unsafe characters with underscores. The original filename is preserved in `file_name` in the database for display.
 
 ```ts
-// Before
-const res = await fetch(url, {
-  method: "PUT",
-  body: file,
-  headers: {
-    "Content-Type": (file as File).type || "application/octet-stream",
-  },
-});
+// Line ~314, change:
+const storagePath = `${user.id}/${effectiveId}/${fileName}`;
 
-// After
-const res = await fetch(url, {
-  method: "PUT",
-  body: file,
-});
+// To:
+const safeFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+const storagePath = `${user.id}/${effectiveId}/${safeFileName}`;
 ```
 
-S3 will infer the content type, and the signature will match since no extra headers are injected.
+Also update the DB insert (where `file_path` is stored) to use the same `safeFileName` so downloads reference the correct S3 key. The `file_name` column keeps the original name for UI display.
 
 ### Scope
-One line change in one file. No edge function or VPS changes needed.
+
+- One file changed: `src/hooks/useDocumentUpload.ts`
+- No edge function, VPS, or AWS changes needed
+- No database migration needed
+- `file_name` (display) stays as original; `file_path` (S3 key) uses sanitized name
+
+### VPS Impact
+
+The VPS `storage.py` receives the S3 key from the `file_path` column, so it will automatically use the sanitized key. No VPS patch needed.
 
