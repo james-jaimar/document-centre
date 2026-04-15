@@ -1,68 +1,54 @@
-<final-text>
-## Fix plan: enforce a real minimum preview resolution for FlipBook
 
-### What I found
-The code is already asking the backend for high-res previews:
-- `useDocumentUpload.ts` calls `rasterize(asset_id, 150)`
-- `cropRasterize()` defaults to `150`
-- `FlipBook.tsx` already uses `BASE_PAGE_WIDTH = 400`
 
-So the issue is probably not “we forgot to request higher DPI”.
+## Fix: FlipBook cache/ordering glitch on return navigation
 
-The more likely problem is thumbnail selection:
-- `fetchThumbnails()` and `reThumbnail()` currently take the **first derived image per page**
-- they do **not** prefer the biggest/highest-resolution file
-- if the backend returns old low-res auto-queue thumbnails before the newer 150 DPI ones, the UI keeps using the soft version
+### Root cause analysis
 
-### Resolution target
-Because the FlipBook never displays pages larger than about **400px wide**, the practical minimum for “decent” quality is roughly:
-- **A5:** about **420px wide** (72 DPI equivalent)
-- **A4:** about **595px wide** (72 DPI equivalent)
+Three interacting issues cause the intermittent broken preview when returning to an existing order:
 
-So your “at least 72 DPI” requirement is reasonable for the inline FlipBook.
-I would still keep backend rendering at **150 DPI**, but enforce a **72 DPI minimum acceptance threshold** in the frontend selection logic.
+1. **Expired signed URLs served from stale cache** — `signedUrlCache` stores URLs with a 1-hour server TTL but never tracks when they were cached. After ~1 hour, the browser gets 403 errors but the code still serves the stale URL, resulting in broken images.
 
-### Changes to make
+2. **`createSignedUrls` path mismatch** — Supabase's `createSignedUrls` may return `item.path` with a slightly different format than the key we sent (e.g. leading slash differences). When this happens, the result never gets cached, and the resolve loop returns `""` for that page — causing missing or mis-ordered images.
 
-**1) `src/hooks/useDocumentUpload.ts`**
-- Replace the current “first thumbnail per page wins” logic
-- Group derived files by page
-- Pick the **best candidate per page** by:
-  - cropped/trimmed version first when appropriate
-  - then **largest `width` / `height`**
-- Compute effective preview DPI from:
-  - selected image width
-  - page width in mm
-- If the selected result is below **72 DPI equivalent**, force a fresh rasterize and refetch before saving `thumbnail_urls`
+3. **No error recovery in DocumentPreview** — When `batchSignUrls` returns empty strings for some pages, the FlipBook renders with gaps. There's no retry or fallback, and the `structuralKey` (which includes URLs) locks in the broken state.
 
-**2) `src/pages/dashboard/OrderFiles.tsx`**
-- Apply the same “pick highest-resolution candidate per page” logic in `reThumbnail()`
-- This keeps bleed/orientation reprocessing from falling back to soft previews
+### Changes
 
-**3) `src/lib/thumbnailUtils.ts`** (hardening)
-- If re-rendered thumbnails reuse the same storage path, clear or bypass the signed URL cache after reprocessing
-- This avoids the browser showing a stale low-res image after a higher-res render replaces it
+**1. `src/lib/thumbnailUtils.ts` — Add TTL tracking and path normalization**
+- Store cache entries as `{ url, expiresAt }` instead of bare strings
+- Set `expiresAt` to `Date.now() + 55 * 60 * 1000` (55 min, 5 min safety margin before the 60 min server TTL)
+- On cache lookup, treat expired entries as uncached — re-sign them
+- Normalize both the requested path and the returned `item.path` through `toStorageKey()` before caching, eliminating leading-slash mismatches
 
-### Expected result
-- FlipBook uses the sharpest derived file available for each page
-- Anything below a **72 DPI equivalent floor** is rejected and re-rendered
-- Existing 150 DPI backend rendering stays in place
-- Inline preview should look properly crisp on a normal desktop screen
+**2. `src/components/preview/DocumentPreview.tsx` — Add retry on failed signing**
+- After `batchSignUrls` resolves, check if any resolved URL is empty for a non-empty input path
+- If so, clear those specific cache entries and retry once (covers transient network errors and recently-expired cache)
+- Add an `img.onerror` handler in FlipPage that clears the cache entry and triggers a re-sign (covers URLs that expire while the page is open)
 
-### Technical details
-Suggested selection rule per page:
+**3. `src/components/preview/FlipBook.tsx` — Exclude URLs from structural key**
+- The `structuralKey` currently includes the full URL array. This means URL changes (e.g. re-signing) cause unnecessary full remounts of `react-pageflip`
+- Change `structuralKey` to use only the count and the raw storage paths (not signed URLs), so signing doesn't trigger a remount
+- URLs should flow in as props that update images in-place without destroying the flip engine
+
+### Technical detail
+
 ```text
-1. Prefer cropped_* if trim preview is intended
-2. Otherwise compare candidates by width desc, then height desc
-3. Save only the best path for each page
-4. Compute effective dpi = pixel_width / (page_width_mm / 25.4)
-5. If dpi < 72, trigger rasterize/crop-rasterize and refetch
+Cache entry shape (before → after):
+  Before: Map<string, string>          // key → signedUrl
+  After:  Map<string, { url: string; expiresAt: number }>
+
+TTL check:
+  const entry = signedUrlCache.get(key);
+  const isValid = entry && entry.expiresAt > Date.now();
+
+Path normalization on cache write:
+  const normalizedPath = toStorageKey(item.path ?? uncached[idx]);
+  signedUrlCache.set(normalizedPath, { url: item.signedUrl, expiresAt });
 ```
 
-### Verification
-After implementation, test with one A5 and one A4 PDF and confirm:
-- chosen thumbnail widths are at least ~420px (A5) / ~595px (A4)
-- FlipBook looks crisp in the normal preview
-- reprocessed files stay crisp too
-- no stale low-res image remains after trim/orientation changes
-</final-text>
+### Result
+- Signed URLs automatically refresh before they expire
+- Path format differences no longer cause missing thumbnails
+- Transient failures get one automatic retry
+- FlipBook doesn't unnecessarily remount when URLs change
+
