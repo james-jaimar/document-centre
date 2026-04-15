@@ -1,53 +1,73 @@
 
 
-## Fix: S3 Bucket Folder Structure for Multi-Tenant Isolation
+## Plan: PostNet Tenant Setup and Branch Self-Service Admin
 
-### Problem
-You're right — the current S3 paths have two issues:
+### Context
+The system already has a `branches` table, a `branch_capabilities` table, tenant settings infrastructure, and admin pages for branch management. What's missing is:
+- A real PostNet tenant with ~200-300 branches loaded
+- A branch-level self-service portal where each branch can toggle which products they offer
+- Branch-specific settings (operating hours, contact overrides, etc.)
 
-1. **User uploads** go to `{user_id}/{order_item_id}/{filename}` — no tenant grouping, so all tenants' files mix together at the root
-2. **VPS-generated files** (`normalized/`, `previews/`, `thumbnails/`) dump directly at the bucket root — these will also grow unbounded
+### Phase 1 — Create PostNet Tenant and Bulk-Load Branches
 
-With multiple tenants, this becomes thousands of top-level folders with no way to audit, manage, or clean up per-tenant.
+**Database work:**
+- Insert a PostNet tenant record (name: "PostNet", slug: "postnet")
+- Create a number sequence for the PostNet app
+- You'll provide a CSV/list of PostNet stores (name, code, address, city, province, postal code, phone, email) and I'll bulk-insert them as branches under the PostNet tenant
 
-### Proposed Path Structure
+**No schema changes needed** — the `branches` table already has all the required fields (name, code, address, city, province, postal_code, country, phone, email, is_active).
 
-```text
-tenants/{tenant_id}/uploads/{user_id}/{order_item_id}/{filename}
-tenants/{tenant_id}/normalized/{asset_id}.pdf
-tenants/{tenant_id}/previews/{kind}/{asset_id}.png
-tenants/{tenant_id}/thumbnails/{kind}/{asset_id}.png
-```
+### Phase 2 — Branch Product Capabilities (Toggle On/Off)
 
-This gives:
-- Clean per-tenant isolation in S3
-- Easy IAM policy scoping if needed later
-- Simple lifecycle rules per tenant prefix
-- Audit/cleanup by tenant
+The `branch_capabilities` table already exists with `is_enabled`, `supports_color`, `min/max_pages`, `min/max_quantity`, and `temporary_outage` fields. The plan:
 
-### Changes Required
+1. **Auto-seed capabilities**: When a new branch is created (or via a bulk action), auto-create one `branch_capabilities` row per active `product_family`, defaulting `is_enabled = true`. This gives every branch a full product matrix out of the box.
 
-**1. Frontend: `src/hooks/useDocumentUpload.ts`**
-- Import `useTenantContext` to get `tenantId`
-- Change path from `${user.id}/${effectiveId}/${safeFileName}` to `tenants/${tenantId}/uploads/${user.id}/${effectiveId}/${safeFileName}`
-- The hook's parent component already has tenant context available
+2. **Branch Capabilities Admin UI** (on the existing `AdminBranchDetail` Capabilities tab):
+   - Replace the read-only table with an interactive toggle grid
+   - Each product family gets a row with a Switch to enable/disable
+   - Expanding a row reveals fine-tuning: color support, page range, quantity range
+   - A "Temporary Outage" toggle with optional "outage until" date (e.g., machine broken for a week)
+   - Bulk actions: "Enable All" / "Disable All"
 
-**2. VPS: `storage.py` (you'll do this on the server)**
-- When the worker downloads the source file, the `source_storage_path` already contains the full key — no change needed for downloads
-- For **writing** normalized/preview/thumbnail files, prefix with `tenants/{tenant_id}/` instead of writing to root-level `normalized/`, `previews/`, `thumbnails/`
-- The `tenant_id` would need to be passed through the asset metadata or looked up from the `documents` table via `backend_asset_id`
+3. **Branch self-service view** (for `branch_manager` / `store_operator` roles):
+   - A new route `/admin/branch/products` accessible to branch-level staff
+   - Shows only their branch's product toggles — they can enable/disable products and flag outages
+   - Cannot change pricing or add new product families (that's head office only)
 
-**3. VPS: Asset creation API**
-- The `createAsset` call already passes `source_storage_path` — this will automatically use the new prefixed path
-- The VPS needs to derive the tenant prefix for output files (normalized, previews, thumbnails)
+### Phase 3 — Branch Settings (Self-Service)
 
-### Migration Consideration
-- Existing files in the bucket (from testing) can be manually moved or left as-is
-- New uploads will use the new structure immediately
-- No database migration needed — `file_path` in `documents` already stores the full S3 key
+Replace the empty `BranchSettings` page with a real settings panel. Settings a branch operator should control:
 
-### Scope
-- One Lovable file changed: `src/hooks/useDocumentUpload.ts`
-- VPS changes: `storage.py` output path logic (you'll handle on server)
-- No edge function changes needed
+| Setting | Type | Purpose |
+|---------|------|---------|
+| Operating hours | JSON (per day) | When the store accepts orders |
+| Walk-in enabled | Boolean | Whether walk-in customers are accepted |
+| Max daily orders | Number | Capacity throttle |
+| Turnaround override | Text | e.g., "Same day" vs tenant default |
+| Contact overrides | Text fields | Local phone, email, manager name |
+| Delivery radius | Number (km) | For local delivery capability |
+| Accepts delivery | Boolean | Whether branch does deliveries |
+| Collection available | Boolean | Whether customers can collect |
+| Special instructions | Text | Notes for customers (parking, access) |
+
+These will be stored in the existing `branches.settings` JSONB column — no new table needed.
+
+### Phase 4 — Routing and Navigation Updates
+
+- Add `/admin/branch/products` and `/admin/branch/settings` routes for branch-level staff
+- Update `AppSidebar` to show "My Products" and "Branch Settings" for `branch_manager` / `store_operator` roles
+- Ensure branch staff only see their own branch's data (RLS already handles this via `tenant_id`)
+
+### Technical Details
+
+- **No new tables**: Uses existing `branch_capabilities`, `branches.settings` JSONB, and `tenant_settings`
+- **Migration needed**: One migration to auto-seed `branch_capabilities` rows for existing branches (INSERT from cross-join of branches × product_families where no capability row exists yet)
+- **New components**: `BranchProductToggles.tsx`, updated `BranchSettings.tsx`
+- **Hooks**: `useBranchCapabilities` (CRUD for the toggle grid), extend `useBranches` for settings JSONB
+- **RLS**: `branch_capabilities` already has RLS for branch managers and head office admins
+
+### What I Need From You
+- The PostNet branch data (CSV or list) with store names, codes, addresses, cities, provinces, postal codes, phone numbers, and emails
+- Confirmation on which product families are already seeded (Bound Documents, Flyers, Posters, Presentations, Ring Binders, Brochures?)
 
