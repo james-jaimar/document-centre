@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
-import { batchSignUrls } from "@/lib/thumbnailUtils";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { batchSignUrls, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import type { ProductPreviewType } from "./previewTypes";
 import { getBindingType } from "./previewTypes";
 import FlipBook from "./FlipBook";
@@ -60,6 +60,7 @@ export default function DocumentPreview({
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const retryRef = useRef(false);
 
   const page = controlledPage ?? internalPage;
   const setPage = controlledOnPageChange ?? setInternalPage;
@@ -92,16 +93,37 @@ export default function DocumentPreview({
     }
 
     let cancelled = false;
+    retryRef.current = false;
     setLoading(true);
-    batchSignUrls(needsSigning).then((map) => {
-      if (cancelled) return;
-      const resolved = thumbnailPaths.map((p, i) => {
-        if (directUrls.has(i)) return directUrls.get(i)!;
-        return map.get(p) || "";
+
+    const signAndResolve = (isRetry: boolean) => {
+      batchSignUrls(needsSigning).then((map) => {
+        if (cancelled) return;
+        const resolved = thumbnailPaths.map((p, i) => {
+          if (directUrls.has(i)) return directUrls.get(i)!;
+          return map.get(p) || "";
+        });
+
+        // Check for failed signings (non-empty path → empty URL)
+        const failedPaths = thumbnailPaths.filter(
+          (p, i) => p && !directUrls.has(i) && !resolved[i]
+        );
+
+        if (failedPaths.length > 0 && !isRetry) {
+          // Clear cache for failed paths and retry once
+          console.warn("[DocumentPreview] Failed to sign", failedPaths.length, "paths, retrying…");
+          clearSignedUrlCache(failedPaths);
+          retryRef.current = true;
+          signAndResolve(true);
+          return;
+        }
+
+        setUrls(resolved);
+        setLoading(false);
       });
-      setUrls(resolved);
-      setLoading(false);
-    });
+    };
+
+    signAndResolve(false);
     return () => { cancelled = true; };
   }, [thumbnailPaths]);
 
@@ -136,7 +158,7 @@ export default function DocumentPreview({
   };
 
   if (BOUND_TYPES.has(productType)) {
-    return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} displayPageNumbers={displayPageNumbers} faceLabels={faceLabels} bindingEdge={bindingEdge} />;
+    return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} displayPageNumbers={displayPageNumbers} faceLabels={faceLabels} bindingEdge={bindingEdge} rawPaths={thumbnailPaths} />;
   }
 
   if (FOLD_TYPES.has(productType)) {

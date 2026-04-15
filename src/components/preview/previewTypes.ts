@@ -94,6 +94,8 @@ export interface FlipBookProps extends PreviewComponentProps {
   faceLabels?: string[];
   /** Binding edge: left (default) or top (for landscape presentations) */
   bindingEdge?: "left" | "top";
+  /** Raw storage paths (pre-signing) for stable structural key */
+  rawPaths?: string[];
 }
 
 /** Ring binder cover dimensions in mm (placeholder — user to confirm exact size) */
