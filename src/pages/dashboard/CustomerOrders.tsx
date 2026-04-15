@@ -99,7 +99,8 @@ async function deleteDraftOrder(orderId: string) {
 
     // 5. Remove storage files
     if (filePaths.length > 0) {
-      await supabase.storage.from("document-uploads").remove(filePaths);
+      const { deleteFromS3 } = await import("@/lib/s3Storage");
+      await deleteFromS3(filePaths);
     }
 
     // 6. Delete order items

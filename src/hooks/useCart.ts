@@ -125,7 +125,8 @@ export function useAddItemToCart() {
         const oldPaths = oldDocs?.map((d) => d.file_path).filter(Boolean) ?? [];
         await supabase.from("documents").delete().eq("order_item_id", input.replacesCartItemId);
         if (oldPaths.length > 0) {
-          await supabase.storage.from("document-uploads").remove(oldPaths);
+          const { deleteFromS3 } = await import("@/lib/s3Storage");
+          await deleteFromS3(oldPaths);
         }
         await supabase.from("order_items").delete().eq("id", input.replacesCartItemId);
       }
@@ -320,7 +321,8 @@ export function useRemoveCartItem() {
 
       // Remove storage files
       if (filePaths.length > 0) {
-        await supabase.storage.from("document-uploads").remove(filePaths);
+        const { deleteFromS3 } = await import("@/lib/s3Storage");
+        await deleteFromS3(filePaths);
       }
 
       // Delete the order item
