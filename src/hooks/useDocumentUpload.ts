@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
+import { useTenantContext } from "@/hooks/useTenantContext";
 import { toast } from "@/hooks/use-toast";
 import {
   createAsset,
@@ -24,6 +25,7 @@ interface UploadProgress {
 
 export function useDocumentUpload(orderItemId: string | undefined) {
   const { user } = useAuth();
+  const { tenantId } = useTenantContext();
   const qc = useQueryClient();
   const [uploads, setUploads] = useState<Record<string, UploadProgress>>({});
 
@@ -295,7 +297,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         const safeFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
 
         // 1. Upload to S3
-        const storagePath = `${user.id}/${effectiveId}/${safeFileName}`;
+        const storagePath = `tenants/${tenantId}/uploads/${user.id}/${effectiveId}/${safeFileName}`;
         const { uploadToS3 } = await import("@/lib/s3Storage");
         await uploadToS3(storagePath, file);
         updateUpload(originalName, { progress: 30, fileName: originalName });
