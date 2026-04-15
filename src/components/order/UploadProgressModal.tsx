@@ -1,6 +1,7 @@
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -52,6 +53,9 @@ export default function UploadProgressModal({
             <Upload className="h-5 w-5 text-primary" />
             Uploading Files
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Upload progress for your document files
+          </DialogDescription>
         </DialogHeader>
 
         {/* Summary badges */}
