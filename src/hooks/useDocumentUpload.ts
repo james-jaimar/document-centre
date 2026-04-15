@@ -310,13 +310,10 @@ export function useDocumentUpload(orderItemId: string | undefined) {
 
         const fileName = file.name;
 
-        // 1. Upload to Supabase Storage
+        // 1. Upload to S3
         const storagePath = `${user.id}/${effectiveId}/${fileName}`;
-        const { error: uploadError } = await supabase.storage
-          .from("document-uploads")
-          .upload(storagePath, file, { upsert: true });
-
-        if (uploadError) throw uploadError;
+        const { uploadToS3 } = await import("@/lib/s3Storage");
+        await uploadToS3(storagePath, file);
         updateUpload(originalName, { progress: 30, fileName: originalName });
 
         // 2. Create documents row

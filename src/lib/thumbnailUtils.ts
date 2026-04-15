@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { getDownloadUrls } from "@/lib/s3Storage";
 
 const BUCKET = "document-uploads";
 
-/** TTL for signed URLs: 55 minutes (5 min safety margin on 60 min server TTL) */
-const SIGNED_URL_TTL_MS = 55 * 60 * 1000;
+/** TTL for signed URLs: 13 minutes (2 min safety margin on 15 min S3 presign default) */
+const SIGNED_URL_TTL_MS = 13 * 60 * 1000;
 
 interface CacheEntry {
   url: string;
@@ -77,7 +77,7 @@ export function toStorageKey(raw: string): string {
 }
 
 /**
- * Batch-sign an array of storage paths in one API call.
+ * Batch-sign an array of storage paths via the S3 edge function.
  * Results are cached in-memory with TTL tracking.
  */
 export async function batchSignUrls(
@@ -87,21 +87,16 @@ export async function batchSignUrls(
   const uncached = keys.filter((k) => !getCached(k));
 
   if (uncached.length > 0) {
-    const { data, error } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrls(uncached, 60 * 60);
-
-    if (!error && data) {
-      for (let i = 0; i < data.length; i++) {
-        const item = data[i];
-        if (item.signedUrl) {
-          // Normalize the returned path to avoid leading-slash mismatches
-          const normalizedPath = item.path
-            ? toStorageKey(item.path)
-            : uncached[i];
-          setCached(normalizedPath, item.signedUrl);
+    try {
+      const signedUrls = await getDownloadUrls(uncached);
+      for (const [path, url] of Object.entries(signedUrls)) {
+        if (url) {
+          const normalizedPath = toStorageKey(path);
+          setCached(normalizedPath, url);
         }
       }
+    } catch (err) {
+      console.error("[thumbnailUtils] S3 signing failed:", err);
     }
   }
 
@@ -130,16 +125,14 @@ export function useSignedThumbnailUrl(rawPath: string | null): string | null {
     if (cached) { setUrl(cached); return; }
 
     let cancelled = false;
-    supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(key, 60 * 60)
-      .then(({ data, error }) => {
-        if (!cancelled && data?.signedUrl) {
-          setCached(key, data.signedUrl);
-          setUrl(data.signedUrl);
-        }
-        if (error) console.warn("[thumbnail] signed URL error:", key, error.message);
-      });
+    getDownloadUrls([key]).then((urls) => {
+      if (!cancelled && urls[key]) {
+        setCached(key, urls[key]);
+        setUrl(urls[key]);
+      }
+    }).catch((err) => {
+      console.warn("[thumbnail] S3 signed URL error:", key, err);
+    });
 
     return () => { cancelled = true; };
   }, [rawPath]);
