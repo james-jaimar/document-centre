@@ -2010,6 +2010,10 @@ export type Database = {
         Returns: Json
       }
       rollup_order_status: { Args: { p_order_id: string }; Returns: undefined }
+      seed_branch_capabilities: {
+        Args: { p_branch_id: string }
+        Returns: undefined
+      }
       sync_order_amounts: { Args: { p_order_id: string }; Returns: undefined }
       user_can_read_order: {
         Args: {
