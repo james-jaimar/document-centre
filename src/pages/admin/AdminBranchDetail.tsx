@@ -2,8 +2,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useBranches, useUpdateBranch } from "@/hooks/useBranches";
 import { useTenantMembers, useUpdateTenantMember } from "@/hooks/useTenantMembers";
+import BranchProductToggles from "@/components/branch/BranchProductToggles";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,10 +19,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { toast } from "sonner";
 import { ArrowLeft, Building2, Users, Settings2, Shield, UserPlus } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 
 const AdminBranchDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -39,20 +36,6 @@ const AdminBranchDetail = () => {
 
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState("");
-
-  // Branch capabilities
-  const { data: capabilities } = useQuery({
-    queryKey: ["branch-capabilities", id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("branch_capabilities")
-        .select("*, product_families:product_family_id (name)")
-        .eq("branch_id", id!);
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!id,
-  });
 
   // Editable form state
   const [editing, setEditing] = useState(false);
