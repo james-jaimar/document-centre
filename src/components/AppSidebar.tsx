@@ -145,10 +145,27 @@ export default function AppSidebar() {
         <Link
           to="/platform"
           className="mx-3 mt-3 flex items-center gap-2 rounded-md border border-sidebar-border px-3 py-2 text-xs font-medium text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          onClick={() => setOverrideTenantId(null)}
         >
           <Globe size={14} />
           Back to Platform
         </Link>
+      )}
+
+      {/* Tenant override banner */}
+      {!collapsed && isOverriding && (
+        <div className="mx-3 mt-2 flex items-center justify-between rounded-md bg-primary/10 px-3 py-2 text-xs font-medium text-primary">
+          <span>Viewing: {tenantName}</span>
+          <button
+            onClick={() => {
+              setOverrideTenantId(null);
+              navigate("/platform");
+            }}
+            className="underline underline-offset-2 hover:text-primary/80"
+          >
+            Exit
+          </button>
+        </div>
       )}
 
       {/* Nav */}
