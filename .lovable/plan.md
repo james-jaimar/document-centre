@@ -1,54 +1,75 @@
 
 
-## Fix: FlipBook cache/ordering glitch on return navigation
+## S3 Storage Migration — Implementation Plan
 
-### Root cause analysis
+### Overview
 
-Three interacting issues cause the intermittent broken preview when returning to an existing order:
+Migrate all file storage from Supabase Storage (`document-uploads` bucket) to AWS S3 (`jaimar-dev-600743178200-af-south-1-an`), using the Lovable connector gateway for URL signing. The S3 connection is already linked and secrets are available.
 
-1. **Expired signed URLs served from stale cache** — `signedUrlCache` stores URLs with a 1-hour server TTL but never tracks when they were cached. After ~1 hour, the browser gets 403 errors but the code still serves the stale URL, resulting in broken images.
+### What Changes
 
-2. **`createSignedUrls` path mismatch** — Supabase's `createSignedUrls` may return `item.path` with a slightly different format than the key we sent (e.g. leading slash differences). When this happens, the result never gets cached, and the resolve loop returns `""` for that page — causing missing or mis-ordered images.
+**1. New Edge Function: `supabase/functions/s3-storage/index.ts`**
 
-3. **No error recovery in DocumentPreview** — When `batchSignUrls` returns empty strings for some pages, the FlipBook renders with gaps. There's no retry or fallback, and the `structuralKey` (which includes URLs) locks in the broken state.
+Handles three actions via the connector gateway:
+- **`sign-upload`** — Returns a presigned PUT URL for uploading a file to a given S3 key
+- **`sign-download`** — Returns presigned GET URLs for one or more S3 keys (batch)
+- **`delete`** — Deletes one or more S3 objects
 
-### Changes
+All actions authenticate the user via Supabase JWT and validate the requested key prefix against the user's tenant membership. Uses the gateway at `https://connector-gateway.lovable.dev/api/v1/sign_storage_url?provider=aws_s3`.
 
-**1. `src/lib/thumbnailUtils.ts` — Add TTL tracking and path normalization**
-- Store cache entries as `{ url, expiresAt }` instead of bare strings
-- Set `expiresAt` to `Date.now() + 55 * 60 * 1000` (55 min, 5 min safety margin before the 60 min server TTL)
-- On cache lookup, treat expired entries as uncached — re-sign them
-- Normalize both the requested path and the returned `item.path` through `toStorageKey()` before caching, eliminating leading-slash mismatches
+**2. Frontend: `src/hooks/useDocumentUpload.ts`**
 
-**2. `src/components/preview/DocumentPreview.tsx` — Add retry on failed signing**
-- After `batchSignUrls` resolves, check if any resolved URL is empty for a non-empty input path
-- If so, clear those specific cache entries and retry once (covers transient network errors and recently-expired cache)
-- Add an `img.onerror` handler in FlipPage that clears the cache entry and triggers a re-sign (covers URLs that expire while the page is open)
+Replace `supabase.storage.from("document-uploads").upload()` with:
+1. Call `s3-storage` edge function (`sign-upload`) to get a presigned PUT URL
+2. `fetch(putUrl, { method: 'PUT', body: file })` to upload directly to S3
 
-**3. `src/components/preview/FlipBook.tsx` — Exclude URLs from structural key**
-- The `structuralKey` currently includes the full URL array. This means URL changes (e.g. re-signing) cause unnecessary full remounts of `react-pageflip`
-- Change `structuralKey` to use only the count and the raw storage paths (not signed URLs), so signing doesn't trigger a remount
-- URLs should flow in as props that update images in-place without destroying the flip engine
+Update storage path format to: `{tenant_id}/uploads/{user_id}/{order_item_id}/{filename}`
 
-### Technical detail
+**3. Frontend: `src/lib/thumbnailUtils.ts`**
+
+Replace `supabase.storage.from(BUCKET).createSignedUrls()` and `createSignedUrl()` with calls to the `s3-storage` edge function (`sign-download`). Keep the existing TTL cache logic — just swap the signing backend.
+
+**4. Frontend: Delete operations (3 files)**
+
+Replace `supabase.storage.from("document-uploads").remove()` with calls to `s3-storage` (`delete`):
+- `src/hooks/useCart.ts` (2 locations)
+- `src/pages/dashboard/OrderFiles.tsx` (1 location)
+- `src/pages/dashboard/CustomerOrders.tsx` (1 location)
+
+**5. S3 Bucket CORS Configuration**
+
+You'll need to add CORS to your S3 bucket so browser-based uploads/downloads work. I'll provide the exact AWS CLI command.
+
+### S3 Key Structure
 
 ```text
-Cache entry shape (before → after):
-  Before: Map<string, string>          // key → signedUrl
-  After:  Map<string, { url: string; expiresAt: number }>
-
-TTL check:
-  const entry = signedUrlCache.get(key);
-  const isValid = entry && entry.expiresAt > Date.now();
-
-Path normalization on cache write:
-  const normalizedPath = toStorageKey(item.path ?? uncached[idx]);
-  signedUrlCache.set(normalizedPath, { url: item.signedUrl, expiresAt });
+{tenant_id}/uploads/{user_id}/{order_item_id}/{filename}.pdf
+{tenant_id}/derived/{asset_id}/previews/page-001.png
+{tenant_id}/derived/{asset_id}/thumbs/page-001.png
 ```
 
-### Result
-- Signed URLs automatically refresh before they expire
-- Path format differences no longer cause missing thumbnails
-- Transient failures get one automatic retry
-- FlipBook doesn't unnecessarily remount when URLs change
+### VPS Instructions (after app changes)
+
+Once the app migration is complete, I'll provide exact instructions for your Ubuntu Document Centre API:
+1. Install `boto3`
+2. Add S3 config to `.env` (`STORAGE_MODE=s3`, AWS credentials)
+3. Patch `config.py` with new S3 fields
+4. Patch `storage.py` with S3 read/write mode
+5. Restart the service
+
+### Execution Order
+
+1. Create `s3-storage` edge function and deploy
+2. Test it via `curl_edge_functions`
+3. Update `thumbnailUtils.ts` (signing)
+4. Update `useDocumentUpload.ts` (uploads)
+5. Update delete operations (3 files)
+6. Provide S3 CORS config command
+7. Provide VPS patch instructions
+
+### Important Notes
+
+- The `documents.file_path` column will store S3 object keys instead of Supabase paths — same format, different backend
+- Existing files in Supabase Storage will remain accessible until migrated — we can add a migration script later
+- All previews remain private (presigned GET URLs), not public
 
