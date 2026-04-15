@@ -2,7 +2,30 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 const BUCKET = "document-uploads";
-const signedUrlCache = new Map<string, string>();
+
+/** TTL for signed URLs: 55 minutes (5 min safety margin on 60 min server TTL) */
+const SIGNED_URL_TTL_MS = 55 * 60 * 1000;
+
+interface CacheEntry {
+  url: string;
+  expiresAt: number;
+}
+
+const signedUrlCache = new Map<string, CacheEntry>();
+
+function getCached(key: string): string | undefined {
+  const entry = signedUrlCache.get(key);
+  if (!entry) return undefined;
+  if (entry.expiresAt <= Date.now()) {
+    signedUrlCache.delete(key);
+    return undefined;
+  }
+  return entry.url;
+}
+
+function setCached(key: string, url: string) {
+  signedUrlCache.set(key, { url, expiresAt: Date.now() + SIGNED_URL_TTL_MS });
+}
 
 /**
  * Returns true when the value is already a loadable URL (data-URI or HTTP).
@@ -55,13 +78,13 @@ export function toStorageKey(raw: string): string {
 
 /**
  * Batch-sign an array of storage paths in one API call.
- * Results are cached in-memory for the session.
+ * Results are cached in-memory with TTL tracking.
  */
 export async function batchSignUrls(
   rawPaths: string[]
 ): Promise<Map<string, string>> {
   const keys = rawPaths.map(toStorageKey);
-  const uncached = keys.filter((k) => !signedUrlCache.has(k));
+  const uncached = keys.filter((k) => !getCached(k));
 
   if (uncached.length > 0) {
     const { data, error } = await supabase.storage
@@ -69,9 +92,14 @@ export async function batchSignUrls(
       .createSignedUrls(uncached, 60 * 60);
 
     if (!error && data) {
-      for (const item of data) {
-        if (item.signedUrl && item.path) {
-          signedUrlCache.set(item.path, item.signedUrl);
+      for (let i = 0; i < data.length; i++) {
+        const item = data[i];
+        if (item.signedUrl) {
+          // Normalize the returned path to avoid leading-slash mismatches
+          const normalizedPath = item.path
+            ? toStorageKey(item.path)
+            : uncached[i];
+          setCached(normalizedPath, item.signedUrl);
         }
       }
     }
@@ -79,7 +107,7 @@ export async function batchSignUrls(
 
   const result = new Map<string, string>();
   for (let i = 0; i < rawPaths.length; i++) {
-    const url = signedUrlCache.get(keys[i]);
+    const url = getCached(keys[i]);
     if (url) result.set(rawPaths[i], url);
   }
   return result;
@@ -91,14 +119,14 @@ export async function batchSignUrls(
 export function useSignedThumbnailUrl(rawPath: string | null): string | null {
   const [url, setUrl] = useState<string | null>(() => {
     if (!rawPath) return null;
-    return signedUrlCache.get(toStorageKey(rawPath)) ?? null;
+    return getCached(toStorageKey(rawPath)) ?? null;
   });
 
   useEffect(() => {
     if (!rawPath) { setUrl(null); return; }
 
     const key = toStorageKey(rawPath);
-    const cached = signedUrlCache.get(key);
+    const cached = getCached(key);
     if (cached) { setUrl(cached); return; }
 
     let cancelled = false;
@@ -107,7 +135,7 @@ export function useSignedThumbnailUrl(rawPath: string | null): string | null {
       .createSignedUrl(key, 60 * 60)
       .then(({ data, error }) => {
         if (!cancelled && data?.signedUrl) {
-          signedUrlCache.set(key, data.signedUrl);
+          setCached(key, data.signedUrl);
           setUrl(data.signedUrl);
         }
         if (error) console.warn("[thumbnail] signed URL error:", key, error.message);

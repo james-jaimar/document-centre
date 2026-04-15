@@ -283,16 +283,17 @@ export default function FlipBook({
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
 
   // ── STRUCTURAL key: only remount when page structure changes ──
+  // Use raw storage paths (not signed URLs) so re-signing doesn't cause remounts
   const structuralKey = useMemo(
     () => JSON.stringify({
       n: urls.length,
-      u: urls,
+      p: rawPaths,
       r: pageRoles,
       s: sectionTypes,
       l: pageLabels,
       c: pageColors,
     }),
-    [urls, pageRoles, sectionTypes, pageLabels, pageColors]
+    [urls.length, rawPaths, pageRoles, sectionTypes, pageLabels, pageColors]
   );
 
   // ── FIXED internal resolution — never changes ──
