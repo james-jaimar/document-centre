@@ -86,7 +86,8 @@ const ADMIN_SECTIONS: NavSection[] = [
 export default function AppSidebar() {
   const location = useLocation();
   const { roles, signOut, user } = useAuth();
-  const { tenantName, membershipRole } = useTenantContext();
+  const { tenantName, membershipRole, isOverriding, overrideTenantId, setOverrideTenantId } = useTenantContext();
+  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
 
   const isPlatformArea = location.pathname.startsWith("/platform");
