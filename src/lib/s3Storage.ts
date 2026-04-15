@@ -31,9 +31,6 @@ export async function uploadToS3(objectPath: string, file: File | Blob): Promise
   const res = await fetch(url, {
     method: "PUT",
     body: file,
-    headers: {
-      "Content-Type": (file as File).type || "application/octet-stream",
-    },
   });
   if (!res.ok) {
     throw new Error(`S3 upload failed [${res.status}]: ${await res.text()}`);
