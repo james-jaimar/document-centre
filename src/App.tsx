@@ -36,6 +36,8 @@ import AdminOrders from "@/pages/admin/AdminOrders";
 import AdminOrderDetail from "@/pages/admin/AdminOrderDetail";
 import AdminBranchDetail from "@/pages/admin/AdminBranchDetail";
 import BranchDashboard from "@/pages/branch/BranchDashboard";
+import BranchProducts from "@/pages/branch/BranchProducts";
+import BranchSettings from "@/pages/branch/BranchSettings";
 
 // Platform
 import PlatformTenants from "@/pages/platform/PlatformTenants";
@@ -102,6 +104,18 @@ const App = () => (
               <Route path="/admin/production" element={
                 <ProtectedRoute allowedRoles={[...operationsRoles]}>
                   <BranchDashboard />
+                </ProtectedRoute>
+              } />
+
+              {/* Branch self-service */}
+              <Route path="/admin/branch/products" element={
+                <ProtectedRoute allowedRoles={[...operationsRoles]}>
+                  <BranchProducts />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/branch/settings" element={
+                <ProtectedRoute allowedRoles={[...operationsRoles]}>
+                  <BranchSettings />
                 </ProtectedRoute>
               } />
 
