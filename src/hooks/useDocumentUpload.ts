@@ -25,6 +25,7 @@ interface UploadProgress {
 
 export function useDocumentUpload(orderItemId: string | undefined) {
   const { user } = useAuth();
+  const { tenantId } = useTenantContext();
   const qc = useQueryClient();
   const [uploads, setUploads] = useState<Record<string, UploadProgress>>({});
 
