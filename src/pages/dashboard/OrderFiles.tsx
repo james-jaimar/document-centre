@@ -704,7 +704,8 @@ export default function OrderFiles() {
         await supabase.from("documents").delete().eq("id", docId);
         // 3. Remove file from storage
         if (doc?.file_path) {
-          await supabase.storage.from("document-uploads").remove([doc.file_path]);
+          const { deleteFromS3 } = await import("@/lib/s3Storage");
+          await deleteFromS3([doc.file_path]);
         }
         // 4. Clear selection if this doc was selected
         if (selectedDocId === docId) setSelectedDocId(null);
