@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useTenants, useUpdateTenant } from "@/hooks/useTenants";
+import { useTenantContext } from "@/hooks/useTenantContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,12 +15,19 @@ import type { Tenant } from "@/hooks/useTenants";
 const PlatformTenants = () => {
   const { data: tenants, isLoading } = useTenants();
   const updateTenant = useUpdateTenant();
+  const { setOverrideTenantId } = useTenantContext();
+  const navigate = useNavigate();
   const [editing, setEditing] = useState<Tenant | null>(null);
   const [form, setForm] = useState({ name: "", slug: "", logo_url: "" });
 
   const openEdit = (t: Tenant) => {
     setEditing(t);
     setForm({ name: t.name, slug: t.slug, logo_url: t.logo_url || "" });
+  };
+
+  const handleManage = (tenantId: string) => {
+    setOverrideTenantId(tenantId);
+    navigate("/admin");
   };
 
   const handleSave = async () => {
@@ -93,10 +101,8 @@ const PlatformTenants = () => {
                     <Button variant="ghost" size="sm" onClick={() => openEdit(t)}>
                       <Pencil size={14} className="mr-1" /> Edit
                     </Button>
-                    <Button variant="outline" size="sm" asChild>
-                      <Link to={`/admin?tenant=${t.id}`}>
-                        Manage <ArrowRight size={14} className="ml-1" />
-                      </Link>
+                    <Button variant="outline" size="sm" onClick={() => handleManage(t.id)}>
+                      Manage <ArrowRight size={14} className="ml-1" />
                     </Button>
                   </div>
                 </div>
