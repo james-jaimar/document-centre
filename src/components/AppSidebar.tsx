@@ -12,6 +12,8 @@ import {
   LogOut,
   ClipboardList,
   Factory,
+  Store,
+  Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -52,6 +54,14 @@ const ADMIN_SECTIONS: NavSection[] = [
       { to: "/admin", icon: <LayoutDashboard size={20} />, label: "Dashboard" },
       { to: "/admin/orders", icon: <ClipboardList size={20} />, label: "Order Manager" },
       { to: "/admin/production", icon: <Factory size={20} />, label: "Production Queue" },
+    ],
+  },
+  {
+    heading: "My Branch",
+    roles: ["branch_manager", "store_operator"],
+    items: [
+      { to: "/admin/branch/products", icon: <Store size={20} />, label: "My Products" },
+      { to: "/admin/branch/settings", icon: <Wrench size={20} />, label: "Branch Settings" },
     ],
   },
   {
