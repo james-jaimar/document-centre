@@ -278,6 +278,7 @@ export default function FlipBook({
   displayPageNumbers,
   faceLabels,
   bindingEdge = "left",
+  rawPaths,
 }: FlipBookProps) {
   const flipBookRef = useRef<any>(null);
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
