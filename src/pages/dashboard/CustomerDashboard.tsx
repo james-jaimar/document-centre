@@ -25,6 +25,26 @@ import { formatDistanceToNow } from "date-fns";
 import { useState, useCallback, useRef } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
+import imgBoundDocuments from "@/assets/products/bound-documents.jpg";
+import imgPresentations from "@/assets/products/presentations.jpg";
+import imgRingBinders from "@/assets/products/ring-binders.jpg";
+import imgStapledLoose from "@/assets/products/stapled-loose.jpg";
+import imgPosters from "@/assets/products/posters.jpg";
+import imgBooklets from "@/assets/products/booklets.jpg";
+import imgFlyers from "@/assets/products/flyers.jpg";
+import imgBrochures from "@/assets/products/brochures.jpg";
+
+const SLUG_IMAGE_MAP: Record<string, string> = {
+  "bound-documents": imgBoundDocuments,
+  presentations: imgPresentations,
+  "ring-binders": imgRingBinders,
+  "stapled-loose-pages": imgStapledLoose,
+  posters: imgPosters,
+  booklets: imgBooklets,
+  flyers: imgFlyers,
+  "brochures-folded-leaflets": imgBrochures,
+};
+
 /* ── Icon map ── */
 const ICON_MAP: Record<string, React.ElementType> = {
   BookOpen,
@@ -207,9 +227,11 @@ const CustomerDashboard = () => {
                       onClick={() => handlePickProduct(f.id)}
                       disabled={creatingFamily === f.id}
                     >
-                      <div className="product-thumb">
+                      <div className="product-thumb overflow-hidden">
                         {creatingFamily === f.id ? (
                           <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                        ) : (SLUG_IMAGE_MAP[f.slug] || f.image_url) ? (
+                          <img src={SLUG_IMAGE_MAP[f.slug] || f.image_url!} alt={f.name} className="h-full w-full object-cover" />
                         ) : (
                           <Icon className="h-9 w-9 text-muted-foreground" />
                         )}
