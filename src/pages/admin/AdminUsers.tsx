@@ -185,10 +185,10 @@ const AdminUsers = () => {
             </div>
             <div>
               <Label>Branch</Label>
-              <Select value={editForm.branch_id} onValueChange={(v) => setEditForm({ ...editForm, branch_id: v })}>
+              <Select value={editForm.branch_id || "__all__"} onValueChange={(v) => setEditForm({ ...editForm, branch_id: v === "__all__" ? "" : v })}>
                 <SelectTrigger><SelectValue placeholder="All branches" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All branches</SelectItem>
+                  <SelectItem value="__all__">All branches</SelectItem>
                   {branches?.map((b) => (
                     <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
                   ))}

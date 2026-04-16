@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useTenantContext } from "@/hooks/useTenantContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -47,16 +48,18 @@ const DRAFT_STATUSES = ["draft"];
 const ACTIVE_STATUSES = ["quoted", "confirmed", "in_production", "quality_check", "ready_for_collection", "dispatched"];
 const COMPLETED_STATUSES = ["delivered", "cancelled"];
 
-function useUserOrders(userId: string | undefined) {
+function useUserOrders(userId: string | undefined, tenantId: string | null) {
   return useQuery({
-    queryKey: ["all_orders", userId],
+    queryKey: ["all_orders", userId, tenantId],
     queryFn: async () => {
       if (!userId) return [];
-      const { data, error } = await supabase
+      let query = supabase
         .from("orders")
         .select("*, order_items(id, product_family_id, build_status, title, spec, quantity, unit_price)")
         .eq("user_id", userId)
         .order("created_at", { ascending: false });
+      if (tenantId) query = query.eq("tenant_id", tenantId);
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
@@ -116,8 +119,9 @@ const CustomerOrders = () => {
   const navigate = useNavigate();
   const { slug } = useParams<{ slug: string }>();
   const { user } = useAuth();
+  const { tenantId } = useTenantContext();
   const queryClient = useQueryClient();
-  const { data: orders, isLoading } = useUserOrders(user?.id);
+  const { data: orders, isLoading } = useUserOrders(user?.id, tenantId);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
 
   // Exclude cart orders and unsaved drafts (all items still in build_status 'draft')
@@ -210,7 +214,7 @@ const CustomerOrders = () => {
             const hasItems = (order.order_items?.length ?? 0) > 0;
             const dest = isDraft
               ? `/t/${slug}/orders/${order.id}/files`
-              : `/t/${slug}/orders/${order.id}/build`;
+              : `/t/${slug}/orders/${order.id}`;
             const isDeleting = deletingIds.has(order.id);
             return (
               <TableRow
