@@ -37,6 +37,7 @@ export default function AdminOrders() {
   const [page, setPage] = useState(1);
 
   const filters: AdminOrderListFilters = {
+    tenant_id: tenantId || undefined,
     search: search || undefined,
     admin_status: selectedStatuses.length ? selectedStatuses : undefined,
     page,
