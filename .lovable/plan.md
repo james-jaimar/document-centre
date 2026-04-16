@@ -1,58 +1,35 @@
 
 
-# Plan: Users & Roles Fix + Customer Order Detail Page
+# Plan: Fix Users & Roles Console Errors
 
-## Problem Summary
+## Problem
+The `useTenantMembers` hook uses PostgREST embedded resource syntax `profiles:profile_id(...)` to join profile data. But `tenant_memberships.profile_id` has a foreign key to `auth.users`, not `public.profiles`. PostgREST returns 400: "Could not find a relationship between 'tenant_memberships' and 'profile_id'".
 
-Two issues:
+The page shows "Loading members..." forever because the query always fails.
 
-1. **Admin Users page** — works per-tenant already via `useTenantMembers(tenantId, appId)`. The page itself should function correctly when `tenantId` is set via the `?tenant=` override. Need to verify console errors and fix any issues.
+## Fix
 
-2. **Customer area** — missing a proper order detail/tracking page. Currently, clicking a submitted order navigates to `/build` (the configurator). Also, `CustomerOrders` queries orders by `user_id` only — no `tenant_id` filter, so a user with memberships in multiple tenants sees all their orders regardless of which storefront they're on.
+### 1. Change `useTenantMembers` to use a two-step approach
+Instead of the PostgREST join, fetch memberships first (without the `profiles:profile_id(...)` join), then fetch profile data separately for the returned `profile_id`s.
 
-## Changes
+**File: `src/hooks/useTenantMembers.ts`**
+- Remove the `profiles:profile_id(...)` from the select
+- After fetching memberships, do a second query: `supabase.from("profiles").select("id, display_name, email, first_name, last_name, avatar_url").in("id", profileIds)`
+- Merge the profile data into the membership rows
 
-### 1. Tenant-scope customer order queries
+### 2. Fix the `AddMemberDialog` Select empty-string issue
+**File: `src/components/admin/AddMemberDialog.tsx`**
+- The branch Select uses `value=""` and `<SelectItem value="">All branches</SelectItem>` which Radix doesn't support
+- Change to `"__all__"` pattern (same fix applied elsewhere)
 
-| File | Change |
-|------|--------|
-| `src/pages/dashboard/CustomerOrders.tsx` | Add `tenant_id` filter to `useUserOrders` query using `useTenantContext()`. Pass `tenantId` to the hook. |
-| `src/pages/dashboard/CustomerDashboard.tsx` | Add `tenant_id` filter to `useTrackingOrders`, `useRecentOrderItems`, and `useRecentDocuments` queries. |
+### 3. TikTok Ads console noise
+This is from the Lovable preview infrastructure (`rs.lovable.dev/transform`), not from your code. You can safely ignore it -- it's not something in your codebase.
 
-### 2. Customer Order Detail page
+### 4. forwardRef warning on AdminUsers
+React Router is trying to pass a ref to the `AdminUsers` function component. The route definition likely wraps it in a way that triggers this. Will check if it needs `React.forwardRef` or if it's just a harmless warning from the lazy/Outlet pattern.
 
-| File | Change |
-|------|--------|
-| `src/pages/dashboard/CustomerOrderDetail.tsx` | **New file.** Ecommerce-style order view showing: order summary (number, status, date, totals), list of jobs with customer-facing statuses, and a messaging/timeline panel using existing `TimelinePanel` component with `sender_type: "customer"`. |
-| `src/App.tsx` | Add route `orders/:id` under `/t/:slug` pointing to `CustomerOrderDetail`. |
-| `src/pages/dashboard/CustomerOrders.tsx` | Update click handler: non-draft orders navigate to `/t/${slug}/orders/${id}` (detail page) instead of `/build`. |
-| `src/pages/dashboard/CustomerDashboard.tsx` | Update Order Tracking click to navigate to `/t/${slug}/orders/${id}` instead of `/build`. |
-
-### 3. Admin Users page console error audit
-
-| File | Change |
-|------|--------|
-| `src/pages/admin/AdminUsers.tsx` | Verify the page renders correctly with tenant override. The `useTenantMembers` hook already filters by `tenantId` + `appId` from context — this should work. Will check for Select component empty-string value issues (Radix Select doesn't allow `value=""`) and fix if present. |
-
-## Technical Details
-
-**Customer Order Detail page structure:**
-- Reuses `OrderSummaryTab`, `OrderPricingTab`, `OrderDeliveryTab`, `TimelinePanel` from `src/components/orders/detail/`
-- Uses `useOrderDetail(orderId)` hook
-- Shows customer-facing status (not admin status)
-- Messaging sends with `sender_type: "customer"`
-- Back button returns to `/t/:slug/orders`
-
-**Tenant scoping in customer queries:**
-```typescript
-// Before:
-.eq("user_id", userId)
-
-// After:
-.eq("user_id", userId)
-.eq("tenant_id", tenantId)
-```
-
-**Select empty-string fix (if needed):**
-Replace `<SelectItem value="">All branches</SelectItem>` with `<SelectItem value="__all__">All branches</SelectItem>` and map accordingly, since Radix Select throws console errors for empty string values.
+## Summary
+- 1 hook file changed (two-step query)
+- 1 dialog file fixed (empty string Select)
+- No schema changes needed
 
