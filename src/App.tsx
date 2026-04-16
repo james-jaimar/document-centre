@@ -64,6 +64,7 @@ const App = () => (
           <Routes>
             {/* Public */}
             <Route path="/auth" element={<Auth />} />
+            <Route path="/t/:slug/auth" element={<Auth />} />
             <Route path="/reset-password" element={<ResetPassword />} />
 
             {/* Customer portal — slug-based storefront */}

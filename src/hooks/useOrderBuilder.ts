@@ -105,19 +105,34 @@ export function useCreateOrder() {
     mutationFn: async (productFamilyId: string) => {
       if (!user) throw new Error("Not authenticated");
 
-      // Get user's tenant_id
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("tenant_id")
-        .eq("id", user.id)
-        .single();
+      // Get user's tenant membership for tenant_id and app_id
+      const { data: membership } = await supabase
+        .from("tenant_memberships")
+        .select("tenant_id, app_id")
+        .eq("profile_id", user.id)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+
+      // Fallback to profile.tenant_id for users without memberships
+      let tenantId = membership?.tenant_id ?? null;
+      let appId = membership?.app_id ?? null;
+      if (!tenantId) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("tenant_id")
+          .eq("id", user.id)
+          .single();
+        tenantId = profile?.tenant_id ?? null;
+      }
 
       // Create order
       const { data: order, error: orderError } = await supabase
         .from("orders")
         .insert({
           user_id: user.id,
-          tenant_id: profile?.tenant_id ?? null,
+          tenant_id: tenantId,
+          app_id: appId,
           order_status: "draft",
         })
         .select()

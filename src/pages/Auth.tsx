@@ -54,7 +54,10 @@ const Auth = () => {
         email,
         password,
         options: {
-          data: { display_name: displayName || email.split("@")[0] },
+          data: {
+            display_name: displayName || email.split("@")[0],
+            ...(tenantSlug ? { tenant_slug: tenantSlug } : {}),
+          },
           emailRedirectTo: window.location.origin,
         },
       });
