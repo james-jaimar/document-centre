@@ -5,9 +5,11 @@ import { buildAdminPath } from "@/lib/adminRouting";
 
 export function AppEntryRedirect() {
   const { user, highestRole, loading } = useAuth();
-  const { tenantId } = useTenantContext();
+  const { tenantId, loading: tenantLoading } = useTenantContext();
 
-  if (loading) {
+  const defaultRoute = getDefaultRoute(highestRole);
+
+  if (loading || (user && defaultRoute.startsWith("/admin") && tenantLoading)) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
@@ -22,7 +24,6 @@ export function AppEntryRedirect() {
     return <Navigate to="/auth" replace />;
   }
 
-  const defaultRoute = getDefaultRoute(highestRole);
   const targetRoute = defaultRoute.startsWith("/admin")
     ? buildAdminPath(defaultRoute, tenantId)
     : defaultRoute;

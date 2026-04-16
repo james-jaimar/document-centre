@@ -180,13 +180,12 @@ export default function AppSidebar() {
             )}
             {collapsed && idx > 0 && <div className="my-3 mx-2 border-t border-sidebar-border" />}
             <div className="flex flex-col gap-0.5">
-              {section.items.map((item) => (
-                (() => {
-                  const href = item.to.startsWith("/admin")
-                    ? buildAdminPath(item.to, tenantId)
-                    : item.to;
+              {section.items.map((item) => {
+                const href = item.to.startsWith("/admin")
+                  ? buildAdminPath(item.to, tenantId)
+                  : item.to;
 
-                  return (
+                return (
                 <Link
                   key={item.to}
                   to={href}
@@ -201,9 +200,8 @@ export default function AppSidebar() {
                   <span className="shrink-0">{item.icon}</span>
                   {!collapsed && <span>{item.label}</span>}
                 </Link>
-                  );
-                })()
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}
