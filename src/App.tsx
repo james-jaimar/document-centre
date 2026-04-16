@@ -27,6 +27,7 @@ import OrderBuild from "@/pages/dashboard/OrderBuild";
 import Cart from "@/pages/dashboard/Cart";
 import Checkout from "@/pages/dashboard/Checkout";
 import OrderConfirmation from "@/pages/dashboard/OrderConfirmation";
+import CustomerOrderDetail from "@/pages/dashboard/CustomerOrderDetail";
 
 // Admin
 import AdminDashboard from "@/pages/admin/AdminDashboard";
@@ -75,6 +76,7 @@ const App = () => (
             {/* Customer portal — slug-based storefront */}
             <Route path="/t/:slug" element={<ProtectedRoute><CustomerLayout /></ProtectedRoute>}>
               <Route path="dashboard" element={<CustomerDashboard />} />
+              <Route path="orders/:id" element={<CustomerOrderDetail />} />
               <Route path="orders" element={<CustomerOrders />} />
               <Route path="orders/new" element={<NewOrder />} />
               <Route path="orders/new/:familyId" element={<OrderFiles />} />
