@@ -42,7 +42,7 @@ const SLUG_IMAGE_MAP: Record<string, string> = {
   posters: imgPosters,
   booklets: imgBooklets,
   flyers: imgFlyers,
-  "brochures-folded-leaflets": imgBrochures,
+  brochures: imgBrochures,
 };
 
 /* ── Icon map ── */
