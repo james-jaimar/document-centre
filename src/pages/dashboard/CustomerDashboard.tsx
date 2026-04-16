@@ -3,6 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useCreateOrder } from "@/hooks/useOrderBuilder";
+import { useTenantContext } from "@/hooks/useTenantContext";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -97,52 +98,55 @@ function useProductFamiliesActive() {
   });
 }
 
-function useRecentDocuments(userId: string | undefined) {
+function useRecentDocuments(userId: string | undefined, tenantId: string | null) {
   return useQuery({
-    queryKey: ["recent_documents", userId],
+    queryKey: ["recent_documents", userId, tenantId],
     queryFn: async () => {
-      if (!userId) return [];
+      if (!userId || !tenantId) return [];
       const { data, error } = await supabase
         .from("documents")
-        .select("*, order_items!inner(id, orders!inner(user_id))")
+        .select("*, order_items!inner(id, orders!inner(user_id, tenant_id))")
         .eq("order_items.orders.user_id", userId)
+        .eq("order_items.orders.tenant_id", tenantId)
         .order("created_at", { ascending: false })
         .limit(5);
       if (error) throw error;
       return data;
     },
-    enabled: !!userId,
+    enabled: !!userId && !!tenantId,
   });
 }
 
-function useRecentOrderItems(userId: string | undefined) {
+function useRecentOrderItems(userId: string | undefined, tenantId: string | null) {
   return useQuery({
-    queryKey: ["recent_order_items", userId],
+    queryKey: ["recent_order_items", userId, tenantId],
     queryFn: async () => {
-      if (!userId) return [];
+      if (!userId || !tenantId) return [];
       const { data, error } = await supabase
         .from("order_items")
-        .select("id, title, updated_at, order_id, build_status, orders!inner(user_id, order_status)")
+        .select("id, title, updated_at, order_id, build_status, orders!inner(user_id, order_status, tenant_id)")
         .eq("orders.user_id", userId)
+        .eq("orders.tenant_id", tenantId)
         .in("orders.order_status", ["draft", "quoted"])
         .order("updated_at", { ascending: false })
         .limit(5);
       if (error) throw error;
       return data;
     },
-    enabled: !!userId,
+    enabled: !!userId && !!tenantId,
   });
 }
 
-function useTrackingOrders(userId: string | undefined) {
+function useTrackingOrders(userId: string | undefined, tenantId: string | null) {
   return useQuery({
-    queryKey: ["tracking_orders", userId],
+    queryKey: ["tracking_orders", userId, tenantId],
     queryFn: async () => {
-      if (!userId) return [];
+      if (!userId || !tenantId) return [];
       const { data, error } = await supabase
         .from("orders")
         .select("*")
         .eq("user_id", userId)
+        .eq("tenant_id", tenantId)
         .in("order_status", [
           "confirmed",
           "in_production",
@@ -155,7 +159,7 @@ function useTrackingOrders(userId: string | undefined) {
       if (error) throw error;
       return data;
     },
-    enabled: !!userId,
+    enabled: !!userId && !!tenantId,
   });
 }
 
