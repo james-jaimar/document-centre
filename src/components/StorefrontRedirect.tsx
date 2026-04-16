@@ -14,7 +14,7 @@ export function StorefrontRedirect({ path }: { path?: string }) {
   const [loading, setLoading] = useState(true);
 
   const derivedPath = location.pathname.replace(/^\/dashboard\/?/, "");
-  const targetPath = path ?? derivedPath || "dashboard";
+  const targetPath = path ?? (derivedPath || "dashboard");
 
   useEffect(() => {
     if (ctxLoading) return;
