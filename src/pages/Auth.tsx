@@ -25,9 +25,13 @@ const Auth = () => {
 
   useEffect(() => {
     if (user) {
-      navigate(getDefaultRoute(highestRole), { replace: true });
+      if (tenantSlug && (!highestRole || highestRole === 'customer')) {
+        navigate(`/t/${tenantSlug}/dashboard`, { replace: true });
+      } else {
+        navigate(getDefaultRoute(highestRole), { replace: true });
+      }
     }
-  }, [user, highestRole, navigate]);
+  }, [user, highestRole, navigate, tenantSlug]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

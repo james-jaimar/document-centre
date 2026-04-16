@@ -1,4 +1,4 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -11,6 +11,7 @@ interface ProtectedRouteProps {
 
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
   const { user, roles, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -23,12 +24,17 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     );
   }
 
+  // Extract tenant slug from current path for context-aware redirects
+  const slugMatch = location.pathname.match(/^\/t\/([^/]+)/);
+  const fallback = slugMatch ? `/t/${slugMatch[1]}/dashboard` : "/dashboard";
+
   if (!user) {
-    return <Navigate to="/auth" replace />;
+    const authPath = slugMatch ? `/t/${slugMatch[1]}/auth` : "/auth";
+    return <Navigate to={authPath} replace />;
   }
 
   if (allowedRoles && !allowedRoles.some((r) => roles.includes(r))) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={fallback} replace />;
   }
 
   return <>{children}</>;
