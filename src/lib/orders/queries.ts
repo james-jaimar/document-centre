@@ -93,7 +93,7 @@ export async function fetchCustomerOrders(filters: ClientOrderListFilters = {}) 
  * Fetch a single order with all related data.
  */
 export async function fetchOrderDetail(orderId: string) {
-  const [orderRes, jobsRes, addressesRes, timelineRes, messagesRes, paymentsRes, docsRes] =
+  const [orderRes, jobsRes, addressesRes, timelineRes, statusHistoryRes, messagesRes, paymentsRes, docsRes] =
     await Promise.all([
       supabase
         .from("orders")
@@ -111,6 +111,12 @@ export async function fetchOrderDetail(orderId: string) {
         .eq("order_id", orderId),
       supabase
         .from("timeline_events")
+        .select("*")
+        .eq("order_id", orderId)
+        .order("created_at", { ascending: false })
+        .then((res) => res.error ? { data: [], error: null } : res) as any,
+      supabase
+        .from("status_history")
         .select("*")
         .eq("order_id", orderId)
         .order("created_at", { ascending: false }),
@@ -138,6 +144,7 @@ export async function fetchOrderDetail(orderId: string) {
     jobs: jobsRes.data || [],
     addresses: addressesRes.data || [],
     timeline: timelineRes.data || [],
+    statusHistory: statusHistoryRes.data || [],
     messages: messagesRes.data || [],
     payments: paymentsRes.data || [],
     documents: docsRes.data || [],

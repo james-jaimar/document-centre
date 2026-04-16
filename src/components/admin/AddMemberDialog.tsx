@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useCreateTenantMember } from "@/hooks/useTenantMembers";
 import { useBranches } from "@/hooks/useBranches";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +12,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Search, UserPlus, AlertCircle } from "lucide-react";
+import { Search, UserPlus, AlertCircle, Mail } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 const MEMBERSHIP_ROLES = ["owner", "admin", "sales", "production", "accounts", "customer"];
 
@@ -33,13 +33,14 @@ interface FoundProfile {
 }
 
 export function AddMemberDialog({ open, onOpenChange, tenantId, appId }: Props) {
-  const createMember = useCreateTenantMember();
   const { data: branches } = useBranches(tenantId);
+  const queryClient = useQueryClient();
 
   const [email, setEmail] = useState("");
   const [searching, setSearching] = useState(false);
   const [foundProfile, setFoundProfile] = useState<FoundProfile | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [inviting, setInviting] = useState(false);
 
   const [role, setRole] = useState("customer");
   const [branchId, setBranchId] = useState("");
@@ -52,6 +53,7 @@ export function AddMemberDialog({ open, onOpenChange, tenantId, appId }: Props) 
     setRole("customer");
     setBranchId("");
     setCanViewAllOrders(false);
+    setInviting(false);
   };
 
   const handleSearch = async () => {
@@ -79,22 +81,57 @@ export function AddMemberDialog({ open, onOpenChange, tenantId, appId }: Props) 
     }
   };
 
-  const handleAdd = async () => {
+  const handleAddExisting = async () => {
     if (!foundProfile) return;
+    setInviting(true);
     try {
-      await createMember.mutateAsync({
-        profile_id: foundProfile.id,
-        app_id: appId,
-        tenant_id: tenantId,
-        role,
-        branch_id: branchId || null,
-        can_view_all_orders: canViewAllOrders,
+      const { data, error } = await supabase.functions.invoke("invite-member", {
+        body: {
+          email: foundProfile.email,
+          tenant_id: tenantId,
+          app_id: appId,
+          role,
+          branch_id: branchId || null,
+          can_view_all_orders: canViewAllOrders,
+        },
       });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
       toast.success("Member added");
+      queryClient.invalidateQueries({ queryKey: ["tenant-members"] });
       reset();
       onOpenChange(false);
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.message || "Failed to add member");
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const handleInviteNew = async () => {
+    if (!email.trim()) return;
+    setInviting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("invite-member", {
+        body: {
+          email: email.trim(),
+          tenant_id: tenantId,
+          app_id: appId,
+          role,
+          branch_id: branchId || null,
+          can_view_all_orders: canViewAllOrders,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(data?.invited ? "Invitation sent" : "Member added");
+      queryClient.invalidateQueries({ queryKey: ["tenant-members"] });
+      reset();
+      onOpenChange(false);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to invite");
+    } finally {
+      setInviting(false);
     }
   };
 
@@ -105,9 +142,11 @@ export function AddMemberDialog({ open, onOpenChange, tenantId, appId }: Props) 
       "Unknown"
     : "";
 
+  const showRoleControls = foundProfile || notFound;
+
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v); }}>
-      <DialogContent>
+      <DialogContent aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserPlus size={18} /> Add Team Member
@@ -133,18 +172,22 @@ export function AddMemberDialog({ open, onOpenChange, tenantId, appId }: Props) 
 
           {notFound && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted rounded-md p-3">
-              <AlertCircle size={16} className="shrink-0 text-amber-500" />
-              No account found with that email. The user needs to sign up first.
+              <Mail size={16} className="shrink-0 text-primary" />
+              <span>
+                No account found. An invitation email will be sent to <strong>{email.trim()}</strong>.
+              </span>
             </div>
           )}
 
           {foundProfile && (
-            <>
-              <div className="bg-muted rounded-md p-3 text-sm">
-                <p className="font-medium text-foreground">{profileName}</p>
-                <p className="text-muted-foreground">{foundProfile.email}</p>
-              </div>
+            <div className="bg-muted rounded-md p-3 text-sm">
+              <p className="font-medium text-foreground">{profileName}</p>
+              <p className="text-muted-foreground">{foundProfile.email}</p>
+            </div>
+          )}
 
+          {showRoleControls && (
+            <>
               <div>
                 <Label>Role</Label>
                 <Select value={role} onValueChange={setRole}>
@@ -180,9 +223,15 @@ export function AddMemberDialog({ open, onOpenChange, tenantId, appId }: Props) 
 
         <DialogFooter>
           <Button variant="outline" onClick={() => { reset(); onOpenChange(false); }}>Cancel</Button>
-          <Button onClick={handleAdd} disabled={!foundProfile || createMember.isPending}>
-            {createMember.isPending ? "Adding…" : "Add Member"}
-          </Button>
+          {foundProfile ? (
+            <Button onClick={handleAddExisting} disabled={inviting}>
+              {inviting ? "Adding…" : "Add Member"}
+            </Button>
+          ) : notFound ? (
+            <Button onClick={handleInviteNew} disabled={inviting}>
+              {inviting ? "Sending…" : "Invite & Add Member"}
+            </Button>
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>

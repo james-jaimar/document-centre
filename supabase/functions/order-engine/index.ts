@@ -571,12 +571,11 @@ Deno.serve(async (req) => {
     const { userClient, admin } = clients(authHeader);
 
     // Verify user
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claims, error: claimsErr } = await userClient.auth.getClaims(token);
-    if (claimsErr || !claims?.claims?.sub) {
+    const { data: { user: authedUser }, error: authErr } = await userClient.auth.getUser();
+    if (authErr || !authedUser) {
       return err("Unauthorized", 401);
     }
-    const userId = claims.claims.sub as string;
+    const userId = authedUser.id;
 
     // Parse body
     const body = await req.json();
