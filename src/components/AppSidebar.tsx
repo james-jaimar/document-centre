@@ -20,6 +20,7 @@ import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import type { Database } from "@/integrations/supabase/types";
+import { buildAdminPath } from "@/lib/adminRouting";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
 
@@ -60,8 +61,8 @@ const ADMIN_SECTIONS: NavSection[] = [
     heading: "My Branch",
     roles: ["branch_manager", "store_operator"],
     items: [
-      { to: "/admin/branch/products", icon: <Store size={20} />, label: "My Products" },
-      { to: "/admin/branch/settings", icon: <Wrench size={20} />, label: "Branch Settings" },
+      { to: "/branch/products", icon: <Store size={20} />, label: "My Products" },
+      { to: "/branch/settings", icon: <Wrench size={20} />, label: "Branch Settings" },
     ],
   },
   {
@@ -86,7 +87,7 @@ const ADMIN_SECTIONS: NavSection[] = [
 export default function AppSidebar() {
   const location = useLocation();
   const { roles, signOut, user } = useAuth();
-  const { tenantName, membershipRole, isOverriding, overrideTenantId, setOverrideTenantId } = useTenantContext();
+  const { tenantId, tenantName, membershipRole, isOverriding, setOverrideTenantId } = useTenantContext();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
 
@@ -179,10 +180,15 @@ export default function AppSidebar() {
             )}
             {collapsed && idx > 0 && <div className="my-3 mx-2 border-t border-sidebar-border" />}
             <div className="flex flex-col gap-0.5">
-              {section.items.map((item) => (
+              {section.items.map((item) => {
+                const href = item.to.startsWith("/admin")
+                  ? buildAdminPath(item.to, tenantId)
+                  : item.to;
+
+                return (
                 <Link
                   key={item.to}
-                  to={item.to}
+                  to={href}
                   className={cn(
                     "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                     isActive(item.to)
@@ -194,7 +200,8 @@ export default function AppSidebar() {
                   <span className="shrink-0">{item.icon}</span>
                   {!collapsed && <span>{item.label}</span>}
                 </Link>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}

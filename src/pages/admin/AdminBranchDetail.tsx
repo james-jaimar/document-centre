@@ -22,6 +22,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Building2, Users, Settings2, Shield, UserPlus } from "lucide-react";
+import { buildAdminPath } from "@/lib/adminRouting";
 
 const AdminBranchDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -117,7 +118,7 @@ const AdminBranchDetail = () => {
   if (!branch) {
     return (
       <div className="space-y-4">
-        <Button variant="ghost" onClick={() => navigate("/admin/branches")}>
+        <Button variant="ghost" onClick={() => navigate(buildAdminPath("/admin/branches", tenantId))}>
           <ArrowLeft size={16} className="mr-2" /> Back to Branches
         </Button>
         <p className="text-muted-foreground">Branch not found.</p>
@@ -128,7 +129,7 @@ const AdminBranchDetail = () => {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/admin/branches")}>
+        <Button variant="ghost" size="icon" onClick={() => navigate(buildAdminPath("/admin/branches", tenantId))}>
           <ArrowLeft size={18} />
         </Button>
         <div className="flex items-center gap-3">

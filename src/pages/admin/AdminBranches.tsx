@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { Building2, MapPin, Phone, Mail, Plus, Pencil, Trash2, ChevronRight, LayoutGrid, List } from "lucide-react";
+import { buildAdminPath } from "@/lib/adminRouting";
 
 interface BranchFormData {
   name: string;
@@ -219,7 +220,7 @@ const AdminBranches = () => {
                   </div>
                 )}
                 <div className="flex justify-end gap-1 pt-2">
-                  <Button variant="ghost" size="sm" onClick={() => navigate(`/admin/branches/${b.id}`)}>
+                  <Button variant="ghost" size="sm" onClick={() => navigate(buildAdminPath(`/admin/branches/${b.id}`, tenantId))}>
                     <ChevronRight size={14} className="mr-1" /> Manage
                   </Button>
                   <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openEdit(b); }}>
@@ -265,7 +266,7 @@ const AdminBranches = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => navigate(`/admin/branches/${b.id}`)}>
+                        <Button variant="ghost" size="icon" onClick={() => navigate(buildAdminPath(`/admin/branches/${b.id}`, tenantId))}>
                           <ChevronRight size={14} />
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => openEdit(b)}>

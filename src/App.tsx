@@ -14,6 +14,7 @@ import Auth from "@/pages/Auth";
 import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "@/pages/NotFound";
 import { StorefrontRedirect } from "@/components/StorefrontRedirect";
+import { AppEntryRedirect } from "@/components/AppEntryRedirect";
 import StorefrontLanding from "@/pages/storefront/StorefrontLanding";
 
 // Customer
@@ -86,12 +87,7 @@ const App = () => (
             </Route>
 
             {/* Legacy /dashboard redirects to slug-based URL */}
-            <Route path="/dashboard" element={<ProtectedRoute><StorefrontRedirect path="dashboard" /></ProtectedRoute>} />
-            <Route path="/dashboard/orders" element={<ProtectedRoute><StorefrontRedirect path="orders" /></ProtectedRoute>} />
-            <Route path="/dashboard/orders/new" element={<ProtectedRoute><StorefrontRedirect path="orders/new" /></ProtectedRoute>} />
-            <Route path="/dashboard/orders/:id/files" element={<ProtectedRoute><StorefrontRedirect path="orders" /></ProtectedRoute>} />
-            <Route path="/dashboard/orders/:id/build" element={<ProtectedRoute><StorefrontRedirect path="orders" /></ProtectedRoute>} />
-            <Route path="/dashboard/settings" element={<ProtectedRoute><StorefrontRedirect path="settings" /></ProtectedRoute>} />
+            <Route path="/dashboard/*" element={<ProtectedRoute><StorefrontRedirect /></ProtectedRoute>} />
 
             {/* Branch Portal — dedicated layout */}
             <Route element={<ProtectedRoute allowedRoles={[...branchRoles]}><BranchLayout /></ProtectedRoute>}>
@@ -100,6 +96,8 @@ const App = () => (
               <Route path="/branch/products" element={<BranchProducts />} />
               <Route path="/branch/settings" element={<BranchSettings />} />
             </Route>
+            <Route path="/admin/branch/products" element={<Navigate to="/branch/products" replace />} />
+            <Route path="/admin/branch/settings" element={<Navigate to="/branch/settings" replace />} />
 
             {/* Admin & Platform — shared AppLayout */}
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
@@ -173,7 +171,7 @@ const App = () => (
             </Route>
 
             {/* Redirects */}
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/" element={<AppEntryRedirect />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
           </TenantProvider>
