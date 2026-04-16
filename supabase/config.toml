@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.s3-storage]
 verify_jwt = false
+
+[functions.scrape-branding]
+verify_jwt = false
