@@ -14,9 +14,12 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { Building2, MapPin, Phone, Mail, Plus, Pencil, Trash2, ChevronRight } from "lucide-react";
+import { Building2, MapPin, Phone, Mail, Plus, Pencil, Trash2, ChevronRight, LayoutGrid, List } from "lucide-react";
 
 interface BranchFormData {
   name: string;
@@ -48,6 +51,14 @@ const AdminBranches = () => {
   const [isNew, setIsNew] = useState(false);
   const [form, setForm] = useState<BranchFormData>(emptyForm);
   const [deleteTarget, setDeleteTarget] = useState<Branch | null>(null);
+  const [viewMode, setViewMode] = useState<"grid" | "list">(() => {
+    return (localStorage.getItem("branch-view") as "grid" | "list") || "grid";
+  });
+
+  const toggleView = (mode: "grid" | "list") => {
+    setViewMode(mode);
+    localStorage.setItem("branch-view", mode);
+  };
 
   const openNew = () => {
     setEditing(null);
@@ -130,11 +141,34 @@ const AdminBranches = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Branch Management</h1>
-          <p className="text-sm text-muted-foreground">Manage branches for your organisation</p>
+          <p className="text-sm text-muted-foreground">
+            Manage branches for your organisation
+            {branches?.length ? ` · ${branches.length} branch${branches.length !== 1 ? "es" : ""}` : ""}
+          </p>
         </div>
-        <Button onClick={openNew}>
-          <Plus size={16} className="mr-2" /> Add Branch
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-md border border-border">
+            <Button
+              variant={viewMode === "grid" ? "secondary" : "ghost"}
+              size="icon"
+              className="h-9 w-9 rounded-r-none"
+              onClick={() => toggleView("grid")}
+            >
+              <LayoutGrid size={16} />
+            </Button>
+            <Button
+              variant={viewMode === "list" ? "secondary" : "ghost"}
+              size="icon"
+              className="h-9 w-9 rounded-l-none"
+              onClick={() => toggleView("list")}
+            >
+              <List size={16} />
+            </Button>
+          </div>
+          <Button onClick={openNew}>
+            <Plus size={16} className="mr-2" /> Add Branch
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -145,7 +179,7 @@ const AdminBranches = () => {
             No branches yet. Click "Add Branch" to create one.
           </CardContent>
         </Card>
-      ) : (
+      ) : viewMode === "grid" ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {branches.map((b) => (
             <Card key={b.id}>
@@ -199,6 +233,55 @@ const AdminBranches = () => {
             </Card>
           ))}
         </div>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Code</TableHead>
+                  <TableHead>City</TableHead>
+                  <TableHead>Province</TableHead>
+                  <TableHead>Phone</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="w-32">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {branches.map((b) => (
+                  <TableRow key={b.id}>
+                    <TableCell className="font-medium">{b.name}</TableCell>
+                    <TableCell className="text-muted-foreground">{b.code || "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">{b.city || "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">{b.province || "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">{b.phone || "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">{b.email || "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant={b.is_active ? "default" : "secondary"}>
+                        {b.is_active ? "Active" : "Inactive"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => navigate(`/admin/branches/${b.id}`)}>
+                          <ChevronRight size={14} />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(b)}>
+                          <Pencil size={14} />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => setDeleteTarget(b)}>
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       )}
 
       {/* Create/Edit Dialog */}

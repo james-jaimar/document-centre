@@ -7,6 +7,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import { TenantProvider } from "@/hooks/useTenantContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
+import BranchLayout from "@/components/BranchLayout";
 import CustomerLayout from "@/components/CustomerLayout";
 
 import Auth from "@/pages/Auth";
@@ -25,7 +26,7 @@ import Cart from "@/pages/dashboard/Cart";
 import Checkout from "@/pages/dashboard/Checkout";
 import OrderConfirmation from "@/pages/dashboard/OrderConfirmation";
 
-// Admin (includes former Branch pages)
+// Admin
 import AdminDashboard from "@/pages/admin/AdminDashboard";
 import AdminBranches from "@/pages/admin/AdminBranches";
 import AdminProducts from "@/pages/admin/AdminProducts";
@@ -35,7 +36,10 @@ import AdminSettings from "@/pages/admin/AdminSettings";
 import AdminOrders from "@/pages/admin/AdminOrders";
 import AdminOrderDetail from "@/pages/admin/AdminOrderDetail";
 import AdminBranchDetail from "@/pages/admin/AdminBranchDetail";
+
+// Branch portal
 import BranchDashboard from "@/pages/branch/BranchDashboard";
+import BranchOrders from "@/pages/branch/BranchOrders";
 import BranchProducts from "@/pages/branch/BranchProducts";
 import BranchSettings from "@/pages/branch/BranchSettings";
 
@@ -47,6 +51,7 @@ const queryClient = new QueryClient();
 
 const adminRoles = ["head_office_admin", "platform_admin"] as const;
 const operationsRoles = ["branch_manager", "store_operator", "head_office_admin", "platform_admin"] as const;
+const branchRoles = ["branch_manager", "store_operator", "head_office_admin", "platform_admin"] as const;
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -83,6 +88,14 @@ const App = () => (
             <Route path="/dashboard/orders/:id/build" element={<ProtectedRoute><StorefrontRedirect path="orders" /></ProtectedRoute>} />
             <Route path="/dashboard/settings" element={<ProtectedRoute><StorefrontRedirect path="settings" /></ProtectedRoute>} />
 
+            {/* Branch Portal — dedicated layout */}
+            <Route element={<ProtectedRoute allowedRoles={[...branchRoles]}><BranchLayout /></ProtectedRoute>}>
+              <Route path="/branch" element={<BranchDashboard />} />
+              <Route path="/branch/orders" element={<BranchOrders />} />
+              <Route path="/branch/products" element={<BranchProducts />} />
+              <Route path="/branch/settings" element={<BranchSettings />} />
+            </Route>
+
             {/* Admin & Platform — shared AppLayout */}
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               {/* Admin — Operations */}
@@ -104,18 +117,6 @@ const App = () => (
               <Route path="/admin/production" element={
                 <ProtectedRoute allowedRoles={[...operationsRoles]}>
                   <BranchDashboard />
-                </ProtectedRoute>
-              } />
-
-              {/* Branch self-service */}
-              <Route path="/admin/branch/products" element={
-                <ProtectedRoute allowedRoles={[...operationsRoles]}>
-                  <BranchProducts />
-                </ProtectedRoute>
-              } />
-              <Route path="/admin/branch/settings" element={
-                <ProtectedRoute allowedRoles={[...operationsRoles]}>
-                  <BranchSettings />
                 </ProtectedRoute>
               } />
 
@@ -168,7 +169,6 @@ const App = () => (
 
             {/* Redirects */}
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/branch" element={<Navigate to="/admin/production" replace />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
           </TenantProvider>
