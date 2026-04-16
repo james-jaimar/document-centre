@@ -1,35 +1,58 @@
 
 
-# Plan: Enforce Tenant Isolation in Order Manager
+# Plan: Users & Roles Fix + Customer Order Detail Page
 
-## Problem
-The `AdminOrders` page builds query filters but never includes `tenant_id`. Since you're logged in as a platform admin, RLS allows access to all orders across all tenants — so PostNet sees PrintWorx orders and vice versa.
+## Problem Summary
 
-## Root Cause
-Line 39-44 of `AdminOrders.tsx` — `tenantId` from `useTenantContext()` is available but never added to the filters object.
+Two issues:
 
-## Fix
+1. **Admin Users page** — works per-tenant already via `useTenantMembers(tenantId, appId)`. The page itself should function correctly when `tenantId` is set via the `?tenant=` override. Need to verify console errors and fix any issues.
+
+2. **Customer area** — missing a proper order detail/tracking page. Currently, clicking a submitted order navigates to `/build` (the configurator). Also, `CustomerOrders` queries orders by `user_id` only — no `tenant_id` filter, so a user with memberships in multiple tenants sees all their orders regardless of which storefront they're on.
+
+## Changes
+
+### 1. Tenant-scope customer order queries
 
 | File | Change |
 |------|--------|
-| `src/pages/admin/AdminOrders.tsx` | Add `tenant_id: tenantId` to the filters object (line ~43) |
+| `src/pages/dashboard/CustomerOrders.tsx` | Add `tenant_id` filter to `useUserOrders` query using `useTenantContext()`. Pass `tenantId` to the hook. |
+| `src/pages/dashboard/CustomerDashboard.tsx` | Add `tenant_id` filter to `useTrackingOrders`, `useRecentOrderItems`, and `useRecentDocuments` queries. |
 
-That's it — one line. The query function already supports `filters.tenant_id` (line 36 of `queries.ts`: `if (filters.tenant_id) query = query.eq("tenant_id", filters.tenant_id)`). It's just never being passed.
+### 2. Customer Order Detail page
 
-### The line change:
+| File | Change |
+|------|--------|
+| `src/pages/dashboard/CustomerOrderDetail.tsx` | **New file.** Ecommerce-style order view showing: order summary (number, status, date, totals), list of jobs with customer-facing statuses, and a messaging/timeline panel using existing `TimelinePanel` component with `sender_type: "customer"`. |
+| `src/App.tsx` | Add route `orders/:id` under `/t/:slug` pointing to `CustomerOrderDetail`. |
+| `src/pages/dashboard/CustomerOrders.tsx` | Update click handler: non-draft orders navigate to `/t/${slug}/orders/${id}` (detail page) instead of `/build`. |
+| `src/pages/dashboard/CustomerDashboard.tsx` | Update Order Tracking click to navigate to `/t/${slug}/orders/${id}` instead of `/build`. |
+
+### 3. Admin Users page console error audit
+
+| File | Change |
+|------|--------|
+| `src/pages/admin/AdminUsers.tsx` | Verify the page renders correctly with tenant override. The `useTenantMembers` hook already filters by `tenantId` + `appId` from context — this should work. Will check for Select component empty-string value issues (Radix Select doesn't allow `value=""`) and fix if present. |
+
+## Technical Details
+
+**Customer Order Detail page structure:**
+- Reuses `OrderSummaryTab`, `OrderPricingTab`, `OrderDeliveryTab`, `TimelinePanel` from `src/components/orders/detail/`
+- Uses `useOrderDetail(orderId)` hook
+- Shows customer-facing status (not admin status)
+- Messaging sends with `sender_type: "customer"`
+- Back button returns to `/t/:slug/orders`
+
+**Tenant scoping in customer queries:**
 ```typescript
-const filters: AdminOrderListFilters = {
-  tenant_id: tenantId || undefined,  // ← ADD THIS
-  search: search || undefined,
-  admin_status: selectedStatuses.length ? selectedStatuses : undefined,
-  page,
-  page_size: 25,
-};
+// Before:
+.eq("user_id", userId)
+
+// After:
+.eq("user_id", userId)
+.eq("tenant_id", tenantId)
 ```
 
-## Also check: Customer orders
-The `fetchCustomerOrders` query similarly lacks tenant filtering — but that's currently protected by the `user_can_read_order` RLS function which checks membership. Still, for defence-in-depth, we should pass the tenant context there too if available.
-
-## Also check: Order detail
-`fetchOrderDetail` fetches by order ID with no tenant guard. RLS protects this, but the admin detail page should verify the returned order's `tenant_id` matches the current context to prevent accidental cross-tenant navigation.
+**Select empty-string fix (if needed):**
+Replace `<SelectItem value="">All branches</SelectItem>` with `<SelectItem value="__all__">All branches</SelectItem>` and map accordingly, since Radix Select throws console errors for empty string values.
 
