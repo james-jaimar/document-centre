@@ -159,10 +159,10 @@ export function AddMemberDialog({ open, onOpenChange, tenantId, appId }: Props) 
 
               <div>
                 <Label>Branch</Label>
-                <Select value={branchId} onValueChange={setBranchId}>
+                <Select value={branchId || "__all__"} onValueChange={(v) => setBranchId(v === "__all__" ? "" : v)}>
                   <SelectTrigger><SelectValue placeholder="All branches" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All branches</SelectItem>
+                    <SelectItem value="__all__">All branches</SelectItem>
                     {branches?.map((b) => (
                       <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
                     ))}
