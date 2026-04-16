@@ -1,31 +1,20 @@
 
 
-## Plan: Fix Brochure Image + Regenerate 3 Product Images
+## Plan: Regenerate Presentations Image Using References
 
-### Issue (d) — Brochure image not showing on dashboard
-The `CustomerDashboard.tsx` maps `"brochures-folded-leaflets"` but the actual product slug is `"brochures"` (which is why `NewOrder.tsx` works — it uses the correct slug). Simple one-line fix.
+### Problem
+The AI image generator produced a portrait-oriented or incorrectly bound image for "Presentations." The reference images clearly show: **landscape (wider than tall) A4 documents with wire/spiral binding along the left short edge**.
 
-### Issues (a), (b), (c) — Regenerate 3 images with better prompts
-
-Using the AI image generation script to create improved versions:
-
-1. **Bound Documents** — Regenerate: thinner spine (half current thickness), colorful cover design visible on front page
-2. **Presentations** — Regenerate: landscape-oriented document, spiral/wire-bound on the left edge, colorful cover
-3. **Ring Binders** — Regenerate: D-ring binder with a colorful printed cover/insert visible through the front pocket
-
-All images will maintain the same consistent studio lighting and white background style.
-
-### Files Changed
-
-| File | Change |
-|------|--------|
-| `src/pages/dashboard/CustomerDashboard.tsx` | Fix slug: `"brochures-folded-leaflets"` → `"brochures"` |
-| `src/assets/products/bound-documents.jpg` | Regenerated — thinner, colorful cover |
-| `src/assets/products/presentations.jpg` | Regenerated — landscape, left-bound |
-| `src/assets/products/ring-binders.jpg` | Regenerated — colorful cover insert |
+### Approach
+Use the uploaded reference images as direct input to the AI image editor. Take one of the best references (e.g., `landscape_4.jpg` or `landscape_5.jpg`) and use `--edit-image` mode to generate a clean product shot in the same studio style as the other product images — white/light background, realistic 3D render, colorful corporate cover design, wire binding on the left short edge.
 
 ### Steps
-1. Fix the brochure slug mismatch in `CustomerDashboard.tsx`
-2. Regenerate 3 images via AI image generation with refined prompts
-3. Replace existing files in `src/assets/products/`
+1. Copy a reference image to `/tmp/`
+2. Use the AI image generation with `--edit-image` to create a studio-style product shot based on the reference — landscape A4, wire-bound on left short edge, colorful cover, white background
+3. Replace `src/assets/products/presentations.jpg` with the result
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `src/assets/products/presentations.jpg` | Regenerated using reference images |
 
