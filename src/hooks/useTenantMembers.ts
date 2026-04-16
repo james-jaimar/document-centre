@@ -11,7 +11,6 @@ export interface TenantMemberRow {
   is_active: boolean;
   can_view_all_orders: boolean;
   created_at: string;
-  // joined from profiles
   profiles: {
     display_name: string | null;
     email: string | null;
@@ -28,18 +27,34 @@ export function useTenantMembers(tenantId: string | null, appId: string | null) 
     queryKey: [...QUERY_KEY, tenantId, appId],
     queryFn: async () => {
       if (!tenantId || !appId) return [];
-      const { data, error } = await supabase
+
+      // Step 1: fetch memberships without profile join
+      const { data: memberships, error } = await supabase
         .from("tenant_memberships")
-        .select(`
-          id, profile_id, app_id, tenant_id, branch_id, role,
-          is_active, can_view_all_orders, created_at,
-          profiles:profile_id (display_name, email, first_name, last_name, avatar_url)
-        `)
+        .select("id, profile_id, app_id, tenant_id, branch_id, role, is_active, can_view_all_orders, created_at")
         .eq("tenant_id", tenantId)
         .eq("app_id", appId)
         .order("created_at", { ascending: true });
+
       if (error) throw error;
-      return (data || []) as unknown as TenantMemberRow[];
+      if (!memberships?.length) return [];
+
+      // Step 2: fetch profiles separately
+      const profileIds = [...new Set(memberships.map((m) => m.profile_id))];
+      const { data: profiles, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, display_name, email, first_name, last_name, avatar_url")
+        .in("id", profileIds);
+
+      if (profileError) {
+        console.error("Error fetching profiles:", profileError);
+      }
+
+      // Step 3: merge
+      return memberships.map((m) => {
+        const p = profiles?.find((pr) => pr.id === m.profile_id) ?? null;
+        return { ...m, profiles: p } as TenantMemberRow;
+      });
     },
     enabled: !!tenantId && !!appId,
   });
