@@ -183,11 +183,12 @@ const CustomerDashboard = () => {
   const navigate = useNavigate();
   const { slug } = useParams<{ slug: string }>();
   const { user } = useAuth();
+  const { tenantId } = useTenantContext();
   const createOrder = useCreateOrder();
   const { data: families, isLoading: familiesLoading } = useProductFamiliesActive();
-  const { data: recentDocs } = useRecentDocuments(user?.id);
-  const { data: trackingOrders } = useTrackingOrders(user?.id);
-  const { data: recentItems } = useRecentOrderItems(user?.id);
+  const { data: recentDocs } = useRecentDocuments(user?.id, tenantId);
+  const { data: trackingOrders } = useTrackingOrders(user?.id, tenantId);
+  const { data: recentItems } = useRecentOrderItems(user?.id, tenantId);
   const [creatingFamily, setCreatingFamily] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
