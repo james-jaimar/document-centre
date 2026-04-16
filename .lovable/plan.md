@@ -1,48 +1,35 @@
 
 
-# Plan: Fix Routing to Respect Tenant Slug Context
+# Plan: Enforce Tenant Isolation in Order Manager
 
 ## Problem
-When a user logs in via `/t/:slug/auth`, they get redirected to `/dashboard` (generic), which then uses `StorefrontRedirect` to look up the user's **first** tenant membership. For multi-tenant users or users whose primary membership isn't the tenant they logged into, this sends them to the wrong tenant's portal.
+The `AdminOrders` page builds query filters but never includes `tenant_id`. Since you're logged in as a platform admin, RLS allows access to all orders across all tenants — so PostNet sees PrintWorx orders and vice versa.
 
-## Root Causes
+## Root Cause
+Line 39-44 of `AdminOrders.tsx` — `tenantId` from `useTenantContext()` is available but never added to the filters object.
 
-1. **Auth.tsx ignores `tenantSlug`** — It reads `slug` from `useParams` but never uses it for post-login redirect. It always calls `getDefaultRoute(highestRole)` which returns `/dashboard` for customers.
-
-2. **`getDefaultRoute` is role-only** — It has no concept of which tenant the user is trying to access.
-
-3. **`ProtectedRoute` fallback** — When a user lacks the required role, it redirects to `/dashboard` instead of back to their slug-scoped dashboard.
-
-## Changes
+## Fix
 
 | File | Change |
 |------|--------|
-| `src/pages/Auth.tsx` | When `tenantSlug` is present and `highestRole` is `customer`, redirect to `/t/${tenantSlug}/dashboard` instead of `/dashboard` |
-| `src/hooks/useAuth.tsx` | Update `getDefaultRoute` to accept an optional `slug` parameter — if provided and role is customer, return `/t/${slug}/dashboard` |
-| `src/components/ProtectedRoute.tsx` | Instead of hard-coded `/dashboard`, attempt to redirect to the current tenant slug context (extract slug from URL if on a `/t/:slug` path, otherwise fall back to `/dashboard`) |
+| `src/pages/admin/AdminOrders.tsx` | Add `tenant_id: tenantId` to the filters object (line ~43) |
 
-## Details
+That's it — one line. The query function already supports `filters.tenant_id` (line 36 of `queries.ts`: `if (filters.tenant_id) query = query.eq("tenant_id", filters.tenant_id)`). It's just never being passed.
 
-**Auth.tsx redirect logic:**
+### The line change:
 ```typescript
-// Before:
-navigate(getDefaultRoute(highestRole), { replace: true });
-
-// After:
-if (tenantSlug && (!highestRole || highestRole === 'customer')) {
-  navigate(`/t/${tenantSlug}/dashboard`, { replace: true });
-} else {
-  navigate(getDefaultRoute(highestRole), { replace: true });
-}
+const filters: AdminOrderListFilters = {
+  tenant_id: tenantId || undefined,  // ← ADD THIS
+  search: search || undefined,
+  admin_status: selectedStatuses.length ? selectedStatuses : undefined,
+  page,
+  page_size: 25,
+};
 ```
 
-**ProtectedRoute fallback:**
-```typescript
-// Extract slug from current path if on /t/:slug/*
-const match = location.pathname.match(/^\/t\/([^/]+)/);
-const fallback = match ? `/t/${match[1]}/dashboard` : "/dashboard";
-return <Navigate to={fallback} replace />;
-```
+## Also check: Customer orders
+The `fetchCustomerOrders` query similarly lacks tenant filtering — but that's currently protected by the `user_can_read_order` RLS function which checks membership. Still, for defence-in-depth, we should pass the tenant context there too if available.
 
-These are small, targeted fixes — no new files, no schema changes.
+## Also check: Order detail
+`fetchOrderDetail` fetches by order ID with no tenant guard. RLS protects this, but the admin detail page should verify the returned order's `tenant_id` matches the current context to prevent accidental cross-tenant navigation.
 
