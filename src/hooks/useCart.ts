@@ -1,24 +1,26 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useTenantContext } from "@/hooks/useTenantContext";
 
 /**
  * Get or create the user's single open cart order (order_status = 'cart').
- * Multiple order_items accumulate on this one order until checkout.
+ * Scoped to the current tenant so each storefront has its own cart.
  */
 export function useCart() {
   const { user } = useAuth();
+  const { tenantId } = useTenantContext();
 
   return useQuery({
-    queryKey: ["cart", user?.id],
+    queryKey: ["cart", user?.id, tenantId],
     queryFn: async () => {
-      if (!user?.id) return null;
+      if (!user?.id || !tenantId) return null;
 
-      // Find existing cart order
       const { data, error } = await supabase
         .from("orders")
         .select("*, order_items(*, product_families:product_family_id(name, slug, icon))")
         .eq("user_id", user.id)
+        .eq("tenant_id", tenantId)
         .eq("order_status", "cart" as any)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -27,7 +29,7 @@ export function useCart() {
       if (error) throw error;
       return data;
     },
-    enabled: !!user?.id,
+    enabled: !!user?.id && !!tenantId,
   });
 }
 
@@ -42,12 +44,13 @@ export function useCartItemCount() {
 /**
  * Get or create the cart order, returning its ID.
  */
-async function getOrCreateCartId(userId: string, tenantId: string | null, appId: string | null): Promise<string> {
-  // Try to find existing cart
+async function getOrCreateCartId(userId: string, tenantId: string, appId: string | null): Promise<string> {
+  // Try to find existing cart scoped to tenant
   const { data: existing } = await supabase
     .from("orders")
     .select("id")
     .eq("user_id", userId)
+    .eq("tenant_id", tenantId)
     .eq("order_status", "cart" as any)
     .limit(1)
     .maybeSingle();
@@ -77,6 +80,7 @@ async function getOrCreateCartId(userId: string, tenantId: string | null, appId:
  */
 export function useAddItemToCart() {
   const { user } = useAuth();
+  const { tenantId, appId } = useTenantContext();
   const qc = useQueryClient();
 
   return useMutation({
@@ -91,26 +95,7 @@ export function useAddItemToCart() {
       replacesCartItemId?: string;
     }) => {
       if (!user) throw new Error("Not authenticated");
-
-      // Get user's tenant membership
-      const { data: membership } = await supabase
-        .from("tenant_memberships")
-        .select("tenant_id, app_id")
-        .eq("profile_id", user.id)
-        .eq("is_active", true)
-        .limit(1)
-        .maybeSingle();
-
-      let tenantId = membership?.tenant_id ?? null;
-      const appId = membership?.app_id ?? null;
-      if (!tenantId) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("tenant_id")
-          .eq("id", user.id)
-          .single();
-        tenantId = profile?.tenant_id ?? null;
-      }
+      if (!tenantId) throw new Error("No tenant context");
 
       const cartId = await getOrCreateCartId(user.id, tenantId, appId);
 
@@ -130,7 +115,6 @@ export function useAddItemToCart() {
 
       // If this edit replaces an existing cart item, delete the original
       if (input.replacesCartItemId) {
-        // Delete sections, documents, storage files for the replaced item
         await supabase.from("document_sections").delete().eq("order_item_id", input.replacesCartItemId);
         const { data: oldDocs } = await supabase
           .from("documents")
@@ -183,35 +167,15 @@ export function useAddItemToCart() {
 
 /**
  * Move a cart item back to a new draft order for editing.
- * Returns the new draft order ID so the caller can navigate to the build page.
  */
 export function useEditCartItem() {
   const { user } = useAuth();
+  const { tenantId, appId } = useTenantContext();
   const qc = useQueryClient();
 
   return useMutation({
     mutationFn: async ({ orderItemId, cartOrderId }: { orderItemId: string; cartOrderId: string }) => {
       if (!user) throw new Error("Not authenticated");
-
-      // Get user's tenant membership
-      const { data: membership } = await supabase
-        .from("tenant_memberships")
-        .select("tenant_id, app_id")
-        .eq("profile_id", user.id)
-        .eq("is_active", true)
-        .limit(1)
-        .maybeSingle();
-
-      let tenantId = membership?.tenant_id ?? null;
-      const appId = membership?.app_id ?? null;
-      if (!tenantId) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("tenant_id")
-          .eq("id", user.id)
-          .single();
-        tenantId = profile?.tenant_id ?? null;
-      }
 
       // Get the original cart item details
       const { data: sourceItem, error: srcErr } = await supabase
@@ -221,7 +185,7 @@ export function useEditCartItem() {
         .single();
       if (srcErr || !sourceItem) throw srcErr ?? new Error("Item not found");
 
-      // Create a new temporary draft order, storing the source cart item ID in metadata
+      // Create a new temporary draft order
       const { data: draftOrder, error: draftErr } = await supabase
         .from("orders")
         .insert({
@@ -279,7 +243,7 @@ export function useEditCartItem() {
           .insert(docInserts)
           .select("id");
 
-        // Clone document sections, mapping old doc IDs to new ones
+        // Clone document sections
         const docIdMap = new Map<string, string>();
         if (newDocs) {
           docs.forEach((old, i) => {
@@ -312,8 +276,6 @@ export function useEditCartItem() {
         }
       }
 
-      // Cart total stays unchanged since we didn't remove anything
-
       return draftOrder.id;
     },
     onSuccess: () => {
@@ -325,35 +287,28 @@ export function useEditCartItem() {
 }
 
 /**
- * Remove an item from the cart. Deletes associated documents, sections, storage files.
+ * Remove an item from the cart.
  */
 export function useRemoveCartItem() {
   const qc = useQueryClient();
 
   return useMutation({
     mutationFn: async ({ orderItemId, cartOrderId }: { orderItemId: string; cartOrderId: string }) => {
-      // Get documents for cleanup
       const { data: docs } = await supabase
         .from("documents")
         .select("id, file_path")
         .eq("order_item_id", orderItemId);
 
-      const docIds = docs?.map((d) => d.id) ?? [];
       const filePaths = docs?.map((d) => d.file_path).filter(Boolean) ?? [];
 
-      // Delete sections
       await supabase.from("document_sections").delete().eq("order_item_id", orderItemId);
-
-      // Delete documents
       await supabase.from("documents").delete().eq("order_item_id", orderItemId);
 
-      // Remove storage files
       if (filePaths.length > 0) {
         const { deleteFromS3 } = await import("@/lib/s3Storage");
         await deleteFromS3(filePaths);
       }
 
-      // Delete the order item
       await supabase.from("order_items").delete().eq("id", orderItemId);
 
       // Recalculate cart total
@@ -380,9 +335,11 @@ export function useRemoveCartItem() {
 }
 
 /**
- * Place the order: transitions cart → confirmed, records submission timestamp.
+ * Place the order: calls the order-engine to create order_jobs, generate order_number, etc.
  */
 export function usePlaceOrder() {
+  const { user } = useAuth();
+  const { tenantId, appId } = useTenantContext();
   const qc = useQueryClient();
 
   return useMutation({
@@ -403,33 +360,105 @@ export function usePlaceOrder() {
         email?: string;
       };
     }) => {
-      // Update order with checkout details
-      const { error: orderError } = await supabase
+      if (!user) throw new Error("Not authenticated");
+
+      // Load cart items with full details
+      const { data: cartOrder, error: cartErr } = await supabase
         .from("orders")
-        .update({
-          order_status: "confirmed" as any,
-          fulfillment_type: input.deliveryMethod as any,
-          notes_customer: input.notes || null,
-          submitted_at: new Date().toISOString(),
-          ...(input.branchId ? { branch_id: input.branchId } : {}),
-        })
-        .eq("id", input.cartOrderId);
-      if (orderError) throw orderError;
+        .select("*, order_items(*, product_families:product_family_id(name, slug))")
+        .eq("id", input.cartOrderId)
+        .single();
 
-      // Save delivery address if provided
-      if (input.deliveryMethod === "delivery" && input.deliveryAddress) {
-        const { error: addrError } = await supabase
-          .from("order_addresses")
-          .insert({
-            order_id: input.cartOrderId,
-            address_type: "delivery",
-            ...input.deliveryAddress,
-          });
-        // Address insert may fail if RLS doesn't allow — log but don't block
-        if (addrError) console.warn("Could not save delivery address:", addrError);
-      }
+      if (cartErr || !cartOrder) throw cartErr ?? new Error("Cart not found");
 
-      return input.cartOrderId;
+      const items = (cartOrder.order_items as any[]) ?? [];
+      if (!items.length) throw new Error("Cart is empty");
+
+      // Get user profile for customer info
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("email, first_name, last_name, display_name")
+        .eq("id", user.id)
+        .single();
+
+      // Get app slug
+      const { data: app } = await supabase
+        .from("apps")
+        .select("slug")
+        .eq("id", cartOrder.app_id || appId)
+        .single();
+
+      if (!app) throw new Error("App not found");
+
+      // Build jobs from cart items
+      const jobs = items.map((item: any) => ({
+        product_name: item.product_families?.name || item.title || "Document",
+        product_category: item.product_families?.slug || null,
+        job_name: item.title || null,
+        quantity: item.quantity,
+        unit_label: "copies",
+        net_price: Number(item.unit_price) * item.quantity,
+        gross_price: Number(item.unit_price) * item.quantity,
+        cost_price: 0,
+        vat_rate: 15,
+        configuration: item.spec || {},
+        product_snapshot: {
+          product_family_id: item.product_family_id,
+          product_name: item.product_families?.name,
+        },
+      }));
+
+      const subtotal = jobs.reduce((sum: number, j: any) => sum + j.net_price, 0);
+      const vatAmount = Math.round(subtotal * 0.15 * 100) / 100;
+      const totalAmount = subtotal + vatAmount;
+
+      // Call order-engine to create the real order
+      const { data, error } = await supabase.functions.invoke("order-engine", {
+        body: {
+          action: "createOrderWithJobs",
+          app_slug: app.slug,
+          tenant_id: tenantId || cartOrder.tenant_id,
+          branch_id: input.branchId || cartOrder.branch_id || null,
+          customer: {
+            profile_id: user.id,
+            email: profile?.email || user.email,
+            name: [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || profile?.display_name || null,
+          },
+          order: {
+            source_channel: "storefront",
+            notes_customer: input.notes || null,
+            date_required: null,
+            metadata: { cart_order_id: input.cartOrderId },
+          },
+          pricing: {
+            currency: "ZAR",
+            subtotal,
+            vat_amount: vatAmount,
+            total_amount: totalAmount,
+            amount_paid: 0,
+            amount_due: totalAmount,
+          },
+          delivery_address: input.deliveryMethod === "delivery" ? input.deliveryAddress : undefined,
+          jobs,
+        },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      // Clean up the cart order (delete it since the order-engine created a new one)
+      await supabase.from("document_sections").delete().in(
+        "order_item_id",
+        items.map((i: any) => i.id)
+      );
+      await supabase.from("documents").delete().in(
+        "order_item_id",
+        items.map((i: any) => i.id)
+      );
+      await supabase.from("order_items").delete().eq("order_id", input.cartOrderId);
+      await supabase.from("orders").delete().eq("id", input.cartOrderId);
+
+      return data.order_id;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["cart"] });

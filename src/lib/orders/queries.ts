@@ -113,6 +113,12 @@ export async function fetchOrderDetail(orderId: string) {
         .from("timeline_events")
         .select("*")
         .eq("order_id", orderId)
+        .order("created_at", { ascending: false })
+        .then((res) => res.error ? { data: [], error: null } : res) as any,
+      supabase
+        .from("status_history")
+        .select("*")
+        .eq("order_id", orderId)
         .order("created_at", { ascending: false }),
       supabase
         .from("messages")
