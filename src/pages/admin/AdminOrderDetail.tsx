@@ -1,6 +1,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useOrderDetail } from "@/hooks/useOrders";
 import { useState } from "react";
+import { useTenantContext } from "@/hooks/useTenantContext";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft } from "lucide-react";
@@ -10,10 +11,12 @@ import { OrderDeliveryTab } from "@/components/orders/detail/OrderDeliveryTab";
 import { OrderedByTab } from "@/components/orders/detail/OrderedByTab";
 import { JobDetailPanel } from "@/components/orders/detail/JobDetailPanel";
 import { TimelinePanel } from "@/components/orders/detail/TimelinePanel";
+import { buildAdminPath } from "@/lib/adminRouting";
 
 export default function AdminOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { tenantId } = useTenantContext();
   const { data, isLoading, error } = useOrderDetail(id);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
@@ -28,7 +31,7 @@ export default function AdminOrderDetail() {
   if (error || !data?.order) {
     return (
       <div className="space-y-4">
-        <Button variant="outline" onClick={() => navigate("/admin/orders")}>
+        <Button variant="outline" onClick={() => navigate(buildAdminPath("/admin/orders", tenantId))}>
           <ArrowLeft className="mr-2 h-4 w-4" /> Back to Order Manager
         </Button>
         <p className="text-destructive">Order not found</p>
@@ -49,7 +52,7 @@ export default function AdminOrderDetail() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <Button variant="outline" size="sm" onClick={() => navigate("/admin/orders")}>
+      <Button variant="outline" size="sm" onClick={() => navigate(buildAdminPath("/admin/orders", tenantId))}>
         <ArrowLeft className="mr-2 h-4 w-4" /> Back to Order Manager
       </Button>
 

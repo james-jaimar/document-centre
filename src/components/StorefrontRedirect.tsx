@@ -1,4 +1,4 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,8 +9,11 @@ import { supabase } from "@/integrations/supabase/client";
  */
 export function StorefrontRedirect({ path = "dashboard" }: { path?: string }) {
   const { tenantId, loading: ctxLoading } = useTenantContext();
+  const location = useLocation();
   const [slug, setSlug] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const targetPath = path || location.pathname.replace(/^\/dashboard\/?/, "") || "dashboard";
 
   useEffect(() => {
     if (ctxLoading) return;
@@ -34,7 +37,16 @@ export function StorefrontRedirect({ path = "dashboard" }: { path?: string }) {
   }
 
   if (slug) {
-    return <Navigate to={`/t/${slug}/${path}`} replace />;
+    return (
+      <Navigate
+        to={{
+          pathname: `/t/${slug}/${targetPath}`,
+          search: location.search,
+          hash: location.hash,
+        }}
+        replace
+      />
+    );
   }
 
   // No tenant membership — show a message or redirect to auth

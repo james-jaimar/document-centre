@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAdminOrders } from "@/hooks/useOrders";
+import { useTenantContext } from "@/hooks/useTenantContext";
 import { OrderStatusChips } from "@/components/orders/OrderStatusChips";
 import { StatusBadge } from "@/components/orders/StatusBadge";
 import { Input } from "@/components/ui/input";
@@ -21,6 +22,7 @@ import {
 } from "@/lib/orders/status-maps";
 import type { OrderAdminStatus, AdminOrderListFilters } from "@/lib/orders/types";
 import { format } from "date-fns";
+import { buildAdminPath } from "@/lib/adminRouting";
 
 const ALL_ADMIN_STATUSES: OrderAdminStatus[] = [
   "new_order", "under_review", "approved", "in_production", "qa",
@@ -29,6 +31,7 @@ const ALL_ADMIN_STATUSES: OrderAdminStatus[] = [
 
 export default function AdminOrders() {
   const navigate = useNavigate();
+  const { tenantId } = useTenantContext();
   const [search, setSearch] = useState("");
   const [selectedStatuses, setSelectedStatuses] = useState<OrderAdminStatus[]>([]);
   const [page, setPage] = useState(1);
@@ -154,7 +157,7 @@ export default function AdminOrders() {
                     <TableRow
                       key={order.id}
                       className="cursor-pointer hover:bg-muted/50 text-xs"
-                      onClick={() => navigate(`/admin/orders/${order.id}`)}
+                      onClick={() => navigate(buildAdminPath(`/admin/orders/${order.id}`, tenantId))}
                     >
                       <TableCell className="font-mono text-xs font-medium">
                         {order.order_number || "—"}
@@ -187,7 +190,7 @@ export default function AdminOrders() {
                   <TableRow
                     key={job.id}
                     className="cursor-pointer hover:bg-muted/50 text-xs"
-                    onClick={() => navigate(`/admin/orders/${order.id}`)}
+                    onClick={() => navigate(buildAdminPath(`/admin/orders/${order.id}`, tenantId))}
                   >
                     <TableCell className="font-mono text-xs font-medium text-primary">
                       {job.job_number}

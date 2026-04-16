@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 import { Building2, Pencil, ArrowRight, ExternalLink } from "lucide-react";
 import type { Tenant } from "@/hooks/useTenants";
+import { buildAdminPath } from "@/lib/adminRouting";
 
 const PlatformTenants = () => {
   const { data: tenants, isLoading } = useTenants();
@@ -27,7 +28,7 @@ const PlatformTenants = () => {
 
   const handleManage = (tenantId: string) => {
     setOverrideTenantId(tenantId);
-    navigate("/admin");
+    navigate(buildAdminPath("/admin", tenantId));
   };
 
   const handleSave = async () => {
