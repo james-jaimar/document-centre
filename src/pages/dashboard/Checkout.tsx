@@ -1,12 +1,16 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useCart, usePlaceOrder } from "@/hooks/useCart";
+import { useTenantContext } from "@/hooks/useTenantContext";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Loader2, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
 
@@ -14,11 +18,30 @@ export default function Checkout() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { data: cart, isLoading } = useCart();
+  const { tenantId } = useTenantContext();
   const placeOrder = usePlaceOrder();
 
   const [deliveryMethod, setDeliveryMethod] = useState<"collection" | "delivery">("collection");
+  const [selectedBranchId, setSelectedBranchId] = useState<string>("");
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Fetch active branches for collection picker
+  const { data: branches } = useQuery({
+    queryKey: ["branches-for-checkout", tenantId],
+    queryFn: async () => {
+      if (!tenantId) return [];
+      const { data, error } = await supabase
+        .from("branches")
+        .select("id, name, city, address")
+        .eq("tenant_id", tenantId)
+        .eq("is_active", true)
+        .order("name");
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!tenantId,
+  });
 
   // Delivery address fields
   const [address, setAddress] = useState({
@@ -44,6 +67,10 @@ export default function Checkout() {
 
   const handlePlaceOrder = async () => {
     if (!cart) return;
+    if (deliveryMethod === "collection" && branches && branches.length > 1 && !selectedBranchId) {
+      toast.error("Please select a collection branch");
+      return;
+    }
     if (deliveryMethod === "delivery" && !address.line1.trim()) {
       toast.error("Please enter a delivery address");
       return;
@@ -56,6 +83,9 @@ export default function Checkout() {
         deliveryMethod,
         notes: notes.trim() || undefined,
         deliveryAddress: deliveryMethod === "delivery" ? address : undefined,
+        branchId: deliveryMethod === "collection"
+          ? (selectedBranchId || branches?.[0]?.id || undefined)
+          : undefined,
       });
       navigate(`/t/${slug}/orders/${cart.id}/confirmation`);
     } catch (err: any) {
@@ -122,6 +152,30 @@ export default function Checkout() {
                 </Label>
               </div>
             </RadioGroup>
+
+            {/* Branch selector for collection */}
+            {deliveryMethod === "collection" && branches && branches.length > 1 && (
+              <div className="mt-3 space-y-1">
+                <Label className="text-xs">Collection Branch</Label>
+                <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a branch…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {branches.map((b) => (
+                      <SelectItem key={b.id} value={b.id}>
+                        {b.name}{b.city ? ` — ${b.city}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {deliveryMethod === "collection" && branches && branches.length === 1 && (
+              <p className="text-sm text-muted-foreground mt-2">
+                Collect from: <strong>{branches[0].name}</strong>{branches[0].city ? ` — ${branches[0].city}` : ""}
+              </p>
+            )}
           </div>
 
           {/* Delivery Address */}

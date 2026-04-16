@@ -42,7 +42,7 @@ export function useCartItemCount() {
 /**
  * Get or create the cart order, returning its ID.
  */
-async function getOrCreateCartId(userId: string, tenantId: string | null): Promise<string> {
+async function getOrCreateCartId(userId: string, tenantId: string | null, appId: string | null): Promise<string> {
   // Try to find existing cart
   const { data: existing } = await supabase
     .from("orders")
@@ -60,6 +60,7 @@ async function getOrCreateCartId(userId: string, tenantId: string | null): Promi
     .insert({
       user_id: userId,
       tenant_id: tenantId,
+      app_id: appId,
       order_status: "cart" as any,
       total_price: 0,
     })
@@ -91,14 +92,27 @@ export function useAddItemToCart() {
     }) => {
       if (!user) throw new Error("Not authenticated");
 
-      // Get user's tenant_id
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("tenant_id")
-        .eq("id", user.id)
-        .single();
+      // Get user's tenant membership
+      const { data: membership } = await supabase
+        .from("tenant_memberships")
+        .select("tenant_id, app_id")
+        .eq("profile_id", user.id)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
 
-      const cartId = await getOrCreateCartId(user.id, profile?.tenant_id ?? null);
+      let tenantId = membership?.tenant_id ?? null;
+      const appId = membership?.app_id ?? null;
+      if (!tenantId) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("tenant_id")
+          .eq("id", user.id)
+          .single();
+        tenantId = profile?.tenant_id ?? null;
+      }
+
+      const cartId = await getOrCreateCartId(user.id, tenantId, appId);
 
       // Update the order item: set it as ready and move to cart order
       const { error: itemError } = await supabase
@@ -179,12 +193,25 @@ export function useEditCartItem() {
     mutationFn: async ({ orderItemId, cartOrderId }: { orderItemId: string; cartOrderId: string }) => {
       if (!user) throw new Error("Not authenticated");
 
-      // Get user's tenant_id
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("tenant_id")
-        .eq("id", user.id)
-        .single();
+      // Get user's tenant membership
+      const { data: membership } = await supabase
+        .from("tenant_memberships")
+        .select("tenant_id, app_id")
+        .eq("profile_id", user.id)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+
+      let tenantId = membership?.tenant_id ?? null;
+      const appId = membership?.app_id ?? null;
+      if (!tenantId) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("tenant_id")
+          .eq("id", user.id)
+          .single();
+        tenantId = profile?.tenant_id ?? null;
+      }
 
       // Get the original cart item details
       const { data: sourceItem, error: srcErr } = await supabase
@@ -199,7 +226,8 @@ export function useEditCartItem() {
         .from("orders")
         .insert({
           user_id: user.id,
-          tenant_id: profile?.tenant_id ?? null,
+          tenant_id: tenantId,
+          app_id: appId,
           order_status: "draft" as any,
           total_price: 0,
           metadata: { replaces_cart_item_id: orderItemId },
@@ -362,6 +390,7 @@ export function usePlaceOrder() {
       cartOrderId: string;
       deliveryMethod: "collection" | "delivery";
       notes?: string;
+      branchId?: string;
       deliveryAddress?: {
         contact_name?: string;
         company_name?: string;
@@ -382,6 +411,7 @@ export function usePlaceOrder() {
           fulfillment_type: input.deliveryMethod as any,
           notes_customer: input.notes || null,
           submitted_at: new Date().toISOString(),
+          ...(input.branchId ? { branch_id: input.branchId } : {}),
         })
         .eq("id", input.cartOrderId);
       if (orderError) throw orderError;

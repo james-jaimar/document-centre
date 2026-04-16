@@ -2015,6 +2015,7 @@ export type Database = {
         Returns: undefined
       }
       sync_order_amounts: { Args: { p_order_id: string }; Returns: undefined }
+      user_branch_id: { Args: never; Returns: string }
       user_can_read_order: {
         Args: {
           p_app_id: string
