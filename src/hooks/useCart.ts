@@ -390,6 +390,7 @@ export function usePlaceOrder() {
       cartOrderId: string;
       deliveryMethod: "collection" | "delivery";
       notes?: string;
+      branchId?: string;
       deliveryAddress?: {
         contact_name?: string;
         company_name?: string;
@@ -410,6 +411,7 @@ export function usePlaceOrder() {
           fulfillment_type: input.deliveryMethod as any,
           notes_customer: input.notes || null,
           submitted_at: new Date().toISOString(),
+          ...(input.branchId ? { branch_id: input.branchId } : {}),
         })
         .eq("id", input.cartOrderId);
       if (orderError) throw orderError;
