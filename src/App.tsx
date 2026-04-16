@@ -14,6 +14,7 @@ import Auth from "@/pages/Auth";
 import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "@/pages/NotFound";
 import { StorefrontRedirect } from "@/components/StorefrontRedirect";
+import StorefrontLanding from "@/pages/storefront/StorefrontLanding";
 
 // Customer
 import CustomerDashboard from "@/pages/dashboard/CustomerDashboard";
@@ -66,6 +67,9 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/t/:slug/auth" element={<Auth />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+
+            {/* Public storefront landing */}
+            <Route path="/t/:slug" element={<StorefrontLanding />} />
 
             {/* Customer portal — slug-based storefront */}
             <Route path="/t/:slug" element={<ProtectedRoute><CustomerLayout /></ProtectedRoute>}>
