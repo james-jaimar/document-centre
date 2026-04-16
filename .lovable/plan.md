@@ -1,20 +1,17 @@
 
 
-## Plan: Regenerate Presentations Image Using References
+## Plan: Regenerate Ring Binders Product Image
 
-### Problem
-The AI image generator produced a portrait-oriented or incorrectly bound image for "Presentations." The reference images clearly show: **landscape (wider than tall) A4 documents with wire/spiral binding along the left short edge**.
-
-### Approach
-Use the uploaded reference images as direct input to the AI image editor. Take one of the best references (e.g., `landscape_4.jpg` or `landscape_5.jpg`) and use `--edit-image` mode to generate a clean product shot in the same studio style as the other product images — white/light background, realistic 3D render, colorful corporate cover design, wire binding on the left short edge.
+### What
+Regenerate `src/assets/products/ring-binders.jpg` using the AI image editor with one of the uploaded reference images (e.g., `ring_binder_1.webp` or `ring_binder_3.jpg`) as a base. These show exactly the style needed: a white "insert cover" ring binder with a colorful printed page visible through the clear front pocket, plain white back, rings hidden inside the spine.
 
 ### Steps
-1. Copy a reference image to `/tmp/`
-2. Use the AI image generation with `--edit-image` to create a studio-style product shot based on the reference — landscape A4, wire-bound on left short edge, colorful cover, white background
-3. Replace `src/assets/products/presentations.jpg` with the result
+1. Copy a reference image (`ring_binder_3.jpg` — best angle, shows colorful insert) to `/tmp/`
+2. Use `--edit-image` to generate a clean studio product shot: white ring binder, colorful corporate design visible through the clear front pocket, plain white spine and back, clean white background, soft shadow
+3. Replace `src/assets/products/ring-binders.jpg` with the result
 
 ### Files Changed
 | File | Change |
 |------|--------|
-| `src/assets/products/presentations.jpg` | Regenerated using reference images |
+| `src/assets/products/ring-binders.jpg` | Regenerated — insert-cover binder with colorful front |
 
