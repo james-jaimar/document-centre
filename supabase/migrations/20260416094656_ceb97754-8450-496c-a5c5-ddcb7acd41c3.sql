@@ -1,0 +1,1 @@
+ALTER TABLE public.product_families ADD COLUMN image_url text;
