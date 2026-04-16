@@ -1,71 +1,97 @@
 
 
-## Plan: Branch List View, Users & Roles Fix, and Role-Based Portal Separation
+## Plan: Ringfence Customers to Tenants and Branch-Scoped Orders
 
-### 1. Branch Management — Dual View (Card + List)
+### Problem Summary
+Currently, customer registration creates a profile and a `customer` role in `user_roles`, but **no `tenant_membership` row** is created. Orders rely on `profiles.tenant_id` which is fragile. There's no branch selection at checkout, and no mechanism to tag orders with a branch for collection-based workflows.
 
-Add a toggle switch (Grid/List icons) to `AdminBranches.tsx`. The card view already exists. The list view will be a `Table` with columns: Name, Code, City, Province, Phone, Email, Status, Actions. Store the view preference in local state (or localStorage). Both views share the same data and action buttons.
+### Changes
 
-**Files**: `src/pages/admin/AdminBranches.tsx`
+**1. Storefront-Aware Customer Registration (DB trigger)**
 
----
+Update `handle_new_user()` to also create a `tenant_membership` when the user signs up through a storefront URL. The storefront slug will be passed via `raw_user_meta_data.tenant_slug` during signup.
 
-### 2. Users & Roles — Fix 400 Errors
+- Modify `Auth.tsx` (storefront variant at `/t/:slug/auth`) to include `tenant_slug` in the signup metadata
+- Update the `handle_new_user()` DB function to:
+  - Look up the tenant by slug from metadata
+  - If found, create a `tenant_membership` row with role `customer`, the correct `app_id` and `tenant_id`
+  - Set `profiles.tenant_id` for backwards compatibility
 
-**Root cause**: The `tenant_memberships` table has **no foreign key** to `profiles`. The Supabase PostgREST embedded select `profiles:profile_id(...)` requires a FK to resolve the join, so it returns 400.
+**2. Storefront Auth Page**
 
-**Fix**:
-- **Migration**: Add a foreign key from `tenant_memberships.profile_id` → `profiles.id`
-- This will allow the embedded select to work correctly
-- PostNet currently has 0 memberships, so the "No team members found" is also expected — but the 400 errors are the real bug
+Create a `/t/:slug/auth` route that renders the existing Auth page but passes the tenant slug into signup metadata. This ensures customers who register via a storefront are automatically ringfenced to that tenant.
 
-**Files**: New migration, no code changes needed in `useTenantMembers.ts`
+**Files**: `src/App.tsx`, `src/pages/Auth.tsx` — accept optional `slug` prop or read from params
 
----
+**3. Branch Selection at Checkout**
 
-### 3. Three-Tier Portal Separation
+For "collection" delivery method, allow the customer to pick a branch:
+- Fetch active branches for the tenant
+- Show a branch selector dropdown when "Collection" is chosen
+- Save the selected `branch_id` on the order when placing it
+- This tags the order so branch staff see it in their portal
 
-Currently all admin/branch routes live under `/admin/*` with role guards. The plan is to create distinct experiences:
+**Files**: `src/pages/dashboard/Checkout.tsx`, `src/hooks/useCart.ts` (placeOrder mutation)
 
-#### a. Platform Admin (`/platform/*`) — Already done
-You (platform_admin) can see all tenants, override into any tenant's admin view.
+**4. Ensure `app_id` on Orders**
 
-#### b. Tenant Admin (`/admin/*`) — Needs refinement
-- Accessible to `head_office_admin` role (tenant owners/admins via `tenant_memberships` with role `owner` or `admin`)
-- These users see: Dashboard, Orders, Branches, Products, Pricing, Users, Settings
-- They do NOT see platform-level pages
-- **Change**: When a tenant admin logs in, route them to `/admin` automatically based on their `tenant_memberships` role (not `user_roles`)
+Currently `useCreateOrder` and `getOrCreateCartId` don't set `app_id` on orders. Fix both to pull `app_id` from the user's `tenant_membership` (via `TenantContext`) and write it to the order. This is critical for RLS policies and the order engine.
 
-#### c. Branch Portal (`/branch/*`) — New dedicated routes
-- Accessible to `branch_manager` and `store_operator` roles
-- New routes under `/branch/*` with a branch-focused sidebar:
-  - `/branch/dashboard` — their branch's orders and stats
-  - `/branch/orders` — orders for their branch only
-  - `/branch/products` — product capability toggles (already built)
-  - `/branch/settings` — branch-level settings (already built)
-- New `BranchLayout` or reuse `AppLayout` with branch-specific sidebar sections
-- Data is filtered by `branchId` from `TenantContext`
+**Files**: `src/hooks/useOrderBuilder.ts`, `src/hooks/useCart.ts`
 
-**Key changes**:
-- Move existing `/admin/branch/*` routes to `/branch/*`
-- Create a branch-aware sidebar that only shows branch-relevant items
-- Update `getDefaultRoute()` to route `branch_manager`/`store_operator` to `/branch/dashboard`
-- Update `ProtectedRoute` or add a `BranchGuard` that ensures the user has a `branch_id` in their membership
-- Branch orders page filters by `branch_id`
+**5. Branch Portal Order Scoping**
 
-**Files**:
-- `src/App.tsx` — new `/branch/*` routes
-- `src/components/AppSidebar.tsx` — branch portal sidebar variant
-- `src/pages/branch/BranchDashboard.tsx` — branch-specific dashboard
-- `src/pages/branch/BranchOrders.tsx` — new, filtered by branch
-- Migration: FK on `tenant_memberships.profile_id`
+The `BranchOrders` page should filter by `branch_id` from the user's membership. Verify the existing implementation correctly passes `branch_id` to the query and that RLS allows it.
 
-### Summary of Changes
+**Files**: `src/pages/branch/BranchOrders.tsx`
 
-| Step | Type | Description |
-|------|------|-------------|
-| Migration | DB | Add FK `tenant_memberships.profile_id → profiles.id` |
-| AdminBranches | UI | Add list/grid view toggle |
-| Branch Portal | Routing + UI | Dedicated `/branch/*` routes with branch-scoped sidebar and data |
-| Auth routing | Logic | Route branch staff to `/branch/dashboard` on login |
+**6. RLS Policy Review**
+
+- Orders: The existing `Branch managers can view branch orders` policy checks `tenant_id` but not `branch_id`. Add a proper branch-scoped policy that also checks `branch_id` matches the user's membership `branch_id`.
+- Ensure branch staff can only see orders tagged with their branch.
+
+**Migration**: New `SECURITY DEFINER` function `user_branch_id()` that returns the branch_id from the user's tenant_membership, then use it in a revised RLS policy.
+
+### Migration SQL (Summary)
+
+```sql
+-- 1. Update handle_new_user to auto-create tenant_membership
+CREATE OR REPLACE FUNCTION public.handle_new_user() ...
+
+-- 2. Helper: get user's branch_id
+CREATE OR REPLACE FUNCTION public.user_branch_id()
+RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT branch_id FROM tenant_memberships
+  WHERE profile_id = auth.uid() AND is_active = true
+  AND branch_id IS NOT NULL LIMIT 1;
+$$;
+
+-- 3. Replace branch manager order policy with branch_id check
+DROP POLICY "Branch managers can view branch orders" ON orders;
+CREATE POLICY "Branch staff can view branch orders" ON orders
+  FOR SELECT USING (
+    branch_id = public.user_branch_id()
+    AND branch_id IS NOT NULL
+  );
+```
+
+### What You Haven't Thought Of (Item 3)
+
+- **Existing users without memberships**: Need a one-time data fix to create `tenant_membership` rows for any existing customers who have `profiles.tenant_id` set but no membership
+- **Cross-tenant prevention**: Customers should not be able to browse `/t/other-tenant/` storefronts and place orders there. The order creation must validate that the user's membership matches the storefront tenant
+- **Branch transfer**: If a customer picks Branch A for collection but the order needs to be fulfilled at Branch B, admin should be able to reassign `branch_id` — this already works via the admin order detail page
+- **Multi-branch customers**: Some B2B customers may order from multiple branches. The membership model supports this (multiple memberships with different `branch_id`), but the UI would need a branch picker on login or in the customer portal
+
+### File Change Summary
+
+| File | Change |
+|------|--------|
+| Migration | `handle_new_user`, `user_branch_id()`, RLS policy |
+| `src/pages/Auth.tsx` | Accept tenant slug, pass in signup metadata |
+| `src/App.tsx` | Add `/t/:slug/auth` route |
+| `src/pages/dashboard/Checkout.tsx` | Branch selector for collection |
+| `src/hooks/useCart.ts` | Pass `branch_id` and `app_id` on order creation |
+| `src/hooks/useOrderBuilder.ts` | Set `app_id` on draft orders |
+| `src/pages/branch/BranchOrders.tsx` | Verify branch_id filtering |
+| Data fix (insert tool) | Backfill memberships for existing customers |
 
