@@ -17,6 +17,39 @@ function err(message: string, status = 400) {
   return json({ error: message }, status);
 }
 
+// ── Side-effect helpers (fire-and-forget) ───────────────────
+async function triggerEmail(authHeader: string, order_id: string, event_key: string, extra: Record<string, unknown> = {}) {
+  try {
+    const url = Deno.env.get("SUPABASE_URL")!;
+    await fetch(`${url}/functions/v1/send-order-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: authHeader },
+      body: JSON.stringify({ order_id, event_key, ...extra }),
+    });
+  } catch (e) {
+    console.error("triggerEmail failed:", e);
+  }
+}
+
+async function triggerInvoice(authHeader: string, order_id: string, kind: string) {
+  try {
+    const url = Deno.env.get("SUPABASE_URL")!;
+    await fetch(`${url}/functions/v1/generate-invoice-pdf`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: authHeader },
+      body: JSON.stringify({ order_id, kind }),
+    });
+  } catch (e) {
+    console.error("triggerInvoice failed:", e);
+  }
+}
+
+const STATUS_EVENT_MAP: Record<string, string> = {
+  in_production: "in_production",
+  ready: "ready_for_collection",
+  completed: "completed",
+};
+
 // ── Authenticated user client + service client ──────────────
 function clients(authHeader: string) {
   const url = Deno.env.get("SUPABASE_URL")!;
