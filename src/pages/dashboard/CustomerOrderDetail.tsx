@@ -20,6 +20,7 @@ import {
 import { format } from "date-fns";
 import { useState } from "react";
 import { sendMessage } from "@/lib/orders/mutations";
+import { OrderInvoicesList } from "@/components/orders/OrderInvoicesList";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -132,11 +133,6 @@ const CustomerOrderDetail = () => {
     });
   };
 
-  const handleDownloadInvoice = () => {
-    toast.info("Invoice download coming soon", {
-      description: "PDF invoices will be available once payment processing is wired up.",
-    });
-  };
 
   const getTimeAgo = (dateStr: string) => {
     const diff = Date.now() - new Date(dateStr).getTime();
@@ -490,20 +486,19 @@ const CustomerOrderDetail = () => {
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2 pt-2">
-                {order.amount_due > 0 && (
+              {order.amount_due > 0 && (
+                <div className="flex flex-wrap gap-2 pt-2">
                   <Button size="sm" onClick={handlePayNow} className="gap-1.5">
                     <CreditCard className="h-3.5 w-3.5" />
                     Pay Now
                   </Button>
-                )}
-                <Button size="sm" variant="outline" onClick={handleDownloadInvoice} className="gap-1.5">
-                  <Receipt className="h-3.5 w-3.5" />
-                  Download Invoice
-                </Button>
-              </div>
+                </div>
+              )}
             </div>
           </div>
+
+          {/* Invoices & Receipts */}
+          <OrderInvoicesList orderId={order.id} />
         </div>
 
         {/* Sidebar: Messages & Timeline */}
