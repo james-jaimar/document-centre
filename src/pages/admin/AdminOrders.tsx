@@ -144,11 +144,18 @@ export default function AdminOrders() {
       </div>
 
       {/* Status filter chips */}
-      <OrderStatusChips
-        statuses={ALL_ADMIN_STATUSES}
-        selected={selectedStatuses}
-        onToggle={handleToggleStatus}
-      />
+      <div className="space-y-2">
+        <OrderStatusChips
+          statuses={ALL_ADMIN_STATUSES}
+          selected={selectedStatuses}
+          onToggle={handleToggleStatus}
+        />
+        <PaymentStatusChips
+          statuses={ALL_PAYMENT_STATUSES}
+          selected={selectedPaymentStatuses}
+          onToggle={handleTogglePayment}
+        />
+      </div>
 
       {/* Table */}
       <div className="rounded-lg border bg-card">
@@ -179,8 +186,22 @@ export default function AdminOrders() {
               </TableRow>
             ) : orders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={13} className="h-32 text-center text-muted-foreground">
-                  No orders found
+                <TableCell colSpan={13} className="h-40 text-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <p className="text-sm text-muted-foreground">
+                      {hasActiveFilters
+                        ? `No orders match these filters.`
+                        : `No orders yet for this storefront.`}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {totalForTenant} total order{totalForTenant === 1 ? "" : "s"} for this tenant.
+                    </p>
+                    {hasActiveFilters && (
+                      <Button variant="outline" size="sm" onClick={clearFilters} className="mt-1">
+                        Clear filters
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ) : (
