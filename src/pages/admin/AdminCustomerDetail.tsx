@@ -71,6 +71,44 @@ export default function AdminCustomerDetail() {
         </div>
       </div>
 
+      <Card className="p-4">
+        <h2 className="text-sm font-semibold mb-3">Account info</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div>
+            <div className="text-xs text-muted-foreground">Account created</div>
+            <div className="font-medium">
+              {profile?.created_at ? format(new Date(profile.created_at), "PP") : "—"}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Member since</div>
+            <div className="font-medium">
+              {membership?.created_at
+                ? formatDistanceToNow(new Date(membership.created_at), { addSuffix: true })
+                : "—"}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Default delivery</div>
+            <div className="font-medium truncate">
+              {(() => {
+                const a = addresses.find((x: any) => x.address_type === "delivery") ?? addresses[0];
+                if (!a) return "—";
+                return [a.line1, a.city, a.postal_code].filter(Boolean).join(", ") || "—";
+              })()}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Status</div>
+            <div className="font-medium">
+              <Badge variant={membership?.is_active ? "default" : "secondary"}>
+                {membership?.is_active ? "Active" : "Inactive"}
+              </Badge>
+            </div>
+          </div>
+        </div>
+      </Card>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="p-4">
           <div className="text-xs text-muted-foreground">Lifetime value</div>

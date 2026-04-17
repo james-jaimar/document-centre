@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { buildJobSnapshot } from "@/lib/orders/buildJobSnapshot";
 
 /**
  * Get or create the user's single open cart order (order_status = 'cart').
@@ -390,23 +391,73 @@ export function usePlaceOrder() {
 
       if (!app) throw new Error("App not found");
 
-      // Build jobs from cart items
-      const jobs = items.map((item: any) => ({
-        product_name: item.product_families?.name || item.title || "Document",
-        product_category: item.product_families?.slug || null,
-        job_name: item.title || null,
-        quantity: item.quantity,
-        unit_label: "copies",
-        net_price: Number(item.unit_price) * item.quantity,
-        gross_price: Number(item.unit_price) * item.quantity,
-        cost_price: 0,
-        vat_rate: 15,
-        configuration: item.spec || {},
-        product_snapshot: {
-          product_family_id: item.product_family_id,
-          product_name: item.product_families?.name,
-        },
-      }));
+      // Build jobs with rich snapshot per item (resolved labels, sections, files)
+      const familyIds = Array.from(
+        new Set(items.map((i: any) => i.product_family_id).filter(Boolean))
+      ) as string[];
+      const itemIds = items.map((i: any) => i.id) as string[];
+
+      const [{ data: optionsData }, { data: sectionsData }, { data: documentsData }] =
+        await Promise.all([
+          familyIds.length
+            ? supabase
+                .from("product_options")
+                .select("id, name, option_type, values, sort_order, product_family_id")
+                .in("product_family_id", familyIds)
+                .order("sort_order")
+            : Promise.resolve({ data: [] as any[] }),
+          itemIds.length
+            ? supabase
+                .from("document_sections")
+                .select(
+                  "id, order_item_id, label, section_type, page_range_start, page_range_end, paper_stock, paper_weight_gsm, is_color, is_duplex, lamination, color, sort_order"
+                )
+                .in("order_item_id", itemIds)
+                .order("sort_order")
+            : Promise.resolve({ data: [] as any[] }),
+          itemIds.length
+            ? supabase
+                .from("documents")
+                .select(
+                  "id, order_item_id, file_name, page_count, file_size, page_width_mm, page_height_mm"
+                )
+                .in("order_item_id", itemIds)
+                .order("sort_order")
+            : Promise.resolve({ data: [] as any[] }),
+        ]);
+
+      const jobs = items.map((item: any) => {
+        const familyOptions = ((optionsData ?? []) as any[]).filter(
+          (o) => o.product_family_id === item.product_family_id
+        );
+        const itemSections = ((sectionsData ?? []) as any[]).filter(
+          (s) => s.order_item_id === item.id
+        );
+        const itemDocs = ((documentsData ?? []) as any[]).filter(
+          (d) => d.order_item_id === item.id
+        );
+
+        const { configuration, product_snapshot } = buildJobSnapshot({
+          item,
+          productOptions: familyOptions,
+          sections: itemSections,
+          documents: itemDocs,
+        });
+
+        return {
+          product_name: item.product_families?.name || item.title || "Document",
+          product_category: item.product_families?.slug || null,
+          job_name: item.title || null,
+          quantity: item.quantity,
+          unit_label: "copies",
+          net_price: Number(item.unit_price) * item.quantity,
+          gross_price: Number(item.unit_price) * item.quantity,
+          cost_price: 0,
+          vat_rate: 15,
+          configuration,
+          product_snapshot,
+        };
+      });
 
       const subtotal = jobs.reduce((sum: number, j: any) => sum + j.net_price, 0);
       const vatAmount = Math.round(subtotal * 0.15 * 100) / 100;
