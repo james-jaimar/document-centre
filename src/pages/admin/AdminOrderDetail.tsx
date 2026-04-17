@@ -4,14 +4,20 @@ import { useState } from "react";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Receipt } from "lucide-react";
 import { OrderSummaryTab } from "@/components/orders/detail/OrderSummaryTab";
 import { OrderPricingTab } from "@/components/orders/detail/OrderPricingTab";
 import { OrderDeliveryTab } from "@/components/orders/detail/OrderDeliveryTab";
 import { OrderedByTab } from "@/components/orders/detail/OrderedByTab";
 import { JobDetailPanel } from "@/components/orders/detail/JobDetailPanel";
 import { TimelinePanel } from "@/components/orders/detail/TimelinePanel";
+import { RecordPaymentDialog } from "@/components/orders/RecordPaymentDialog";
+import { recordPaymentEvent } from "@/lib/orders/mutations";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { buildAdminPath } from "@/lib/adminRouting";
+import { PAYMENT_STATUS_CONFIG } from "@/lib/orders/status-maps";
+import { StatusBadge } from "@/components/orders/StatusBadge";
 
 export default function AdminOrderDetail() {
   const { id } = useParams<{ id: string }>();
@@ -19,6 +25,9 @@ export default function AdminOrderDetail() {
   const { tenantId } = useTenantContext();
   const { data, isLoading, error } = useOrderDetail(id);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [markingPaid, setMarkingPaid] = useState(false);
+  const queryClient = useQueryClient();
 
   if (isLoading) {
     return (
