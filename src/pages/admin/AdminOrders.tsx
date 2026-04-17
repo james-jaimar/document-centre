@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAdminOrders } from "@/hooks/useOrders";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { OrderStatusChips } from "@/components/orders/OrderStatusChips";
+import { PaymentStatusChips } from "@/components/orders/PaymentStatusChips";
 import { StatusBadge } from "@/components/orders/StatusBadge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,7 @@ import {
   PAYMENT_STATUS_CONFIG,
   URGENCY_CONFIG,
 } from "@/lib/orders/status-maps";
-import type { OrderAdminStatus, AdminOrderListFilters } from "@/lib/orders/types";
+import type { OrderAdminStatus, PaymentStatus, AdminOrderListFilters } from "@/lib/orders/types";
 import { format } from "date-fns";
 import { buildAdminPath } from "@/lib/adminRouting";
 
@@ -29,20 +30,37 @@ const ALL_ADMIN_STATUSES: OrderAdminStatus[] = [
   "ready_for_dispatch", "completed", "on_hold", "cancelled",
 ];
 
+const ALL_PAYMENT_STATUSES: PaymentStatus[] = [
+  "unpaid", "part_paid", "paid", "refunded",
+];
+
 export default function AdminOrders() {
   const navigate = useNavigate();
   const { tenantId } = useTenantContext();
   const [search, setSearch] = useState("");
   const [selectedStatuses, setSelectedStatuses] = useState<OrderAdminStatus[]>([]);
+  const [selectedPaymentStatuses, setSelectedPaymentStatuses] = useState<PaymentStatus[]>([]);
   const [page, setPage] = useState(1);
 
   const filters: AdminOrderListFilters = {
     tenant_id: tenantId || undefined,
     search: search || undefined,
     admin_status: selectedStatuses.length ? selectedStatuses : undefined,
+    payment_status: selectedPaymentStatuses.length ? selectedPaymentStatuses : undefined,
     page,
     page_size: 25,
   };
+
+  // Total count without filters (for empty state messaging)
+  const { data: totalData } = useAdminOrders({
+    tenant_id: tenantId || undefined,
+    page: 1,
+    page_size: 1,
+  });
+  const totalForTenant = totalData?.total || 0;
+
+  const hasActiveFilters =
+    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0;
 
   const { data, isLoading } = useAdminOrders(filters);
   const orders = data?.orders || [];
@@ -55,6 +73,22 @@ export default function AdminOrders() {
         ? prev.filter((s) => s !== status)
         : [...prev, status]
     );
+    setPage(1);
+  };
+
+  const handleTogglePayment = (status: PaymentStatus) => {
+    setSelectedPaymentStatuses((prev) =>
+      prev.includes(status)
+        ? prev.filter((s) => s !== status)
+        : [...prev, status]
+    );
+    setPage(1);
+  };
+
+  const clearFilters = () => {
+    setSearch("");
+    setSelectedStatuses([]);
+    setSelectedPaymentStatuses([]);
     setPage(1);
   };
 
@@ -110,11 +144,18 @@ export default function AdminOrders() {
       </div>
 
       {/* Status filter chips */}
-      <OrderStatusChips
-        statuses={ALL_ADMIN_STATUSES}
-        selected={selectedStatuses}
-        onToggle={handleToggleStatus}
-      />
+      <div className="space-y-2">
+        <OrderStatusChips
+          statuses={ALL_ADMIN_STATUSES}
+          selected={selectedStatuses}
+          onToggle={handleToggleStatus}
+        />
+        <PaymentStatusChips
+          statuses={ALL_PAYMENT_STATUSES}
+          selected={selectedPaymentStatuses}
+          onToggle={handleTogglePayment}
+        />
+      </div>
 
       {/* Table */}
       <div className="rounded-lg border bg-card">
@@ -145,8 +186,22 @@ export default function AdminOrders() {
               </TableRow>
             ) : orders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={13} className="h-32 text-center text-muted-foreground">
-                  No orders found
+                <TableCell colSpan={13} className="h-40 text-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <p className="text-sm text-muted-foreground">
+                      {hasActiveFilters
+                        ? `No orders match these filters.`
+                        : `No orders yet for this storefront.`}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {totalForTenant} total order{totalForTenant === 1 ? "" : "s"} for this tenant.
+                    </p>
+                    {hasActiveFilters && (
+                      <Button variant="outline" size="sm" onClick={clearFilters} className="mt-1">
+                        Clear filters
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ) : (
@@ -253,10 +308,16 @@ export default function AdminOrders() {
 }
 
 function PaymentIcon({ status }: { status: string }) {
-  if (status === "paid") return <CheckCircle2 className="h-4 w-4 text-green-600 mx-auto" />;
-  if (status === "part_paid") return <Clock className="h-4 w-4 text-amber-500 mx-auto" />;
-  if (status === "failed") return <AlertTriangle className="h-4 w-4 text-red-500 mx-auto" />;
-  return <span className="text-muted-foreground text-[10px]">—</span>;
+  if (status === "paid")
+    return <CheckCircle2 className="h-4 w-4 text-green-600 mx-auto" aria-label="Paid" />;
+  if (status === "part_paid")
+    return <Clock className="h-4 w-4 text-amber-500 mx-auto" aria-label="Part paid" />;
+  if (status === "failed")
+    return <AlertTriangle className="h-4 w-4 text-red-500 mx-auto" aria-label="Failed" />;
+  if (status === "refunded")
+    return <span className="inline-block rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">REF</span>;
+  // unpaid / requested
+  return <span className="inline-block rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-semibold text-red-700">UNPAID</span>;
 }
 
 function ReadyIcon({ status }: { status: string }) {
