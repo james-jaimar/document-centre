@@ -308,10 +308,16 @@ export default function AdminOrders() {
 }
 
 function PaymentIcon({ status }: { status: string }) {
-  if (status === "paid") return <CheckCircle2 className="h-4 w-4 text-green-600 mx-auto" />;
-  if (status === "part_paid") return <Clock className="h-4 w-4 text-amber-500 mx-auto" />;
-  if (status === "failed") return <AlertTriangle className="h-4 w-4 text-red-500 mx-auto" />;
-  return <span className="text-muted-foreground text-[10px]">—</span>;
+  if (status === "paid")
+    return <CheckCircle2 className="h-4 w-4 text-green-600 mx-auto" aria-label="Paid" />;
+  if (status === "part_paid")
+    return <Clock className="h-4 w-4 text-amber-500 mx-auto" aria-label="Part paid" />;
+  if (status === "failed")
+    return <AlertTriangle className="h-4 w-4 text-red-500 mx-auto" aria-label="Failed" />;
+  if (status === "refunded")
+    return <span className="inline-block rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">REF</span>;
+  // unpaid / requested
+  return <span className="inline-block rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-semibold text-red-700">UNPAID</span>;
 }
 
 function ReadyIcon({ status }: { status: string }) {
