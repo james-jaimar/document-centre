@@ -616,22 +616,91 @@ Deno.serve(async (req) => {
 
     if (!action) return err("Missing 'action' field");
 
+    let response: Response;
+    let sideEffects: (() => Promise<void>) | null = null;
+
     switch (action) {
-      case "createOrderWithJobs":
-        return await createOrderWithJobs(admin, userId, payload);
-      case "updateJobStatus":
-        return await updateJobStatus(admin, userId, payload);
-      case "recordPaymentEvent":
-        return await recordPaymentEvent(admin, userId, payload);
+      case "createOrderWithJobs": {
+        response = await createOrderWithJobs(admin, userId, payload);
+        if (response.status === 201) {
+          const data = await response.clone().json();
+          if (data?.order_id) {
+            sideEffects = async () => {
+              await Promise.all([
+                triggerInvoice(authHeader, data.order_id, "proforma"),
+                triggerEmail(authHeader, data.order_id, "order_received"),
+              ]);
+            };
+          }
+        }
+        break;
+      }
+      case "updateJobStatus": {
+        response = await updateJobStatus(admin, userId, payload);
+        if (response.ok) {
+          const data = await response.clone().json();
+          const eventKey = STATUS_EVENT_MAP[data?.to_status];
+          if (eventKey && payload.job_id) {
+            sideEffects = async () => {
+              const { data: j } = await admin
+                .from("order_jobs")
+                .select("order_id")
+                .eq("id", payload.job_id)
+                .single();
+              if (j?.order_id) await triggerEmail(authHeader, j.order_id, eventKey);
+            };
+          }
+        }
+        break;
+      }
+      case "recordPaymentEvent": {
+        response = await recordPaymentEvent(admin, userId, payload);
+        if (response.ok && payload.status === "paid" && payload.order_id) {
+          sideEffects = async () => {
+            await Promise.all([
+              triggerInvoice(authHeader, payload.order_id, "invoice"),
+              triggerEmail(authHeader, payload.order_id, "payment_received"),
+            ]);
+          };
+        }
+        break;
+      }
+      case "refundPayment": {
+        response = await refundPayment(admin, userId, payload);
+        if (response.ok && payload.order_id) {
+          sideEffects = async () => {
+            await Promise.all([
+              triggerInvoice(authHeader, payload.order_id, "credit_note"),
+              triggerEmail(authHeader, payload.order_id, "refunded", { refund_amount: payload.amount }),
+            ]);
+          };
+        }
+        break;
+      }
       case "attachOrderDocument":
-        return await attachOrderDocument(admin, userId, payload);
+        response = await attachOrderDocument(admin, userId, payload);
+        break;
       case "createJobProof":
-        return await createJobProof(admin, userId, payload);
+        response = await createJobProof(admin, userId, payload);
+        break;
       case "sendMessage":
-        return await sendMessage(admin, userId, payload);
+        response = await sendMessage(admin, userId, payload);
+        break;
+      case "generateInvoice": {
+        if (!payload.order_id) {
+          response = err("order_id required");
+        } else {
+          await triggerInvoice(authHeader, payload.order_id, payload.kind || "invoice");
+          response = json({ success: true });
+        }
+        break;
+      }
       default:
         return err(`Unknown action: ${action}`, 400);
     }
+
+    if (sideEffects) sideEffects().catch((e) => console.error("sideEffects:", e));
+    return response;
   } catch (e) {
     console.error("order-engine error:", e);
     return err("Internal server error", 500);
