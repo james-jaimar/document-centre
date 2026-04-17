@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAdminOrders } from "@/hooks/useOrders";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { OrderStatusChips } from "@/components/orders/OrderStatusChips";
+import { PaymentStatusChips } from "@/components/orders/PaymentStatusChips";
 import { StatusBadge } from "@/components/orders/StatusBadge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,7 @@ import {
   PAYMENT_STATUS_CONFIG,
   URGENCY_CONFIG,
 } from "@/lib/orders/status-maps";
-import type { OrderAdminStatus, AdminOrderListFilters } from "@/lib/orders/types";
+import type { OrderAdminStatus, PaymentStatus, AdminOrderListFilters } from "@/lib/orders/types";
 import { format } from "date-fns";
 import { buildAdminPath } from "@/lib/adminRouting";
 
@@ -29,20 +30,37 @@ const ALL_ADMIN_STATUSES: OrderAdminStatus[] = [
   "ready_for_dispatch", "completed", "on_hold", "cancelled",
 ];
 
+const ALL_PAYMENT_STATUSES: PaymentStatus[] = [
+  "unpaid", "part_paid", "paid", "refunded",
+];
+
 export default function AdminOrders() {
   const navigate = useNavigate();
   const { tenantId } = useTenantContext();
   const [search, setSearch] = useState("");
   const [selectedStatuses, setSelectedStatuses] = useState<OrderAdminStatus[]>([]);
+  const [selectedPaymentStatuses, setSelectedPaymentStatuses] = useState<PaymentStatus[]>([]);
   const [page, setPage] = useState(1);
 
   const filters: AdminOrderListFilters = {
     tenant_id: tenantId || undefined,
     search: search || undefined,
     admin_status: selectedStatuses.length ? selectedStatuses : undefined,
+    payment_status: selectedPaymentStatuses.length ? selectedPaymentStatuses : undefined,
     page,
     page_size: 25,
   };
+
+  // Total count without filters (for empty state messaging)
+  const { data: totalData } = useAdminOrders({
+    tenant_id: tenantId || undefined,
+    page: 1,
+    page_size: 1,
+  });
+  const totalForTenant = totalData?.total || 0;
+
+  const hasActiveFilters =
+    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0;
 
   const { data, isLoading } = useAdminOrders(filters);
   const orders = data?.orders || [];
@@ -55,6 +73,22 @@ export default function AdminOrders() {
         ? prev.filter((s) => s !== status)
         : [...prev, status]
     );
+    setPage(1);
+  };
+
+  const handleTogglePayment = (status: PaymentStatus) => {
+    setSelectedPaymentStatuses((prev) =>
+      prev.includes(status)
+        ? prev.filter((s) => s !== status)
+        : [...prev, status]
+    );
+    setPage(1);
+  };
+
+  const clearFilters = () => {
+    setSearch("");
+    setSelectedStatuses([]);
+    setSelectedPaymentStatuses([]);
     setPage(1);
   };
 
