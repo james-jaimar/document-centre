@@ -12,12 +12,15 @@ import { OrderedByTab } from "@/components/orders/detail/OrderedByTab";
 import { JobDetailPanel } from "@/components/orders/detail/JobDetailPanel";
 import { TimelinePanel } from "@/components/orders/detail/TimelinePanel";
 import { RecordPaymentDialog } from "@/components/orders/RecordPaymentDialog";
+import { RefundDialog } from "@/components/orders/RefundDialog";
+import { OrderInvoicesList } from "@/components/orders/OrderInvoicesList";
 import { recordPaymentEvent } from "@/lib/orders/mutations";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { buildAdminPath } from "@/lib/adminRouting";
 import { PAYMENT_STATUS_CONFIG } from "@/lib/orders/status-maps";
 import { StatusBadge } from "@/components/orders/StatusBadge";
+import { Undo2 } from "lucide-react";
 
 export default function AdminOrderDetail() {
   const { id } = useParams<{ id: string }>();
@@ -26,6 +29,7 @@ export default function AdminOrderDetail() {
   const { data, isLoading, error } = useOrderDetail(id);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [refundDialogOpen, setRefundDialogOpen] = useState(false);
   const [markingPaid, setMarkingPaid] = useState(false);
   const queryClient = useQueryClient();
 
@@ -96,17 +100,24 @@ export default function AdminOrderDetail() {
             {paymentConfig && <StatusBadge {...paymentConfig} />}
           </div>
         </div>
-        {order.amount_due > 0 && (
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => setPaymentDialogOpen(true)}>
-              <Receipt className="mr-2 h-4 w-4" /> Record Payment
+        <div className="flex items-center gap-2">
+          {Number(order.amount_paid) > 0 && (
+            <Button size="sm" variant="outline" onClick={() => setRefundDialogOpen(true)}>
+              <Undo2 className="mr-2 h-4 w-4" /> Refund
             </Button>
-            <Button size="sm" onClick={handleMarkAsPaid} disabled={markingPaid}>
-              <CheckCircle2 className="mr-2 h-4 w-4" />
-              {markingPaid ? "Marking..." : "Mark as Paid"}
-            </Button>
-          </div>
-        )}
+          )}
+          {order.amount_due > 0 && (
+            <>
+              <Button size="sm" variant="outline" onClick={() => setPaymentDialogOpen(true)}>
+                <Receipt className="mr-2 h-4 w-4" /> Record Payment
+              </Button>
+              <Button size="sm" onClick={handleMarkAsPaid} disabled={markingPaid}>
+                <CheckCircle2 className="mr-2 h-4 w-4" />
+                {markingPaid ? "Marking..." : "Mark as Paid"}
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       <RecordPaymentDialog
@@ -114,6 +125,13 @@ export default function AdminOrderDetail() {
         onOpenChange={setPaymentDialogOpen}
         orderId={order.id}
         amountDue={Number(order.amount_due)}
+        currency={order.currency}
+      />
+      <RefundDialog
+        open={refundDialogOpen}
+        onOpenChange={setRefundDialogOpen}
+        orderId={order.id}
+        amountPaid={Number(order.amount_paid)}
         currency={order.currency}
       />
 
