@@ -85,3 +85,33 @@ export async function sendMessage(payload: {
     created_at: string;
   }>("sendMessage", payload);
 }
+
+export async function refundPayment(payload: {
+  order_id: string;
+  amount: number;
+  reason?: string;
+  provider?: string;
+}) {
+  return invokeOrderEngine<{ success: boolean; payment_id: string }>("refundPayment", payload);
+}
+
+export async function generateInvoice(payload: {
+  order_id: string;
+  kind?: "proforma" | "invoice" | "credit_note" | "receipt";
+}) {
+  return invokeOrderEngine<{ success: boolean }>("generateInvoice", payload);
+}
+
+export async function downloadInvoice(storage_bucket: string, storage_path: string, file_name: string) {
+  const { supabase } = await import("@/integrations/supabase/client");
+  const { data, error } = await supabase.storage.from(storage_bucket).createSignedUrl(storage_path, 60);
+  if (error || !data?.signedUrl) throw new Error(error?.message || "Failed to get download URL");
+  const a = document.createElement("a");
+  a.href = data.signedUrl;
+  a.download = file_name;
+  a.target = "_blank";
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
