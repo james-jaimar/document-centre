@@ -27,7 +27,7 @@ export function useTenantCustomers() {
     queryFn: async (): Promise<CustomerListRow[]> => {
       const { data: memberships, error: mErr } = await supabase
         .from("tenant_memberships")
-        .select("id, profile_id, is_active, profiles!inner(id, display_name, first_name, last_name, email, phone)")
+        .select("id, profile_id, is_active")
         .eq("tenant_id", tenantId!)
         .eq("app_id", appId!)
         .eq("role", "customer");
@@ -37,6 +37,13 @@ export function useTenantCustomers() {
       const rows = (memberships ?? []) as any[];
       const profileIds = rows.map((r) => r.profile_id);
       if (profileIds.length === 0) return [];
+
+      const { data: profiles, error: pErr } = await supabase
+        .from("profiles")
+        .select("id, display_name, first_name, last_name, email, phone")
+        .in("id", profileIds);
+      if (pErr) throw pErr;
+      const profileMap = new Map<string, any>((profiles ?? []).map((p: any) => [p.id, p]));
 
       const { data: orders } = await supabase
         .from("orders")
