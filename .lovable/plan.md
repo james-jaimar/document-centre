@@ -1,175 +1,85 @@
 
 
-# Plan: Make this a real ecommerce system
+# Roadmap: Take the platform from "works" to "fully fledged ecommerce"
 
-Three problems, one direction. I'll fix the immediate blockers now and lay out a clear roadmap to a "fully fledged" ecommerce platform.
+Sequenced so each layer unlocks the next. I'll need a few decisions before kicking off Phase 1.
 
 ---
 
-## Part 1 — Immediate fixes (this round)
+## Phase 1 — Payments (per tenant)
 
-### Fix A: Admin Order Manager hides unpaid orders
-**Cause:** the status filter chips default to admin statuses like `new_order`, `under_review`, `in_production` etc. INV-00011 has `admin_status='in_production'` AND `payment_status='unpaid'`, but on PostNet the user actually has 0 orders. The deeper issue is the status chip row hides unpaid items behind tabs and there's no "Unpaid / Awaiting Payment" lens.
+Everything else (emails, invoices, refunds) hangs off this.
 
-**Fix:**
-- Add a top-row "Payment" filter alongside admin-status: `All / Unpaid / Part Paid / Paid / Refunded`.
-- Show a per-row Payment badge (already have icon, add color label).
-- Change empty state to: `No orders match these filters. {N} total orders for {tenant_name}` with a "Clear filters" button.
-- Add a "Mark as Paid" quick action on the order detail page (admin) — calls order-engine `record_payment` op (already exists). Also a "Record Manual Payment" dialog for cash/EFT.
+- **Stripe Connect (Standard accounts)** so each tenant receives their own funds directly.
+- New table `tenant_payment_accounts`: `tenant_id`, `provider`, `stripe_account_id`, `charges_enabled`, `payouts_enabled`, `onboarding_url`, `livemode`.
+- New tab in **Tenant Settings → Payments**: "Connect Stripe" button → onboarding link → live status pills. Manual/EFT toggle + bank details captured for invoice footer.
+- Customer "Pay Now" → edge function `create-payment-intent` (uses tenant's connected account, `transfer_data[destination]`) → Stripe Elements drawer.
+- Edge function `stripe-webhook` (signature verified) → handles `payment_intent.succeeded` / `.payment_failed` / `charge.refunded` → calls existing `recordPaymentEvent` → DB triggers already roll up `payment_status` and `customer_status`.
+- Admin "Refund" action on order detail.
+- Manual "Mark as Paid" already wired — keep.
 
-### Fix B: Customer "My Orders" looks confusing (mixes drafts + placed)
-**Cause:** drafts and placed orders are visually identical rows. INV-00011 sits between two drafts with the same styling.
+## Phase 2 — Invoice & receipt PDFs (per-tenant branded)
 
-**Fix — split into two distinct surfaces:**
+- New edge function `generate-invoice-pdf` using `pdf-lib`, rendering from order snapshot + tenant branding (logo, legal name, VAT no., address, bank details).
+- New table `order_invoices` (`invoice_number` from `number_sequences` type=`invoice`, `pdf_path`, `kind`: invoice / credit_note / receipt).
+- Auto-generate proforma at placement, tax invoice on payment, credit note on refund.
+- "Download Invoice" on customer + admin order detail.
+
+## Phase 3 — Transactional email lifecycle
+
+- Templates per event: `order-received`, `payment-received`, `proof-ready`, `in-production`, `ready-for-collection`, `dispatched`, `completed`, `refunded`.
+- Triggered from order-engine after each `status_history` insert (single hook).
+- Each tenant's emails branded with their logo / colors / from-name.
+- Per-event toggle in Settings → Notifications (tab already exists).
+
+## Phase 4 — Customer accounts polish
+
+- **Address book** (`customer_addresses` table) with default delivery/billing flags. Profile page CRUD; checkout picker.
+- **Reorder** button on placed order → clones `order_jobs.configuration` snapshots into a fresh draft cart.
+- **Save as template** → `customer_order_templates`.
+
+## Phase 5 — Admin operations
+
+- **Bulk actions** on AdminOrders grid (status changes, mark paid, assign).
+- **Production queue** (`/admin/production`) — kanban grouped by `job_status`, drag between columns, assign to operator.
+- **Customers page** — list of tenant's customers from `tenant_memberships`, with order count, lifetime value, last order, drill-in.
+
+## Phase 6 — Trust & legal
+
+- T&Cs checkbox at checkout; record `terms_accepted_at` + `terms_version` on the order.
+- Per-tenant T&Cs body in Settings → General (rich text).
+- Branded quote PDF (variant of invoice generator).
+
+## Phase 7 — Analytics
+
+- **Tenant dashboard widgets:** revenue (MTD vs prior), orders by status (donut), AR aging buckets, top 10 customers, top products.
+- **Funnel** (later): `analytics_events` log → cohort chart for view → upload → cart → checkout → paid.
+- **Platform dashboard:** GMV across all tenants, active tenants, total orders.
+
+---
+
+## Suggested execution order
 
 ```text
-┌─ My Orders ──────────────────────────────────────────┐
-│  [Placed Orders]  [Drafts (2)]   ← top tabs           │
-├──────────────────────────────────────────────────────┤
-│  PLACED tab (default):                                │
-│    Card-style rows, prominent order #, status pill,  │
-│    total, item thumbnails, "View order" CTA          │
-│                                                       │
-│  DRAFTS tab:                                          │
-│    Lighter "in progress" cards, "Resume" CTA,        │
-│    "Delete" action, dimmed styling                   │
-└──────────────────────────────────────────────────────┘
+1  Payments (Stripe Connect + EFT)
+2  Invoice & receipt PDFs
+3  Transactional emails
+4  Address book + Reorder + Templates
+5  Bulk admin actions + Production queue + Customers page
+6  T&Cs + branded PDFs polish
+7  Analytics dashboards
 ```
 
-- Placed orders never appear in Drafts and vice versa.
-- Drafts get a subtle "Draft – not yet placed" ribbon and a different background tint.
-- Placed orders show: order #, date, total, item count, status badge, payment badge, and a thumbnail strip of the first 1–3 jobs.
-- Empty state for Placed: "No orders yet — start by uploading a file."
-
-### Fix C: Customer order detail is bare
-Right now it shows: items (name + qty + price), payment summary, messages. Missing: full print spec, finishing, paper, sections, delivery / collection details, files, proof status, downloadable invoice.
-
-**Fix — restructure CustomerOrderDetail into a richer layout:**
-
-```text
-┌─ Order INV-00011 ─── Status pill ── Payment pill ────┐
-│                                                       │
-│ ┌─ Items ────────────────────────────────────────┐    │
-│ │ [thumb] Booklets — A5 Wedding Booklets          │    │
-│ │   Qty: 10 copies                R 610.00        │    │
-│ │   ─────────────────────────────────────         │    │
-│ │   Print Specs                                   │    │
-│ │     Size: A5  •  Pages: 24  •  Colour: Full     │    │
-│ │     Paper: 170gsm Silk  •  Sides: Duplex        │    │
-│ │   Finishing                                     │    │
-│ │     Binding: Saddle stitched                    │    │
-│ │     Lamination: Matt (cover only)               │    │
-│ │   Sections (if bound):                          │    │
-│ │     • Cover — 170gsm Silk, Matt Lam             │    │
-│ │     • Body  — 100gsm Bond, B/W Duplex           │    │
-│ │   Files                                         │    │
-│ │     • wedding-booklet.pdf (24 pages)            │    │
-│ │   [View files]  [Download proof]                │    │
-│ └────────────────────────────────────────────────┘    │
-│                                                       │
-│ ┌─ Fulfilment ──────────────────────────────────┐     │
-│ │ Method: Delivery  •  Required by 25 Apr 2026  │     │
-│ │ Ship to:  Wendy Jaimar                        │     │
-│ │           12 Acacia Rd, Sandton, 2196          │     │
-│ │ Tracking: not yet dispatched                   │     │
-│ └────────────────────────────────────────────────┘    │
-│                                                       │
-│ ┌─ Payment Summary ─────────────────────────────┐     │
-│ │ Subtotal R 610  VAT R 91.50  Total R 701.50   │     │
-│ │ Amount Due: R 701.50                           │     │
-│ │ [Pay Now]   [Download invoice (PDF)]           │     │
-│ └────────────────────────────────────────────────┘    │
-│                                                       │
-│ Sidebar: Messages + Timeline (existing, unchanged)    │
-└──────────────────────────────────────────────────────┘
-```
-
-The print specs are read from `order_jobs.configuration.summary` and `configuration.sections` (already snapshotted). Files are read from `order_documents` filtered by `is_customer_visible=true`.
-
-**Pay Now** opens a payment dialog stub for now (so the UX is in place when we wire EFT/Stripe later).
+I'd ship **Phases 1+2+3 as one big release** — "Order it → Pay it → Get the invoice → Get the email" forms one continuous customer story. Phases 4–7 then go one at a time.
 
 ---
 
-## Part 2 — Roadmap to a fully fledged ecommerce system
+## Decisions I need before starting Phase 1
 
-Below is a prioritised gap analysis. Items marked **[Now]** are part of this round; **[Next]** are short follow-ups; **[Later]** are bigger pieces of work I'll plan separately when you green-light each.
+1. **Payments model** — Stripe Connect per tenant (recommended), single platform Stripe account, or manual/EFT only for now?
+2. **Email provider** — switch to Lovable's built-in queued email infra (recommended; gives retries, suppression, branded per-tenant) or keep your existing custom SMTP `send-email` function?
+3. **Invoice numbering** — separate per-tenant invoice sequence (`INV-2026-0001`, accountant-friendly) or reuse the order number?
+4. **Phase 1 scope** — ship 1+2+3 together as one big release, or just Phase 1 first and verify before continuing?
 
-### 1. Catalog & merchandising
-- [Later] Product family landing pages with imagery, copy, starting prices, FAQs.
-- [Later] Quote-to-order flow for non-standard jobs (bespoke quoting).
-- [Later] Promo codes / discount engine.
-- [Later] Reorder and "Save as template" from a placed order.
-
-### 2. Cart & checkout
-- [Now] Already wired through engine.
-- [Next] Address book on the profile (saved delivery & billing addresses).
-- [Next] VAT-inclusive vs exclusive display preference per tenant.
-- [Later] Multiple delivery addresses per order (split shipping).
-- [Later] Tax rules per region (currently flat 15% ZA).
-
-### 3. Payments
-- [Now] Manual "Mark as Paid" + "Record Manual Payment" for admin (covers EFT today).
-- [Next] Customer-side "Pay Now" button → opens dialog (Stripe/Payfast/Yoco placeholder).
-- [Later] Real PSP integration (Stripe + Payfast for ZA).
-- [Later] Invoices (PDF) and receipts emailed automatically.
-- [Later] Refunds & credit notes.
-
-### 4. Order lifecycle visibility
-- [Now] Customer order detail shows full specs, files, fulfilment, payment.
-- [Next] Public status page reachable by token (for non-account guests).
-- [Later] Email + SMS notifications on every status transition (driven by `status_history`).
-- [Later] Customer proof approval flow (job_proofs table is already there).
-
-### 5. Admin operations
-- [Now] Payment filter + Mark Paid action.
-- [Next] Bulk actions on order grid (mark printed, assign to operator, change status).
-- [Next] Production queue grouped by job_status for the workshop.
-- [Later] Per-tenant workflow templates (proof required vs not, prepaid vs account).
-- [Later] Supplier dispatch / outsourcing flows (`assigned_supplier_id` already exists).
-- [Later] Revenue dashboard, AR aging, top customers.
-
-### 6. Customer accounts
-- [Now] Hidden behind portal already.
-- [Next] Address book + saved payment methods.
-- [Later] Company / multi-user accounts with per-user PO numbers and approval workflow.
-- [Later] Account credit / pre-paid wallets.
-
-### 7. Files & documents
-- [Next] On the customer order detail, list files from `order_documents` with download links.
-- [Later] Migrate cart documents into `order_documents` at placement (fixes the orphaned-S3 issue flagged earlier).
-- [Later] Customer can re-upload corrected files for a job in `awaiting_files` state.
-
-### 8. Notifications & comms
-- [Later] Templated transactional emails: order received, payment received, in production, ready/dispatched, completed.
-- [Later] Per-tenant branding on emails (logos, colors already in `tenant_settings`).
-
-### 9. Trust, legal, branding
-- [Later] T&Cs acceptance at checkout, stored against the order.
-- [Later] Branded invoice/quote PDF generator per tenant.
-- [Later] Storefront SEO (meta tags, OG images per product family).
-
-### 10. Analytics
-- [Later] Funnel: view product → upload file → add to cart → checkout → pay.
-- [Later] Per-tenant dashboards.
-
----
-
-## Files I'll touch in this round
-
-**Admin:**
-- `src/pages/admin/AdminOrders.tsx` — add Payment filter chips, payment column, smarter empty state.
-- `src/pages/admin/AdminOrderDetail.tsx` — add "Mark as Paid" + "Record Manual Payment" dialog (calls existing engine `record_payment` op).
-- `src/components/orders/OrderStatusChips.tsx` — small reuse for payment chips, or a sibling component.
-
-**Customer:**
-- `src/pages/dashboard/CustomerOrders.tsx` — replace tabs with `[Placed Orders] [Drafts]` and apply card styling per category.
-- `src/pages/dashboard/CustomerOrderDetail.tsx` — restructure into Items (with full spec block, sections, files), Fulfilment, Payment Summary (with Pay Now + Download Invoice stubs), keep Messages sidebar.
-- `src/lib/orders/queries.ts` — extend `fetchOrderDetail` to also pull `order_documents` (already does) and ensure `configuration.summary`/`configuration.sections` come through (they already do — they're inside `order_jobs.configuration`).
-
-**No DB or edge function changes required for this round.** The engine and snapshots already carry everything we need.
-
-## Verification
-1. PostNet admin: Order Manager shows the 0 orders correctly with new empty-state copy; switch to Printworks → INV-00011 visible with Unpaid badge; Mark as Paid works and the customer view updates to "In Production".
-2. Customer My Orders: Drafts and Placed Orders are visually distinct in two tabs; placed orders no longer mix with drafts.
-3. Customer Order INV-00011: shows full spec (size, pages, paper, finishing, sections), fulfilment (delivery/collection), payment summary with Pay Now and invoice buttons, plus the existing messages sidebar.
+Reply with your picks (or "use your recommendations") and I'll kick off the implementation.
 
