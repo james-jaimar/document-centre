@@ -65,7 +65,7 @@ export function useTenantCustomers() {
 
       return rows.map((r) => {
         const s = stats.get(r.profile_id) ?? { count: 0, total: 0, last: null };
-        const p = r.profiles;
+        const p = profileMap.get(r.profile_id);
         return {
           profile_id: r.profile_id,
           membership_id: r.id,
