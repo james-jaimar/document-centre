@@ -387,7 +387,79 @@ async function recordPaymentEvent(
   return json({ success: true, payment_id: payment?.id });
 }
 
-async function attachOrderDocument(
+async function refundPayment(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any
+) {
+  const { order_id, amount, reason } = payload;
+  if (!order_id || amount == null) return err("Missing order_id or amount");
+
+  const { data: order, error: oErr } = await admin
+    .from("orders")
+    .select("id, app_id, tenant_id, order_number, amount_paid, currency")
+    .eq("id", order_id)
+    .single();
+  if (oErr || !order) return err("Order not found", 404);
+
+  const refundAmt = Number(amount);
+  if (refundAmt <= 0) return err("Refund amount must be positive");
+  if (refundAmt > Number(order.amount_paid)) return err("Refund exceeds amount paid");
+
+  const { data: payment, error: pErr } = await admin
+    .from("payments")
+    .insert({
+      order_id,
+      app_id: order.app_id,
+      tenant_id: order.tenant_id,
+      provider: payload.provider || "manual",
+      status: "refunded",
+      amount: -refundAmt,
+      currency: order.currency,
+      payment_reference: reason || "Refund",
+      paid_at: new Date().toISOString(),
+      metadata: { reason },
+    })
+    .select("id")
+    .single();
+  if (pErr) return err(`Failed to record refund: ${pErr.message}`);
+
+  const newPaid = Math.max(Number(order.amount_paid) - refundAmt, 0);
+  const fullyRefunded = newPaid <= 0;
+
+  await admin
+    .from("orders")
+    .update({
+      amount_paid: newPaid,
+      payment_status: fullyRefunded ? "refunded" : "part_paid",
+    })
+    .eq("id", order_id);
+
+  await admin.from("status_history").insert({
+    app_id: order.app_id,
+    tenant_id: order.tenant_id,
+    order_id,
+    entity_type: "payment",
+    from_status: "paid",
+    to_status: "refunded",
+    reason: reason || null,
+    changed_by: userId,
+  });
+
+  await admin.from("timeline_events").insert({
+    app_id: order.app_id,
+    tenant_id: order.tenant_id,
+    order_id,
+    event_type: "payment_refunded",
+    visibility: "both",
+    actor_type: "admin",
+    actor_profile_id: userId,
+    description: `Refund of ${refundAmt} ${order.currency} processed`,
+    metadata: { payment_id: payment?.id, amount: refundAmt, reason },
+  });
+
+  return json({ success: true, payment_id: payment?.id });
+}
   admin: ReturnType<typeof createClient>,
   userId: string,
   payload: any
