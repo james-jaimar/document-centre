@@ -58,12 +58,64 @@ export default function AdminOrderDetail() {
     setSelectedJobId(jobs[0].id);
   }
 
+  const handleMarkAsPaid = async () => {
+    if (!order || order.amount_due <= 0) return;
+    if (!window.confirm(`Mark order ${order.order_number} as fully paid (${order.currency} ${Number(order.amount_due).toFixed(2)})?`)) return;
+    setMarkingPaid(true);
+    try {
+      await recordPaymentEvent({
+        order_id: order.id,
+        provider: "manual",
+        status: "paid",
+        amount: Number(order.amount_due),
+        currency: order.currency,
+        payment_reference: "Marked paid by admin",
+      });
+      toast.success("Order marked as paid");
+      queryClient.invalidateQueries({ queryKey: ["order-detail", order.id] });
+      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to mark as paid");
+    } finally {
+      setMarkingPaid(false);
+    }
+  };
+
+  const paymentConfig = PAYMENT_STATUS_CONFIG[order.payment_status as keyof typeof PAYMENT_STATUS_CONFIG];
+
   return (
     <div className="space-y-4">
       {/* Header */}
-      <Button variant="outline" size="sm" onClick={() => navigate(buildAdminPath("/admin/orders", tenantId))}>
-        <ArrowLeft className="mr-2 h-4 w-4" /> Back to Order Manager
-      </Button>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" onClick={() => navigate(buildAdminPath("/admin/orders", tenantId))}>
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Order Manager
+          </Button>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-sm font-semibold">{order.order_number || order.id.slice(0, 8)}</span>
+            {paymentConfig && <StatusBadge {...paymentConfig} />}
+          </div>
+        </div>
+        {order.amount_due > 0 && (
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setPaymentDialogOpen(true)}>
+              <Receipt className="mr-2 h-4 w-4" /> Record Payment
+            </Button>
+            <Button size="sm" onClick={handleMarkAsPaid} disabled={markingPaid}>
+              <CheckCircle2 className="mr-2 h-4 w-4" />
+              {markingPaid ? "Marking..." : "Mark as Paid"}
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <RecordPaymentDialog
+        open={paymentDialogOpen}
+        onOpenChange={setPaymentDialogOpen}
+        orderId={order.id}
+        amountDue={Number(order.amount_due)}
+        currency={order.currency}
+      />
 
       {/* 3-column layout */}
       <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr_360px] gap-4">
