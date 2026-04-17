@@ -483,6 +483,8 @@ async function refundPayment(
 
   return json({ success: true, payment_id: payment?.id });
 }
+
+async function uploadOrderDocument(
   admin: ReturnType<typeof createClient>,
   userId: string,
   payload: any
