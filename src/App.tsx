@@ -20,7 +20,7 @@ import StorefrontLanding from "@/pages/storefront/StorefrontLanding";
 // Customer
 import CustomerDashboard from "@/pages/dashboard/CustomerDashboard";
 import CustomerOrders from "@/pages/dashboard/CustomerOrders";
-import CustomerSettings from "@/pages/dashboard/CustomerSettings";
+import CustomerAccount from "@/pages/dashboard/CustomerAccount";
 import NewOrder from "@/pages/dashboard/NewOrder";
 import OrderFiles from "@/pages/dashboard/OrderFiles";
 import OrderBuild from "@/pages/dashboard/OrderBuild";
@@ -39,6 +39,8 @@ import AdminSettings from "@/pages/admin/AdminSettings";
 import AdminOrders from "@/pages/admin/AdminOrders";
 import AdminOrderDetail from "@/pages/admin/AdminOrderDetail";
 import AdminBranchDetail from "@/pages/admin/AdminBranchDetail";
+import AdminCustomers from "@/pages/admin/AdminCustomers";
+import AdminCustomerDetail from "@/pages/admin/AdminCustomerDetail";
 
 // Branch portal
 import BranchDashboard from "@/pages/branch/BranchDashboard";
@@ -85,7 +87,8 @@ const App = () => (
               <Route path="orders/:id/confirmation" element={<OrderConfirmation />} />
               <Route path="cart" element={<Cart />} />
               <Route path="checkout" element={<Checkout />} />
-              <Route path="settings" element={<CustomerSettings />} />
+              <Route path="account" element={<CustomerAccount />} />
+              <Route path="settings" element={<CustomerAccount />} />
             </Route>
 
             {/* Legacy /dashboard redirects to slug-based URL */}
@@ -149,6 +152,16 @@ const App = () => (
               <Route path="/admin/users" element={
                 <ProtectedRoute allowedRoles={[...adminRoles]}>
                   <AdminUsers />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/customers" element={
+                <ProtectedRoute allowedRoles={[...adminRoles]}>
+                  <AdminCustomers />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/customers/:id" element={
+                <ProtectedRoute allowedRoles={[...adminRoles]}>
+                  <AdminCustomerDetail />
                 </ProtectedRoute>
               } />
 

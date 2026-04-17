@@ -229,6 +229,39 @@ export type Database = {
           },
         ]
       }
+      customer_notes: {
+        Row: {
+          app_id: string
+          body: string
+          created_at: string
+          created_by: string | null
+          customer_profile_id: string
+          id: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          app_id: string
+          body: string
+          created_at?: string
+          created_by?: string | null
+          customer_profile_id: string
+          id?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          app_id?: string
+          body?: string
+          created_at?: string
+          created_by?: string | null
+          customer_profile_id?: string
+          id?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       derived_files: {
         Row: {
           asset_id: string | null
