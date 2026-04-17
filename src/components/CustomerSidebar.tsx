@@ -22,7 +22,7 @@ const buildNavItems = (slug: string) => [
   { to: `/t/${slug}/orders/new`, icon: Plus, label: "Create", exact: false },
   { to: `/t/${slug}/orders`, icon: ClipboardList, label: "Orders", exact: false },
   { to: `/t/${slug}/cart`, icon: ShoppingCart, label: "Cart", exact: false, badge: true },
-  { to: `/t/${slug}/settings`, icon: Settings, label: "Account Settings", exact: false },
+  { to: `/t/${slug}/account`, icon: Settings, label: "My Account", exact: false },
 ];
 
 export default function CustomerSidebar() {

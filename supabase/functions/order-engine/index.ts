@@ -135,6 +135,29 @@ async function createOrderWithJobs(
 
   if (orderErr || !newOrder) return err(`Failed to create order: ${orderErr?.message}`);
 
+  // Auto-create customer membership for the order placer (idempotent)
+  try {
+    const { data: existingMembership } = await admin
+      .from("tenant_memberships")
+      .select("id")
+      .eq("profile_id", customer.profile_id)
+      .eq("tenant_id", tenant_id)
+      .eq("app_id", app_id)
+      .maybeSingle();
+
+    if (!existingMembership) {
+      await admin.from("tenant_memberships").insert({
+        profile_id: customer.profile_id,
+        tenant_id,
+        app_id,
+        role: "customer",
+        is_active: true,
+      });
+    }
+  } catch (e) {
+    console.error("Failed to ensure customer membership:", e);
+  }
+
   // Insert jobs
   const jobInserts = jobs.map((j: any, idx: number) => {
     const seqNo = idx + 1;
