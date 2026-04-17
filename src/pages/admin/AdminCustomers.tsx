@@ -4,19 +4,22 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, Users } from "lucide-react";
+import { Search, Users, UserPlus } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTenantCustomers } from "@/hooks/useTenantCustomers";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { buildAdminPath } from "@/lib/adminRouting";
+import { AddCustomerDialog } from "@/components/admin/AddCustomerDialog";
 
 const ZAR = new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR" });
 
 export default function AdminCustomers() {
   const { data, isLoading } = useTenantCustomers();
-  const { tenantId } = useTenantContext();
+  const { tenantId, appId } = useTenantContext();
   const [search, setSearch] = useState("");
+  const [addOpen, setAddOpen] = useState(false);
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -40,7 +43,20 @@ export default function AdminCustomers() {
             All customers who have placed orders or signed up to your storefront.
           </p>
         </div>
+        <Button onClick={() => setAddOpen(true)} disabled={!tenantId || !appId}>
+          <UserPlus className="h-4 w-4 mr-2" />
+          Add customer
+        </Button>
       </div>
+
+      {tenantId && appId && (
+        <AddCustomerDialog
+          open={addOpen}
+          onOpenChange={setAddOpen}
+          tenantId={tenantId}
+          appId={appId}
+        />
+      )}
 
       <Card className="p-4">
         <div className="relative max-w-md">
