@@ -191,3 +191,74 @@ export function useCustomerNotes(profileId: string | undefined) {
 
   return { ...query, addNote, deleteNote };
 }
+
+export interface CustomerProfileUpdate {
+  first_name?: string | null;
+  last_name?: string | null;
+  display_name?: string | null;
+  phone?: string | null;
+  email?: string | null;
+}
+
+export function useUpdateCustomerProfile(profileId: string | undefined) {
+  const { tenantId } = useTenantContext();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (patch: CustomerProfileUpdate) => {
+      if (!profileId) throw new Error("Missing profile id");
+      const { error } = await supabase.from("profiles").update(patch).eq("id", profileId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tenant-customer", tenantId, profileId] });
+      qc.invalidateQueries({ queryKey: ["tenant-customers", tenantId] });
+      toast.success("Customer updated");
+    },
+    onError: (e: any) => toast.error(e.message ?? "Failed to update customer"),
+  });
+}
+
+export function useToggleCustomerMembership(profileId: string | undefined) {
+  const { tenantId, appId } = useTenantContext();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (isActive: boolean) => {
+      if (!tenantId || !appId || !profileId) throw new Error("Missing context");
+      const { error } = await supabase
+        .from("tenant_memberships")
+        .update({ is_active: isActive })
+        .eq("tenant_id", tenantId)
+        .eq("app_id", appId)
+        .eq("profile_id", profileId);
+      if (error) throw error;
+    },
+    onSuccess: (_, isActive) => {
+      qc.invalidateQueries({ queryKey: ["tenant-customer", tenantId, profileId] });
+      qc.invalidateQueries({ queryKey: ["tenant-customers", tenantId] });
+      toast.success(isActive ? "Customer activated" : "Customer deactivated");
+    },
+    onError: (e: any) => toast.error(e.message ?? "Failed to update status"),
+  });
+}
+
+export function useRemoveCustomerFromTenant(profileId: string | undefined) {
+  const { tenantId, appId } = useTenantContext();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (!tenantId || !appId || !profileId) throw new Error("Missing context");
+      const { error } = await supabase
+        .from("tenant_memberships")
+        .delete()
+        .eq("tenant_id", tenantId)
+        .eq("app_id", appId)
+        .eq("profile_id", profileId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tenant-customers", tenantId] });
+      toast.success("Customer removed from tenant");
+    },
+    onError: (e: any) => toast.error(e.message ?? "Failed to remove customer"),
+  });
+}

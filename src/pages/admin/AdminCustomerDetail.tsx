@@ -1,25 +1,38 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Mail, Phone, Trash2, MessageSquare } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { ArrowLeft, Mail, Phone, Trash2, MessageSquare, Pencil, UserX, UserCheck } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
-import { useTenantCustomer, useCustomerNotes } from "@/hooks/useTenantCustomers";
+import {
+  useTenantCustomer, useCustomerNotes,
+  useToggleCustomerMembership, useRemoveCustomerFromTenant,
+} from "@/hooks/useTenantCustomers";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { buildAdminPath } from "@/lib/adminRouting";
+import { EditCustomerDialog } from "@/components/admin/EditCustomerDialog";
 
 const ZAR = new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR" });
 
 export default function AdminCustomerDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { tenantId } = useTenantContext();
   const { data, isLoading } = useTenantCustomer(id);
   const notes = useCustomerNotes(id);
+  const toggleMembership = useToggleCustomerMembership(id);
+  const removeMembership = useRemoveCustomerFromTenant(id);
   const [noteBody, setNoteBody] = useState("");
+  const [editOpen, setEditOpen] = useState(false);
+  const [removeOpen, setRemoveOpen] = useState(false);
 
   if (isLoading || !data) {
     return (
@@ -42,34 +55,96 @@ export default function AdminCustomerDetail() {
 
   return (
     <div className="space-y-6 p-6">
-      <div>
-        <Link
-          to={buildAdminPath("/admin/customers", tenantId)}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" /> All customers
-        </Link>
-        <h1 className="mt-2 text-2xl font-bold">{name}</h1>
-        <div className="mt-1 flex flex-wrap gap-3 text-sm text-muted-foreground">
-          {profile?.email && (
-            <span className="inline-flex items-center gap-1">
-              <Mail className="h-3.5 w-3.5" />
-              {profile.email}
-            </span>
-          )}
-          {profile?.phone && (
-            <span className="inline-flex items-center gap-1">
-              <Phone className="h-3.5 w-3.5" />
-              {profile.phone}
-            </span>
-          )}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <Link
+            to={buildAdminPath("/admin/customers", tenantId)}
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" /> All customers
+          </Link>
+          <h1 className="mt-2 text-2xl font-bold">{name}</h1>
+          <div className="mt-1 flex flex-wrap gap-3 text-sm text-muted-foreground">
+            {profile?.email && (
+              <span className="inline-flex items-center gap-1">
+                <Mail className="h-3.5 w-3.5" />
+                {profile.email}
+              </span>
+            )}
+            {profile?.phone && (
+              <span className="inline-flex items-center gap-1">
+                <Phone className="h-3.5 w-3.5" />
+                {profile.phone}
+              </span>
+            )}
+            {membership && (
+              <Badge variant={membership.is_active ? "default" : "secondary"}>
+                {membership.is_active ? "Active" : "Inactive"}
+              </Badge>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+            <Pencil className="h-4 w-4 mr-1" /> Edit
+          </Button>
           {membership && (
-            <Badge variant={membership.is_active ? "default" : "secondary"}>
-              {membership.is_active ? "Active" : "Inactive"}
-            </Badge>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={toggleMembership.isPending}
+              onClick={() => toggleMembership.mutate(!membership.is_active)}
+            >
+              {membership.is_active ? (
+                <><UserX className="h-4 w-4 mr-1" /> Deactivate</>
+              ) : (
+                <><UserCheck className="h-4 w-4 mr-1" /> Activate</>
+              )}
+            </Button>
           )}
+          <Button variant="destructive" size="sm" onClick={() => setRemoveOpen(true)}>
+            <Trash2 className="h-4 w-4 mr-1" /> Remove
+          </Button>
         </div>
       </div>
+
+      {profile && (
+        <EditCustomerDialog
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          profileId={profile.id}
+          initial={{
+            first_name: profile.first_name,
+            last_name: profile.last_name,
+            display_name: profile.display_name,
+            phone: profile.phone,
+            email: profile.email,
+          }}
+        />
+      )}
+
+      <AlertDialog open={removeOpen} onOpenChange={setRemoveOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove customer from tenant?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes their membership in this tenant. Their account, profile and order history are preserved. They can be re-added later.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() =>
+                removeMembership.mutate(undefined, {
+                  onSuccess: () => navigate(buildAdminPath("/admin/customers", tenantId)),
+                })
+              }
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Card className="p-4">
         <h2 className="text-sm font-semibold mb-3">Account info</h2>
