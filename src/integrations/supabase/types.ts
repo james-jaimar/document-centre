@@ -423,6 +423,70 @@ export type Database = {
           },
         ]
       }
+      email_log: {
+        Row: {
+          app_id: string | null
+          error_message: string | null
+          event_key: string
+          id: string
+          metadata: Json
+          order_id: string | null
+          recipient_email: string
+          sent_at: string
+          status: string
+          subject: string
+          tenant_id: string | null
+        }
+        Insert: {
+          app_id?: string | null
+          error_message?: string | null
+          event_key: string
+          id?: string
+          metadata?: Json
+          order_id?: string | null
+          recipient_email: string
+          sent_at?: string
+          status?: string
+          subject: string
+          tenant_id?: string | null
+        }
+        Update: {
+          app_id?: string | null
+          error_message?: string | null
+          event_key?: string
+          id?: string
+          metadata?: Json
+          order_id?: string | null
+          recipient_email?: string
+          sent_at?: string
+          status?: string
+          subject?: string
+          tenant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_log_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: false
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_log_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_log_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       job_proofs: {
         Row: {
           app_id: string
@@ -848,6 +912,79 @@ export type Database = {
           },
           {
             foreignKeyName: "order_documents_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      order_invoices: {
+        Row: {
+          amount_paid: number
+          app_id: string
+          created_at: string
+          currency: string
+          id: string
+          invoice_number: string
+          issued_at: string
+          kind: string
+          metadata: Json
+          order_id: string
+          storage_bucket: string
+          storage_path: string
+          tenant_id: string
+          total_amount: number
+        }
+        Insert: {
+          amount_paid?: number
+          app_id: string
+          created_at?: string
+          currency?: string
+          id?: string
+          invoice_number: string
+          issued_at?: string
+          kind?: string
+          metadata?: Json
+          order_id: string
+          storage_bucket?: string
+          storage_path: string
+          tenant_id: string
+          total_amount?: number
+        }
+        Update: {
+          amount_paid?: number
+          app_id?: string
+          created_at?: string
+          currency?: string
+          id?: string
+          invoice_number?: string
+          issued_at?: string
+          kind?: string
+          metadata?: Json
+          order_id?: string
+          storage_bucket?: string
+          storage_path?: string
+          tenant_id?: string
+          total_amount?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_invoices_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: false
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_invoices_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_invoices_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -1987,6 +2124,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      generate_invoice_number: {
+        Args: { p_app_id: string; p_tenant_id: string }
+        Returns: string
+      }
       generate_job_number: {
         Args: { p_order_number: string; p_sequence_no: number }
         Returns: string
@@ -1999,6 +2140,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      issue_invoice_number: {
+        Args: { p_app_id: string; p_tenant_id: string }
+        Returns: string
       }
       map_customer_job_status: {
         Args: { p_job_status: string; p_payment_status?: string }
