@@ -20,33 +20,56 @@ import { format } from "date-fns";
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 
+// Customer-facing status (engine column `customer_status`) + legacy fallback
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   draft: "outline",
+  awaiting_payment: "secondary",
+  proof_pending: "secondary",
+  in_production: "default",
+  on_hold: "destructive",
+  ready: "default",
+  dispatched: "default",
+  completed: "secondary",
+  cancelled: "destructive",
+  // legacy
   quoted: "secondary",
   confirmed: "default",
-  in_production: "default",
   quality_check: "default",
   ready_for_collection: "default",
-  dispatched: "default",
   delivered: "secondary",
-  cancelled: "destructive",
 };
 
 const STATUS_LABEL: Record<string, string> = {
   draft: "Draft",
+  awaiting_payment: "Awaiting Payment",
+  proof_pending: "Proof Pending",
+  in_production: "In Production",
+  on_hold: "On Hold",
+  ready: "Ready",
+  dispatched: "Dispatched",
+  completed: "Completed",
+  cancelled: "Cancelled",
+  // legacy
   quoted: "Quoted",
   confirmed: "Confirmed",
-  in_production: "Printing",
   quality_check: "QC",
   ready_for_collection: "Ready",
-  dispatched: "Shipped",
   delivered: "Delivered",
-  cancelled: "Cancelled",
 };
 
-const DRAFT_STATUSES = ["draft"];
-const ACTIVE_STATUSES = ["quoted", "confirmed", "in_production", "quality_check", "ready_for_collection", "dispatched"];
-const COMPLETED_STATUSES = ["delivered", "cancelled"];
+const isPlaced = (o: any) =>
+  !!o.order_number && !!o.app_id;
+
+const ACTIVE_CUSTOMER_STATUSES = new Set([
+  "awaiting_payment",
+  "proof_pending",
+  "in_production",
+  "on_hold",
+  "ready",
+  "dispatched",
+]);
+
+const COMPLETED_CUSTOMER_STATUSES = new Set(["completed", "cancelled", "delivered"]);
 
 function useUserOrders(userId: string | undefined, tenantId: string | null) {
   return useQuery({
@@ -55,7 +78,7 @@ function useUserOrders(userId: string | undefined, tenantId: string | null) {
       if (!userId) return [];
       let query = supabase
         .from("orders")
-        .select("*, order_items(id, product_family_id, build_status, title, spec, quantity, unit_price)")
+        .select("*, order_items(id, product_family_id, build_status, title, spec, quantity, unit_price), order_jobs(id, product_name, quantity, gross_price)")
         .eq("user_id", userId)
         .order("created_at", { ascending: false });
       if (tenantId) query = query.eq("tenant_id", tenantId);
@@ -68,7 +91,6 @@ function useUserOrders(userId: string | undefined, tenantId: string | null) {
 }
 
 async function deleteDraftOrder(orderId: string) {
-  // 1. Get order items and their documents
   const { data: items } = await supabase
     .from("order_items")
     .select("id")
@@ -77,7 +99,6 @@ async function deleteDraftOrder(orderId: string) {
   const itemIds = items?.map((i) => i.id) ?? [];
 
   if (itemIds.length > 0) {
-    // 2. Get documents for file cleanup
     const { data: docs } = await supabase
       .from("documents")
       .select("id, file_path")
@@ -86,31 +107,22 @@ async function deleteDraftOrder(orderId: string) {
     const docIds = docs?.map((d) => d.id) ?? [];
     const filePaths = docs?.map((d) => d.file_path).filter(Boolean) ?? [];
 
-    // 3. Delete sections
     if (docIds.length > 0) {
       await supabase.from("document_sections").delete().in("document_id", docIds);
     }
-    // Also delete sections by order_item_id (tabs/inserts may not have document_id)
     for (const itemId of itemIds) {
       await supabase.from("document_sections").delete().eq("order_item_id", itemId);
     }
-
-    // 4. Delete documents
     for (const itemId of itemIds) {
       await supabase.from("documents").delete().eq("order_item_id", itemId);
     }
-
-    // 5. Remove storage files
     if (filePaths.length > 0) {
       const { deleteFromS3 } = await import("@/lib/s3Storage");
       await deleteFromS3(filePaths);
     }
-
-    // 6. Delete order items
     await supabase.from("order_items").delete().eq("order_id", orderId);
   }
 
-  // 7. Delete the order
   const { error } = await supabase.from("orders").delete().eq("id", orderId);
   if (error) throw error;
 }
@@ -124,28 +136,36 @@ const CustomerOrders = () => {
   const { data: orders, isLoading } = useUserOrders(user?.id, tenantId);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
 
-  // Exclude cart orders and unsaved drafts (all items still in build_status 'draft')
-  const nonCartOrders = orders?.filter((o) => {
+  // Visible orders:
+  // - Hide cart rows
+  // - Hide legacy abandoned drafts (no app_id, no order_number, no real items saved)
+  const visibleOrders = (orders ?? []).filter((o: any) => {
     if (o.order_status === "cart") return false;
-    // Hide draft orders that haven't been explicitly saved yet
-    if (o.order_status === "draft") {
+    if (!isPlaced(o)) {
+      // candidate draft — only show if it has saved items (build_status !== 'draft')
       const items = o.order_items ?? [];
-      const allUnsaved = items.length === 0 || items.every((i: any) => i.build_status === "draft");
-      if (allUnsaved) return false;
+      if (!o.app_id && !o.order_number) {
+        const hasSavedItem = items.some((i: any) => i.build_status && i.build_status !== "draft");
+        if (!hasSavedItem) return false;
+      }
     }
     return true;
-  }) ?? [];
+  });
 
   const filterOrders = (tab: string) => {
     switch (tab) {
       case "drafts":
-        return nonCartOrders.filter((o) => DRAFT_STATUSES.includes(o.order_status));
+        return visibleOrders.filter((o: any) => !isPlaced(o));
       case "active":
-        return nonCartOrders.filter((o) => ACTIVE_STATUSES.includes(o.order_status));
+        return visibleOrders.filter(
+          (o: any) => isPlaced(o) && ACTIVE_CUSTOMER_STATUSES.has(o.customer_status)
+        );
       case "completed":
-        return nonCartOrders.filter((o) => COMPLETED_STATUSES.includes(o.order_status));
+        return visibleOrders.filter(
+          (o: any) => isPlaced(o) && COMPLETED_CUSTOMER_STATUSES.has(o.customer_status)
+        );
       default:
-        return nonCartOrders;
+        return visibleOrders;
     }
   };
 
@@ -187,7 +207,7 @@ const CustomerOrders = () => {
     toast.success("All drafts cleared");
   }, [orders, queryClient]);
 
-  const OrderTable = ({ items }: { items: typeof orders }) => {
+  const OrderTable = ({ items }: { items: any[] }) => {
     if (!items?.length) {
       return (
         <p className="py-8 text-center text-sm text-muted-foreground">
@@ -208,13 +228,18 @@ const CustomerOrders = () => {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {items.map((order) => {
+          {items.map((order: any) => {
+            const placed = isPlaced(order);
+            const job = order.order_jobs?.[0];
             const item = order.order_items?.[0];
-            const isDraft = order.order_status === "draft";
-            const hasItems = (order.order_items?.length ?? 0) > 0;
-            const dest = isDraft
-              ? `/t/${slug}/orders/${order.id}/files`
-              : `/t/${slug}/orders/${order.id}`;
+            const productLabel =
+              job?.product_name || item?.title || "Untitled";
+            const statusKey = placed ? order.customer_status : "draft";
+            const total = Number(order.total_amount ?? order.total_price ?? 0);
+            const orderLabel = order.order_number || order.id.slice(0, 8);
+            const dest = placed
+              ? `/t/${slug}/orders/${order.id}`
+              : `/t/${slug}/orders/${order.id}/files`;
             const isDeleting = deletingIds.has(order.id);
             return (
               <TableRow
@@ -222,26 +247,26 @@ const CustomerOrders = () => {
                 className="cursor-pointer"
                 onClick={() => !isDeleting && navigate(dest)}
               >
-                <TableCell className="font-medium text-foreground">
-                  {order.id.slice(0, 8)}
+                <TableCell className="font-medium text-foreground font-mono text-xs">
+                  {orderLabel}
                 </TableCell>
                 <TableCell className="text-muted-foreground">
-                  {item?.title || "Untitled"}
+                  {productLabel}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={STATUS_VARIANT[order.order_status] ?? "outline"}>
-                    {STATUS_LABEL[order.order_status] ?? order.order_status}
+                  <Badge variant={STATUS_VARIANT[statusKey] ?? "outline"}>
+                    {STATUS_LABEL[statusKey] ?? statusKey}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-muted-foreground">
-                  {format(new Date(order.created_at), "dd MMM yyyy")}
+                  {format(new Date(order.submitted_at || order.created_at), "dd MMM yyyy")}
                 </TableCell>
                 <TableCell className="text-right font-medium text-foreground">
-                  R {Number(order.total_price).toFixed(2)}
+                  R {total.toFixed(2)}
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-1 justify-end">
-                    {isDraft && (
+                    {!placed && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -259,7 +284,7 @@ const CustomerOrders = () => {
                       </button>
                     )}
                     <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                    {isDraft && hasItems && (
+                    {!placed && (
                       <span className="text-xs text-muted-foreground">Continue</span>
                     )}
                   </div>
@@ -297,7 +322,7 @@ const CustomerOrders = () => {
         <Tabs defaultValue="all">
           <TabsList>
             <TabsTrigger value="all">
-              All ({orders?.length ?? 0})
+              All ({visibleOrders.length})
             </TabsTrigger>
             <TabsTrigger value="drafts">
               Drafts ({filterOrders("drafts").length})
