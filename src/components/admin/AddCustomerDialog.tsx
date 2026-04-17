@@ -146,14 +146,14 @@ export function AddCustomerDialog({ open, onOpenChange, tenantId, appId }: Props
 
         <DialogFooter>
           <Button variant="outline" onClick={() => { reset(); onOpenChange(false); }}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={submitting || (!foundProfile && !notFound)}>
+          <Button onClick={handleSubmit} disabled={submitting || searching || !email.trim()}>
             {submitting
               ? "Saving…"
               : foundProfile
                 ? "Add Customer"
                 : notFound
                   ? "Send Invite"
-                  : "Add Customer"}
+                  : "Add / Invite Customer"}
           </Button>
         </DialogFooter>
       </DialogContent>
