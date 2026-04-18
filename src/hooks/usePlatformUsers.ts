@@ -26,10 +26,21 @@ export function usePlatformUsers(search: string) {
   return useQuery({
     queryKey: [...QUERY_KEY, search],
     queryFn: async () => {
-      // 1. Fetch all profiles
+      // 1. Find all profile IDs that have the platform_admin role
+      const { data: adminRoles, error: rolesErr } = await supabase
+        .from("user_roles")
+        .select("user_id")
+        .eq("role", "platform_admin");
+      if (rolesErr) throw rolesErr;
+
+      const adminIds = (adminRoles ?? []).map((r) => r.user_id);
+      if (!adminIds.length) return [];
+
+      // 2. Fetch only those profiles
       let q = supabase
         .from("profiles")
         .select("id, email, display_name, first_name, last_name, is_active, created_at")
+        .in("id", adminIds)
         .order("created_at", { ascending: false })
         .limit(500);
 
@@ -42,14 +53,14 @@ export function usePlatformUsers(search: string) {
       if (error) throw error;
       if (!profiles?.length) return [];
 
-      // 2. Memberships across all tenants
+      // 3. Memberships across all tenants (informational)
       const profileIds = profiles.map((p) => p.id);
       const { data: memberships } = await supabase
         .from("tenant_memberships")
         .select("id, profile_id, tenant_id, app_id, role, is_active")
         .in("profile_id", profileIds);
 
-      // 3. Tenant lookup
+      // 4. Tenant lookup
       const tenantIds = [...new Set((memberships ?? []).map((m) => m.tenant_id))];
       let tenants: Array<{ id: string; name: string; slug: string }> = [];
       if (tenantIds.length) {

@@ -15,5 +15,7 @@ project_id = "lcvdhtaqoumyokjqaqfw"
     verify_jwt = false
   [functions.invite-member]
     verify_jwt = false
+  [functions.invite-platform-admin]
+    verify_jwt = false
   [functions.oauth-callback]
     verify_jwt = false

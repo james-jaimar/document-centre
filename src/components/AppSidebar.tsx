@@ -25,6 +25,14 @@ import { buildAdminPath } from "@/lib/adminRouting";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
 
+const ROLE_LABELS: Record<AppRole, string> = {
+  platform_admin: "Platform Admin",
+  head_office_admin: "Tenant Admin",
+  branch_manager: "Branch Manager",
+  store_operator: "Store Operator",
+  customer: "Customer",
+};
+
 interface NavItem {
   to: string;
   icon: React.ReactNode;
@@ -89,7 +97,7 @@ const ADMIN_SECTIONS: NavSection[] = [
 
 export default function AppSidebar() {
   const location = useLocation();
-  const { roles, signOut, user } = useAuth();
+  const { roles, signOut, user, highestRole } = useAuth();
   const { tenantId, tenantName, membershipRole, isOverriding, setOverrideTenantId } = useTenantContext();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
@@ -125,7 +133,7 @@ export default function AppSidebar() {
             </div>
             <div>
               <h1 className="text-base font-bold leading-tight">
-                {isPlatformArea ? "PrintHub Platform" : tenantName || "PrintHub"}
+                {isPlatformArea ? "Document Centre" : tenantName || "Document Centre"}
               </h1>
               <p className="text-xs text-sidebar-muted">
                 {isPlatformArea ? "Platform Admin" : membershipRole || "Tenant Admin"}
@@ -219,7 +227,9 @@ export default function AppSidebar() {
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{user.email}</p>
-              <p className="truncate text-xs text-sidebar-muted">{roles[0] ?? "user"}</p>
+              <p className="truncate text-xs text-sidebar-muted">
+                {highestRole ? ROLE_LABELS[highestRole] : "User"}
+              </p>
             </div>
           </div>
         )}
