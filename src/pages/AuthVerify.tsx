@@ -41,7 +41,8 @@ export default function AuthVerify() {
         );
         return;
       }
-      navigate(next, { replace: true });
+      const sep = next.includes("?") ? "&" : "?";
+      navigate(`${next}${sep}recovery=1`, { replace: true });
     })();
   }, [params, navigate]);
 
