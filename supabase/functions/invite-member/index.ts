@@ -271,29 +271,31 @@ Deno.serve(async (req) => {
 
     // Generate password-setup link (no email sent by Supabase)
     let actionLink: string | null = null;
-    try {
-      const origin = req.headers.get("origin") || req.headers.get("referer") || "";
-      const siteUrl = origin ? new URL(origin).origin : "";
-      const redirectTo = siteUrl ? `${siteUrl}/reset-password` : undefined;
+    if (shouldSendEmail) {
+      try {
+        const origin = req.headers.get("origin") || req.headers.get("referer") || "";
+        const siteUrl = origin ? new URL(origin).origin : "";
+        const redirectTo = siteUrl ? `${siteUrl}/reset-password` : undefined;
 
-      const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
-        type: "recovery",
-        email: cleanEmail,
-        options: redirectTo ? { redirectTo } : undefined,
-      });
+        const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+          type: "recovery",
+          email: cleanEmail,
+          options: redirectTo ? { redirectTo } : undefined,
+        });
 
-      if (!linkErr && linkData?.properties?.action_link) {
-        actionLink = linkData.properties.action_link;
-      } else if (linkErr) {
-        console.error("generateLink error:", linkErr);
+        if (!linkErr && linkData?.properties?.action_link) {
+          actionLink = linkData.properties.action_link;
+        } else if (linkErr) {
+          console.error("generateLink error:", linkErr);
+        }
+      } catch (e) {
+        console.error("generateLink threw:", e);
       }
-    } catch (e) {
-      console.error("generateLink threw:", e);
     }
 
     // Send branded email via SMTP send-email function
     let emailSent = false;
-    if (actionLink) {
+    if (shouldSendEmail && actionLink) {
       try {
         const brand = await getTenantBranding(admin, tenant_id);
         const { subject, html, text } = buildInviteEmail(brand, actionLink, isNewAccount);
