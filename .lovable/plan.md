@@ -1,76 +1,58 @@
 
 
-## What's wrong now
+## Re-think the "Add Team Member" experience
 
-1. **`Users & Roles` shows customers** — the page is correct in design, but the membership system has dual-purposed `customer` role inside `tenant_memberships`. Customers belong on the dedicated `Customers` page; staff (owner/admin/sales/production/accounts/branch_manager/store_operator) belong on `Users & Roles`. The current filter doesn't exclude customers.
-2. **No branch-scoped roles** — `MEMBERSHIP_ROLES` only has `owner/admin/sales/production/accounts/customer`. There is no `branch_manager` or `store_operator` option, so a tenant admin can't create a Johannesburg branch login that's confined to that branch.
-3. **Branch portal isn't truly scoped** — `BranchSidebar` shows "Branch Portal" with no branch name; `BranchOrders` correctly filters on `branchId`, but a user with `role='admin'` who has no `branch_id` falls through. Also the branch portal route is gated by `branchRoles` from `user_roles` (the legacy `app_role` enum) rather than by `tenant_memberships.role`. That's why your `admin@printworx.co.za` (with `global_role=platform_admin`) can land there but a real branch staffer with only a tenant_membership can't.
-4. **CRUD gaps**:
-   - "Resend invite" exists in UI but `manage-user` action `resend_invite` isn't wired through (need to verify).
-   - Email update is silent on the customer detail page.
-   - No branch-scoped invite (you can pick a branch in AddMember, but no way to assign a `branch_manager` role).
-   - `customer` role mixed into the staff list.
+The current dialog is effectively a search box. That's not what a tenant admin needs. A tenant admin who's onboarding their team already knows who they're adding — name, role, branch, permissions — and shouldn't be forced through a "search → maybe a form appears" dance.
 
-## Plan
+### New dialog layout (single screen, all fields visible)
 
-### A. Split staff vs customers
+**Identity** (always visible, no search-first gate)
+- First name *
+- Last name *
+- Email * — as they type, we silently look it up in `profiles` and show a small inline note: "Existing account — will be added to your tenant" or "New account — invitation will be emailed".
+- Phone (optional)
+- Job title (optional, free text)
 
-- `useTenantMembers` → exclude `role = 'customer'` so the **Users & Roles** page only shows staff.
-- `MembersTable` and `AdminUsers` role filter → drop `customer` from `ROLE_FILTER_OPTIONS` and `MEMBERSHIP_ROLES`, add `branch_manager` and `store_operator`.
-- The `Customers` page already filters on `role='customer'` — keep as-is.
-- This naturally hides `james_b_hawkins` (PostNet customer) from the PostNet Users & Roles screen; he stays on Customers.
+**Role & access** (always visible)
+- **Role** dropdown with friendly labels and a one-line description under each:
+  - Owner — Full control, including billing
+  - Tenant Admin — Manage all tenant settings and users
+  - Sales — Quotes, customers, orders
+  - Production — Production queue, jobs
+  - Accounts — Invoices, payments
+  - Branch Manager — Manage one branch and its staff
+  - Store Operator — Day-to-day operations for one branch
+- **Branch** dropdown (required for Branch Manager / Store Operator, hidden/optional for tenant-wide roles, with explanatory helper text)
+- **Can view all orders** toggle (only meaningful for Sales/Production/Accounts; auto-hidden for Owner/Admin who already see everything, and for branch roles which are inherently scoped)
+- **Send welcome email** toggle (default on; off lets the admin add a member silently and share credentials manually)
 
-### B. Add branch-scoped staff roles
+**Submit behaviour**
+- One button: **Add Member** (label changes to "Send Invitation" when email is unknown).
+- On submit, `invite-member` edge function is called with the extra fields. It:
+  - Finds-or-creates the auth user.
+  - Upserts `profiles` with the supplied first/last/phone (the current edge function only sets `display_name = email-prefix` for new accounts — we'll fix that).
+  - Inserts the `tenant_memberships` row.
+  - Sends the branded invite email (skippable via the toggle).
+- Errors (already-a-member, invalid branch for role, etc.) shown inline, not just as a toast.
 
-- New roles supported in `tenant_memberships.role`: **`branch_manager`**, **`store_operator`** (text column already permits anything).
-- AddMember / EditMember dialogs:
-   - Role dropdown gains `branch_manager` and `store_operator`.
-   - When role is `branch_manager`/`store_operator`, **Branch is required** (UI validation, disable Save until set).
-   - Show inline help: "Branch staff only see orders for their assigned branch."
-
-### C. Fix branch portal access + identity
-
-- `App.tsx` route guard: replace the `user_roles`-based `branchRoles` check with a tenant-membership-aware guard. Add `BranchProtectedRoute` that allows access when EITHER the legacy `user_roles` role matches OR the user has an active `tenant_memberships` row with role in `('branch_manager','store_operator','admin','owner')`. Tenant context already gives us this.
-- `BranchSidebar`: show **`{tenantName} — {branchName}`** as the brand line and the membership role under the email (e.g. "Branch Manager"). Need to fetch branch name from `branchId` (already available from `TenantContext`).
-- `BranchOrders` already scopes to `branchId`. Add the same scoping to `BranchDashboard` counts and `BranchProducts` so the portal only ever shows that one store.
-- Add a redirect: when a branch-scoped user lands on `/auth` and has no other roles, push them to `/branch` (already handled by `getDefaultRoute`).
-
-### D. Tighten role labels everywhere
-
-- `AppSidebar` footer `ROLE_LABELS` — already added; extend to recognise the membership role too (so when a tenant_admin logs in we show "Tenant Admin" not the legacy `customer` fallback).
-- `MembersTable` role badge: friendly labels (`branch_manager` → "Branch Manager", etc.) and colour-code (owner/admin = primary, branch_* = sky, sales/production/accounts = outline).
-
-### E. CRUD completeness on Users & Roles
-
-- Wire missing pieces in `manage-user`:
-   - `resend_invite` — regenerate password-recovery link and re-send branded email (mirror `invite-member`'s send block).
-   - `update_email` — already supported; surface the result with toast.
-   - `remove_membership` — already supported; surface in dropdown as "Remove from tenant".
-- Confirm/disable buttons already work; just verify the new roles flow through.
-
-### F. Self-cleanup
-
-- Remove the misplaced `customer` membership your `admin@printworx.co.za` account inherited (it shows both `owner` and `customer` for PrintWorx). One-off migration: delete `tenant_memberships` rows where `role='customer'` AND the same `(profile_id, tenant_id, app_id)` already has a non-customer staff role.
+### Validation rules (client + edge function)
+- First/last name + email required, valid email format.
+- Branch required when role ∈ {branch_manager, store_operator}.
+- Branch ignored (set to null) for owner/admin.
+- Duplicate-membership returns a friendly "Already a member of this tenant" message with a link to that user's row.
 
 ### Files
 
 | File | Change |
 |---|---|
-| `src/hooks/useTenantMembers.ts` | exclude `role='customer'` in query |
-| `src/pages/admin/AdminUsers.tsx` | drop `customer` from filter, add `branch_manager`/`store_operator` |
-| `src/components/admin/MembersTable.tsx` | friendly role labels + colour mapping |
-| `src/components/admin/AddMemberDialog.tsx` | new roles + require-branch validation |
-| `src/components/admin/EditMemberDialog.tsx` | new roles + require-branch validation |
-| `src/components/BranchSidebar.tsx` | show tenant + branch name, membership role |
-| `src/pages/branch/BranchDashboard.tsx` | scope counts to `branchId` |
-| `src/pages/branch/BranchProducts.tsx` | scope to `branchId` |
-| `src/App.tsx` | new `BranchProtectedRoute` (or update `ProtectedRoute`) accepting membership-role list |
-| `src/components/ProtectedRoute.tsx` | extend to optionally accept `allowedMembershipRoles` |
-| `supabase/functions/manage-user/index.ts` | implement `resend_invite` properly |
-| **Migration** | DELETE duplicate `customer` memberships where a staff role exists for the same `(profile_id, tenant_id, app_id)` |
+| `src/components/admin/AddMemberDialog.tsx` | Full rewrite: always-visible form (name/email/phone/job title/role/branch/permissions/send-email), live email-exists detection, role descriptions, conditional fields. |
+| `supabase/functions/invite-member/index.ts` | Accept `first_name`, `last_name`, `phone`, `job_title`, `send_email` in body. Upsert profile with these values (don't clobber existing names). Honour `send_email=false`. Friendlier error messages. |
+| (no schema change) | `profiles` already has `first_name`, `last_name`, `phone`. |
 
-### Out of scope (flag if you want next)
+### Out of scope (next pass — flag if you want them now)
 
-- Branch staff impersonation by tenant admin (similar to platform-admin tenant override).
-- Per-branch product/pricing overrides UI (data model already supports it via `branch_capabilities`).
+- Bulk CSV invite.
+- Role/permission matrix shown as a chips grid instead of a dropdown.
+- Re-invite/resend from the row's action menu (already in `manage-user`, just wire UI).
+- Customising per-role default `can_view_all_orders`.
 
