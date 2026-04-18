@@ -13,7 +13,18 @@ import { toast } from "sonner";
 import { useUpdateTenantMember, type TenantMemberRow } from "@/hooks/useTenantMembers";
 import { useManageUser } from "@/hooks/useManageUser";
 
-const MEMBERSHIP_ROLES = ["owner", "admin", "sales", "production", "accounts", "customer"];
+const MEMBERSHIP_ROLES = ["owner", "admin", "sales", "production", "accounts", "branch_manager", "store_operator"];
+const ROLE_LABELS: Record<string, string> = {
+  owner: "Owner",
+  admin: "Tenant Admin",
+  sales: "Sales",
+  production: "Production",
+  accounts: "Accounts",
+  branch_manager: "Branch Manager",
+  store_operator: "Store Operator",
+  customer: "Customer",
+};
+const BRANCH_REQUIRED_ROLES = new Set(["branch_manager", "store_operator"]);
 
 interface Props {
   member: TenantMemberRow | null;
@@ -102,25 +113,35 @@ export function EditMemberDialog({ member, branches, onClose }: Props) {
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {MEMBERSHIP_ROLES.map((r) => (
-                  <SelectItem key={r} value={r}>{r}</SelectItem>
+                  <SelectItem key={r} value={r}>{ROLE_LABELS[r] ?? r}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {BRANCH_REQUIRED_ROLES.has(form.role) && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Branch staff only see orders for their assigned branch.
+              </p>
+            )}
           </div>
           <div>
-            <Label>Branch</Label>
+            <Label>
+              Branch {BRANCH_REQUIRED_ROLES.has(form.role) && <span className="text-destructive">*</span>}
+            </Label>
             <Select
               value={form.branch_id || "__all__"}
               onValueChange={(v) => setForm({ ...form, branch_id: v === "__all__" ? "" : v })}
             >
               <SelectTrigger><SelectValue placeholder="All branches" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="__all__">All branches</SelectItem>
+                {!BRANCH_REQUIRED_ROLES.has(form.role) && <SelectItem value="__all__">All branches</SelectItem>}
                 {branches?.map((b) => (
                   <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {BRANCH_REQUIRED_ROLES.has(form.role) && !form.branch_id && (
+              <p className="text-xs text-destructive mt-1">A branch must be selected for this role.</p>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <Switch
@@ -139,7 +160,14 @@ export function EditMemberDialog({ member, branches, onClose }: Props) {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} disabled={updateMember.isPending || manageUser.isPending}>
+          <Button
+            onClick={handleSave}
+            disabled={
+              updateMember.isPending ||
+              manageUser.isPending ||
+              (BRANCH_REQUIRED_ROLES.has(form.role) && !form.branch_id)
+            }
+          >
             {updateMember.isPending || manageUser.isPending ? "Saving…" : "Save"}
           </Button>
         </DialogFooter>

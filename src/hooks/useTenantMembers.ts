@@ -28,12 +28,13 @@ export function useTenantMembers(tenantId: string | null, appId: string | null) 
     queryFn: async () => {
       if (!tenantId || !appId) return [];
 
-      // Step 1: fetch memberships without profile join
+      // Step 1: fetch staff memberships (exclude customers — they live on the Customers page)
       const { data: memberships, error } = await supabase
         .from("tenant_memberships")
         .select("id, profile_id, app_id, tenant_id, branch_id, role, is_active, can_view_all_orders, created_at")
         .eq("tenant_id", tenantId)
         .eq("app_id", appId)
+        .neq("role", "customer")
         .order("created_at", { ascending: true });
 
       if (error) throw error;

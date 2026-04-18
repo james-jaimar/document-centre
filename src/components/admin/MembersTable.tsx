@@ -10,17 +10,33 @@ import { Pencil, MoreVertical, Shield, KeyRound, UserX, UserCheck, Trash2, Mail 
 import type { TenantMemberRow } from "@/hooks/useTenantMembers";
 import type { UserStat } from "@/hooks/useUserOrderStats";
 
+const ROLE_LABELS: Record<string, string> = {
+  owner: "Owner",
+  admin: "Tenant Admin",
+  sales: "Sales",
+  production: "Production",
+  accounts: "Accounts",
+  branch_manager: "Branch Manager",
+  store_operator: "Store Operator",
+  customer: "Customer",
+};
+
 const roleBadgeVariant = (role: string) => {
   switch (role) {
     case "owner":
     case "admin":
       return "default";
+    case "branch_manager":
+    case "store_operator":
+      return "secondary";
     case "customer":
       return "secondary";
     default:
       return "outline";
   }
 };
+
+const formatRole = (role: string) => ROLE_LABELS[role] ?? role;
 
 const formatCurrency = (n: number) =>
   new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", maximumFractionDigits: 0 }).format(n);
@@ -73,7 +89,7 @@ export function MembersTable({
               <TableCell>
                 <Badge variant={roleBadgeVariant(m.role) as any}>
                   <Shield size={12} className="mr-1" />
-                  {m.role}
+                  {formatRole(m.role)}
                 </Badge>
               </TableCell>
               <TableCell className="text-muted-foreground">{branchName || "All"}</TableCell>

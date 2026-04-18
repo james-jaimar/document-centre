@@ -22,7 +22,18 @@ import { AddMemberDialog } from "@/components/admin/AddMemberDialog";
 import { EditMemberDialog } from "@/components/admin/EditMemberDialog";
 import { MembersTable, displayName } from "@/components/admin/MembersTable";
 
-const ROLE_FILTER_OPTIONS = ["all", "owner", "admin", "sales", "production", "accounts", "customer"];
+const ROLE_FILTER_OPTIONS = ["all", "owner", "admin", "sales", "production", "accounts", "branch_manager", "store_operator"];
+
+const ROLE_LABELS: Record<string, string> = {
+  all: "All roles",
+  owner: "Owner",
+  admin: "Tenant Admin",
+  sales: "Sales",
+  production: "Production",
+  accounts: "Accounts",
+  branch_manager: "Branch Manager",
+  store_operator: "Store Operator",
+};
 
 const AdminUsers = () => {
   const { tenantId, appId } = useTenantContext();
@@ -124,7 +135,7 @@ const AdminUsers = () => {
           <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
           <SelectContent>
             {ROLE_FILTER_OPTIONS.map((r) => (
-              <SelectItem key={r} value={r}>{r === "all" ? "All roles" : r}</SelectItem>
+              <SelectItem key={r} value={r}>{ROLE_LABELS[r] ?? r}</SelectItem>
             ))}
           </SelectContent>
         </Select>

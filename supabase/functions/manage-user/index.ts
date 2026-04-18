@@ -125,14 +125,86 @@ Deno.serve(async (req) => {
         const siteUrl = origin ? new URL(origin).origin : "";
         const redirectTo = siteUrl ? `${siteUrl}/reset-password` : undefined;
 
-        const { error: linkErr } = await admin.auth.admin.generateLink({
+        const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
           type: "recovery",
           email: targetEmail,
           options: redirectTo ? { redirectTo } : undefined,
         });
-        if (linkErr) return err(`Failed to generate reset link: ${linkErr.message}`);
-        await audit({ delivered_via: "auth_email_hook" });
-        return json({ success: true, message: "Password reset email sent" });
+        if (linkErr) return err(`Failed to generate link: ${linkErr.message}`);
+
+        const actionLink = (linkData as any)?.properties?.action_link as string | undefined;
+
+        // For resend_invite, fetch tenant branding and send a branded email via send-email.
+        let emailSent = false;
+        if (action === "resend_invite" && actionLink && tenant_id) {
+          try {
+            const { data: tenantRow } = await admin
+              .from("tenants")
+              .select("name")
+              .eq("id", tenant_id)
+              .maybeSingle();
+            const { data: settingsRows } = await admin
+              .from("tenant_settings")
+              .select("setting_key, setting_value")
+              .eq("tenant_id", tenant_id)
+              .eq("category", "branding");
+
+            const settings: Record<string, any> = {};
+            for (const r of settingsRows ?? []) settings[r.setting_key] = r.setting_value;
+
+            const portalName = (typeof settings.portal_name === "string" && settings.portal_name)
+              || (tenantRow as any)?.name || "Your portal";
+            const primary = typeof settings.primary_color === "string" ? settings.primary_color : "#1a1a2e";
+            const logoUrl = typeof settings.logo_url === "string" ? settings.logo_url : null;
+
+            const escapeHtml = (s: string) =>
+              s.replace(/[&<>"']/g, (c) =>
+                ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!)
+              );
+
+            const subject = `Your sign-in link for ${portalName}`;
+            const heading = `Sign in to ${escapeHtml(portalName)}`;
+            const intro = `Use the button below to sign in and set a new password if needed.`;
+            const logo = logoUrl
+              ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(portalName)}" style="max-height:48px;margin-bottom:24px;" />`
+              : `<div style="font-size:20px;font-weight:600;color:${primary};margin-bottom:24px;">${escapeHtml(portalName)}</div>`;
+
+            const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7;padding:40px 16px;"><tr><td align="center">
+<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:40px;box-shadow:0 1px 3px rgba(0,0,0,0.06);"><tr><td>
+${logo}<h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 16px;">${heading}</h1>
+<p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 28px;">${intro}</p>
+<a href="${escapeHtml(actionLink)}" style="display:inline-block;background:${primary};color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:500;font-size:15px;">Open portal</a>
+<p style="font-size:13px;color:#888;margin:32px 0 0;line-height:1.5;">If the button doesn't work, copy and paste this link:<br/><a href="${escapeHtml(actionLink)}" style="color:${primary};word-break:break-all;">${escapeHtml(actionLink)}</a></p>
+</td></tr></table></td></tr></table></body></html>`;
+            const text = `${heading}\n\n${intro}\n\nOpen portal: ${actionLink}`;
+
+            const sendResp = await fetch(`${url}/functions/v1/send-email`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: authHeader,
+                apikey: anonKey,
+              },
+              body: JSON.stringify({ to: targetEmail, subject, html, text }),
+            });
+            emailSent = sendResp.ok;
+            if (!sendResp.ok) {
+              const body = await sendResp.text();
+              console.error("send-email failed:", sendResp.status, body);
+            }
+          } catch (e) {
+            console.error("resend_invite send-email threw:", e);
+          }
+        }
+
+        await audit({ delivered_via: action === "resend_invite" ? "send_email" : "auth_email_hook", email_sent: emailSent });
+        return json({
+          success: true,
+          message: action === "resend_invite"
+            ? (emailSent ? "Invite email resent" : "Sign-in link generated (email send failed)")
+            : "Password reset email sent",
+        });
       }
 
       case "disable_account": {
