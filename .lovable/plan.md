@@ -1,25 +1,50 @@
 
-The user bought document-centre.com and wants the app rebranded from "Document Centre" (which is mostly already the name based on index.html title) to consistently reflect this. Let me check what currently uses the name to scope the work.
 
-Looking at what I know:
-- index.html title is already "Document Centre"
-- Various references in code/templates likely say "Lovable Generated Project", "Document Centre", or other variants
-- Email templates use `siteName` prop — driven by what's passed in
+**Three fixes for the platform shell:**
 
-I need to search for: "Lovable Generated Project", "Document Centre", "document-centre", "Document Center" variants, hardcoded brand names in components, the meta tags, README, etc.
+### 1. Rebrand sidebar header
+`src/components/AppSidebar.tsx` line 128–131 — replace hardcoded `"PrintHub Platform"` / `"PrintHub"` fallback with `"Document Centre"`. Subtitle stays "Platform Admin" / role.
 
-Let me keep the plan tight — this is a find/replace + canonical-name decision exercise.
+### 2. Fix footer role label
+Same file, line 222 — currently shows `roles[0] ?? "user"` which picks an arbitrary role (so a platform admin who also has the legacy `customer` role displays as "customer"). Change to display the **highest role** with a friendly label:
+- `platform_admin` → "Platform Admin"
+- `head_office_admin` → "Tenant Admin"
+- `branch_manager` → "Branch Manager"
+- `store_operator` → "Store Operator"
+- `customer` → "Customer"
 
-Key decision: user wrote "Document Center" (US) in chat but bought "document-centre.com" (UK/SA). Project memory says SA English is preferred. So canonical = **"Document Centre"** with domain **document-centre.com**. Confirm with user.
+Use `highestRole` from `useAuth()` (already exposed).
 
-Scope of changes:
-1. index.html — meta description, og:description (currently "Lovable Generated Project")
-2. README.md
-3. Any hardcoded brand strings in components (sidebars, auth page, landing)
-4. Email templates default siteName / siteUrl
-5. Any reference to old project name in audit logs / seed data
-6. Tenant-default branding fallback in useTenantBranding (portal_name default is empty — fine, but the platform-level brand needs setting)
+### 3. Scope Platform Users to platform staff only + add CRUD
+This is the meat. Currently `usePlatformUsers` returns **every profile in the database** including tenant customers — that's why `james_b_hawkins` (a PostNet customer) shows up. Platform Users should be the SaaS operator team only.
 
-I should NOT touch tenant-level branding (each tenant sets their own portal_name via tenant_settings). This rebrand is for the **platform shell** — the SaaS product itself, not individual storefronts.
+**Filter logic** — update `src/hooks/usePlatformUsers.ts` to only return profiles where:
+```
+EXISTS (SELECT 1 FROM user_roles WHERE user_id = profiles.id AND role = 'platform_admin')
+```
+Tenant memberships are still shown as informational badges (so you can see if a platform admin also has tenant access), but tenant-only users are excluded entirely.
 
-Plan should be brief.
+**CRUD operations** — extend `src/pages/platform/PlatformUsers.tsx`:
+- **Invite Platform Admin button** (top right) → opens dialog asking for email + display name. Calls a new `invite-platform-admin` edge function that:
+  - Sends a magic-link/invite email via the existing `send-email` function
+  - On first sign-in, the `handle_new_user` trigger creates the profile; we then need to assign `platform_admin` via `user_roles`. Simplest: the edge function (service role) pre-creates the auth user with `email_confirm: false` and inserts a `user_roles` row with role `platform_admin` keyed to the new auth user id.
+- **Revoke admin** action in row dropdown → removes the `platform_admin` row from `user_roles` (account stays, just loses platform access). Hidden for the current user (can't self-revoke).
+- Existing **Force password reset / Disable / Enable / Delete** stay as-is (they already use `manage-user`).
+- Add a small "Platform Admin" badge column or merge into Status (e.g., Status pill stays Active/Disabled, plus a separate "Role" cell showing "Platform Admin").
+
+**Self-listing** — once the filter is in place, the current user (if a platform admin) will appear in the list. The current screenshot user isn't a platform admin in the DB (`james_b_hawkins` only has `customer`) — but `admin@printworx.co.za` (James Hawkins) IS a platform admin and will continue to appear correctly.
+
+### Files touched
+- `src/components/AppSidebar.tsx` — brand string + footer role label
+- `src/hooks/usePlatformUsers.ts` — filter to platform admins only
+- `src/pages/platform/PlatformUsers.tsx` — Invite button, dialog, revoke action, role column
+- `src/components/platform/InvitePlatformAdminDialog.tsx` — new component
+- `src/hooks/useInvitePlatformAdmin.ts` — new mutation hook
+- `supabase/functions/invite-platform-admin/index.ts` — new edge function (service-role, creates auth user + user_roles row, sends invite email)
+- `supabase/functions/manage-user/index.ts` — extend with `revoke_platform_admin` action
+- `supabase/config.toml` — register the new function
+
+### Security notes
+- New edge function gated by `supabase.auth.getUser()` + check caller has `platform_admin` role before performing any action.
+- Revoke-admin is blocked if the target is the only remaining platform admin (prevent lockout).
+
