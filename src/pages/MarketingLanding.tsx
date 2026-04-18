@@ -1,111 +1,238 @@
 import { Link } from "react-router-dom";
-import {
-  ArrowRight,
-  Check,
-  Upload,
-  Eye,
-  Sliders,
-  Printer,
-  Users,
-  Briefcase,
-  TrendingUp,
-  FileText,
-  Presentation,
-  BookOpen,
-  Files,
-  Image as ImageIcon,
-  Layers,
-  Megaphone,
-  Newspaper,
-  Layout as LayoutIcon,
-  Linkedin,
-  Youtube,
-  Mail,
-  CheckCircle2,
-  ShieldCheck,
-  Zap,
-  Heart,
-} from "lucide-react";
+import { ArrowRight, Check, Linkedin, Youtube, Mail, Star, Play } from "lucide-react";
+import heroBg from "@/assets/marketing-hero-bg.jpg";
+import sarahPhoto from "@/assets/testimonial-sarah.jpg";
+import printSamples from "@/assets/print-samples.png";
 
-/* ---------- shared bits ---------- */
-
-const Ribbons = ({ variant = "hero" }: { variant?: "hero" | "cta" }) => {
-  if (variant === "cta") {
-    return (
-      <>
-        <div className="dc-ribbon" style={{ top: -80, left: -120, width: 360, height: 360, background: "hsl(var(--dc-sky) / 0.35)" }} />
-        <div className="dc-ribbon" style={{ top: 40, right: -140, width: 320, height: 320, background: "hsl(var(--dc-orange) / 0.35)" }} />
-        <div className="dc-ribbon" style={{ bottom: -120, left: "30%", width: 400, height: 400, background: "hsl(var(--dc-green) / 0.28)" }} />
-      </>
-    );
-  }
-  return (
-    <>
-      <div className="dc-ribbon" style={{ top: -120, right: -60, width: 520, height: 520, background: "hsl(var(--dc-blue) / 0.18)" }} />
-      <div className="dc-ribbon" style={{ top: 120, right: 220, width: 280, height: 280, background: "hsl(var(--dc-green) / 0.20)" }} />
-      <div className="dc-ribbon" style={{ bottom: -100, right: 60, width: 340, height: 340, background: "hsl(var(--dc-orange) / 0.22)" }} />
-      <div className="dc-ribbon" style={{ top: 200, left: -80, width: 220, height: 220, background: "hsl(var(--dc-sky) / 0.18)" }} />
-    </>
-  );
-};
-
+/* ───────────────────────── Logo ───────────────────────── */
 const Logo = ({ className = "" }: { className?: string }) => (
-  <div className={`flex items-center gap-2.5 ${className}`}>
-    <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-      <rect x="3" y="6" width="22" height="26" rx="3" fill="hsl(var(--dc-blue))" />
-      <rect x="9" y="3" width="22" height="26" rx="3" fill="hsl(var(--dc-green))" opacity="0.85" />
-      <rect x="14" y="9" width="18" height="22" rx="2.5" fill="hsl(var(--dc-orange))" opacity="0.9" />
+  <div className={`flex items-center gap-3 ${className}`}>
+    <svg width="44" height="44" viewBox="0 0 44 44" fill="none" aria-hidden>
+      {/* page-flip / bookmark mark — green base, blue middle, orange accent */}
+      <path d="M6 6 L26 6 L26 38 L6 38 Z" fill="hsl(var(--dc-green))" />
+      <path d="M14 4 L34 4 L34 36 L14 36 Z" fill="hsl(var(--dc-blue))" />
+      <path d="M22 12 L38 12 L38 30 L22 30 Z" fill="hsl(var(--dc-orange))" />
+      <path d="M14 4 L26 6 L26 12 L22 12 Z" fill="hsl(var(--dc-navy))" opacity="0.25" />
     </svg>
-    <span className="font-bold text-[1.15rem] leading-none">
-      <span style={{ color: "hsl(var(--dc-navy))" }}>Document </span>
+    <span className="leading-[1.05] font-extrabold text-[1.35rem]">
+      <span style={{ color: "hsl(var(--dc-navy))" }}>Document</span>
+      <br />
       <span style={{ color: "hsl(var(--dc-green))" }}>Centre</span>
     </span>
   </div>
 );
 
-/* ---------- mocked product UI for hero (clean, our look, not fake) ---------- */
-const HeroAppMock = () => (
-  <div className="relative">
-    {/* laptop */}
-    <div className="relative mx-auto" style={{ maxWidth: 720 }}>
-      <div className="rounded-[20px] bg-[#1c2332] p-3 shadow-2xl">
-        <div className="rounded-xl overflow-hidden bg-white">
-          {/* top bar */}
-          <div className="flex items-center gap-1.5 px-3 py-2 bg-[#f5f8fc] border-b border-[#e6ecf3]">
-            <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
-            <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
-            <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
-            <span className="ml-3 text-[10px] text-slate-500 font-medium">document-centre.com / order</span>
+/* ───────────────────────── Diagonal Ribbon Layer ─────────────────────────
+   Big angled colored bands that sweep across the hero (and CTA) — exactly
+   like the reference image. Implemented as wide, rotated, gradient strips
+   absolutely positioned and clipped by the parent.
+*/
+const HeroRibbons = () => (
+  <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden>
+    {/* top-right blue */}
+    <div
+      className="absolute"
+      style={{
+        top: "-18%",
+        right: "-25%",
+        width: "85%",
+        height: "180px",
+        transform: "rotate(28deg)",
+        background: "linear-gradient(90deg, hsl(var(--dc-blue) / 0.85), hsl(var(--dc-sky) / 0.6))",
+        borderRadius: "999px",
+        filter: "blur(0.3px)",
+      }}
+    />
+    {/* mid green */}
+    <div
+      className="absolute"
+      style={{
+        top: "12%",
+        right: "-20%",
+        width: "75%",
+        height: "120px",
+        transform: "rotate(28deg)",
+        background: "linear-gradient(90deg, hsl(var(--dc-green) / 0.85), hsl(var(--dc-green) / 0.55))",
+        borderRadius: "999px",
+      }}
+    />
+    {/* mid orange */}
+    <div
+      className="absolute"
+      style={{
+        top: "30%",
+        right: "-15%",
+        width: "70%",
+        height: "100px",
+        transform: "rotate(28deg)",
+        background: "linear-gradient(90deg, hsl(var(--dc-orange) / 0.9), hsl(var(--dc-orange) / 0.55))",
+        borderRadius: "999px",
+      }}
+    />
+    {/* bottom orange large */}
+    <div
+      className="absolute"
+      style={{
+        bottom: "-15%",
+        left: "20%",
+        width: "75%",
+        height: "150px",
+        transform: "rotate(-22deg)",
+        background: "linear-gradient(90deg, hsl(var(--dc-orange) / 0.85), hsl(var(--dc-orange) / 0.5))",
+        borderRadius: "999px",
+      }}
+    />
+    {/* bottom green */}
+    <div
+      className="absolute"
+      style={{
+        bottom: "-5%",
+        left: "10%",
+        width: "70%",
+        height: "100px",
+        transform: "rotate(-22deg)",
+        background: "linear-gradient(90deg, hsl(var(--dc-green) / 0.85), hsl(var(--dc-green) / 0.5))",
+        borderRadius: "999px",
+      }}
+    />
+    {/* top-left small blue accent */}
+    <div
+      className="absolute"
+      style={{
+        top: "0%",
+        left: "-8%",
+        width: "30%",
+        height: "60px",
+        transform: "rotate(-22deg)",
+        background: "hsl(var(--dc-blue) / 0.5)",
+        borderRadius: "999px",
+      }}
+    />
+  </div>
+);
+
+const CtaRibbons = () => (
+  <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden>
+    {/* top-right blue */}
+    <div
+      className="absolute"
+      style={{
+        top: "-30%",
+        right: "-15%",
+        width: "55%",
+        height: "120px",
+        transform: "rotate(28deg)",
+        background: "linear-gradient(90deg, hsl(var(--dc-sky) / 0.45), hsl(var(--dc-blue) / 0.55))",
+        borderRadius: "999px",
+      }}
+    />
+    {/* bottom-left orange */}
+    <div
+      className="absolute"
+      style={{
+        bottom: "-30%",
+        left: "-10%",
+        width: "60%",
+        height: "130px",
+        transform: "rotate(28deg)",
+        background: "linear-gradient(90deg, hsl(var(--dc-orange) / 0.55), hsl(var(--dc-orange) / 0.4))",
+        borderRadius: "999px",
+      }}
+    />
+    {/* bottom-left green */}
+    <div
+      className="absolute"
+      style={{
+        bottom: "-15%",
+        left: "-8%",
+        width: "55%",
+        height: "90px",
+        transform: "rotate(28deg)",
+        background: "hsl(var(--dc-green) / 0.45)",
+        borderRadius: "999px",
+      }}
+    />
+  </div>
+);
+
+/* ───────────────────────── Hero device mock — laptop ─────────────────────────
+   Detailed product UI catalogue grid (matches reference: dark sidebar, product
+   cards with thumbnails and "Order Now" buttons).
+*/
+const LaptopMock = () => {
+  const cat = [
+    { name: "Business Cards", btn: "Order Now", c: "hsl(var(--dc-blue))" },
+    { name: "Flyers & Leaflets", btn: "Order Now", c: "hsl(var(--dc-green))" },
+    { name: "Booklets", btn: "Order Now", c: "hsl(var(--dc-blue))" },
+    { name: "Banners", btn: "Order Now", c: "hsl(var(--dc-orange))" },
+    { name: "Posters", btn: "Order Now", c: "hsl(var(--dc-blue))" },
+    { name: "Forms", btn: "Order Now", c: "hsl(var(--dc-green))" },
+    { name: "NCR Pads", btn: "Order Now", c: "hsl(var(--dc-blue))" },
+    { name: "Stickers", btn: "Order Now", c: "hsl(var(--dc-orange))" },
+  ];
+  return (
+    <div className="relative">
+      {/* laptop body */}
+      <div className="rounded-t-[14px] bg-gradient-to-b from-[#2b3445] to-[#1c2332] p-[10px] shadow-2xl">
+        <div className="rounded-[6px] overflow-hidden bg-white">
+          {/* topbar */}
+          <div className="flex items-center justify-between px-3 py-2 bg-white border-b border-[#eef2f7]">
+            <div className="flex items-center gap-1.5">
+              <span className="font-bold text-[10px]" style={{ color: "hsl(var(--dc-navy))" }}>
+                ▮ Document Centre
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[8px] px-2 py-0.5 rounded bg-[hsl(var(--dc-blue)/0.1)] font-semibold" style={{ color: "hsl(var(--dc-blue))" }}>
+                ↑ Upload Files
+              </span>
+              <span className="h-4 w-4 rounded-full bg-[hsl(var(--dc-bg-soft))]" />
+              <span className="h-4 w-4 rounded-full bg-[hsl(var(--dc-bg-soft))]" />
+            </div>
           </div>
-          <div className="flex" style={{ minHeight: 320 }}>
+          <div className="flex" style={{ minHeight: 280 }}>
             {/* sidebar */}
-            <div className="w-[140px] bg-[#0f1623] text-white p-3 space-y-1">
-              <div className="text-[9px] uppercase tracking-wider text-slate-400 mb-2">Document Centre</div>
-              {["Dashboard", "Products", "Orders", "Files", "Customers", "Reports", "Settings"].map((l, i) => (
-                <div
-                  key={l}
-                  className={`text-[11px] px-2.5 py-1.5 rounded-md ${i === 1 ? "bg-[hsl(var(--dc-blue))] text-white" : "text-slate-300"}`}
-                >
-                  {l}
-                </div>
-              ))}
-            </div>
-            {/* content */}
-            <div className="flex-1 p-4 bg-white">
-              <div className="text-[12px] font-bold text-[hsl(var(--dc-navy))] mb-3">Choose a product</div>
-              <div className="grid grid-cols-3 gap-2.5">
+            <div className="bg-[#0f2348] text-white py-3" style={{ width: 86 }}>
+              <div className="px-2.5 space-y-0.5">
                 {[
-                  { c: "hsl(var(--dc-blue))", l: "Bound Docs" },
-                  { c: "hsl(var(--dc-green))", l: "Flyers" },
-                  { c: "hsl(var(--dc-orange))", l: "Booklets" },
-                  { c: "hsl(var(--dc-sky))", l: "Posters" },
-                  { c: "hsl(var(--dc-blue))", l: "Brochures" },
-                  { c: "hsl(var(--dc-green))", l: "Stapled" },
-                ].map((p) => (
-                  <div key={p.l} className="rounded-lg border border-[#e6ecf3] p-2 bg-white">
-                    <div className="h-[42px] rounded-md mb-1.5" style={{ background: `${p.c.replace("hsl(", "hsl(")} / 0.15)`, backgroundColor: `color-mix(in srgb, ${p.c} 14%, white)` }} />
-                    <div className="text-[9.5px] font-semibold text-[hsl(var(--dc-navy))]">{p.l}</div>
-                    <div className="text-[8px] text-slate-500">From £4.50</div>
+                  { l: "Dashboard", a: false },
+                  { l: "Products", a: true },
+                  { l: "Templates", a: false },
+                  { l: "Customers", a: false },
+                  { l: "Quotes", a: false },
+                  { l: "Orders", a: false },
+                  { l: "Reports", a: false },
+                  { l: "Settings", a: false },
+                ].map((i) => (
+                  <div
+                    key={i.l}
+                    className={`text-[7.5px] px-1.5 py-1 rounded ${i.a ? "bg-white/15 font-semibold" : "text-white/70"}`}
+                  >
+                    ● {i.l}
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* product grid */}
+            <div className="flex-1 px-3 py-2.5 bg-[#fafbfd]">
+              <div className="flex items-center gap-2 mb-2 text-[8px]">
+                <span className="px-1.5 py-0.5 rounded bg-[hsl(var(--dc-blue))] text-white font-semibold">Products</span>
+                <span className="dc-muted">Templates</span>
+                <span className="dc-muted">Favourites</span>
+                <span className="dc-muted">Recent</span>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {cat.map((p) => (
+                  <div key={p.name} className="rounded-md border border-[#e6ecf3] p-1.5 bg-white">
+                    <div className="h-[34px] rounded mb-1 flex items-center justify-center" style={{ background: `color-mix(in srgb, ${p.c} 18%, white)` }}>
+                      <div className="h-4 w-5 rounded-sm bg-white shadow-sm" />
+                    </div>
+                    <div className="text-[6.5px] font-bold leading-tight mb-0.5" style={{ color: "hsl(var(--dc-navy))" }}>
+                      {p.name}
+                    </div>
+                    <div className="text-[6px] px-1 py-0.5 rounded text-white text-center font-semibold" style={{ background: p.c }}>
+                      {p.btn}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -113,462 +240,466 @@ const HeroAppMock = () => (
           </div>
         </div>
       </div>
-      <div className="mx-auto h-3 w-[55%] rounded-b-xl bg-[#1c2332]" />
+      {/* laptop base lip */}
+      <div className="mx-auto h-[10px] rounded-b-2xl bg-gradient-to-b from-[#1c2332] to-[#0f1623]" style={{ width: "108%", marginLeft: "-4%" }} />
     </div>
+  );
+};
 
-    {/* phone overlay */}
-    <div className="absolute -right-2 -bottom-6 hidden md:block">
-      <div className="rounded-[28px] bg-[#1c2332] p-2 shadow-2xl" style={{ width: 150 }}>
-        <div className="rounded-[20px] bg-white overflow-hidden">
-          <div className="bg-[#0f1623] text-white px-3 py-2.5 text-[9px] font-semibold">Document Centre</div>
-          <div className="p-2.5 space-y-1.5">
-            {[
-              { l: "Booklet · 24pp", s: "In progress", c: "hsl(var(--dc-orange))" },
-              { l: "A2 Posters x12", s: "Proofing", c: "hsl(var(--dc-blue))" },
-              { l: "Bound Manual", s: "Ready", c: "hsl(var(--dc-green))" },
-              { l: "Flyer Run", s: "New", c: "hsl(var(--dc-sky))" },
-            ].map((j) => (
-              <div key={j.l} className="rounded-md border border-[#e6ecf3] p-1.5">
-                <div className="text-[8.5px] font-semibold text-[hsl(var(--dc-navy))]">{j.l}</div>
-                <div className="flex items-center gap-1 mt-0.5">
-                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: j.c }} />
-                  <span className="text-[7.5px] text-slate-500">{j.s}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+/* phone overlay — small order-summary list */
+const PhoneMock = () => (
+  <div className="rounded-[26px] bg-[#1c2332] p-[5px] shadow-2xl" style={{ width: 142 }}>
+    <div className="rounded-[22px] bg-white overflow-hidden">
+      <div className="bg-[#0f2348] text-white px-3 py-2 flex items-center justify-between">
+        <span className="text-[8px] font-bold">▮ Document Centre</span>
+        <span className="h-1 w-1 rounded-full bg-white/60" />
       </div>
-    </div>
-  </div>
-);
-
-/* ---------- workflow dark-band mock ---------- */
-const DarkWorkflowMock = () => (
-  <div className="rounded-2xl bg-[#0d1422] p-4 shadow-2xl border border-white/10">
-    <div className="rounded-xl overflow-hidden bg-white">
-      <div className="flex items-center px-3 py-2 bg-[#f5f8fc] border-b border-[#e6ecf3] text-[10px] text-slate-500">
-        Production Workflow
-      </div>
-      <div className="flex" style={{ minHeight: 280 }}>
-        <div className="w-[120px] bg-[#0f1623] text-white p-3 space-y-1">
-          {["Dashboard", "Orders", "Production", "Files", "Customers", "Reports"].map((l, i) => (
-            <div key={l} className={`text-[10px] px-2 py-1.5 rounded ${i === 2 ? "bg-[hsl(var(--dc-blue))]" : "text-slate-400"}`}>
-              {l}
+      <div className="px-2.5 py-2 space-y-1.5">
+        <div className="text-[7.5px] font-bold" style={{ color: "hsl(var(--dc-navy))" }}>Your Orders</div>
+        {[
+          { n: "A4 Booklet · 24pp", s: "In Progress", v: "£128", c: "hsl(var(--dc-blue))" },
+          { n: "Bus. Cards x500", s: "Proofing", v: "£42", c: "hsl(var(--dc-orange))" },
+          { n: "Posters A2 x10", s: "Ready", v: "£96", c: "hsl(var(--dc-green))" },
+          { n: "Bound Manual", s: "New", v: "£148", c: "hsl(var(--dc-sky))" },
+        ].map((o) => (
+          <div key={o.n} className="rounded-md border border-[#eef2f7] p-1.5">
+            <div className="text-[7px] font-bold" style={{ color: "hsl(var(--dc-navy))" }}>{o.n}</div>
+            <div className="flex items-center justify-between mt-0.5">
+              <span className="flex items-center gap-1">
+                <span className="h-1 w-1 rounded-full" style={{ background: o.c }} />
+                <span className="text-[6.5px] dc-muted font-medium">{o.s}</span>
+              </span>
+              <span className="text-[7px] font-bold" style={{ color: "hsl(var(--dc-navy))" }}>{o.v}</span>
             </div>
-          ))}
-        </div>
-        <div className="flex-1 p-3">
-          <div className="text-[11px] font-bold text-[hsl(var(--dc-navy))] mb-2">Jobs</div>
-          <div className="grid grid-cols-4 gap-2">
-            {[
-              { t: "New", n: 8, c: "hsl(var(--dc-sky))" },
-              { t: "In Progress", n: 12, c: "hsl(var(--dc-blue))" },
-              { t: "Proofing", n: 5, c: "hsl(var(--dc-orange))" },
-              { t: "Ready", n: 7, c: "hsl(var(--dc-green))" },
-            ].map((col) => (
-              <div key={col.t} className="space-y-1.5">
-                <div className="flex items-center justify-between text-[9px] font-semibold text-slate-600">
-                  <span>{col.t}</span>
-                  <span className="px-1 rounded text-white" style={{ background: col.c }}>{col.n}</span>
-                </div>
-                {[0, 1].map((i) => (
-                  <div key={i} className="rounded-md border border-[#e6ecf3] p-1.5 bg-white">
-                    <div className="text-[8.5px] font-semibold text-[hsl(var(--dc-navy))]">Job #{1200 + i + col.n}</div>
-                    <div className="text-[7.5px] text-slate-500">A4 · 100pp</div>
-                    <div className="text-[8px] font-bold mt-0.5" style={{ color: col.c }}>£{(43 + i * 5).toFixed(2)}</div>
-                  </div>
-                ))}
-              </div>
-            ))}
           </div>
+        ))}
+        <div className="text-[6.5px] text-center px-1 py-1 rounded-full text-white font-semibold mt-1.5" style={{ background: "hsl(var(--dc-blue))" }}>
+          Start New Order
         </div>
       </div>
     </div>
   </div>
 );
 
-/* ---------- preview spread mock ---------- */
-const PreviewSpreadMock = () => (
-  <div className="relative rounded-3xl bg-gradient-to-br from-[hsl(var(--dc-bg-soft))] to-white p-8 border border-[hsl(var(--dc-border))] shadow-xl">
-    <div className="flex justify-center items-center gap-1.5">
-      {/* book spread */}
-      <div className="bg-white rounded-l-md shadow-2xl border-r border-slate-200" style={{ width: 220, height: 290, padding: 18 }}>
-        <div className="h-3 w-2/3 bg-[hsl(var(--dc-navy))] rounded mb-2" />
-        <div className="h-1.5 w-1/2 bg-slate-300 rounded mb-4" />
-        <div className="space-y-1">
-          {Array.from({ length: 11 }).map((_, i) => (
-            <div key={i} className="h-1 bg-slate-200 rounded" style={{ width: `${80 + (i % 3) * 6}%` }} />
-          ))}
-        </div>
-        <div className="mt-3 h-16 rounded bg-gradient-to-br from-[hsl(var(--dc-sky))/0.3] to-[hsl(var(--dc-blue))/0.2]" />
-        <div className="space-y-1 mt-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-1 bg-slate-200 rounded" style={{ width: `${75 + (i % 2) * 10}%` }} />
-          ))}
-        </div>
-      </div>
-      <div className="bg-white rounded-r-md shadow-2xl" style={{ width: 220, height: 290, padding: 18 }}>
-        <div className="space-y-1 mb-3">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="h-1 bg-slate-200 rounded" style={{ width: `${70 + (i % 4) * 7}%` }} />
-          ))}
-        </div>
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          <div className="h-20 rounded bg-gradient-to-br from-[hsl(var(--dc-orange))/0.3] to-[hsl(var(--dc-orange))/0.1]" />
-          <div className="h-20 rounded bg-gradient-to-br from-[hsl(var(--dc-green))/0.3] to-[hsl(var(--dc-green))/0.1]" />
-        </div>
-        <div className="space-y-1">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-1 bg-slate-200 rounded" style={{ width: `${65 + (i % 3) * 9}%` }} />
-          ))}
-        </div>
-      </div>
-    </div>
-    <div className="flex justify-center items-center gap-3 mt-5">
-      <button className="px-3 py-1.5 rounded-full bg-white border border-[hsl(var(--dc-border))] text-xs font-medium text-[hsl(var(--dc-navy))]">‹ Prev</button>
-      <span className="text-xs dc-muted font-medium">Spread 4 / 12</span>
-      <button className="px-3 py-1.5 rounded-full bg-[hsl(var(--dc-blue))] text-white text-xs font-medium">Next ›</button>
-    </div>
+/* ───────────────────────── Feature outline icons ─────────────────────────
+   Multi-stroke colorful line icons matching the reference's style (cloud arrow,
+   magnifier, colored grid, receipt, gear, bar chart with arrow).
+*/
+const IconUpload = () => (
+  <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+    <path d="M16 40 C8 40 8 28 18 28 C18 18 32 16 36 26 C44 24 50 30 48 38 C54 38 56 46 50 48 L18 48 C12 48 10 44 12 40 Z"
+      stroke="hsl(var(--dc-blue))" strokeWidth="2.5" strokeLinejoin="round" fill="none"/>
+    <path d="M32 44 L32 32 M26 38 L32 32 L38 38" stroke="hsl(var(--dc-green))" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+const IconPreview = () => (
+  <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+    <circle cx="28" cy="28" r="14" stroke="hsl(var(--dc-blue))" strokeWidth="2.5" fill="none"/>
+    <path d="M39 39 L50 50" stroke="hsl(var(--dc-green))" strokeWidth="3" strokeLinecap="round"/>
+    <circle cx="28" cy="28" r="6" stroke="hsl(var(--dc-orange))" strokeWidth="2" fill="none"/>
+  </svg>
+);
+const IconCatalogue = () => (
+  <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+    <rect x="12" y="12" width="16" height="16" rx="2.5" stroke="hsl(var(--dc-blue))" strokeWidth="2.5" fill="none"/>
+    <rect x="36" y="12" width="16" height="16" rx="2.5" stroke="hsl(var(--dc-green))" strokeWidth="2.5" fill="none"/>
+    <rect x="12" y="36" width="16" height="16" rx="2.5" stroke="hsl(var(--dc-orange))" strokeWidth="2.5" fill="none"/>
+    <rect x="36" y="36" width="16" height="16" rx="2.5" stroke="hsl(var(--dc-sky))" strokeWidth="2.5" fill="none"/>
+    <path d="M40 18 L43 21 L48 16" stroke="hsl(var(--dc-green))" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+const IconQuotes = () => (
+  <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+    <path d="M18 8 L42 8 L48 14 L48 56 L18 56 Z" stroke="hsl(var(--dc-blue))" strokeWidth="2.5" strokeLinejoin="round" fill="none"/>
+    <path d="M42 8 L42 14 L48 14" stroke="hsl(var(--dc-blue))" strokeWidth="2.5" strokeLinejoin="round" fill="none"/>
+    <text x="33" y="42" textAnchor="middle" fontSize="16" fontWeight="800" fill="hsl(var(--dc-orange))">£</text>
+    <line x1="24" y1="22" x2="38" y2="22" stroke="hsl(var(--dc-green))" strokeWidth="2" strokeLinecap="round"/>
+    <line x1="24" y1="28" x2="34" y2="28" stroke="hsl(var(--dc-green))" strokeWidth="2" strokeLinecap="round"/>
+  </svg>
+);
+const IconWorkflow = () => (
+  <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+    <circle cx="32" cy="32" r="10" stroke="hsl(var(--dc-blue))" strokeWidth="2.5" fill="none"/>
+    <circle cx="32" cy="32" r="3" fill="hsl(var(--dc-orange))"/>
+    {[0, 60, 120, 180, 240, 300].map((d) => {
+      const r = (d * Math.PI) / 180;
+      const x1 = 32 + Math.cos(r) * 14, y1 = 32 + Math.sin(r) * 14;
+      const x2 = 32 + Math.cos(r) * 22, y2 = 32 + Math.sin(r) * 22;
+      return <line key={d} x1={x1} y1={y1} x2={x2} y2={y2} stroke="hsl(var(--dc-green))" strokeWidth="3" strokeLinecap="round"/>;
+    })}
+  </svg>
+);
+const IconReports = () => (
+  <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+    <line x1="10" y1="52" x2="54" y2="52" stroke="hsl(var(--dc-navy))" strokeWidth="2.5" strokeLinecap="round"/>
+    <line x1="10" y1="52" x2="10" y2="14" stroke="hsl(var(--dc-navy))" strokeWidth="2.5" strokeLinecap="round"/>
+    <rect x="16" y="36" width="6" height="14" fill="hsl(var(--dc-blue))" rx="1"/>
+    <rect x="26" y="28" width="6" height="22" fill="hsl(var(--dc-green))" rx="1"/>
+    <rect x="36" y="22" width="6" height="28" fill="hsl(var(--dc-orange))" rx="1"/>
+    <path d="M14 30 L22 24 L32 18 L42 12" stroke="hsl(var(--dc-sky))" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M44 14 L48 10 L50 16" stroke="hsl(var(--dc-sky))" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+  </svg>
+);
+
+/* timeline icons (filled circles with white pictogram) */
+const TimelineIcon = ({ color, kind }: { color: string; kind: "bolt" | "check" | "growth" | "heart" }) => (
+  <div className="h-14 w-14 rounded-full flex items-center justify-center shadow-md shrink-0" style={{ background: color }}>
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      {kind === "bolt" && <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" fill="white" />}
+      {kind === "check" && <polyline points="5 12 10 17 19 7" />}
+      {kind === "growth" && <><polyline points="3 17 9 11 13 15 21 7" /><polyline points="14 7 21 7 21 14" /></>}
+      {kind === "heart" && <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" fill="white"/>}
+    </svg>
   </div>
 );
 
-/* ---------- main ---------- */
+/* CTA trust icons (line-style with brand colors) */
+const TrustIcon = ({ kind }: { kind: "trial" | "feature" | "fees" | "cancel" }) => (
+  <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+    {kind === "trial" && (
+      <>
+        <circle cx="18" cy="18" r="12" stroke="hsl(var(--dc-orange))" strokeWidth="2" fill="none"/>
+        <path d="M18 11 L18 18 L23 21" stroke="hsl(var(--dc-sky))" strokeWidth="2" strokeLinecap="round"/>
+      </>
+    )}
+    {kind === "feature" && (
+      <>
+        <rect x="7" y="7" width="22" height="22" rx="3" stroke="hsl(var(--dc-sky))" strokeWidth="2" fill="none"/>
+        <path d="M12 18 L16 22 L24 13" stroke="hsl(var(--dc-orange))" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+      </>
+    )}
+    {kind === "fees" && (
+      <>
+        <path d="M18 4 L30 11 L30 22 C30 27 24 31 18 32 C12 31 6 27 6 22 L6 11 Z" stroke="hsl(var(--dc-sky))" strokeWidth="2" fill="none"/>
+        <path d="M13 18 L17 22 L24 14" stroke="hsl(var(--dc-orange))" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+      </>
+    )}
+    {kind === "cancel" && (
+      <>
+        <rect x="6" y="8" width="24" height="22" rx="3" stroke="hsl(var(--dc-sky))" strokeWidth="2" fill="none"/>
+        <line x1="6" y1="14" x2="30" y2="14" stroke="hsl(var(--dc-sky))" strokeWidth="2"/>
+        <path d="M14 21 L22 21 M18 17 L18 25" stroke="hsl(var(--dc-orange))" strokeWidth="2.5" strokeLinecap="round" transform="rotate(45 18 21)"/>
+      </>
+    )}
+  </svg>
+);
+
+/* ───────────────────────── Main ───────────────────────── */
 export default function MarketingLanding() {
-  const products = [
-    { t: "Bound Documents", d: "Reports, manuals & everyday bound jobs", icon: BookOpen, c: "hsl(var(--dc-blue))" },
-    { t: "Presentations", d: "Business decks & meeting packs", icon: Presentation, c: "hsl(var(--dc-orange))" },
-    { t: "Ring Binders", d: "Professional binder-ready packs", icon: Files, c: "hsl(var(--dc-green))" },
-    { t: "Stapled Documents", d: "Fast multi-page document printing", icon: FileText, c: "hsl(var(--dc-sky))" },
-    { t: "Posters", d: "Short-run posters & display prints", icon: ImageIcon, c: "hsl(var(--dc-orange))" },
-    { t: "Booklets", d: "Saddle-stitched & booklet-style jobs", icon: Newspaper, c: "hsl(var(--dc-blue))" },
-    { t: "Flyers", d: "Simple marketing & promo print", icon: Megaphone, c: "hsl(var(--dc-green))" },
-    { t: "Brochures", d: "Folded leaflets for everyday sales", icon: Layers, c: "hsl(var(--dc-sky))" },
-  ];
-
-  const benefits = [
-    { icon: Users, t: "Easy for customers", d: "Simple ordering flow, clear upload steps and visual previews." },
-    { icon: Briefcase, t: "Easy for staff", d: "Less back-and-forth, fewer unclear jobs and cleaner setup." },
-    { icon: Printer, t: "Made for everyday print work", d: "Bound docs, posters, flyers, brochures and counter-service jobs." },
-    { icon: TrendingUp, t: "Ready to grow with you", d: "Add more products, options and workflows as you expand." },
-  ];
-
-  const audiences = [
-    "Copy Shops",
-    "Business Copy Centres",
-    "Franchise Print Stores",
-    "Campus Print Rooms",
-    "Local Commercial Printers",
-    "Poster & Document Specialists",
-  ];
-
   return (
     <div className="dc-marketing">
       {/* ───────── Header ───────── */}
-      <header className="sticky top-0 z-50 bg-white/85 backdrop-blur-md border-b border-[hsl(var(--dc-border))]">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-[hsl(var(--dc-border))]">
+        <div className="max-w-[1240px] mx-auto px-6 h-[78px] flex items-center justify-between">
           <Logo />
-          <nav className="hidden lg:flex items-center gap-8 text-sm font-medium dc-muted">
-            <a href="#products" className="hover:text-[hsl(var(--dc-navy))]">Features</a>
-            <a href="#how-it-works" className="hover:text-[hsl(var(--dc-navy))]">How It Works</a>
-            <a href="#solutions" className="hover:text-[hsl(var(--dc-navy))]">Solutions</a>
-            <a href="#pricing" className="hover:text-[hsl(var(--dc-navy))]">Pricing</a>
-            <a href="#resources" className="hover:text-[hsl(var(--dc-navy))]">Resources</a>
+          <nav className="hidden lg:flex items-center gap-9 text-[15px] font-medium" style={{ color: "hsl(var(--dc-navy))" }}>
+            <a href="#features" className="hover:text-[hsl(var(--dc-blue))]">Features</a>
+            <a href="#how-it-works" className="hover:text-[hsl(var(--dc-blue))]">How It Works</a>
+            <a href="#pricing" className="hover:text-[hsl(var(--dc-blue))]">Pricing</a>
+            <a href="#resources" className="hover:text-[hsl(var(--dc-blue))]">Resources ▾</a>
           </nav>
           <div className="flex items-center gap-3">
-            <Link to="/auth" className="hidden md:inline text-sm font-medium dc-muted hover:text-[hsl(var(--dc-navy))]">Login</Link>
-            <a href="#cta" className="dc-btn dc-btn-outline hidden sm:inline-flex" style={{ padding: "0.55rem 1.1rem" }}>Book a demo</a>
-            <a href="#cta" className="dc-btn dc-btn-primary" style={{ padding: "0.6rem 1.2rem" }}>Start Free Trial</a>
+            <Link
+              to="/auth"
+              className="hidden sm:inline-flex items-center justify-center rounded-full border-[1.5px] border-[hsl(var(--dc-border))] px-5 py-2 text-sm font-semibold hover:border-[hsl(var(--dc-blue))]"
+              style={{ color: "hsl(var(--dc-navy))" }}
+            >
+              Login
+            </Link>
+            <a href="#cta" className="dc-btn dc-btn-primary" style={{ padding: "0.6rem 1.4rem" }}>
+              Get Started
+            </a>
           </div>
         </div>
       </header>
 
       {/* ───────── Hero ───────── */}
-      <section className="relative overflow-hidden">
-        <Ribbons />
-        <div className="relative max-w-7xl mx-auto px-6 pt-16 pb-24 grid lg:grid-cols-[1.05fr_1fr] gap-12 items-center">
-          <div>
-            <span className="dc-eyebrow">Web-to-Print Software for Copy Shops &amp; Print Centres</span>
-            <h1 className="mt-5 font-extrabold tracking-tight" style={{ fontSize: "clamp(2.5rem, 5vw, 4.25rem)", lineHeight: 1.05 }}>
-              <span style={{ color: "hsl(var(--dc-navy))" }}>Web-to-Print</span>
+      <section
+        className="relative overflow-hidden"
+        style={{
+          background: `linear-gradient(180deg, hsl(var(--dc-bg-soft)) 0%, #ffffff 100%)`,
+        }}
+      >
+        {/* photo background — right half, blurred print shop */}
+        <div
+          className="absolute inset-y-0 right-0 hidden md:block"
+          style={{
+            width: "62%",
+            backgroundImage: `linear-gradient(90deg, rgba(245,248,252,0.95) 0%, rgba(245,248,252,0.55) 25%, rgba(245,248,252,0.15) 60%), url(${heroBg})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            filter: "saturate(0.9)",
+          }}
+          aria-hidden
+        />
+        <HeroRibbons />
+
+        <div className="relative max-w-[1240px] mx-auto px-6 pt-16 pb-28 grid lg:grid-cols-[1fr_1.1fr] gap-10 items-center">
+          {/* left: copy */}
+          <div className="relative z-10">
+            <h1
+              className="font-extrabold tracking-tight"
+              style={{
+                fontSize: "clamp(2.8rem, 5.6vw, 4.6rem)",
+                lineHeight: 1.02,
+                color: "hsl(var(--dc-navy))",
+              }}
+            >
+              Web-to-Print
               <br />
               <span style={{ color: "hsl(var(--dc-green))" }}>Made </span>
               <span style={{ color: "hsl(var(--dc-orange))" }}>Easy</span>
             </h1>
-            <p className="mt-6 text-lg dc-muted max-w-xl">
-              Document Centre helps copy shops, business print rooms and local print centres take orders online,
-              collect files, show live previews and get jobs into production faster.
+            <p className="mt-5 text-[1.05rem] dc-muted max-w-md leading-relaxed">
+              Power your print business with a fast, flexible, and beautiful ordering system your customers will love.
             </p>
-            <ul className="mt-7 grid sm:grid-cols-2 gap-y-2.5 gap-x-6 text-[15px]" style={{ color: "hsl(var(--dc-navy))" }}>
+            <ul className="mt-7 grid sm:grid-cols-2 gap-y-2.5 gap-x-8 text-[14.5px]" style={{ color: "hsl(var(--dc-navy))" }}>
               {[
                 "Online ordering & file upload",
-                "Live document preview & proofing",
-                "Binding, finishing & print options",
-                "Built for copy shops & small print centres",
+                "Artwork templates & variable data",
+                "Instant previews & proofing",
+                "Integrated production workflow",
+                "Quotes, pricing & approvals",
+                "Built for copy shops & small printers",
               ].map((b) => (
                 <li key={b} className="flex items-start gap-2">
-                  <span className="mt-0.5 h-5 w-5 rounded-full flex items-center justify-center" style={{ background: "hsl(var(--dc-green) / 0.15)" }}>
-                    <Check className="h-3 w-3" style={{ color: "hsl(var(--dc-green))" }} strokeWidth={3} />
+                  <span
+                    className="mt-0.5 h-5 w-5 rounded-full flex items-center justify-center shrink-0"
+                    style={{ background: "hsl(var(--dc-green))" }}
+                  >
+                    <Check className="h-3 w-3 text-white" strokeWidth={3.5} />
                   </span>
                   <span className="font-medium">{b}</span>
                 </li>
               ))}
             </ul>
             <div className="mt-8 flex flex-wrap gap-3">
-              <a href="#cta" className="dc-btn dc-btn-primary text-base" style={{ padding: "1rem 1.8rem" }}>
+              <a href="#cta" className="dc-btn dc-btn-primary" style={{ padding: "0.95rem 1.7rem", fontSize: "0.98rem" }}>
                 Start Your Free Trial <ArrowRight className="h-4 w-4" />
               </a>
-              <a href="#cta" className="dc-btn dc-btn-outline text-base" style={{ padding: "1rem 1.8rem" }}>
-                Book a Demo
+              <a href="#cta" className="dc-btn dc-btn-outline" style={{ padding: "0.95rem 1.7rem", fontSize: "0.98rem" }}>
+                <Play className="h-4 w-4" style={{ color: "hsl(var(--dc-blue))" }} fill="hsl(var(--dc-blue))" />
+                See It in Action
               </a>
             </div>
-            <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm dc-muted">
-              {["No credit card required", "Set up in minutes", "Great for everyday print products"].map((t) => (
+            <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 text-[13px] dc-muted">
+              {["No credit card required", "Set up in minutes", "UK-based & GBP"].map((t) => (
                 <span key={t} className="flex items-center gap-1.5">
                   <Check className="h-4 w-4" style={{ color: "hsl(var(--dc-green))" }} strokeWidth={3} /> {t}
                 </span>
               ))}
             </div>
           </div>
+
+          {/* right: device composite */}
           <div className="relative">
-            <HeroAppMock />
-          </div>
-        </div>
-      </section>
-
-      {/* ───────── Products ───────── */}
-      <section id="products" className="py-24" style={{ background: "hsl(var(--dc-bg-soft))" }}>
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center max-w-2xl mx-auto mb-14">
-            <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight">
-              Everything you need to sell <span style={{ color: "hsl(var(--dc-blue))" }}>everyday print</span> online
-            </h2>
-            <p className="mt-4 text-lg dc-muted">
-              Launch the products your customers already ask for — from bound documents and presentations to posters,
-              brochures and booklets.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
-            {products.map(({ t, d, icon: Icon, c }) => (
-              <div key={t} className="dc-card p-6">
-                <div
-                  className="h-14 w-14 rounded-2xl flex items-center justify-center mb-4"
-                  style={{ background: `color-mix(in srgb, ${c} 12%, white)` }}
-                >
-                  <Icon className="h-7 w-7" style={{ color: c }} strokeWidth={2} />
-                </div>
-                <h3 className="font-bold text-[1.05rem] mb-1">{t}</h3>
-                <p className="text-sm dc-muted leading-snug">{d}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ───────── How it works ───────── */}
-      <section id="how-it-works" className="py-24 bg-white">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center max-w-2xl mx-auto mb-16">
-            <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight">
-              From upload to order in <span style={{ color: "hsl(var(--dc-orange))" }}>three simple steps</span>
-            </h2>
-          </div>
-          <div className="grid md:grid-cols-3 gap-8">
-            {[
-              { n: "01", icon: LayoutIcon, t: "Choose a product", d: "Start with a product customers understand straight away — booklets, posters, bound documents, flyers and more.", c: "hsl(var(--dc-blue))" },
-              { n: "02", icon: Upload, t: "Upload & organise files", d: "Drag in PDFs and images, then assign sections like front cover, body pages and back cover.", c: "hsl(var(--dc-green))" },
-              { n: "03", icon: Sliders, t: "Configure & preview", d: "Set size, binding, paper stock and finishing, then review the live preview before adding to basket.", c: "hsl(var(--dc-orange))" },
-            ].map(({ n, icon: Icon, t, d, c }) => (
-              <div key={n} className="dc-card p-8 relative">
-                <span className="absolute top-5 right-6 text-5xl font-black opacity-10" style={{ color: c }}>{n}</span>
-                <div className="h-14 w-14 rounded-2xl flex items-center justify-center mb-5" style={{ background: `color-mix(in srgb, ${c} 14%, white)` }}>
-                  <Icon className="h-7 w-7" style={{ color: c }} />
-                </div>
-                <h3 className="font-bold text-xl mb-2">{t}</h3>
-                <p className="dc-muted">{d}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ───────── Dark workflow band ───────── */}
-      <section className="relative overflow-hidden py-24" style={{ background: "linear-gradient(135deg, hsl(var(--dc-navy)) 0%, #061a44 100%)" }}>
-        <div className="dc-ribbon" style={{ top: -100, left: -100, width: 360, height: 360, background: "hsl(var(--dc-sky) / 0.18)" }} />
-        <div className="dc-ribbon" style={{ bottom: -120, right: -80, width: 380, height: 380, background: "hsl(var(--dc-orange) / 0.18)" }} />
-        <div className="relative max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-14 items-center">
-          <div className="text-white">
-            <span className="dc-eyebrow" style={{ background: "rgba(255,255,255,0.12)", color: "hsl(var(--dc-sky))" }}>One workflow</span>
-            <h2 className="mt-5 text-4xl md:text-5xl font-extrabold tracking-tight text-white">
-              From upload to print-ready, all in one workflow
-            </h2>
-            <p className="mt-5 text-lg text-white/75 max-w-xl">
-              Document Centre brings online ordering, file collection, product setup, proofing and production-ready
-              job preparation into one simple flow for busy print counters.
-            </p>
-            <ul className="mt-7 space-y-3">
-              {[
-                "Collect customer files without email chaos",
-                "Let staff and customers review jobs visually",
-                "Reduce setup mistakes before production",
-                "Offer more products with less admin",
-                "Keep online and in-store ordering aligned",
-              ].map((b) => (
-                <li key={b} className="flex items-start gap-3 text-white/90">
-                  <CheckCircle2 className="h-5 w-5 mt-0.5 shrink-0" style={{ color: "hsl(var(--dc-green))" }} />
-                  <span>{b}</span>
-                </li>
-              ))}
-            </ul>
-            <a href="#how-it-works" className="dc-btn dc-btn-light-outline mt-8">
-              See how it works <ArrowRight className="h-4 w-4" />
-            </a>
-          </div>
-          <DarkWorkflowMock />
-        </div>
-      </section>
-
-      {/* ───────── Live preview feature ───────── */}
-      <section className="py-24 bg-white">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center max-w-2xl mx-auto mb-12">
-            <span className="dc-eyebrow" style={{ color: "hsl(var(--dc-orange))", background: "hsl(var(--dc-orange) / 0.1)" }}>Live preview</span>
-            <h2 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-tight">
-              Live previews your customers can <span style={{ color: "hsl(var(--dc-blue))" }}>actually understand</span>
-            </h2>
-            <p className="mt-4 text-lg dc-muted">
-              Show document spreads, binding choices and finishing options before the job goes to print. Fewer
-              mistakes, fewer back-and-forth calls and more confident orders.
-            </p>
-          </div>
-          <div className="max-w-5xl mx-auto">
-            <PreviewSpreadMock />
-          </div>
-          <ul className="mt-12 grid md:grid-cols-5 gap-4 max-w-5xl mx-auto">
-            {[
-              { i: Eye, t: "Flipbook page preview" },
-              { i: BookOpen, t: "Spread view for bound" },
-              { i: Layers, t: "Binding & finishing context" },
-              { i: ShieldCheck, t: "Better proofing" },
-              { i: Users, t: "Clearer for staff & customers" },
-            ].map(({ i: Icon, t }) => (
-              <li key={t} className="text-center">
-                <div className="mx-auto h-10 w-10 rounded-xl flex items-center justify-center mb-2" style={{ background: "hsl(var(--dc-blue) / 0.1)" }}>
-                  <Icon className="h-5 w-5" style={{ color: "hsl(var(--dc-blue))" }} />
-                </div>
-                <div className="text-sm font-semibold">{t}</div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
-
-      {/* ───────── Benefits ───────── */}
-      <section className="py-24" style={{ background: "hsl(var(--dc-bg-soft))" }}>
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center max-w-2xl mx-auto mb-14">
-            <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight">
-              Built for print counters. Designed for <span style={{ color: "hsl(var(--dc-green))" }}>real-world jobs.</span>
-            </h2>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {benefits.map(({ icon: Icon, t, d }, i) => {
-              const colours = ["hsl(var(--dc-blue))", "hsl(var(--dc-green))", "hsl(var(--dc-orange))", "hsl(var(--dc-sky))"];
-              const c = colours[i];
-              return (
-                <div key={t} className="dc-card p-7">
-                  <div className="h-12 w-12 rounded-xl flex items-center justify-center mb-4" style={{ background: `color-mix(in srgb, ${c} 14%, white)` }}>
-                    <Icon className="h-6 w-6" style={{ color: c }} />
-                  </div>
-                  <h3 className="font-bold text-lg mb-1.5">{t}</h3>
-                  <p className="text-sm dc-muted">{d}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* ───────── Solutions / audiences ───────── */}
-      <section id="solutions" className="py-24 bg-white">
-        <div className="max-w-5xl mx-auto px-6 text-center">
-          <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight">
-            Ideal for modern <span style={{ color: "hsl(var(--dc-blue))" }}>print businesses</span>
-          </h2>
-          <p className="mt-4 text-lg dc-muted max-w-2xl mx-auto">
-            Document Centre is ideal for businesses selling fast-turnaround, over-the-counter print products that need
-            a cleaner online experience.
-          </p>
-          <div className="mt-10 flex flex-wrap justify-center gap-3">
-            {audiences.map((a, i) => {
-              const c = ["hsl(var(--dc-blue))", "hsl(var(--dc-green))", "hsl(var(--dc-orange))", "hsl(var(--dc-sky))"][i % 4];
-              return (
-                <span
-                  key={a}
-                  className="px-5 py-2.5 rounded-full font-semibold text-sm border-2"
-                  style={{ borderColor: `color-mix(in srgb, ${c} 35%, white)`, color: "hsl(var(--dc-navy))", background: `color-mix(in srgb, ${c} 6%, white)` }}
-                >
-                  {a}
-                </span>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* ───────── Testimonial ───────── */}
-      <section className="py-24" style={{ background: "hsl(var(--dc-bg-soft))" }}>
-        <div className="max-w-4xl mx-auto px-6">
-          <div className="text-center mb-10">
-            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight">Made for busy print teams</h2>
-          </div>
-          <div className="dc-card p-10 relative">
-            <div className="absolute -top-5 left-10 text-7xl font-serif leading-none" style={{ color: "hsl(var(--dc-blue))" }}>“</div>
-            <p className="text-xl md:text-2xl font-medium leading-relaxed" style={{ color: "hsl(var(--dc-navy))" }}>
-              Document Centre has transformed how we take print orders. Customers upload more cleanly, staff spend
-              less time chasing files, and the previewing gives everyone more confidence.
-            </p>
-            <div className="mt-6 flex items-center gap-4">
-              <div className="h-12 w-12 rounded-full flex items-center justify-center text-white font-bold" style={{ background: "linear-gradient(135deg, hsl(var(--dc-blue)), hsl(var(--dc-sky)))" }}>
-                ST
-              </div>
-              <div>
-                <div className="font-bold">Sarah T.</div>
-                <div className="text-sm dc-muted">Print Manager · UK</div>
-              </div>
+            <div className="relative z-10 mx-auto max-w-[640px]">
+              <LaptopMock />
+            </div>
+            {/* phone overlay */}
+            <div className="absolute -right-2 top-16 hidden md:block z-20">
+              <PhoneMock />
             </div>
           </div>
         </div>
       </section>
 
-      {/* ───────── CTA ───────── */}
-      <section id="cta" className="relative overflow-hidden py-24" style={{ background: "linear-gradient(135deg, hsl(var(--dc-navy)) 0%, #0a2358 60%, #051640 100%)" }}>
-        <Ribbons variant="cta" />
-        <div className="relative max-w-5xl mx-auto px-6 text-center text-white">
-          <h2 className="text-4xl md:text-6xl font-extrabold tracking-tight">
-            Ready to <span style={{ color: "hsl(var(--dc-orange))" }}>modernise</span> your<br />print business?
+      {/* ───────── Features (6 outlined icons) ───────── */}
+      <section id="features" className="bg-white py-24">
+        <div className="max-w-[1240px] mx-auto px-6">
+          <h2 className="text-center font-extrabold tracking-tight" style={{ fontSize: "clamp(1.8rem, 3.2vw, 2.6rem)", color: "hsl(var(--dc-navy))" }}>
+            Everything you need to run your print shop online
           </h2>
-          <p className="mt-5 text-lg text-white/80 max-w-2xl mx-auto">
-            Launch online ordering, live previewing and smoother job setup with Document Centre.
-          </p>
-          <div className="mt-9 flex flex-wrap justify-center gap-4">
-            <a href="/auth" className="dc-btn dc-btn-green text-base" style={{ padding: "1.05rem 2rem" }}>
-              Start Your Free Trial <ArrowRight className="h-4 w-4" />
-            </a>
-            <a href="mailto:hello@document-centre.com" className="dc-btn dc-btn-light-outline text-base" style={{ padding: "1.05rem 2rem" }}>
-              Book a Demo
-            </a>
-          </div>
-          <div className="mt-12 grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl mx-auto">
+          <div className="mt-14 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
             {[
-              { i: Heart, t: "14-day free trial" },
-              { i: ShieldCheck, t: "Full feature access" },
-              { i: Zap, t: "No setup fees" },
-              { i: Check, t: "Cancel anytime" },
-            ].map(({ i: Icon, t }) => (
-              <div key={t} className="flex items-center justify-center gap-2 text-white/85">
-                <Icon className="h-5 w-5" style={{ color: "hsl(var(--dc-sky))" }} />
-                <span className="text-sm font-medium">{t}</span>
+              { Icon: IconUpload, t1: "Upload &", t2: "File Management", d: "Secure uploads, format checks & auto-preflight" },
+              { Icon: IconPreview, t1: "Live Preview", t2: "& Proofing", d: "Accurate previews with zoom, pages & annotations" },
+              { Icon: IconCatalogue, t1: "Product", t2: "Catalogue", d: "Customisable templates, finishes & pricing" },
+              { Icon: IconQuotes, t1: "Quotes &", t2: "Payments", d: "Instant quotes, approvals & online payments" },
+              { Icon: IconWorkflow, t1: "Production", t2: "Workflow", d: "Job tracking, statuses & automated routing" },
+              { Icon: IconReports, t1: "Reports &", t2: "Analytics", d: "Track sales, customers & production insights" },
+            ].map(({ Icon, t1, t2, d }) => (
+              <div key={t1} className="dc-card p-5 text-center flex flex-col items-center">
+                <div className="mb-3"><Icon /></div>
+                <h3 className="font-bold text-[0.95rem] leading-tight" style={{ color: "hsl(var(--dc-navy))" }}>
+                  {t1}<br />{t2}
+                </h3>
+                <p className="mt-2 text-[12.5px] dc-muted leading-snug">{d}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ───────── Why printers choose (timeline + screenshot + samples) ───────── */}
+      <section id="how-it-works" className="bg-white pb-28">
+        <div className="max-w-[1240px] mx-auto px-6 grid lg:grid-cols-[0.85fr_1.15fr] gap-14 items-center">
+          {/* timeline */}
+          <div className="relative">
+            <h2 className="font-extrabold tracking-tight mb-10" style={{ fontSize: "clamp(1.7rem, 2.6vw, 2.2rem)", color: "hsl(var(--dc-navy))" }}>
+              Why printers choose Document Centre
+            </h2>
+            {/* vertical dotted connector */}
+            <div
+              className="absolute left-[28px] top-[120px] bottom-10 hidden sm:block"
+              style={{
+                width: 2,
+                backgroundImage: "linear-gradient(to bottom, hsl(var(--dc-border)) 50%, transparent 0)",
+                backgroundSize: "2px 8px",
+                backgroundRepeat: "repeat-y",
+              }}
+              aria-hidden
+            />
+            <div className="space-y-7 relative">
+              {[
+                { c: "hsl(var(--dc-blue))", k: "bolt" as const, t: "Save time & reduce admin", d: "Automate quoting, ordering & proofing — from upload to print-ready." },
+                { c: "hsl(var(--dc-green))", k: "check" as const, t: "Reduce errors & reprints", d: "Built-in preflight checks catch issues before they reach production." },
+                { c: "hsl(var(--dc-orange))", k: "growth" as const, t: "Grow your business", d: "Offer 24/7 online ordering and reach more customers without extra staff." },
+                { c: "hsl(var(--dc-navy))", k: "heart" as const, t: "Delight your customers", d: "A smooth, branded experience that builds repeat business." },
+              ].map((row) => (
+                <div key={row.t} className="flex items-start gap-5 relative">
+                  <TimelineIcon color={row.c} kind={row.k} />
+                  <div className="pt-1">
+                    <h3 className="font-bold text-[1.1rem]" style={{ color: "hsl(var(--dc-navy))" }}>{row.t}</h3>
+                    <p className="mt-1 text-[14px] dc-muted max-w-md leading-relaxed">{row.d}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* kanban screenshot + scattered samples */}
+          <div className="relative">
+            {/* laptop frame containing kanban */}
+            <div className="rounded-t-[14px] bg-gradient-to-b from-[#2b3445] to-[#1c2332] p-[10px] shadow-2xl">
+              <div className="rounded-[6px] overflow-hidden bg-white">
+                <div className="flex items-center justify-between px-3 py-2 bg-white border-b border-[#eef2f7]">
+                  <span className="font-bold text-[10px]" style={{ color: "hsl(var(--dc-navy))" }}>▮ Document Centre</span>
+                  <div className="flex items-center gap-2 text-[8px] dc-muted">
+                    <span>Filter</span><span>Export</span><span>Search</span>
+                    <span className="px-2 py-0.5 rounded text-white font-semibold" style={{ background: "hsl(var(--dc-blue))" }}>+ New Job</span>
+                  </div>
+                </div>
+                <div className="flex" style={{ minHeight: 320 }}>
+                  <div className="bg-[#0f2348] text-white py-3" style={{ width: 84 }}>
+                    <div className="px-2.5 space-y-0.5">
+                      {["Dashboard", "Orders", "Products", "Templates", "Customers", "Reports", "Settings"].map((l, i) => (
+                        <div key={l} className={`text-[7.5px] px-1.5 py-1 rounded ${i === 1 ? "bg-white/15 font-semibold" : "text-white/70"}`}>● {l}</div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex-1 px-3 py-3 bg-[#fafbfd]">
+                    <div className="font-bold text-[10px] mb-2" style={{ color: "hsl(var(--dc-navy))" }}>Jobs</div>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        { col: "New (8)", c: "hsl(var(--dc-sky))", items: [{ n: "Business Cards", d: "500 × Standard", p: "£42.50" }, { n: "Brochure A4-trifold", d: "100 × Satin", p: "£108.00" }] },
+                        { col: "In Progress (12)", c: "hsl(var(--dc-blue))", items: [{ n: "A4 Flyers", d: "250 × Gloss", p: "£43.00" }, { n: "Poster A2", d: "50 × 13oz Vinyl", p: "£86.00" }] },
+                        { col: "Proofing (5)", c: "hsl(var(--dc-orange))", items: [{ n: "Brochure - 8pp", d: "100 × Saddle Stitch", p: "£128.00" }, { n: "NCR Pads", d: "5 × 50 sets", p: "£72.00" }] },
+                        { col: "Ready (7)", c: "hsl(var(--dc-green))", items: [{ n: "Poster A2", d: "50 × Matt", p: "£96.00" }, { n: "Stickers", d: "1,000 × Vinyl", p: "£72.00" }] },
+                      ].map((c) => (
+                        <div key={c.col} className="space-y-1.5">
+                          <div className="flex items-center justify-between text-[8px] font-bold" style={{ color: "hsl(var(--dc-navy))" }}>
+                            <span style={{ color: c.c }}>{c.col}</span>
+                          </div>
+                          {c.items.map((it, i) => (
+                            <div key={i} className="rounded-md border border-[#e6ecf3] p-1.5 bg-white">
+                              <div className="text-[7px] font-bold" style={{ color: "hsl(var(--dc-navy))" }}>{it.n}</div>
+                              <div className="text-[6.5px] dc-muted">{it.d}</div>
+                              <div className="text-[7px] font-bold mt-0.5" style={{ color: c.c }}>{it.p}</div>
+                              <div className="mt-1 h-3 w-3 rounded-full bg-[hsl(var(--dc-bg-soft))] border border-[#e6ecf3]" />
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="mx-auto h-[10px] rounded-b-2xl bg-gradient-to-b from-[#1c2332] to-[#0f1623]" style={{ width: "108%", marginLeft: "-4%" }} />
+            {/* scattered print samples */}
+            <img
+              src={printSamples}
+              alt="Printed brochure samples"
+              loading="lazy"
+              className="absolute -bottom-12 -left-6 w-[280px] drop-shadow-2xl pointer-events-none"
+              style={{ transform: "rotate(-8deg)" }}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ───────── Testimonial ───────── */}
+      <section className="bg-white pb-20">
+        <div className="max-w-[1240px] mx-auto px-6">
+          <div
+            className="dc-card p-7 max-w-[640px] flex items-center gap-6"
+            style={{ borderRadius: 20 }}
+          >
+            <div className="flex-1">
+              <div className="text-4xl leading-none mb-1 font-serif" style={{ color: "hsl(var(--dc-blue))" }}>“</div>
+              <p className="text-[15px] leading-relaxed font-medium" style={{ color: "hsl(var(--dc-navy))" }}>
+                Document Centre has transformed how we take orders. Our customers love the simple interface, and our
+                workflow is so much smoother.
+              </p>
+              <div className="mt-3 flex items-center gap-2">
+                <div className="flex">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Star key={i} className="h-4 w-4" fill="hsl(var(--dc-orange))" stroke="hsl(var(--dc-orange))" />
+                  ))}
+                </div>
+                <span className="text-[13px] dc-muted font-medium">— Sarah T., Print Manager, UK</span>
+              </div>
+            </div>
+            <img
+              src={sarahPhoto}
+              alt="Sarah T."
+              loading="lazy"
+              width={88}
+              height={88}
+              className="h-[88px] w-[88px] rounded-full object-cover shrink-0 border-4 border-white shadow-md"
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ───────── CTA ───────── */}
+      <section
+        id="cta"
+        className="relative overflow-hidden py-16"
+        style={{ background: "linear-gradient(135deg, #0a2358 0%, hsl(var(--dc-navy)) 50%, #051640 100%)" }}
+      >
+        <CtaRibbons />
+        <div className="relative max-w-[1240px] mx-auto px-6 grid lg:grid-cols-[1.4fr_1fr] gap-10 items-center text-white">
+          {/* left: heading + CTAs */}
+          <div>
+            <h2 className="font-extrabold tracking-tight text-white" style={{ fontSize: "clamp(1.8rem, 3vw, 2.5rem)", lineHeight: 1.15, color: "#ffffff" }}>
+              Ready to modernise your print business?
+            </h2>
+            <p className="mt-3 text-white/80 text-[15px]">
+              Join hundreds of copy shops &amp; printers using Document Centre to grow.
+            </p>
+            <div className="mt-7 flex flex-wrap gap-3">
+              <a href="/auth" className="dc-btn dc-btn-green" style={{ padding: "1rem 2rem", fontSize: "0.98rem" }}>
+                Start Your Free Trial <ArrowRight className="h-4 w-4" />
+              </a>
+              <a href="mailto:hello@document-centre.com" className="dc-btn dc-btn-light-outline" style={{ padding: "1rem 2rem", fontSize: "0.98rem" }}>
+                Book a Demo
+              </a>
+            </div>
+          </div>
+
+          {/* right: 4 trust icons in a 2x2 grid */}
+          <div className="grid grid-cols-2 gap-y-6 gap-x-8">
+            {[
+              { k: "trial" as const, t: "14-day free trial" },
+              { k: "feature" as const, t: "Full feature access" },
+              { k: "fees" as const, t: "No setup fees" },
+              { k: "cancel" as const, t: "Cancel anytime" },
+            ].map((i) => (
+              <div key={i.t} className="flex flex-col items-center text-center gap-2">
+                <TrustIcon kind={i.k} />
+                <span className="text-[13.5px] font-semibold text-white">{i.t}</span>
               </div>
             ))}
           </div>
@@ -576,40 +707,30 @@ export default function MarketingLanding() {
       </section>
 
       {/* ───────── Footer ───────── */}
-      <footer className="bg-white border-t border-[hsl(var(--dc-border))] py-14">
-        <div className="max-w-7xl mx-auto px-6 grid md:grid-cols-[1.4fr_1fr_1fr_1fr_1fr] gap-10">
-          <div>
-            <Logo />
-            <p className="mt-4 text-sm dc-muted max-w-xs">
-              Web-to-print software for copy shops and print centres.
-            </p>
-            <div className="mt-5 flex gap-3">
-              {[Linkedin, Youtube, Mail].map((Icon, i) => (
-                <a key={i} href="#" className="h-9 w-9 rounded-full flex items-center justify-center border border-[hsl(var(--dc-border))] hover:border-[hsl(var(--dc-blue))] hover:text-[hsl(var(--dc-blue))] dc-muted">
-                  <Icon className="h-4 w-4" />
-                </a>
-              ))}
-            </div>
+      <footer className="bg-white border-t border-[hsl(var(--dc-border))] py-10">
+        <div className="max-w-[1240px] mx-auto px-6 flex flex-wrap items-center justify-between gap-6">
+          <Logo />
+          <nav className="flex flex-wrap gap-7 text-sm font-medium" style={{ color: "hsl(var(--dc-navy))" }}>
+            {["Features", "How It Works", "Pricing", "Resources", "Support", "Contact"].map((l) => (
+              <a key={l} href="#" className="hover:text-[hsl(var(--dc-blue))]">{l}</a>
+            ))}
+          </nav>
+          <div className="flex gap-2.5">
+            {[Linkedin, Youtube, Mail].map((Icon, i) => (
+              <a
+                key={i}
+                href="#"
+                className="h-9 w-9 rounded-full flex items-center justify-center border border-[hsl(var(--dc-border))] hover:border-[hsl(var(--dc-blue))]"
+                style={{ color: "hsl(var(--dc-blue))" }}
+              >
+                <Icon className="h-4 w-4" />
+              </a>
+            ))}
           </div>
-          {[
-            { t: "Product", l: ["Features", "How It Works", "Pricing", "Integrations"] },
-            { t: "Solutions", l: ["Copy Shops", "Business Centres", "Print Stores", "Small Printers"] },
-            { t: "Resources", l: ["Help Centre", "Guides", "Blog", "Contact"] },
-            { t: "Company", l: ["About", "Privacy", "Terms"] },
-          ].map((col) => (
-            <div key={col.t}>
-              <div className="font-bold text-sm mb-4" style={{ color: "hsl(var(--dc-navy))" }}>{col.t}</div>
-              <ul className="space-y-2.5 text-sm dc-muted">
-                {col.l.map((l) => (
-                  <li key={l}><a href="#" className="hover:text-[hsl(var(--dc-blue))]">{l}</a></li>
-                ))}
-              </ul>
-            </div>
-          ))}
         </div>
-        <div className="max-w-7xl mx-auto px-6 mt-12 pt-6 border-t border-[hsl(var(--dc-border))] flex flex-col md:flex-row gap-3 justify-between text-xs dc-muted">
+        <div className="max-w-[1240px] mx-auto px-6 mt-8 pt-5 border-t border-[hsl(var(--dc-border))] flex flex-wrap gap-3 justify-between text-xs dc-muted">
           <span>© {new Date().getFullYear()} Document Centre. All rights reserved.</span>
-          <span>Web-to-print software for copy shops &amp; small printers</span>
+          <span>Web-to-Print software for copy shops &amp; small printers · <a href="#" className="hover:text-[hsl(var(--dc-blue))]">Privacy</a> · <a href="#" className="hover:text-[hsl(var(--dc-blue))]">Terms</a></span>
         </div>
       </footer>
     </div>

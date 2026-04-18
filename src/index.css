@@ -243,6 +243,10 @@
 .dc-marketing h1, .dc-marketing h2, .dc-marketing h3 {
   font-family: "Inter", "Manrope", "Plus Jakarta Sans", system-ui, sans-serif;
   letter-spacing: -0.02em;
+}
+.dc-marketing h1:not([class*="text-"]):not([style*="color"]),
+.dc-marketing h2:not([class*="text-"]):not([style*="color"]),
+.dc-marketing h3:not([class*="text-"]):not([style*="color"]) {
   color: hsl(var(--dc-navy));
 }
 
