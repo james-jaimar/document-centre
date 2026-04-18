@@ -673,7 +673,7 @@ export default function MarketingLanding() {
         <div className="relative max-w-[1240px] mx-auto px-6 grid lg:grid-cols-[1.4fr_1fr] gap-10 items-center text-white">
           {/* left: heading + CTAs */}
           <div>
-            <h2 className="font-extrabold tracking-tight" style={{ fontSize: "clamp(1.8rem, 3vw, 2.5rem)", lineHeight: 1.15 }}>
+            <h2 className="font-extrabold tracking-tight text-white" style={{ fontSize: "clamp(1.8rem, 3vw, 2.5rem)", lineHeight: 1.15, color: "#ffffff" }}>
               Ready to modernise your print business?
             </h2>
             <p className="mt-3 text-white/80 text-[15px]">
