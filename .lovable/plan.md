@@ -1,48 +1,56 @@
+# Phase 3 Plan — Google OAuth with tenant firewalling
 
-The user wants steps 1, 2, and 3 planned and executed. Let me think about this carefully.
+Apple and Microsoft deferred — will add later if tenants request them. Code will be structured so adding more providers is a one-line change.
 
-**Step 1 — Brand remaining auth emails**
-Use the scaffold_auth_email_templates tool. This needs a configured email domain. Need to check if one exists. The project has SMTP secrets (SMTP_HOST etc.) for the existing send-email function, but Lovable's auth email system uses its own domain setup. I'll need to check email_domain status first. If no domain, present the setup dialog. If domain exists, scaffold immediately.
+## Tenant-firewall rules
 
-Templates created: signup, magic-link, recovery, invite, email-change, reauthentication. The `invite-member` function we built last turn uses `generateLink({ type: 'recovery' })` and our own SMTP — that flow stays as is (it's already branded). The Lovable auth-email-hook will handle the OTHER auth emails (password reset from `/auth` page, signup confirmation, etc.).
+| Where they sign in | What OAuth does | Membership outcome |
+|---|---|---|
+| `/t/:slug/auth` (customer storefront) | Auto-creates a `customer` membership for **only** that tenant if missing | Same as manual signup |
+| `/auth` (platform/staff login) | Sign-in only — no new memberships created | Staff must be invited; OAuth never grants staff access |
+| Existing user signing in via different storefront | Adds a customer membership for the new tenant (does not touch the existing one) | Multi-tenant accounts safe — RLS already isolates per tenant |
 
-Important: there's potential overlap. The user's existing `/auth` page has a "forgot password" flow that calls `supabase.auth.resetPasswordForEmail()`. That's currently sending Supabase default email. After scaffolding, it'll go through auth-email-hook and use our branded template. Good.
+OAuth never auto-creates `owner / admin / sales / production / accounts` roles. Staff onboarding stays invite-only. This is the firewall.
 
-Branding: pull tenant branding. BUT — auth emails happen BEFORE we know which tenant the user belongs to (multi-tenant SaaS). So templates will use the platform-level brand (Document Centre / jaimar.dev), not per-tenant branding. This is a real limitation worth calling out. Per-tenant branded auth emails would require a different architecture (custom flows that bypass Supabase Auth's email system, like the invite flow we built).
+## Code I'll build
 
-Actually wait — for password reset, the user is on a specific tenant storefront when they request it. We could pass tenant context via the redirectTo URL, but the email itself comes from Supabase Auth's webhook which doesn't know tenant context. The auth-email-hook could try to look up the user's tenant_membership and pull branding from there. That's doable. Let me include this.
+1. **`SocialAuthButtons.tsx`** — single "Continue with Google" button (component built to accept a provider list so Apple/Microsoft drop in later). Reads tenant slug from URL, sets `redirectTo` to `/auth/callback?tenant=<slug>` (or `/auth/callback` for platform login).
+2. **`/auth/callback` page** (works for both contexts)
+   - Reads `?tenant=` from URL
+   - Waits for Supabase session to be established
+   - Calls `oauth-callback` edge function with tenant slug
+   - Redirects to `/t/:slug/dashboard` (storefront) or role-based default route (platform)
+3. **Edge function `oauth-callback`**
+   - Validates the JWT (`supabase.auth.getUser()`)
+   - If tenant slug provided: validates tenant exists + active, then upserts a `customer` `tenant_memberships` row (idempotent, no role escalation possible)
+   - If no tenant slug (platform login): verifies user has at least one existing membership, otherwise rejects with a clear error
+   - Logs to `user_admin_audit` for traceability
+4. **Update `Auth.tsx`** — drop in `SocialAuthButtons`, pass tenant context. No change to email/password flow.
+5. **No trigger changes** — `handle_new_user` still handles email signups; OAuth uses the callback edge function.
 
-**Step 2 — Admin Users management page**
-Routes:
-- `/admin/users` — already exists as AdminUsers.tsx (basic). Need to enhance.
-- `/platform/users` — new, lists ALL users across all tenants
+## What you need to do (one-time, ~10 min, free)
 
-Features needed beyond current AdminUsers:
-- Search/filter
-- Last sign-in timestamp (from auth.users.last_sign_in_at — needs admin API)
-- Order count + total spend per user (joins to orders)
-- Force password reset (calls our send-email or auth-email-hook)
-- Disable/enable account (auth.admin.updateUserById with banned_until)
-- Delete account (auth.admin.deleteUser + cascade)
-- Resend invite for pending users
+**Google Cloud setup**
+1. Go to https://console.cloud.google.com → create a new project (or use existing)
+2. APIs & Services → OAuth consent screen → External → fill in app name, support email, your domain (`document-centre.jaimar.dev`), authorised domains
+3. Add scopes: `openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile`
+4. APIs & Services → Credentials → Create Credentials → OAuth Client ID → Web application
+5. Authorised JavaScript origins: `https://document-centre.jaimar.dev`, `https://document-centre.lovable.app`, `https://id-preview--645dbd17-56d7-4b01-8a59-11817be20fbf.lovable.app`
+6. Authorised redirect URI: `https://lcvdhtaqoumyokjqaqfw.supabase.co/auth/v1/callback`
+7. Copy Client ID and Client Secret
 
-Need an edge function: `manage-user` (or extend invite-member) — to perform admin operations using service role. Must validate caller is tenant admin via tenant_memberships.
+**Supabase setup**
+1. Open Supabase dashboard → Authentication → Providers → Google → Enable
+2. Paste Client ID + Secret → Save
 
-For platform users page: needs to show users from ALL tenants — only accessible to platform admins. Need to check if there's a platform_admin role or how that works. Looking at memory: "tenant_memberships (Owner, Admin, Sales, Production, Accounts, Customer)" — no explicit platform admin role mentioned, but there's `/platform` routes and `PlatformTenants.tsx`. There must be some platform-level access check.
+I'll provide these exact URLs again when you're ready to configure.
 
-**Step 3 — OAuth providers (Google, Apple, Microsoft)**
-This is mostly configuration in Supabase dashboard, not code. The code side:
-- Add "Continue with Google/Apple/Microsoft" buttons to `/auth` page and storefront signup
-- Call `supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo, queryParams: { tenant_slug: ... } } })`
-- The `handle_new_user` trigger already reads `raw_user_meta_data->>'tenant_slug'` to attach to the right tenant — but OAuth doesn't pass user_metadata at signup the same way. Need to handle tenant attachment post-OAuth (e.g., a callback page that reads tenant context from URL state and creates the membership).
+## Build order
 
-For the user's planning I should note: the dashboard config requires THEIR action (creating Google Cloud project, getting client ID/secret). I'll do all the code; they do the provider setup in Supabase dashboard.
+1. Edge function `oauth-callback` + audit logging
+2. `/auth/callback` page + routing (both `/auth/callback` and `/t/:slug/auth/callback`)
+3. `SocialAuthButtons` component + integration into both auth pages
+4. You complete Google Cloud + Supabase config
+5. End-to-end test on a storefront and platform login
 
-**Plan structure:**
-Keep it concise. 3 phases. Note prerequisites and what the user has to do vs what I do.
-
-Email domain — I should check status. But I'm in plan mode and can call email_domain tools. Let me call get_project_custom_domain to see what's set up before finalizing the plan.
-
-Actually since I'm in plan mode and the rule says "the plan IS your complete response" I shouldn't be making other tool calls now. The plan can include "first I'll check email domain status" as step zero.
-
-Let me write this concisely.
+Reply "go" and I'll start building.
