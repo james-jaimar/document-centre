@@ -1,37 +1,55 @@
 
 
-## Why "Invalid Link" appears
+## Answer to your question first
 
-The new `/auth/verify` page correctly exchanges the token and creates a Supabase session. It then navigates to `/reset-password`. But `ResetPassword.tsx` only flips `isRecovery = true` when `window.location.hash` contains `type=recovery` — that hash existed in the *old* Supabase-hosted flow (`#access_token=...&type=recovery`), but our new app-hosted flow uses `verifyOtp({ token_hash, type })` which establishes the session via API and leaves the URL hash empty. So the gate fails and the user sees "Invalid Link".
+Right now `/auth` works for **anyone**. A PostNet customer can sign in there and gets redirected via `getDefaultRoute(highestRole)` → `/dashboard` (which then bounces through `StorefrontRedirect` to `/t/postnet/dashboard` if they have a tenant membership). So it "works", but it's leaky — customers can authenticate from a generic page that has no tenant context, no tenant branding, and exposes the platform-level entry point.
 
-The token verification itself worked (no error from AuthVerify). The user is actually signed in — they just can't get past the gate.
+## What you want
 
-## The fix
+- `/auth` → **platform admins only** (and tenant staff who don't belong to a single tenant storefront, e.g. owners managing multiple).
+- `/t/:slug/auth` → the **only** way customers (and tenant staff) of a given tenant can sign in / sign up.
 
-Two small client-side changes — no edge function, no DB.
+## Plan
 
-**`src/pages/AuthVerify.tsx`**
-- After `verifyOtp` succeeds, navigate to `${next}?recovery=1` so ResetPassword has an unambiguous signal.
+### 1. Gate `/auth` to platform-level users only
 
-**`src/pages/ResetPassword.tsx`**
-- Treat the page as a valid recovery context when ANY of these is true:
-  1. `?recovery=1` (new app-hosted flow)
-  2. `#type=recovery` (legacy Supabase hash flow — keep for safety)
-  3. There's an active Supabase session AND the URL came from `/auth/verify` (sanity fallback)
-- Show a small loading state while checking, instead of flashing "Invalid Link".
-- Keep the existing form and `updateUser({ password })` call — they're correct.
+In `src/pages/Auth.tsx`, after sign-in succeeds and roles load:
 
-**Optional safety polish** (recommended): after a successful password update, call `supabase.auth.signOut()` then navigate to `/auth` so the user re-authenticates with the new password. This avoids a freshly-invited user landing in the app with an unfamiliar tenant context attached.
+- If `highestRole === 'platform_admin'` → allow, redirect to `/platform`.
+- If user has no tenant memberships AND no platform role → show error "This portal is for platform staff. Please use your tenant's sign-in page" + sign them out.
+- If user has tenant memberships → look up their primary tenant's `slug`, sign them out from this generic session, and redirect to `/t/{slug}/auth?email={email}` with a toast: "Please sign in via your organisation's portal." (Pre-fills email on the tenant page.)
 
-### Files
+Also: hide the **Register** and **Forgot password** modes when there's no `tenantSlug` param. Generic `/auth` becomes login-only for platform staff. The register flow without a tenant slug creates orphan customers anyway — no value.
+
+### 2. Make `/t/:slug/auth` the customer/staff entry
+
+Already exists and already passes `tenant_slug` into signup metadata (which `handle_new_user` uses to create the tenant_membership). Two small polish items:
+
+- Show the tenant's name + logo on the auth card when on `/t/:slug/auth` (look up via `useTenantFromSlug`). Right now the page is identical regardless of tenant — feels generic.
+- After login, validate the user actually has a membership for *this* tenant. If not, sign out and show "Your account isn't part of {TenantName}. Please use the correct portal."
+
+### 3. Update redirect entry points
+
+- `StorefrontRedirect` (used by `/dashboard/*`): if user has no tenant membership AND isn't platform staff, send them to `/auth` with a "Please contact your organisation" message instead of looping. (Currently already redirects to `/auth` — just improve the messaging.)
+- `AppEntryRedirect`: unchanged, already correct.
+- `AuthCallback` (OAuth): if the OAuth user lands on `/auth/callback` (no tenant) but has a tenant membership, push them to `/t/{slug}/dashboard`. If they have no membership and aren't platform staff, sign out + redirect to `/auth` with the platform-only message.
+
+### 4. Friendlier "wrong door" UX on `/auth`
+
+A small banner above the form: "Customer or team member? Sign in through your organisation's portal at `yourcompany.document-centre.com` or the link your admin sent you." This nudges anyone who landed there by mistake.
+
+### Files touched
 
 | File | Change |
 |---|---|
-| `src/pages/AuthVerify.tsx` | Append `?recovery=1` to `next` on success |
-| `src/pages/ResetPassword.tsx` | Detect recovery via query param OR legacy hash OR active session; drop the false "Invalid Link" |
+| `src/pages/Auth.tsx` | Gate redirect by role; sign out non-platform users with no tenant; hide register/forgot when no slug; show tenant branding when slug present; add "wrong door" banner on generic `/auth` |
+| `src/pages/AuthCallback.tsx` | After OAuth resolves, route based on tenant membership / platform role; reject orphan accounts on `/auth/callback` |
+| `src/components/StorefrontRedirect.tsx` | Improve messaging when user has no membership |
+| *(no DB / edge function changes)* | Pure routing/UX |
 
-### Why this is safe
+### Out of scope (flag if you want them)
 
-- The token has already been verified by AuthVerify before redirect, so the recovery gate isn't a security boundary — it's just UX.
-- The actual security check is `supabase.auth.updateUser({ password })`, which requires an authenticated session. If a random visitor hits `/reset-password?recovery=1` with no session, `updateUser` will fail with an auth error (which we'll surface).
+- Disabling self-signup on `/t/:slug/auth` for tenants whose admin wants invite-only access (would need a `tenant_settings` flag like `auth.allow_self_signup`).
+- A login attempt on the wrong tenant slug auto-redirecting to the right one (would require resolving tenant membership before sign-in, which we can't do until they're authed — so we handle it post-login by signing them out and pointing them to the right slug).
+- Custom domain sign-in (e.g. `postnet.document-centre.com/auth`) — separate piece of work.
 
