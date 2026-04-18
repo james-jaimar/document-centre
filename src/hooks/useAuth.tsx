@@ -51,6 +51,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
 
         if (session?.user) {
+          // Mark loading so consumers wait for roles before redirecting
+          setLoading(true);
           // Defer role fetch to avoid Supabase deadlock
           setTimeout(async () => {
             const userRoles = await fetchRoles(session.user.id);
