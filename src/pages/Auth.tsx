@@ -16,7 +16,7 @@ type AuthMode = "login" | "register" | "forgot";
 const Auth = () => {
   const navigate = useNavigate();
   const { slug: tenantSlug } = useParams<{ slug: string }>();
-  const { user, highestRole } = useAuth();
+  const { user, highestRole, loading: authLoading } = useAuth();
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -25,14 +25,17 @@ const Auth = () => {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (user) {
-      if (tenantSlug && (!highestRole || highestRole === 'customer')) {
+    // Wait for roles to load before deciding where to send the user.
+    // Otherwise platform admins land on /t/:slug/dashboard because
+    // highestRole is briefly null right after sign-in.
+    if (user && !authLoading) {
+      if (tenantSlug && highestRole === 'customer') {
         navigate(`/t/${tenantSlug}/dashboard`, { replace: true });
       } else {
         navigate(getDefaultRoute(highestRole), { replace: true });
       }
     }
-  }, [user, highestRole, navigate, tenantSlug]);
+  }, [user, highestRole, authLoading, navigate, tenantSlug]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
