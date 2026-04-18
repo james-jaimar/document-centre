@@ -12,6 +12,17 @@ import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { useBranches } from "@/hooks/useBranches";
+
+const ROLE_LABELS: Record<string, string> = {
+  owner: "Owner",
+  admin: "Tenant Admin",
+  sales: "Sales",
+  production: "Production",
+  accounts: "Accounts",
+  branch_manager: "Branch Manager",
+  store_operator: "Store Operator",
+};
 
 const BRANCH_NAV = [
   { to: "/branch", icon: <LayoutDashboard size={20} />, label: "Dashboard" },
@@ -23,7 +34,11 @@ const BRANCH_NAV = [
 export default function BranchSidebar() {
   const location = useLocation();
   const { signOut, user } = useAuth();
-  const { tenantName } = useTenantContext();
+  const { tenantName, tenantId, branchId, membershipRole } = useTenantContext();
+  const { data: branches } = useBranches(tenantId);
+  const branch = branches?.find((b) => b.id === branchId);
+  const branchLabel = branch?.name ?? "Branch";
+  const roleLabel = membershipRole ? ROLE_LABELS[membershipRole] ?? membershipRole : "Branch Staff";
   const [collapsed, setCollapsed] = useState(false);
 
   const isActive = (path: string) => {
@@ -45,8 +60,10 @@ export default function BranchSidebar() {
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
               <Printer size={18} />
             </div>
-            <div>
-              <h1 className="text-base font-bold leading-tight">{tenantName || "Branch"}</h1>
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-bold leading-tight">
+                {tenantName ? `${tenantName} — ${branchLabel}` : branchLabel}
+              </h1>
               <p className="text-xs text-sidebar-muted">Branch Portal</p>
             </div>
           </div>
@@ -93,7 +110,7 @@ export default function BranchSidebar() {
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{user.email}</p>
-              <p className="truncate text-xs text-sidebar-muted">Branch Staff</p>
+              <p className="truncate text-xs text-sidebar-muted">{roleLabel}</p>
             </div>
           </div>
         )}
