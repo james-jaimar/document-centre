@@ -15,7 +15,17 @@ import { toast } from "sonner";
 import { Search, UserPlus, AlertCircle, Mail } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
-const MEMBERSHIP_ROLES = ["owner", "admin", "sales", "production", "accounts", "customer"];
+const MEMBERSHIP_ROLES = ["owner", "admin", "sales", "production", "accounts", "branch_manager", "store_operator"];
+const ROLE_LABELS: Record<string, string> = {
+  owner: "Owner",
+  admin: "Tenant Admin",
+  sales: "Sales",
+  production: "Production",
+  accounts: "Accounts",
+  branch_manager: "Branch Manager",
+  store_operator: "Store Operator",
+};
+const BRANCH_REQUIRED_ROLES = new Set(["branch_manager", "store_operator"]);
 
 interface Props {
   open: boolean;
@@ -42,7 +52,9 @@ export function AddMemberDialog({ open, onOpenChange, tenantId, appId }: Props) 
   const [notFound, setNotFound] = useState(false);
   const [inviting, setInviting] = useState(false);
 
-  const [role, setRole] = useState("customer");
+  const [role, setRole] = useState("admin");
+  const branchRequired = BRANCH_REQUIRED_ROLES.has(role);
+  const branchInvalid = branchRequired && !branchId;
   const [branchId, setBranchId] = useState("");
   const [canViewAllOrders, setCanViewAllOrders] = useState(false);
 
@@ -50,7 +62,7 @@ export function AddMemberDialog({ open, onOpenChange, tenantId, appId }: Props) 
     setEmail("");
     setFoundProfile(null);
     setNotFound(false);
-    setRole("customer");
+    setRole("admin");
     setBranchId("");
     setCanViewAllOrders(false);
     setInviting(false);
@@ -194,23 +206,33 @@ export function AddMemberDialog({ open, onOpenChange, tenantId, appId }: Props) 
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {MEMBERSHIP_ROLES.map((r) => (
-                      <SelectItem key={r} value={r}>{r}</SelectItem>
+                      <SelectItem key={r} value={r}>{ROLE_LABELS[r] ?? r}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {branchRequired && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Branch staff only see orders for their assigned branch.
+                  </p>
+                )}
               </div>
 
               <div>
-                <Label>Branch</Label>
+                <Label>
+                  Branch {branchRequired && <span className="text-destructive">*</span>}
+                </Label>
                 <Select value={branchId || "__all__"} onValueChange={(v) => setBranchId(v === "__all__" ? "" : v)}>
                   <SelectTrigger><SelectValue placeholder="All branches" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__all__">All branches</SelectItem>
+                    {!branchRequired && <SelectItem value="__all__">All branches</SelectItem>}
                     {branches?.map((b) => (
                       <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {branchInvalid && (
+                  <p className="text-xs text-destructive mt-1">A branch must be selected for this role.</p>
+                )}
               </div>
 
               <div className="flex items-center gap-3">
@@ -224,11 +246,11 @@ export function AddMemberDialog({ open, onOpenChange, tenantId, appId }: Props) 
         <DialogFooter>
           <Button variant="outline" onClick={() => { reset(); onOpenChange(false); }}>Cancel</Button>
           {foundProfile ? (
-            <Button onClick={handleAddExisting} disabled={inviting}>
+            <Button onClick={handleAddExisting} disabled={inviting || branchInvalid}>
               {inviting ? "Adding…" : "Add Member"}
             </Button>
           ) : notFound ? (
-            <Button onClick={handleInviteNew} disabled={inviting}>
+            <Button onClick={handleInviteNew} disabled={inviting || branchInvalid}>
               {inviting ? "Sending…" : "Invite & Add Member"}
             </Button>
           ) : null}
