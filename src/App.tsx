@@ -11,6 +11,7 @@ import BranchLayout from "@/components/BranchLayout";
 import CustomerLayout from "@/components/CustomerLayout";
 
 import Auth from "@/pages/Auth";
+import AuthCallback from "@/pages/AuthCallback";
 import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "@/pages/NotFound";
 import { StorefrontRedirect } from "@/components/StorefrontRedirect";
@@ -71,6 +72,8 @@ const App = () => (
             {/* Public */}
             <Route path="/auth" element={<Auth />} />
             <Route path="/t/:slug/auth" element={<Auth />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/t/:slug/auth/callback" element={<AuthCallback />} />
             <Route path="/reset-password" element={<ResetPassword />} />
 
             {/* Public storefront landing */}
