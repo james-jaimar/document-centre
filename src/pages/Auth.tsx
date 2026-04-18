@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, Printer } from "lucide-react";
 import { toast } from "sonner";
+import SocialAuthButtons from "@/components/auth/SocialAuthButtons";
 
 type AuthMode = "login" | "register" | "forgot";
 
@@ -164,6 +165,17 @@ const Auth = () => {
                   />
                 </div>
               )}
+
+              <div className="relative pt-2">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-card px-2 text-muted-foreground">Or</span>
+                </div>
+              </div>
+
+              <SocialAuthButtons tenantSlug={tenantSlug ?? null} />
             </CardContent>
 
             <CardFooter className="flex flex-col gap-3">
