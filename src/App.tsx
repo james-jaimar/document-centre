@@ -99,7 +99,7 @@ const App = () => (
             <Route path="/dashboard/*" element={<ProtectedRoute><StorefrontRedirect /></ProtectedRoute>} />
 
             {/* Branch Portal — dedicated layout */}
-            <Route element={<ProtectedRoute allowedRoles={[...branchRoles]}><BranchLayout /></ProtectedRoute>}>
+            <Route element={<ProtectedRoute allowedRoles={[...branchRoles]} allowedMembershipRoles={["branch_manager", "store_operator", "owner", "admin"]}><BranchLayout /></ProtectedRoute>}>
               <Route path="/branch" element={<BranchDashboard />} />
               <Route path="/branch/orders" element={<BranchOrders />} />
               <Route path="/branch/products" element={<BranchProducts />} />
