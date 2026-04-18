@@ -1,6 +1,7 @@
 // Admin operations on user accounts. Requires caller to be tenant owner/admin
 // (for tenant-scoped actions) or platform_admin (for cross-tenant actions).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { resolveAppOrigin, buildAppVerifyLink } from "../_shared/buildAuthLink.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -121,18 +122,18 @@ Deno.serve(async (req) => {
       case "force_password_reset":
       case "resend_invite": {
         if (!targetEmail) return err("Target user has no email on file");
-        const origin = req.headers.get("origin") || req.headers.get("referer") || "";
-        const siteUrl = origin ? new URL(origin).origin : "";
-        const redirectTo = siteUrl ? `${siteUrl}/reset-password` : undefined;
+        const callerOrigin = req.headers.get("origin") || req.headers.get("referer") || null;
+        const appOrigin = await resolveAppOrigin(admin, tenant_id ?? null, callerOrigin);
+        if (!appOrigin) return err("Could not resolve app URL for verification link", 500);
 
         const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
           type: "recovery",
           email: targetEmail,
-          options: redirectTo ? { redirectTo } : undefined,
+          options: { redirectTo: `${appOrigin}/reset-password` },
         });
         if (linkErr) return err(`Failed to generate link: ${linkErr.message}`);
 
-        const actionLink = (linkData as any)?.properties?.action_link as string | undefined;
+        const actionLink = buildAppVerifyLink(appOrigin, linkData, "/reset-password");
 
         // For resend_invite, fetch tenant branding and send a branded email via send-email.
         let emailSent = false;
