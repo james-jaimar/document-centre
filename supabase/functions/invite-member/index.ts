@@ -125,13 +125,27 @@ Deno.serve(async (req) => {
     const admin = createClient(url, serviceKey);
 
     const body = await req.json();
-    const { email, tenant_id, app_id, role, branch_id, can_view_all_orders } = body;
+    const {
+      email, tenant_id, app_id, role, branch_id, can_view_all_orders,
+      first_name, last_name, phone, job_title, send_email,
+    } = body;
 
     if (!email || !tenant_id || !app_id || !role) {
       return err("Missing required fields: email, tenant_id, app_id, role");
     }
 
+    const branchRequired = role === "branch_manager" || role === "store_operator";
+    if (branchRequired && !branch_id) {
+      return err("A branch must be selected for this role");
+    }
+
     const cleanEmail = String(email).trim().toLowerCase();
+    const cleanFirst = first_name ? String(first_name).trim() : null;
+    const cleanLast = last_name ? String(last_name).trim() : null;
+    const cleanPhone = phone ? String(phone).trim() : null;
+    const cleanJobTitle = job_title ? String(job_title).trim() : null;
+    const shouldSendEmail = send_email !== false;
+    const displayName = [cleanFirst, cleanLast].filter(Boolean).join(" ").trim() || cleanEmail.split("@")[0];
 
     // Verify caller is admin/owner for this tenant
     const { data: callerMembership } = await admin
@@ -196,21 +210,35 @@ Deno.serve(async (req) => {
         isNewAccount = true;
       }
 
-      // Ensure profile row exists
+      // Ensure profile row exists with the provided identity fields
       await admin.from("profiles").upsert(
         {
           id: profileId,
           email: cleanEmail,
-          display_name: cleanEmail.split("@")[0],
+          display_name: displayName,
+          first_name: cleanFirst,
+          last_name: cleanLast,
+          phone: cleanPhone,
         },
         { onConflict: "id" }
       );
     }
 
+    // For existing profiles, only fill blanks (don't clobber)
+    if (existingProfile) {
+      const patch: Record<string, unknown> = {};
+      if (!existingProfile.first_name && cleanFirst) patch.first_name = cleanFirst;
+      if (!existingProfile.last_name && cleanLast) patch.last_name = cleanLast;
+      if (cleanPhone) patch.phone = cleanPhone;
+      if (Object.keys(patch).length > 0) {
+        await admin.from("profiles").update(patch).eq("id", profileId);
+      }
+    }
+
     // Check membership exists
     const { data: existingMembership } = await admin
       .from("tenant_memberships")
-      .select("id")
+      .select("id, role")
       .eq("profile_id", profileId)
       .eq("tenant_id", tenant_id)
       .eq("app_id", app_id)
@@ -218,10 +246,14 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (existingMembership) {
-      return err("This user already has a membership in this tenant", 409);
+      return err(
+        `This user is already a member of this tenant (role: ${existingMembership.role}). Edit their existing membership instead.`,
+        409
+      );
     }
 
-    // Create membership
+    // Create membership (tenant-wide roles ignore branch)
+    const tenantWide = role === "owner" || role === "admin";
     const { error: memberErr } = await admin
       .from("tenant_memberships")
       .insert({
@@ -229,7 +261,7 @@ Deno.serve(async (req) => {
         tenant_id,
         app_id,
         role,
-        branch_id: branch_id || null,
+        branch_id: tenantWide ? null : (branch_id || null),
         can_view_all_orders: can_view_all_orders ?? false,
       });
 
@@ -239,29 +271,31 @@ Deno.serve(async (req) => {
 
     // Generate password-setup link (no email sent by Supabase)
     let actionLink: string | null = null;
-    try {
-      const origin = req.headers.get("origin") || req.headers.get("referer") || "";
-      const siteUrl = origin ? new URL(origin).origin : "";
-      const redirectTo = siteUrl ? `${siteUrl}/reset-password` : undefined;
+    if (shouldSendEmail) {
+      try {
+        const origin = req.headers.get("origin") || req.headers.get("referer") || "";
+        const siteUrl = origin ? new URL(origin).origin : "";
+        const redirectTo = siteUrl ? `${siteUrl}/reset-password` : undefined;
 
-      const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
-        type: "recovery",
-        email: cleanEmail,
-        options: redirectTo ? { redirectTo } : undefined,
-      });
+        const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+          type: "recovery",
+          email: cleanEmail,
+          options: redirectTo ? { redirectTo } : undefined,
+        });
 
-      if (!linkErr && linkData?.properties?.action_link) {
-        actionLink = linkData.properties.action_link;
-      } else if (linkErr) {
-        console.error("generateLink error:", linkErr);
+        if (!linkErr && linkData?.properties?.action_link) {
+          actionLink = linkData.properties.action_link;
+        } else if (linkErr) {
+          console.error("generateLink error:", linkErr);
+        }
+      } catch (e) {
+        console.error("generateLink threw:", e);
       }
-    } catch (e) {
-      console.error("generateLink threw:", e);
     }
 
     // Send branded email via SMTP send-email function
     let emailSent = false;
-    if (actionLink) {
+    if (shouldSendEmail && actionLink) {
       try {
         const brand = await getTenantBranding(admin, tenant_id);
         const { subject, html, text } = buildInviteEmail(brand, actionLink, isNewAccount);
