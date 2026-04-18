@@ -50,6 +50,7 @@ export function StorefrontRedirect({ path }: { path?: string }) {
     );
   }
 
-  // No tenant membership — show a message or redirect to auth
+  // No tenant membership — bounce to generic /auth where the gating
+  // logic will explain that they need their organisation's portal.
   return <Navigate to="/auth" replace />;
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, getDefaultRoute } from "@/hooks/useAuth";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,35 +7,99 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle, Printer } from "lucide-react";
+import { AlertCircle, Printer, Info } from "lucide-react";
 import { toast } from "sonner";
 import SocialAuthButtons from "@/components/auth/SocialAuthButtons";
+import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 
 type AuthMode = "login" | "register" | "forgot";
 
 const Auth = () => {
   const navigate = useNavigate();
   const { slug: tenantSlug } = useParams<{ slug: string }>();
+  const [searchParams] = useSearchParams();
   const { user, highestRole, loading: authLoading } = useAuth();
+  const { tenant: brandedTenant } = useTenantFromSlug();
   const [mode, setMode] = useState<AuthMode>("login");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [gating, setGating] = useState(false);
 
+  const isTenantPortal = !!tenantSlug;
+
+  // Post-login gating: route by role + tenant context. Sign out and bounce
+  // anyone who landed at the wrong door.
   useEffect(() => {
-    // Wait for roles to load before deciding where to send the user.
-    // Otherwise platform admins land on /t/:slug/dashboard because
-    // highestRole is briefly null right after sign-in.
-    if (user && !authLoading) {
-      if (tenantSlug && highestRole === 'customer') {
-        navigate(`/t/${tenantSlug}/dashboard`, { replace: true });
-      } else {
-        navigate(getDefaultRoute(highestRole), { replace: true });
+    if (!user || authLoading || gating) return;
+
+    (async () => {
+      setGating(true);
+      try {
+        // Platform admins always go to /platform regardless of entry point.
+        if (highestRole === "platform_admin") {
+          navigate("/platform", { replace: true });
+          return;
+        }
+
+        // Look up this user's tenant memberships (active only).
+        const { data: memberships } = await supabase
+          .from("tenant_memberships")
+          .select("tenant_id, role, tenants:tenant_id(slug, name)")
+          .eq("profile_id", user.id)
+          .eq("is_active", true);
+
+        const list = (memberships ?? []) as Array<{
+          tenant_id: string;
+          role: string;
+          tenants: { slug: string; name: string } | null;
+        }>;
+
+        if (isTenantPortal) {
+          // On /t/:slug/auth — user must have a membership for THIS tenant.
+          const matchSlug = list.find((m) => m.tenants?.slug === tenantSlug);
+          if (matchSlug) {
+            navigate(`/t/${tenantSlug}/dashboard`, { replace: true });
+            return;
+          }
+          // Wrong tenant — sign out and explain.
+          await supabase.auth.signOut();
+          setError(
+            brandedTenant
+              ? `Your account isn't part of ${brandedTenant.name}. Please use the correct portal.`
+              : "Your account isn't part of this organisation. Please use the correct portal.",
+          );
+          return;
+        }
+
+        // On generic /auth — only platform staff or staff with no tenant should be here.
+        if (list.length === 0) {
+          // No tenant, no platform role — orphan.
+          await supabase.auth.signOut();
+          setError("This portal is for platform staff. Please use your organisation's sign-in page.");
+          return;
+        }
+
+        // Tenant member landed on generic /auth — bounce them to their portal.
+        const primary = list[0];
+        const targetSlug = primary.tenants?.slug;
+        await supabase.auth.signOut();
+        if (targetSlug) {
+          toast.info("Please sign in via your organisation's portal.");
+          navigate(`/t/${targetSlug}/auth?email=${encodeURIComponent(email || user.email || "")}`, {
+            replace: true,
+          });
+        } else {
+          setError("Please sign in via your organisation's portal.");
+        }
+      } finally {
+        setGating(false);
       }
-    }
-  }, [user, highestRole, authLoading, navigate, tenantSlug]);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, highestRole, authLoading]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,6 +120,10 @@ const Auth = () => {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    if (!isTenantPortal) {
+      setError("Sign-up is only available via your organisation's portal.");
+      return;
+    }
     if (!email || !password) return setError("Please enter both email and password");
     setLoading(true);
     try {
@@ -83,6 +151,10 @@ const Auth = () => {
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    if (!isTenantPortal) {
+      setError("Password reset is only available via your organisation's portal.");
+      return;
+    }
     if (!email) return setError("Please enter your email");
     setLoading(true);
     try {
@@ -107,23 +179,50 @@ const Auth = () => {
       <div className="w-full max-w-md px-4">
         <Card className="shadow-2xl">
           <CardHeader className="text-center">
-            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-              <Printer className="h-7 w-7" />
-            </div>
+            {isTenantPortal && brandedTenant?.logo_url ? (
+              <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl bg-card">
+                <img
+                  src={brandedTenant.logo_url}
+                  alt={`${brandedTenant.name} logo`}
+                  className="max-h-16 max-w-16 object-contain"
+                />
+              </div>
+            ) : (
+              <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+                <Printer className="h-7 w-7" />
+              </div>
+            )}
             <CardTitle className="text-2xl font-bold">
-              {mode === "login" ? "Welcome Back" : mode === "register" ? "Create Account" : "Reset Password"}
+              {isTenantPortal && brandedTenant
+                ? brandedTenant.name
+                : mode === "login"
+                ? "Welcome Back"
+                : mode === "register"
+                ? "Create Account"
+                : "Reset Password"}
             </CardTitle>
             <CardDescription>
-              {mode === "login"
-                ? "Sign in to your print portal"
-                : mode === "register"
-                ? "Get started with your print account"
-                : "Enter your email to reset your password"}
+              {isTenantPortal
+                ? mode === "login"
+                  ? `Sign in to ${brandedTenant?.name ?? "your portal"}`
+                  : mode === "register"
+                  ? `Create your ${brandedTenant?.name ?? ""} account`.trim()
+                  : "Enter your email to reset your password"
+                : "Platform staff sign-in"}
             </CardDescription>
           </CardHeader>
 
           <form onSubmit={submitHandler}>
             <CardContent className="space-y-4">
+              {!isTenantPortal && (
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertDescription>
+                    Customer or team member? Sign in through your organisation's portal using the link your admin sent you.
+                  </AlertDescription>
+                </Alert>
+              )}
+
               {error && (
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
@@ -131,7 +230,7 @@ const Auth = () => {
                 </Alert>
               )}
 
-              {mode === "register" && (
+              {mode === "register" && isTenantPortal && (
                 <div className="space-y-2">
                   <Label htmlFor="displayName">Name</Label>
                   <Input
@@ -182,7 +281,7 @@ const Auth = () => {
             </CardContent>
 
             <CardFooter className="flex flex-col gap-3">
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button type="submit" className="w-full" disabled={loading || gating}>
                 {loading
                   ? "Please wait..."
                   : mode === "login"
@@ -192,23 +291,26 @@ const Auth = () => {
                   : "Send Reset Link"}
               </Button>
 
-              <div className="flex w-full flex-col gap-1 text-center text-sm text-muted-foreground">
-                {mode === "login" && (
-                  <>
-                    <button type="button" className="hover:text-primary" onClick={() => setMode("forgot")}>
-                      Forgot password?
+              {/* Only tenant portals expose register / forgot flows. */}
+              {isTenantPortal && (
+                <div className="flex w-full flex-col gap-1 text-center text-sm text-muted-foreground">
+                  {mode === "login" && (
+                    <>
+                      <button type="button" className="hover:text-primary" onClick={() => setMode("forgot")}>
+                        Forgot password?
+                      </button>
+                      <button type="button" className="hover:text-primary" onClick={() => setMode("register")}>
+                        Don't have an account? <span className="font-medium text-primary">Sign up</span>
+                      </button>
+                    </>
+                  )}
+                  {mode !== "login" && (
+                    <button type="button" className="hover:text-primary" onClick={() => setMode("login")}>
+                      Back to sign in
                     </button>
-                    <button type="button" className="hover:text-primary" onClick={() => setMode("register")}>
-                      Don't have an account? <span className="font-medium text-primary">Sign up</span>
-                    </button>
-                  </>
-                )}
-                {mode !== "login" && (
-                  <button type="button" className="hover:text-primary" onClick={() => setMode("login")}>
-                    Back to sign in
-                  </button>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
             </CardFooter>
           </form>
         </Card>
