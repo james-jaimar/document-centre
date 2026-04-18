@@ -1,5 +1,6 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useTenantContext } from "@/hooks/useTenantContext";
 import type { Database } from "@/integrations/supabase/types";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
@@ -7,13 +8,16 @@ type AppRole = Database["public"]["Enums"]["app_role"];
 interface ProtectedRouteProps {
   children: React.ReactNode;
   allowedRoles?: AppRole[];
+  /** Optional tenant_memberships.role values that also grant access */
+  allowedMembershipRoles?: string[];
 }
 
-export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
+export function ProtectedRoute({ children, allowedRoles, allowedMembershipRoles }: ProtectedRouteProps) {
   const { user, roles, loading } = useAuth();
+  const { memberships, loading: tenantLoading } = useTenantContext();
   const location = useLocation();
 
-  if (loading) {
+  if (loading || tenantLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
@@ -24,7 +28,6 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     );
   }
 
-  // Extract tenant slug from current path for context-aware redirects
   const slugMatch = location.pathname.match(/^\/t\/([^/]+)/);
   const fallback = slugMatch ? `/t/${slugMatch[1]}/dashboard` : "/dashboard";
 
@@ -33,7 +36,12 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     return <Navigate to={authPath} replace />;
   }
 
-  if (allowedRoles && !allowedRoles.some((r) => roles.includes(r))) {
+  const hasAppRole = allowedRoles ? allowedRoles.some((r) => roles.includes(r)) : false;
+  const hasMembershipRole = allowedMembershipRoles
+    ? memberships.some((m) => m.is_active && allowedMembershipRoles.includes(m.role))
+    : false;
+
+  if ((allowedRoles || allowedMembershipRoles) && !hasAppRole && !hasMembershipRole) {
     return <Navigate to={fallback} replace />;
   }
 
