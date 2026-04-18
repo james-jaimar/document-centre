@@ -1,27 +1,64 @@
 
 
-The screenshot shows 154 errors in the console. From the console log excerpt I can see two clear React warnings being thrown repeatedly:
+## The problem
 
-1. **`MembersTable` ref warning** — "Function components cannot be given refs. Did you mean to use React.forwardRef()?" thrown from `AdminUsers` rendering `MembersTable`. The `AdminUsers` page is likely passing a `ref` to `MembersTable` (a plain function component).
+The invite email contains a Supabase-hosted action link:
+`https://lcvdhtaqoumyokjqaqfw.supabase.co/auth/v1/verify?token=...&redirect_to=https://...lovableproject.com/reset-password`
 
-2. **`DropdownMenu` ref warning** — "Function components cannot be given refs" thrown from `MembersTable` rendering a `DropdownMenu`. Inside the row actions, a `DropdownMenuTrigger asChild` is wrapping a custom function component (likely the icon button) instead of a forwardRef'd element.
+That's because `invite-member/index.ts` calls `admin.auth.admin.generateLink({ type: "recovery" })` and embeds `linkData.properties.action_link` in the email. Supabase's `action_link` always points at `{SUPABASE_URL}/auth/v1/verify` — it does the token exchange and *then* redirects to your `redirectTo`. So users see the raw Supabase domain in the URL bar (and in the email body, which is what they're complaining about).
 
-Both warnings fire on every render and every row, which compounds into hundreds of console errors as the table re-renders. Let me check the actual files to confirm.
+The same pattern is used in `manage-user` (resend invite) and likely `invite-platform-admin` — both need the same fix.
 
-I'll read `AdminUsers.tsx` and `MembersTable.tsx` to identify the exact ref-passing sites, then fix both. I also need to check whether anything else is contributing — but the stack traces in the console point squarely at these two.
+## The fix
 
-### Fix
+Stop using Supabase's `verify` URL. Instead, use the `hashed_token` that `generateLink` also returns and build our own app-hosted link that does the verification client-side.
 
-**`src/components/admin/MembersTable.tsx`**
-- Convert the component (or whichever inner button/icon component is used as `DropdownMenuTrigger asChild`) to use `React.forwardRef` so Radix can attach its ref. Most common cause: a wrapper like `<IconButton>` or a custom action component used as `asChild`. Replace with the standard `<Button>` from `@/components/ui/button` (which already forwards refs) or wrap in `forwardRef`.
-- Also: if `AdminUsers` is passing a `ref` prop to `<MembersTable ref={...}>`, either drop it or wrap `MembersTable` in `forwardRef`.
+### How it works
 
-**`src/pages/admin/AdminUsers.tsx`**
-- Remove any stray `ref={...}` being forwarded to `MembersTable`. (Possible leftover from a refactor.)
+`generateLink({ type: "recovery" })` returns:
+- `properties.action_link` — the Supabase-hosted URL (what we're using now, what we want to drop)
+- `properties.hashed_token` — the raw token
+- `properties.email_otp` — OTP code
+- `properties.verification_type` — e.g. "recovery"
 
-### Files touched
-- `src/components/admin/MembersTable.tsx`
-- `src/pages/admin/AdminUsers.tsx`
+We build the link ourselves:
+```
+https://{app-origin}/auth/verify?token_hash={hashed_token}&type=recovery&next=/reset-password
+```
 
-No schema, edge function, or data changes — pure client-side cleanup. After the fix, the console should drop from ~154 errors to near zero (auth/network warnings aside).
+A new public route `/auth/verify` runs `supabase.auth.verifyOtp({ token_hash, type })` on mount, then navigates to `next`. Result: the user only ever sees the app domain.
+
+### Picking the right app origin
+
+The Edge Function currently uses `req.headers.get('origin')` as the base. That works for the inviter's session but isn't reliable for emails. Better source of truth: a per-tenant `portal_url` (already part of branding settings — tenants like PostNet have their own subdomain/path). Resolution order in the function:
+
+1. `tenant_settings.branding.portal_url` for this tenant (preferred — matches the tenant's storefront)
+2. `tenant_settings.global.app_url` (platform-wide default)
+3. `req.headers.get('origin')` (fallback — the admin's current portal)
+
+Never fall back to the Supabase URL.
+
+### Files
+
+| File | Change |
+|---|---|
+| `src/pages/AuthVerify.tsx` *(new)* | Reads `token_hash`, `type`, `next` from query string. Calls `supabase.auth.verifyOtp({ token_hash, type })`. On success, navigates to `next` (default `/reset-password`). On failure, shows a friendly error with a "Request a new link" CTA. |
+| `src/App.tsx` | Add public route `/auth/verify` → `<AuthVerify />`. |
+| `supabase/functions/invite-member/index.ts` | Replace the `action_link` block with a `hashed_token`-based app URL. Add `resolveAppOrigin(tenantId)` helper that reads tenant branding `portal_url` first, then falls back to caller origin. |
+| `supabase/functions/manage-user/index.ts` | Same change for the `resend_invite` action. |
+| `supabase/functions/invite-platform-admin/index.ts` | Same change (verify it follows the same pattern; if it does, fix it). |
+| *(optional, follow-up)* `supabase/functions/_shared/buildAuthLink.ts` | Extract the link-building helper so all three functions share it. |
+
+### Visual / UX
+
+`/auth/verify` shows a centered spinner with "Verifying your invitation…" — no Supabase branding ever, just the tenant's portal. On failure (expired, used, invalid), shows: "This link has expired or already been used. Please ask your admin to resend the invitation."
+
+### Migration / cleanup
+
+No DB migration. Existing in-flight invite emails (sent before this change) will still work — the old Supabase verify URL keeps functioning until the user opens it. New invites will use the app-hosted link.
+
+### Out of scope (flag if needed)
+
+- Email change confirmation, magic link login, signup confirmation — same pattern applies but those flows aren't currently exposed in your custom invite system, so no immediate action needed.
+- The bigger "Lovable auth email templates" infrastructure (with React Email + the `auth-email-hook` edge function) — your project uses a custom SMTP `send-email` function instead, which is fine and works. No need to migrate.
 
