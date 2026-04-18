@@ -195,7 +195,7 @@ const PlatformUsers = () => {
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
                                   onClick={() => setConfirmAction({ user: u, type: "revoke" })}
-                                  className="text-amber-600 focus:text-amber-600"
+                                  className="text-warning focus:text-warning"
                                 >
                                   <ShieldOff size={14} className="mr-2" /> Revoke platform admin
                                 </DropdownMenuItem>
