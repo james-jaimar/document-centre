@@ -1,50 +1,43 @@
 
 
-**Three fixes for the platform shell:**
+### Root cause
 
-### 1. Rebrand sidebar header
-`src/components/AppSidebar.tsx` line 128–131 — replace hardcoded `"PrintHub Platform"` / `"PrintHub"` fallback with `"Document Centre"`. Subtitle stays "Platform Admin" / role.
+When you click "Sign In", `useAuth.loading` is already `false` (from the initial `getSession()` call returning no session). When `onAuthStateChange` fires `SIGNED_IN`:
 
-### 2. Fix footer role label
-Same file, line 222 — currently shows `roles[0] ?? "user"` which picks an arbitrary role (so a platform admin who also has the legacy `customer` role displays as "customer"). Change to display the **highest role** with a friendly label:
-- `platform_admin` → "Platform Admin"
-- `head_office_admin` → "Tenant Admin"
-- `branch_manager` → "Branch Manager"
-- `store_operator` → "Store Operator"
-- `customer` → "Customer"
+1. `setUser(session.user)` runs immediately
+2. `fetchRoles` is deferred to `setTimeout(0)` 
+3. **`loading` stays `false` the whole time**
 
-Use `highestRole` from `useAuth()` (already exposed).
+So `Auth.tsx`'s effect runs with `user=truthy, authLoading=false, highestRole=null` and navigates to `getDefaultRoute(null)` = `/dashboard` → `StorefrontRedirect` → `/t/printworx/dashboard`.
 
-### 3. Scope Platform Users to platform staff only + add CRUD
-This is the meat. Currently `usePlatformUsers` returns **every profile in the database** including tenant customers — that's why `james_b_hawkins` (a PostNet customer) shows up. Platform Users should be the SaaS operator team only.
+My previous "fix" gating on `!authLoading` was a no-op because `authLoading` was never set back to `true` for the sign-in flow.
 
-**Filter logic** — update `src/hooks/usePlatformUsers.ts` to only return profiles where:
+### Fix
+
+**`src/hooks/useAuth.tsx`** — when `onAuthStateChange` fires `SIGNED_IN` (or `TOKEN_REFRESHED` with a new user), set `loading=true` BEFORE the deferred role fetch, so consumers reliably wait for roles to populate. Reset to `false` only after roles are set.
+
+```text
+onAuthStateChange((event, session) => {
+  setSession(session);
+  setUser(session?.user ?? null);
+  if (session?.user) {
+    setLoading(true);              // ← ADD THIS
+    setTimeout(async () => {
+      const userRoles = await fetchRoles(session.user.id);
+      setRoles(userRoles);
+      setLoading(false);
+    }, 0);
+  } else {
+    setRoles([]);
+    setLoading(false);
+  }
+});
 ```
-EXISTS (SELECT 1 FROM user_roles WHERE user_id = profiles.id AND role = 'platform_admin')
-```
-Tenant memberships are still shown as informational badges (so you can see if a platform admin also has tenant access), but tenant-only users are excluded entirely.
 
-**CRUD operations** — extend `src/pages/platform/PlatformUsers.tsx`:
-- **Invite Platform Admin button** (top right) → opens dialog asking for email + display name. Calls a new `invite-platform-admin` edge function that:
-  - Sends a magic-link/invite email via the existing `send-email` function
-  - On first sign-in, the `handle_new_user` trigger creates the profile; we then need to assign `platform_admin` via `user_roles`. Simplest: the edge function (service role) pre-creates the auth user with `email_confirm: false` and inserts a `user_roles` row with role `platform_admin` keyed to the new auth user id.
-- **Revoke admin** action in row dropdown → removes the `platform_admin` row from `user_roles` (account stays, just loses platform access). Hidden for the current user (can't self-revoke).
-- Existing **Force password reset / Disable / Enable / Delete** stay as-is (they already use `manage-user`).
-- Add a small "Platform Admin" badge column or merge into Status (e.g., Status pill stays Active/Disabled, plus a separate "Role" cell showing "Platform Admin").
-
-**Self-listing** — once the filter is in place, the current user (if a platform admin) will appear in the list. The current screenshot user isn't a platform admin in the DB (`james_b_hawkins` only has `customer`) — but `admin@printworx.co.za` (James Hawkins) IS a platform admin and will continue to appear correctly.
+That single line closes the race. `Auth.tsx`'s existing guard (`!authLoading`) will then correctly wait for roles before deciding the destination, and `getDefaultRoute('platform_admin')` will send you to `/platform`.
 
 ### Files touched
-- `src/components/AppSidebar.tsx` — brand string + footer role label
-- `src/hooks/usePlatformUsers.ts` — filter to platform admins only
-- `src/pages/platform/PlatformUsers.tsx` — Invite button, dialog, revoke action, role column
-- `src/components/platform/InvitePlatformAdminDialog.tsx` — new component
-- `src/hooks/useInvitePlatformAdmin.ts` — new mutation hook
-- `supabase/functions/invite-platform-admin/index.ts` — new edge function (service-role, creates auth user + user_roles row, sends invite email)
-- `supabase/functions/manage-user/index.ts` — extend with `revoke_platform_admin` action
-- `supabase/config.toml` — register the new function
+- `src/hooks/useAuth.tsx` — add `setLoading(true)` before the deferred role fetch in `onAuthStateChange`.
 
-### Security notes
-- New edge function gated by `supabase.auth.getUser()` + check caller has `platform_admin` role before performing any action.
-- Revoke-admin is blocked if the target is the only remaining platform admin (prevent lockout).
+No other changes needed. The Auth.tsx logic is already correct once `authLoading` behaves properly.
 
