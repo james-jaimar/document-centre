@@ -12,6 +12,7 @@ import CustomerLayout from "@/components/CustomerLayout";
 
 import Auth from "@/pages/Auth";
 import AuthCallback from "@/pages/AuthCallback";
+import AuthVerify from "@/pages/AuthVerify";
 import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "@/pages/NotFound";
 import { StorefrontRedirect } from "@/components/StorefrontRedirect";
@@ -74,6 +75,7 @@ const App = () => (
             <Route path="/t/:slug/auth" element={<Auth />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/t/:slug/auth/callback" element={<AuthCallback />} />
+            <Route path="/auth/verify" element={<AuthVerify />} />
             <Route path="/reset-password" element={<ResetPassword />} />
 
             {/* Public storefront landing */}
