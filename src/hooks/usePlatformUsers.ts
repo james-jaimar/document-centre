@@ -51,11 +51,16 @@ export function usePlatformUsers(search: string) {
 
       // 3. Tenant lookup
       const tenantIds = [...new Set((memberships ?? []).map((m) => m.tenant_id))];
-      const { data: tenants } = tenantIds.length
-        ? await supabase.from("tenants").select("id, name, slug").in("id", tenantIds)
-        : { data: [] };
+      let tenants: Array<{ id: string; name: string; slug: string }> = [];
+      if (tenantIds.length) {
+        const { data } = await supabase
+          .from("tenants")
+          .select("id, name, slug")
+          .in("id", tenantIds);
+        tenants = (data ?? []) as Array<{ id: string; name: string; slug: string }>;
+      }
 
-      const tenantMap = new Map(tenants?.map((t) => [t.id, t]) ?? []);
+      const tenantMap = new Map(tenants.map((t) => [t.id, t] as const));
 
       return profiles.map<PlatformUserRow>((p) => ({
         profile_id: p.id,

@@ -50,6 +50,7 @@ import BranchSettings from "@/pages/branch/BranchSettings";
 
 // Platform
 import PlatformTenants from "@/pages/platform/PlatformTenants";
+import PlatformUsers from "@/pages/platform/PlatformUsers";
 import PlatformSettings from "@/pages/platform/PlatformSettings";
 
 const queryClient = new QueryClient();
@@ -176,6 +177,11 @@ const App = () => (
               <Route path="/platform" element={
                 <ProtectedRoute allowedRoles={["platform_admin"]}>
                   <PlatformTenants />
+                </ProtectedRoute>
+              } />
+              <Route path="/platform/users" element={
+                <ProtectedRoute allowedRoles={["platform_admin"]}>
+                  <PlatformUsers />
                 </ProtectedRoute>
               } />
               <Route path="/platform/settings" element={

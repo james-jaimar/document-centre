@@ -43,6 +43,7 @@ const PLATFORM_SECTIONS: NavSection[] = [
     roles: ["platform_admin"],
     items: [
       { to: "/platform", icon: <Globe size={20} />, label: "Tenants" },
+      { to: "/platform/users", icon: <Users size={20} />, label: "All Users" },
       { to: "/platform/settings", icon: <Settings size={20} />, label: "Platform Settings" },
     ],
   },
