@@ -44,28 +44,63 @@ const AuthCallback = () => {
       if (fnError || (data as any)?.error) {
         const msg = (data as any)?.error || fnError?.message || "Sign-in failed";
         setError(msg);
-        // Clean up — sign them out so they aren't left in a half-authed state
-        // when the platform login rejects them.
         await supabase.auth.signOut();
         return;
       }
 
-      toast.success("Signed in");
+      // Resolve roles + memberships in parallel.
+      const [rolesRes, membershipsRes] = await Promise.all([
+        supabase.from("user_roles").select("role").eq("user_id", session.user.id),
+        supabase
+          .from("tenant_memberships")
+          .select("tenant_id, tenants:tenant_id(slug, name)")
+          .eq("profile_id", session.user.id)
+          .eq("is_active", true),
+      ]);
 
+      const priority = ["platform_admin", "head_office_admin", "branch_manager", "store_operator", "customer"] as const;
+      const roleList = (rolesRes.data ?? []).map((r) => r.role);
+      const highest = priority.find((r) => roleList.includes(r)) ?? null;
+      const memberships = (membershipsRes.data ?? []) as Array<{
+        tenant_id: string;
+        tenants: { slug: string; name: string } | null;
+      }>;
+
+      // Tenant-scoped OAuth flow — verify membership for this tenant.
       if (tenantSlug) {
-        navigate(`/t/${tenantSlug}/dashboard`, { replace: true });
+        const match = memberships.find((m) => m.tenants?.slug === tenantSlug);
+        if (match) {
+          toast.success("Signed in");
+          navigate(`/t/${tenantSlug}/dashboard`, { replace: true });
+          return;
+        }
+        await supabase.auth.signOut();
+        setError("Your account isn't part of this organisation. Please use the correct portal.");
         return;
       }
 
-      // Platform login — route by highest role.
-      const { data: roles } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", session.user.id);
-      const priority = ["platform_admin", "head_office_admin", "branch_manager", "store_operator", "customer"] as const;
-      const list = (roles ?? []).map((r) => r.role);
-      const highest = priority.find((r) => list.includes(r)) ?? "customer";
-      navigate(getDefaultRoute(highest as any), { replace: true });
+      // Generic /auth/callback — platform staff allowed; tenant members get bounced; orphans rejected.
+      if (highest === "platform_admin") {
+        toast.success("Signed in");
+        navigate(getDefaultRoute(highest as any), { replace: true });
+        return;
+      }
+
+      if (memberships.length > 0) {
+        const targetSlug = memberships[0].tenants?.slug;
+        await supabase.auth.signOut();
+        if (targetSlug) {
+          toast.info("Please sign in via your organisation's portal.");
+          navigate(`/t/${targetSlug}/auth`, { replace: true });
+        } else {
+          setError("Please sign in via your organisation's portal.");
+        }
+        return;
+      }
+
+      // No platform role, no tenant membership.
+      await supabase.auth.signOut();
+      setError("This portal is for platform staff. Please use your organisation's sign-in page.");
     };
 
     run();
