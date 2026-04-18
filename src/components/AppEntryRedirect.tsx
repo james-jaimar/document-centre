@@ -2,6 +2,7 @@ import { Navigate } from "react-router-dom";
 import { getDefaultRoute, useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { buildAdminPath } from "@/lib/adminRouting";
+import MarketingLanding from "@/pages/MarketingLanding";
 
 export function AppEntryRedirect() {
   const { user, highestRole, loading } = useAuth();
@@ -20,8 +21,9 @@ export function AppEntryRedirect() {
     );
   }
 
+  // Unauthenticated visitors land on the public marketing site
   if (!user) {
-    return <Navigate to="/auth" replace />;
+    return <MarketingLanding />;
   }
 
   const targetRoute = defaultRoute.startsWith("/admin")

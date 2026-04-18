@@ -219,3 +219,106 @@
     @apply w-full bg-transparent text-base outline-none placeholder:text-muted-foreground;
   }
 }
+
+/* === Document Centre marketing site (scoped) === */
+.dc-marketing {
+  /* Brand palette as HSL so Tailwind arbitrary values stay clean */
+  --dc-navy: 220 80% 22%;        /* #0B2A66 */
+  --dc-blue: 215 75% 47%;        /* #1565D8 */
+  --dc-sky: 199 86% 58%;         /* #39B6F0 */
+  --dc-green: 130 56% 43%;       /* #34B34A */
+  --dc-orange: 38 93% 54%;       /* #F7A81B */
+  --dc-bg-soft: 213 50% 97%;     /* #F5F8FC */
+  --dc-border: 215 36% 90%;      /* #DCE4EE */
+  --dc-text-muted: 215 17% 45%;  /* #5F6E85 */
+
+  font-family: "Inter", "Manrope", "Plus Jakarta Sans", system-ui, sans-serif;
+  color: hsl(var(--dc-navy));
+  background: #fff;
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.dc-marketing h1, .dc-marketing h2, .dc-marketing h3 {
+  font-family: "Inter", "Manrope", "Plus Jakarta Sans", system-ui, sans-serif;
+  letter-spacing: -0.02em;
+  color: hsl(var(--dc-navy));
+}
+
+.dc-marketing .dc-ribbon {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 9999px;
+  filter: blur(0.5px);
+  opacity: 0.85;
+}
+
+.dc-marketing .dc-card {
+  background: #fff;
+  border: 1px solid hsl(var(--dc-border));
+  border-radius: 24px;
+  box-shadow: 0 12px 40px rgba(11,42,102,0.06);
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+
+.dc-marketing .dc-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 50px rgba(11,42,102,0.10);
+}
+
+.dc-marketing .dc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  padding: 0.85rem 1.6rem;
+  font-size: 0.95rem;
+  transition: all .15s ease;
+  white-space: nowrap;
+}
+
+.dc-marketing .dc-btn-primary {
+  background: hsl(var(--dc-blue));
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(21,101,216,0.28);
+}
+.dc-marketing .dc-btn-primary:hover { background: hsl(var(--dc-navy)); }
+
+.dc-marketing .dc-btn-outline {
+  background: #fff;
+  color: hsl(var(--dc-navy));
+  border: 1.5px solid hsl(var(--dc-border));
+}
+.dc-marketing .dc-btn-outline:hover { border-color: hsl(var(--dc-blue)); color: hsl(var(--dc-blue)); }
+
+.dc-marketing .dc-btn-light-outline {
+  background: transparent;
+  color: #fff;
+  border: 1.5px solid rgba(255,255,255,0.4);
+}
+.dc-marketing .dc-btn-light-outline:hover { border-color: #fff; background: rgba(255,255,255,0.08); }
+
+.dc-marketing .dc-btn-green {
+  background: hsl(var(--dc-green));
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(52,179,74,0.32);
+}
+.dc-marketing .dc-btn-green:hover { filter: brightness(0.95); }
+
+.dc-marketing .dc-eyebrow {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: hsl(var(--dc-blue));
+  background: hsl(var(--dc-blue) / 0.08);
+  padding: 0.35rem 0.8rem;
+  border-radius: 9999px;
+}
+
+.dc-marketing .dc-muted { color: hsl(var(--dc-text-muted)); }
+
