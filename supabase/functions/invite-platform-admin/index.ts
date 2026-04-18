@@ -1,5 +1,6 @@
 // Invite a new Platform Admin. Caller must already be platform_admin.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { resolveAppOrigin, buildAppVerifyLink } from "../_shared/buildAuthLink.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -161,20 +162,24 @@ Deno.serve(async (req) => {
       metadata: { invited_new_account: isNewAccount },
     }).then(() => {}, () => {}); // ignore if table doesn't exist
 
-    // Generate password setup link + send email
+    // Generate password setup link via app-hosted URL (never expose Supabase domain)
     let actionLink: string | null = null;
     try {
-      const origin = req.headers.get("origin") || req.headers.get("referer") || "";
-      const siteUrl = origin ? new URL(origin).origin : "";
-      const redirectTo = siteUrl ? `${siteUrl}/reset-password` : undefined;
-
-      const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
-        type: "recovery",
-        email,
-        options: redirectTo ? { redirectTo } : undefined,
-      });
-      if (!linkErr && linkData?.properties?.action_link) {
-        actionLink = linkData.properties.action_link;
+      const callerOrigin = req.headers.get("origin") || req.headers.get("referer") || null;
+      const appOrigin = await resolveAppOrigin(admin, null, callerOrigin);
+      if (!appOrigin) {
+        console.error("Could not resolve app origin for platform admin invite");
+      } else {
+        const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+          type: "recovery",
+          email,
+          options: { redirectTo: `${appOrigin}/reset-password` },
+        });
+        if (linkErr) {
+          console.error("generateLink error:", linkErr);
+        } else {
+          actionLink = buildAppVerifyLink(appOrigin, linkData, "/reset-password");
+        }
       }
     } catch (e) {
       console.error("generateLink threw:", e);
