@@ -240,12 +240,9 @@ export function AddMemberDialog({ open, onOpenChange, tenantId, appId }: Props) 
               <Select value={role} onValueChange={setRole}>
                 <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {ROLE_OPTIONS.map((opt) => (
+                {ROLE_OPTIONS.map((opt) => (
                     <SelectItem key={opt.value} value={opt.value}>
-                      <div className="flex flex-col">
-                        <span className="font-medium">{opt.label}</span>
-                        <span className="text-xs text-muted-foreground">{opt.description}</span>
-                      </div>
+                      {opt.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
