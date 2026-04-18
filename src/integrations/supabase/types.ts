@@ -2113,6 +2113,45 @@ export type Database = {
           },
         ]
       }
+      user_admin_audit: {
+        Row: {
+          action: string
+          actor_profile_id: string
+          app_id: string | null
+          created_at: string
+          id: string
+          metadata: Json
+          reason: string | null
+          target_email: string | null
+          target_profile_id: string | null
+          tenant_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_profile_id: string
+          app_id?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json
+          reason?: string | null
+          target_email?: string | null
+          target_profile_id?: string | null
+          tenant_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_profile_id?: string
+          app_id?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json
+          reason?: string | null
+          target_email?: string | null
+          target_profile_id?: string | null
+          tenant_id?: string | null
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           branch_id: string | null
