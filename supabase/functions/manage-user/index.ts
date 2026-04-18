@@ -26,7 +26,8 @@ type Action =
   | "delete_account"
   | "resend_invite"
   | "update_email"
-  | "remove_membership";
+  | "remove_membership"
+  | "revoke_platform_admin";
 
 interface Body {
   action: Action;
@@ -184,6 +185,28 @@ Deno.serve(async (req) => {
         if (e) return err(`Failed to remove membership: ${e.message}`);
         await audit({ membership_id });
         return json({ success: true, message: "Membership removed" });
+      }
+
+      case "revoke_platform_admin": {
+        if (!isPlatformAdmin) return err("Only platform admins can revoke platform admin", 403);
+        if (target_profile_id === caller.id) return err("You cannot revoke your own platform admin role", 400);
+
+        // Prevent lockout — at least one platform admin must remain
+        const { data: remaining } = await admin
+          .from("user_roles")
+          .select("user_id")
+          .eq("role", "platform_admin");
+        const others = (remaining ?? []).filter((r) => r.user_id !== target_profile_id);
+        if (others.length === 0) return err("Cannot revoke the only platform admin", 400);
+
+        const { error: e } = await admin
+          .from("user_roles")
+          .delete()
+          .eq("user_id", target_profile_id)
+          .eq("role", "platform_admin");
+        if (e) return err(`Failed to revoke: ${e.message}`);
+        await audit();
+        return json({ success: true, message: "Platform admin access revoked" });
       }
 
       default:

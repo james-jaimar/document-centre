@@ -8,7 +8,8 @@ export type ManageUserAction =
   | "delete_account"
   | "resend_invite"
   | "update_email"
-  | "remove_membership";
+  | "remove_membership"
+  | "revoke_platform_admin";
 
 export interface ManageUserInput {
   action: ManageUserAction;
