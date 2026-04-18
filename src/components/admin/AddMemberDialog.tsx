@@ -53,10 +53,10 @@ export function AddMemberDialog({ open, onOpenChange, tenantId, appId }: Props) 
   const [inviting, setInviting] = useState(false);
 
   const [role, setRole] = useState("admin");
-  const branchRequired = BRANCH_REQUIRED_ROLES.has(role);
-  const branchInvalid = branchRequired && !branchId;
   const [branchId, setBranchId] = useState("");
   const [canViewAllOrders, setCanViewAllOrders] = useState(false);
+  const branchRequired = BRANCH_REQUIRED_ROLES.has(role);
+  const branchInvalid = branchRequired && !branchId;
 
   const reset = () => {
     setEmail("");
