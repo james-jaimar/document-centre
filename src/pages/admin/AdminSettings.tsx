@@ -7,7 +7,8 @@ import { UploadsTab } from "./settings/UploadsTab";
 import { NotificationsTab } from "./settings/NotificationsTab";
 import { DocumentsTab } from "./settings/DocumentsTab";
 import { DeliveryTab } from "./settings/DeliveryTab";
-import { Building2, Palette, Workflow, Receipt, Upload, Bell, FileText, Truck } from "lucide-react";
+import { EmailAccountsTab } from "./settings/EmailAccountsTab";
+import { Building2, Palette, Workflow, Receipt, Upload, Bell, FileText, Truck, Mail } from "lucide-react";
 
 const AdminSettings = () => {
   return (
@@ -26,6 +27,7 @@ const AdminSettings = () => {
             { value: "financial", label: "Financial", icon: Receipt },
             { value: "uploads", label: "Uploads & Proofs", icon: Upload },
             { value: "notifications", label: "Notifications", icon: Bell },
+            { value: "email", label: "Email Accounts", icon: Mail },
             { value: "documents", label: "Documents", icon: FileText },
             { value: "delivery", label: "Delivery", icon: Truck },
           ].map(({ value, label, icon: Icon }) => (
@@ -46,6 +48,7 @@ const AdminSettings = () => {
         <TabsContent value="financial"><FinancialTab /></TabsContent>
         <TabsContent value="uploads"><UploadsTab /></TabsContent>
         <TabsContent value="notifications"><NotificationsTab /></TabsContent>
+        <TabsContent value="email"><EmailAccountsTab /></TabsContent>
         <TabsContent value="documents"><DocumentsTab /></TabsContent>
         <TabsContent value="delivery"><DeliveryTab /></TabsContent>
       </Tabs>
