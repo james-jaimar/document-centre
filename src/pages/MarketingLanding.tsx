@@ -1,25 +1,19 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, Check, Linkedin, Youtube, Mail, Star, Play } from "lucide-react";
-import heroBg from "@/assets/marketing-hero-bg.jpg";
+import heroImage from "@/assets/hero-image.png";
 import sarahPhoto from "@/assets/testimonial-sarah.jpg";
 import printSamples from "@/assets/print-samples.png";
+import docCentreLogo from "@/assets/doc-centre-logo.svg";
+import webToPrintHeadline from "@/assets/web-to-print-made-easy.svg";
 
 /* ───────────────────────── Logo ───────────────────────── */
-const Logo = ({ className = "" }: { className?: string }) => (
-  <div className={`flex items-center gap-3 ${className}`}>
-    <svg width="44" height="44" viewBox="0 0 44 44" fill="none" aria-hidden>
-      {/* page-flip / bookmark mark — green base, blue middle, orange accent */}
-      <path d="M6 6 L26 6 L26 38 L6 38 Z" fill="hsl(var(--dc-green))" />
-      <path d="M14 4 L34 4 L34 36 L14 36 Z" fill="hsl(var(--dc-blue))" />
-      <path d="M22 12 L38 12 L38 30 L22 30 Z" fill="hsl(var(--dc-orange))" />
-      <path d="M14 4 L26 6 L26 12 L22 12 Z" fill="hsl(var(--dc-navy))" opacity="0.25" />
-    </svg>
-    <span className="leading-[1.05] font-extrabold text-[1.35rem]">
-      <span style={{ color: "hsl(var(--dc-navy))" }}>Document</span>
-      <br />
-      <span style={{ color: "hsl(var(--dc-green))" }}>Centre</span>
-    </span>
-  </div>
+const Logo = ({ className = "", height = 44 }: { className?: string; height?: number }) => (
+  <img
+    src={docCentreLogo}
+    alt="Document Centre"
+    style={{ height }}
+    className={`w-auto ${className}`}
+  />
 );
 
 /* ───────────────────────── Diagonal Ribbon Layer ─────────────────────────
