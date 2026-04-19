@@ -49,7 +49,9 @@ import AdminSentMail from "@/pages/admin/AdminSentMail";
 // Branch portal
 import BranchDashboard from "@/pages/branch/BranchDashboard";
 import BranchOrders from "@/pages/branch/BranchOrders";
+import BranchOrderDetail from "@/pages/branch/BranchOrderDetail";
 import BranchProducts from "@/pages/branch/BranchProducts";
+import BranchPricing from "@/pages/branch/BranchPricing";
 import BranchSettings from "@/pages/branch/BranchSettings";
 
 // Platform
