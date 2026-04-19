@@ -59,6 +59,11 @@ export default function AdminCustomerDetail() {
   const [editingAddress, setEditingAddress] = useState<CustomerAddress | null>(null);
   const [confirmDeleteAddress, setConfirmDeleteAddress] = useState<string | null>(null);
 
+  const accountSettings = useMemo(
+    () => ((data?.membership as any)?.metadata ?? {}) as any,
+    [data?.membership]
+  );
+
   if (isLoading || !data) {
     return (
       <div className="p-6 space-y-4">
@@ -80,7 +85,6 @@ export default function AdminCustomerDetail() {
 
   const lifetimeValue = orders.reduce((sum, o: any) => sum + Number(o.total_amount ?? 0), 0);
   const aov = orders.length > 0 ? lifetimeValue / orders.length : 0;
-  const accountSettings = useMemo(() => (membership?.metadata ?? {}) as any, [membership]);
 
   const openAddAddress = () => {
     setEditingAddress(null);
