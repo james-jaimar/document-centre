@@ -34,6 +34,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // (e.g. TOKEN_REFRESHED) must never flip this back to true, otherwise the
   // route guards blank the entire app on tab refocus.
   const [loading, setLoading] = useState(true);
+  // `rolesLoaded` flips false when the user identity changes and back to true
+  // once that user's roles have been fetched. Consumers wait on this before
+  // making routing decisions that depend on `highestRole`.
+  const [rolesLoaded, setRolesLoaded] = useState(false);
   const currentUserIdRef = useRef<string | null>(null);
 
   const fetchRoles = useCallback(async (userId: string) => {
