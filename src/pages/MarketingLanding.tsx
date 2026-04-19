@@ -457,7 +457,7 @@ export default function MarketingLanding() {
                 </li>
               ))}
             </ul>
-            <div className="mt-6 flex flex-wrap gap-3">
+            <div className="mt-5 flex flex-wrap gap-3">
               <a href="#cta" className="dc-btn dc-btn-primary" style={{ padding: "0.7rem 1.3rem", fontSize: "0.92rem" }}>
                 Start Your Free Trial <ArrowRight className="h-4 w-4" />
               </a>
@@ -466,7 +466,7 @@ export default function MarketingLanding() {
                 See It in Action
               </a>
             </div>
-            <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[12.5px] dc-muted">
+            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-[12.5px] dc-muted">
               {["No credit card required", "Set up in minutes", "UK-based & GBP"].map((t) => (
                 <span key={t} className="flex items-center gap-1.5">
                   <Check className="h-3.5 w-3.5" style={{ color: "hsl(var(--dc-green))" }} strokeWidth={3} /> {t}
