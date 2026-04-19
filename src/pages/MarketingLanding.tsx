@@ -384,7 +384,7 @@ export default function MarketingLanding() {
     <div className="dc-marketing">
       {/* ───────── Header ───────── */}
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-[hsl(var(--dc-border))]">
-        <div className="max-w-[1240px] mx-auto px-6 h-[78px] flex items-center justify-between">
+        <div className="max-w-[1240px] mx-auto px-6 h-[112px] flex items-center justify-between">
           <Logo />
           <nav className="hidden lg:flex items-center gap-9 text-[15px] font-medium" style={{ color: "hsl(var(--dc-navy))" }}>
             <a href="#features" className="hover:text-[hsl(var(--dc-blue))]">Features</a>
