@@ -10,6 +10,7 @@ interface AuthContextValue {
   session: Session | null;
   roles: AppRole[];
   loading: boolean;
+  rolesLoaded: boolean;
   signOut: () => Promise<void>;
   hasRole: (role: AppRole) => boolean;
   highestRole: AppRole | null;
