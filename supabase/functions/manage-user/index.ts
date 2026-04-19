@@ -199,12 +199,19 @@ ${logo}<h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 16px;">${
           }
         }
 
-        await audit({ delivered_via: action === "resend_invite" ? "send_email" : "auth_email_hook", email_sent: emailSent });
+        // For force_password_reset, the actual email is dispatched by Supabase Auth
+        // firing its send-email webhook → auth-email-hook → pgmq queue → process-email-queue.
+        // We can't synchronously confirm delivery here, so report it as queued.
+        await audit({
+          delivered_via: action === "resend_invite" ? "send_email" : "auth_email_hook",
+          email_sent: action === "resend_invite" ? emailSent : null,
+          delivery: action === "resend_invite" ? (emailSent ? "sent" : "failed") : "queued",
+        });
         return json({
           success: true,
           message: action === "resend_invite"
             ? (emailSent ? "Invite email resent" : "Sign-in link generated (email send failed)")
-            : "Password reset email sent",
+            : "Reset link queued — delivery is being processed",
         });
       }
 
