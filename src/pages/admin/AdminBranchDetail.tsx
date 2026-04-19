@@ -39,6 +39,7 @@ const AdminBranchDetail = () => {
   const unassignedMembers = allMembers?.filter((m) => !m.branch_id || m.branch_id !== id) || [];
 
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState("");
 
   // Editable form state
@@ -324,6 +325,16 @@ const AdminBranchDetail = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Invite New Branch Staff */}
+      {tenantId && appId && (
+        <AddMemberDialog
+          open={inviteDialogOpen}
+          onOpenChange={setInviteDialogOpen}
+          tenantId={tenantId}
+          appId={appId}
+        />
+      )}
     </div>
   );
 };
