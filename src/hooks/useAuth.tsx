@@ -10,6 +10,7 @@ interface AuthContextValue {
   session: Session | null;
   roles: AppRole[];
   loading: boolean;
+  rolesLoaded: boolean;
   signOut: () => Promise<void>;
   hasRole: (role: AppRole) => boolean;
   highestRole: AppRole | null;
@@ -33,6 +34,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // (e.g. TOKEN_REFRESHED) must never flip this back to true, otherwise the
   // route guards blank the entire app on tab refocus.
   const [loading, setLoading] = useState(true);
+  // `rolesLoaded` flips false when the user identity changes and back to true
+  // once that user's roles have been fetched. Consumers wait on this before
+  // making routing decisions that depend on `highestRole`.
+  const [rolesLoaded, setRolesLoaded] = useState(false);
   const currentUserIdRef = useRef<string | null>(null);
 
   const fetchRoles = useCallback(async (userId: string) => {
@@ -64,13 +69,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           currentUserIdRef.current = nextUserId;
 
           if (nextUserId) {
+            setRolesLoaded(false);
             // Defer to avoid Supabase deadlock inside the listener
             setTimeout(async () => {
               const userRoles = await fetchRoles(nextUserId);
-              setRoles(userRoles);
+              // Guard against a newer identity change overtaking us.
+              if (currentUserIdRef.current === nextUserId) {
+                setRoles(userRoles);
+                setRolesLoaded(true);
+              }
             }, 0);
           } else {
             setRoles([]);
+            setRolesLoaded(true);
           }
         }
         // TOKEN_REFRESHED, USER_UPDATED, etc. for the same user: do nothing
@@ -87,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const userRoles = await fetchRoles(initialSession.user.id);
         setRoles(userRoles);
       }
+      setRolesLoaded(true);
       setLoading(false);
     });
 
@@ -98,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setSession(null);
     setRoles([]);
+    setRolesLoaded(true);
     currentUserIdRef.current = null;
   }, []);
 
@@ -112,7 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, session, roles, loading, signOut, hasRole, highestRole }}
+      value={{ user, session, roles, loading, rolesLoaded, signOut, hasRole, highestRole }}
     >
       {children}
     </AuthContext.Provider>

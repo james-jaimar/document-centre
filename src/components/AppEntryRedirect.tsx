@@ -5,12 +5,14 @@ import { buildAdminPath } from "@/lib/adminRouting";
 import MarketingLanding from "@/pages/MarketingLanding";
 
 export function AppEntryRedirect() {
-  const { user, highestRole, loading } = useAuth();
+  const { user, highestRole, loading, rolesLoaded } = useAuth();
   const { tenantId, loading: tenantLoading } = useTenantContext();
 
   const defaultRoute = getDefaultRoute(highestRole);
 
-  if (loading || (user && defaultRoute.startsWith("/admin") && tenantLoading)) {
+  // Wait for roles to resolve before deciding — otherwise a platform admin can
+  // briefly look role-less and get sent to /dashboard.
+  if (loading || (user && !rolesLoaded) || (user && defaultRoute.startsWith("/admin") && tenantLoading)) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
