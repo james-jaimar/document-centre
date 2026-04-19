@@ -426,13 +426,13 @@ export default function MarketingLanding() {
           <img src={heroImage} alt="" className="w-full h-auto block" />
         </div>
 
-        <div className="relative max-w-[1240px] mx-auto px-6 py-12 lg:py-14 grid lg:grid-cols-2 gap-10 items-center">
+        <div className="relative max-w-[1240px] mx-auto px-6 py-8 lg:py-10 min-h-[520px] lg:min-h-[560px] grid lg:grid-cols-2 gap-10 items-start">
           {/* left: copy */}
           <div className="relative z-10">
             <img
               src={webToPrintHeadline}
               alt="Web-to-Print Made Easy"
-              className="w-full max-w-[460px] h-auto"
+              className="w-full max-w-[420px] h-auto mt-2"
             />
             <p className="mt-4 text-[1rem] dc-muted max-w-md leading-relaxed">
               Power your print business with a fast, flexible, and beautiful ordering system your customers will love.
