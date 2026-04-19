@@ -7,7 +7,7 @@ import docCentreLogo from "@/assets/doc-centre-logo.svg";
 import webToPrintHeadline from "@/assets/web-to-print-made-easy.svg";
 
 /* ───────────────────────── Logo ───────────────────────── */
-const Logo = ({ className = "", height = 44 }: { className?: string; height?: number }) => (
+const Logo = ({ className = "", height = 88 }: { className?: string; height?: number }) => (
   <img
     src={docCentreLogo}
     alt="Document Centre"
