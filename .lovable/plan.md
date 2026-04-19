@@ -1,159 +1,80 @@
 
-## What’s actually happening
 
-This is not the browser doing a real page reload, and it’s not React Query window-focus refetching either.
+Looking at the Platform Users page issue. Let me check the current state.
 
-I can see from your code and logs that when you return to the tab, Supabase auto-refreshes the auth token:
+The user shows:
+- Logged in as `james@jaimar.dev` (platform_admin)
+- But the Platform Users row shows email `admin@printworx.co.za` linked to PrintWorx as owner
 
-- network log shows `POST /auth/v1/token?grant_type=refresh_token`
-- immediately after that, the app re-runs:
-  - `user_roles` fetch
-  - `tenant_memberships` fetch
-  - tenant lookup fetches
-- your route guards then show the full-screen `Loading...` overlay, which makes it feel like the whole app refreshed
+From the network log, I can see:
+- `profiles` returns: `{"id":"430a7575...","email":"admin@printworx.co.za","display_name":"James Hawkins"}`
+- `auth.users` JWT email: `james@jaimar.dev`
 
-## Root cause
+So the **profile row's email is stale** — it was set when the seed data was created with `admin@printworx.co.za`, but the actual auth account is `james@jaimar.dev`. The profile's `email` column was never synced when the auth email changed (or it was seeded incorrectly).
 
-There are two code-level causes working together:
+Also looking at `usePlatformUsers.ts`: it shows tenant memberships (PrintWorx owner) because that profile genuinely has an owner membership in PrintWorx — that's correct, not a bug. James is both a platform admin AND owner of PrintWorx.
 
-1. `useAuth` treats every auth event like a fresh app bootstrap  
-   In `src/hooks/useAuth.tsx`, `onAuthStateChange(...)` does this for any session event:
-   - `setSession(session)`
-   - `setUser(session?.user ?? null)`
-   - `setLoading(true)`
-   - re-fetch roles
+The "limited actions" issue: looking at how the row menu is built, I need to check what actions are exposed for platform users vs tenant members. Let me lay out what's actually wrong and what to fix.
 
-   That includes background token refresh events when the tab regains focus.
+## Two distinct problems
 
-2. `useTenantContext` reloads memberships whenever the `user` object changes  
-   In `src/hooks/useTenantContext.tsx`, the effect depends on `[user]`, not a stable key like `user?.id`.  
-   When Supabase refreshes the token, the session/user object can change identity even though it’s still the same signed-in person. That retriggers:
-   - `setLoading(true)`
-   - `tenant_memberships` query
-   - tenant name lookup
+### Problem 1: Stale email in `profiles.email`
+The `profiles` row for user `430a7575…` has `email: admin@printworx.co.za` but the actual auth.users email is `james@jaimar.dev`. Two causes possible:
+- Seed data inserted the wrong email
+- Email was changed in auth but profile never updated
 
-Then `ProtectedRoute` blocks the entire app whenever either auth or tenant context is loading:
+**Fix**: 
+- Add a one-time data correction to sync `profiles.email` from `auth.users.email` for all profiles (backfill).
+- Add a DB trigger on `auth.users` that keeps `profiles.email` in sync on email change going forward.
 
-- `src/components/ProtectedRoute.tsx`
-- if `loading || tenantLoading`, it renders the full-screen spinner
+### Problem 2: Platform Users row only shows "force password reset" / "disable account"
+Looking at `AdminUsers.tsx` (which is what renders the actions menu via `MembersTable`), the actions wired up are: Edit, Reset Password, Resend Invite, Toggle Active, Remove. But this is the **tenant** Users page, not the **platform** Users page.
 
-So the app “blanks out” on focus.
+The Platform Users page (`/platform/users`) uses `PlatformUsers.tsx` + `usePlatformUsers` and likely has its own row menu with a smaller action set. I need to read it to confirm what's there and what's missing.
 
-## Why this has been happening in newer builds
+I'll need to inspect `src/pages/platform/PlatformUsers.tsx` to see exactly which actions exist and design the missing ones.
 
-The pattern causing this is:
+## Plan
 
-- modern auth SDKs silently refresh tokens when a tab becomes active again
-- if app code uses one shared `loading` flag for both:
-  - initial app bootstrap
-  - background auth/session maintenance
-- then every silent token refresh looks like a fresh app load
+### Step A — Fix the data and prevent recurrence
+1. Migration:
+   - Backfill: `UPDATE public.profiles SET email = au.email FROM auth.users au WHERE profiles.id = au.id AND profiles.email IS DISTINCT FROM au.email;`
+   - Trigger on `auth.users` AFTER UPDATE: when `email` changes, update `public.profiles.email`.
+   - Also update `handle_new_user()` to set `profiles.email` from `NEW.email` on signup (currently it doesn't).
 
-That’s why you’re seeing it more recently. It’s not a browser bug and not something inherent to Lovable-hosted apps; it’s an app-state design issue in the auth/context layer.
+### Step B — Full CRUD on Platform Users
+Inspect `PlatformUsers.tsx`. Add the missing actions to the row menu:
+- **Edit user details** (display name, email) — wire to `manage-user` action `update_email` (already exists) + a new `update_profile` action for display name.
+- **Force password reset** (already there)
+- **Resend invite** 
+- **Disable / Enable account** (already there as toggle)
+- **Revoke platform admin** (existing `manage-user` action)
+- **Remove from a specific tenant membership** (existing `remove_membership` action) — surfaced per-membership chip
+- **Delete account** (existing `delete_account` action) — destructive, with confirmation
+- **View tenant memberships** with quick "remove" per row
 
-## What I’ll change
+Layout: use a dropdown menu on the row + an "Edit" dialog for profile fields.
 
-### 1) Split “initialising app” from “background auth updates”
-Refactor `useAuth` so it has a bootstrap-only loading state.
+### Step C — Self-protection guardrails
+- Don't allow a platform admin to: disable their own account, delete their own account, revoke their own platform_admin role.
+- Backend (`manage-user`) should already enforce; UI should also disable those actions when `target_profile_id === auth.uid()`.
 
-New behavior:
-- on first mount:
-  - call `getSession()`
-  - fetch roles once
-  - mark auth as ready
-- on `onAuthStateChange`:
-  - update session/user silently
-  - only re-fetch roles when actually needed
-    - signed in as a different user
-    - signed out
-    - explicit sign-in/signup callback flow
-  - do not set the global blocking loader for token refresh events
+## What I'll change
 
-In practice:
-- `TOKEN_REFRESHED` should not trigger full-screen loading
-- same-user session refresh should be silent
+**Migration**:
+- Backfill profile emails from auth.users
+- Add trigger `sync_profile_email_on_auth_change` 
+- Update `handle_new_user()` to copy email
 
-### 2) Make tenant loading depend on `user?.id`, not whole `user`
-Refactor `useTenantContext` effect dependency from `[user]` to something stable like `[user?.id]`.
+**Code**:
+- `src/pages/platform/PlatformUsers.tsx` — expand row actions, add Edit dialog, add per-membership remove, add delete-account confirmation, add revoke-platform-admin
+- Possibly extend `useManageUser.ts` types if a new `update_profile` action is added
+- `supabase/functions/manage-user/index.ts` — add `update_profile` action (display_name, first_name, last_name) if not present, plus self-protection checks
 
-New behavior:
-- if the same user remains signed in, background token refresh won’t reload memberships
-- memberships stay in memory
-- tenant context does not flicker back to loading
+**Verification**:
+1. After migration, refresh `/platform/users` → row shows `james@jaimar.dev`.
+2. Click row menu → see Edit, Reset Password, Resend Invite, Disable/Enable, Revoke Platform Admin, Delete Account.
+3. Self-actions (disable/delete/revoke) are disabled with tooltip "Cannot perform on your own account".
+4. Remove a tenant membership chip → membership disappears, account stays.
+5. Edit display name + email → row updates, auth email actually changes.
 
-### 3) Preserve existing tenant data during silent refresh
-Keep current memberships/tenant state while background auth events happen.
-
-That means:
-- no `setLoading(true)` for same-user silent refreshes
-- only show blocking load when:
-  - app first boots
-  - user actually changes
-  - user signs out
-
-### 4) Tighten route guard behavior
-Update `ProtectedRoute` and entry redirects so they only block on true initial unresolved auth/tenant bootstrap.
-
-Goal:
-- first load: spinner is fine
-- tab refocus: no full-screen spinner
-- explicit login/logout: still correct
-
-### 5) Leave React Query settings alone
-`src/App.tsx` already has:
-
-- `refetchOnWindowFocus: false`
-- `refetchOnReconnect: false`
-
-So I will not chase React Query here. That’s not the problem.
-
-## Extra issue spotted
-There’s also a console warning in `EmailAccountsTab` / `DialogContent` about refs being passed to a function component. That’s separate from the refresh issue, but I’ll clean it up while I’m in there if you want. It’s not the cause of the tab-focus refresh.
-
-## Implementation plan
-
-1. Refactor `useAuth` to distinguish:
-   - initial bootstrap loading
-   - background auth/session updates
-2. Ignore or handle `TOKEN_REFRESHED` without setting blocking `loading = true`
-3. Change `useTenantContext` to key membership loading off `user?.id`
-4. Prevent tenant context from re-entering loading state on same-user token refresh
-5. Verify `ProtectedRoute` and `AppEntryRedirect` only block on first-load conditions
-6. Test by:
-   - opening `/admin/settings?tenant=...`
-   - switching away from the tab and back
-   - confirming there is no full-screen loading reset
-   - confirming login/logout still behave correctly
-   - confirming tenant override still persists
-
-## Technical details
-
-```text
-Current flow on tab focus
-browser focus
-  -> Supabase refresh token
-  -> onAuthStateChange fires
-  -> useAuth sets loading=true
-  -> setUser(new object reference)
-  -> useTenantContext effect runs again
-  -> tenantLoading=true
-  -> ProtectedRoute shows fullscreen loader
-```
-
-```text
-Desired flow on tab focus
-browser focus
-  -> Supabase refresh token
-  -> useAuth updates session silently
-  -> same user id, no bootstrap loading
-  -> useTenantContext does not reload memberships
-  -> current screen stays visible
-```
-
-## Expected outcome after fix
-
-- coming back to the tab will feel instant
-- no fake “app refresh” overlay
-- background auth refresh still works properly
-- tenant/admin pages stay stable
-- only real app startup or real auth changes show a blocking loader
