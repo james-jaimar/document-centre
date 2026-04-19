@@ -409,38 +409,35 @@ export default function MarketingLanding() {
 
       {/* ───────── Hero ───────── */}
       <section
-        className="relative overflow-hidden"
-        style={{
-          background: `linear-gradient(180deg, hsl(var(--dc-bg-soft)) 0%, #ffffff 100%)`,
-        }}
+        className="relative overflow-hidden bg-white"
       >
         {/* full-width hero image (already pre-blended to white on the left).
-            Sized to width so the whole image fits across the viewport. */}
-        <div className="absolute inset-x-0 top-0 hidden md:block pointer-events-none" aria-hidden>
+            Renders as a background that fills the section; copy sits on top
+            within the image's frame. */}
+        <div className="absolute inset-0 hidden md:block pointer-events-none" aria-hidden>
           <img
             src={heroImage}
             alt=""
-            className="w-full h-auto block"
-          />
-          {/* soft fade to white at the bottom so the image blends into page */}
-          <div
-            className="absolute inset-x-0 bottom-0 h-24"
-            style={{ background: "linear-gradient(180deg, rgba(255,255,255,0) 0%, #ffffff 100%)" }}
+            className="w-full h-full object-cover object-right block"
           />
         </div>
+        {/* mobile fallback: show image as a top banner */}
+        <div className="md:hidden">
+          <img src={heroImage} alt="" className="w-full h-auto block" />
+        </div>
 
-        <div className="relative max-w-[1240px] mx-auto px-6 pt-16 pb-28 grid lg:grid-cols-[1fr_1.1fr] gap-10 items-center">
+        <div className="relative max-w-[1240px] mx-auto px-6 py-12 lg:py-14 grid lg:grid-cols-2 gap-10 items-center">
           {/* left: copy */}
           <div className="relative z-10">
             <img
               src={webToPrintHeadline}
               alt="Web-to-Print Made Easy"
-              className="w-full max-w-[520px] h-auto"
+              className="w-full max-w-[460px] h-auto"
             />
-            <p className="mt-5 text-[1.05rem] dc-muted max-w-md leading-relaxed">
+            <p className="mt-4 text-[1rem] dc-muted max-w-md leading-relaxed">
               Power your print business with a fast, flexible, and beautiful ordering system your customers will love.
             </p>
-            <ul className="mt-7 grid sm:grid-cols-2 gap-y-2.5 gap-x-8 text-[14.5px]" style={{ color: "hsl(var(--dc-navy))" }}>
+            <ul className="mt-5 grid sm:grid-cols-2 gap-y-2 gap-x-6 text-[14px]" style={{ color: "hsl(var(--dc-navy))" }}>
               {[
                 "Online ordering & file upload",
                 "Artwork templates & variable data",
@@ -451,34 +448,34 @@ export default function MarketingLanding() {
               ].map((b) => (
                 <li key={b} className="flex items-start gap-2">
                   <span
-                    className="mt-0.5 h-5 w-5 rounded-full flex items-center justify-center shrink-0"
+                    className="mt-0.5 h-[18px] w-[18px] rounded-full flex items-center justify-center shrink-0"
                     style={{ background: "hsl(var(--dc-green))" }}
                   >
-                    <Check className="h-3 w-3 text-white" strokeWidth={3.5} />
+                    <Check className="h-2.5 w-2.5 text-white" strokeWidth={3.5} />
                   </span>
                   <span className="font-medium">{b}</span>
                 </li>
               ))}
             </ul>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <a href="#cta" className="dc-btn dc-btn-primary" style={{ padding: "0.95rem 1.7rem", fontSize: "0.98rem" }}>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <a href="#cta" className="dc-btn dc-btn-primary" style={{ padding: "0.7rem 1.3rem", fontSize: "0.92rem" }}>
                 Start Your Free Trial <ArrowRight className="h-4 w-4" />
               </a>
-              <a href="#cta" className="dc-btn dc-btn-outline" style={{ padding: "0.95rem 1.7rem", fontSize: "0.98rem" }}>
+              <a href="#cta" className="dc-btn dc-btn-outline" style={{ padding: "0.7rem 1.3rem", fontSize: "0.92rem" }}>
                 <Play className="h-4 w-4" style={{ color: "hsl(var(--dc-blue))" }} fill="hsl(var(--dc-blue))" />
                 See It in Action
               </a>
             </div>
-            <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 text-[13px] dc-muted">
+            <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[12.5px] dc-muted">
               {["No credit card required", "Set up in minutes", "UK-based & GBP"].map((t) => (
                 <span key={t} className="flex items-center gap-1.5">
-                  <Check className="h-4 w-4" style={{ color: "hsl(var(--dc-green))" }} strokeWidth={3} /> {t}
+                  <Check className="h-3.5 w-3.5" style={{ color: "hsl(var(--dc-green))" }} strokeWidth={3} /> {t}
                 </span>
               ))}
             </div>
           </div>
 
-          {/* right column intentionally empty — the hero image fills the right side as a background */}
+          {/* right column intentionally empty — the hero image fills the right side */}
           <div aria-hidden />
         </div>
       </section>
