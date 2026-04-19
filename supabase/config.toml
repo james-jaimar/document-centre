@@ -1,8 +1,6 @@
 project_id = "lcvdhtaqoumyokjqaqfw"
 
 [functions]
-  [functions.auth-email-hook]
-    verify_jwt = false
   [functions.pdf-api]
     verify_jwt = false
   [functions.s3-storage]
@@ -10,6 +8,16 @@ project_id = "lcvdhtaqoumyokjqaqfw"
   [functions.scrape-branding]
     verify_jwt = false
   [functions.send-email]
+    verify_jwt = false
+  [functions.send-order-email]
+    verify_jwt = false
+  [functions.email-dispatcher]
+    verify_jwt = false
+  [functions.email-account-manage]
+    verify_jwt = false
+  [functions.request-password-reset]
+    verify_jwt = false
+  [functions.request-signup]
     verify_jwt = false
   [functions.manage-user]
     verify_jwt = false
