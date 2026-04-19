@@ -255,6 +255,19 @@ ${logo}<h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 16px;">${
         return json({ success: true, message: "Account deleted" });
       }
 
+      case "update_profile": {
+        const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        if (display_name !== undefined) updates.display_name = display_name;
+        if (first_name !== undefined) updates.first_name = first_name;
+        if (last_name !== undefined) updates.last_name = last_name;
+        if (phone !== undefined) updates.phone = phone;
+        if (Object.keys(updates).length === 1) return err("No profile fields provided");
+        const { error: e } = await admin.from("profiles").update(updates).eq("id", target_profile_id);
+        if (e) return err(`Failed to update profile: ${e.message}`);
+        await audit({ updates });
+        return json({ success: true, message: "Profile updated" });
+      }
+
       case "update_email": {
         if (!new_email) return err("Missing new_email");
         const cleanEmail = String(new_email).trim().toLowerCase();
