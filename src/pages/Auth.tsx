@@ -124,22 +124,15 @@ const Auth = () => {
       setError("Sign-up is only available via your organisation's portal.");
       return;
     }
-    if (!email || !password) return setError("Please enter both email and password");
+    if (!email) return setError("Please enter your email");
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            display_name: displayName || email.split("@")[0],
-            ...(tenantSlug ? { tenant_slug: tenantSlug } : {}),
-          },
-          emailRedirectTo: window.location.origin,
-        },
+      const { data, error } = await supabase.functions.invoke("request-signup", {
+        body: { email, display_name: displayName, tenant_slug: tenantSlug },
       });
       if (error) throw error;
-      toast.success("Check your email to confirm your account");
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast.success("Check your email to set your password and sign in.");
       setMode("login");
     } catch (err: any) {
       setError(err.message);
@@ -158,11 +151,12 @@ const Auth = () => {
     if (!email) return setError("Please enter your email");
     setLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+      const { data, error } = await supabase.functions.invoke("request-password-reset", {
+        body: { email, tenant_slug: tenantSlug },
       });
       if (error) throw error;
-      toast.success("Password reset email sent");
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast.success("If an account exists, a reset link is on its way.");
       setMode("login");
     } catch (err: any) {
       setError(err.message);
@@ -170,7 +164,6 @@ const Auth = () => {
       setLoading(false);
     }
   };
-
   const submitHandler =
     mode === "login" ? handleLogin : mode === "register" ? handleRegister : handleForgotPassword;
 

@@ -2503,6 +2503,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_email_account_secret: {
+        Args: { p_name: string; p_secret: string }
+        Returns: string
+      }
+      delete_email_account_secret: {
+        Args: { p_secret_id: string }
+        Returns: undefined
+      }
       generate_invoice_number: {
         Args: { p_app_id: string; p_tenant_id: string }
         Returns: string
@@ -2531,6 +2539,10 @@ export type Database = {
       next_number: {
         Args: { p_app_id: string; p_sequence_type: string }
         Returns: number
+      }
+      read_email_account_secret: {
+        Args: { p_secret_id: string }
+        Returns: string
       }
       resolve_tenant_setting: {
         Args: { p_category: string; p_key: string; p_tenant_id: string }

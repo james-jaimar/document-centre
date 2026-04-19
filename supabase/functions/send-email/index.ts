@@ -1,5 +1,5 @@
-import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { enqueueEmail } from "../_shared/email-queue.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,7 +13,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Validate auth
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -22,23 +21,23 @@ Deno.serve(async (req) => {
       });
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
+    const url = Deno.env.get("SUPABASE_URL")!;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) {
+    const userClient = createClient(url, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user: caller }, error: authErr } = await userClient.auth.getUser();
+    if (authErr || !caller) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const { to, subject, html, text } = await req.json();
-
+    const body = await req.json();
+    const { to, subject, html, text } = body;
     if (!to || !subject || (!html && !text)) {
       return new Response(
         JSON.stringify({ error: "Missing required fields: to, subject, and html or text" }),
@@ -46,34 +45,41 @@ Deno.serve(async (req) => {
       );
     }
 
-    const client = new SMTPClient({
-      connection: {
-        hostname: Deno.env.get("SMTP_HOST")!,
-        port: Number(Deno.env.get("SMTP_PORT")!),
-        tls: true,
-        auth: {
-          username: Deno.env.get("SMTP_USER")!,
-          password: Deno.env.get("SMTP_PASS")!,
-        },
-      },
-    });
-
-    await client.send({
-      from: Deno.env.get("SMTP_USER")!,
+    const admin = createClient(url, serviceKey);
+    const queued = await enqueueEmail(admin, {
       to,
       subject,
-      content: text || "",
-      html: html || undefined,
+      html,
+      text,
+      tenant_id: body.tenant_id ?? null,
+      branch_id: body.branch_id ?? null,
+      app_id: body.app_id ?? null,
+      email_account_id: body.email_account_id ?? null,
+      category: body.category ?? "transactional",
+      related_type: body.related_type ?? null,
+      related_id: body.related_id ?? null,
+      cc: body.cc ?? null,
+      bcc: body.bcc ?? null,
+      reply_to: body.reply_to ?? null,
+      from_name: body.from_name ?? null,
+      from_email: body.from_email ?? null,
+      scheduled_for: body.scheduled_for ?? null,
+      created_by_profile_id: caller.id,
+      metadata: body.metadata ?? {},
     });
 
-    await client.close();
+    // Best-effort immediate dispatch so simple callers see fast delivery.
+    fetch(`${url}/functions/v1/email-dispatcher`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${serviceKey}` },
+    }).catch(() => {});
 
-    return new Response(JSON.stringify({ success: true }), {
+    return new Response(JSON.stringify({ success: true, queued: true, id: queued.id }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
     console.error("Send email error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
