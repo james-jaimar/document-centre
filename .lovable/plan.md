@@ -1,80 +1,77 @@
 
 
-Looking at the Platform Users page issue. Let me check the current state.
+## Root cause — sign-in loop
 
-The user shows:
-- Logged in as `james@jaimar.dev` (platform_admin)
-- But the Platform Users row shows email `admin@printworx.co.za` linked to PrintWorx as owner
+There's a **race condition** in `src/pages/Auth.tsx` between role loading and the gating effect.
 
-From the network log, I can see:
-- `profiles` returns: `{"id":"430a7575...","email":"admin@printworx.co.za","display_name":"James Hawkins"}`
-- `auth.users` JWT email: `james@jaimar.dev`
+When James (who is BOTH `platform_admin` AND `owner` of `printworx`) signs in on `/auth`:
 
-So the **profile row's email is stale** — it was set when the seed data was created with `admin@printworx.co.za`, but the actual auth account is `james@jaimar.dev`. The profile's `email` column was never synced when the auth email changed (or it was seeded incorrectly).
+1. `signInWithPassword` resolves → `useAuth` sets `user` immediately, but schedules `fetchRoles` via `setTimeout`
+2. Auth.tsx gating effect runs — but `roles` is still `[]` so `highestRole === null`
+3. The check `if (highestRole === "platform_admin")` (line 42) is FALSE → falls through
+4. `isTenantPortal === false` → fetches memberships → finds printworx → **signs out and bounces to `/t/printworx/auth?email=...` with the "Please sign in via your organisation's portal" toast**
+5. On `/t/printworx/auth` he signs in again; same race can repeat — and even when it succeeds the gating may bounce him to `/platform` while he's actually trying to enter the storefront
+6. Loop
 
-Also looking at `usePlatformUsers.ts`: it shows tenant memberships (PrintWorx owner) because that profile genuinely has an owner membership in PrintWorx — that's correct, not a bug. James is both a platform admin AND owner of PrintWorx.
+Same race exists in `src/pages/AuthCallback.tsx` (Google OAuth path) — it does its own role lookup but only after the session is set, with the same single source of truth issue if the user has both platform and tenant roles.
 
-The "limited actions" issue: looking at how the row menu is built, I need to check what actions are exposed for platform users vs tenant members. Let me lay out what's actually wrong and what to fix.
-
-## Two distinct problems
-
-### Problem 1: Stale email in `profiles.email`
-The `profiles` row for user `430a7575…` has `email: admin@printworx.co.za` but the actual auth.users email is `james@jaimar.dev`. Two causes possible:
-- Seed data inserted the wrong email
-- Email was changed in auth but profile never updated
-
-**Fix**: 
-- Add a one-time data correction to sync `profiles.email` from `auth.users.email` for all profiles (backfill).
-- Add a DB trigger on `auth.users` that keeps `profiles.email` in sync on email change going forward.
-
-### Problem 2: Platform Users row only shows "force password reset" / "disable account"
-Looking at `AdminUsers.tsx` (which is what renders the actions menu via `MembersTable`), the actions wired up are: Edit, Reset Password, Resend Invite, Toggle Active, Remove. But this is the **tenant** Users page, not the **platform** Users page.
-
-The Platform Users page (`/platform/users`) uses `PlatformUsers.tsx` + `usePlatformUsers` and likely has its own row menu with a smaller action set. I need to read it to confirm what's there and what's missing.
-
-I'll need to inspect `src/pages/platform/PlatformUsers.tsx` to see exactly which actions exist and design the missing ones.
-
-## Plan
-
-### Step A — Fix the data and prevent recurrence
-1. Migration:
-   - Backfill: `UPDATE public.profiles SET email = au.email FROM auth.users au WHERE profiles.id = au.id AND profiles.email IS DISTINCT FROM au.email;`
-   - Trigger on `auth.users` AFTER UPDATE: when `email` changes, update `public.profiles.email`.
-   - Also update `handle_new_user()` to set `profiles.email` from `NEW.email` on signup (currently it doesn't).
-
-### Step B — Full CRUD on Platform Users
-Inspect `PlatformUsers.tsx`. Add the missing actions to the row menu:
-- **Edit user details** (display name, email) — wire to `manage-user` action `update_email` (already exists) + a new `update_profile` action for display name.
-- **Force password reset** (already there)
-- **Resend invite** 
-- **Disable / Enable account** (already there as toggle)
-- **Revoke platform admin** (existing `manage-user` action)
-- **Remove from a specific tenant membership** (existing `remove_membership` action) — surfaced per-membership chip
-- **Delete account** (existing `delete_account` action) — destructive, with confirmation
-- **View tenant memberships** with quick "remove" per row
-
-Layout: use a dropdown menu on the row + an "Edit" dialog for profile fields.
-
-### Step C — Self-protection guardrails
-- Don't allow a platform admin to: disable their own account, delete their own account, revoke their own platform_admin role.
-- Backend (`manage-user`) should already enforce; UI should also disable those actions when `target_profile_id === auth.uid()`.
+The toast in the screenshot ("Please sign in via your organisation's portal") is literally that bounce firing.
 
 ## What I'll change
 
-**Migration**:
-- Backfill profile emails from auth.users
-- Add trigger `sync_profile_email_on_auth_change` 
-- Update `handle_new_user()` to copy email
+### 1. Wait for roles before deciding (fixes the race)
 
-**Code**:
-- `src/pages/platform/PlatformUsers.tsx` — expand row actions, add Edit dialog, add per-membership remove, add delete-account confirmation, add revoke-platform-admin
-- Possibly extend `useManageUser.ts` types if a new `update_profile` action is added
-- `supabase/functions/manage-user/index.ts` — add `update_profile` action (display_name, first_name, last_name) if not present, plus self-protection checks
+In `Auth.tsx`, add a derived "auth fully ready" gate:
 
-**Verification**:
-1. After migration, refresh `/platform/users` → row shows `james@jaimar.dev`.
-2. Click row menu → see Edit, Reset Password, Resend Invite, Disable/Enable, Revoke Platform Admin, Delete Account.
-3. Self-actions (disable/delete/revoke) are disabled with tooltip "Cannot perform on your own account".
-4. Remove a tenant membership chip → membership disappears, account stays.
-5. Edit display name + email → row updates, auth email actually changes.
+- block the gating effect until either `roles.length > 0` OR we've definitively confirmed there are no roles
+- expose a `rolesLoaded` flag from `useAuth` (separate from the bootstrap `loading`) so `Auth.tsx`, `AuthCallback.tsx` and `AppEntryRedirect.tsx` can wait on it without flipping the global loading spinner
+
+Concretely in `useAuth.tsx`:
+- add `rolesLoaded: boolean` to the context
+- set it to `true` after the initial `fetchRoles` resolves on bootstrap
+- set it to `false` whenever `currentUserIdRef` changes (new user identity), then back to `true` once that user's roles resolve
+- `TOKEN_REFRESHED` for the same user does NOT touch this flag
+
+### 2. Decide based on full role+membership picture
+
+In `Auth.tsx` gating, change the order of decisions to:
+
+1. If `!rolesLoaded` → return (wait)
+2. If `highestRole === "platform_admin"`:
+   - On `/t/:slug/auth` → navigate to `/t/:slug/dashboard` (platform admins are allowed into any storefront they want to inspect; do NOT force them to `/platform` from a tenant URL — the user clearly wants to be in the tenant context)
+   - On generic `/auth` → navigate to `/platform`
+3. Otherwise, run the existing tenant-membership branch
+
+This means a user like James who has both roles can sign into the storefront at `/t/printworx/auth` and stay in the storefront, AND can sign into `/auth` and land on the platform. No loop.
+
+### 3. Mirror the same fix in `AuthCallback.tsx`
+
+The OAuth callback path has the same "bounce tenant member to their portal" logic and the same toast. Apply the same rule:
+- platform admin entering via `/t/:slug/auth/callback` → land on `/t/:slug/dashboard`
+- platform admin entering via `/auth/callback` → land on `/platform`
+- non-platform user entering via `/auth/callback` who has a tenant membership → still bounce to their tenant portal (this is the only case that should ever show the bounce toast)
+
+### 4. Don't sign the user out on a "wrong door" bounce when they're a platform admin
+
+Today, the generic `/auth` bounce calls `supabase.auth.signOut()` before redirecting. For platform admins this is wrong — they have a valid session and should keep it. After fix #2 they won't hit this branch at all, but as a safety net I'll guard the signOut with `if (highestRole !== "platform_admin")`.
+
+### 5. Verification
+
+1. Sign out fully. Visit `/auth`. Sign in as `james@jaimar.dev`.
+   - Expected: lands on `/platform`. No bounce toast. No loop.
+2. Sign out fully. Visit `/t/printworx/auth`. Sign in as `james@jaimar.dev`.
+   - Expected: lands on `/t/printworx/dashboard`. No bounce toast. No loop.
+3. Sign out fully. Visit `/t/postnet/auth`. Sign in as `hello@jaimar.dev` (tenant admin only, no platform role).
+   - Expected: lands on `/t/postnet/dashboard`. No bounce.
+4. Sign out fully. Visit `/auth`. Sign in as `hello@jaimar.dev`.
+   - Expected: bounce toast appears, redirected to `/t/postnet/auth?email=...` (this case is intentional — the user is at the wrong door and they're not a platform admin).
+
+## Files to change
+
+- `src/hooks/useAuth.tsx` — add `rolesLoaded` flag
+- `src/pages/Auth.tsx` — wait for `rolesLoaded`; reorder platform-admin decision; per-portal landing
+- `src/pages/AuthCallback.tsx` — same per-portal landing for platform admins; same wait-for-roles pattern
+- `src/components/AppEntryRedirect.tsx` — also wait on `rolesLoaded` to avoid a flash redirect with stale roles
+
+No DB changes. No new RLS. No edge function changes.
 
