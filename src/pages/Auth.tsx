@@ -18,7 +18,7 @@ const Auth = () => {
   const navigate = useNavigate();
   const { slug: tenantSlug } = useParams<{ slug: string }>();
   const [searchParams] = useSearchParams();
-  const { user, highestRole, loading: authLoading } = useAuth();
+  const { user, highestRole, loading: authLoading, rolesLoaded } = useAuth();
   const { tenant: brandedTenant } = useTenantFromSlug();
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState(searchParams.get("email") ?? "");
