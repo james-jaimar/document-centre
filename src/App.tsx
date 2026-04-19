@@ -44,6 +44,7 @@ import AdminOrderDetail from "@/pages/admin/AdminOrderDetail";
 import AdminBranchDetail from "@/pages/admin/AdminBranchDetail";
 import AdminCustomers from "@/pages/admin/AdminCustomers";
 import AdminCustomerDetail from "@/pages/admin/AdminCustomerDetail";
+import AdminSentMail from "@/pages/admin/AdminSentMail";
 
 // Branch portal
 import BranchDashboard from "@/pages/branch/BranchDashboard";
@@ -178,6 +179,13 @@ const App = () => (
               <Route path="/admin/customers/:id" element={
                 <ProtectedRoute allowedRoles={[...adminRoles]}>
                   <AdminCustomerDetail />
+                </ProtectedRoute>
+              } />
+
+              {/* Admin — Communications */}
+              <Route path="/admin/sent-mail" element={
+                <ProtectedRoute allowedRoles={[...adminRoles]}>
+                  <AdminSentMail />
                 </ProtectedRoute>
               } />
 

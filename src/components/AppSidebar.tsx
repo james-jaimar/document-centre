@@ -15,6 +15,7 @@ import {
   Store,
   Wrench,
   UserSquare2,
+  Mail,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -84,6 +85,13 @@ const ADMIN_SECTIONS: NavSection[] = [
       { to: "/admin/customers", icon: <UserSquare2 size={20} />, label: "Customers" },
       { to: "/admin/pricing", icon: <DollarSign size={20} />, label: "Pricing" },
       { to: "/admin/users", icon: <Users size={20} />, label: "Users & Roles" },
+    ],
+  },
+  {
+    heading: "Communications",
+    roles: ["head_office_admin", "platform_admin"],
+    items: [
+      { to: "/admin/sent-mail", icon: <Mail size={20} />, label: "Sent Mail" },
     ],
   },
   {
