@@ -1,7 +1,8 @@
-// Sends a branded transactional email for an order via SMTP.
+// Renders a branded transactional email for an order and enqueues it into
+// email_outbox (which the email-dispatcher then sends via the tenant's SMTP).
 // Idempotent on (order_id, event_key) — won't double-send.
-import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { enqueueEmail } from "../_shared/email-queue.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
