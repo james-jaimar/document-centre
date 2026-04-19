@@ -27,6 +27,7 @@ type Action =
   | "delete_account"
   | "resend_invite"
   | "update_email"
+  | "update_profile"
   | "remove_membership"
   | "revoke_platform_admin";
 
@@ -37,6 +38,10 @@ interface Body {
   app_id?: string | null;
   membership_id?: string | null;
   new_email?: string;
+  display_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  phone?: string | null;
   reason?: string;
 }
 
@@ -62,10 +67,17 @@ Deno.serve(async (req) => {
     const admin = createClient(url, serviceKey);
 
     const body = (await req.json()) as Body;
-    const { action, target_profile_id, tenant_id, app_id, membership_id, new_email, reason } = body;
+    const { action, target_profile_id, tenant_id, app_id, membership_id, new_email, display_name, first_name, last_name, phone, reason } = body;
 
     if (!action || !target_profile_id) {
       return err("Missing action or target_profile_id");
+    }
+
+    // Self-protection guardrails for destructive actions
+    if (target_profile_id === caller.id) {
+      if (action === "disable_account" || action === "delete_account") {
+        return err("You cannot perform this action on your own account", 400);
+      }
     }
 
     // Authorisation: platform admin OR tenant owner/admin for the given tenant
@@ -241,6 +253,19 @@ ${logo}<h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 16px;">${
         const { error: e } = await admin.auth.admin.deleteUser(target_profile_id);
         if (e) return err(`Failed to delete: ${e.message}`);
         return json({ success: true, message: "Account deleted" });
+      }
+
+      case "update_profile": {
+        const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        if (display_name !== undefined) updates.display_name = display_name;
+        if (first_name !== undefined) updates.first_name = first_name;
+        if (last_name !== undefined) updates.last_name = last_name;
+        if (phone !== undefined) updates.phone = phone;
+        if (Object.keys(updates).length === 1) return err("No profile fields provided");
+        const { error: e } = await admin.from("profiles").update(updates).eq("id", target_profile_id);
+        if (e) return err(`Failed to update profile: ${e.message}`);
+        await audit({ updates });
+        return json({ success: true, message: "Profile updated" });
       }
 
       case "update_email": {
