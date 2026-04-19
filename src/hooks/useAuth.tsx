@@ -98,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const userRoles = await fetchRoles(initialSession.user.id);
         setRoles(userRoles);
       }
+      setRolesLoaded(true);
       setLoading(false);
     });
 
@@ -109,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setSession(null);
     setRoles([]);
+    setRolesLoaded(true);
     currentUserIdRef.current = null;
   }, []);
 
