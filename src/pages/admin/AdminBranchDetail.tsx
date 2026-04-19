@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Building2, Users, Settings2, Shield, UserPlus } from "lucide-react";
 import { buildAdminPath } from "@/lib/adminRouting";
+import { AddMemberDialog } from "@/components/admin/AddMemberDialog";
 
 const AdminBranchDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -38,6 +39,7 @@ const AdminBranchDetail = () => {
   const unassignedMembers = allMembers?.filter((m) => !m.branch_id || m.branch_id !== id) || [];
 
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState("");
 
   // Editable form state
@@ -236,9 +238,14 @@ const AdminBranchDetail = () => {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Branch Staff</CardTitle>
-              <Button size="sm" onClick={() => setAssignDialogOpen(true)}>
-                <UserPlus size={14} className="mr-1.5" /> Assign User
-              </Button>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => setAssignDialogOpen(true)}>
+                  <UserPlus size={14} className="mr-1.5" /> Assign Existing
+                </Button>
+                <Button size="sm" onClick={() => setInviteDialogOpen(true)}>
+                  <UserPlus size={14} className="mr-1.5" /> Invite New Staff
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               {branchMembers.length === 0 ? (
@@ -318,6 +325,16 @@ const AdminBranchDetail = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Invite New Branch Staff */}
+      {tenantId && appId && (
+        <AddMemberDialog
+          open={inviteDialogOpen}
+          onOpenChange={setInviteDialogOpen}
+          tenantId={tenantId}
+          appId={appId}
+        />
+      )}
     </div>
   );
 };
