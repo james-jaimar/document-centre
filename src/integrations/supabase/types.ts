@@ -1830,6 +1830,7 @@ export type Database = {
       }
       pricing_rules: {
         Row: {
+          branch_id: string | null
           conditions: Json
           created_at: string
           id: string
@@ -1842,6 +1843,7 @@ export type Database = {
           tenant_id: string | null
         }
         Insert: {
+          branch_id?: string | null
           conditions?: Json
           created_at?: string
           id?: string
@@ -1854,6 +1856,7 @@ export type Database = {
           tenant_id?: string | null
         }
         Update: {
+          branch_id?: string | null
           conditions?: Json
           created_at?: string
           id?: string
@@ -1866,6 +1869,13 @@ export type Database = {
           tenant_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "pricing_rules_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "pricing_rules_product_family_id_fkey"
             columns: ["product_family_id"]
