@@ -1,25 +1,19 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, Check, Linkedin, Youtube, Mail, Star, Play } from "lucide-react";
-import heroBg from "@/assets/marketing-hero-bg.jpg";
+import heroImage from "@/assets/hero-image.png";
 import sarahPhoto from "@/assets/testimonial-sarah.jpg";
 import printSamples from "@/assets/print-samples.png";
+import docCentreLogo from "@/assets/doc-centre-logo.svg";
+import webToPrintHeadline from "@/assets/web-to-print-made-easy.svg";
 
 /* ───────────────────────── Logo ───────────────────────── */
-const Logo = ({ className = "" }: { className?: string }) => (
-  <div className={`flex items-center gap-3 ${className}`}>
-    <svg width="44" height="44" viewBox="0 0 44 44" fill="none" aria-hidden>
-      {/* page-flip / bookmark mark — green base, blue middle, orange accent */}
-      <path d="M6 6 L26 6 L26 38 L6 38 Z" fill="hsl(var(--dc-green))" />
-      <path d="M14 4 L34 4 L34 36 L14 36 Z" fill="hsl(var(--dc-blue))" />
-      <path d="M22 12 L38 12 L38 30 L22 30 Z" fill="hsl(var(--dc-orange))" />
-      <path d="M14 4 L26 6 L26 12 L22 12 Z" fill="hsl(var(--dc-navy))" opacity="0.25" />
-    </svg>
-    <span className="leading-[1.05] font-extrabold text-[1.35rem]">
-      <span style={{ color: "hsl(var(--dc-navy))" }}>Document</span>
-      <br />
-      <span style={{ color: "hsl(var(--dc-green))" }}>Centre</span>
-    </span>
-  </div>
+const Logo = ({ className = "", height = 44 }: { className?: string; height?: number }) => (
+  <img
+    src={docCentreLogo}
+    alt="Document Centre"
+    style={{ height }}
+    className={`w-auto ${className}`}
+  />
 );
 
 /* ───────────────────────── Diagonal Ribbon Layer ─────────────────────────
@@ -420,36 +414,39 @@ export default function MarketingLanding() {
           background: `linear-gradient(180deg, hsl(var(--dc-bg-soft)) 0%, #ffffff 100%)`,
         }}
       >
-        {/* photo background — right half, blurred print shop */}
-        <div
-          className="absolute inset-y-0 right-0 hidden md:block"
-          style={{
-            width: "62%",
-            backgroundImage: `linear-gradient(90deg, rgba(245,248,252,0.95) 0%, rgba(245,248,252,0.55) 25%, rgba(245,248,252,0.15) 60%), url(${heroBg})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            filter: "saturate(0.9)",
-          }}
-          aria-hidden
-        />
-        <HeroRibbons />
+        {/* hero photo — right side, with feathered fade to white on the left edge */}
+        <div className="absolute inset-y-0 right-0 hidden md:block w-[62%]" aria-hidden>
+          <img
+            src={heroImage}
+            alt=""
+            className="w-full h-full object-cover object-center"
+          />
+          {/* feathered blend to white on the left */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background:
+                "linear-gradient(90deg, #ffffff 0%, rgba(255,255,255,0.95) 12%, rgba(255,255,255,0.6) 28%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0) 70%)",
+            }}
+          />
+          {/* subtle top/bottom feather to blend with section bg */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background:
+                "linear-gradient(180deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 18%, rgba(255,255,255,0) 82%, rgba(255,255,255,0.4) 100%)",
+            }}
+          />
+        </div>
 
         <div className="relative max-w-[1240px] mx-auto px-6 pt-16 pb-28 grid lg:grid-cols-[1fr_1.1fr] gap-10 items-center">
           {/* left: copy */}
           <div className="relative z-10">
-            <h1
-              className="font-extrabold tracking-tight"
-              style={{
-                fontSize: "clamp(2.8rem, 5.6vw, 4.6rem)",
-                lineHeight: 1.02,
-                color: "hsl(var(--dc-navy))",
-              }}
-            >
-              Web-to-Print
-              <br />
-              <span style={{ color: "hsl(var(--dc-green))" }}>Made </span>
-              <span style={{ color: "hsl(var(--dc-orange))" }}>Easy</span>
-            </h1>
+            <img
+              src={webToPrintHeadline}
+              alt="Web-to-Print Made Easy"
+              className="w-full max-w-[520px] h-auto"
+            />
             <p className="mt-5 text-[1.05rem] dc-muted max-w-md leading-relaxed">
               Power your print business with a fast, flexible, and beautiful ordering system your customers will love.
             </p>
@@ -491,16 +488,8 @@ export default function MarketingLanding() {
             </div>
           </div>
 
-          {/* right: device composite */}
-          <div className="relative">
-            <div className="relative z-10 mx-auto max-w-[640px]">
-              <LaptopMock />
-            </div>
-            {/* phone overlay */}
-            <div className="absolute -right-2 top-16 hidden md:block z-20">
-              <PhoneMock />
-            </div>
-          </div>
+          {/* right column intentionally empty — the hero image fills the right side as a background */}
+          <div aria-hidden />
         </div>
       </section>
 
