@@ -414,12 +414,18 @@ export default function MarketingLanding() {
           background: `linear-gradient(180deg, hsl(var(--dc-bg-soft)) 0%, #ffffff 100%)`,
         }}
       >
-        {/* full-width hero image (already pre-blended to white on the left) */}
-        <div className="absolute inset-0 hidden md:block" aria-hidden>
+        {/* full-width hero image (already pre-blended to white on the left).
+            Sized to width so the whole image fits across the viewport. */}
+        <div className="absolute inset-x-0 top-0 hidden md:block pointer-events-none" aria-hidden>
           <img
             src={heroImage}
             alt=""
-            className="w-full h-full object-cover object-center"
+            className="w-full h-auto block"
+          />
+          {/* soft fade to white at the bottom so the image blends into page */}
+          <div
+            className="absolute inset-x-0 bottom-0 h-24"
+            style={{ background: "linear-gradient(180deg, rgba(255,255,255,0) 0%, #ffffff 100%)" }}
           />
         </div>
 
