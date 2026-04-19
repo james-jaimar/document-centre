@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { getDefaultRoute } from "@/hooks/useAuth";
+import { pickPrimaryMembership, resolveTenantLanding, type LandingMembership } from "@/lib/auth/landingRoute";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -53,7 +54,7 @@ const AuthCallback = () => {
         supabase.from("user_roles").select("role").eq("user_id", session.user.id),
         supabase
           .from("tenant_memberships")
-          .select("tenant_id, tenants:tenant_id(slug, name)")
+          .select("tenant_id, role, branch_id, tenants:tenant_id(slug, name)")
           .eq("profile_id", session.user.id)
           .eq("is_active", true),
       ]);
@@ -61,13 +62,10 @@ const AuthCallback = () => {
       const priority = ["platform_admin", "head_office_admin", "branch_manager", "store_operator", "customer"] as const;
       const roleList = (rolesRes.data ?? []).map((r) => r.role);
       const highest = priority.find((r) => roleList.includes(r)) ?? null;
-      const memberships = (membershipsRes.data ?? []) as Array<{
-        tenant_id: string;
-        tenants: { slug: string; name: string } | null;
-      }>;
+      const memberships = (membershipsRes.data ?? []) as LandingMembership[];
 
       // Tenant-scoped OAuth flow — platform admins are allowed in regardless;
-      // otherwise verify membership for this tenant.
+      // otherwise route by membership role for this tenant.
       if (tenantSlug) {
         if (highest === "platform_admin") {
           toast.success("Signed in");
@@ -76,8 +74,9 @@ const AuthCallback = () => {
         }
         const match = memberships.find((m) => m.tenants?.slug === tenantSlug);
         if (match) {
+          const primary = pickPrimaryMembership(memberships, tenantSlug) ?? match;
           toast.success("Signed in");
-          navigate(`/t/${tenantSlug}/dashboard`, { replace: true });
+          navigate(resolveTenantLanding(primary, tenantSlug), { replace: true });
           return;
         }
         await supabase.auth.signOut();
@@ -93,7 +92,8 @@ const AuthCallback = () => {
       }
 
       if (memberships.length > 0) {
-        const targetSlug = memberships[0].tenants?.slug;
+        const primary = pickPrimaryMembership(memberships, null) ?? memberships[0];
+        const targetSlug = primary.tenants?.slug;
         await supabase.auth.signOut();
         if (targetSlug) {
           toast.info("Please sign in via your organisation's portal.");

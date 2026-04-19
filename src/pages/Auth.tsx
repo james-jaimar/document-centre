@@ -11,6 +11,7 @@ import { AlertCircle, Printer, Info } from "lucide-react";
 import { toast } from "sonner";
 import SocialAuthButtons from "@/components/auth/SocialAuthButtons";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
+import { pickPrimaryMembership, resolveTenantLanding, type LandingMembership } from "@/lib/auth/landingRoute";
 
 type AuthMode = "login" | "register" | "forgot";
 
@@ -55,21 +56,18 @@ const Auth = () => {
         // Look up this user's tenant memberships (active only).
         const { data: memberships } = await supabase
           .from("tenant_memberships")
-          .select("tenant_id, role, tenants:tenant_id(slug, name)")
+          .select("tenant_id, role, branch_id, tenants:tenant_id(slug, name)")
           .eq("profile_id", user.id)
           .eq("is_active", true);
 
-        const list = (memberships ?? []) as Array<{
-          tenant_id: string;
-          role: string;
-          tenants: { slug: string; name: string } | null;
-        }>;
+        const list = (memberships ?? []) as LandingMembership[];
 
         if (isTenantPortal) {
           // On /t/:slug/auth — user must have a membership for THIS tenant.
           const matchSlug = list.find((m) => m.tenants?.slug === tenantSlug);
           if (matchSlug) {
-            navigate(`/t/${tenantSlug}/dashboard`, { replace: true });
+            const primary = pickPrimaryMembership(list, tenantSlug ?? null) ?? matchSlug;
+            navigate(resolveTenantLanding(primary, tenantSlug ?? null), { replace: true });
             return;
           }
           // Wrong tenant — sign out and explain.
@@ -91,7 +89,7 @@ const Auth = () => {
         }
 
         // Tenant member landed on generic /auth — bounce them to their portal.
-        const primary = list[0];
+        const primary = pickPrimaryMembership(list, null) ?? list[0];
         const targetSlug = primary.tenants?.slug;
         await supabase.auth.signOut();
         if (targetSlug) {
