@@ -426,13 +426,13 @@ export default function MarketingLanding() {
           <img src={heroImage} alt="" className="w-full h-auto block" />
         </div>
 
-        <div className="relative max-w-[1240px] mx-auto px-6 py-12 lg:py-14 grid lg:grid-cols-2 gap-10 items-center">
+        <div className="relative max-w-[1240px] mx-auto px-6 py-8 lg:py-10 min-h-[520px] lg:min-h-[560px] grid lg:grid-cols-2 gap-10 items-start">
           {/* left: copy */}
           <div className="relative z-10">
             <img
               src={webToPrintHeadline}
               alt="Web-to-Print Made Easy"
-              className="w-full max-w-[460px] h-auto"
+              className="w-full max-w-[420px] h-auto mt-2"
             />
             <p className="mt-4 text-[1rem] dc-muted max-w-md leading-relaxed">
               Power your print business with a fast, flexible, and beautiful ordering system your customers will love.
@@ -457,7 +457,7 @@ export default function MarketingLanding() {
                 </li>
               ))}
             </ul>
-            <div className="mt-6 flex flex-wrap gap-3">
+            <div className="mt-5 flex flex-wrap gap-3">
               <a href="#cta" className="dc-btn dc-btn-primary" style={{ padding: "0.7rem 1.3rem", fontSize: "0.92rem" }}>
                 Start Your Free Trial <ArrowRight className="h-4 w-4" />
               </a>
@@ -466,7 +466,7 @@ export default function MarketingLanding() {
                 See It in Action
               </a>
             </div>
-            <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[12.5px] dc-muted">
+            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-[12.5px] dc-muted">
               {["No credit card required", "Set up in minutes", "UK-based & GBP"].map((t) => (
                 <span key={t} className="flex items-center gap-1.5">
                   <Check className="h-3.5 w-3.5" style={{ color: "hsl(var(--dc-green))" }} strokeWidth={3} /> {t}
