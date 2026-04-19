@@ -1,77 +1,90 @@
 
 
-## Root cause — sign-in loop
+## Where things stand
 
-There's a **race condition** in `src/pages/Auth.tsx` between role loading and the gating effect.
+### PostNet tenant admin login — partially wired, won't work end-to-end today
 
-When James (who is BOTH `platform_admin` AND `owner` of `printworx`) signs in on `/auth`:
+**Already in place:**
+- `/t/postnet/auth` route renders the branded sign-in page
+- DB has `hello@jaimar.dev` with an active `admin` membership for PostNet
+- `Auth.tsx` does verify the user has a membership for the slug they signed in at
 
-1. `signInWithPassword` resolves → `useAuth` sets `user` immediately, but schedules `fetchRoles` via `setTimeout`
-2. Auth.tsx gating effect runs — but `roles` is still `[]` so `highestRole === null`
-3. The check `if (highestRole === "platform_admin")` (line 42) is FALSE → falls through
-4. `isTenantPortal === false` → fetches memberships → finds printworx → **signs out and bounces to `/t/printworx/auth?email=...` with the "Please sign in via your organisation's portal" toast**
-5. On `/t/printworx/auth` he signs in again; same race can repeat — and even when it succeeds the gating may bounce him to `/platform` while he's actually trying to enter the storefront
-6. Loop
+**Why a real tenant admin can't actually use the system today:**
+1. `Auth.tsx` sends every signed-in tenant user from `/t/:slug/auth` to `/t/:slug/dashboard` (the customer storefront). A tenant `owner`/`admin` lands on the customer dashboard with no admin tools.
+2. `/admin/*` routes are gated by **legacy `user_roles`** (`head_office_admin`, `platform_admin`). The new `tenant_memberships.role = 'admin' | 'owner'` is not accepted there, so even if the user types `/admin` manually, `ProtectedRoute` bounces them to `/dashboard`.
+3. `getDefaultRoute()` only knows the legacy roles. A tenant admin with no `user_roles` row is routed to `/dashboard`.
 
-Same race exists in `src/pages/AuthCallback.tsx` (Google OAuth path) — it does its own role lookup but only after the session is set, with the same single source of truth issue if the user has both platform and tenant roles.
+Net effect: `hello@jaimar.dev` can sign in but lands on the customer dashboard with no PostNet admin console.
 
-The toast in the screenshot ("Please sign in via your organisation's portal") is literally that bounce firing.
+### Branch portal — partially wired
 
-## What I'll change
+**Exists:** routes `/branch`, `/branch/orders`, `/branch/products`, `/branch/settings`; `BranchLayout`, `BranchSidebar`, `BranchDashboard` (counts), `BranchOrders` (read-only), `BranchProducts` (capability toggles), `BranchSettings` (hours, fulfilment, contact). `ProtectedRoute` already accepts `allowedMembershipRoles`.
 
-### 1. Wait for roles before deciding (fixes the race)
+**Missing for "branches log in, update pricing, work orders":**
+- No `branch_manager` / `store_operator` membership exists in DB → nobody can log in to `/branch`
+- `BranchOrders` is read-only — no detail page, no status changes, no proof actions, no messaging
+- No branch-level pricing UI — pricing is only tenant-wide via `/admin/pricing`
+- Sign-in routing has no path that lands a branch user on `/branch`
 
-In `Auth.tsx`, add a derived "auth fully ready" gate:
+## Plan
 
-- block the gating effect until either `roles.length > 0` OR we've definitively confirmed there are no roles
-- expose a `rolesLoaded` flag from `useAuth` (separate from the bootstrap `loading`) so `Auth.tsx`, `AuthCallback.tsx` and `AppEntryRedirect.tsx` can wait on it without flipping the global loading spinner
+### 1. Tenant admin sign-in routing
+After roles + memberships load in `Auth.tsx`, decide by `tenant_memberships.role` for the slug:
+- `owner`/`admin` → `/admin?tenant=<id>`
+- `sales`/`production`/`accounts` → `/admin?tenant=<id>` (operations)
+- `branch_manager`/`store_operator` → `/branch`
+- `customer` → `/t/:slug/dashboard`
 
-Concretely in `useAuth.tsx`:
-- add `rolesLoaded: boolean` to the context
-- set it to `true` after the initial `fetchRoles` resolves on bootstrap
-- set it to `false` whenever `currentUserIdRef` changes (new user identity), then back to `true` once that user's roles resolve
-- `TOKEN_REFRESHED` for the same user does NOT touch this flag
+Mirror in `AuthCallback.tsx` and `AppEntryRedirect.tsx`. Extend `getDefaultRoute()` to accept the active membership role.
 
-### 2. Decide based on full role+membership picture
+### 2. Authorise admin routes by membership
+Add `allowedMembershipRoles={["owner","admin"]}` to every `/admin/*` `ProtectedRoute` (operations routes also accept `sales`/`production`/`accounts`). No more reliance on legacy `user_roles` for tenant admins.
 
-In `Auth.tsx` gating, change the order of decisions to:
+### 3. Real branch portal
+- **Branch order detail** at `/branch/orders/:id` — reuse `AdminOrderDetail` panels scoped to the user's `branch_id` (status, proof, timeline, internal notes, customer messages)
+- **Branch pricing** at `/branch/pricing` — read-only inherited tenant pricing + per-branch overrides (small migration: `pricing_rules.branch_id uuid` + RLS so a branch manager edits only their own)
+- **Invite branch staff** action on `/admin/branches/:id` wired to existing `invite-member` edge function with a `branch_id` parameter
+- `BranchSidebar`: add Pricing entry
 
-1. If `!rolesLoaded` → return (wait)
-2. If `highestRole === "platform_admin"`:
-   - On `/t/:slug/auth` → navigate to `/t/:slug/dashboard` (platform admins are allowed into any storefront they want to inspect; do NOT force them to `/platform` from a tenant URL — the user clearly wants to be in the tenant context)
-   - On generic `/auth` → navigate to `/platform`
-3. Otherwise, run the existing tenant-membership branch
+### 4. Polish
+- Hide "Back to Platform" cross-link in `AppSidebar` for non-platform tenant admins
+- Better empty states when membership shape doesn't match the page
 
-This means a user like James who has both roles can sign into the storefront at `/t/printworx/auth` and stay in the storefront, AND can sign into `/auth` and land on the platform. No loop.
+## Verification
 
-### 3. Mirror the same fix in `AuthCallback.tsx`
+1. Sign out → `/t/postnet/auth` → sign in as `hello@jaimar.dev` → lands on `/admin?tenant=postnet` with PostNet branding and admin sidebar.
+2. From `/admin/branches/<aliwal>`, invite a branch manager. Accept invite → sign in → lands on `/branch`.
+3. Open `/branch/orders/:id`, change status, add internal note → persists; visible in `/admin/orders/:id`.
+4. Add a per-branch price override → reflected when a customer chooses that branch.
+5. James (`james@jaimar.dev`) at `/auth` still lands on `/platform`. Tenant override into PostNet still works.
 
-The OAuth callback path has the same "bounce tenant member to their portal" logic and the same toast. Apply the same rule:
-- platform admin entering via `/t/:slug/auth/callback` → land on `/t/:slug/dashboard`
-- platform admin entering via `/auth/callback` → land on `/platform`
-- non-platform user entering via `/auth/callback` who has a tenant membership → still bounce to their tenant portal (this is the only case that should ever show the bounce toast)
+## Files
 
-### 4. Don't sign the user out on a "wrong door" bounce when they're a platform admin
+- `src/pages/Auth.tsx`, `src/pages/AuthCallback.tsx`, `src/components/AppEntryRedirect.tsx`, `src/hooks/useAuth.tsx`
+- `src/App.tsx` (membership-role guards; new branch routes)
+- `src/components/AppSidebar.tsx`, `src/components/BranchSidebar.tsx`
+- New: `src/pages/branch/BranchOrderDetail.tsx`, `src/pages/branch/BranchPricing.tsx`
+- New migration: `pricing_rules.branch_id` + RLS
+- `src/pages/admin/AdminBranchDetail.tsx` — invite branch staff action
 
-Today, the generic `/auth` bounce calls `supabase.auth.signOut()` before redirecting. For platform admins this is wrong — they have a valid session and should keep it. After fix #2 they won't hit this branch at all, but as a safety net I'll guard the signOut with `if (highestRole !== "platform_admin")`.
+## Open questions before I build
 
-### 5. Verification
+**1. Branch pricing scope**
+- (a) Inherit only — `/branch/pricing` is read-only, no migration
+- (b) Per-branch overrides on top of tenant pricing (recommended)
+- (c) Per-branch full pricing tables, independent
 
-1. Sign out fully. Visit `/auth`. Sign in as `james@jaimar.dev`.
-   - Expected: lands on `/platform`. No bounce toast. No loop.
-2. Sign out fully. Visit `/t/printworx/auth`. Sign in as `james@jaimar.dev`.
-   - Expected: lands on `/t/printworx/dashboard`. No bounce toast. No loop.
-3. Sign out fully. Visit `/t/postnet/auth`. Sign in as `hello@jaimar.dev` (tenant admin only, no platform role).
-   - Expected: lands on `/t/postnet/dashboard`. No bounce.
-4. Sign out fully. Visit `/auth`. Sign in as `hello@jaimar.dev`.
-   - Expected: bounce toast appears, redirected to `/t/postnet/auth?email=...` (this case is intentional — the user is at the wrong door and they're not a platform admin).
+**2. First branch user**
+- (a) Invite-only via `/admin/branches/:id`
+- (b) Seed one demo `branch_manager` for a PostNet branch with a known password so you can test today
+- (c) Both
 
-## Files to change
+**3. Branch order actions**
+- (a) View + status updates only
+- (b) View + status + messaging (recommended)
+- (c) Full operational control (incl. payments, proofs, reassignment)
 
-- `src/hooks/useAuth.tsx` — add `rolesLoaded` flag
-- `src/pages/Auth.tsx` — wait for `rolesLoaded`; reorder platform-admin decision; per-portal landing
-- `src/pages/AuthCallback.tsx` — same per-portal landing for platform admins; same wait-for-roles pattern
-- `src/components/AppEntryRedirect.tsx` — also wait on `rolesLoaded` to avoid a flash redirect with stale roles
-
-No DB changes. No new RLS. No edge function changes.
-
+**4. Tenant owner/admin landing after `/t/:slug/auth`**
+- (a) Tenant admin console (`/admin?tenant=…`) — recommended
+- (b) Customer-style dashboard
+- (c) Let them choose on first login and remember
