@@ -31,16 +31,24 @@ const Auth = () => {
   const isTenantPortal = !!tenantSlug;
 
   // Post-login gating: route by role + tenant context. Sign out and bounce
-  // anyone who landed at the wrong door.
+  // anyone who landed at the wrong door. CRITICAL: wait for `rolesLoaded`
+  // before deciding — otherwise platform admins (who have empty `roles` for
+  // a brief tick after sign-in) get misclassified as tenant members and
+  // bounced into a sign-in loop.
   useEffect(() => {
-    if (!user || authLoading || gating) return;
+    if (!user || authLoading || !rolesLoaded || gating) return;
 
     (async () => {
       setGating(true);
       try {
-        // Platform admins always go to /platform regardless of entry point.
+        // Platform admins are allowed into either the platform console or any
+        // tenant storefront they navigate to (so they can inspect tenants).
         if (highestRole === "platform_admin") {
-          navigate("/platform", { replace: true });
+          if (isTenantPortal) {
+            navigate(`/t/${tenantSlug}/dashboard`, { replace: true });
+          } else {
+            navigate("/platform", { replace: true });
+          }
           return;
         }
 
@@ -99,7 +107,7 @@ const Auth = () => {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, highestRole, authLoading]);
+  }, [user, highestRole, authLoading, rolesLoaded]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
