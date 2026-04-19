@@ -69,13 +69,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           currentUserIdRef.current = nextUserId;
 
           if (nextUserId) {
+            setRolesLoaded(false);
             // Defer to avoid Supabase deadlock inside the listener
             setTimeout(async () => {
               const userRoles = await fetchRoles(nextUserId);
-              setRoles(userRoles);
+              // Guard against a newer identity change overtaking us.
+              if (currentUserIdRef.current === nextUserId) {
+                setRoles(userRoles);
+                setRolesLoaded(true);
+              }
             }, 0);
           } else {
             setRoles([]);
+            setRolesLoaded(true);
           }
         }
         // TOKEN_REFRESHED, USER_UPDATED, etc. for the same user: do nothing
