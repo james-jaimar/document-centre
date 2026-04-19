@@ -66,8 +66,14 @@ const AuthCallback = () => {
         tenants: { slug: string; name: string } | null;
       }>;
 
-      // Tenant-scoped OAuth flow — verify membership for this tenant.
+      // Tenant-scoped OAuth flow — platform admins are allowed in regardless;
+      // otherwise verify membership for this tenant.
       if (tenantSlug) {
+        if (highest === "platform_admin") {
+          toast.success("Signed in");
+          navigate(`/t/${tenantSlug}/dashboard`, { replace: true });
+          return;
+        }
         const match = memberships.find((m) => m.tenants?.slug === tenantSlug);
         if (match) {
           toast.success("Signed in");
