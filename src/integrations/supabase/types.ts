@@ -229,6 +229,100 @@ export type Database = {
           },
         ]
       }
+      customer_addresses: {
+        Row: {
+          address_type: string
+          app_id: string
+          city: string | null
+          company_name: string | null
+          contact_name: string | null
+          country: string | null
+          created_at: string
+          customer_profile_id: string
+          email: string | null
+          id: string
+          instructions: string | null
+          is_default: boolean
+          label: string | null
+          line1: string | null
+          line2: string | null
+          phone: string | null
+          postal_code: string | null
+          province: string | null
+          suburb: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          address_type?: string
+          app_id: string
+          city?: string | null
+          company_name?: string | null
+          contact_name?: string | null
+          country?: string | null
+          created_at?: string
+          customer_profile_id: string
+          email?: string | null
+          id?: string
+          instructions?: string | null
+          is_default?: boolean
+          label?: string | null
+          line1?: string | null
+          line2?: string | null
+          phone?: string | null
+          postal_code?: string | null
+          province?: string | null
+          suburb?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          address_type?: string
+          app_id?: string
+          city?: string | null
+          company_name?: string | null
+          contact_name?: string | null
+          country?: string | null
+          created_at?: string
+          customer_profile_id?: string
+          email?: string | null
+          id?: string
+          instructions?: string | null
+          is_default?: boolean
+          label?: string | null
+          line1?: string | null
+          line2?: string | null
+          phone?: string | null
+          postal_code?: string | null
+          province?: string | null
+          suburb?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_addresses_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: false
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_addresses_customer_profile_id_fkey"
+            columns: ["customer_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_addresses_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customer_notes: {
         Row: {
           app_id: string
@@ -261,6 +355,61 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      customer_tags: {
+        Row: {
+          app_id: string
+          color: string | null
+          created_at: string
+          created_by: string | null
+          customer_profile_id: string
+          id: string
+          tag: string
+          tenant_id: string
+        }
+        Insert: {
+          app_id: string
+          color?: string | null
+          created_at?: string
+          created_by?: string | null
+          customer_profile_id: string
+          id?: string
+          tag: string
+          tenant_id: string
+        }
+        Update: {
+          app_id?: string
+          color?: string | null
+          created_at?: string
+          created_by?: string | null
+          customer_profile_id?: string
+          id?: string
+          tag?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_tags_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: false
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_tags_customer_profile_id_fkey"
+            columns: ["customer_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_tags_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       derived_files: {
         Row: {
@@ -1831,6 +1980,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          metadata: Json
           profile_id: string
           role: string
           tenant_id: string
@@ -1842,6 +1992,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          metadata?: Json
           profile_id: string
           role: string
           tenant_id: string
@@ -1853,6 +2004,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          metadata?: Json
           profile_id?: string
           role?: string
           tenant_id?: string
