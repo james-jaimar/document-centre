@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
@@ -29,7 +29,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [roles, setRoles] = useState<AppRole[]>([]);
+  // `loading` reflects ONLY the initial bootstrap. Background auth events
+  // (e.g. TOKEN_REFRESHED) must never flip this back to true, otherwise the
+  // route guards blank the entire app on tab refocus.
   const [loading, setLoading] = useState(true);
+  const currentUserIdRef = useRef<string | null>(null);
 
   const fetchRoles = useCallback(async (userId: string) => {
     const { data, error } = await supabase
@@ -46,32 +50,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
+      (event, nextSession) => {
+        const nextUserId = nextSession?.user?.id ?? null;
+        const prevUserId = currentUserIdRef.current;
 
-        if (session?.user) {
-          // Mark loading so consumers wait for roles before redirecting
-          setLoading(true);
-          // Defer role fetch to avoid Supabase deadlock
-          setTimeout(async () => {
-            const userRoles = await fetchRoles(session.user.id);
-            setRoles(userRoles);
-            setLoading(false);
-          }, 0);
-        } else {
-          setRoles([]);
-          setLoading(false);
+        // Always keep session/user state in sync (cheap, same-identity updates
+        // don't cause cascades because consumers should key off user?.id).
+        setSession(nextSession);
+        setUser(nextSession?.user ?? null);
+
+        // Only re-fetch roles when the actual user identity changes.
+        if (nextUserId !== prevUserId) {
+          currentUserIdRef.current = nextUserId;
+
+          if (nextUserId) {
+            // Defer to avoid Supabase deadlock inside the listener
+            setTimeout(async () => {
+              const userRoles = await fetchRoles(nextUserId);
+              setRoles(userRoles);
+            }, 0);
+          } else {
+            setRoles([]);
+          }
         }
+        // TOKEN_REFRESHED, USER_UPDATED, etc. for the same user: do nothing
+        // beyond syncing session — never flip `loading` back on.
       }
     );
 
-    // THEN check existing session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        const userRoles = await fetchRoles(session.user.id);
+    // THEN check existing session (initial bootstrap)
+    supabase.auth.getSession().then(async ({ data: { session: initialSession } }) => {
+      setSession(initialSession);
+      setUser(initialSession?.user ?? null);
+      currentUserIdRef.current = initialSession?.user?.id ?? null;
+      if (initialSession?.user) {
+        const userRoles = await fetchRoles(initialSession.user.id);
         setRoles(userRoles);
       }
       setLoading(false);
@@ -85,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setSession(null);
     setRoles([]);
+    currentUserIdRef.current = null;
   }, []);
 
   const hasRole = useCallback(

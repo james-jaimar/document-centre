@@ -89,8 +89,13 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     setOverrideTenantIdState(id);
   }, []);
 
+  // Key membership loading off the stable user id, NOT the user object reference.
+  // Supabase emits a new user object on every silent token refresh, which would
+  // otherwise re-trigger this effect and blank the UI via the loading flag.
+  const userId = user?.id ?? null;
+
   useEffect(() => {
-    if (!user) {
+    if (!userId) {
       setMemberships([]);
       setActiveMembershipId(null);
       setTenantName(null);
@@ -103,7 +108,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase
         .from("tenant_memberships")
         .select("id, app_id, tenant_id, branch_id, role, is_active, can_view_all_orders")
-        .eq("profile_id", user.id)
+        .eq("profile_id", userId)
         .eq("is_active", true);
 
       if (error) {
@@ -133,7 +138,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     };
 
     load();
-  }, [user]);
+  }, [userId]);
 
   const activeMembership = memberships.find((m) => m.id === activeMembershipId) ?? null;
 
