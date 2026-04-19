@@ -130,11 +130,12 @@ Deno.serve(async (req) => {
     // Idempotency
     if (!force) {
       const { data: existing } = await admin
-        .from("email_log")
+        .from("email_outbox")
         .select("id")
-        .eq("order_id", order_id)
-        .eq("event_key", eventKey)
+        .eq("related_type", "order")
+        .eq("related_id", order_id)
         .eq("status", "sent")
+        .contains("metadata", { event_key: eventKey })
         .maybeSingle();
       if (existing) return json({ success: true, skipped: true, reason: "already_sent" });
     }
@@ -160,7 +161,6 @@ Deno.serve(async (req) => {
       if (s.category === "payments") bank[s.setting_key] = s.setting_value;
     });
 
-    // Per-tenant event toggle (default: on)
     const enabledMap: Record<EventKey, string> = {
       order_received: "order_confirmation",
       payment_received: "payment_received",
@@ -173,12 +173,6 @@ Deno.serve(async (req) => {
     };
     const settingKey = enabledMap[eventKey];
     if (notif[settingKey] === false) {
-      await admin.from("email_log").insert({
-        app_id: order.app_id, tenant_id: order.tenant_id, order_id,
-        event_key: eventKey, recipient_email: order.customer_email,
-        subject: SUBJECTS[eventKey](order.order_number || ""),
-        status: "skipped", error_message: "tenant_disabled_event",
-      });
       return json({ success: true, skipped: true, reason: "tenant_disabled" });
     }
 
@@ -203,44 +197,31 @@ Deno.serve(async (req) => {
     const html = renderHtml({ branding, tenant, bank, event: eventKey, ctx, ctaUrl });
 
     const senderName = (notif.sender_name as string) || tenant.trading_name || tenant.name || "Orders";
-    const smtpUser = Deno.env.get("SMTP_USER")!;
-    const senderEmail = (notif.sender_email as string) || smtpUser;
+    const senderEmail = (notif.sender_email as string) || null;
 
-    const client = new SMTPClient({
-      connection: {
-        hostname: Deno.env.get("SMTP_HOST")!,
-        port: Number(Deno.env.get("SMTP_PORT")!),
-        tls: true,
-        auth: { username: smtpUser, password: Deno.env.get("SMTP_PASS")! },
-      },
+    await enqueueEmail(admin, {
+      tenant_id: order.tenant_id,
+      branch_id: order.branch_id ?? null,
+      app_id: order.app_id,
+      to: order.customer_email,
+      subject,
+      html,
+      from_name: senderName,
+      from_email: senderEmail ?? undefined,
+      reply_to: tenant?.support_email ?? null,
+      category: "order",
+      related_type: "order",
+      related_id: order_id,
+      metadata: { event_key: eventKey, order_number: ctx.orderNo },
     });
 
-    try {
-      await client.send({
-        from: `${senderName} <${senderEmail}>`,
-        to: order.customer_email,
-        replyTo: tenant.support_email || senderEmail,
-        subject,
-        html,
-        content: "auto",
-      });
-      await client.close();
-    } catch (sendErr: any) {
-      await admin.from("email_log").insert({
-        app_id: order.app_id, tenant_id: order.tenant_id, order_id,
-        event_key: eventKey, recipient_email: order.customer_email,
-        subject, status: "failed", error_message: sendErr.message,
-      });
-      return json({ error: `smtp: ${sendErr.message}` }, 500);
-    }
+    // Kick the dispatcher so the customer email goes out promptly.
+    fetch(`${Deno.env.get("SUPABASE_URL")!}/functions/v1/email-dispatcher`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!}` },
+    }).catch(() => {});
 
-    await admin.from("email_log").insert({
-      app_id: order.app_id, tenant_id: order.tenant_id, order_id,
-      event_key: eventKey, recipient_email: order.customer_email,
-      subject, status: "sent",
-    });
-
-    return json({ success: true });
+    return json({ success: true, queued: true });
   } catch (e) {
     console.error("send-order-email error:", e);
     return json({ error: (e as Error).message }, 500);
