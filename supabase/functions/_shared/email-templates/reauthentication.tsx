@@ -36,39 +36,25 @@ export const ReauthenticationEmail = ({ token }: ReauthenticationEmailProps) => 
 
 export default ReauthenticationEmail
 
-const main = {
-  backgroundColor: '#ffffff',
-  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-}
-const container = { padding: '32px 28px', maxWidth: '560px' }
+const main = { backgroundColor: '#ffffff', fontFamily: 'Arial, sans-serif' }
+const container = { padding: '20px 25px' }
 const h1 = {
-  fontSize: '24px',
+  fontSize: '22px',
   fontWeight: 'bold' as const,
-  color: 'hsl(222, 24%, 18%)',
+  color: '#000000',
   margin: '0 0 20px',
 }
 const text = {
-  fontSize: '15px',
-  color: 'hsl(215, 16%, 45%)',
-  lineHeight: '1.6',
-  margin: '0 0 20px',
+  fontSize: '14px',
+  color: '#55575d',
+  lineHeight: '1.5',
+  margin: '0 0 25px',
 }
 const codeStyle = {
-  fontFamily: '"SF Mono", Menlo, Courier, monospace',
-  fontSize: '28px',
+  fontFamily: 'Courier, monospace',
+  fontSize: '22px',
   fontWeight: 'bold' as const,
-  color: 'hsl(201, 76%, 47%)',
-  letterSpacing: '4px',
+  color: '#000000',
   margin: '0 0 30px',
-  padding: '16px 24px',
-  backgroundColor: 'hsl(210, 18%, 94%)',
-  borderRadius: '12px',
-  display: 'inline-block',
 }
-const footer = {
-  fontSize: '12px',
-  color: 'hsl(215, 16%, 55%)',
-  margin: '32px 0 0',
-  borderTop: '1px solid hsl(210, 18%, 88%)',
-  paddingTop: '20px',
-}
+const footer = { fontSize: '12px', color: '#999999', margin: '30px 0 0' }
