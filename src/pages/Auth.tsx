@@ -164,6 +164,7 @@ const Auth = () => {
       setLoading(false);
     }
   };
+  const submitHandler =
     mode === "login" ? handleLogin : mode === "register" ? handleRegister : handleForgotPassword;
 
   return (
