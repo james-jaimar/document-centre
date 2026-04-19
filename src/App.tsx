@@ -56,7 +56,16 @@ import PlatformTenants from "@/pages/platform/PlatformTenants";
 import PlatformUsers from "@/pages/platform/PlatformUsers";
 import PlatformSettings from "@/pages/platform/PlatformSettings";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      staleTime: 30_000,
+      retry: 1,
+    },
+  },
+});
 
 const adminRoles = ["head_office_admin", "platform_admin"] as const;
 const operationsRoles = ["branch_manager", "store_operator", "head_office_admin", "platform_admin"] as const;
