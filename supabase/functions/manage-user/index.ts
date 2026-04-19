@@ -67,10 +67,17 @@ Deno.serve(async (req) => {
     const admin = createClient(url, serviceKey);
 
     const body = (await req.json()) as Body;
-    const { action, target_profile_id, tenant_id, app_id, membership_id, new_email, reason } = body;
+    const { action, target_profile_id, tenant_id, app_id, membership_id, new_email, display_name, first_name, last_name, phone, reason } = body;
 
     if (!action || !target_profile_id) {
       return err("Missing action or target_profile_id");
+    }
+
+    // Self-protection guardrails for destructive actions
+    if (target_profile_id === caller.id) {
+      if (action === "disable_account" || action === "delete_account") {
+        return err("You cannot perform this action on your own account", 400);
+      }
     }
 
     // Authorisation: platform admin OR tenant owner/admin for the given tenant
