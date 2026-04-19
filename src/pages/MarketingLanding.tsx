@@ -414,28 +414,12 @@ export default function MarketingLanding() {
           background: `linear-gradient(180deg, hsl(var(--dc-bg-soft)) 0%, #ffffff 100%)`,
         }}
       >
-        {/* hero photo — right side, with feathered fade to white on the left edge */}
-        <div className="absolute inset-y-0 right-0 hidden md:block w-[62%]" aria-hidden>
+        {/* full-width hero image (already pre-blended to white on the left) */}
+        <div className="absolute inset-0 hidden md:block" aria-hidden>
           <img
             src={heroImage}
             alt=""
             className="w-full h-full object-cover object-center"
-          />
-          {/* feathered blend to white on the left */}
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={{
-              background:
-                "linear-gradient(90deg, #ffffff 0%, rgba(255,255,255,0.95) 12%, rgba(255,255,255,0.6) 28%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0) 70%)",
-            }}
-          />
-          {/* subtle top/bottom feather to blend with section bg */}
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={{
-              background:
-                "linear-gradient(180deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 18%, rgba(255,255,255,0) 82%, rgba(255,255,255,0.4) 100%)",
-            }}
           />
         </div>
 
