@@ -605,63 +605,218 @@ export type Database = {
           },
         ]
       }
-      email_log: {
+      email_accounts: {
         Row: {
-          app_id: string | null
-          error_message: string | null
-          event_key: string
+          branch_id: string | null
+          created_at: string
+          from_email: string
+          from_name: string
           id: string
-          metadata: Json
-          order_id: string | null
-          recipient_email: string
-          sent_at: string
-          status: string
-          subject: string
-          tenant_id: string | null
+          is_active: boolean
+          is_default: boolean
+          label: string
+          last_error: string | null
+          last_verified_at: string | null
+          max_concurrent: number
+          reply_to: string | null
+          send_delay_ms: number
+          smtp_host: string
+          smtp_password_secret_id: string | null
+          smtp_port: number
+          smtp_secure: string
+          smtp_username: string
+          tenant_id: string
+          updated_at: string
         }
         Insert: {
-          app_id?: string | null
-          error_message?: string | null
-          event_key: string
+          branch_id?: string | null
+          created_at?: string
+          from_email: string
+          from_name: string
           id?: string
-          metadata?: Json
-          order_id?: string | null
-          recipient_email: string
-          sent_at?: string
-          status?: string
-          subject: string
-          tenant_id?: string | null
+          is_active?: boolean
+          is_default?: boolean
+          label: string
+          last_error?: string | null
+          last_verified_at?: string | null
+          max_concurrent?: number
+          reply_to?: string | null
+          send_delay_ms?: number
+          smtp_host: string
+          smtp_password_secret_id?: string | null
+          smtp_port?: number
+          smtp_secure?: string
+          smtp_username: string
+          tenant_id: string
+          updated_at?: string
         }
         Update: {
-          app_id?: string | null
-          error_message?: string | null
-          event_key?: string
+          branch_id?: string | null
+          created_at?: string
+          from_email?: string
+          from_name?: string
           id?: string
-          metadata?: Json
-          order_id?: string | null
-          recipient_email?: string
-          sent_at?: string
-          status?: string
-          subject?: string
-          tenant_id?: string | null
+          is_active?: boolean
+          is_default?: boolean
+          label?: string
+          last_error?: string | null
+          last_verified_at?: string | null
+          max_concurrent?: number
+          reply_to?: string | null
+          send_delay_ms?: number
+          smtp_host?: string
+          smtp_password_secret_id?: string | null
+          smtp_port?: number
+          smtp_secure?: string
+          smtp_username?: string
+          tenant_id?: string
+          updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "email_log_app_id_fkey"
+            foreignKeyName: "email_accounts_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_accounts_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      email_outbox: {
+        Row: {
+          app_id: string | null
+          attempts: number
+          bcc: string[] | null
+          branch_id: string | null
+          category: string
+          cc: string[] | null
+          created_by_profile_id: string | null
+          email_account_id: string | null
+          error_message: string | null
+          from_email: string | null
+          from_name: string | null
+          html: string | null
+          id: string
+          locked_at: string | null
+          locked_by: string | null
+          max_attempts: number
+          message_id: string | null
+          metadata: Json
+          next_attempt_at: string
+          queued_at: string
+          related_id: string | null
+          related_type: string | null
+          reply_to: string | null
+          scheduled_for: string | null
+          sent_at: string | null
+          status: string
+          subject: string
+          tenant_id: string | null
+          text_body: string | null
+          to_email: string
+        }
+        Insert: {
+          app_id?: string | null
+          attempts?: number
+          bcc?: string[] | null
+          branch_id?: string | null
+          category?: string
+          cc?: string[] | null
+          created_by_profile_id?: string | null
+          email_account_id?: string | null
+          error_message?: string | null
+          from_email?: string | null
+          from_name?: string | null
+          html?: string | null
+          id?: string
+          locked_at?: string | null
+          locked_by?: string | null
+          max_attempts?: number
+          message_id?: string | null
+          metadata?: Json
+          next_attempt_at?: string
+          queued_at?: string
+          related_id?: string | null
+          related_type?: string | null
+          reply_to?: string | null
+          scheduled_for?: string | null
+          sent_at?: string | null
+          status?: string
+          subject: string
+          tenant_id?: string | null
+          text_body?: string | null
+          to_email: string
+        }
+        Update: {
+          app_id?: string | null
+          attempts?: number
+          bcc?: string[] | null
+          branch_id?: string | null
+          category?: string
+          cc?: string[] | null
+          created_by_profile_id?: string | null
+          email_account_id?: string | null
+          error_message?: string | null
+          from_email?: string | null
+          from_name?: string | null
+          html?: string | null
+          id?: string
+          locked_at?: string | null
+          locked_by?: string | null
+          max_attempts?: number
+          message_id?: string | null
+          metadata?: Json
+          next_attempt_at?: string
+          queued_at?: string
+          related_id?: string | null
+          related_type?: string | null
+          reply_to?: string | null
+          scheduled_for?: string | null
+          sent_at?: string | null
+          status?: string
+          subject?: string
+          tenant_id?: string | null
+          text_body?: string | null
+          to_email?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_outbox_app_id_fkey"
             columns: ["app_id"]
             isOneToOne: false
             referencedRelation: "apps"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "email_log_order_id_fkey"
-            columns: ["order_id"]
+            foreignKeyName: "email_outbox_branch_id_fkey"
+            columns: ["branch_id"]
             isOneToOne: false
-            referencedRelation: "orders"
+            referencedRelation: "branches"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "email_log_tenant_id_fkey"
+            foreignKeyName: "email_outbox_created_by_profile_id_fkey"
+            columns: ["created_by_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_outbox_email_account_id_fkey"
+            columns: ["email_account_id"]
+            isOneToOne: false
+            referencedRelation: "email_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_outbox_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
