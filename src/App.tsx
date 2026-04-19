@@ -18,6 +18,7 @@ import NotFound from "@/pages/NotFound";
 import { StorefrontRedirect } from "@/components/StorefrontRedirect";
 import { AppEntryRedirect } from "@/components/AppEntryRedirect";
 import StorefrontLanding from "@/pages/storefront/StorefrontLanding";
+import MarketingLanding from "@/pages/MarketingLanding";
 
 // Customer
 import CustomerDashboard from "@/pages/dashboard/CustomerDashboard";
@@ -196,8 +197,10 @@ const App = () => (
               } />
             </Route>
 
-            {/* Redirects */}
-            <Route path="/" element={<AppEntryRedirect />} />
+            {/* Public marketing landing — always shown at root */}
+            <Route path="/" element={<MarketingLanding />} />
+            {/* Authenticated entry: redirects users to their portal */}
+            <Route path="/app" element={<AppEntryRedirect />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
           </TenantProvider>
