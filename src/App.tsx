@@ -74,6 +74,10 @@ const adminRoles = ["head_office_admin", "platform_admin"] as const;
 const operationsRoles = ["branch_manager", "store_operator", "head_office_admin", "platform_admin"] as const;
 const branchRoles = ["branch_manager", "store_operator", "head_office_admin", "platform_admin"] as const;
 
+// Membership-role allowances (parallel to legacy app roles, evaluated together).
+const adminMembershipRoles = ["owner", "admin"];
+const operationsMembershipRoles = ["owner", "admin", "sales", "production", "accounts"];
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -117,7 +121,9 @@ const App = () => (
             <Route element={<ProtectedRoute allowedRoles={[...branchRoles]} allowedMembershipRoles={["branch_manager", "store_operator", "owner", "admin"]}><BranchLayout /></ProtectedRoute>}>
               <Route path="/branch" element={<BranchDashboard />} />
               <Route path="/branch/orders" element={<BranchOrders />} />
+              <Route path="/branch/orders/:id" element={<BranchOrderDetail />} />
               <Route path="/branch/products" element={<BranchProducts />} />
+              <Route path="/branch/pricing" element={<BranchPricing />} />
               <Route path="/branch/settings" element={<BranchSettings />} />
             </Route>
             <Route path="/admin/branch/products" element={<Navigate to="/branch/products" replace />} />
@@ -127,73 +133,73 @@ const App = () => (
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               {/* Admin — Operations */}
               <Route path="/admin" element={
-                <ProtectedRoute allowedRoles={[...operationsRoles]}>
+                <ProtectedRoute allowedRoles={[...operationsRoles]} allowedMembershipRoles={operationsMembershipRoles}>
                   <AdminDashboard />
                 </ProtectedRoute>
               } />
               <Route path="/admin/orders" element={
-                <ProtectedRoute allowedRoles={[...operationsRoles]}>
+                <ProtectedRoute allowedRoles={[...operationsRoles]} allowedMembershipRoles={operationsMembershipRoles}>
                   <AdminOrders />
                 </ProtectedRoute>
               } />
               <Route path="/admin/orders/:id" element={
-                <ProtectedRoute allowedRoles={[...operationsRoles]}>
+                <ProtectedRoute allowedRoles={[...operationsRoles]} allowedMembershipRoles={operationsMembershipRoles}>
                   <AdminOrderDetail />
                 </ProtectedRoute>
               } />
               <Route path="/admin/production" element={
-                <ProtectedRoute allowedRoles={[...operationsRoles]}>
+                <ProtectedRoute allowedRoles={[...operationsRoles]} allowedMembershipRoles={operationsMembershipRoles}>
                   <BranchDashboard />
                 </ProtectedRoute>
               } />
 
               {/* Admin — Configuration */}
               <Route path="/admin/branches" element={
-                <ProtectedRoute allowedRoles={[...adminRoles]}>
+                <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
                   <AdminBranches />
                 </ProtectedRoute>
               } />
               <Route path="/admin/branches/:id" element={
-                <ProtectedRoute allowedRoles={[...adminRoles]}>
+                <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
                   <AdminBranchDetail />
                 </ProtectedRoute>
               } />
               <Route path="/admin/products" element={
-                <ProtectedRoute allowedRoles={[...adminRoles]}>
+                <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
                   <AdminProducts />
                 </ProtectedRoute>
               } />
               <Route path="/admin/pricing" element={
-                <ProtectedRoute allowedRoles={[...adminRoles]}>
+                <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
                   <AdminPricing />
                 </ProtectedRoute>
               } />
               <Route path="/admin/users" element={
-                <ProtectedRoute allowedRoles={[...adminRoles]}>
+                <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
                   <AdminUsers />
                 </ProtectedRoute>
               } />
               <Route path="/admin/customers" element={
-                <ProtectedRoute allowedRoles={[...adminRoles]}>
+                <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
                   <AdminCustomers />
                 </ProtectedRoute>
               } />
               <Route path="/admin/customers/:id" element={
-                <ProtectedRoute allowedRoles={[...adminRoles]}>
+                <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
                   <AdminCustomerDetail />
                 </ProtectedRoute>
               } />
 
               {/* Admin — Communications */}
               <Route path="/admin/sent-mail" element={
-                <ProtectedRoute allowedRoles={[...adminRoles]}>
+                <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
                   <AdminSentMail />
                 </ProtectedRoute>
               } />
 
               {/* Admin — Settings */}
               <Route path="/admin/settings" element={
-                <ProtectedRoute allowedRoles={[...adminRoles]}>
+                <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
                   <AdminSettings />
                 </ProtectedRoute>
               } />
