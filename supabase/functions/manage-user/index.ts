@@ -27,6 +27,7 @@ type Action =
   | "delete_account"
   | "resend_invite"
   | "update_email"
+  | "update_profile"
   | "remove_membership"
   | "revoke_platform_admin";
 
@@ -37,6 +38,10 @@ interface Body {
   app_id?: string | null;
   membership_id?: string | null;
   new_email?: string;
+  display_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  phone?: string | null;
   reason?: string;
 }
 
