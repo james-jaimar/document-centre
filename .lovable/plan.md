@@ -1,35 +1,54 @@
 
+
 ## Bug
 
-"Recently Modified" lists empty draft `order_items` (no documents, no sections) created when a customer clicks a product tile and bails before uploading. Clicking **Continue** correctly navigates to the files page — but there's literally nothing to load because no files were ever uploaded against that draft.
+When a customer edits a cart item, changes Document Size from A5 → A4, saves to cart, then re-edits to change just the reference name, the size silently reverts to A5 (the original PDF's physical dimensions).
 
-Verified in DB: items `65dafe75…`, `1ad18c20…`, `ad0ea66c…` all have `build_status='draft'`, `documents=0`, `sections=0`.
+## Root cause
 
-This also violates the project's lazy-order-creation rule (`mem://orders/lazy-order-creation`). `useCreateOrder` in `src/hooks/useOrderBuilder.ts` is called eagerly from the product tile (`CustomerDashboard.handlePickProduct`) and creates an empty `orders` + `order_items` row before the user uploads anything.
+`OrderBuild.tsx` lines 209-241 — an "auto-match Document Size from uploaded document dimensions" `useEffect` runs on every mount of the order builder. It reads `documents[0].page_width_mm/page_height_mm` (still A5, since we cloned the original file) and overwrites `spec.selected_options["Document Size"]` with the matching ISO size — **even when the user previously picked a different size**.
+
+The guard `autoSizeMatchedRef.current` only prevents re-runs within the same component lifetime. On a fresh edit-from-cart load the ref resets to `false`, so the auto-match clobbers the persisted A4 choice.
+
+The same pattern likely affects any other auto-derived option that doesn't first check whether the user has already made an explicit choice (e.g. orientation advisory).
 
 ## Fix
 
-### 1. Hide empty drafts from "Recently Modified"
-`useRecentOrderItems` in `CustomerDashboard.tsx` should only return items that have at least one document or one section. Filter via a join/exists check so the dashboard never advertises hollow drafts.
+### 1. Respect persisted Document Size
+In `src/pages/dashboard/OrderBuild.tsx` change the auto-size effect so it only runs when **no Document Size is currently selected** in `spec.selected_options`. Logic:
 
-### 2. Stop creating orphans (root cause)
-Make product-tile selection truly lazy:
-- `handlePickProduct` no longer calls `createOrder.mutateAsync`.
-- Instead it navigates to the existing `new-order` route with the family preselected: `/t/:slug/orders/new/:familyId` (already supported by `OrderFiles.tsx` via `routeFamilyId` + `isNewMode`).
-- The order is then created by `OrderFiles` only on first file upload (the `ensureOrder` path that's already there).
+```text
+if a value already exists for the "Document Size" key (case-insensitive)
+  → mark autoSizeMatchedRef = true and return
+otherwise → run the existing match logic
+```
 
-### 3. Clean up existing orphans
-One-off migration: delete `order_items` (and their parent `orders` if the order has no other items) where `order_status='draft'`, `build_status='draft'`, no documents and no sections, and `updated_at` older than e.g. 1 hour. Also runnable now to clear the current 5 visible orphans for this user.
+This means:
+- First-time upload: auto-match still fires (current behaviour).
+- Edit-from-cart with a previously chosen size: persisted choice wins.
+- User can still manually change size; that change persists into spec and survives the next edit cycle.
 
-### 4. Verify Continue still works for real drafts
-For a draft item with at least one uploaded document, Continue → `/orders/:id/files` already loads docs/sections through `useOrderData(effectiveOrderId)`. No code change needed; the bug was purely empty drafts being surfaced.
+### 2. Audit other auto-set effects in `OrderBuild.tsx`
+- **Defaults loop (lines ~190-207)**: already correct — only fills `if (selected[opt.name])` is empty. No change.
+- **Orientation advisory** (`OrientationAdvisory`): check that any "rotate to landscape" outcome writes to spec and isn't re-prompted on subsequent edits. Add a `preflight_data.orientation_resolved` short-circuit if missing (already present per existing code at `OrderFiles.tsx:254`).
 
-## Files
+### 3. Re-verify edit cycle end-to-end
+- Upload A5 booklet → cart.
+- Edit → change to A4 → save → cart shows A4.
+- Edit again → change reference only → save → cart still shows A4.
+- Place order → snapshot/configuration shows A4.
 
-- `src/pages/dashboard/CustomerDashboard.tsx` — change `useRecentOrderItems` SQL to require docs/sections; change `handlePickProduct` to navigate without creating.
-- `supabase/migrations/<timestamp>_cleanup_empty_draft_items.sql` — one-shot delete of orphan empty drafts older than 1 hour.
+## Files to change
+
+- `src/pages/dashboard/OrderBuild.tsx` — guard the auto-size effect against existing user choice.
 
 ## Out of scope
 
-- Reworking the broader order/draft lifecycle.
-- Surfacing orphan cleanup as a scheduled job (already covered conceptually by `cleanup-stale-drafts` Edge Function — can be wired up separately if needed).
+- Re-running document conversion to physically resize the PDF to A4. The chosen "Document Size" is a print-spec choice that drives pricing and finishing — the source PDF stays as uploaded. (If you later want true physical scaling, that's a separate Document Centre API task.)
+- Backfilling already-corrupted cart items (none observed; the user noticed before placing).
+
+## Verification
+
+- Manual flow above.
+- Confirm in DB: `order_items.spec.selected_options."Document Size"` for the cloned draft equals the user's last saved value, not the document's physical size.
+
