@@ -74,7 +74,7 @@ async function createOrderWithJobs(
   userId: string,
   payload: any
 ) {
-  const { app_slug, tenant_id, branch_id, customer, order, billing_address, delivery_address, pricing, jobs } = payload;
+  const { app_slug, tenant_id, branch_id, customer, order, billing_address, delivery_address, fulfillment_type, pricing, jobs } = payload;
 
   if (!app_slug || !tenant_id || !customer?.profile_id || !customer?.email || !jobs?.length) {
     return err("Missing required fields: app_slug, tenant_id, customer (profile_id, email), jobs[]");
@@ -125,6 +125,7 @@ async function createOrderWithJobs(
       amount_due: pricing?.amount_due || pricing?.total_amount || 0,
       date_required: order?.date_required || null,
       turnaround_time_text: order?.turnaround_time_text || null,
+      fulfillment_type: fulfillment_type || (delivery_address ? "delivery" : (branch_id ? "collection" : null)),
       external_code: order?.external_code || null,
       notes_customer: order?.notes_customer || null,
       metadata: order?.metadata || {},

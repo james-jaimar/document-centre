@@ -99,7 +99,7 @@ export async function fetchOrderDetail(orderId: string) {
     await Promise.all([
       supabase
         .from("orders")
-        .select("*")
+        .select("*, branch:branch_id(id, name, address, city, province, postal_code, country, phone, email), ordered_by:ordered_by_profile_id(id, phone, email, first_name, last_name, display_name)")
         .eq("id", orderId)
         .single(),
       supabase

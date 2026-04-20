@@ -196,8 +196,24 @@ function buildPageSequence(
     }
   };
 
+  // Sort documents by sort_order so fallback indexing is deterministic
+  const sortedDocs = [...documents].sort((a: any, b: any) =>
+    (a.sort_order ?? 0) - (b.sort_order ?? 0)
+  );
+
+  let bodyIdx = 0;
   for (const section of bodySections) {
-    const doc = documents.find((d) => d.id === section.document_id);
+    // Primary: match by document_id. Fallback: when a section's document_id
+    // is missing or stale (e.g. after a clone-from-cart edit), pair body
+    // sections positionally with the available documents so we always emit
+    // pages instead of silently producing an empty preview.
+    let doc = section.document_id
+      ? documents.find((d) => d.id === section.document_id)
+      : undefined;
+    if (!doc) {
+      doc = sortedDocs[bodyIdx] ?? sortedDocs[0];
+    }
+    bodyIdx++;
     if (!doc) continue;
     const rawThumbs = Array.isArray(doc.thumbnail_urls)
       ? (doc.thumbnail_urls as any[])

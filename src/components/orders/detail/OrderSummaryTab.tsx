@@ -39,6 +39,16 @@ export function OrderSummaryTab({ order, jobs, selectedJobId, onSelectJob }: Pro
             <span className="text-muted-foreground">Source</span>
             <span>{order.source_channel || order.storefront_name || "—"}</span>
           </div>
+          <div className="flex justify-between gap-2">
+            <span className="text-muted-foreground">Fulfilment</span>
+            <span className="text-right">
+              {order.fulfillment_type === "collection"
+                ? `Collection${order.branch?.name ? ` — ${order.branch.name}` : ""}`
+                : order.fulfillment_type === "delivery"
+                ? "Delivery"
+                : "—"}
+            </span>
+          </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Customer</span>
             <span>{order.customer_name || "—"}</span>

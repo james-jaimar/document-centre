@@ -19,7 +19,7 @@ import { recordPaymentEvent } from "@/lib/orders/mutations";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { buildAdminPath } from "@/lib/adminRouting";
-import { PAYMENT_STATUS_CONFIG } from "@/lib/orders/status-maps";
+import { ADMIN_STATUS_CONFIG, PAYMENT_STATUS_CONFIG } from "@/lib/orders/status-maps";
 import { StatusBadge } from "@/components/orders/StatusBadge";
 import { Undo2 } from "lucide-react";
 
@@ -88,6 +88,8 @@ export default function AdminOrderDetail() {
   };
 
   const paymentConfig = PAYMENT_STATUS_CONFIG[order.payment_status as keyof typeof PAYMENT_STATUS_CONFIG];
+  const adminConfig = ADMIN_STATUS_CONFIG[order.admin_status as keyof typeof ADMIN_STATUS_CONFIG];
+  const isCancelled = order.admin_status === "cancelled";
 
   return (
     <div className="space-y-4">
@@ -97,18 +99,19 @@ export default function AdminOrderDetail() {
           <Button variant="outline" size="sm" onClick={() => navigate(buildAdminPath("/admin/orders", tenantId))}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Order Manager
           </Button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-mono text-sm font-semibold">{order.order_number || order.id.slice(0, 8)}</span>
+            {adminConfig && <StatusBadge {...adminConfig} />}
             {paymentConfig && <StatusBadge {...paymentConfig} />}
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {Number(order.amount_paid) > 0 && (
+          {!isCancelled && Number(order.amount_paid) > 0 && (
             <Button size="sm" variant="outline" onClick={() => setRefundDialogOpen(true)}>
               <Undo2 className="mr-2 h-4 w-4" /> Refund
             </Button>
           )}
-          {order.amount_due > 0 && (
+          {!isCancelled && order.amount_due > 0 && (
             <>
               <Button size="sm" variant="outline" onClick={() => setPaymentDialogOpen(true)}>
                 <Receipt className="mr-2 h-4 w-4" /> Record Payment
@@ -119,7 +122,7 @@ export default function AdminOrderDetail() {
               </Button>
             </>
           )}
-          {order.admin_status !== "cancelled" && order.admin_status !== "completed" && (
+          {!isCancelled && order.admin_status !== "completed" && (
             <Button
               size="sm"
               variant="outline"
@@ -183,7 +186,7 @@ export default function AdminOrderDetail() {
             </TabsContent>
 
             <TabsContent value="delivery" className="mt-3">
-              <OrderDeliveryTab addresses={addresses} />
+              <OrderDeliveryTab addresses={addresses} order={order} />
             </TabsContent>
 
             <TabsContent value="ordered_by" className="mt-3">
