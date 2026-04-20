@@ -1,6 +1,11 @@
+import { useState } from "react";
+import { Eye } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/orders/StatusBadge";
 import { JOB_STATUS_CONFIG, PROOF_STATUS_CONFIG, URGENCY_CONFIG } from "@/lib/orders/status-maps";
 import { Separator } from "@/components/ui/separator";
+import PreviewLightbox from "@/components/order/PreviewLightbox";
+import { inferPreviewTypeFromJob } from "@/lib/orders/inferPreviewType";
 import type { JobConfiguration, ConfigSection } from "@/lib/orders/types";
 
 interface Props {
@@ -17,18 +22,36 @@ export function JobDetailPanel({ job, documents }: Props) {
   const summary = config.summary || {};
   const jobDocs = documents.filter((d: any) => d.job_id === job.id);
 
+  const previewSnap = ((config as any).preview ?? {}) as any;
+  const previewThumbs: string[] = Array.isArray(previewSnap.thumbnails) ? previewSnap.thumbnails : [];
+  const hasPreview = previewThumbs.some((t) => !!t);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
   return (
     <div className="space-y-4">
       {/* Job header */}
       <div className="rounded-lg border bg-card p-4">
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-xs text-muted-foreground">Job ID</div>
             <div className="text-lg font-bold font-mono">{job.job_number}</div>
           </div>
-          <div className="text-right">
-            <div className="text-xs text-muted-foreground">Job Name</div>
-            <div className="text-sm font-semibold">{job.job_name || job.product_name}</div>
+          <div className="text-right space-y-2">
+            <div>
+              <div className="text-xs text-muted-foreground">Job Name</div>
+              <div className="text-sm font-semibold">{job.job_name || job.product_name}</div>
+            </div>
+            {hasPreview && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setPreviewOpen(true)}
+              >
+                <Eye className="h-3.5 w-3.5 mr-1.5" />
+                View customer preview
+              </Button>
+            )}
           </div>
         </div>
 
@@ -157,6 +180,28 @@ export function JobDetailPanel({ job, documents }: Props) {
             ))}
           </div>
         </div>
+      )}
+
+      {previewOpen && (
+        <PreviewLightbox
+          thumbnailPaths={previewThumbs}
+          productType={
+            (previewSnap.product_type as any) || inferPreviewTypeFromJob(job)
+          }
+          effects={previewSnap.effects}
+          colorFlags={previewSnap.colorFlags}
+          bleedFlags={previewSnap.bleedFlags}
+          pageRoles={previewSnap.pageRoles}
+          sectionTypes={previewSnap.sectionTypes}
+          pageLabels={previewSnap.pageLabels}
+          pageColors={previewSnap.pageColors}
+          tabPositions={previewSnap.tabPositions}
+          displayPageNumbers={previewSnap.displayPageNumbers}
+          faceLabels={previewSnap.faceLabels}
+          bindingEdge={previewSnap.bindingEdge}
+          pageAspectRatio={previewSnap.pageAspectRatio ?? undefined}
+          onClose={() => setPreviewOpen(false)}
+        />
       )}
     </div>
   );
