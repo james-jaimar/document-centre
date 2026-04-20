@@ -2,6 +2,7 @@
 // (for tenant-scoped actions) or platform_admin (for cross-tenant actions).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { resolveAppOrigin, buildAppVerifyLink } from "../_shared/buildAuthLink.ts";
+import { enqueueEmail } from "../_shared/email-queue.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -146,84 +147,88 @@ Deno.serve(async (req) => {
         if (linkErr) return err(`Failed to generate link: ${linkErr.message}`);
 
         const actionLink = buildAppVerifyLink(appOrigin, linkData, "/reset-password");
+        if (!actionLink) return err("Failed to build verification link", 500);
 
-        // For resend_invite, fetch tenant branding and send a branded email via send-email.
-        let emailSent = false;
-        if (action === "resend_invite" && actionLink && tenant_id) {
-          try {
-            const { data: tenantRow } = await admin
-              .from("tenants")
-              .select("name")
-              .eq("id", tenant_id)
-              .maybeSingle();
-            const { data: settingsRows } = await admin
-              .from("tenant_settings")
-              .select("setting_key, setting_value")
-              .eq("tenant_id", tenant_id)
-              .eq("category", "branding");
+        // Resolve tenant branding for the email body
+        let portalName = "Your portal";
+        let primary = "#1a1a2e";
+        let logoUrl: string | null = null;
+        if (tenant_id) {
+          const { data: tenantRow } = await admin
+            .from("tenants")
+            .select("name")
+            .eq("id", tenant_id)
+            .maybeSingle();
+          if ((tenantRow as any)?.name) portalName = (tenantRow as any).name;
 
-            const settings: Record<string, any> = {};
-            for (const r of settingsRows ?? []) settings[r.setting_key] = r.setting_value;
+          const { data: settingsRows } = await admin
+            .from("tenant_settings")
+            .select("setting_key, setting_value")
+            .eq("tenant_id", tenant_id)
+            .eq("category", "branding");
+          const settings: Record<string, any> = {};
+          for (const r of settingsRows ?? []) settings[r.setting_key] = r.setting_value;
+          if (typeof settings.portal_name === "string" && settings.portal_name) portalName = settings.portal_name;
+          if (typeof settings.primary_color === "string") primary = settings.primary_color;
+          if (typeof settings.logo_url === "string" && settings.logo_url) logoUrl = settings.logo_url;
+        }
 
-            const portalName = (typeof settings.portal_name === "string" && settings.portal_name)
-              || (tenantRow as any)?.name || "Your portal";
-            const primary = typeof settings.primary_color === "string" ? settings.primary_color : "#1a1a2e";
-            const logoUrl = typeof settings.logo_url === "string" ? settings.logo_url : null;
+        const escapeHtml = (s: string) =>
+          s.replace(/[&<>"']/g, (c) =>
+            ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!)
+          );
 
-            const escapeHtml = (s: string) =>
-              s.replace(/[&<>"']/g, (c) =>
-                ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!)
-              );
+        const isInvite = action === "resend_invite";
+        const subject = isInvite
+          ? `Your sign-in link for ${portalName}`
+          : `Reset your password for ${portalName}`;
+        const heading = isInvite ? `Sign in to ${escapeHtml(portalName)}` : `Reset your password`;
+        const intro = isInvite
+          ? `Use the button below to sign in and set a new password if needed. This link expires in 1 hour.`
+          : `Click the button below to set a new password for your <strong>${escapeHtml(portalName)}</strong> account. This link expires in 1 hour.`;
+        const buttonLabel = isInvite ? "Open portal" : "Reset password";
+        const logo = logoUrl
+          ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(portalName)}" style="max-height:48px;margin-bottom:24px;" />`
+          : `<div style="font-size:20px;font-weight:600;color:${primary};margin-bottom:24px;">${escapeHtml(portalName)}</div>`;
 
-            const subject = `Your sign-in link for ${portalName}`;
-            const heading = `Sign in to ${escapeHtml(portalName)}`;
-            const intro = `Use the button below to sign in and set a new password if needed.`;
-            const logo = logoUrl
-              ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(portalName)}" style="max-height:48px;margin-bottom:24px;" />`
-              : `<div style="font-size:20px;font-weight:600;color:${primary};margin-bottom:24px;">${escapeHtml(portalName)}</div>`;
-
-            const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
+        const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7;padding:40px 16px;"><tr><td align="center">
 <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:40px;box-shadow:0 1px 3px rgba(0,0,0,0.06);"><tr><td>
 ${logo}<h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 16px;">${heading}</h1>
 <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 28px;">${intro}</p>
-<a href="${escapeHtml(actionLink)}" style="display:inline-block;background:${primary};color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:500;font-size:15px;">Open portal</a>
+<a href="${escapeHtml(actionLink)}" style="display:inline-block;background:${primary};color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:500;font-size:15px;">${buttonLabel}</a>
 <p style="font-size:13px;color:#888;margin:32px 0 0;line-height:1.5;">If the button doesn't work, copy and paste this link:<br/><a href="${escapeHtml(actionLink)}" style="color:${primary};word-break:break-all;">${escapeHtml(actionLink)}</a></p>
+<hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;" />
+<p style="font-size:12px;color:#999;margin:0;">If you didn't expect this email, you can safely ignore it.</p>
 </td></tr></table></td></tr></table></body></html>`;
-            const text = `${heading}\n\n${intro}\n\nOpen portal: ${actionLink}`;
+        const text = `${heading}\n\n${intro.replace(/<[^>]+>/g, "")}\n\n${buttonLabel}: ${actionLink}`;
 
-            const sendResp = await fetch(`${url}/functions/v1/send-email`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: authHeader,
-                apikey: anonKey,
-              },
-              body: JSON.stringify({ to: targetEmail, subject, html, text }),
-            });
-            emailSent = sendResp.ok;
-            if (!sendResp.ok) {
-              const body = await sendResp.text();
-              console.error("send-email failed:", sendResp.status, body);
-            }
-          } catch (e) {
-            console.error("resend_invite send-email threw:", e);
-          }
+        try {
+          await enqueueEmail(admin, {
+            tenant_id: tenant_id ?? null,
+            app_id: app_id ?? null,
+            to: targetEmail,
+            subject,
+            html,
+            text,
+            category: "auth",
+            created_by_profile_id: caller.id,
+            metadata: {
+              kind: isInvite ? "resend_invite" : "force_password_reset",
+              profile_id: target_profile_id,
+            },
+          });
+        } catch (e) {
+          console.error("enqueueEmail failed:", e);
+          return err(`Failed to enqueue email: ${(e as Error).message}`, 500);
         }
 
-        // For force_password_reset, the actual email is dispatched by Supabase Auth
-        // firing its send-email webhook → auth-email-hook → pgmq queue → process-email-queue.
-        // We can't synchronously confirm delivery here, so report it as queued.
-        await audit({
-          delivered_via: action === "resend_invite" ? "send_email" : "auth_email_hook",
-          email_sent: action === "resend_invite" ? emailSent : null,
-          delivery: action === "resend_invite" ? (emailSent ? "sent" : "failed") : "queued",
-        });
+        await audit({ delivered_via: "email_outbox", delivery: "queued" });
         return json({
           success: true,
-          message: action === "resend_invite"
-            ? (emailSent ? "Invite email resent" : "Sign-in link generated (email send failed)")
-            : "Reset link queued — delivery is being processed",
+          message: isInvite
+            ? `Invite link sent to ${targetEmail}`
+            : `Reset link sent to ${targetEmail}`,
         });
       }
 

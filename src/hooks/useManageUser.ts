@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
 export type ManageUserAction =
@@ -37,9 +38,13 @@ export function useManageUser() {
       if (data?.error) throw new Error(data.error);
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: ["tenant-members"] });
       qc.invalidateQueries({ queryKey: ["platform-users"] });
+      toast.success(data?.message ?? "Done");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message ?? "Action failed");
     },
   });
 }
