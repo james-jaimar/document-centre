@@ -192,24 +192,18 @@ const CustomerDashboard = () => {
   const { slug } = useParams<{ slug: string }>();
   const { user } = useAuth();
   const { tenantId } = useTenantContext();
-  const createOrder = useCreateOrder();
   const { data: families, isLoading: familiesLoading } = useProductFamiliesActive();
   const { data: recentDocs } = useRecentDocuments(user?.id, tenantId);
   const { data: trackingOrders } = useTrackingOrders(user?.id, tenantId);
   const { data: recentItems } = useRecentOrderItems(user?.id, tenantId);
-  const [creatingFamily, setCreatingFamily] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
 
-  const handlePickProduct = async (familyId: string) => {
-    setCreatingFamily(familyId);
-    try {
-      const order = await createOrder.mutateAsync(familyId);
-      navigate(`/t/${slug}/orders/${order.id}/files`);
-    } finally {
-      setCreatingFamily(null);
-    }
+  // Lazy: navigate to upload step with the family preselected; the order is
+  // only created on first file upload (see OrderFiles.ensureOrder).
+  const handlePickProduct = (familyId: string) => {
+    navigate(`/t/${slug}/orders/new/${familyId}`);
   };
 
   const handleUploadClick = useCallback(() => {
