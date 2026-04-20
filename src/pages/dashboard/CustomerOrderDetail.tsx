@@ -189,7 +189,9 @@ const CustomerOrderDetail = () => {
     ...messages.filter((m: any) => !m.is_internal).map((m: any) => ({ ...m, _type: "message" as const })),
   ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-  const fulfilmentMethod = delivery ? "Delivery" : billing ? "Collection" : "—";
+  const branch = (order as any).branch;
+  const isCollection = order.fulfillment_type === "collection" || (!delivery && !!branch);
+  const fulfilmentMethod = isCollection ? "Collection" : delivery ? "Delivery" : billing ? "Collection" : "—";
 
   return (
     <div className="space-y-6">
