@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
         email,
         password: randomPassword(),
         email_confirm: true,
-        user_metadata: { display_name: display_name || email.split("@")[0], tenant_slug },
+        user_metadata: { display_name: display_name || null, tenant_slug },
       });
       if (createErr || !created?.user) {
         if (createErr?.message?.toLowerCase().includes("already")) {
@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
       }
 
       await admin.from("profiles").upsert(
-        { id: profileId, email, display_name: display_name || email.split("@")[0] },
+        { id: profileId, email, display_name: display_name || null },
         { onConflict: "id" }
       );
     }

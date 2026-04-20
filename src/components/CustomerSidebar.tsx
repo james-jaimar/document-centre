@@ -16,6 +16,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { useCartItemCount } from "@/hooks/useCart";
+import { resolveDisplayName, resolveInitials } from "@/lib/displayName";
 
 const buildNavItems = (slug: string) => [
   { to: `/t/${slug}/dashboard`, icon: Home, label: "Home", exact: true },
@@ -38,7 +39,7 @@ export default function CustomerSidebar() {
       if (!user?.id) return null;
       const { data } = await supabase
         .from("profiles")
-        .select("display_name")
+        .select("display_name, first_name, last_name, email")
         .eq("id", user.id)
         .single();
       return data;
@@ -49,8 +50,9 @@ export default function CustomerSidebar() {
   const isActive = (path: string, exact: boolean) =>
     exact ? location.pathname === path : location.pathname.startsWith(path);
 
-  const displayName = profile?.display_name || user?.email?.split("@")[0] || "User";
-  const initials = displayName.slice(0, 2).toLowerCase();
+  const nameSource = { ...(profile ?? {}), email: profile?.email ?? user?.email ?? null };
+  const displayName = resolveDisplayName(nameSource, "User");
+  const initials = resolveInitials(nameSource, "U").toLowerCase();
 
    const { collapsed, toggle } = useSidebarCollapse();
 
