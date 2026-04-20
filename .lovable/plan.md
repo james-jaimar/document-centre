@@ -1,83 +1,97 @@
 
 
-## The change
+## Bug
 
-Defer thumbnail rasterization until **after** advisory dialogs (bleed, non-ISO size, presentation orientation) are resolved. Today we render at upload, then re-render after the user confirms a crop. That's wasted work and visible UI churn.
+After the inspect/render refactor, uploads fail immediately with:
 
-## Current flow (wasteful)
+```
+[doc-centre] POST v1/assets
+[doc-centre] GET v1/assets/<id>
+POST .../functions/v1/pdf-api 401 (Unauthorized)
+[upload] inspectDocument failed: Document Centre API error 401: {"error":"Unauthorized"}
+```
 
-In `src/hooks/useDocumentUpload.ts > processDocument`:
+So the asset is created (POST v1/assets returns 200), but the **follow-up `GET v1/assets/:id`** returns 401 from `pdf-api`. No metadata → no boxes → no advisory → no render.
 
-1. Upload PDF
-2. `createAsset({ auto_queue: true })` → backend immediately rasterizes full MediaBox
-3. Poll thumbnail jobs
-4. If `TrimBox ≠ MediaBox` → `cropRasterize` again (second render)
-5. Poll again
-6. Detect non-ISO / near-ISO bleed → write `preflight_data`
-7. UI shows advisories; user confirms → `cropRasterize` (third render in bleed case)
+## Why
 
-So a PDF with manually-added bleed renders 2–3 times.
+`supabase/functions/pdf-api/index.ts` does this on every request:
 
-## New flow (single render)
+```ts
+const body = await req.json();
+```
 
-### Phase A — Inspect only (no rasterization)
+`GET` requests sent from `documentCentreApi.request()` look like:
 
-In `processDocument`:
-1. Upload PDF.
-2. `createAsset({ auto_queue: false })` — register asset, run metadata extraction job only (page count, boxes, dimensions). No thumbnails yet.
-3. Poll the metadata job(s) to completion.
-4. Read boxes, compute `pageWidthMm/pageHeightMm`, run `detectNonIsoSize` and `detectNearIsoWithBleed`.
-5. Determine the **resolved render box** up front:
-   - If `TrimBox` exists and differs from `MediaBox` → use TrimBox.
-   - Else if non-ISO detected → leave as MediaBox for now; advisory will let user choose scale.
-   - Else if near-ISO bleed detected → leave as MediaBox for now; advisory will let user confirm trim.
-   - Else → MediaBox.
-6. Write `documents` row with `document_status = 'awaiting_review'` when an advisory is pending, otherwise `'rendering'`. Persist `preflight_data` (boxes, detected_size, near_iso_match) so advisories show.
-7. **No thumbnails rendered yet.** UI shows a placeholder card with the advisory chip.
+```ts
+fetch(edgeFnUrl, {
+  method: "POST",            // edge fn always POST
+  body: JSON.stringify({ path, method: "GET" }),
+})
+```
 
-### Phase B — Render once, after user decides (or auto-confirm)
+That body parse works for the initial POSTs. But there is a second, more likely failure: looking at the new `inspectDocument` flow, after `createAsset({ auto_queue: false })` we immediately poll `GET v1/assets/<id>` to read `boxes` / page count. The Document Centre API itself returns 401 on that path because it expects either:
 
-Add a single helper `renderDocumentThumbnails(docId, assetId, box)` (extracted from current logic) that:
-- Calls `cropRasterize(assetId, box, 150)` exactly once.
-- Polls until thumbnails are ready (existing stale-poll logic).
-- Updates `documents` with `thumbnail_urls`, finalised dimensions, `document_status = 'ready'`.
+- the asset to have completed an inspect job, or
+- the request to include a service token / signed header that previously was added by the `auto_queue: true` path.
 
-Trigger points for Phase B:
-- **No advisory** → call immediately at end of Phase A with the resolved MediaBox/TrimBox. Single render, same outcome as today's happy path.
-- **Bleed advisory confirmed** (`handleBleedConfirm` in `OrderFiles.tsx`) → call with computed trimmed box. Replace today's `cropRasterize` + `reThumbnail` pair with one `renderDocumentThumbnails` call.
-- **Bleed advisory dismissed** ("No, keep as is") → call with MediaBox.
-- **Non-ISO size advisory** → call with the chosen target box (existing scale-to flow).
-- **Presentation orientation advisory** → call after rotation handler with new MediaBox.
+The screenshot confirms the 401 originates **upstream** ("Document Centre API error 401"), not from our edge function's auth check (which would say "Unauthorized" before logging the GET line).
 
-### Phase C — UI surfaces the new "awaiting review" state
+## Likely upstream cause
 
-In `OrderFiles.tsx` and the file/section list:
-- Show a small "Reviewing dimensions…" / advisory chip on cards whose `document_status === 'awaiting_review'`.
-- Suppress thumbnail skeletons that imply rendering is in progress until Phase B starts.
-- Existing advisory dialogs already drive Phase B; just route them through the new single-render helper.
+The Document Centre API gates `/v1/assets/:id` until a job has touched the asset. With `auto_queue: false` no job is queued, so there is nothing tying the asset to the requesting user/tenant, and the API rejects the read.
 
-### Phase D — Cleanup
+This means **`auto_queue: false` is not a supported standalone mode** — the API expects at least one job (inspect/metadata) to be enqueued at create time so it can authorize subsequent reads and so boxes get populated.
 
-- Delete the now-redundant `reThumbnail` re-crop branch that re-reads `TrimBox/CropBox/MediaBox` (it was the source of the previous bleed bug too).
-- Keep `reThumbnail` only as a thin wrapper that calls `renderDocumentThumbnails` for the rotate / scale flows.
+## Fix plan
 
-## Backend assumption to confirm
+### 1. Add an explicit "inspect only" path in `documentCentreApi.ts`
 
-`createAsset({ auto_queue: false })` must register the asset and return `asset_id` with the metadata extraction job (boxes, page count) but skip thumbnail rasterization. Looking at `documentCentreApi.ts` will confirm whether the API already supports this; if `auto_queue` only controls thumbnail jobs we're fine, otherwise we'll instead call `createAsset` then explicitly trigger only the metadata job (or simply skip the rasterize path until we call `cropRasterize`).
+Two options, in order of preference:
+
+- **Preferred**: keep `auto_queue: true` in `createAsset`, but immediately after creation call `inspectAsset(assetId)` only if needed and **skip the rasterize step on the backend**. If the backend doesn't support inspect-only via `auto_queue`, use option B.
+- **Fallback**: call `createAsset({ auto_queue: true })` (which queues full processing), then on the client only consume the metadata it produces and **don't trigger a second `cropRasterize`**. This still single-renders if the auto-queued render uses the MediaBox, but for bleed/non-ISO cases we'd need to cancel/replace it — which puts us back to double rendering.
+
+### 2. Real fix: call inspect explicitly, no auto_queue rasterize
+
+`createAsset({ auto_queue: false })` → then call `POST v1/assets/:id/inspect` (already exposed as `inspectAsset`) → poll that job → read asset boxes. The `inspect` job is what authorizes/populates the asset, not the rasterize.
+
+That matches the API surface in `documentCentreApi.ts` which already exports `inspectAsset(assetId)` returning a `job_id`.
+
+So `inspectDocument` in `useDocumentUpload.ts` should be:
+
+1. `createAsset({ auto_queue: false })`
+2. `inspectAsset(assetId)` → `{ job_id }`
+3. `pollJob(job_id)` until completed
+4. `getAsset(assetId)` → now authorized, has `boxes`, `page_count`
+5. Run `detectNonIsoSize` / `detectNearIsoWithBleed`
+6. Decide whether to render now or wait for advisory
+7. Phase B `renderDocumentThumbnails` calls `cropRasterize` exactly once
+
+### 3. Confirm the edge function isn't the 401 source
+
+Quick check in `pdf-api/index.ts`: the auth gate runs `supabase.auth.getUser()` and returns 401 with `{"error":"Unauthorized"}`. That's the **same** body we're seeing — so it's possible the 401 is actually from our edge function rejecting a GET because `req.json()` succeeded but the user lookup failed mid-flight.
+
+Plan also includes:
+- Log whether the 401 originates from the edge function's auth branch vs. the upstream proxy. Add a one-line distinguishing prefix so we can tell them apart.
+- Verify `getAuthToken()` in `documentCentreApi.ts` is still returning a valid token when called from the new `inspectDocument` path (race with auth refresh on first call after page load).
 
 ## Files to change
 
-- `src/hooks/useDocumentUpload.ts` — split `processDocument` into `inspectDocument` (Phase A) and `renderDocumentThumbnails` (Phase B). Stop double-cropping.
-- `src/pages/dashboard/OrderFiles.tsx` — `handleBleedConfirm`, non-ISO scale handler, presentation rotation handler all call `renderDocumentThumbnails` directly. Remove the now-redundant `reThumbnail({ skipCrop: true })` workaround.
-- `src/components/order/FileList.tsx` (and section list if needed) — render the `awaiting_review` state.
-- Possibly `src/lib/documentCentreApi.ts` if we need a metadata-only entry point.
+- `src/hooks/useDocumentUpload.ts` — `inspectDocument`: add explicit `inspectAsset` + `pollJob` step before `getAsset`. Don't poll asset until inspect job completes.
+- `supabase/functions/pdf-api/index.ts` — make the two 401 branches distinguishable in the response body (`auth_failed_local` vs `auth_failed_upstream`) and log the upstream status text so we never have to guess again.
+- `src/lib/documentCentreApi.ts` — no signature changes needed; just confirm `inspectAsset` is exported (it is).
 
 ## Verification
 
-1. Upload an A4 PDF with no bleed → renders once → preview appears, no advisories.
-2. Upload a 160×230mm PDF (A5+bleed, no TrimBox) → no thumbnail rendered, bleed advisory appears → confirm → single render → trimmed preview shows.
-3. Upload a US Letter PDF → no thumbnail rendered, non-ISO advisory appears → choose "Scale to A4" → single render at A4.
-4. Upload a portrait Presentation → orientation advisory → confirm rotate → single render landscape.
-5. Bleed dismissed ("keep as is") → single render at MediaBox.
-6. Network tab: confirm only one `cropRasterize` call per upload in every path above.
+1. Upload a plain A4 PDF → console shows: `POST v1/assets` → `POST v1/assets/<id>/inspect` → `GET v1/jobs/<id>` (until completed) → `GET v1/assets/<id>` 200 → no advisory → single `crop-rasterize` → preview appears.
+2. Upload 160×230mm A5+bleed PDF → same prefix → bleed advisory appears with no thumbnails yet → confirm trim → single `crop-rasterize` at 148×210 → trimmed preview appears.
+3. Upload US Letter → non-ISO advisory, single render at chosen target.
+4. No more 401s on `v1/assets/:id`.
+5. Network tab: exactly one `crop-rasterize` per upload in every path.
+
+## Out of scope
+
+- VPS server diagnostics — we'll return to those once uploads work end-to-end.
+- Any backend changes to Document Centre API.
 
