@@ -2,7 +2,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useCreateOrder } from "@/hooks/useOrderBuilder";
+
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -124,14 +124,22 @@ function useRecentOrderItems(userId: string | undefined, tenantId: string | null
       if (!userId || !tenantId) return [];
       const { data, error } = await supabase
         .from("order_items")
-        .select("id, title, updated_at, order_id, build_status, orders!inner(user_id, order_status, tenant_id)")
+        .select(
+          "id, title, updated_at, order_id, build_status, orders!inner(user_id, order_status, tenant_id), documents(id), document_sections(id)"
+        )
         .eq("orders.user_id", userId)
         .eq("orders.tenant_id", tenantId)
         .in("orders.order_status", ["draft", "quoted"])
         .order("updated_at", { ascending: false })
-        .limit(5);
+        .limit(20);
       if (error) throw error;
-      return data;
+      // Filter out hollow drafts (no uploaded files and no sections)
+      const filtered = (data ?? []).filter((item: any) => {
+        const docs = Array.isArray(item.documents) ? item.documents.length : 0;
+        const secs = Array.isArray(item.document_sections) ? item.document_sections.length : 0;
+        return docs > 0 || secs > 0;
+      });
+      return filtered.slice(0, 5);
     },
     enabled: !!userId && !!tenantId,
   });
@@ -184,24 +192,18 @@ const CustomerDashboard = () => {
   const { slug } = useParams<{ slug: string }>();
   const { user } = useAuth();
   const { tenantId } = useTenantContext();
-  const createOrder = useCreateOrder();
   const { data: families, isLoading: familiesLoading } = useProductFamiliesActive();
   const { data: recentDocs } = useRecentDocuments(user?.id, tenantId);
   const { data: trackingOrders } = useTrackingOrders(user?.id, tenantId);
   const { data: recentItems } = useRecentOrderItems(user?.id, tenantId);
-  const [creatingFamily, setCreatingFamily] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
 
-  const handlePickProduct = async (familyId: string) => {
-    setCreatingFamily(familyId);
-    try {
-      const order = await createOrder.mutateAsync(familyId);
-      navigate(`/t/${slug}/orders/${order.id}/files`);
-    } finally {
-      setCreatingFamily(null);
-    }
+  // Lazy: navigate to upload step with the family preselected; the order is
+  // only created on first file upload (see OrderFiles.ensureOrder).
+  const handlePickProduct = (familyId: string) => {
+    navigate(`/t/${slug}/orders/new/${familyId}`);
   };
 
   const handleUploadClick = useCallback(() => {
@@ -230,12 +232,9 @@ const CustomerDashboard = () => {
                       key={f.id}
                       className="product-tile"
                       onClick={() => handlePickProduct(f.id)}
-                      disabled={creatingFamily === f.id}
                     >
                       <div className="product-thumb overflow-hidden">
-                        {creatingFamily === f.id ? (
-                          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                        ) : (SLUG_IMAGE_MAP[f.slug] || f.image_url) ? (
+                        {(SLUG_IMAGE_MAP[f.slug] || f.image_url) ? (
                           <img src={SLUG_IMAGE_MAP[f.slug] || f.image_url!} alt={f.name} className="h-full w-full object-cover" />
                         ) : (
                           <Icon className="h-9 w-9 text-muted-foreground" />
