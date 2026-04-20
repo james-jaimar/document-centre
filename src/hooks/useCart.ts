@@ -429,6 +429,7 @@ export function usePlaceOrder() {
         ]);
 
       const { inferPreviewTypeFromJob } = await import("@/lib/orders/inferPreviewType");
+      const { buildPreviewSnapshot } = await import("@/lib/orders/buildPreviewSnapshot");
 
       const jobs = items.map((item: any) => {
         const familyOptions = ((optionsData ?? []) as any[]).filter(
@@ -464,12 +465,29 @@ export function usePlaceOrder() {
           product_snapshot,
         });
 
+        // Full preview snapshot — bleed/covers/lamination/paper colour/tabs/inserts
+        // resolved at place-order time so the read-only preview matches the
+        // customer's chosen finishing options exactly.
+        const selectedOptions = (item.spec?.selected_options ?? {}) as Record<string, string>;
+        let previewSnapshot: any = { thumbnails, product_type: previewType };
+        try {
+          const snap = buildPreviewSnapshot({
+            productType: previewType,
+            selectedOptions,
+            productOptions: familyOptions as any,
+            sections: itemSections as any,
+            documents: itemDocs as any,
+          });
+          // Prefer the snapshot's resolved per-page thumbnails (includes
+          // tab/insert/cover blanks in the right physical positions).
+          previewSnapshot = snap;
+        } catch (e) {
+          console.warn("[placeOrder] preview snapshot failed, using fallback", e);
+        }
+
         const configurationWithPreview = {
           ...configuration,
-          preview: {
-            thumbnails,
-            product_type: previewType,
-          },
+          preview: previewSnapshot,
         };
 
         return {
