@@ -1,63 +1,92 @@
 
 
-## Three fixes
+## Bug
 
-### 1. Admin Order Manager shows drafts (BUG)
+Customers/admins cannot delete uploaded files. Toast: *"s3-storage: Some deletes failed"*.
 
-**Cause**: `fetchAdminOrders` filters `.not("app_id", "is", null)` but lazy-created drafts already have `app_id` set. The drafts have `order_number IS NULL` and `submitted_at IS NULL`.
+## Root cause
 
-**Fix**: in `src/lib/orders/queries.ts > fetchAdminOrders`, add `.not("submitted_at", "is", null)` (and same for `fetchCustomerOrders` for safety). Only truly placed orders have `submitted_at`.
+`supabase/functions/s3-storage/index.ts` handles the `delete` action by sending `DELETE https://connector-gateway.lovable.dev/aws_s3/{path}` through the Lovable connector gateway. Per the S3 connector contract, **the gateway only proxies `GET ?list-type=2` and `HEAD`**. DELETE is rejected, so every `delRes.ok` is false and the function returns 207 with "Some deletes failed".
 
-### 2. Auto-clear drafts older than 7 days
+The connector also only signs URLs for `mode=read` and `mode=write` — there is no `mode=delete`. So we cannot delete via the gateway at all.
 
-Two parts:
+## Fix
 
-**A. Customer-facing notice** — in `src/pages/dashboard/CustomerOrders.tsx`, add a small info banner at the top of the Drafts tab:
-> "Drafts are automatically deleted after 7 days. Place your order or save it to your cart to keep it."
+Sign DELETE requests directly to S3 using AWS SigV4 from the edge function, bypassing the connector for this one action.
 
-Also show each draft's age and visually flag any draft >5 days as "expires soon" so the user has warning.
+### 1. Add AWS credentials as Supabase secrets
 
-**B. Server-side cleanup** — add a Postgres function + pg_cron schedule via migration:
+Required new secrets (request via the secrets flow, ask user to paste from AWS IAM):
 
-- New SQL function `cleanup_stale_draft_orders()` (`SECURITY DEFINER`, `search_path = public`):
-  - Find orders where `submitted_at IS NULL` AND `order_number IS NULL` AND `created_at < now() - interval '7 days'`.
-  - For each, delete dependent `document_sections`, `documents`, `order_items`, then the order itself (mirror `deleteDraftOrder` client logic). Storage objects in the `document-uploads` bucket: collect file paths and delete via the storage API call from a tiny Edge Function trigger, OR leave orphaned and rely on a separate sweep — recommended: do the DB cleanup in SQL and orphan storage for now (keeps migration pure SQL; storage can be swept by a follow-up edge function).
-  - Better: create a small edge function `cleanup-stale-drafts` that does both (DB + storage), and schedule it via pg_cron with `net.http_post` daily at 03:00 UTC.
+- `AWS_S3_ACCESS_KEY_ID`
+- `AWS_S3_SECRET_ACCESS_KEY`
+- `AWS_S3_REGION` (e.g. `eu-west-1`)
+- `AWS_S3_BUCKET` (e.g. `document-centre-uploads`)
 
-Approach chosen: **Edge function `cleanup-stale-drafts`** scheduled by pg_cron. Cleaner, deletes both DB rows and S3 storage objects. Logs how many drafts cleared per run.
+The IAM user/role only needs `s3:DeleteObject` on `arn:aws:s3:::{bucket}/*` for these credentials.
 
-### 3. Customer order detail — link to read-only flip preview
+### 2. Rewrite the `delete` branch in `s3-storage/index.ts`
 
-In `src/pages/dashboard/CustomerOrderDetail.tsx`, for each job:
-- Compute thumbnail paths from the job's `documents` (joined via `order_jobs → documents` snapshot, or pulled from `order_documents` filtered by `job_id`). Existing code already loads `documents` into `visibleDocs`.
-- Add a "Preview" button next to each job (or inside the Files section) that opens `PreviewLightbox` with the job's thumbnails and the correct `productType` inferred from `job.product_category` / `job.configuration`.
-- Reuse the existing `PreviewLightbox` component verbatim — it's already read-only (no edit controls). Pass `productType` from `inferPreviewType` (same util used by OrderBuild).
+Replace the gateway DELETE loop with a direct, SigV4-signed `DELETE https://{bucket}.s3.{region}.amazonaws.com/{key}` request per object. Use the `aws4fetch` library (`https://esm.sh/aws4fetch@1.0.20`) which is the standard lightweight SigV4 client for Deno:
 
-We need thumbnail paths. The most reliable source post-placement is `order_documents` rows tagged `document_type = 'thumbnail'` or the `documents.thumbnail_urls` array snapshot. Plan:
-- Extend `fetchOrderDetail` to also pull `documents` via `order_items` joined through the original draft → not viable (drafts deleted on placement).
-- Better: snapshot the thumbnail paths into `job.configuration.thumbnails` at order-engine time, OR write them to `order_documents` with `document_type = 'preview_thumbnail'` and `is_customer_visible = true`.
+```ts
+import { AwsClient } from "https://esm.sh/aws4fetch@1.0.20";
 
-**Decision**: minimal change — at place-order time in `order-engine`, copy the source `documents.thumbnail_urls` into `order_jobs.configuration.preview` so the customer detail page can read them without any new tables. The flip preview button reads `job.configuration.preview.thumbnails` and `productType` and opens the lightbox.
+const aws = new AwsClient({
+  accessKeyId: Deno.env.get("AWS_S3_ACCESS_KEY_ID")!,
+  secretAccessKey: Deno.env.get("AWS_S3_SECRET_ACCESS_KEY")!,
+  region: Deno.env.get("AWS_S3_REGION")!,
+  service: "s3",
+});
+
+const bucket = Deno.env.get("AWS_S3_BUCKET")!;
+const region = Deno.env.get("AWS_S3_REGION")!;
+
+// For each path:
+const url = `https://${bucket}.s3.${region}.amazonaws.com/${encodeURI(path)}`;
+const res = await aws.fetch(url, { method: "DELETE" });
+// 204 = deleted, 404 = already gone (treat as success)
+```
+
+Run deletes in parallel batches of 10 with `Promise.all` for speed, collect failures with status code + body text for diagnostics, and only return 207 if at least one truly failed (still treat 404 as success).
+
+### 3. Verify other actions still use the connector
+
+`sign-upload` and `sign-download` continue to go through the gateway (`/api/v1/sign_storage_url`) — no changes. Only `delete` switches to direct AWS.
+
+### 4. Same fix for `cleanup-stale-drafts`
+
+`supabase/functions/cleanup-stale-drafts/index.ts` has the identical broken pattern (`DELETE ${GATEWAY_URL}/aws_s3/${path}`). Refactor its `deleteS3Objects` helper to use the same `aws4fetch` SigV4 client. Easiest: extract a shared helper into `supabase/functions/_shared/s3Delete.ts` and import from both functions.
 
 ## Files to change
 
-- `src/lib/orders/queries.ts` — add `submitted_at IS NOT NULL` to admin/customer order list queries.
-- `src/pages/dashboard/CustomerOrders.tsx` — add 7-day notice banner on Drafts tab; show draft age.
-- `supabase/functions/order-engine/index.ts` — at `createOrderWithJobs`, snapshot per-job thumbnail paths + product_category into `configuration.preview`.
-- `src/pages/dashboard/CustomerOrderDetail.tsx` — add "View Preview" button per job; mount `PreviewLightbox` with job thumbnails + inferred productType.
-- New migration: create `cleanup-stale-drafts` edge function scaffolding (deploy via existing edge function deploy flow); pg_cron schedule via SQL migration calling `net.http_post` daily.
-- `supabase/functions/cleanup-stale-drafts/index.ts` — new function; deletes drafts >7 days old (DB + storage objects).
+- `supabase/functions/_shared/s3Delete.ts` — new shared SigV4 delete helper.
+- `supabase/functions/s3-storage/index.ts` — replace `delete` action body with the helper; parallelize.
+- `supabase/functions/cleanup-stale-drafts/index.ts` — replace `deleteS3Objects` with the helper.
+- New Supabase secrets: `AWS_S3_ACCESS_KEY_ID`, `AWS_S3_SECRET_ACCESS_KEY`, `AWS_S3_REGION`, `AWS_S3_BUCKET`.
 
 ## Verification
 
-1. Admin Order Manager → only `INV-00012` row is visible; the four R 0.00 draft rows are gone.
-2. Customer Drafts tab shows banner "Drafts auto-clear after 7 days"; per-draft age shown.
-3. Place an order → open it from Placed Orders → click "View Preview" on the booklet job → fullscreen flip preview opens, no edit UI.
-4. Manually invoke `cleanup-stale-drafts` edge function → drafts older than 7 days removed; storage files removed; younger drafts untouched.
-5. pg_cron job listed in `cron.job` table running daily at 03:00.
+1. Customer opens a draft order → clicks trash on a file → toast "File deleted", file disappears from the list.
+2. Confirm in AWS S3 console that the object is gone.
+3. Delete a whole draft order with multiple files → all files removed, no error toast.
+4. Manually invoke `cleanup-stale-drafts` → DB rows removed AND storage objects removed (check S3 console / log line `S3 deleted: N, failed: 0`).
+5. Edge function logs show `204` (or `404`) responses, no `405`/`403`.
 
-## Out of scope
+## Why not use the connector
 
-- Storage sweep for already-orphaned files (one-off, can be done after first cron run).
-- Reminder email to customer 24h before draft auto-deletion (nice future enhancement).
+The Lovable S3 connector intentionally restricts the gateway to read-only proxy + signed read/write URLs. There is no signed-delete mode and no DELETE proxy. Using the AWS keys directly for DELETE is the documented escape hatch and is scoped narrowly (single permission, single bucket).
+
+## What you'll need to do
+
+When I switch to default mode I'll request the four AWS secrets. You'll need:
+
+1. An AWS IAM user with policy:
+   ```json
+   { "Version":"2012-10-17","Statement":[{
+     "Effect":"Allow","Action":"s3:DeleteObject","Resource":"arn:aws:s3:::YOUR-BUCKET/*"
+   }]}
+   ```
+2. Its access key ID + secret access key.
+3. The bucket name and region you're already using with the connector.
 
