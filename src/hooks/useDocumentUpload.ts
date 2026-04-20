@@ -9,6 +9,7 @@ import {
   cropRasterize,
   getAsset,
   getDerivedFiles,
+  inspectAsset,
   pollJob,
 } from "@/lib/documentCentreApi";
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
@@ -144,23 +145,27 @@ export function useDocumentUpload(orderItemId: string | undefined) {
           .update({ backend_asset_id: asset_id })
           .eq("id", docId);
 
-        // 2. Wait for any metadata jobs the backend kicked off automatically
-        if (job_ids.length > 0) {
-          updateUpload(fileName, { progress: 35, statusText: "Inspecting PDF…" });
-          await Promise.all(
-            job_ids.map((jobId) =>
-              pollJob(jobId, (job) => {
-                if (job.status === "pending") {
-                  updateUpload(fileName, { progress: 35, statusText: "Queued — inspecting…" });
-                } else if (job.status === "running") {
-                  updateUpload(fileName, { progress: 45, statusText: "Reading page metadata…" });
-                }
-              })
-            )
-          );
-        }
+        // 2. Explicitly enqueue an inspect job (this also authorizes the
+        //    asset for subsequent reads — without it GET /v1/assets/:id 401s).
+        updateUpload(fileName, { progress: 35, statusText: "Inspecting PDF…" });
+        const { job_id: inspectJobId } = await inspectAsset(asset_id);
 
-        // 3. Poll the asset itself until we have boxes + page_count (metadata may
+        const allJobIds = [...job_ids, inspectJobId];
+
+        // 3. Wait for inspect (and any auto-queued metadata jobs) to complete
+        await Promise.all(
+          allJobIds.map((jobId) =>
+            pollJob(jobId, (job) => {
+              if (job.status === "pending") {
+                updateUpload(fileName, { progress: 35, statusText: "Queued — inspecting…" });
+              } else if (job.status === "running") {
+                updateUpload(fileName, { progress: 45, statusText: "Reading page metadata…" });
+              }
+            })
+          )
+        );
+
+        // 4. Poll the asset itself until we have boxes + page_count (metadata may
         //    populate slightly after job completes for newly-created assets)
         let asset = await getAsset(asset_id);
         for (let i = 0; i < 20 && (!asset.boxes || asset.page_count == null); i++) {

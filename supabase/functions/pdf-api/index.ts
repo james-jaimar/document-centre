@@ -29,7 +29,7 @@ Deno.serve(async (req) => {
     // Auth
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      return new Response(JSON.stringify({ error: "Unauthorized", source: "edge_no_bearer" }), {
         status: 401, headers: jsonHeaders,
       });
     }
@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
 
     const { data: userData, error: userError } = await supabase.auth.getUser();
     if (userError || !userData?.user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      return new Response(JSON.stringify({ error: "Unauthorized", source: "edge_user_lookup", detail: userError?.message }), {
         status: 401, headers: jsonHeaders,
       });
     }
@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
 
     if (!path || !isAllowedPath(path)) {
       return new Response(
-        JSON.stringify({ error: `Invalid path: ${path}` }),
+        JSON.stringify({ error: `Invalid path: ${path}`, source: "edge_invalid_path" }),
         { status: 400, headers: jsonHeaders }
       );
     }
@@ -76,10 +76,13 @@ Deno.serve(async (req) => {
 
     const upstream = await fetch(fullUrl, fetchOptions);
 
-    console.log(`pdf-api: upstream responded ${upstream.status}`);
+    console.log(`pdf-api: upstream responded ${upstream.status} ${upstream.statusText} for ${httpMethod} ${path}`);
 
     // Forward the response
     const responseText = await upstream.text();
+    if (upstream.status >= 400) {
+      console.log(`pdf-api: upstream error body: ${responseText.slice(0, 500)}`);
+    }
     return new Response(responseText, {
       status: upstream.status,
       headers: jsonHeaders,
