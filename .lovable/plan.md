@@ -1,72 +1,98 @@
 
 
-## Bug 1 — "Source file not found" on Recently Uploaded → Create
+## Bug — "Order not found" everywhere
 
-### Symptom
-User picks a recently uploaded document, picks a product type, lands on the new order page → toast "Source file not found". An empty new draft order (`046d64a3…`) is created anyway.
+Both customer (`/t/postnet/orders/:id`) and tenant-admin (`/admin/orders/:id`) order-detail pages return "Order not found" for INV-00017 — which exists in DB, has `app_id`, `tenant_id`, `submitted_at`, jobs, pricing — and would be readable under both RLS policies.
 
-### Root cause
-In `OrderFiles.tsx` (lines 105-157) the copy-from-`fromDoc` effect:
-1. Calls `ensureOrder()` first (creates draft order + item).
-2. Then runs `.from("documents").select("*").eq("id", fromDocId).single()`.
+## Root cause (verified)
 
-That SELECT relies on the `documents` RLS policy "Users can manage own documents" which checks `o.user_id = auth.uid()`. The lookup is brittle in three ways:
+`src/lib/orders/queries.ts:fetchOrderDetail` does:
 
-a) **No tenant filter** — `useRecentDocuments` filters by tenant on the dashboard, but the lookup in `OrderFiles` does not. If the user is now in a different tenant storefront than where the doc was originally uploaded, the doc still passes RLS (RLS is user-scoped), so this isn't the failure — but it is a UX bug: copying a doc from tenant A into a new order in tenant B silently re-uses a `file_path` that lives under tenant A's storage prefix. That's a latent S3-permissions and audit problem.
+```ts
+.from("orders")
+.select("*, branch:branch_id(...), ordered_by:ordered_by_profile_id(id, phone, email, first_name, last_name, display_name)")
+.eq("id", orderId)
+.single()
+```
 
-b) **Race / stale cache** — `recentDocs` is React-Query-cached for the lifetime of the dashboard. If the doc was hard-deleted by `cleanup-stale-drafts` cron (7-day stale rule) or by manual cleanup between dashboard render and click, the lookup returns zero rows and the toast fires.
+The `ordered_by:ordered_by_profile_id(...)` embed targets `public.profiles`. But the only foreign key on that column is:
 
-c) **Order created before the lookup** — even when the lookup fails, an empty draft order has already been created (orphan). This both spams the DB and lands the user on a blank upload page with a confusing error.
+```text
+orders_ordered_by_profile_id_fkey  →  auth.users(id)
+```
 
-### Fix
-1. **Move the source-doc fetch BEFORE `ensureOrder`.** If the doc cannot be read (or its tenant differs from the active storefront tenant), show an inline error UI ("That file is no longer available — please upload again") and do NOT create an order.
-2. **Tenant guard** — when fetching the source doc, also fetch its `order_items.orders.tenant_id` and compare to `useTenantContext().tenantId`. If different, refuse the copy and explain (the file lives in another store's bucket).
-3. **Storage path rewrite** — when the copy is allowed, do not blindly reuse `file_path`. The path is keyed by the source `order_item_id`. Instead, copy the S3 object to a new key keyed by the new `order_item_id` (mirrors the upload key pattern in `useDocumentUpload`). Falls back to inserting the doc row only after the storage copy succeeds. This prevents two order_items pointing at the same physical file (deletion of one wipes the other).
-4. **Invalidate `recentDocs` on dashboard mount** so a deleted-cron-doc cannot linger as a clickable ghost.
-5. **Better toast** — surface the exact reason (`not_found`, `wrong_tenant`, `storage_copy_failed`) for diagnosability.
+There is no FK from `orders` to `public.profiles`. PostgREST cannot resolve the embed → request fails (PGRST200 / relationship-not-found) → `error` is truthy → both pages show "Order not found".
 
-## Bug 2 — `recentDocs` query returns docs from already-cleaned drafts
+The `branch:branch_id(...)` embed works fine (real FK to `public.branches`). The customer's `submitted_at IS NOT NULL` and `app_id IS NOT NULL` filters all pass. RLS for both `orders_select_membership` (admin override) and `Users can manage own orders` (customer) allow the read. The whole failure is the broken embed.
 
-`useRecentDocuments` has no filter on the parent order's `order_status` and no exclusion of orders pending deletion. After the new orphan-cleanup migration (and the daily `cleanup-stale-drafts` cron) docs may still appear in the cache window before refetch.
+## Why we drifted into this
 
-### Fix
-Add `.not("order_items.orders.order_status", "eq", "cancelled")` and add a `documents.deleted_at IS NULL` guard if/when we add soft-delete; for now, rely on (a) refetch-on-focus and (b) the tenant guard above to fail safely.
+`fetchOrderDetail` was extended over recent fixes to surface "ordered by" phone/email on the OrderedByTab. The embed was written assuming PostgREST can join on the `profile_id` name suffix — it can't without an actual FK. Tests didn't catch it because there was no e2e check on order detail load.
 
-## Bug 3 — Cross-tenant doc reuse (latent)
+## Fix
 
-A user who has accounts in two tenants currently sees their docs from tenant A on tenant B's storefront dashboard (`useRecentDocuments` filters by tenantId, but only via the `orders.tenant_id` join — that's correct). The actual risk is the `fromDoc` URL param: it can be hand-crafted to copy a doc from tenant A while signed-in storefront is tenant B. Tenant guard in Bug 1 fix closes this.
+### A. Add the missing FK so the embed resolves
+One DB migration:
 
-## Bug 4 — Audit of cross-linked code that touches the same flows
+```sql
+ALTER TABLE public.orders
+  ADD CONSTRAINT orders_ordered_by_profile_fk
+  FOREIGN KEY (ordered_by_profile_id)
+  REFERENCES public.profiles(id)
+  ON DELETE SET NULL;
+```
 
-While we're in there, three adjacent issues to verify and patch in the same pass:
+Notes:
+- Keeps the existing `orders_ordered_by_profile_id_fkey → auth.users` (profiles already mirror auth.users 1-1). Two FKs on the same column to two different tables is allowed; the embed in PostgREST is disambiguated by the FK constraint name if needed.
+- If the dual-FK causes ambiguity for PostgREST, switch the embed alias to use the constraint-name disambiguator: `ordered_by:orders_ordered_by_profile_fk(...)`.
 
-a) **`useEditCartItem` (`useCart.ts:220-245`)** clones documents by re-using `file_path` — same pollution problem as Bug 1.3. Each cart-edit creates two doc rows pointing at the same S3 object. When the original cart item is later removed (after the user saves the edit), `s3Delete` could nuke the file out from under the cloned draft.
-   - **Fix**: Either skip the file_path duplication risk by (i) marking cloned docs as `metadata.cloned_from_id` and (ii) teaching `s3Delete` paths to refcount, OR (simpler) physically copy the S3 object into a key keyed by the new `order_item_id`. Pick (ii) for consistency with Bug 1.3.
+### B. Make `fetchOrderDetail` resilient regardless of relationship state
+Even after the FK is added, the order detail should not nuke the whole page if a single embed fails:
 
-b) **`OrderFiles.ensureOrder` always creates a NEW order even after a previous failed copy.** Add an idempotency guard: if `copyTriggeredRef.current` is true and the previous attempt failed (no docs created), reuse the existing draft order rather than letting the user see an empty page.
+1. Drop the inline `ordered_by` embed; fetch the profile row in a separate parallel `Promise.all` step keyed off `order.ordered_by_profile_id`. Same approach already used for jobs/addresses/timeline/messages/payments/documents.
+2. Replace `.single()` with `.maybeSingle()` and surface "Order not found" only when `data === null`, not on every error.
+3. Add a one-line `console.error("fetchOrderDetail failed", error)` so future regressions are visible in console (the user has already noted log-driven debugging).
 
-c) **Stale-cache invalidations.** When a user deletes a document, removes a cart item, or cancels an order, the following query keys must be invalidated together: `recent_documents`, `recent_order_items`, `cart`, `orders`, `all_orders`. Audit `useCart.ts`, `useOrderBuilder.ts`, and the cancel flow in `order-engine`-callers; add a single helper `invalidateUserOrderCaches(qc)` and call it from every mutation onSuccess.
+### C. Tighten `OrderedByTab` to use the new shape
+- Read profile from `data.orderedByProfile` (new field returned by `fetchOrderDetail`) rather than `order.ordered_by`.
+- Fall back to order-level `customer_name / customer_email / company_name` (already happens).
 
-## Files to change
+### D. Audit other embeds in the same file
+While here, scan all PostgREST embeds in `src/lib/orders/queries.ts` and `src/hooks/useOrders.ts` for joins that rely on FKs that may not exist. Concretely verify:
 
-- `src/pages/dashboard/OrderFiles.tsx` — re-order the copy effect (fetch first, then ensureOrder + S3 copy + insert), add tenant guard, surface error reasons.
-- `src/hooks/useCart.ts` — physical S3 copy in `useEditCartItem`; share helper with OrderFiles.
-- `src/lib/s3Storage.ts` (or new helper `copyS3Object`) — add a `copyObject` wrapper that calls Edge Function `s3-storage` with a new `op: "copy"` action.
-- `supabase/functions/s3-storage/index.ts` — implement `copy` op (CopyObjectCommand) with tenant-prefix validation.
-- `src/pages/dashboard/CustomerDashboard.tsx` — invalidate `recent_documents` on mount; tighten `useRecentDocuments` query.
-- `src/lib/queryInvalidation.ts` (new) — single helper `invalidateUserOrderCaches(qc)` used by all order mutations.
+- `order_jobs (... job_proofs (*))` — `job_proofs.job_id → order_jobs.id`? Confirm FK exists.
+- `branch:branch_id(...)` — confirmed OK.
+- Anywhere else using `name:fk_column(...)` syntax — assert the FK exists in `pg_constraint`.
+
+If any are missing, either add the FK in the same migration or split into a separate fetch.
+
+### E. Cleanup pass on `fetchOrderDetail`
+The function already has one ugly bit:
+
+```ts
+.then((res) => res.error ? { data: [], error: null } : res) as any
+```
+
+— a swallow on `timeline_events`. Delete the cast and the swallow; if the table doesn't exist for a tenant, fix the query, don't hide the error. Reduces "layers of rubbish" the user complained about.
+
+## Files
+
+- `supabase/migrations/<ts>_orders_profile_fk.sql` — add FK from `orders.ordered_by_profile_id → profiles.id`.
+- `src/lib/orders/queries.ts` — split the profile fetch out, drop the unsafe embed, swap `.single()` → `.maybeSingle()`, remove the timeline error swallow, add a single `console.error` on failure.
+- `src/components/orders/detail/OrderedByTab.tsx` — read from new `orderedByProfile` field.
+- `src/pages/admin/AdminOrderDetail.tsx` and `src/pages/dashboard/CustomerOrderDetail.tsx` — pass `orderedByProfile` from the hook through to `OrderedByTab`; show error banner when the query throws (vs the current "Order not found" catch-all that also fires for permission errors).
 
 ## Verification
 
-1. From Recently Uploaded, pick a doc → Create → Booklets. New order opens, doc is copied with a NEW `file_path` keyed by the new order_item_id, no toast error.
-2. Hand-craft `?fromDoc=<doc-from-other-tenant>` → friendly "this file isn't available in this store" message, no order created.
-3. Delete the source order in another tab, then click Create on the now-stale dashboard tile → friendly "no longer available", no orphan order.
-4. Edit a cart item → save → original cart item deleted → new draft retains a working file (S3 object survives because each clone gets its own physical copy).
-5. Cancel an order → dashboard `recent_order_items` and `recent_documents` refresh immediately (no F5 required).
+1. Hard-reload `/admin/orders/d5de59d8-13b8-40ca-8cca-e011380c3aac?tenant=c0000000-0000-0000-0000-000000000002` as platform admin → page loads, jobs, pricing, branch info, ordered-by phone all populate.
+2. Hard-reload `/t/postnet/orders/d5de59d8-...` as the customer (`james_b_hawkins@me.com`) → same.
+3. Cancel/refund/mark-paid actions still work.
+4. INV-00012/13/14/15/16 (already cancelled) all open without "Order not found".
+5. Open browser console — no PGRST200/relationship errors.
 
 ## Out of scope
 
-- Soft-delete on `documents` (would be cleaner but is a bigger refactor).
-- Refcounted S3 deletion (deferred to a future cleanup-cron rewrite).
-- Migrating already-duplicated `file_path` rows (one-shot script if/when measurable cost shows up).
+- Backfilling preview data on INV-00014/15/16 (acknowledged as unrecoverable).
+- Refactoring the wider order/draft lifecycle.
+- Splitting `fetchOrderDetail` into a typed result interface (worth doing later but not required for this bug).
 
