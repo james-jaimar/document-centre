@@ -225,7 +225,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
             page_count: asset.page_count,
             page_width_mm: pageWidthMm,
             page_height_mm: pageHeightMm,
-            preflight_data: preflight,
+            preflight_data: preflight as any,
             // 'processing' = either still rendering OR awaiting user review.
             // UI distinguishes via preflight_data.awaiting_review.
             document_status: "processing",
