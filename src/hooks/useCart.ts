@@ -429,6 +429,7 @@ export function usePlaceOrder() {
         ]);
 
       const { inferPreviewTypeFromJob } = await import("@/lib/orders/inferPreviewType");
+      const { buildPreviewSnapshot } = await import("@/lib/orders/buildPreviewSnapshot");
 
       const jobs = items.map((item: any) => {
         const familyOptions = ((optionsData ?? []) as any[]).filter(
