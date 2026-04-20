@@ -3,6 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { buildJobSnapshot } from "@/lib/orders/buildJobSnapshot";
+import { copyS3Object } from "@/lib/s3Storage";
+import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 
 /**
  * Get or create the user's single open cart order (order_status = 'cart').
@@ -159,9 +161,7 @@ export function useAddItemToCart() {
       return cartId;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["cart"] });
-      qc.invalidateQueries({ queryKey: ["all_orders"] });
-      qc.invalidateQueries({ queryKey: ["orders"] });
+      invalidateUserOrderCaches(qc);
     },
   });
 }
@@ -224,21 +224,41 @@ export function useEditCartItem() {
         .eq("order_item_id", orderItemId);
 
       if (docs && docs.length > 0) {
-        const docInserts = docs.map((d) => ({
-          order_item_id: clonedItem.id,
-          file_name: d.file_name,
-          file_path: d.file_path,
-          file_size: d.file_size,
-          mime_type: d.mime_type,
-          page_count: d.page_count,
-          page_width_mm: d.page_width_mm,
-          page_height_mm: d.page_height_mm,
-          document_status: d.document_status,
-          preflight_data: d.preflight_data,
-          thumbnail_urls: d.thumbnail_urls,
-          sort_order: d.sort_order,
-          backend_asset_id: d.backend_asset_id,
-        }));
+        // Physically copy each S3 object to a new key keyed by the cloned order_item_id.
+        // This avoids two doc rows pointing at the same physical file (deletion of one
+        // would otherwise wipe the other).
+        const docInserts: any[] = [];
+        for (const d of docs) {
+          let newPath = d.file_path;
+          if (d.file_path) {
+            const ext = d.file_path.includes(".")
+              ? d.file_path.slice(d.file_path.lastIndexOf("."))
+              : "";
+            newPath = `order-items/${clonedItem.id}/${crypto.randomUUID()}${ext}`;
+            try {
+              await copyS3Object(d.file_path, newPath);
+            } catch (e) {
+              console.error("[useEditCartItem] S3 copy failed, reusing original path", e);
+              newPath = d.file_path; // fall back rather than block the edit
+            }
+          }
+          docInserts.push({
+            order_item_id: clonedItem.id,
+            file_name: d.file_name,
+            file_path: newPath,
+            file_size: d.file_size,
+            mime_type: d.mime_type,
+            page_count: d.page_count,
+            page_width_mm: d.page_width_mm,
+            page_height_mm: d.page_height_mm,
+            document_status: d.document_status,
+            preflight_data: d.preflight_data,
+            thumbnail_urls: d.thumbnail_urls,
+            sort_order: d.sort_order,
+            backend_asset_id: d.backend_asset_id,
+          });
+        }
+
         const { data: newDocs } = await supabase
           .from("documents")
           .insert(docInserts)
@@ -280,9 +300,7 @@ export function useEditCartItem() {
       return draftOrder.id;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["cart"] });
-      qc.invalidateQueries({ queryKey: ["all_orders"] });
-      qc.invalidateQueries({ queryKey: ["orders"] });
+      invalidateUserOrderCaches(qc);
     },
   });
 }
@@ -329,8 +347,7 @@ export function useRemoveCartItem() {
         .eq("id", cartOrderId);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["cart"] });
-      qc.invalidateQueries({ queryKey: ["all_orders"] });
+      invalidateUserOrderCaches(qc);
     },
   });
 }

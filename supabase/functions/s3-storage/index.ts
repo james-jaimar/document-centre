@@ -116,6 +116,73 @@ Deno.serve(async (req) => {
       return json({ signed_urls: results });
     }
 
+    if (action === "copy") {
+      const { source_path, dest_path } = body;
+      if (!source_path || !dest_path) {
+        return json({ error: "source_path and dest_path required" }, 400);
+      }
+
+      // Sign a read URL for the source, download the bytes, then PUT to dest.
+      // (The gateway doesn't expose S3 CopyObject directly, so we stream.)
+      const signReadRes = await fetch(
+        `${GATEWAY_URL}/api/v1/sign_storage_url?provider=aws_s3&mode=read`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "X-Connection-Api-Key": AWS_S3_API_KEY,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ object_path: source_path }),
+        }
+      );
+      if (!signReadRes.ok) {
+        const errText = await signReadRes.text();
+        throw new Error(`sign-read failed [${signReadRes.status}]: ${errText}`);
+      }
+      const { url: readUrl } = await signReadRes.json();
+
+      const signWriteRes = await fetch(
+        `${GATEWAY_URL}/api/v1/sign_storage_url?provider=aws_s3&mode=write`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "X-Connection-Api-Key": AWS_S3_API_KEY,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ object_path: dest_path }),
+        }
+      );
+      if (!signWriteRes.ok) {
+        const errText = await signWriteRes.text();
+        throw new Error(`sign-write failed [${signWriteRes.status}]: ${errText}`);
+      }
+      const { url: writeUrl } = await signWriteRes.json();
+
+      // Stream bytes from source → dest
+      const getRes = await fetch(readUrl);
+      if (!getRes.ok) {
+        const errText = await getRes.text();
+        throw new Error(`S3 source fetch failed [${getRes.status}]: ${errText}`);
+      }
+      const bytes = await getRes.arrayBuffer();
+      const contentType = getRes.headers.get("Content-Type") || "application/octet-stream";
+
+      const putRes = await fetch(writeUrl, {
+        method: "PUT",
+        headers: { "Content-Type": contentType },
+        body: bytes,
+      });
+      if (!putRes.ok) {
+        const errText = await putRes.text();
+        throw new Error(`S3 dest PUT failed [${putRes.status}]: ${errText}`);
+      }
+
+      console.log(`[s3-storage] copy ok: ${source_path} -> ${dest_path} (${bytes.byteLength}b)`);
+      return json({ success: true, dest_path });
+    }
+
     if (action === "delete") {
       const { object_paths } = body;
       if (!Array.isArray(object_paths) || object_paths.length === 0) {

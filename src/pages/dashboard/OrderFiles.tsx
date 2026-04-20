@@ -27,11 +27,14 @@ import { ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { resize, rotate, pollJob, cropRasterize, getAsset, getDerivedFiles } from "@/lib/documentCentreApi";
+import { copyS3Object } from "@/lib/s3Storage";
+import { useTenantContext } from "@/hooks/useTenantContext";
+import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import type { PaperSize, NearIsoMatch } from "@/lib/paperSizes";
 import { isLandscape, ISO_SIZES } from "@/lib/paperSizes";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export default function OrderFiles() {
   const { id: orderId, familyId: routeFamilyId, slug } = useParams<{ id: string; familyId: string; slug: string }>();
@@ -39,11 +42,14 @@ export default function OrderFiles() {
   const [searchParams, setSearchParams] = useSearchParams();
   const fromDocId = searchParams.get("fromDoc");
   const createOrder = useCreateOrder();
+  const { tenantId: activeTenantId } = useTenantContext();
+  const qc = useQueryClient();
 
   // Track whether we're in "new order" mode (no order created yet)
   const isNewMode = !orderId && !!routeFamilyId;
   const [createdOrderId, setCreatedOrderId] = useState<string | null>(null);
   const effectiveOrderId = orderId ?? createdOrderId ?? undefined;
+  const [copyError, setCopyError] = useState<string | null>(null);
 
   const {
     order,
@@ -103,32 +109,61 @@ export default function OrderFiles() {
   }, [orderItem?.id, routeFamilyId, createOrder, slug, navigate]);
 
   // Auto-create order and copy a single document when arriving from "Recently Uploaded Files"
+  // IMPORTANT: validate the source doc + its tenant BEFORE creating an order, so a
+  // missing/cross-tenant file doesn't leave an orphan empty draft behind.
   const copyTriggeredRef = useRef(false);
   useEffect(() => {
     if (!fromDocId || !isNewMode || copyTriggeredRef.current) return;
+    if (!activeTenantId) return; // wait for tenant context
     copyTriggeredRef.current = true;
 
     (async () => {
       try {
-        const newItemId = await ensureOrder();
-
-        // Fetch the single source document
-        const { data: sourceDoc, error } = await supabase
+        // 1) Fetch source doc + parent order's tenant_id, BEFORE any mutations.
+        const { data: sourceDoc, error: srcErr } = await supabase
           .from("documents")
-          .select("*")
+          .select("*, order_items!inner(orders!inner(tenant_id))")
           .eq("id", fromDocId)
-          .single();
+          .maybeSingle();
 
-        if (error || !sourceDoc) {
-          toast.error("Source file not found");
+        if (srcErr || !sourceDoc) {
+          setCopyError("That file is no longer available — please upload again.");
+          toast.error("Source file not found", {
+            description: "It may have been removed. Please upload again.",
+          });
+          // Refresh dashboard caches so the stale tile disappears
+          invalidateUserOrderCaches(qc);
           return;
         }
 
-        // Copy the document to the new order item
-        await supabase.from("documents").insert({
+        const sourceTenantId =
+          (sourceDoc as any).order_items?.orders?.tenant_id ?? null;
+        if (sourceTenantId && sourceTenantId !== activeTenantId) {
+          setCopyError("That file belongs to a different store and can't be reused here.");
+          toast.error("File not available in this store");
+          return;
+        }
+
+        // 2) Source is valid — now create the order + item.
+        const newItemId = await ensureOrder();
+
+        // 3) Physically copy the S3 object to a new key keyed by the new order_item_id.
+        const sourcePath: string = sourceDoc.file_path;
+        const ext = sourcePath.includes(".") ? sourcePath.slice(sourcePath.lastIndexOf(".")) : "";
+        const destPath = `order-items/${newItemId}/${crypto.randomUUID()}${ext}`;
+        try {
+          await copyS3Object(sourcePath, destPath);
+        } catch (copyErr: any) {
+          toast.error("Failed to copy file", { description: copyErr.message });
+          setCopyError("Could not copy the source file. Please upload again.");
+          return;
+        }
+
+        // 4) Insert the cloned document row pointing at the NEW path.
+        const { error: insErr } = await supabase.from("documents").insert({
           order_item_id: newItemId,
           file_name: sourceDoc.file_name,
-          file_path: sourceDoc.file_path,
+          file_path: destPath,
           file_size: sourceDoc.file_size,
           mime_type: sourceDoc.mime_type,
           page_count: sourceDoc.page_count,
@@ -140,8 +175,9 @@ export default function OrderFiles() {
           backend_asset_id: sourceDoc.backend_asset_id,
           sort_order: sourceDoc.sort_order,
         });
+        if (insErr) throw insErr;
 
-        // Clear the ?fromDoc param so refresh doesn't re-copy
+        // 5) Clear the ?fromDoc param so refresh doesn't re-copy.
         setSearchParams((prev) => {
           const next = new URLSearchParams(prev);
           next.delete("fromDoc");
@@ -149,12 +185,14 @@ export default function OrderFiles() {
         }, { replace: true });
 
         refetchDocuments();
+        invalidateUserOrderCaches(qc);
         toast.success(`Copied "${sourceDoc.file_name}" into new order`);
       } catch (err: any) {
         toast.error("Failed to copy file", { description: err.message });
+        setCopyError(err.message ?? "Unknown error");
       }
     })();
-  }, [fromDocId, isNewMode, ensureOrder, refetchDocuments, setSearchParams]);
+  }, [fromDocId, isNewMode, ensureOrder, refetchDocuments, setSearchParams, activeTenantId, qc]);
 
 
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);

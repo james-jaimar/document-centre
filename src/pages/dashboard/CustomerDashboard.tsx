@@ -1,9 +1,10 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -23,7 +24,7 @@ import {
   FileImage,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 import imgBoundDocuments from "@/assets/products/bound-documents.jpg";
@@ -105,15 +106,17 @@ function useRecentDocuments(userId: string | undefined, tenantId: string | null)
       if (!userId || !tenantId) return [];
       const { data, error } = await supabase
         .from("documents")
-        .select("*, order_items!inner(id, orders!inner(user_id, tenant_id))")
+        .select("*, order_items!inner(id, orders!inner(user_id, tenant_id, order_status))")
         .eq("order_items.orders.user_id", userId)
         .eq("order_items.orders.tenant_id", tenantId)
+        .neq("order_items.orders.order_status", "cancelled")
         .order("created_at", { ascending: false })
         .limit(5);
       if (error) throw error;
       return data;
     },
     enabled: !!userId && !!tenantId,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -192,10 +195,16 @@ const CustomerDashboard = () => {
   const { slug } = useParams<{ slug: string }>();
   const { user } = useAuth();
   const { tenantId } = useTenantContext();
+  const qc = useQueryClient();
   const { data: families, isLoading: familiesLoading } = useProductFamiliesActive();
   const { data: recentDocs } = useRecentDocuments(user?.id, tenantId);
   const { data: trackingOrders } = useTrackingOrders(user?.id, tenantId);
   const { data: recentItems } = useRecentOrderItems(user?.id, tenantId);
+
+  // Always refresh order caches on mount so deleted/cleaned drafts disappear
+  useEffect(() => {
+    invalidateUserOrderCaches(qc);
+  }, [qc]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
