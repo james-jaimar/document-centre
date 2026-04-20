@@ -78,7 +78,7 @@ export default function Checkout() {
 
     setIsSubmitting(true);
     try {
-      await placeOrder.mutateAsync({
+      const newOrderId = await placeOrder.mutateAsync({
         cartOrderId: cart.id,
         deliveryMethod,
         notes: notes.trim() || undefined,
@@ -87,7 +87,7 @@ export default function Checkout() {
           ? (selectedBranchId || branches?.[0]?.id || undefined)
           : undefined,
       });
-      navigate(`/t/${slug}/orders/${cart.id}/confirmation`);
+      navigate(`/t/${slug}/orders/${newOrderId}/confirmation`);
     } catch (err: any) {
       toast.error("Failed to place order", { description: err.message });
     } finally {

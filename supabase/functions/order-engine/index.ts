@@ -135,30 +135,7 @@ async function createOrderWithJobs(
 
   if (orderErr || !newOrder) return err(`Failed to create order: ${orderErr?.message}`);
 
-  // Auto-create customer membership for the order placer (idempotent)
-  try {
-    const { data: existingMembership } = await admin
-      .from("tenant_memberships")
-      .select("id")
-      .eq("profile_id", customer.profile_id)
-      .eq("tenant_id", tenant_id)
-      .eq("app_id", app_id)
-      .maybeSingle();
-
-    if (!existingMembership) {
-      await admin.from("tenant_memberships").insert({
-        profile_id: customer.profile_id,
-        tenant_id,
-        app_id,
-        role: "customer",
-        is_active: true,
-      });
-    }
-  } catch (e) {
-    console.error("Failed to ensure customer membership:", e);
-  }
-
-  // Insert jobs
+  // Build job inserts
   const jobInserts = jobs.map((j: any, idx: number) => {
     const seqNo = idx + 1;
     const jobNumber = `${orderNum}-${seqNo}`;
@@ -186,80 +163,91 @@ async function createOrderWithJobs(
     };
   });
 
-  const { data: newJobs, error: jobsErr } = await admin
-    .from("order_jobs")
-    .insert(jobInserts)
-    .select("id, job_number, sequence_no");
-
-  if (jobsErr) return err(`Failed to create jobs: ${jobsErr.message}`);
-
   // Insert addresses
-  const addressInserts = [];
+  const addressInserts: any[] = [];
   if (billing_address) {
     addressInserts.push({ order_id: newOrder.id, address_type: "billing", ...billing_address });
   }
   if (delivery_address) {
     addressInserts.push({ order_id: newOrder.id, address_type: "delivery", ...delivery_address });
   }
-  if (addressInserts.length) {
-    await admin.from("order_addresses").insert(addressInserts);
-  }
 
-  // Insert pricing snapshot
-  if (pricing) {
-    await admin.from("order_pricing_snapshots").insert({
+  // Run all independent post-order writes in parallel
+  const [jobsResult] = await Promise.all([
+    admin.from("order_jobs").insert(jobInserts).select("id, job_number, sequence_no"),
+    addressInserts.length
+      ? admin.from("order_addresses").insert(addressInserts)
+      : Promise.resolve({ error: null }),
+    pricing
+      ? admin.from("order_pricing_snapshots").insert({
+          order_id: newOrder.id,
+          version_no: 1,
+          currency: pricing.currency || "ZAR",
+          subtotal: pricing.subtotal || 0,
+          discount_amount: pricing.discount_amount || 0,
+          delivery_amount: pricing.delivery_amount || 0,
+          vat_rate: 15,
+          vat_amount: pricing.vat_amount || 0,
+          total_amount: pricing.total_amount || 0,
+          amount_paid: pricing.amount_paid || 0,
+          amount_due: pricing.amount_due || pricing.total_amount || 0,
+          pricing_snapshot: pricing,
+        })
+      : Promise.resolve({ error: null }),
+    admin.from("timeline_events").insert({
+      app_id,
+      tenant_id,
+      branch_id: branch_id || null,
       order_id: newOrder.id,
-      version_no: 1,
-      currency: pricing.currency || "ZAR",
-      subtotal: pricing.subtotal || 0,
-      discount_amount: pricing.discount_amount || 0,
-      delivery_amount: pricing.delivery_amount || 0,
-      vat_rate: 15,
-      vat_amount: pricing.vat_amount || 0,
-      total_amount: pricing.total_amount || 0,
-      amount_paid: pricing.amount_paid || 0,
-      amount_due: pricing.amount_due || pricing.total_amount || 0,
-      pricing_snapshot: pricing,
-    });
-  }
-
-  // Insert proofs for jobs that need them
-  for (const [idx, j] of jobs.entries()) {
-    if (j.proof && newJobs?.[idx]) {
-      await admin.from("job_proofs").insert({
-        app_id,
+      event_type: "order_created",
+      visibility: "both",
+      actor_type: "system",
+      actor_profile_id: userId,
+      description: `Order ${orderNum} created with ${jobs.length} job(s)`,
+      metadata: { job_count: jobs.length },
+    }),
+    // Customer membership upsert (idempotent) — runs in parallel
+    admin.from("tenant_memberships").upsert(
+      {
+        profile_id: customer.profile_id,
         tenant_id,
-        order_id: newOrder.id,
-        job_id: newJobs[idx].id,
-        proof_type: j.proof.proof_type,
-        proof_status: "pending",
-        viewer_type: j.proof.viewer_type,
-        viewer_url: j.proof.viewer_url || null,
-        document_id: j.proof.document_id || null,
-        metadata: j.proof.metadata || {},
-      });
+        app_id,
+        role: "customer",
+        is_active: true,
+      },
+      { onConflict: "profile_id,tenant_id,app_id", ignoreDuplicates: true }
+    ),
+  ]);
 
-      // Update job proof_status
-      await admin
+  if (jobsResult.error) return err(`Failed to create jobs: ${jobsResult.error.message}`);
+  const newJobs = jobsResult.data;
+
+  // Insert proofs only if any jobs request them (rare in checkout flow)
+  const proofJobs = jobs
+    .map((j: any, idx: number) => ({ j, newJob: newJobs?.[idx] }))
+    .filter((x: any) => x.j.proof && x.newJob);
+
+  if (proofJobs.length > 0) {
+    const proofInserts = proofJobs.map(({ j, newJob }: any) => ({
+      app_id,
+      tenant_id,
+      order_id: newOrder.id,
+      job_id: newJob.id,
+      proof_type: j.proof.proof_type,
+      proof_status: "pending",
+      viewer_type: j.proof.viewer_type,
+      viewer_url: j.proof.viewer_url || null,
+      document_id: j.proof.document_id || null,
+      metadata: j.proof.metadata || {},
+    }));
+    await Promise.all([
+      admin.from("job_proofs").insert(proofInserts),
+      admin
         .from("order_jobs")
         .update({ proof_status: "pending" })
-        .eq("id", newJobs[idx].id);
-    }
+        .in("id", proofJobs.map((x: any) => x.newJob.id)),
+    ]);
   }
-
-  // Insert timeline event
-  await admin.from("timeline_events").insert({
-    app_id,
-    tenant_id,
-    branch_id: branch_id || null,
-    order_id: newOrder.id,
-    event_type: "order_created",
-    visibility: "both",
-    actor_type: "system",
-    actor_profile_id: userId,
-    description: `Order ${orderNum} created with ${jobs.length} job(s)`,
-    metadata: { job_count: jobs.length },
-  });
 
   return json({
     order_id: newOrder.id,

@@ -20,19 +20,22 @@ export default function OrderConfirmation() {
           "id, order_number, total_amount, total_price, currency, submitted_at, created_at, customer_status, payment_status, order_jobs(id, product_name, quantity, gross_price)"
         )
         .eq("id", orderId)
-        .single();
+        .maybeSingle();
       if (error) throw error;
       return data;
     },
     enabled: !!orderId,
+    refetchInterval: (query) => (query.state.data ? false : 600),
+    retry: 5,
   });
 
-  if (isLoading) {
+  if (isLoading || !order) {
     return (
       <div className="flex flex-col items-center py-20 space-y-4">
         <Skeleton className="h-16 w-16 rounded-full" />
         <Skeleton className="h-6 w-48" />
         <Skeleton className="h-4 w-64" />
+        <p className="text-sm text-muted-foreground">Preparing your order…</p>
       </div>
     );
   }

@@ -363,26 +363,28 @@ export function usePlaceOrder() {
     }) => {
       if (!user) throw new Error("Not authenticated");
 
-      // Load cart items with full details
-      const { data: cartOrder, error: cartErr } = await supabase
-        .from("orders")
-        .select("*, order_items(*, product_families:product_family_id(name, slug))")
-        .eq("id", input.cartOrderId)
-        .single();
+      // Load cart, profile in parallel (app fetch needs cartOrder.app_id, but we can pre-resolve via appId)
+      const [cartRes, profileRes] = await Promise.all([
+        supabase
+          .from("orders")
+          .select("*, order_items(*, product_families:product_family_id(name, slug))")
+          .eq("id", input.cartOrderId)
+          .single(),
+        supabase
+          .from("profiles")
+          .select("email, first_name, last_name, display_name")
+          .eq("id", user.id)
+          .single(),
+      ]);
 
-      if (cartErr || !cartOrder) throw cartErr ?? new Error("Cart not found");
+      if (cartRes.error || !cartRes.data) throw cartRes.error ?? new Error("Cart not found");
+      const cartOrder = cartRes.data;
+      const profile = profileRes.data;
 
       const items = (cartOrder.order_items as any[]) ?? [];
       if (!items.length) throw new Error("Cart is empty");
 
-      // Get user profile for customer info
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("email, first_name, last_name, display_name")
-        .eq("id", user.id)
-        .single();
-
-      // Get app slug
+      // Get app slug (now that we have cartOrder.app_id)
       const { data: app } = await supabase
         .from("apps")
         .select("slug")
@@ -497,17 +499,18 @@ export function usePlaceOrder() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      // Clean up the cart order (delete it since the order-engine created a new one)
-      await supabase.from("document_sections").delete().in(
-        "order_item_id",
-        items.map((i: any) => i.id)
-      );
-      await supabase.from("documents").delete().in(
-        "order_item_id",
-        items.map((i: any) => i.id)
-      );
-      await supabase.from("order_items").delete().eq("order_id", input.cartOrderId);
-      await supabase.from("orders").delete().eq("id", input.cartOrderId);
+      // Clean up the cart in the background — don't block navigation
+      const itemIdsToDelete = items.map((i: any) => i.id);
+      void (async () => {
+        try {
+          await supabase.from("document_sections").delete().in("order_item_id", itemIdsToDelete);
+          await supabase.from("documents").delete().in("order_item_id", itemIdsToDelete);
+          await supabase.from("order_items").delete().eq("order_id", input.cartOrderId);
+          await supabase.from("orders").delete().eq("id", input.cartOrderId);
+        } catch (e) {
+          console.error("Cart cleanup failed (non-critical):", e);
+        }
+      })();
 
       return data.order_id;
     },
