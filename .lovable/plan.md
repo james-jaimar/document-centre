@@ -1,92 +1,69 @@
 
+## Issue
 
-## Bug
-
-Customers/admins cannot delete uploaded files. Toast: *"s3-storage: Some deletes failed"*.
+The read-only preview on the placed-order detail page shows pages with white margins (default state) instead of reflecting the customer's actual chosen finishing options — in this case "Print to Edge: Entire Document" should render edge-to-edge, plus lamination, paper colour, covers etc. should also visually apply.
 
 ## Root cause
 
-`supabase/functions/s3-storage/index.ts` handles the `delete` action by sending `DELETE https://connector-gateway.lovable.dev/aws_s3/{path}` through the Lovable connector gateway. Per the S3 connector contract, **the gateway only proxies `GET ?list-type=2` and `HEAD`**. DELETE is rejected, so every `delRes.ok` is false and the function returns 207 with "Some deletes failed".
+In `CustomerOrderDetail.tsx`, the "View Preview" button mounts `PreviewLightbox` with only `urls`, `currentPage`, `productType` — no `effects`, no `bleedFlags`, no `colorFlags`, no `pageRoles`. So `PreviewLightbox`/`FlipBook` fall back to `DEFAULT_PREVIEW_EFFECTS` (bleed: "none", frontCover: "none", paperColor: "white", lamination: "none") — which is exactly what we see.
 
-The connector also only signs URLs for `mode=read` and `mode=write` — there is no `mode=delete`. So we cannot delete via the gateway at all.
+The snapshot we wrote into `job.configuration.preview` in `useCart.ts` only contains `thumbnails` + `product_type`. It does NOT contain the resolved finishing effects or per-page metadata that `OrderBuild`/`PreviewPanel` normally compute live from `selected_options` + sections.
 
-## Fix
+## Fix — two parts
 
-Sign DELETE requests directly to S3 using AWS SigV4 from the edge function, bypassing the connector for this one action.
+### Part A: snapshot the preview state at place-order time
 
-### 1. Add AWS credentials as Supabase secrets
+Extend `useCart.ts` `placeOrder` (where `configuration.preview` is built) to also persist the **already-computed** preview inputs that `PreviewPanel` uses live. Specifically, snapshot:
 
-Required new secrets (request via the secrets flow, ask user to paste from AWS IAM):
+- `effects: PreviewEffects` — the resolved bleed/frontCover/backCover/paperColor/holePunch/coverLamination derived from `selected_options` + product option metadata.
+- `pageAspectRatio: number`
+- `colorFlags: boolean[]` — per-page colour flag from sections.
+- `bleedFlags: boolean[]` — per-page edge-to-edge flag (already computed upstream in OrderBuild).
+- `pageRoles: string[]` — front_cover / body / back_cover_card / blank / tab / insert.
+- `sectionTypes: string[]`
+- `pageLabels: string[]` (tab labels) and `pageColors: string[]` (insert colours).
+- `tabPositions: TabPosition[]`
+- `displayPageNumbers: number[]`, `faceLabels: string[]`
+- `bindingEdge: "left" | "top"`
+- `rawPaths: string[]` (the storage paths in render order)
 
-- `AWS_S3_ACCESS_KEY_ID`
-- `AWS_S3_SECRET_ACCESS_KEY`
-- `AWS_S3_REGION` (e.g. `eu-west-1`)
-- `AWS_S3_BUCKET` (e.g. `document-centre-uploads`)
+The cleanest source of truth: the existing `useOrderBuilder` hook already computes all of these for the live preview in `OrderBuild`. Right now `useCart.placeOrder` doesn't have access to them — they live in component state.
 
-The IAM user/role only needs `s3:DeleteObject` on `arn:aws:s3:::{bucket}/*` for these credentials.
+**Approach**: have `OrderBuild`/the checkout flow pass a `previewSnapshot` object into `placeOrder`. Two options:
 
-### 2. Rewrite the `delete` branch in `s3-storage/index.ts`
+1. **Recompute server-side at place-order time** in `order-engine` from `selected_options` + sections + documents (most robust, single source of truth) — but duplicates the effect-resolution logic that currently lives in `PreviewPanel`/`OrderBuild`.
+2. **Capture client-side at place-order time** by lifting the computed preview inputs out of `PreviewPanel`/`OrderBuild` and persisting them onto the cart `order_items.spec.preview_snapshot` whenever the builder re-renders, then `useCart.placeOrder` reads that and copies it into `job.configuration.preview`.
 
-Replace the gateway DELETE loop with a direct, SigV4-signed `DELETE https://{bucket}.s3.{region}.amazonaws.com/{key}` request per object. Use the `aws4fetch` library (`https://esm.sh/aws4fetch@1.0.20`) which is the standard lightweight SigV4 client for Deno:
+**Decision: option 2.** Far smaller change, mirrors how the live preview already works, and avoids re-implementing the effect-resolution rules in Deno. The snapshot is written to `order_items.spec.preview_snapshot` inside `useOrderBuilder`'s autosave (it already saves `selected_options` to spec). `useCart.placeOrder` then merges `spec.preview_snapshot` into `job.configuration.preview`.
 
-```ts
-import { AwsClient } from "https://esm.sh/aws4fetch@1.0.20";
+### Part B: read the snapshot in CustomerOrderDetail
 
-const aws = new AwsClient({
-  accessKeyId: Deno.env.get("AWS_S3_ACCESS_KEY_ID")!,
-  secretAccessKey: Deno.env.get("AWS_S3_SECRET_ACCESS_KEY")!,
-  region: Deno.env.get("AWS_S3_REGION")!,
-  service: "s3",
-});
+Update `CustomerOrderDetail.tsx`:
 
-const bucket = Deno.env.get("AWS_S3_BUCKET")!;
-const region = Deno.env.get("AWS_S3_REGION")!;
-
-// For each path:
-const url = `https://${bucket}.s3.${region}.amazonaws.com/${encodeURI(path)}`;
-const res = await aws.fetch(url, { method: "DELETE" });
-// 204 = deleted, 404 = already gone (treat as success)
-```
-
-Run deletes in parallel batches of 10 with `Promise.all` for speed, collect failures with status code + body text for diagnostics, and only return 207 if at least one truly failed (still treat 404 as success).
-
-### 3. Verify other actions still use the connector
-
-`sign-upload` and `sign-download` continue to go through the gateway (`/api/v1/sign_storage_url`) — no changes. Only `delete` switches to direct AWS.
-
-### 4. Same fix for `cleanup-stale-drafts`
-
-`supabase/functions/cleanup-stale-drafts/index.ts` has the identical broken pattern (`DELETE ${GATEWAY_URL}/aws_s3/${path}`). Refactor its `deleteS3Objects` helper to use the same `aws4fetch` SigV4 client. Easiest: extract a shared helper into `supabase/functions/_shared/s3Delete.ts` and import from both functions.
+- Read `job.configuration.preview` fully (not just `thumbnails`).
+- Pass through to `PreviewLightbox`: `effects`, `colorFlags`, `bleedFlags`, `pageRoles`, `pageAspectRatio`, `sectionTypes`, `pageLabels`, `pageColors`, `tabPositions`, `displayPageNumbers`, `faceLabels`, `bindingEdge`.
+- Verify `PreviewLightbox` already forwards these to `FlipBook` / `LooseSheets` / `FoldPreview` (per `previewTypes.ts` it accepts the full `PreviewComponentProps` set — confirm in PreviewLightbox.tsx during implementation).
 
 ## Files to change
 
-- `supabase/functions/_shared/s3Delete.ts` — new shared SigV4 delete helper.
-- `supabase/functions/s3-storage/index.ts` — replace `delete` action body with the helper; parallelize.
-- `supabase/functions/cleanup-stale-drafts/index.ts` — replace `deleteS3Objects` with the helper.
-- New Supabase secrets: `AWS_S3_ACCESS_KEY_ID`, `AWS_S3_SECRET_ACCESS_KEY`, `AWS_S3_REGION`, `AWS_S3_BUCKET`.
+- `src/hooks/useOrderBuilder.ts` — when persisting `selected_options` to `order_items.spec`, also persist the computed preview inputs as `spec.preview_snapshot`.
+- `src/hooks/useCart.ts` — in `placeOrder`, when assembling `job.configuration.preview`, spread `spec.preview_snapshot` into it (alongside `thumbnails` + `product_type` already there).
+- `src/pages/dashboard/CustomerOrderDetail.tsx` — pass the full snapshot fields into `PreviewLightbox`.
+- `src/components/order/PreviewLightbox.tsx` — verify it accepts and forwards every preview prop; add any missing pass-throughs.
+
+## Backwards compatibility
+
+Orders placed BEFORE this change won't have `preview_snapshot` — for those the preview falls back to current behaviour (defaults). No migration needed; old orders remain functional, just unstyled. Optionally we can show a small "Preview reflects defaults — placed before settings snapshot" hint, but probably not worth it.
 
 ## Verification
 
-1. Customer opens a draft order → clicks trash on a file → toast "File deleted", file disappears from the list.
-2. Confirm in AWS S3 console that the object is gone.
-3. Delete a whole draft order with multiple files → all files removed, no error toast.
-4. Manually invoke `cleanup-stale-drafts` → DB rows removed AND storage objects removed (check S3 console / log line `S3 deleted: N, failed: 0`).
-5. Edge function logs show `204` (or `404`) responses, no `405`/`403`.
+1. Configure a bound document with: Print to Edge = Entire Document, Lamination = Gloss, Paper = Pastel Blue. Place order.
+2. Open the placed order from Customer Orders → click "View Preview".
+3. Flip preview shows: edge-to-edge pages (no white margin), gloss sheen overlay, blue paper tint — matching the screenshot the user expected.
+4. Configure another with: Print to Edge = Front Cover only, Tabs at pages 5/10. Place order. Preview shows bleed only on front cover and tabs in correct positions.
+5. Old pre-change orders still open the preview without crashing (just default styling).
 
-## Why not use the connector
+## Out of scope
 
-The Lovable S3 connector intentionally restricts the gateway to read-only proxy + signed read/write URLs. There is no signed-delete mode and no DELETE proxy. Using the AWS keys directly for DELETE is the documented escape hatch and is scoped narrowly (single permission, single bucket).
-
-## What you'll need to do
-
-When I switch to default mode I'll request the four AWS secrets. You'll need:
-
-1. An AWS IAM user with policy:
-   ```json
-   { "Version":"2012-10-17","Statement":[{
-     "Effect":"Allow","Action":"s3:DeleteObject","Resource":"arn:aws:s3:::YOUR-BUCKET/*"
-   }]}
-   ```
-2. Its access key ID + secret access key.
-3. The bucket name and region you're already using with the connector.
-
+- Re-snapshotting historical placed orders (would require a backfill).
+- Showing the snapshot in the admin order detail (same change is trivial to add later — same `job.configuration.preview` field).
