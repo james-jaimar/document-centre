@@ -1,75 +1,70 @@
 
-## Diagnosis
 
-This is not primarily a routing failure anymore.
+## Root cause
 
-Your screenshot shows you are already on:
+Clicking "Send reset link" on `/admin/customers/:id` does this:
 
-```text
-/admin?tenant=c0000000-0000-0000-0000-000000000002
-```
+1. `useManageUser` calls edge function `manage-user` with `action: force_password_reset`.
+2. `manage-user` calls `auth.admin.generateLink({ type: 'recovery' })` — succeeds (auth log shows `/admin/generate_link` 200, `user_recovery_requested`).
+3. Function then comments: "the actual email is dispatched by Supabase Auth firing its send-email webhook → auth-email-hook → pgmq queue".
+4. **There is no `auth-email-hook` in this project**. This project routes all email through `email_outbox` (`enqueueEmail`) + `email-dispatcher` + tenant SMTP accounts.
+5. Result: link is generated, nothing is enqueued, nothing is sent. UI closes the dialog with no toast either way (see point 7).
 
-and `AdminDashboard` is rendering ("Head Office"). So tenant-admin routing is working enough to land you in the admin shell.
+Compare with `request-password-reset` (customer self-service) — it already does the right thing: builds the branded HTML, calls `enqueueEmail({ category: 'auth', ... })`. We just need the admin path to do the same.
 
-The real bug is:
+A second smaller bug:
+- `useManageUser` has no `onSuccess`/`onError` toast, and `AdminCustomerDetail.handlePasswordReset` doesn't show one either. So even when actions like "Change email" succeed, the user sees nothing happen.
 
-- `src/components/AppSidebar.tsx` still decides which sidebar sections to show using only legacy `user_roles`
-- tenant admins are now authorised via `tenant_memberships.role`
-- result: `/admin/*` pages load, but the sidebar renders no nav items because `roles.includes("head_office_admin")` is false
+## Fix
 
-That is why the left sidebar is blank.
+### 1. `supabase/functions/manage-user/index.ts` — actually send the reset email
 
-There is also a second symptom in the screenshot:
-- the footer says `Customer`
-- that label comes from `highestRole` in `useAuth`, which is still based only on legacy `user_roles`
-- so tenant admins look like customers in the shell even while inside `/admin`
+For both `force_password_reset` and `resend_invite`:
+- Resolve tenant branding (portal_name, primary_color, logo_url) — same lookup pattern as `request-password-reset`.
+- Build the branded HTML/text email with the generated `actionLink`.
+- Call `enqueueEmail(admin, { tenant_id, app_id, to: targetEmail, subject, html, text, category: 'auth', metadata: { kind: 'force_password_reset' | 'resend_invite', profile_id: target_profile_id } })`.
+- Stop using direct `send-email` HTTP call for `resend_invite` — switch it to `enqueueEmail` too for consistency, branding, and SMTP routing via `email_accounts`.
+- Return `{ success: true, message: "Reset link sent to {email}" }` once enqueued. Audit row records `delivered_via: "email_outbox"`.
 
-## What I’ll change
+This brings admin-triggered resets onto the same SMTP pipeline as customer self-service resets, which we already know works (recent successful customer auth events in logs).
 
-### 1. Make AppSidebar membership-aware
-Update `src/components/AppSidebar.tsx` so nav visibility is based on both:
-- legacy app roles (`platform_admin`, etc.)
-- membership roles (`owner`, `admin`, `sales`, `production`, `accounts`, `branch_manager`, `store_operator`)
+### 2. `src/hooks/useManageUser.ts` — surface success / failure
 
-Best implementation:
-- extend `NavSection` to support `appRoles?: AppRole[]` and `membershipRoles?: string[]`
-- filter sections by either matching app role or matching active membership role
+Add toast feedback so admins always see what happened:
+- `onSuccess`: `toast.success(data?.message ?? "Done")`
+- `onError`: `toast.error(error.message)`
 
-### 2. Map the admin nav properly by membership
-Use membership roles for tenant admin sections:
-- `owner`, `admin` → Dashboard, Orders, Production, Branches, Products, Customers, Pricing, Users, Sent Mail, Settings
-- `sales`, `production`, `accounts` → only operations pages
-- `branch_manager`, `store_operator` stay in branch portal nav, not tenant admin config
+Keep existing query invalidations.
 
-### 3. Fix the user label in the sidebar footer
-In admin/branch shells, prefer the current membership role label over `highestRole` so tenant admins no longer display as `Customer`.
+### 3. `src/pages/admin/AdminCustomerDetail.tsx` — close dialog cleanly
 
-### 4. Optional hardening
-If the user is on `/admin` with an allowed membership role but no visible nav items, show a defensive fallback instead of a blank sidebar. This prevents the UI from looking broken if roles drift again.
+Tighten `handlePasswordReset` to close the dialog inside `onSettled` (so it closes regardless of outcome). The toast comes from the hook.
 
-## Files to update
+## What you'll see after the fix
 
-- `src/components/AppSidebar.tsx` — main fix
-- possibly `src/hooks/useAuth.tsx` only if we decide to expose a cleaner portal-role helper, but likely not required
-- optionally a small shared auth helper if we want one source of truth for role groupings
+1. Open `/admin/customers/<id>` → click **Send reset link** → confirm.
+2. Toast: "Reset link sent to email@example.com".
+3. Email arrives via the tenant's SMTP account (Document Centre / PostNet branded), with a link to `/auth/verify?...&next=/reset-password` on the tenant portal.
+4. Customer clicks → lands on `/reset-password`, sets a new password, redirected to `/auth`.
 
-## Expected result after fix
+## Files
 
-For `hello@jaimar.dev` on PostNet:
-- `/t/postnet/auth` signs in and lands on `/admin?tenant=<postnet-id>`
-- left sidebar shows the full tenant admin menu
-- footer role label shows `Admin` / `Owner` instead of `Customer`
-- pages like Branches, Products, Pricing, Users, Settings become reachable normally
+- `supabase/functions/manage-user/index.ts` — branded email + `enqueueEmail` for both reset & invite paths
+- `src/hooks/useManageUser.ts` — toast on success/error
+- `src/pages/admin/AdminCustomerDetail.tsx` — close dialog in `onSettled`
 
-## Important conclusion
+## Out of scope
 
-The tenant admin pages are mostly wired already.
-What is broken on the screen you showed is the sidebar visibility logic, not the underlying `/admin` routing.
+- No DB migrations.
+- No new edge functions.
+- No changes to the customer-facing `request-password-reset` (already correct).
+- No changes to `ResetPassword.tsx` / `AuthVerify.tsx` (the link already targets the right route).
 
 ## Verification
 
-1. Sign in to `/t/postnet/auth` as `hello@jaimar.dev`
-2. Confirm landing on `/admin?tenant=<postnet>`
-3. Confirm sidebar now shows admin navigation items
-4. Open Branches, Products, Pricing, Users, Settings from the sidebar
-5. Confirm footer role label is no longer `Customer`
+1. From `/admin/customers/<a customer with email>` → "Send reset link". Expect success toast and email delivery.
+2. Inspect `email_outbox` for a new row with `category='auth'` and `metadata.kind='force_password_reset'`.
+3. `/admin/users` → MembersTable → "Force password reset" on a tenant member should also send the same branded email.
+4. Same flow for "Resend invite" (sends branded sign-in link via `email_outbox`).
+5. Negative: a profile with no email shows the existing 400 error.
+
