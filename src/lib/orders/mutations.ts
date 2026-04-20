@@ -95,6 +95,10 @@ export async function refundPayment(payload: {
   return invokeOrderEngine<{ success: boolean; payment_id: string }>("refundPayment", payload);
 }
 
+export async function cancelOrder(payload: { order_id: string; reason: string }) {
+  return invokeOrderEngine<{ success: boolean; refund_pending: boolean }>("cancelOrder", payload);
+}
+
 export async function generateInvoice(payload: {
   order_id: string;
   kind?: "proforma" | "invoice" | "credit_note" | "receipt";
