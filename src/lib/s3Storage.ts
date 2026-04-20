@@ -60,3 +60,16 @@ export async function deleteFromS3(objectPaths: string[]): Promise<void> {
     object_paths: objectPaths,
   });
 }
+
+/**
+ * Physically copy an S3 object to a new key (server-side CopyObject).
+ * Returns the new object path.
+ */
+export async function copyS3Object(sourcePath: string, destPath: string): Promise<string> {
+  await callS3Function({
+    action: "copy",
+    source_path: sourcePath,
+    dest_path: destPath,
+  });
+  return destPath;
+}
