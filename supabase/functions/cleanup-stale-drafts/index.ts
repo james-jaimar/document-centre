@@ -4,13 +4,13 @@
 //
 // Triggered by pg_cron via net.http_post (no JWT verification needed for the cron).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { deleteS3Objects } from "../_shared/s3Delete.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const GATEWAY_URL = "https://connector-gateway.lovable.dev";
 const STALE_DAYS = 7;
 
 function json(body: unknown, status = 200) {
@@ -18,36 +18,6 @@ function json(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
-}
-
-async function deleteS3Objects(paths: string[]): Promise<{ deleted: number; failed: string[] }> {
-  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-  const AWS_S3_API_KEY = Deno.env.get("AWS_S3_API_KEY");
-  if (!LOVABLE_API_KEY || !AWS_S3_API_KEY) {
-    return { deleted: 0, failed: paths };
-  }
-
-  let deleted = 0;
-  const failed: string[] = [];
-  for (const path of paths) {
-    try {
-      const res = await fetch(`${GATEWAY_URL}/aws_s3/${path}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "X-Connection-Api-Key": AWS_S3_API_KEY,
-        },
-      });
-      if (res.ok || res.status === 404) {
-        deleted++;
-      } else {
-        failed.push(`${path}: ${res.status}`);
-      }
-    } catch (e) {
-      failed.push(`${path}: ${(e as Error).message}`);
-    }
-  }
-  return { deleted, failed };
 }
 
 Deno.serve(async (req) => {

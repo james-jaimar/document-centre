@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { deleteS3Objects } from "../_shared/s3Delete.ts";
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev";
 
@@ -121,26 +122,18 @@ Deno.serve(async (req) => {
         return json({ error: "object_paths array required" }, 400);
       }
 
-      // Delete by signing a write URL isn't the right approach.
-      // Use the gateway proxy to issue DELETE requests for each object.
-      const errors: string[] = [];
-      for (const path of object_paths) {
-        const delRes = await fetch(`${GATEWAY_URL}/aws_s3/${path}`, {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
-            "X-Connection-Api-Key": AWS_S3_API_KEY,
-          },
-        });
-        if (!delRes.ok && delRes.status !== 404) {
-          errors.push(`${path}: ${delRes.status}`);
-        }
+      // The connector gateway does not support DELETE for S3 — sign directly with SigV4.
+      const result = await deleteS3Objects(object_paths);
+      console.log(
+        `[s3-storage] delete: ${result.deleted} ok, ${result.failed.length} failed`
+      );
+      if (result.failed.length > 0) {
+        return json(
+          { error: "Some deletes failed", details: result.failed, deleted: result.deleted },
+          207
+        );
       }
-
-      if (errors.length > 0) {
-        return json({ error: "Some deletes failed", details: errors }, 207);
-      }
-      return json({ success: true });
+      return json({ success: true, deleted: result.deleted });
     }
 
     return json({ error: `Unknown action: ${action}` }, 400);
