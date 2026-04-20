@@ -54,7 +54,7 @@ export default function AdminOrderDetail() {
     );
   }
 
-  const { order, jobs, addresses, timeline, messages, payments, documents } = data;
+  const { order, jobs, addresses, timeline, messages, payments, documents, orderedByProfile } = data;
   const selectedJob = selectedJobId
     ? jobs.find((j: any) => j.id === selectedJobId)
     : jobs[0] || null;
@@ -190,7 +190,7 @@ export default function AdminOrderDetail() {
             </TabsContent>
 
             <TabsContent value="ordered_by" className="mt-3">
-              <OrderedByTab order={order} />
+              <OrderedByTab order={order} orderedByProfile={orderedByProfile} />
             </TabsContent>
           </Tabs>
         </div>
