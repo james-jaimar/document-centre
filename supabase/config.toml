@@ -27,3 +27,5 @@ project_id = "lcvdhtaqoumyokjqaqfw"
     verify_jwt = false
   [functions.oauth-callback]
     verify_jwt = false
+  [functions.cleanup-stale-drafts]
+    verify_jwt = false

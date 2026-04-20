@@ -16,6 +16,7 @@ import {
   Download,
   Calendar,
   Receipt,
+  Eye,
 } from "lucide-react";
 import { format } from "date-fns";
 import { useState } from "react";
@@ -24,6 +25,8 @@ import { OrderInvoicesList } from "@/components/orders/OrderInvoicesList";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import PreviewLightbox from "@/components/order/PreviewLightbox";
+import { inferPreviewTypeFromJob } from "@/lib/orders/inferPreviewType";
 
 const CUSTOMER_STATUS_LABEL: Record<string, string> = {
   awaiting_payment: "Awaiting Payment",
@@ -98,6 +101,7 @@ const CustomerOrderDetail = () => {
 
   const [messageText, setMessageText] = useState("");
   const [sending, setSending] = useState(false);
+  const [previewJob, setPreviewJob] = useState<any | null>(null);
 
   const order = data?.order;
   const jobs = data?.jobs ?? [];
@@ -264,6 +268,17 @@ const CustomerOrderDetail = () => {
                             Qty: {job.quantity}
                             {job.unit_label ? ` ${job.unit_label}` : ""}
                           </p>
+                          {(config.preview?.thumbnails?.length ?? 0) > 0 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="mt-2 h-7 text-xs"
+                              onClick={() => setPreviewJob(job)}
+                            >
+                              <Eye className="h-3.5 w-3.5 mr-1.5" />
+                              View Preview
+                            </Button>
+                          )}
                         </div>
                         <div className="text-right shrink-0">
                           <p className="font-semibold text-foreground">{fmt(job.gross_price)}</p>
@@ -577,6 +592,17 @@ const CustomerOrderDetail = () => {
           </div>
         </div>
       </div>
+
+      {previewJob && (
+        <PreviewLightbox
+          thumbnailPaths={(previewJob.configuration?.preview?.thumbnails ?? []) as string[]}
+          productType={
+            (previewJob.configuration?.preview?.product_type as any) ||
+            inferPreviewTypeFromJob(previewJob)
+          }
+          onClose={() => setPreviewJob(null)}
+        />
+      )}
     </div>
   );
 };

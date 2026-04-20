@@ -6,8 +6,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Plus, ArrowRight, Trash2, Loader2, FileText, Package, Clock } from "lucide-react";
-import { format } from "date-fns";
+import { Plus, ArrowRight, Trash2, Loader2, FileText, Package, Clock, Info } from "lucide-react";
+import { format, differenceInDays } from "date-fns";
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -246,6 +246,9 @@ const CustomerOrders = () => {
     const item = order.order_items?.[0];
     const productLabel = item?.title || "Untitled draft";
     const isDeleting = deletingIds.has(order.id);
+    const ageDays = differenceInDays(new Date(), new Date(order.created_at));
+    const daysLeft = Math.max(7 - ageDays, 0);
+    const expiresSoon = daysLeft <= 2;
     return (
       <div className="relative rounded-lg border border-dashed bg-muted/30 p-4 hover:bg-muted/50 transition-colors">
         <div className="flex items-start justify-between gap-4">
@@ -264,8 +267,13 @@ const CustomerOrders = () => {
                 </span>
                 <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
                   <Clock className="h-3 w-3" />
-                  {format(new Date(order.created_at), "dd MMM")}
+                  {format(new Date(order.created_at), "dd MMM")} · {ageDays}d old
                 </span>
+                {expiresSoon && (
+                  <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800">
+                    Expires in {daysLeft}d
+                  </span>
+                )}
               </div>
               <p className="mt-1 text-sm font-medium text-foreground truncate">{productLabel}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
@@ -354,6 +362,13 @@ const CustomerOrders = () => {
           </TabsContent>
 
           <TabsContent value="drafts" className="space-y-3 mt-4">
+            <div className="flex items-start gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+              <Info className="h-4 w-4 shrink-0 mt-0.5" />
+              <p>
+                Drafts are automatically deleted after <strong>7 days</strong> to keep your
+                workspace tidy. Place your order to keep it.
+              </p>
+            </div>
             {draftOrders.length > 1 && (
               <div className="flex justify-end">
                 <Button

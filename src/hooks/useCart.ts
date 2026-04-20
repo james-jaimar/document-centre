@@ -421,12 +421,14 @@ export function usePlaceOrder() {
             ? supabase
                 .from("documents")
                 .select(
-                  "id, order_item_id, file_name, page_count, file_size, page_width_mm, page_height_mm"
+                  "id, order_item_id, file_name, page_count, file_size, page_width_mm, page_height_mm, thumbnail_urls, sort_order"
                 )
                 .in("order_item_id", itemIds)
                 .order("sort_order")
             : Promise.resolve({ data: [] as any[] }),
         ]);
+
+      const { inferPreviewTypeFromJob } = await import("@/lib/orders/inferPreviewType");
 
       const jobs = items.map((item: any) => {
         const familyOptions = ((optionsData ?? []) as any[]).filter(
@@ -446,9 +448,33 @@ export function usePlaceOrder() {
           documents: itemDocs,
         });
 
+        // Snapshot per-page thumbnails for the read-only preview later
+        const thumbnails: string[] = [];
+        for (const d of itemDocs) {
+          const tu = (d.thumbnail_urls ?? []) as any[];
+          for (const t of tu) {
+            const path = typeof t === "string" ? t : (t?.path || t?.url || null);
+            if (path) thumbnails.push(path);
+          }
+        }
+
+        const product_category = item.product_families?.slug || null;
+        const previewType = inferPreviewTypeFromJob({
+          product_category,
+          product_snapshot,
+        });
+
+        const configurationWithPreview = {
+          ...configuration,
+          preview: {
+            thumbnails,
+            product_type: previewType,
+          },
+        };
+
         return {
           product_name: item.product_families?.name || item.title || "Document",
-          product_category: item.product_families?.slug || null,
+          product_category,
           job_name: item.title || null,
           quantity: item.quantity,
           unit_label: "copies",
@@ -456,7 +482,7 @@ export function usePlaceOrder() {
           gross_price: Number(item.unit_price) * item.quantity,
           cost_price: 0,
           vat_rate: 15,
-          configuration,
+          configuration: configurationWithPreview,
           product_snapshot,
         };
       });

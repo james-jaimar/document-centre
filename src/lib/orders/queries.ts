@@ -30,6 +30,7 @@ export async function fetchAdminOrders(filters: AdminOrderListFilters = {}) {
       { count: "exact" }
     )
     .not("app_id", "is", null)
+    .not("submitted_at", "is", null)
     .order("created_at", { ascending: false })
     .range(from, to);
 
@@ -77,6 +78,7 @@ export async function fetchCustomerOrders(filters: ClientOrderListFilters = {}) 
       { count: "exact" }
     )
     .not("app_id", "is", null)
+    .not("submitted_at", "is", null)
     .order("created_at", { ascending: false })
     .range(from, to);
 
