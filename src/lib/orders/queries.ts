@@ -93,15 +93,18 @@ export async function fetchCustomerOrders(filters: ClientOrderListFilters = {}) 
 
 /**
  * Fetch a single order with all related data.
+ *
+ * Note: the "ordered by" profile is fetched in a separate step (not embedded)
+ * to avoid PostgREST relationship-resolution failures taking down the whole page.
  */
 export async function fetchOrderDetail(orderId: string) {
   const [orderRes, jobsRes, addressesRes, timelineRes, statusHistoryRes, messagesRes, paymentsRes, docsRes] =
     await Promise.all([
       supabase
         .from("orders")
-        .select("*, branch:branch_id(id, name, address, city, province, postal_code, country, phone, email), ordered_by:ordered_by_profile_id(id, phone, email, first_name, last_name, display_name)")
+        .select("*, branch:branch_id(id, name, address, city, province, postal_code, country, phone, email)")
         .eq("id", orderId)
-        .single(),
+        .maybeSingle(),
       supabase
         .from("order_jobs")
         .select("*, job_proofs (*)")
@@ -112,13 +115,12 @@ export async function fetchOrderDetail(orderId: string) {
         .select("*")
         .eq("order_id", orderId),
       supabase
-        .from("timeline_events")
+        .from("timeline_events" as any)
         .select("*")
         .eq("order_id", orderId)
-        .order("created_at", { ascending: false })
-        .then((res) => res.error ? { data: [], error: null } : res) as any,
+        .order("created_at", { ascending: false }),
       supabase
-        .from("status_history")
+        .from("status_history" as any)
         .select("*")
         .eq("order_id", orderId)
         .order("created_at", { ascending: false }),
@@ -139,14 +141,37 @@ export async function fetchOrderDetail(orderId: string) {
         .order("created_at", { ascending: false }),
     ]);
 
-  if (orderRes.error) throw orderRes.error;
+  if (orderRes.error) {
+    console.error("fetchOrderDetail: orders query failed", orderRes.error);
+    throw orderRes.error;
+  }
+  if (!orderRes.data) {
+    return null;
+  }
+
+  // Fetch ordered-by profile separately so a missing/unjoinable row never
+  // takes down the whole page.
+  let orderedByProfile: any = null;
+  const orderedById = (orderRes.data as any).ordered_by_profile_id;
+  if (orderedById) {
+    const { data: prof, error: profErr } = await supabase
+      .from("profiles")
+      .select("id, phone, email, first_name, last_name, display_name")
+      .eq("id", orderedById)
+      .maybeSingle();
+    if (profErr) {
+      console.error("fetchOrderDetail: profile lookup failed", profErr);
+    }
+    orderedByProfile = prof || null;
+  }
 
   return {
     order: orderRes.data,
+    orderedByProfile,
     jobs: jobsRes.data || [],
     addresses: addressesRes.data || [],
-    timeline: timelineRes.data || [],
-    statusHistory: statusHistoryRes.data || [],
+    timeline: (timelineRes as any).data || [],
+    statusHistory: (statusHistoryRes as any).data || [],
     messages: messagesRes.data || [],
     payments: paymentsRes.data || [],
     documents: docsRes.data || [],
