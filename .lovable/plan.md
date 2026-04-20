@@ -1,65 +1,63 @@
 
 
-## Three issues, one approval
+## Three fixes
 
-### 1. "Order not found" after placing order
+### 1. Admin Order Manager shows drafts (BUG)
 
-**Cause**: After `placeOrder.mutateAsync(...)` returns the new `order_id`, `Checkout.tsx` navigates to `/orders/${cart.id}/confirmation` — but `cart.id` is the **cart order that was just deleted** by the place-order mutation. The confirmation page queries that deleted ID with `.single()` → 406 Not Acceptable → "Order not found".
+**Cause**: `fetchAdminOrders` filters `.not("app_id", "is", null)` but lazy-created drafts already have `app_id` set. The drafts have `order_number IS NULL` and `submitted_at IS NULL`.
 
-**Fix**: 
-- `usePlaceOrder.mutateAsync` already returns the real `order_id` (line 512). Capture it in `Checkout.handlePlaceOrder` and navigate to `/orders/${newOrderId}/confirmation`.
-- In `OrderConfirmation.tsx`, use `.maybeSingle()` instead of `.single()` and show a graceful "still loading…" state for ~1s instead of "Order not found" if the row hasn't propagated.
+**Fix**: in `src/lib/orders/queries.ts > fetchAdminOrders`, add `.not("submitted_at", "is", null)` (and same for `fetchCustomerOrders` for safety). Only truly placed orders have `submitted_at`.
 
-### 2. Client doesn't see the new order until they click Orders again
+### 2. Auto-clear drafts older than 7 days
 
-**Cause**: `usePlaceOrder.onSuccess` invalidates `["cart"]`, `["all_orders"]`, `["orders"]`. But the customer "My Orders" page (`CustomerOrders.tsx`) uses query key `["all_orders", userId, tenantId]`. Invalidation does match (prefix match), so this should work — but the user lands on Confirmation (broken, see #1) instead of Orders. Once #1 is fixed and the user clicks "My Orders", the cache is fresh.
+Two parts:
 
-**Also**: confirm `CustomerOrderDetail` route exists for the new `order_id` so the "View Order Details" button works.
+**A. Customer-facing notice** — in `src/pages/dashboard/CustomerOrders.tsx`, add a small info banner at the top of the Drafts tab:
+> "Drafts are automatically deleted after 7 days. Place your order or save it to your cart to keep it."
 
-### 3. "Place Order" feels slow
+Also show each draft's age and visually flag any draft >5 days as "expires soon" so the user has warning.
 
-**Cause**: `usePlaceOrder.mutationFn` performs five sequential round-trips before invoking the edge function:
+**B. Server-side cleanup** — add a Postgres function + pg_cron schedule via migration:
 
-1. `select` cart with items
-2. `select` profile
-3. `select` app by id
-4. `select` product_options + document_sections + documents (already parallel — good)
-5. `functions.invoke("order-engine")`
+- New SQL function `cleanup_stale_draft_orders()` (`SECURITY DEFINER`, `search_path = public`):
+  - Find orders where `submitted_at IS NULL` AND `order_number IS NULL` AND `created_at < now() - interval '7 days'`.
+  - For each, delete dependent `document_sections`, `documents`, `order_items`, then the order itself (mirror `deleteDraftOrder` client logic). Storage objects in the `document-uploads` bucket: collect file paths and delete via the storage API call from a tiny Edge Function trigger, OR leave orphaned and rely on a separate sweep — recommended: do the DB cleanup in SQL and orphan storage for now (keeps migration pure SQL; storage can be swept by a follow-up edge function).
+  - Better: create a small edge function `cleanup-stale-drafts` that does both (DB + storage), and schedule it via pg_cron with `net.http_post` daily at 03:00 UTC.
 
-Then the edge function does ~10 sequential admin writes (order, jobs, addresses, pricing snapshot, timeline, membership check), and finally the client does 4 more deletes (sections, docs, items, order) before resolving.
+Approach chosen: **Edge function `cleanup-stale-drafts`** scheduled by pg_cron. Cleaner, deletes both DB rows and S3 storage objects. Logs how many drafts cleared per run.
 
-**Fix**:
-- **Client**: Run cart-load + profile-load + app-load in parallel (`Promise.all`). Saves ~2 round-trips.
-- **Client**: Move the post-success cleanup deletes (lines 500–510) into a fire-and-forget background promise — don't block the user's navigation. The deletion is non-critical: the cart row is no longer needed by the user. Resolve the mutation immediately after `data.order_id` is returned.
-- **Client**: Remove the redundant cart cleanup entirely if the order-engine should own it (defer; keep deletes but background them for now).
-- **Edge function**: Parallelize the independent inserts after the order row exists — `order_jobs`, `order_addresses`, `order_pricing_snapshots`, `timeline_events`, and `tenant_memberships` upsert can all run in `Promise.all` once `newOrder.id` is known. Currently they're awaited sequentially.
-- **Edge function**: The `for (job of jobs)` proof-insert + job status update loop runs N×2 sequential writes. Convert to a single bulk insert + bulk update (or skip when no jobs need proofs — currently no checkout flow sets `j.proof`).
+### 3. Customer order detail — link to read-only flip preview
 
-Net effect: place-order should drop from ~3–5s to <1s.
+In `src/pages/dashboard/CustomerOrderDetail.tsx`, for each job:
+- Compute thumbnail paths from the job's `documents` (joined via `order_jobs → documents` snapshot, or pulled from `order_documents` filtered by `job_id`). Existing code already loads `documents` into `visibleDocs`.
+- Add a "Preview" button next to each job (or inside the Files section) that opens `PreviewLightbox` with the job's thumbnails and the correct `productType` inferred from `job.product_category` / `job.configuration`.
+- Reuse the existing `PreviewLightbox` component verbatim — it's already read-only (no edit controls). Pass `productType` from `inferPreviewType` (same util used by OrderBuild).
 
-### 4. Console noise (separate, lower priority)
+We need thumbnail paths. The most reliable source post-placement is `order_documents` rows tagged `document_type = 'thumbnail'` or the `documents.thumbnail_urls` array snapshot. Plan:
+- Extend `fetchOrderDetail` to also pull `documents` via `order_items` joined through the original draft → not viable (drafts deleted on placement).
+- Better: snapshot the thumbnail paths into `job.configuration.thumbnails` at order-engine time, OR write them to `order_documents` with `document_type = 'preview_thumbnail'` and `is_customer_visible = true`.
 
-- `406 GET /orders?id=eq...&order_n_ame...` — that's the confirmation `.single()` failure from #1. Fixed by #1.
-- `[PreviewType] falling back to slug: booklets → saddle_stitched ... options count: 6` — repeated noisy log inside preview-type detector. Add a "logged once per session" guard. Mention in plan but optional.
+**Decision**: minimal change — at place-order time in `order-engine`, copy the source `documents.thumbnail_urls` into `order_jobs.configuration.preview` so the customer detail page can read them without any new tables. The flip preview button reads `job.configuration.preview.thumbnails` and `productType` and opens the lightbox.
 
 ## Files to change
 
-- `src/pages/dashboard/Checkout.tsx` — capture returned `order_id`, navigate to `/orders/${order_id}/confirmation`.
-- `src/hooks/useCart.ts` (`usePlaceOrder`) — parallelize cart/profile/app fetches; background the cleanup deletes; return `order_id` (already does).
-- `src/pages/dashboard/OrderConfirmation.tsx` — use `.maybeSingle()`, show friendly "preparing your order…" state with auto-retry (refetch every 500ms for up to 3s) when row not yet visible.
-- `supabase/functions/order-engine/index.ts` — parallelize independent inserts after the order row is created; remove sequential proof loop overhead when no proofs requested.
-- `src/components/preview/previewTypes.ts` — add once-per-session log guard for the "falling back" warning (optional, only if quick).
+- `src/lib/orders/queries.ts` — add `submitted_at IS NOT NULL` to admin/customer order list queries.
+- `src/pages/dashboard/CustomerOrders.tsx` — add 7-day notice banner on Drafts tab; show draft age.
+- `supabase/functions/order-engine/index.ts` — at `createOrderWithJobs`, snapshot per-job thumbnail paths + product_category into `configuration.preview`.
+- `src/pages/dashboard/CustomerOrderDetail.tsx` — add "View Preview" button per job; mount `PreviewLightbox` with job thumbnails + inferred productType.
+- New migration: create `cleanup-stale-drafts` edge function scaffolding (deploy via existing edge function deploy flow); pg_cron schedule via SQL migration calling `net.http_post` daily.
+- `supabase/functions/cleanup-stale-drafts/index.ts` — new function; deletes drafts >7 days old (DB + storage objects).
 
 ## Verification
 
-1. Cart with one item → click Place Order → button spinner shows briefly (<1s) → lands on Confirmation page showing the **real** `INV-XXXXX` number, totals, and items.
-2. "View Order Details" → opens the order detail page successfully.
-3. Sidebar Orders → new order appears in Placed Orders without manual refresh.
-4. Network tab: no 406 errors after place order.
-5. Console: no more `_n_ame` typo'd 406 requests.
+1. Admin Order Manager → only `INV-00012` row is visible; the four R 0.00 draft rows are gone.
+2. Customer Drafts tab shows banner "Drafts auto-clear after 7 days"; per-draft age shown.
+3. Place an order → open it from Placed Orders → click "View Preview" on the booklet job → fullscreen flip preview opens, no edit UI.
+4. Manually invoke `cleanup-stale-drafts` edge function → drafts older than 7 days removed; storage files removed; younger drafts untouched.
+5. pg_cron job listed in `cron.job` table running daily at 03:00.
 
 ## Out of scope
 
-- VPS / Document Centre API diagnostics (already deferred).
-- Refactoring order-engine into a stored procedure (bigger project; current parallelization is enough for now).
+- Storage sweep for already-orphaned files (one-off, can be done after first cron run).
+- Reminder email to customer 24h before draft auto-deletion (nice future enhancement).
 
