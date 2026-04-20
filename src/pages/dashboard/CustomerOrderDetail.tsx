@@ -428,9 +428,28 @@ const CustomerOrderDetail = () => {
                 </div>
               )}
 
-              {!delivery && billing && (
+              {isCollection && branch && (
                 <div className="rounded-md border bg-muted/20 p-3">
-                  <p className="text-xs font-semibold text-foreground mb-1.5">Collection from</p>
+                  <p className="text-xs font-semibold text-foreground mb-1.5">Collect from</p>
+                  <div className="text-xs space-y-0.5">
+                    <p className="font-medium">{branch.name}</p>
+                    {branch.address && <p>{branch.address}</p>}
+                    {branch.city && <p>{branch.city}</p>}
+                    {(branch.postal_code || branch.province) && (
+                      <p>{[branch.postal_code, branch.province].filter(Boolean).join(" ")}</p>
+                    )}
+                    {branch.phone && <p className="text-muted-foreground mt-1">{branch.phone}</p>}
+                    {branch.email && <p className="text-muted-foreground">{branch.email}</p>}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Your store will contact you when this order is ready for collection.
+                  </p>
+                </div>
+              )}
+
+              {isCollection && !branch && (
+                <div className="rounded-md border bg-muted/20 p-3">
+                  <p className="text-xs font-semibold text-foreground mb-1.5">Collection from store</p>
                   <p className="text-xs text-muted-foreground">
                     Your store will contact you when this order is ready for collection.
                   </p>
