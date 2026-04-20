@@ -29,12 +29,13 @@ export default function OrderConfirmation() {
     retry: 5,
   });
 
-  if (isLoading) {
+  if (isLoading || !order) {
     return (
       <div className="flex flex-col items-center py-20 space-y-4">
         <Skeleton className="h-16 w-16 rounded-full" />
         <Skeleton className="h-6 w-48" />
         <Skeleton className="h-4 w-64" />
+        <p className="text-sm text-muted-foreground">Preparing your order…</p>
       </div>
     );
   }
