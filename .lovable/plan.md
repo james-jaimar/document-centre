@@ -1,98 +1,182 @@
+<final-text>## What actually broke
 
+This is not “the orders are gone”. The data for INV-00017 is still in the database.
 
-## Bug — "Order not found" everywhere
+For that order I verified:
+- the `orders` row exists
+- it is submitted (`submitted_at` is set)
+- it has pricing and branch data
+- it has a real `order_jobs` row with full `configuration.preview` data and the correct A4 snapshot
 
-Both customer (`/t/postnet/orders/:id`) and tenant-admin (`/admin/orders/:id`) order-detail pages return "Order not found" for INV-00017 — which exists in DB, has `app_id`, `tenant_id`, `submitted_at`, jobs, pricing — and would be readable under both RLS policies.
+The reason the admin page looks blank is that the page is now loading the parent `orders` row successfully, but the child queries (`order_jobs`, `order_documents`, `order_addresses`, `timeline_events`, `messages`, `payments`) are coming back empty in the browser.
 
-## Root cause (verified)
+## Root cause
 
-`src/lib/orders/queries.ts:fetchOrderDetail` does:
+### 1. RLS drift between `orders` and child tables
+`orders` has a platform-admin override policy:
 
-```ts
-.from("orders")
-.select("*, branch:branch_id(...), ordered_by:ordered_by_profile_id(id, phone, email, first_name, last_name, display_name)")
-.eq("id", orderId)
-.single()
-```
+- `Platform admins can manage all orders`
 
-The `ordered_by:ordered_by_profile_id(...)` embed targets `public.profiles`. But the only foreign key on that column is:
+But the child tables do not mirror that access model.
 
-```text
-orders_ordered_by_profile_id_fkey  →  auth.users(id)
-```
+Examples:
+- `order_jobs_select_policy`
+- `order_documents_select_policy`
+- `order_addresses_select_policy`
+- `timeline_events_select_policy`
+- `messages_select_policy`
+- `payments_select_policy`
 
-There is no FK from `orders` to `public.profiles`. PostgREST cannot resolve the embed → request fails (PGRST200 / relationship-not-found) → `error` is truthy → both pages show "Order not found".
+These policies rely on:
+- `user_can_read_order(...)`
+- or `user_is_staff_for(...)`
 
-The `branch:branch_id(...)` embed works fine (real FK to `public.branches`). The customer's `submitted_at IS NOT NULL` and `app_id IS NOT NULL` filters all pass. RLS for both `orders_select_membership` (admin override) and `Users can manage own orders` (customer) allow the read. The whole failure is the broken embed.
+Those helpers do **not** treat `platform_admin` as allowed staff.
 
-## Why we drifted into this
+Result:
+- platform admin can read the order row
+- platform admin cannot read the order’s jobs/docs/messages/timeline/payments
+- UI renders header + side panels but “No jobs in this order” in the main pane
 
-`fetchOrderDetail` was extended over recent fixes to surface "ordered by" phone/email on the OrderedByTab. The embed was written assuming PostgREST can join on the `profile_id` name suffix — it can't without an actual FK. Tests didn't catch it because there was no e2e check on order detail load.
+That is why the recent FK/query fix appeared to “break” the page: it fixed the hard failure on the main order query, which exposed the deeper policy mismatch that was already sitting underneath.
 
-## Fix
+### 2. Order lifecycle drift
+Submitted orders are still left with legacy `order_status = 'draft'`.
 
-### A. Add the missing FK so the embed resolves
-One DB migration:
+I confirmed there are submitted orders where:
+- `submitted_at IS NOT NULL`
+- but `order_status = 'draft'`
 
-```sql
-ALTER TABLE public.orders
-  ADD CONSTRAINT orders_ordered_by_profile_fk
-  FOREIGN KEY (ordered_by_profile_id)
-  REFERENCES public.profiles(id)
-  ON DELETE SET NULL;
-```
+That is a serious integrity smell. The app is mixing:
+- legacy cart/draft status
+- newer admin/customer/payment/fulfilment status columns
+- and separate order/job creation paths
 
-Notes:
-- Keeps the existing `orders_ordered_by_profile_id_fkey → auth.users` (profiles already mirror auth.users 1-1). Two FKs on the same column to two different tables is allowed; the embed in PostgREST is disambiguated by the FK constraint name if needed.
-- If the dual-FK causes ambiguity for PostgREST, switch the embed alias to use the constraint-name disambiguator: `ordered_by:orders_ordered_by_profile_fk(...)`.
+This is exactly the “layers of rubbish” problem: the system currently works by multiple parallel status models rather than one authoritative lifecycle.
 
-### B. Make `fetchOrderDetail` resilient regardless of relationship state
-Even after the FK is added, the order detail should not nuke the whole page if a single embed fails:
+### 3. Frontend order-detail code is too fragile
+`fetchOrderDetail` does 8 separate client-side queries and assumes child tables will behave consistently under RLS. They no longer do.
 
-1. Drop the inline `ordered_by` embed; fetch the profile row in a separate parallel `Promise.all` step keyed off `order.ordered_by_profile_id`. Same approach already used for jobs/addresses/timeline/messages/payments/documents.
-2. Replace `.single()` with `.maybeSingle()` and surface "Order not found" only when `data === null`, not on every error.
-3. Add a one-line `console.error("fetchOrderDetail failed", error)` so future regressions are visible in console (the user has already noted log-driven debugging).
+That fan-out pattern makes the UI vulnerable to:
+- partial RLS mismatches
+- empty-state lies (“no jobs”) when data actually exists
+- future regressions whenever a table policy changes
 
-### C. Tighten `OrderedByTab` to use the new shape
-- Read profile from `data.orderedByProfile` (new field returned by `fetchOrderDetail`) rather than `order.ordered_by`.
-- Fall back to order-level `customer_name / customer_email / company_name` (already happens).
+### 4. Minor UI drift also showed up
+The console warnings about refs in `OrderDeliveryTab` and `OrderedByTab` are not the main bug, but they are another sign this area has become patch-on-patch and needs cleanup, not more isolated fixes.
 
-### D. Audit other embeds in the same file
-While here, scan all PostgREST embeds in `src/lib/orders/queries.ts` and `src/hooks/useOrders.ts` for joins that rely on FKs that may not exist. Concretely verify:
+## Fix plan
 
-- `order_jobs (... job_proofs (*))` — `job_proofs.job_id → order_jobs.id`? Confirm FK exists.
-- `branch:branch_id(...)` — confirmed OK.
-- Anywhere else using `name:fk_column(...)` syntax — assert the FK exists in `pg_constraint`.
+### A. Fix the real access-control bug first
+Add explicit platform-admin read policies for every child table used by order detail and order list screens:
 
-If any are missing, either add the FK in the same migration or split into a separate fetch.
+- `order_jobs`
+- `order_documents`
+- `order_addresses`
+- `timeline_events`
+- `status_history`
+- `messages`
+- `payments`
+- `job_proofs`
+- `order_invoices`
+- `order_pricing_snapshots`
 
-### E. Cleanup pass on `fetchOrderDetail`
-The function already has one ugly bit:
+Pattern:
+- keep existing customer/staff rules
+- add a dedicated `has_role(auth.uid(), 'platform_admin')` override
+- do not weaken customer visibility rules
+- do not make tables publicly readable
 
-```ts
-.then((res) => res.error ? { data: [], error: null } : res) as any
-```
+This restores parity with `orders` and stops platform-admin sessions from seeing hollow orders.
 
-— a swallow on `timeline_events`. Delete the cast and the swallow; if the table doesn't exist for a tenant, fix the query, don't hide the error. Reduces "layers of rubbish" the user complained about.
+### B. Normalize the order lifecycle
+When checkout creates the placed order, the placed order must no longer remain `order_status='draft'`.
 
-## Files
+Set a consistent submitted state for placed orders, for example:
+- `order_status = 'confirmed'` or `submitted`
 
-- `supabase/migrations/<ts>_orders_profile_fk.sql` — add FK from `orders.ordered_by_profile_id → profiles.id`.
-- `src/lib/orders/queries.ts` — split the profile fetch out, drop the unsafe embed, swap `.single()` → `.maybeSingle()`, remove the timeline error swallow, add a single `console.error` on failure.
-- `src/components/orders/detail/OrderedByTab.tsx` — read from new `orderedByProfile` field.
-- `src/pages/admin/AdminOrderDetail.tsx` and `src/pages/dashboard/CustomerOrderDetail.tsx` — pass `orderedByProfile` from the hook through to `OrderedByTab`; show error banner when the query throws (vs the current "Order not found" catch-all that also fires for permission errors).
+Then update all reads to use one coherent rule set:
+- cart flow reads `order_status='cart'`
+- editable project flow reads true draft/quoted items only
+- placed order flow reads submitted/confirmed/production/completed/cancelled states
+
+This removes the hidden contradiction of “submitted draft orders”.
+
+### C. Refactor order detail into one authoritative data path
+Replace the current fragile fan-out in `fetchOrderDetail` with a single server-side read surface.
+
+Preferred cleanup:
+- create one DB function or one Edge Function for order detail aggregation
+- validate access once
+- return order + jobs + docs + messages + payments + profile in one shape
+
+Benefits:
+- one permission boundary
+- no partial empty states from mixed RLS outcomes
+- much easier to test
+- less duplicated logic across admin / branch / customer detail pages
+
+### D. Clean up the frontend detail screens
+Refactor admin, branch, and customer order detail pages to consume the same normalized response shape.
+
+Also clean up:
+- render-time `setSelectedJobId(...)` in detail pages → move to `useEffect`
+- misleading empty states → distinguish between:
+  - truly no jobs
+  - failed child data load
+  - unauthorized child data
+- Radix Tabs warnings by ensuring tab content wrappers remain ref-safe
+
+### E. Add guardrails so this cannot happen again
+Add regression coverage for:
+1. platform admin viewing a tenant order
+2. tenant staff viewing the same order
+3. customer viewing own order
+4. an order with jobs must never render as “No jobs” if jobs exist in DB
+5. submitted orders must never remain `order_status='draft'`
+
+## Files / areas to change
+
+### Database
+- new migration for platform-admin SELECT policies on child order tables
+- new migration to normalize submitted order lifecycle status
+- possibly a DB function for `get_order_detail(...)`
+
+### Frontend
+- `src/lib/orders/queries.ts` — replace fan-out client query strategy
+- `src/hooks/useOrders.ts` — switch to normalized detail fetch
+- `src/pages/admin/AdminOrderDetail.tsx`
+- `src/pages/branch/BranchOrderDetail.tsx`
+- `src/pages/dashboard/CustomerOrderDetail.tsx`
+- `src/components/orders/detail/OrderSummaryTab.tsx`
+- `src/components/orders/detail/JobDetailPanel.tsx`
+- `src/components/orders/detail/OrderDeliveryTab.tsx`
+- `src/components/orders/detail/OrderedByTab.tsx`
+
+### Checkout / order creation
+- `src/hooks/useCart.ts`
+- `supabase/functions/order-engine/index.ts`
 
 ## Verification
 
-1. Hard-reload `/admin/orders/d5de59d8-13b8-40ca-8cca-e011380c3aac?tenant=c0000000-0000-0000-0000-000000000002` as platform admin → page loads, jobs, pricing, branch info, ordered-by phone all populate.
-2. Hard-reload `/t/postnet/orders/d5de59d8-...` as the customer (`james_b_hawkins@me.com`) → same.
-3. Cancel/refund/mark-paid actions still work.
-4. INV-00012/13/14/15/16 (already cancelled) all open without "Order not found".
-5. Open browser console — no PGRST200/relationship errors.
+### Data integrity
+- INV-00017 opens for platform admin and shows its real job row
+- same order opens for tenant staff
+- same order opens for the owning customer
+- submitted orders no longer remain `order_status='draft'`
 
-## Out of scope
+### UI
+- admin order list shows job rows again
+- admin detail center panel no longer says “No jobs in this order” when jobs exist
+- customer detail page shows items/files correctly
+- no ref warnings from tabs in console
 
-- Backfilling preview data on INV-00014/15/16 (acknowledged as unrecoverable).
-- Refactoring the wider order/draft lifecycle.
-- Splitting `fetchOrderDetail` into a typed result interface (worth doing later but not required for this bug).
+## Important note
 
+The recent FK/profile work was not the true cause of the blank order body. It fixed one broken relationship query, but because this area is split across inconsistent RLS, mixed status models, and multi-query frontend reads, the next hidden fault immediately surfaced.
+
+So the right move here is not another tiny patch. It is:
+1. fix the RLS mismatch,
+2. normalize submitted order status,
+3. collapse order detail into one authoritative read path,
+4. then clean the three detail screens to consume that one source of truth.</final-text>
