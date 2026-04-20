@@ -27,6 +27,7 @@ import { ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { resize, rotate, pollJob, cropRasterize, getAsset, getDerivedFiles } from "@/lib/documentCentreApi";
+import { renderDocumentThumbnails } from "@/hooks/useDocumentUpload";
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import type { PaperSize, NearIsoMatch } from "@/lib/paperSizes";
 import { isLandscape, ISO_SIZES } from "@/lib/paperSizes";
