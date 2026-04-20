@@ -25,10 +25,30 @@ import type { Database } from "@/integrations/supabase/types";
 import { buildAdminPath } from "@/lib/adminRouting";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
+type MembershipRole =
+  | "owner"
+  | "admin"
+  | "sales"
+  | "production"
+  | "accounts"
+  | "branch_manager"
+  | "store_operator"
+  | "customer";
 
 const ROLE_LABELS: Record<AppRole, string> = {
   platform_admin: "Platform Admin",
   head_office_admin: "Tenant Admin",
+  branch_manager: "Branch Manager",
+  store_operator: "Store Operator",
+  customer: "Customer",
+};
+
+const MEMBERSHIP_ROLE_LABELS: Record<string, string> = {
+  owner: "Owner",
+  admin: "Admin",
+  sales: "Sales",
+  production: "Production",
+  accounts: "Accounts",
   branch_manager: "Branch Manager",
   store_operator: "Store Operator",
   customer: "Customer",
@@ -43,13 +63,14 @@ interface NavItem {
 interface NavSection {
   heading: string;
   items: NavItem[];
-  roles: AppRole[];
+  appRoles?: AppRole[];
+  membershipRoles?: MembershipRole[];
 }
 
 const PLATFORM_SECTIONS: NavSection[] = [
   {
     heading: "Platform",
-    roles: ["platform_admin"],
+    appRoles: ["platform_admin"],
     items: [
       { to: "/platform", icon: <Globe size={20} />, label: "Tenants" },
       { to: "/platform/users", icon: <Users size={20} />, label: "All Users" },
@@ -61,7 +82,8 @@ const PLATFORM_SECTIONS: NavSection[] = [
 const ADMIN_SECTIONS: NavSection[] = [
   {
     heading: "Operations",
-    roles: ["head_office_admin", "platform_admin", "branch_manager", "store_operator"],
+    appRoles: ["head_office_admin", "platform_admin", "branch_manager", "store_operator"],
+    membershipRoles: ["owner", "admin", "sales", "production", "accounts", "branch_manager", "store_operator"],
     items: [
       { to: "/admin", icon: <LayoutDashboard size={20} />, label: "Dashboard" },
       { to: "/admin/orders", icon: <ClipboardList size={20} />, label: "Order Manager" },
@@ -70,7 +92,8 @@ const ADMIN_SECTIONS: NavSection[] = [
   },
   {
     heading: "My Branch",
-    roles: ["branch_manager", "store_operator"],
+    appRoles: ["branch_manager", "store_operator"],
+    membershipRoles: ["branch_manager", "store_operator"],
     items: [
       { to: "/branch/products", icon: <Store size={20} />, label: "My Products" },
       { to: "/branch/settings", icon: <Wrench size={20} />, label: "Branch Settings" },
@@ -78,7 +101,8 @@ const ADMIN_SECTIONS: NavSection[] = [
   },
   {
     heading: "Configuration",
-    roles: ["head_office_admin", "platform_admin"],
+    appRoles: ["head_office_admin", "platform_admin"],
+    membershipRoles: ["owner", "admin"],
     items: [
       { to: "/admin/branches", icon: <Building2 size={20} />, label: "Branches" },
       { to: "/admin/products", icon: <Package size={20} />, label: "Products" },
@@ -89,14 +113,16 @@ const ADMIN_SECTIONS: NavSection[] = [
   },
   {
     heading: "Communications",
-    roles: ["head_office_admin", "platform_admin"],
+    appRoles: ["head_office_admin", "platform_admin"],
+    membershipRoles: ["owner", "admin"],
     items: [
       { to: "/admin/sent-mail", icon: <Mail size={20} />, label: "Sent Mail" },
     ],
   },
   {
     heading: "Settings",
-    roles: ["head_office_admin", "platform_admin"],
+    appRoles: ["head_office_admin", "platform_admin"],
+    membershipRoles: ["owner", "admin"],
     items: [
       { to: "/admin/settings", icon: <Settings size={20} />, label: "Tenant Settings" },
     ],
@@ -114,9 +140,26 @@ export default function AppSidebar() {
 
   const sections = isPlatformArea ? PLATFORM_SECTIONS : ADMIN_SECTIONS;
 
-  const visibleSections = sections.filter((section) =>
-    section.roles.some((r) => roles.includes(r))
-  );
+  const sectionVisible = (section: NavSection) => {
+    const appMatch = section.appRoles?.some((r) => roles.includes(r)) ?? false;
+    const memberMatch =
+      !!membershipRole &&
+      (section.membershipRoles?.includes(membershipRole as MembershipRole) ?? false);
+    return appMatch || memberMatch;
+  };
+
+  let visibleSections = sections.filter(sectionVisible);
+
+  // Defensive fallback: in admin area with a recognised membership role but
+  // no visible sections (e.g. role drift), surface at least the dashboard.
+  if (
+    !isPlatformArea &&
+    visibleSections.length === 0 &&
+    membershipRole &&
+    ["owner", "admin", "sales", "production", "accounts"].includes(membershipRole)
+  ) {
+    visibleSections = [ADMIN_SECTIONS[0]];
+  }
 
   const isActive = (path: string) => {
     if (path === "/admin" || path === "/platform") {
@@ -124,6 +167,20 @@ export default function AppSidebar() {
     }
     return location.pathname.startsWith(path);
   };
+
+  // Footer label: prefer membership role inside admin/branch shells so tenant
+  // admins don't appear as "Customer" (which comes from legacy user_roles).
+  const footerRoleLabel = isPlatformArea
+    ? (highestRole ? ROLE_LABELS[highestRole] : "User")
+    : (membershipRole
+        ? MEMBERSHIP_ROLE_LABELS[membershipRole] ?? membershipRole
+        : (highestRole ? ROLE_LABELS[highestRole] : "User"));
+
+  const headerSubtitle = isPlatformArea
+    ? "Platform Admin"
+    : (membershipRole
+        ? MEMBERSHIP_ROLE_LABELS[membershipRole] ?? membershipRole
+        : "Tenant Admin");
 
   return (
     <aside
@@ -143,9 +200,7 @@ export default function AppSidebar() {
               <h1 className="text-base font-bold leading-tight">
                 {isPlatformArea ? "Document Centre" : tenantName || "Document Centre"}
               </h1>
-              <p className="text-xs text-sidebar-muted">
-                {isPlatformArea ? "Platform Admin" : membershipRole || "Tenant Admin"}
-              </p>
+              <p className="text-xs text-sidebar-muted">{headerSubtitle}</p>
             </div>
           </div>
         )}
@@ -235,9 +290,7 @@ export default function AppSidebar() {
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{user.email}</p>
-              <p className="truncate text-xs text-sidebar-muted">
-                {highestRole ? ROLE_LABELS[highestRole] : "User"}
-              </p>
+              <p className="truncate text-xs text-sidebar-muted">{footerRoleLabel}</p>
             </div>
           </div>
         )}
