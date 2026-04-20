@@ -1,97 +1,62 @@
 
 
-## Bug
+## Issue
 
-After the inspect/render refactor, uploads fail immediately with:
+After the inspect/render split, when the user confirms a bleed/non-ISO/orientation advisory and Phase B (`renderDocumentThumbnails`) runs, there's **no progress indicator**. The dialog closes, the user sees a static "Trimming…" button momentarily, then nothing until the thumbnail eventually appears.
 
-```
-[doc-centre] POST v1/assets
-[doc-centre] GET v1/assets/<id>
-POST .../functions/v1/pdf-api 401 (Unauthorized)
-[upload] inspectDocument failed: Document Centre API error 401: {"error":"Unauthorized"}
-```
+The progress modal (`UploadProgressModal`) was previously driven by `uploads` state in `useDocumentUpload`. Now that rendering happens *after* upload completes (triggered by the advisory handlers in `OrderFiles.tsx`), the upload entry is already marked `done` and the modal doesn't reflect the new render work.
 
-So the asset is created (POST v1/assets returns 200), but the **follow-up `GET v1/assets/:id`** returns 401 from `pdf-api`. No metadata → no boxes → no advisory → no render.
+## Fix
 
-## Why
+Re-use the same `uploads` progress channel for post-advisory renders so the existing `UploadProgressModal` shows live progress during Phase B.
 
-`supabase/functions/pdf-api/index.ts` does this on every request:
+### 1. Expose a progress-aware render trigger from the hook
 
-```ts
-const body = await req.json();
-```
+In `src/hooks/useDocumentUpload.ts`, add a new function `renderWithProgress(docId, assetId, box, fileName)` that:
 
-`GET` requests sent from `documentCentreApi.request()` look like:
+- Re-opens the `uploads[fileName]` entry: sets `status: "analyzing"`, `progress: 50`, `statusText: "Trimming and rendering pages…"`.
+- Calls `renderDocumentThumbnails(docId, assetId, box, { onProgress })` — the existing helper already accepts an `onProgress` callback that updates message + percentage.
+- On completion sets `status: "done"`, `progress: 100`.
+- On error sets `status: "error"`.
 
-```ts
-fetch(edgeFnUrl, {
-  method: "POST",            // edge fn always POST
-  body: JSON.stringify({ path, method: "GET" }),
-})
-```
+Export it from the hook return alongside `reprocessDocument`.
 
-That body parse works for the initial POSTs. But there is a second, more likely failure: looking at the new `inspectDocument` flow, after `createAsset({ auto_queue: false })` we immediately poll `GET v1/assets/<id>` to read `boxes` / page count. The Document Centre API itself returns 401 on that path because it expects either:
+### 2. Wire advisory handlers in `OrderFiles.tsx` to use it
 
-- the asset to have completed an inspect job, or
-- the request to include a service token / signed header that previously was added by the `auto_queue: true` path.
+Replace the direct `renderDocumentThumbnails(...)` calls inside:
 
-The screenshot confirms the 401 originates **upstream** ("Document Centre API error 401"), not from our edge function's auth check (which would say "Unauthorized" before logging the GET line).
+- `handleBleedConfirm` (trim to ISO with bleed)
+- `handleScaleTo` (non-ISO scale)
+- `handleRotateToLandscape` (presentation rotation)
+- `handleKeepOriginal` (dismiss → render at MediaBox)
+- Custom-bleed handler
 
-## Likely upstream cause
+…with `renderWithProgress(doc.id, assetId, box, doc.file_name)`. The `UploadProgressModal` is already mounted and bound to `uploads`, so it'll pop back up automatically and animate from 50% → 100% during the render.
 
-The Document Centre API gates `/v1/assets/:id` until a job has touched the asset. With `auto_queue: false` no job is queued, so there is nothing tying the asset to the requesting user/tenant, and the API rejects the read.
+### 3. Modal visibility
 
-This means **`auto_queue: false` is not a supported standalone mode** — the API expects at least one job (inspect/metadata) to be enqueued at create time so it can authorize subsequent reads and so boxes get populated.
+`UploadProgressModal` opens whenever `uploads` has any entry not in `done`/`error` for >300ms. Re-setting an entry to `analyzing` will reopen it. Confirm in `OrderFiles.tsx` that the modal isn't gated on a separate "uploading" flag — if it is, switch it to derive open-state from `uploads` values.
 
-## Fix plan
+### 4. Status text
 
-### 1. Add an explicit "inspect only" path in `documentCentreApi.ts`
+Use distinct status messages so the user understands this is the post-confirmation render, not a re-upload:
 
-Two options, in order of preference:
-
-- **Preferred**: keep `auto_queue: true` in `createAsset`, but immediately after creation call `inspectAsset(assetId)` only if needed and **skip the rasterize step on the backend**. If the backend doesn't support inspect-only via `auto_queue`, use option B.
-- **Fallback**: call `createAsset({ auto_queue: true })` (which queues full processing), then on the client only consume the metadata it produces and **don't trigger a second `cropRasterize`**. This still single-renders if the auto-queued render uses the MediaBox, but for bleed/non-ISO cases we'd need to cancel/replace it — which puts us back to double rendering.
-
-### 2. Real fix: call inspect explicitly, no auto_queue rasterize
-
-`createAsset({ auto_queue: false })` → then call `POST v1/assets/:id/inspect` (already exposed as `inspectAsset`) → poll that job → read asset boxes. The `inspect` job is what authorizes/populates the asset, not the rasterize.
-
-That matches the API surface in `documentCentreApi.ts` which already exports `inspectAsset(assetId)` returning a `job_id`.
-
-So `inspectDocument` in `useDocumentUpload.ts` should be:
-
-1. `createAsset({ auto_queue: false })`
-2. `inspectAsset(assetId)` → `{ job_id }`
-3. `pollJob(job_id)` until completed
-4. `getAsset(assetId)` → now authorized, has `boxes`, `page_count`
-5. Run `detectNonIsoSize` / `detectNearIsoWithBleed`
-6. Decide whether to render now or wait for advisory
-7. Phase B `renderDocumentThumbnails` calls `cropRasterize` exactly once
-
-### 3. Confirm the edge function isn't the 401 source
-
-Quick check in `pdf-api/index.ts`: the auth gate runs `supabase.auth.getUser()` and returns 401 with `{"error":"Unauthorized"}`. That's the **same** body we're seeing — so it's possible the 401 is actually from our edge function rejecting a GET because `req.json()` succeeded but the user lookup failed mid-flight.
-
-Plan also includes:
-- Log whether the 401 originates from the edge function's auth branch vs. the upstream proxy. Add a one-line distinguishing prefix so we can tell them apart.
-- Verify `getAuthToken()` in `documentCentreApi.ts` is still returning a valid token when called from the new `inspectDocument` path (race with auth refresh on first call after page load).
+- Bleed confirm: "Trimming to A5 and rendering pages…"
+- Non-ISO scale: "Scaling to A4 and rendering pages…"
+- Rotation: "Rotating to landscape and rendering pages…"
+- Keep original: "Rendering pages…"
 
 ## Files to change
 
-- `src/hooks/useDocumentUpload.ts` — `inspectDocument`: add explicit `inspectAsset` + `pollJob` step before `getAsset`. Don't poll asset until inspect job completes.
-- `supabase/functions/pdf-api/index.ts` — make the two 401 branches distinguishable in the response body (`auth_failed_local` vs `auth_failed_upstream`) and log the upstream status text so we never have to guess again.
-- `src/lib/documentCentreApi.ts` — no signature changes needed; just confirm `inspectAsset` is exported (it is).
+- `src/hooks/useDocumentUpload.ts` — add `renderWithProgress`; export it.
+- `src/pages/dashboard/OrderFiles.tsx` — replace 4–5 advisory handler calls with `renderWithProgress`; ensure `UploadProgressModal` open-state reacts to `uploads`.
 
 ## Verification
 
-1. Upload a plain A4 PDF → console shows: `POST v1/assets` → `POST v1/assets/<id>/inspect` → `GET v1/jobs/<id>` (until completed) → `GET v1/assets/<id>` 200 → no advisory → single `crop-rasterize` → preview appears.
-2. Upload 160×230mm A5+bleed PDF → same prefix → bleed advisory appears with no thumbnails yet → confirm trim → single `crop-rasterize` at 148×210 → trimmed preview appears.
-3. Upload US Letter → non-ISO advisory, single render at chosen target.
-4. No more 401s on `v1/assets/:id`.
-5. Network tab: exactly one `crop-rasterize` per upload in every path.
-
-## Out of scope
-
-- VPS server diagnostics — we'll return to those once uploads work end-to-end.
-- Any backend changes to Document Centre API.
+1. Upload 160×222mm A5+bleed PDF → bleed advisory appears (no thumbnails yet, no progress modal).
+2. Click "This is A5 with bleed" → dialog closes → **`UploadProgressModal` reopens** showing "Trimming to A5 and rendering pages…" with progress trickling 50 → 95 → 100%.
+3. Modal closes when render completes; trimmed thumbnail appears.
+4. Repeat for "Keep full size" (renders at MediaBox, progress shown).
+5. Repeat for non-ISO scale and presentation rotation flows.
+6. Network tab: still exactly one `crop-rasterize` per upload.
 
