@@ -124,14 +124,22 @@ function useRecentOrderItems(userId: string | undefined, tenantId: string | null
       if (!userId || !tenantId) return [];
       const { data, error } = await supabase
         .from("order_items")
-        .select("id, title, updated_at, order_id, build_status, orders!inner(user_id, order_status, tenant_id)")
+        .select(
+          "id, title, updated_at, order_id, build_status, orders!inner(user_id, order_status, tenant_id), documents(id), document_sections(id)"
+        )
         .eq("orders.user_id", userId)
         .eq("orders.tenant_id", tenantId)
         .in("orders.order_status", ["draft", "quoted"])
         .order("updated_at", { ascending: false })
-        .limit(5);
+        .limit(20);
       if (error) throw error;
-      return data;
+      // Filter out hollow drafts (no uploaded files and no sections)
+      const filtered = (data ?? []).filter((item: any) => {
+        const docs = Array.isArray(item.documents) ? item.documents.length : 0;
+        const secs = Array.isArray(item.document_sections) ? item.document_sections.length : 0;
+        return docs > 0 || secs > 0;
+      });
+      return filtered.slice(0, 5);
     },
     enabled: !!userId && !!tenantId,
   });
