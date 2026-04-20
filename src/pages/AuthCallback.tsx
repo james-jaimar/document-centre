@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { getDefaultRoute } from "@/hooks/useAuth";
 import { pickPrimaryMembership, resolveTenantLanding, type LandingMembership } from "@/lib/auth/landingRoute";
+import { buildAdminPath } from "@/lib/adminRouting";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -68,8 +69,17 @@ const AuthCallback = () => {
       // otherwise route by membership role for this tenant.
       if (tenantSlug) {
         if (highest === "platform_admin") {
+          const { data: t } = await supabase
+            .from("tenants")
+            .select("id")
+            .eq("slug", tenantSlug)
+            .maybeSingle();
           toast.success("Signed in");
-          navigate(`/t/${tenantSlug}/dashboard`, { replace: true });
+          if (t?.id) {
+            navigate(buildAdminPath("/admin", t.id), { replace: true });
+          } else {
+            navigate("/platform", { replace: true });
+          }
           return;
         }
         const match = memberships.find((m) => m.tenants?.slug === tenantSlug);
