@@ -10,8 +10,20 @@ const fmt = (amount: number, currency = "ZAR") =>
   new Intl.NumberFormat("en-ZA", { style: "currency", currency, minimumFractionDigits: 2 }).format(amount);
 
 export function OrderPricingTab({ order, jobs, payments }: Props) {
+  const fulfilmentLine = order.fulfillment_type === "collection"
+    ? `Collection${order.branch?.name ? ` — ${order.branch.name}` : ""}`
+    : order.fulfillment_type === "delivery"
+    ? "Delivery"
+    : null;
+
   return (
     <div className="rounded-lg border bg-card p-4 space-y-4 text-sm">
+      {fulfilmentLine && (
+        <div className="flex justify-between text-xs border-b pb-2">
+          <span className="text-muted-foreground">Fulfilment</span>
+          <span className="font-medium">{fulfilmentLine}</span>
+        </div>
+      )}
       {/* Job line items */}
       {jobs.length > 0 && (
         <div className="space-y-1">
@@ -34,10 +46,10 @@ export function OrderPricingTab({ order, jobs, payments }: Props) {
           <span className="text-muted-foreground">Net Price</span>
           <span className="font-medium">{fmt(order.subtotal)}</span>
         </div>
-        {order.delivery_amount > 0 && (
+        {(order.fulfillment_type === "delivery" || order.delivery_amount > 0) && (
           <div className="flex justify-between">
             <span className="text-muted-foreground">Delivery</span>
-            <span>{fmt(order.delivery_amount)}</span>
+            <span>{fmt(order.delivery_amount || 0)}</span>
           </div>
         )}
         {order.discount_amount > 0 && (
