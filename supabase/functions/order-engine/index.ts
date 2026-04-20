@@ -673,6 +673,94 @@ async function sendMessage(
   return json({ success: true, message_id: msg?.id, created_at: msg?.created_at }, 201);
 }
 
+async function cancelOrder(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any
+) {
+  const { order_id, reason } = payload;
+  if (!order_id) return err("Missing order_id");
+  if (!reason || typeof reason !== "string" || reason.trim().length < 3) {
+    return err("A cancellation reason is required");
+  }
+
+  const { data: order, error: oErr } = await admin
+    .from("orders")
+    .select("id, app_id, tenant_id, branch_id, order_number, admin_status, order_status, payment_status, amount_paid")
+    .eq("id", order_id)
+    .single();
+  if (oErr || !order) return err("Order not found", 404);
+
+  if (order.admin_status === "cancelled" || order.order_status === "cancelled") {
+    return err("Order is already cancelled");
+  }
+  if (order.admin_status === "completed") {
+    return err("Completed orders cannot be cancelled");
+  }
+
+  // Permission: tenant owner or admin only
+  const { data: membership } = await admin
+    .from("tenant_memberships")
+    .select("role")
+    .eq("profile_id", userId)
+    .eq("tenant_id", order.tenant_id)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (!membership || !["owner", "admin"].includes(membership.role)) {
+    return err("Only tenant owners or admins can cancel orders", 403);
+  }
+
+  const refundPending = Number(order.amount_paid) > 0;
+
+  // Cancel non-completed/non-cancelled jobs
+  const { error: jobsErr } = await admin
+    .from("order_jobs")
+    .update({ job_status: "cancelled" })
+    .eq("order_id", order_id)
+    .not("job_status", "in", "(completed,cancelled)");
+  if (jobsErr) return err(`Failed to cancel jobs: ${jobsErr.message}`);
+
+  // Cancel the order itself
+  const { error: updErr } = await admin
+    .from("orders")
+    .update({
+      admin_status: "cancelled",
+      order_status: "cancelled",
+      customer_status: "cancelled",
+      fulfilment_status: "cancelled",
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", order_id);
+  if (updErr) return err(`Failed to cancel order: ${updErr.message}`);
+
+  await Promise.all([
+    admin.from("status_history").insert({
+      app_id: order.app_id,
+      tenant_id: order.tenant_id,
+      order_id,
+      entity_type: "order",
+      from_status: order.admin_status,
+      to_status: "cancelled",
+      reason,
+      changed_by: userId,
+    }),
+    admin.from("timeline_events").insert({
+      app_id: order.app_id,
+      tenant_id: order.tenant_id,
+      branch_id: order.branch_id,
+      order_id,
+      event_type: "order_cancelled",
+      visibility: "both",
+      actor_type: "admin",
+      actor_profile_id: userId,
+      description: `Order ${order.order_number} cancelled${refundPending ? " (refund pending)" : ""}: ${reason}`,
+      metadata: { reason, refund_pending: refundPending, amount_paid: order.amount_paid },
+    }),
+  ]);
+
+  return json({ success: true, refund_pending: refundPending });
+}
+
 // ── Main handler ────────────────────────────────────────────
 
 Deno.serve(async (req) => {
