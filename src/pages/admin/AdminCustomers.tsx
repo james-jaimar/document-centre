@@ -12,6 +12,7 @@ import { useTenantCustomers } from "@/hooks/useTenantCustomers";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { buildAdminPath } from "@/lib/adminRouting";
 import { AddCustomerDialog } from "@/components/admin/AddCustomerDialog";
+import { resolveDisplayName } from "@/lib/displayName";
 
 const ZAR = new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR" });
 
@@ -97,11 +98,7 @@ export default function AdminCustomers() {
             </TableHeader>
             <TableBody>
               {filtered.map((c) => {
-                const name =
-                  c.display_name ||
-                  [c.first_name, c.last_name].filter(Boolean).join(" ") ||
-                  c.email?.split("@")[0] ||
-                  "—";
+                const name = resolveDisplayName(c, "—");
                 return (
                   <TableRow key={c.profile_id} className="cursor-pointer">
                     <TableCell className="font-medium">
