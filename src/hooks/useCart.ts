@@ -536,6 +536,7 @@ export function usePlaceOrder() {
             amount_due: totalAmount,
           },
           delivery_address: input.deliveryMethod === "delivery" ? input.deliveryAddress : undefined,
+          fulfillment_type: input.deliveryMethod,
           jobs,
         },
       });
