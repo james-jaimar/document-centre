@@ -16,6 +16,7 @@ import {
   Download,
   Calendar,
   Receipt,
+  Eye,
 } from "lucide-react";
 import { format } from "date-fns";
 import { useState } from "react";
@@ -24,6 +25,8 @@ import { OrderInvoicesList } from "@/components/orders/OrderInvoicesList";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import PreviewLightbox from "@/components/order/PreviewLightbox";
+import { inferPreviewTypeFromJob } from "@/lib/orders/inferPreviewType";
 
 const CUSTOMER_STATUS_LABEL: Record<string, string> = {
   awaiting_payment: "Awaiting Payment",
