@@ -119,6 +119,16 @@ export default function AdminOrderDetail() {
               </Button>
             </>
           )}
+          {order.admin_status !== "cancelled" && order.admin_status !== "completed" && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-destructive hover:text-destructive"
+              onClick={() => setCancelDialogOpen(true)}
+            >
+              <XCircle className="mr-2 h-4 w-4" /> Cancel order
+            </Button>
+          )}
         </div>
       </div>
 
@@ -133,6 +143,14 @@ export default function AdminOrderDetail() {
         open={refundDialogOpen}
         onOpenChange={setRefundDialogOpen}
         orderId={order.id}
+        amountPaid={Number(order.amount_paid)}
+        currency={order.currency}
+      />
+      <CancelOrderDialog
+        open={cancelDialogOpen}
+        onOpenChange={setCancelDialogOpen}
+        orderId={order.id}
+        orderNumber={order.order_number || order.id.slice(0, 8)}
         amountPaid={Number(order.amount_paid)}
         currency={order.currency}
       />
