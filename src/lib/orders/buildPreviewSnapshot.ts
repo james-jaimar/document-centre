@@ -199,9 +199,12 @@ function buildPageSequence(
   for (const section of bodySections) {
     const doc = documents.find((d) => d.id === section.document_id);
     if (!doc) continue;
-    const thumbnails = Array.isArray(doc.thumbnail_urls)
-      ? (doc.thumbnail_urls as string[])
+    const rawThumbs = Array.isArray(doc.thumbnail_urls)
+      ? (doc.thumbnail_urls as any[])
       : [];
+    const thumbnails = rawThumbs.map((t: any) =>
+      typeof t === "string" ? t : (t?.path || t?.url || ""),
+    );
     const pageCount = doc.page_count ?? thumbnails.length;
 
     for (let i = 0; i < pageCount; i++) {
