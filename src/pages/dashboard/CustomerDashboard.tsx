@@ -232,12 +232,9 @@ const CustomerDashboard = () => {
                       key={f.id}
                       className="product-tile"
                       onClick={() => handlePickProduct(f.id)}
-                      disabled={creatingFamily === f.id}
                     >
                       <div className="product-thumb overflow-hidden">
-                        {creatingFamily === f.id ? (
-                          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                        ) : (SLUG_IMAGE_MAP[f.slug] || f.image_url) ? (
+                        {(SLUG_IMAGE_MAP[f.slug] || f.image_url) ? (
                           <img src={SLUG_IMAGE_MAP[f.slug] || f.image_url!} alt={f.name} className="h-full w-full object-cover" />
                         ) : (
                           <Icon className="h-9 w-9 text-muted-foreground" />
