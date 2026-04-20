@@ -36,23 +36,29 @@ export function JobDetailPanel({ job, documents }: Props) {
             <div className="text-xs text-muted-foreground">Job ID</div>
             <div className="text-lg font-bold font-mono">{job.job_number}</div>
           </div>
-          <div className="text-right space-y-2">
-            <div>
-              <div className="text-xs text-muted-foreground">Job Name</div>
-              <div className="text-sm font-semibold">{job.job_name || job.product_name}</div>
-            </div>
-            {hasPreview && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => setPreviewOpen(true)}
-              >
-                <Eye className="h-3.5 w-3.5 mr-1.5" />
-                View customer preview
-              </Button>
-            )}
+          <div className="text-right">
+            <div className="text-xs text-muted-foreground">Job Name</div>
+            <div className="text-sm font-semibold">{job.job_name || job.product_name}</div>
           </div>
+        </div>
+
+        {/* Customer preview action — visible to all staff who can view orders */}
+        <div className="mt-3 pt-3 border-t">
+          {hasPreview ? (
+            <Button
+              variant="default"
+              size="sm"
+              className="w-full"
+              onClick={() => setPreviewOpen(true)}
+            >
+              <Eye className="h-4 w-4 mr-2" />
+              View customer preview ({previewThumbs.filter(Boolean).length} pages)
+            </Button>
+          ) : (
+            <div className="text-xs text-muted-foreground italic text-center">
+              No customer preview available for this job
+            </div>
+          )}
         </div>
 
         <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-3">
