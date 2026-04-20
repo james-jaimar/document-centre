@@ -108,7 +108,7 @@ export default function FileList({
                   </span>
                 )}
                 {awaitingReview && (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-warning bg-warning/10 px-1.5 py-0.5 rounded">
                     <Eye className="h-3 w-3" />
                     Review needed
                   </span>
@@ -148,7 +148,7 @@ export default function FileList({
               ) : isError ? (
                 <AlertCircle className="h-4 w-4 text-destructive" />
               ) : awaitingReview ? (
-                <Eye className="h-4 w-4 text-amber-500" />
+                <Eye className="h-4 w-4 text-warning" />
               ) : (
                 <CheckCircle2 className="h-4 w-4 text-primary" />
               )}
