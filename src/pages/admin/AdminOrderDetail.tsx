@@ -31,6 +31,7 @@ export default function AdminOrderDetail() {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [refundDialogOpen, setRefundDialogOpen] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [markingPaid, setMarkingPaid] = useState(false);
   const queryClient = useQueryClient();
 
