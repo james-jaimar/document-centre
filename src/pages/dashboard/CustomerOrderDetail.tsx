@@ -268,6 +268,17 @@ const CustomerOrderDetail = () => {
                             Qty: {job.quantity}
                             {job.unit_label ? ` ${job.unit_label}` : ""}
                           </p>
+                          {(config.preview?.thumbnails?.length ?? 0) > 0 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="mt-2 h-7 text-xs"
+                              onClick={() => setPreviewJob(job)}
+                            >
+                              <Eye className="h-3.5 w-3.5 mr-1.5" />
+                              View Preview
+                            </Button>
+                          )}
                         </div>
                         <div className="text-right shrink-0">
                           <p className="font-semibold text-foreground">{fmt(job.gross_price)}</p>
