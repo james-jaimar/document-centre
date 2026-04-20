@@ -9,6 +9,7 @@ import {
   cropRasterize,
   getAsset,
   getDerivedFiles,
+  inspectAsset,
   pollJob,
 } from "@/lib/documentCentreApi";
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
