@@ -412,7 +412,7 @@ export function usePlaceOrder() {
             ? supabase
                 .from("document_sections")
                 .select(
-                  "id, order_item_id, label, section_type, page_range_start, page_range_end, paper_stock, paper_weight_gsm, is_color, is_duplex, lamination, color, sort_order"
+                  "id, order_item_id, document_id, label, section_type, page_range_start, page_range_end, paper_stock, paper_weight_gsm, is_color, is_duplex, lamination, color, sort_order"
                 )
                 .in("order_item_id", itemIds)
                 .order("sort_order")
