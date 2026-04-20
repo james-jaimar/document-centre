@@ -397,5 +397,40 @@ export function useDocumentUpload(orderItemId: string | undefined) {
 
   const clearUploads = useCallback(() => setUploads({}), []);
 
-  return { uploads, uploadFile, uploadFiles, clearUploads, reprocessDocument };
+  /* ── Phase B (deferred): render thumbnails after advisory resolved, with live progress ── */
+  const renderWithProgress = useCallback(
+    async (
+      docId: string,
+      assetId: string,
+      box: [number, number, number, number],
+      fileName: string,
+      initialStatusText = "Trimming and rendering pages…",
+    ) => {
+      // Re-open the upload entry in the progress modal
+      updateUpload(fileName, {
+        fileName,
+        status: "analyzing",
+        progress: 50,
+        statusText: initialStatusText,
+        error: undefined,
+      });
+      try {
+        await renderDocumentThumbnails(docId, assetId, box, {
+          onProgress: (msg, pct) =>
+            updateUpload(fileName, { statusText: msg, progress: pct }),
+        });
+        updateUpload(fileName, { status: "done", progress: 100, statusText: "Ready" });
+        qc.invalidateQueries({ queryKey: ["documents", orderItemId] });
+      } catch (err: any) {
+        console.error("[upload] renderWithProgress failed:", err);
+        updateUpload(fileName, {
+          status: "error",
+          error: err?.message || "Render failed",
+        });
+      }
+    },
+    [updateUpload, qc, orderItemId],
+  );
+
+  return { uploads, uploadFile, uploadFiles, clearUploads, reprocessDocument, renderWithProgress };
 }

@@ -27,7 +27,7 @@ import { ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { resize, rotate, pollJob, cropRasterize, getAsset, getDerivedFiles } from "@/lib/documentCentreApi";
-import { renderDocumentThumbnails } from "@/hooks/useDocumentUpload";
+
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import type { PaperSize, NearIsoMatch } from "@/lib/paperSizes";
 import { isLandscape, ISO_SIZES } from "@/lib/paperSizes";
@@ -55,7 +55,7 @@ export default function OrderFiles() {
     refetchSections,
   } = useOrderData(effectiveOrderId);
 
-  const { uploads, uploadFiles, reprocessDocument, clearUploads } = useDocumentUpload(orderItem?.id);
+  const { uploads, uploadFiles, reprocessDocument, clearUploads, renderWithProgress } = useDocumentUpload(orderItem?.id);
   const addSection = useAddSection();
   const updateSection = useUpdateSection();
   const deleteSection = useDeleteSection();
@@ -283,9 +283,15 @@ export default function OrderFiles() {
     // Mark resolved + render once at MediaBox
     if (advisoryDoc.backendAssetId) {
       try {
-        toast.info("Rendering preview…");
+        setUploadModalOpen(true);
         const mediaBox = await getMediaBox(advisoryDoc.backendAssetId);
-        await renderDocumentThumbnails(advisoryDoc.id, advisoryDoc.backendAssetId, mediaBox);
+        await renderWithProgress(
+          advisoryDoc.id,
+          advisoryDoc.backendAssetId,
+          mediaBox,
+          advisoryDoc.fileName,
+          "Rendering pages…",
+        );
       } catch (err: any) {
         toast.error("Render failed", { description: err.message });
       }
@@ -319,9 +325,15 @@ export default function OrderFiles() {
       await pollJob(job_id);
 
       // Single render at the new MediaBox (resize updates the asset's box)
-      toast.info("Rendering preview…");
+      setUploadModalOpen(true);
       const newBox = await getMediaBox(advisoryDoc.backendAssetId);
-      await renderDocumentThumbnails(advisoryDoc.id, advisoryDoc.backendAssetId, newBox);
+      await renderWithProgress(
+        advisoryDoc.id,
+        advisoryDoc.backendAssetId,
+        newBox,
+        advisoryDoc.fileName,
+        `Scaling to ${target.name} and rendering pages…`,
+      );
 
       const existing = documents.find((d) => d.id === advisoryDoc.id);
       const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
@@ -362,9 +374,15 @@ export default function OrderFiles() {
       await pollJob(job_id);
 
       // Single render at the new (rotated) MediaBox
-      toast.info("Rendering preview…");
+      setUploadModalOpen(true);
       const newBox = await getMediaBox(orientationDoc.backendAssetId);
-      await renderDocumentThumbnails(orientationDoc.id, orientationDoc.backendAssetId, newBox);
+      await renderWithProgress(
+        orientationDoc.id,
+        orientationDoc.backendAssetId,
+        newBox,
+        orientationDoc.fileName,
+        "Rotating to landscape and rendering pages…",
+      );
 
       const existing = documents.find((d) => d.id === orientationDoc.id);
       const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
@@ -399,9 +417,15 @@ export default function OrderFiles() {
       // Render once at MediaBox (full size, no trim)
       if (bleedDoc.backendAssetId) {
         try {
-          toast.info("Rendering preview…");
+          setUploadModalOpen(true);
           const mediaBox = await getMediaBox(bleedDoc.backendAssetId);
-          await renderDocumentThumbnails(bleedDoc.id, bleedDoc.backendAssetId, mediaBox);
+          await renderWithProgress(
+            bleedDoc.id,
+            bleedDoc.backendAssetId,
+            mediaBox,
+            bleedDoc.fileName,
+            "Rendering pages…",
+          );
         } catch (err: any) {
           toast.error("Render failed", { description: err.message });
         }
@@ -445,8 +469,14 @@ export default function OrderFiles() {
       ];
 
       // Single render at the trimmed box — no separate cropRasterize+reThumbnail
-      toast.info("Trimming and rendering…");
-      await renderDocumentThumbnails(bleedDoc.id, bleedDoc.backendAssetId, trimBox);
+      setUploadModalOpen(true);
+      await renderWithProgress(
+        bleedDoc.id,
+        bleedDoc.backendAssetId,
+        trimBox,
+        bleedDoc.fileName,
+        `Trimming to ${bleedDoc.nearMatch.matchedSize.name} and rendering pages…`,
+      );
 
       const trimWidthPt = Math.abs(trimBox[2] - trimBox[0]);
       const trimHeightPt = Math.abs(trimBox[3] - trimBox[1]);
