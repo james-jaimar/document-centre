@@ -101,6 +101,7 @@ const CustomerOrderDetail = () => {
 
   const [messageText, setMessageText] = useState("");
   const [sending, setSending] = useState(false);
+  const [previewJob, setPreviewJob] = useState<any | null>(null);
 
   const order = data?.order;
   const jobs = data?.jobs ?? [];
