@@ -23,6 +23,91 @@ interface UploadProgress {
   statusText?: string;
 }
 
+/**
+ * Render thumbnails for an asset by cropping to the supplied PDF box (in points)
+ * and updating the documents row when done. Single rasterization pass.
+ *
+ * Exported so OrderFiles advisory handlers (bleed/scale/rotate) can trigger
+ * the single render after the user resolves the advisory.
+ */
+export async function renderDocumentThumbnails(
+  docId: string,
+  assetId: string,
+  box: [number, number, number, number],
+  opts?: { onProgress?: (msg: string, pct: number) => void },
+): Promise<string[]> {
+  const onProgress = opts?.onProgress ?? (() => {});
+
+  onProgress("Rendering pages…", 60);
+
+  // Single rasterization pass at the resolved box
+  const { job_id: cropJobId } = await cropRasterize(assetId, box, 150);
+  await pollJob(cropJobId, (job) => {
+    if (job.status === "pending") onProgress("Queued — waiting for server…", 65);
+    else if (job.status === "running") onProgress("Rendering pages…", 75);
+  });
+
+  // Poll for derived files to appear (rasterization writes them async)
+  const asset = await getAsset(assetId);
+  const expectedPages = asset.page_count ?? 1;
+
+  let derivedFiles = await getDerivedFiles(assetId);
+  let thumbnailPaths = pickBestPerPage(
+    derivedFiles,
+    asset.thumbnail_storage_path,
+    asset.preview_storage_path,
+  );
+
+  const MAX_THUMB_POLLS = 60;
+  let lastCount = -1;
+  let stalePolls = 0;
+
+  for (let i = 0; i < MAX_THUMB_POLLS; i++) {
+    const found = thumbnailPaths.length;
+    if (found >= expectedPages) break;
+
+    if (found === lastCount) {
+      stalePolls++;
+      if (stalePolls >= 15 && found >= expectedPages * 0.8) break;
+    } else {
+      stalePolls = 0;
+    }
+    lastCount = found;
+
+    const pct = 75 + (found / expectedPages) * 20;
+    onProgress(`Rendering pages… (${found}/${expectedPages})`, Math.min(95, pct));
+
+    await new Promise((r) => setTimeout(r, 3000));
+    derivedFiles = await getDerivedFiles(assetId);
+    thumbnailPaths = pickBestPerPage(
+      derivedFiles,
+      asset.thumbnail_storage_path,
+      asset.preview_storage_path,
+    );
+  }
+
+  // Compute final dimensions from the resolved box
+  const widthPt = Math.abs(box[2] - box[0]);
+  const heightPt = Math.abs(box[3] - box[1]);
+  const pageWidthMm = (widthPt * 25.4) / 72;
+  const pageHeightMm = (heightPt * 25.4) / 72;
+
+  // Bust signed-url cache so the browser fetches the freshly rendered images
+  clearSignedUrlCache(thumbnailPaths);
+
+  await supabase
+    .from("documents")
+    .update({
+      thumbnail_urls: thumbnailPaths,
+      page_width_mm: Math.round(pageWidthMm * 10) / 10,
+      page_height_mm: Math.round(pageHeightMm * 10) / 10,
+      document_status: "ready",
+    })
+    .eq("id", docId);
+
+  return thumbnailPaths;
+}
+
 export function useDocumentUpload(orderItemId: string | undefined) {
   const { user } = useAuth();
   const { tenantId } = useTenantContext();
@@ -39,225 +124,130 @@ export function useDocumentUpload(orderItemId: string | undefined) {
     []
   );
 
-  /* ── Process: register asset → poll jobs → fetch metadata ── */
+  /* ── Phase A: Inspect — register asset & extract metadata, NO thumbnails yet ── */
 
-  /** Helper: fetch asset metadata + derived thumbnails and build arrays */
-  const fetchThumbnails = useCallback(
-    async (asset_id: string) => {
-      const asset = await getAsset(asset_id);
-      const derivedFiles = await getDerivedFiles(asset_id);
-
-      // Diagnostic: log what the server actually returns
-      console.log("[upload] Derived files:", derivedFiles.map(df => ({
-        kind: df.kind, page: df.page, media_type: df.media_type,
-        path: df.storage_path?.slice(-40)
-      })));
-
-      const pageCount = asset.page_count ?? null;
-
-      // Use trim box for dimensions (actual finished size) if available,
-      // falling back through crop → media box (width_pt/height_pt)
-      const boxes = asset.boxes as Record<string, number[]> | null;
-      let effectiveWidthPt = asset.width_pt;
-      let effectiveHeightPt = asset.height_pt;
-
-      if (boxes) {
-        // Priority: TrimBox → CropBox → MediaBox → asset.width_pt/height_pt
-        const preferredBox = boxes.TrimBox ?? boxes.CropBox ?? boxes.MediaBox;
-        if (preferredBox && preferredBox.length === 4) {
-          const [x0, y0, x1, y1] = preferredBox;
-          effectiveWidthPt = Math.abs(x1 - x0);
-          effectiveHeightPt = Math.abs(y1 - y0);
-          console.log(`[upload] Using ${boxes.TrimBox ? 'TrimBox' : boxes.CropBox ? 'CropBox' : 'MediaBox'}: ${effectiveWidthPt}×${effectiveHeightPt}pt`);
-        }
-      }
-
-      const pageWidthMm = effectiveWidthPt != null ? (effectiveWidthPt * 25.4) / 72 : null;
-      const pageHeightMm = effectiveHeightPt != null ? (effectiveHeightPt * 25.4) / 72 : null;
-
-      // Pick the highest-resolution candidate per page (prefers cropped, then largest width)
-      const thumbnailPaths = pickBestPerPage(
-        derivedFiles,
-        asset.thumbnail_storage_path,
-        asset.preview_storage_path,
-      );
-
-      // Log selected resolution for diagnostics
-      const bestFile = derivedFiles.find(df => df.storage_path && toStorageKey(df.storage_path) === thumbnailPaths[0]);
-      if (bestFile) {
-        const effectiveDpi = bestFile.width && pageWidthMm ? bestFile.width / (pageWidthMm / 25.4) : null;
-        console.log(`[upload] Best thumbnail: ${bestFile.width}×${bestFile.height}px, ~${effectiveDpi?.toFixed(0)} DPI`);
-      }
-
-      return { asset, pageCount, pageWidthMm, pageHeightMm, thumbnailPaths };
-    },
-    []
-  );
-
-  /* ── Process: register asset → poll jobs → fetch metadata ── */
-
-  const processDocument = useCallback(
+  const inspectDocument = useCallback(
     async (docId: string, storagePath: string, fileName: string) => {
       try {
-        // 1. Register asset with Document Centre API
-        console.log("[upload] Registering asset:", storagePath);
-        updateUpload(fileName, { statusText: "Registering file…" });
+        updateUpload(fileName, { statusText: "Registering file…", progress: 30 });
 
+        // 1. Register asset WITHOUT auto-queuing rasterization
         const { asset_id, job_ids } = await createAsset({
           original_filename: fileName,
           media_type: "application/pdf",
           source_storage_path: storagePath,
-          auto_queue: true,
+          auto_queue: false,
         });
 
-        console.log("[upload] Asset registered:", asset_id, "jobs:", job_ids);
-
-        // 2. Save backend_asset_id to documents row
         await supabase
           .from("documents")
           .update({ backend_asset_id: asset_id })
           .eq("id", docId);
 
-        // 3. Poll all jobs to completion with queue-aware status
+        // 2. Wait for any metadata jobs the backend kicked off automatically
         if (job_ids.length > 0) {
-          updateUpload(fileName, { progress: 35, statusText: "Queued — waiting for server…" });
+          updateUpload(fileName, { progress: 35, statusText: "Inspecting PDF…" });
           await Promise.all(
             job_ids.map((jobId) =>
               pollJob(jobId, (job) => {
-                console.log(`[upload] Job ${jobId}: ${job.status}`);
                 if (job.status === "pending") {
-                  updateUpload(fileName, { progress: 35, statusText: "Queued — waiting for server…" });
+                  updateUpload(fileName, { progress: 35, statusText: "Queued — inspecting…" });
                 } else if (job.status === "running") {
-                  updateUpload(fileName, { progress: 45, statusText: "Processing PDF…" });
+                  updateUpload(fileName, { progress: 45, statusText: "Reading page metadata…" });
                 }
               })
             )
           );
         }
 
-        updateUpload(fileName, { progress: 50, statusText: "Checking page dimensions…" });
+        // 3. Poll the asset itself until we have boxes + page_count (metadata may
+        //    populate slightly after job completes for newly-created assets)
+        let asset = await getAsset(asset_id);
+        for (let i = 0; i < 20 && (!asset.boxes || asset.page_count == null); i++) {
+          await new Promise((r) => setTimeout(r, 1000));
+          asset = await getAsset(asset_id);
+        }
 
-        // 4. Fetch asset to check for TrimBox ≠ MediaBox
-        const assetMeta = await getAsset(asset_id);
-        const boxes = assetMeta.boxes as Record<string, number[]> | null;
+        const boxes = asset.boxes as Record<string, number[]> | null;
         const trimBox = boxes?.TrimBox;
-        const mediaBox = boxes?.MediaBox;
+        const cropBox = boxes?.CropBox;
+        const mediaBox =
+          boxes?.MediaBox ?? [0, 0, asset.width_pt ?? 595, asset.height_pt ?? 842];
 
-        const boxesDiffer = trimBox && mediaBox &&
-          trimBox.length === 4 && mediaBox.length === 4 &&
+        // 4. Pick the box for dimensions reporting (TrimBox → CropBox → MediaBox)
+        const reportingBox = trimBox ?? cropBox ?? mediaBox;
+        const widthPt = Math.abs(reportingBox[2] - reportingBox[0]);
+        const heightPt = Math.abs(reportingBox[3] - reportingBox[1]);
+        const pageWidthMm = (widthPt * 25.4) / 72;
+        const pageHeightMm = (heightPt * 25.4) / 72;
+
+        // 5. Detect non-ISO size or near-ISO bleed for the advisory
+        const detectedSize = detectNonIsoSize(pageWidthMm, pageHeightMm);
+        const nearIsoMatch = !detectedSize
+          ? detectNearIsoWithBleed(pageWidthMm, pageHeightMm)
+          : null;
+
+        // 6. TrimBox differs from MediaBox? Treat it as an explicit author intent
+        //    (no advisory needed — render to TrimBox directly).
+        const explicitTrim =
+          trimBox &&
+          mediaBox &&
+          trimBox.length === 4 &&
+          mediaBox.length === 4 &&
           (Math.abs(trimBox[0] - mediaBox[0]) > 0.5 ||
-           Math.abs(trimBox[1] - mediaBox[1]) > 0.5 ||
-           Math.abs(trimBox[2] - mediaBox[2]) > 0.5 ||
-           Math.abs(trimBox[3] - mediaBox[3]) > 0.5);
+            Math.abs(trimBox[1] - mediaBox[1]) > 0.5 ||
+            Math.abs(trimBox[2] - mediaBox[2]) > 0.5 ||
+            Math.abs(trimBox[3] - mediaBox[3]) > 0.5);
 
-        if (boxesDiffer && trimBox) {
-          // 4a. Re-rasterize cropped to TrimBox for display thumbnails
-          console.log("[upload] TrimBox differs from MediaBox, cropping thumbnails to:", trimBox);
-          updateUpload(fileName, { progress: 55, statusText: "Cropping to trim size…" });
+        const hasAdvisory = !!detectedSize || !!nearIsoMatch;
 
-          const { job_id: cropJobId } = await cropRasterize(
-            asset_id,
-            trimBox as [number, number, number, number]
-          );
-
-          await pollJob(cropJobId, (job) => {
-            if (job.status === "pending") {
-              updateUpload(fileName, { progress: 55, statusText: "Queued — cropping to trim size…" });
-            } else if (job.status === "running") {
-              updateUpload(fileName, { progress: 60, statusText: "Rendering trimmed pages…" });
-            }
-          });
-
-          console.log("[upload] Crop-rasterize complete, fetching new thumbnails");
+        // 7. Persist preflight + provisional dimensions. NO thumbnails written yet.
+        const preflight: Record<string, unknown> = {
+          boxes: asset.boxes,
+          width_pt: asset.width_pt,
+          height_pt: asset.height_pt,
+          effective_width_mm: pageWidthMm,
+          effective_height_mm: pageHeightMm,
+          status: asset.status,
+          awaiting_review: hasAdvisory,
+        };
+        if (detectedSize) preflight.detected_size = detectedSize;
+        if (nearIsoMatch) {
+          preflight.near_iso_match = nearIsoMatch.matchedSize.name;
+          preflight.estimated_bleed_w = nearIsoMatch.bleedW;
+          preflight.estimated_bleed_h = nearIsoMatch.bleedH;
+          preflight.near_iso_landscape = nearIsoMatch.landscape;
         }
 
-        updateUpload(fileName, { progress: 70, statusText: "Rendering pages…" });
-
-        // 5. Poll for thumbnails — they are generated asynchronously after initial jobs
-        let final_ = await fetchThumbnails(asset_id);
-        const MAX_THUMB_POLLS = 60; // ~3 minutes at 3s intervals
-        const expectedPages = final_.pageCount ?? 1;
-        let lastCount = -1;
-        let stalePolls = 0;
-
-        for (let i = 0; i < MAX_THUMB_POLLS; i++) {
-          const found = final_.thumbnailPaths.length;
-
-          // Exit if we have all pages
-          if (found >= expectedPages) break;
-
-          // Exit if count hasn't changed for 15 polls (~45s) and we have ≥80% of pages
-          if (found === lastCount) {
-            stalePolls++;
-            if (stalePolls >= 15 && found >= expectedPages * 0.8) {
-              console.log(`[upload] Stale count after ${stalePolls} polls, accepting ${found}/${expectedPages} thumbnails`);
-              break;
-            }
-          } else {
-            stalePolls = 0;
-          }
-          lastCount = found;
-
-          const progress = 70 + (found / expectedPages) * 20 + (i / MAX_THUMB_POLLS) * 10;
-          updateUpload(fileName, { progress: Math.min(95, progress), statusText: `Rendering pages… (${found}/${expectedPages})` });
-
-          await new Promise((r) => setTimeout(r, 3000));
-          final_ = await fetchThumbnails(asset_id);
-          console.log(`[upload] Thumbnail poll ${i + 1}: ${final_.thumbnailPaths.length}/${expectedPages} thumbnails`);
-        }
-
-        console.log("[upload] Final thumbnails:", final_.thumbnailPaths.length);
-
-        // 5. Detect non-ISO paper size or near-ISO with bleed
-        const detectedSize =
-          final_.pageWidthMm != null && final_.pageHeightMm != null
-            ? detectNonIsoSize(final_.pageWidthMm, final_.pageHeightMm)
-            : null;
-
-        const nearIsoMatch =
-          !detectedSize && final_.pageWidthMm != null && final_.pageHeightMm != null
-            ? detectNearIsoWithBleed(final_.pageWidthMm, final_.pageHeightMm)
-            : null;
-
-        // 6. Update documents row with full metadata
         await supabase
           .from("documents")
           .update({
-            page_count: final_.pageCount,
-            page_width_mm: final_.pageWidthMm,
-            page_height_mm: final_.pageHeightMm,
-            thumbnail_urls: final_.thumbnailPaths,
-            preflight_data: {
-              boxes: final_.asset.boxes,
-              width_pt: final_.asset.width_pt,
-              height_pt: final_.asset.height_pt,
-              effective_width_mm: final_.pageWidthMm,
-              effective_height_mm: final_.pageHeightMm,
-              status: final_.asset.status,
-              ...(detectedSize ? { detected_size: detectedSize } : {}),
-              ...(nearIsoMatch ? {
-                near_iso_match: nearIsoMatch.matchedSize.name,
-                estimated_bleed_w: nearIsoMatch.bleedW,
-                estimated_bleed_h: nearIsoMatch.bleedH,
-                near_iso_landscape: nearIsoMatch.landscape,
-              } : {}),
-            },
-            document_status: "ready",
+            page_count: asset.page_count,
+            page_width_mm: pageWidthMm,
+            page_height_mm: pageHeightMm,
+            preflight_data: preflight as any,
+            // 'processing' = either still rendering OR awaiting user review.
+            // UI distinguishes via preflight_data.awaiting_review.
+            document_status: "processing",
           })
           .eq("id", docId);
 
-        return true;
+        return {
+          asset_id,
+          hasAdvisory,
+          renderBox: (explicitTrim ? trimBox : mediaBox) as [number, number, number, number],
+        };
       } catch (err: any) {
-        console.error("[upload] processDocument failed:", err);
+        console.error("[upload] inspectDocument failed:", err);
         toast({
           title: "Processing warning",
           description: `PDF analysis failed for ${fileName}: ${err.message}`,
           variant: "destructive",
         });
-        return false;
+        return null;
       }
     },
-    [fetchThumbnails, updateUpload, qc, orderItemId]
+    [updateUpload]
   );
 
   /* ── Upload a single file ── */
@@ -272,7 +262,6 @@ export function useDocumentUpload(orderItemId: string | undefined) {
 
       const originalName = file.name;
 
-      // Client-side file size check
       if (file.size > MAX_FILE_SIZE_BYTES) {
         const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
         updateUpload(originalName, {
@@ -287,7 +276,6 @@ export function useDocumentUpload(orderItemId: string | undefined) {
       updateUpload(originalName, { fileName: originalName, status: "uploading", progress: 0 });
 
       try {
-        // 0. Convert images to PDF before uploading
         if (isImageFile(file)) {
           updateUpload(originalName, { progress: 5, statusText: "Converting image to PDF…" });
           file = await imageFileToPdf(file, targetSize);
@@ -296,13 +284,11 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         const fileName = file.name;
         const safeFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
 
-        // 1. Upload to S3
         const storagePath = `tenants/${tenantId}/uploads/${user.id}/${effectiveId}/${safeFileName}`;
         const { uploadToS3 } = await import("@/lib/s3Storage");
         await uploadToS3(storagePath, file);
-        updateUpload(originalName, { progress: 30, fileName: originalName });
+        updateUpload(originalName, { progress: 25, fileName: originalName });
 
-        // 2. Create documents row
         const { data: doc, error: docError } = await supabase
           .from("documents")
           .insert({
@@ -317,18 +303,36 @@ export function useDocumentUpload(orderItemId: string | undefined) {
           .single();
 
         if (docError) throw docError;
-        updateUpload(originalName, { status: "analyzing", progress: 40 });
+        updateUpload(originalName, { status: "analyzing", progress: 30 });
 
-        // 3. Register + process via Document Centre API
-        const processed = await processDocument(doc.id, storagePath, originalName);
+        // Phase A: inspect-only (no rasterization)
+        const inspection = await inspectDocument(doc.id, storagePath, originalName);
 
-        if (!processed) {
-          // Mark as ready even if processing failed (file is uploaded)
+        if (!inspection) {
           await supabase
             .from("documents")
             .update({ document_status: "ready" })
             .eq("id", doc.id)
             .in("document_status", ["processing", "pending"]);
+          updateUpload(originalName, { status: "done", progress: 100 });
+          qc.invalidateQueries({ queryKey: ["documents", effectiveId] });
+          return doc;
+        }
+
+        // Phase B: only render now if no advisory. Otherwise defer until the
+        // user resolves the advisory dialog (bleed / non-ISO / orientation).
+        if (!inspection.hasAdvisory) {
+          updateUpload(originalName, { progress: 60, statusText: "Rendering pages…" });
+          await renderDocumentThumbnails(doc.id, inspection.asset_id, inspection.renderBox, {
+            onProgress: (msg, pct) => updateUpload(originalName, { statusText: msg, progress: pct }),
+          });
+        } else {
+          // Leave document_status as 'processing' with awaiting_review=true so the
+          // UI shows the advisory chip; the dialog handler will trigger render.
+          updateUpload(originalName, {
+            progress: 95,
+            statusText: "Awaiting your review…",
+          });
         }
 
         updateUpload(originalName, { status: "done", progress: 100 });
@@ -343,33 +347,33 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         return null;
       }
     },
-    [orderItemId, user, updateUpload, processDocument, qc]
+    [orderItemId, user, tenantId, updateUpload, inspectDocument, qc]
   );
 
-  /* ── Reprocess an existing document ── */
+  /* ── Reprocess an existing document (re-runs full inspect + render) ── */
 
   const reprocessDocument = useCallback(
     async (doc: { id: string; file_path: string; file_name: string }) => {
-      console.log("[upload] Reprocessing document:", doc.file_name);
-
       await supabase
         .from("documents")
         .update({ document_status: "processing" })
         .eq("id", doc.id);
 
-      const processed = await processDocument(doc.id, doc.file_path, doc.file_name);
+      const inspection = await inspectDocument(doc.id, doc.file_path, doc.file_name);
 
-      if (!processed) {
+      if (!inspection) {
         await supabase
           .from("documents")
           .update({ document_status: "ready" })
           .eq("id", doc.id)
           .eq("document_status", "processing");
+      } else if (!inspection.hasAdvisory) {
+        await renderDocumentThumbnails(doc.id, inspection.asset_id, inspection.renderBox);
       }
 
       qc.invalidateQueries({ queryKey: ["documents", orderItemId] });
     },
-    [processDocument, qc, orderItemId]
+    [inspectDocument, qc, orderItemId]
   );
 
   /* ── Upload multiple files ── */

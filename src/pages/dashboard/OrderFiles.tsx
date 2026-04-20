@@ -27,6 +27,7 @@ import { ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { resize, rotate, pollJob, cropRasterize, getAsset, getDerivedFiles } from "@/lib/documentCentreApi";
+import { renderDocumentThumbnails } from "@/hooks/useDocumentUpload";
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import type { PaperSize, NearIsoMatch } from "@/lib/paperSizes";
 import { isLandscape, ISO_SIZES } from "@/lib/paperSizes";
@@ -266,51 +267,41 @@ export default function OrderFiles() {
     }
   }, [documents, uploadModalOpen, advisoryDoc, orientationDoc, bleedDoc, productFamily?.slug]);
 
-  /** Re-generate thumbnails from a (possibly transformed) asset and update the documents row */
-  /** Re-generate thumbnails from a (possibly transformed) asset and update the documents row */
-  const reThumbnail = useCallback(async (docId: string, assetId: string) => {
+  /** Helper: fetch the asset's MediaBox (used as the default render box) */
+  const getMediaBox = useCallback(async (assetId: string): Promise<[number, number, number, number]> => {
     const asset = await getAsset(assetId);
     const boxes = asset.boxes as Record<string, number[]> | null;
-    const trimBox = boxes?.TrimBox ?? boxes?.CropBox ?? boxes?.MediaBox;
-
-    if (trimBox && trimBox.length === 4) {
-      const { job_id: cropJobId } = await cropRasterize(assetId, trimBox as [number, number, number, number], 150);
-      await pollJob(cropJobId);
-    }
-
-    // Fetch fresh derived files and pick best per page
-    const derivedFiles = await getDerivedFiles(assetId);
-    const thumbnailPaths = pickBestPerPage(
-      derivedFiles,
-      asset.thumbnail_storage_path,
-    );
-
-    // Invalidate signed-URL cache so the browser fetches the new images
-    clearSignedUrlCache(thumbnailPaths);
-
-    await supabase
-      .from("documents")
-      .update({ thumbnail_urls: thumbnailPaths })
-      .eq("id", docId);
-
-    return thumbnailPaths;
+    const mb = boxes?.MediaBox ?? [0, 0, asset.width_pt ?? 595, asset.height_pt ?? 842];
+    return [mb[0], mb[1], mb[2], mb[3]];
   }, []);
 
   const handleKeepOriginal = useCallback(async () => {
     if (!advisoryDoc) return;
     const existing = documents.find((d) => d.id === advisoryDoc.id);
     const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
+
+    // Mark resolved + render once at MediaBox
+    if (advisoryDoc.backendAssetId) {
+      try {
+        toast.info("Rendering preview…");
+        const mediaBox = await getMediaBox(advisoryDoc.backendAssetId);
+        await renderDocumentThumbnails(advisoryDoc.id, advisoryDoc.backendAssetId, mediaBox);
+      } catch (err: any) {
+        toast.error("Render failed", { description: err.message });
+      }
+    }
+
     await supabase
       .from("documents")
       .update({
-        preflight_data: { ...preflight, size_resolved: true, size_action: "keep" },
+        preflight_data: { ...preflight, awaiting_review: false, size_resolved: true, size_action: "keep" },
       })
       .eq("id", advisoryDoc.id);
     resolvedDocIds.current.add(advisoryDoc.id);
     setAdvisoryDoc(null);
     refetchDocuments();
     toast.success("Keeping original size");
-  }, [advisoryDoc, documents, refetchDocuments]);
+  }, [advisoryDoc, documents, refetchDocuments, getMediaBox]);
 
   const handleScaleTo = useCallback(async (target: PaperSize) => {
     if (!advisoryDoc?.backendAssetId) {
@@ -327,20 +318,19 @@ export default function OrderFiles() {
       const { job_id } = await resize(advisoryDoc.backendAssetId, targetW, targetH, "fit");
       await pollJob(job_id);
 
-      // Re-generate thumbnails from the scaled PDF
-      toast.info("Regenerating preview…");
-      await reThumbnail(advisoryDoc.id, advisoryDoc.backendAssetId);
+      // Single render at the new MediaBox (resize updates the asset's box)
+      toast.info("Rendering preview…");
+      const newBox = await getMediaBox(advisoryDoc.backendAssetId);
+      await renderDocumentThumbnails(advisoryDoc.id, advisoryDoc.backendAssetId, newBox);
 
-      // Update document dimensions
       const existing = documents.find((d) => d.id === advisoryDoc.id);
       const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
       await supabase
         .from("documents")
         .update({
-          page_width_mm: targetW,
-          page_height_mm: targetH,
           preflight_data: {
             ...preflight,
+            awaiting_review: false,
             size_resolved: true,
             size_action: `scaled_to_${target.name}`,
             original_width_mm: advisoryDoc.widthMm,
@@ -356,7 +346,7 @@ export default function OrderFiles() {
     } catch (err: any) {
       toast.error("Scaling failed", { description: err.message });
     }
-  }, [advisoryDoc, documents, refetchDocuments, reThumbnail]);
+  }, [advisoryDoc, documents, refetchDocuments, getMediaBox]);
 
   // Orientation handlers
   const handleRotateToLandscape = useCallback(async () => {
@@ -371,19 +361,17 @@ export default function OrderFiles() {
       const { job_id } = await rotate(orientationDoc.backendAssetId, 90);
       await pollJob(job_id);
 
-      // Re-generate thumbnails
-      toast.info("Regenerating preview…");
-      await reThumbnail(orientationDoc.id, orientationDoc.backendAssetId);
+      // Single render at the new (rotated) MediaBox
+      toast.info("Rendering preview…");
+      const newBox = await getMediaBox(orientationDoc.backendAssetId);
+      await renderDocumentThumbnails(orientationDoc.id, orientationDoc.backendAssetId, newBox);
 
-      // Swap dimensions
       const existing = documents.find((d) => d.id === orientationDoc.id);
       const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
       await supabase
         .from("documents")
         .update({
-          page_width_mm: orientationDoc.heightMm,
-          page_height_mm: orientationDoc.widthMm,
-          preflight_data: { ...preflight, orientation_resolved: true, orientation_action: "rotated" },
+          preflight_data: { ...preflight, awaiting_review: false, orientation_resolved: true, orientation_action: "rotated" },
         })
         .eq("id", orientationDoc.id);
 
@@ -395,7 +383,7 @@ export default function OrderFiles() {
     } finally {
       setIsRotating(false);
     }
-  }, [orientationDoc, documents, refetchDocuments, reThumbnail]);
+  }, [orientationDoc, documents, refetchDocuments, getMediaBox]);
 
   const handleSwitchToBoundDocs = useCallback(() => {
     setOrientationDoc(null);
@@ -408,12 +396,22 @@ export default function OrderFiles() {
     if (!bleedDoc) return;
 
     if (choice === "keep") {
+      // Render once at MediaBox (full size, no trim)
+      if (bleedDoc.backendAssetId) {
+        try {
+          toast.info("Rendering preview…");
+          const mediaBox = await getMediaBox(bleedDoc.backendAssetId);
+          await renderDocumentThumbnails(bleedDoc.id, bleedDoc.backendAssetId, mediaBox);
+        } catch (err: any) {
+          toast.error("Render failed", { description: err.message });
+        }
+      }
       const existing = documents.find((d) => d.id === bleedDoc.id);
       const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
       await supabase
         .from("documents")
         .update({
-          preflight_data: { ...preflight, bleed_resolved: true, bleed_action: "keep" },
+          preflight_data: { ...preflight, awaiting_review: false, bleed_resolved: true, bleed_action: "keep" },
         })
         .eq("id", bleedDoc.id);
       resolvedDocIds.current.add(bleedDoc.id);
@@ -431,18 +429,12 @@ export default function OrderFiles() {
 
     setIsApplyingBleed(true);
     try {
-      // Calculate the trim box in points from bleed values
       const bleedMm = choice === "custom" && customBleedMm
         ? customBleedMm
         : (bleedDoc.nearMatch.bleedW + bleedDoc.nearMatch.bleedH) / 2;
-
-      // Convert bleed from mm to points (1 mm = 72/25.4 pt)
       const bleedPt = bleedMm * (72 / 25.4);
 
-      // Get the asset's media box to compute trim box
-      const asset = await getAsset(bleedDoc.backendAssetId);
-      const boxes = asset.boxes as Record<string, number[]> | null;
-      const mediaBox = boxes?.MediaBox ?? [0, 0, asset.width_pt ?? 595, asset.height_pt ?? 842];
+      const mediaBox = await getMediaBox(bleedDoc.backendAssetId);
 
       // TrimBox = MediaBox inset by bleed on all sides
       const trimBox: [number, number, number, number] = [
@@ -452,15 +444,10 @@ export default function OrderFiles() {
         mediaBox[3] - bleedPt,
       ];
 
-      toast.info("Trimming to finished size…");
-      const { job_id: cropJobId } = await cropRasterize(bleedDoc.backendAssetId, trimBox);
-      await pollJob(cropJobId);
+      // Single render at the trimmed box — no separate cropRasterize+reThumbnail
+      toast.info("Trimming and rendering…");
+      await renderDocumentThumbnails(bleedDoc.id, bleedDoc.backendAssetId, trimBox);
 
-      // Re-generate thumbnails
-      toast.info("Regenerating preview…");
-      await reThumbnail(bleedDoc.id, bleedDoc.backendAssetId);
-
-      // Calculate new dimensions
       const trimWidthPt = Math.abs(trimBox[2] - trimBox[0]);
       const trimHeightPt = Math.abs(trimBox[3] - trimBox[1]);
       const newWidthMm = (trimWidthPt * 25.4) / 72;
@@ -471,10 +458,9 @@ export default function OrderFiles() {
       await supabase
         .from("documents")
         .update({
-          page_width_mm: Math.round(newWidthMm * 10) / 10,
-          page_height_mm: Math.round(newHeightMm * 10) / 10,
           preflight_data: {
             ...preflight,
+            awaiting_review: false,
             bleed_resolved: true,
             bleed_action: choice === "custom" ? `custom_${bleedMm}mm` : `trimmed_to_${bleedDoc.nearMatch.matchedSize.name}`,
             bleed_mm: bleedMm,
@@ -494,7 +480,7 @@ export default function OrderFiles() {
     } finally {
       setIsApplyingBleed(false);
     }
-  }, [bleedDoc, documents, refetchDocuments, reThumbnail]);
+  }, [bleedDoc, documents, refetchDocuments, getMediaBox]);
 
   // Determine which document to show in the middle preview
   const previewDoc = useMemo(() => {
