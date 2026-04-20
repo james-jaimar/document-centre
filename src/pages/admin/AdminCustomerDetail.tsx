@@ -105,10 +105,7 @@ export default function AdminCustomerDetail() {
         app_id: appId ?? null,
       },
       {
-        onSuccess: (res: any) => {
-          setResetOpen(false);
-          // toast handled centrally; show app-specific message
-        },
+        onSettled: () => setResetOpen(false),
       }
     );
   };
