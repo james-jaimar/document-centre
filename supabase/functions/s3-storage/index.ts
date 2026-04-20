@@ -166,20 +166,20 @@ Deno.serve(async (req) => {
         const errText = await getRes.text();
         throw new Error(`S3 source fetch failed [${getRes.status}]: ${errText}`);
       }
-      const body = await getRes.arrayBuffer();
+      const bytes = await getRes.arrayBuffer();
       const contentType = getRes.headers.get("Content-Type") || "application/octet-stream";
 
       const putRes = await fetch(writeUrl, {
         method: "PUT",
         headers: { "Content-Type": contentType },
-        body,
+        body: bytes,
       });
       if (!putRes.ok) {
         const errText = await putRes.text();
         throw new Error(`S3 dest PUT failed [${putRes.status}]: ${errText}`);
       }
 
-      console.log(`[s3-storage] copy ok: ${source_path} -> ${dest_path} (${body.byteLength}b)`);
+      console.log(`[s3-storage] copy ok: ${source_path} -> ${dest_path} (${bytes.byteLength}b)`);
       return json({ success: true, dest_path });
     }
 
