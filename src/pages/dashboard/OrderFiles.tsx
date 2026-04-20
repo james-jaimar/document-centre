@@ -55,7 +55,7 @@ export default function OrderFiles() {
     refetchSections,
   } = useOrderData(effectiveOrderId);
 
-  const { uploads, uploadFiles, reprocessDocument, clearUploads } = useDocumentUpload(orderItem?.id);
+  const { uploads, uploadFiles, reprocessDocument, clearUploads, renderWithProgress } = useDocumentUpload(orderItem?.id);
   const addSection = useAddSection();
   const updateSection = useUpdateSection();
   const deleteSection = useDeleteSection();
