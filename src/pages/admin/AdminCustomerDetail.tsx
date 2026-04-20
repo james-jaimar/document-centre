@@ -35,6 +35,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { resolveDisplayName } from "@/lib/displayName";
 
 const ZAR = new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR" });
 
@@ -77,11 +78,7 @@ export default function AdminCustomerDetail() {
   const { profile, membership, orders, history } = data;
   const persistentAddresses = addresses.data ?? [];
 
-  const name =
-    profile?.display_name ||
-    [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") ||
-    profile?.email?.split("@")[0] ||
-    "Customer";
+  const name = resolveDisplayName(profile, "Customer");
 
   const lifetimeValue = orders.reduce((sum, o: any) => sum + Number(o.total_amount ?? 0), 0);
   const aov = orders.length > 0 ? lifetimeValue / orders.length : 0;
