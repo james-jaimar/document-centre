@@ -362,6 +362,13 @@ const CustomerOrders = () => {
           </TabsContent>
 
           <TabsContent value="drafts" className="space-y-3 mt-4">
+            <div className="flex items-start gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+              <Info className="h-4 w-4 shrink-0 mt-0.5" />
+              <p>
+                Drafts are automatically deleted after <strong>7 days</strong> to keep your
+                workspace tidy. Place your order to keep it.
+              </p>
+            </div>
             {draftOrders.length > 1 && (
               <div className="flex justify-end">
                 <Button
