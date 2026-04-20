@@ -177,6 +177,7 @@ Deno.serve(async (req) => {
       dispatched: "order_dispatched",
       completed: "order_completed",
       refunded: "refunded",
+      order_cancelled: "order_cancelled",
     };
     const settingKey = enabledMap[eventKey];
     if (notif[settingKey] === false) {
@@ -197,6 +198,8 @@ Deno.serve(async (req) => {
       unpaid: order.payment_status === "unpaid",
       deliveryLine,
       refundFmt: body.refund_amount != null ? fmtMoney(body.refund_amount) : undefined,
+      reason: body.reason || undefined,
+      refundPending: body.refund_pending === true,
     };
 
     const subject = SUBJECTS[eventKey](ctx.orderNo);
