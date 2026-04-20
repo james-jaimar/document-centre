@@ -207,12 +207,22 @@ export default function OrderBuild() {
   }, [options]);
 
   // Auto-match Document Size from uploaded document dimensions
+  // Only fires when no Document Size is currently selected — preserves user choice across edit cycles
   useEffect(() => {
     if (autoSizeMatchedRef.current) return;
     if (options.length === 0 || documents.length === 0) return;
 
     const sizeOpt = options.find((o) => o.name.toLowerCase() === "document size");
     if (!sizeOpt || !isStructuredValues(sizeOpt.values)) return;
+
+    // Respect any previously persisted Document Size choice (case-insensitive key match)
+    const existingKey = Object.keys(spec.selected_options).find(
+      (k) => k.toLowerCase() === "document size"
+    );
+    if (existingKey && spec.selected_options[existingKey]) {
+      autoSizeMatchedRef.current = true;
+      return;
+    }
 
     const doc = documents[0];
     const docW = doc.page_width_mm ? Number(doc.page_width_mm) : null;
@@ -238,7 +248,7 @@ export default function OrderBuild() {
         selected_options: { ...prev.selected_options, [sizeOpt.name]: matched.slug },
       }));
     }
-  }, [options, documents]);
+  }, [options, documents, spec.selected_options]);
 
   // Derive preview type from binding option metadata or product family slug
   const productType: ProductPreviewType = useMemo(() => {
