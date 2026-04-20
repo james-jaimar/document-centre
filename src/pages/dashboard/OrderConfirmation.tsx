@@ -20,11 +20,13 @@ export default function OrderConfirmation() {
           "id, order_number, total_amount, total_price, currency, submitted_at, created_at, customer_status, payment_status, order_jobs(id, product_name, quantity, gross_price)"
         )
         .eq("id", orderId)
-        .single();
+        .maybeSingle();
       if (error) throw error;
       return data;
     },
     enabled: !!orderId,
+    refetchInterval: (query) => (query.state.data ? false : 600),
+    retry: 5,
   });
 
   if (isLoading) {
