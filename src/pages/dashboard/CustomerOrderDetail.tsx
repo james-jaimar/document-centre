@@ -593,16 +593,30 @@ const CustomerOrderDetail = () => {
         </div>
       </div>
 
-      {previewJob && (
-        <PreviewLightbox
-          thumbnailPaths={(previewJob.configuration?.preview?.thumbnails ?? []) as string[]}
-          productType={
-            (previewJob.configuration?.preview?.product_type as any) ||
-            inferPreviewTypeFromJob(previewJob)
-          }
-          onClose={() => setPreviewJob(null)}
-        />
-      )}
+      {previewJob && (() => {
+        const snap = (previewJob.configuration?.preview ?? {}) as any;
+        return (
+          <PreviewLightbox
+            thumbnailPaths={(snap.thumbnails ?? []) as string[]}
+            productType={
+              (snap.product_type as any) || inferPreviewTypeFromJob(previewJob)
+            }
+            effects={snap.effects}
+            colorFlags={snap.colorFlags}
+            bleedFlags={snap.bleedFlags}
+            pageRoles={snap.pageRoles}
+            sectionTypes={snap.sectionTypes}
+            pageLabels={snap.pageLabels}
+            pageColors={snap.pageColors}
+            tabPositions={snap.tabPositions}
+            displayPageNumbers={snap.displayPageNumbers}
+            faceLabels={snap.faceLabels}
+            bindingEdge={snap.bindingEdge}
+            pageAspectRatio={snap.pageAspectRatio ?? undefined}
+            onClose={() => setPreviewJob(null)}
+          />
+        );
+      })()}
     </div>
   );
 };
