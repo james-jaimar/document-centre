@@ -592,6 +592,17 @@ const CustomerOrderDetail = () => {
           </div>
         </div>
       </div>
+
+      {previewJob && (
+        <PreviewLightbox
+          thumbnailPaths={(previewJob.configuration?.preview?.thumbnails ?? []) as string[]}
+          productType={
+            (previewJob.configuration?.preview?.product_type as any) ||
+            inferPreviewTypeFromJob(previewJob)
+          }
+          onClose={() => setPreviewJob(null)}
+        />
+      )}
     </div>
   );
 };
