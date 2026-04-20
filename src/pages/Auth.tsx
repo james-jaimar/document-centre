@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import SocialAuthButtons from "@/components/auth/SocialAuthButtons";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { pickPrimaryMembership, resolveTenantLanding, type LandingMembership } from "@/lib/auth/landingRoute";
+import { buildAdminPath } from "@/lib/adminRouting";
 
 type AuthMode = "login" | "register" | "forgot";
 
@@ -42,11 +43,21 @@ const Auth = () => {
     (async () => {
       setGating(true);
       try {
-        // Platform admins are allowed into either the platform console or any
-        // tenant storefront they navigate to (so they can inspect tenants).
+        // Platform admins on a tenant portal land in that tenant's admin
+        // console (with ?tenant= override) so they can actually administer.
+        // On the generic /auth they go to /platform.
         if (highestRole === "platform_admin") {
           if (isTenantPortal) {
-            navigate(`/t/${tenantSlug}/dashboard`, { replace: true });
+            const { data: t } = await supabase
+              .from("tenants")
+              .select("id")
+              .eq("slug", tenantSlug!)
+              .maybeSingle();
+            if (t?.id) {
+              navigate(buildAdminPath("/admin", t.id), { replace: true });
+            } else {
+              navigate("/platform", { replace: true });
+            }
           } else {
             navigate("/platform", { replace: true });
           }
