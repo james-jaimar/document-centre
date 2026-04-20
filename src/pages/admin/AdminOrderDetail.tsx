@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, CheckCircle2, Receipt } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Receipt, XCircle } from "lucide-react";
 import { OrderSummaryTab } from "@/components/orders/detail/OrderSummaryTab";
 import { OrderPricingTab } from "@/components/orders/detail/OrderPricingTab";
 import { OrderDeliveryTab } from "@/components/orders/detail/OrderDeliveryTab";
@@ -13,6 +13,7 @@ import { JobDetailPanel } from "@/components/orders/detail/JobDetailPanel";
 import { TimelinePanel } from "@/components/orders/detail/TimelinePanel";
 import { RecordPaymentDialog } from "@/components/orders/RecordPaymentDialog";
 import { RefundDialog } from "@/components/orders/RefundDialog";
+import { CancelOrderDialog } from "@/components/orders/CancelOrderDialog";
 import { OrderInvoicesList } from "@/components/orders/OrderInvoicesList";
 import { recordPaymentEvent } from "@/lib/orders/mutations";
 import { useQueryClient } from "@tanstack/react-query";
@@ -30,6 +31,7 @@ export default function AdminOrderDetail() {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [refundDialogOpen, setRefundDialogOpen] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [markingPaid, setMarkingPaid] = useState(false);
   const queryClient = useQueryClient();
 
@@ -117,6 +119,16 @@ export default function AdminOrderDetail() {
               </Button>
             </>
           )}
+          {order.admin_status !== "cancelled" && order.admin_status !== "completed" && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-destructive hover:text-destructive"
+              onClick={() => setCancelDialogOpen(true)}
+            >
+              <XCircle className="mr-2 h-4 w-4" /> Cancel order
+            </Button>
+          )}
         </div>
       </div>
 
@@ -131,6 +143,14 @@ export default function AdminOrderDetail() {
         open={refundDialogOpen}
         onOpenChange={setRefundDialogOpen}
         orderId={order.id}
+        amountPaid={Number(order.amount_paid)}
+        currency={order.currency}
+      />
+      <CancelOrderDialog
+        open={cancelDialogOpen}
+        onOpenChange={setCancelDialogOpen}
+        orderId={order.id}
+        orderNumber={order.order_number || order.id.slice(0, 8)}
         amountPaid={Number(order.amount_paid)}
         currency={order.currency}
       />

@@ -21,7 +21,8 @@ type EventKey =
   | "ready_for_collection"
   | "dispatched"
   | "completed"
-  | "refunded";
+  | "refunded"
+  | "order_cancelled";
 
 const SUBJECTS: Record<EventKey, (n: string) => string> = {
   order_received: (n) => `Order ${n} received — thank you!`,
@@ -32,6 +33,7 @@ const SUBJECTS: Record<EventKey, (n: string) => string> = {
   dispatched: (n) => `Order ${n} has been dispatched`,
   completed: (n) => `Order ${n} is complete`,
   refunded: (n) => `Refund processed for order ${n}`,
+  order_cancelled: (n) => `Order ${n} has been cancelled`,
 };
 
 const HEADLINES: Record<EventKey, string> = {
@@ -43,6 +45,7 @@ const HEADLINES: Record<EventKey, string> = {
   dispatched: "Your order has been dispatched",
   completed: "Your order is complete",
   refunded: "A refund has been processed",
+  order_cancelled: "Your order has been cancelled",
 };
 
 const BODIES: Record<EventKey, (ctx: any) => string> = {
@@ -57,6 +60,10 @@ const BODIES: Record<EventKey, (ctx: any) => string> = {
   dispatched: (c) => `Order <strong>${c.orderNo}</strong> is on its way. ${c.deliveryLine ?? ""}`,
   completed: (c) => `Order <strong>${c.orderNo}</strong> is complete. Thank you for your business!`,
   refunded: (c) => `A refund of ${c.refundFmt ?? c.totalFmt} has been processed for order <strong>${c.orderNo}</strong>.`,
+  order_cancelled: (c) =>
+    `Order <strong>${c.orderNo}</strong> has been cancelled.${c.reason ? ` Reason: ${c.reason}.` : ""}${
+      c.refundPending ? " Any payment received will be refunded separately." : ""
+    } If you have any questions, please get in touch.`,
 };
 
 function renderHtml(opts: {
@@ -170,6 +177,7 @@ Deno.serve(async (req) => {
       dispatched: "order_dispatched",
       completed: "order_completed",
       refunded: "refunded",
+      order_cancelled: "order_cancelled",
     };
     const settingKey = enabledMap[eventKey];
     if (notif[settingKey] === false) {
@@ -190,6 +198,8 @@ Deno.serve(async (req) => {
       unpaid: order.payment_status === "unpaid",
       deliveryLine,
       refundFmt: body.refund_amount != null ? fmtMoney(body.refund_amount) : undefined,
+      reason: body.reason || undefined,
+      refundPending: body.refund_pending === true,
     };
 
     const subject = SUBJECTS[eventKey](ctx.orderNo);
