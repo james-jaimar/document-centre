@@ -1,5 +1,5 @@
 import type { Tables } from "@/integrations/supabase/types";
-import { FileText, Loader2, AlertCircle, CheckCircle2, RefreshCw, Trash2 } from "lucide-react";
+import { FileText, Loader2, AlertCircle, CheckCircle2, RefreshCw, Trash2, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
@@ -64,7 +64,9 @@ export default function FileList({
       {documents.map((doc) => {
         const isReady = doc.document_status === "ready";
         const isError = doc.document_status === "error";
-        const isProcessing = !isReady && !isError;
+        const preflight = (doc.preflight_data as Record<string, any> | null) ?? null;
+        const awaitingReview = !!preflight?.awaiting_review;
+        const isProcessing = !isReady && !isError && !awaitingReview;
         const thumbnails = Array.isArray(doc.thumbnail_urls) ? (doc.thumbnail_urls as string[]) : [];
         const hasThumbnails = thumbnails.length > 0;
         const isReprocessing = reprocessingIds.has(doc.id);
@@ -105,6 +107,12 @@ export default function FileList({
                     {Math.round(Number(doc.page_height_mm))}mm
                   </span>
                 )}
+                {awaitingReview && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                    <Eye className="h-3 w-3" />
+                    Review needed
+                  </span>
+                )}
               </div>
             </div>
 
@@ -139,6 +147,8 @@ export default function FileList({
                 <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
               ) : isError ? (
                 <AlertCircle className="h-4 w-4 text-destructive" />
+              ) : awaitingReview ? (
+                <Eye className="h-4 w-4 text-amber-500" />
               ) : (
                 <CheckCircle2 className="h-4 w-4 text-primary" />
               )}
