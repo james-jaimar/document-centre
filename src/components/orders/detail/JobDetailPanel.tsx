@@ -189,14 +189,15 @@ export function JobDetailPanel({ job, documents }: Props) {
             (previewSnap.product_type as any) || inferPreviewTypeFromJob(job)
           }
           effects={previewSnap.effects}
-          pageRoles={previewSnap.pageRoles}
-          tabPositions={previewSnap.tabPositions}
-          insertColors={previewSnap.insertColors}
+          colorFlags={previewSnap.colorFlags}
           bleedFlags={previewSnap.bleedFlags}
-          paperColors={previewSnap.paperColors}
-          paperWeights={previewSnap.paperWeights}
-          coverPaperColors={previewSnap.coverPaperColors}
-          coverPaperWeights={previewSnap.coverPaperWeights}
+          pageRoles={previewSnap.pageRoles}
+          sectionTypes={previewSnap.sectionTypes}
+          pageLabels={previewSnap.pageLabels}
+          pageColors={previewSnap.pageColors}
+          tabPositions={previewSnap.tabPositions}
+          displayPageNumbers={previewSnap.displayPageNumbers}
+          faceLabels={previewSnap.faceLabels}
           bindingEdge={previewSnap.bindingEdge}
           pageAspectRatio={previewSnap.pageAspectRatio ?? undefined}
           onClose={() => setPreviewOpen(false)}
