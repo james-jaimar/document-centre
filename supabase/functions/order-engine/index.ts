@@ -859,6 +859,19 @@ Deno.serve(async (req) => {
       case "sendMessage":
         response = await sendMessage(admin, userId, payload);
         break;
+      case "cancelOrder": {
+        response = await cancelOrder(admin, userId, payload);
+        if (response.ok && payload.order_id) {
+          const data = await response.clone().json();
+          sideEffects = async () => {
+            await triggerEmail(authHeader, payload.order_id, "order_cancelled", {
+              reason: payload.reason,
+              refund_pending: data?.refund_pending === true,
+            });
+          };
+        }
+        break;
+      }
       case "generateInvoice": {
         if (!payload.order_id) {
           response = err("order_id required");
