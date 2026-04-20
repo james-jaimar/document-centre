@@ -268,7 +268,7 @@ const CustomerOrderDetail = () => {
                             Qty: {job.quantity}
                             {job.unit_label ? ` ${job.unit_label}` : ""}
                           </p>
-                          {(config.preview?.thumbnails?.length ?? 0) > 0 && (
+                          {(config.preview?.thumbnails ?? []).some((t: string) => !!t) && (
                             <Button
                               variant="outline"
                               size="sm"
