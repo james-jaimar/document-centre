@@ -241,7 +241,7 @@ Deno.serve(async (req) => {
       .eq("id", order_id)
       .single();
     if (oErr || !order) return json({ error: "Order not found" }, 404);
-    if ((order as any).is_demo) return json({ success: true, skipped: true, reason: "demo_order" });
+    // Demo orders are allowed — invoices are harmless and exercise the full flow
 
     const [{ data: jobs }, { data: addresses }, { data: tenant }, { data: settings }] = await Promise.all([
       admin.from("order_jobs").select("*").eq("order_id", order_id).order("sequence_no"),
