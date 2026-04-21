@@ -1,67 +1,56 @@
 
 
-## Replace ring binder placeholder with real binder images
+## Fix: route ring_binder to RingBinderPreview instead of FlipBook
 
-### What changes
+### The bug
 
-The current `RingBinderPreview.tsx` is a CSS-drawn placeholder (gray rectangle + 3 fake D-rings). Replace it with the two real photographs the user uploaded so the preview shows an authentic white PVC binder.
-
-### Assets
-
-Copy the two uploads into `src/assets/bindings/`:
-
-| Source | Destination |
-|---|---|
-| `user-uploads://ring_binder_closed.png` | `src/assets/bindings/ring_binder_white_closed.png` |
-| `user-uploads://ring_bind_open.png` | `src/assets/bindings/ring_binder_white_open.png` |
-
-Naming follows the existing convention (`coil_binding_black_closed.png`, etc.) and leaves room for future colours (e.g. black binder).
-
-### Component rewrite — `src/components/preview/RingBinderPreview.tsx`
-
-Two render modes:
-
-**1. Single-page (cover) mode** — `currentPage === 0` or `urls.length === 1`
-- Render the **closed** binder image as the background (portrait, ~1:1.05 aspect).
-- If a front-cover thumbnail exists, overlay it inside the visible cover pocket window with a small inset margin (the binder has a clear PVC overlay pocket — the doc image sits behind it).
-
-**2. Open spread mode** — `currentPage >= 1`
-- Render the **open** binder image as the background (landscape ~2.4:1, with the 4-ring spine visible down the centre).
-- Overlay the current page thumbnail on the **right** half of the spread (page area only — clear of the spine and rings).
-- Show the previous page on the **left** half if it exists, mimicking a real open binder.
-- Apply the existing `colorFlags` grayscale filter per page.
-
-### Geometry constants
-
-Derived from the uploaded images:
+In `src/components/preview/DocumentPreview.tsx`, the routing logic checks `BOUND_TYPES` first:
 
 ```ts
-const BINDER_CLOSED_ASPECT = 760 / 800;   // ~0.95 portrait
-const BINDER_OPEN_ASPECT   = 1800 / 760;  // ~2.37 landscape
-// Inside-page clear area as % of binder image (measured from photo)
-const CLOSED_PAGE_INSET = { top: 0.04, bottom: 0.04, left: 0.05, right: 0.05 };
-const OPEN_PAGE_INSET   = { top: 0.04, bottom: 0.04, sideMargin: 0.04, spineHalfWidth: 0.06 };
+const BOUND_TYPES = new Set([
+  "wire_bound", "comb_bound", "saddle_stitched", "perfect_bound", "ring_binder",
+]);
+
+if (BOUND_TYPES.has(productType)) {
+  return <FlipBook ... bindingType={getBindingType(productType)} ... />;
+}
 ```
 
-Pages on the open spread are positioned: left page from `sideMargin` to `0.5 - spineHalfWidth`, right page from `0.5 + spineHalfWidth` to `1 - sideMargin`.
+Because `ring_binder` is in `BOUND_TYPES`, it's caught here and sent to `FlipBook`. And `getBindingType("ring_binder")` returns `"wire"` (see `previewTypes.ts` line 115), so we get the wire-bound flip book — never the new ring binder photo. `RingBinderPreview` is imported but unreachable.
 
-### Navigation
+### The fix
 
-Keep the existing prev/next chevron + "Page X of Y" footer unchanged.
+Two small changes, both in `src/components/preview/DocumentPreview.tsx`:
 
-### Drop legacy placeholder bits
+**1. Remove `ring_binder` from `BOUND_TYPES`** so it doesn't match the FlipBook branch:
+```ts
+const BOUND_TYPES = new Set([
+  "wire_bound", "comb_bound", "saddle_stitched", "perfect_bound",
+]);
+```
 
-Remove: the gradient border-rectangle, the three CSS D-rings, the four CSS hole-punch dots — all replaced by the real photo. Drop the unused `useState` and `RING_BINDER_COVER_MM` constant references in this component.
+**2. Add an explicit ring binder branch before the fold/loose fallback**:
+```ts
+if (productType === "ring_binder") {
+  return <RingBinderPreview {...commonProps} />;
+}
+
+if (FOLD_TYPES.has(productType)) { ... }
+return <LooseSheetsPreview {...commonProps} />;
+```
+
+### Optional cleanup (same file)
+
+`getBindingType("ring_binder")` returning `"wire"` is now dead code for the preview path, but it's harmless — leave `previewTypes.ts` alone to avoid touching unrelated callers.
 
 ### Files changed
 
 | File | Change |
 |---|---|
-| `src/assets/bindings/ring_binder_white_closed.png` | New — copied from upload |
-| `src/assets/bindings/ring_binder_white_open.png` | New — copied from upload |
-| `src/components/preview/RingBinderPreview.tsx` | Rewrite to use real binder photos with cover/spread overlay logic |
+| `src/components/preview/DocumentPreview.tsx` | Drop `ring_binder` from `BOUND_TYPES`; add explicit branch returning `<RingBinderPreview>` |
 
 ### Result
 
-Ring binder previews now show the actual white PVC binder — closed view for the cover/page 1, open spread (with visible 4 D-rings down the spine) for any subsequent page — with the user's document thumbnails overlaid in the correct pocket/page positions.
+- Selecting any **D-Ring Binder** option (White or Black) now renders the new photographic ring binder preview: closed cover view on page 0 with the front cover behind the PVC pocket, open spread with the 4 D-rings on subsequent pages.
+- All other binding types (wire, comb, saddle, perfect) remain on `FlipBook` and behave exactly as before.
 
