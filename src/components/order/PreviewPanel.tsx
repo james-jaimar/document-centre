@@ -15,6 +15,7 @@ import {
 import PreviewLightbox from "@/components/order/PreviewLightbox";
 import DocumentPreview from "@/components/preview/DocumentPreview";
 import type { ProductPreviewType, PreviewEffects, TabPosition } from "@/components/preview/previewTypes";
+import { TAB_COLORS } from "@/components/preview/previewTypes";
 
 type Document = Tables<"documents">;
 type DocumentSection = Tables<"document_sections">;
@@ -372,6 +373,25 @@ export default function PreviewPanel({
         }
       }
     }
+
+    // ── Multicolor tab cycling: write cycled hex into each tab face's color ──
+    // so PageEffects renders the sheet body in the same hue as the protrusion.
+    const tabFaceIndices = roles
+      .map((r, i) => (r === "tab" || r === "tab_back" ? i : -1))
+      .filter((i) => i >= 0);
+    const tabPairs: Array<[number, number]> = [];
+    for (let i = 0; i + 1 < tabFaceIndices.length; i += 2) {
+      tabPairs.push([tabFaceIndices[i], tabFaceIndices[i + 1]]);
+    }
+    tabPairs.forEach(([frontIdx, backIdx], tabIdx) => {
+      const front = fp[frontIdx];
+      const existing = (front?.color || "").trim().toLowerCase();
+      const isMulti = !existing || existing === "multi" || existing === "multicolor";
+      if (!isMulti) return;
+      const hex = TAB_COLORS[tabIdx % TAB_COLORS.length];
+      if (fp[frontIdx]) fp[frontIdx] = { ...fp[frontIdx], color: hex };
+      if (fp[backIdx]) fp[backIdx] = { ...fp[backIdx], color: hex };
+    });
 
     return { finalPages: fp, pageRoles: roles };
   }, [pages, effects, isBound]);

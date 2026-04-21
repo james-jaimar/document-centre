@@ -105,18 +105,20 @@ FlipPage.displayName = "FlipPage";
  * Tabs ahead of the current spread stick out from the right edge.
  * Tabs behind the current spread stick out from the left edge.
  */
-/** Map color slugs to CSS colors */
+/** Map color slugs to CSS colors. Cycled hex values pass through unchanged. */
 function resolveTabColor(colorSlug: string, tabIndex: number): string {
   if (!colorSlug || colorSlug === "white" || colorSlug === "") {
     return "#e5e7eb"; // light gray for white tabs
   }
+  // Already a hex value (pre-cycled upstream) — honour it directly
+  if (colorSlug.startsWith("#")) return colorSlug;
   if (colorSlug === "multi" || colorSlug === "multicolor") {
     return TAB_COLORS[tabIndex % TAB_COLORS.length];
   }
-  // Named colors
+  // Named colours — must match PageEffects TAB_BODY_COLORS for visual parity
   const COLOR_MAP: Record<string, string> = {
-    red: "#ef4444", blue: "#3b82f6", green: "#22c55e", yellow: "#eab308",
-    orange: "#f97316", pink: "#ec4899", purple: "#8b5cf6", black: "#1f2937",
+    blue: "#3b82f6", red: "#ef4444", orange: "#f97316", yellow: "#eab308", green: "#22c55e",
+    pink: "#ec4899", purple: "#8b5cf6", black: "#1f2937",
     navy: "#1e3a5f", gray: "#9ca3af", grey: "#9ca3af",
     pastel_blue: "#93c5fd", pastel_green: "#86efac", pastel_yellow: "#fde68a",
     pastel_pink: "#fbcfe8",
