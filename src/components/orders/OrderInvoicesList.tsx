@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Download, Eye, FileText } from "lucide-react";
-import { downloadInvoice, viewInvoice } from "@/lib/orders/mutations";
+import { Download, Eye, FileText, Send } from "lucide-react";
+import { downloadInvoice, viewInvoice, sendInvoiceEmail } from "@/lib/orders/mutations";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -27,6 +27,7 @@ const KIND_LABEL: Record<string, string> = {
 export function OrderInvoicesList({ orderId }: { orderId: string }) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sendingId, setSendingId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -59,6 +60,18 @@ export function OrderInvoicesList({ orderId }: { orderId: string }) {
     }
   };
 
+  const handleSend = async (inv: Invoice) => {
+    setSendingId(inv.id);
+    try {
+      await sendInvoiceEmail(inv.id, orderId);
+      toast.success(`${KIND_LABEL[inv.kind] || "Invoice"} sent to customer`);
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setSendingId(null);
+    }
+  };
+
   return (
     <div className="rounded-lg border bg-card">
       <div className="px-4 py-3 border-b">
@@ -83,6 +96,9 @@ export function OrderInvoicesList({ orderId }: { orderId: string }) {
                 </p>
               </div>
               <div className="flex items-center gap-1">
+                <Button size="sm" variant="ghost" onClick={() => handleSend(inv)} disabled={sendingId === inv.id} title="Send to customer">
+                  <Send className="h-3.5 w-3.5 mr-1" /> {sendingId === inv.id ? "Sending..." : "Send"}
+                </Button>
                 <Button size="sm" variant="ghost" onClick={() => handleView(inv)} title="View PDF">
                   <Eye className="h-3.5 w-3.5 mr-1" /> View
                 </Button>
