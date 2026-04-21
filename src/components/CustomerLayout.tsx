@@ -1,11 +1,15 @@
 import { Outlet, useNavigate } from "react-router-dom";
 import CustomerSidebar from "@/components/CustomerSidebar";
-import { Bell, Menu, Search, ShoppingCart, User, PanelLeftOpen, Sparkles, X } from "lucide-react";
+import CustomerHeader from "@/components/CustomerHeader";
+import CustomerFooter from "@/components/CustomerFooter";
+import { Menu, PanelLeftOpen, Sparkles, X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { SidebarCollapseProvider, useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
+import { useTenantBranding } from "@/hooks/useTenantBranding";
 
 function DemoBanner({ onUpgrade }: { onUpgrade: () => void }) {
   const [dismissed, setDismissed] = useState(false);
@@ -37,11 +41,38 @@ function DemoBanner({ onUpgrade }: { onUpgrade: () => void }) {
   );
 }
 
+// Convert a hex colour to "H S% L%" for CSS variable injection
+function hexToHslString(hex: string | undefined | null): string | null {
+  if (!hex) return null;
+  const m = hex.trim().replace("#", "");
+  if (!/^([0-9a-f]{3}|[0-9a-f]{6})$/i.test(m)) return null;
+  const full = m.length === 3 ? m.split("").map((c) => c + c).join("") : m;
+  const r = parseInt(full.slice(0, 2), 16) / 255;
+  const g = parseInt(full.slice(2, 4), 16) / 255;
+  const b = parseInt(full.slice(4, 6), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0;
+  const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = ((g - b) / d + (g < b ? 6 : 0)); break;
+      case g: h = ((b - r) / d + 2); break;
+      case b: h = ((r - g) / d + 4); break;
+    }
+    h /= 6;
+  }
+  return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
+}
+
 function CustomerLayoutInner() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { collapsed, toggle } = useSidebarCollapse();
+  const { tenant } = useTenantFromSlug();
+  const { data: branding } = useTenantBranding(tenant?.id ?? null);
 
   const { data: profile } = useQuery({
     queryKey: ["profile_demo_flag", user?.id],
@@ -55,8 +86,20 @@ function CustomerLayoutInner() {
 
   const isDemo = !!profile?.is_demo;
 
+  // Inject tenant colour CSS variables for the print centre
+  const tenantStyle = useMemo(() => {
+    const style: Record<string, string> = {};
+    const primary = hexToHslString(branding?.primary_color);
+    const accent = hexToHslString(branding?.accent_color);
+    const secondary = hexToHslString(branding?.secondary_color);
+    if (primary) style["--tenant-primary"] = primary;
+    if (accent) style["--tenant-accent"] = accent;
+    if (secondary) style["--tenant-secondary"] = secondary;
+    return style as React.CSSProperties;
+  }, [branding]);
+
   return (
-    <div className="flex h-screen w-full flex-col">
+    <div className="flex h-screen w-full flex-col" style={tenantStyle}>
       {isDemo && <DemoBanner onUpgrade={() => navigate("/auth?mode=register&from=demo")} />}
       <div className="flex flex-1 w-full min-h-0">
         {/* Desktop sidebar — animated collapse */}
@@ -93,43 +136,27 @@ function CustomerLayoutInner() {
         )}
 
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-          {/* Top bar */}
-          <header className="print-topbar">
+          {/* Top bar — mobile menu trigger + header */}
+          <div className="flex items-stretch">
             <button
-              className="rounded-xl p-2 hover:bg-secondary lg:hidden"
+              className="lg:hidden self-stretch px-4 hover:bg-secondary"
               onClick={() => setMobileOpen(!mobileOpen)}
+              aria-label="Toggle menu"
             >
               <Menu className="h-5 w-5 text-muted-foreground" />
             </button>
-
-            <div className="search-shell max-w-3xl">
-              <Search className="h-5 w-5 text-muted-foreground" />
-              <input
-                className="search-input"
-                placeholder="Search files, products or orders"
-              />
+            <div className="flex-1 min-w-0">
+              <CustomerHeader />
             </div>
-
-            <div className="ml-auto flex items-center gap-2">
-              <button className="relative rounded-xl p-2 hover:bg-secondary">
-                <Bell className="h-5 w-5 text-muted-foreground" />
-                <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-success" />
-              </button>
-              <button className="relative rounded-xl p-2 hover:bg-secondary">
-                <ShoppingCart className="h-5 w-5 text-muted-foreground" />
-              </button>
-              <button className="rounded-full border border-border bg-card p-1 shadow-sm">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-violet-400 to-primary text-primary-foreground">
-                  <User className="h-4 w-4" />
-                </div>
-              </button>
-            </div>
-          </header>
+          </div>
 
           {/* Content */}
           <main className="flex-1 overflow-auto customer-body p-6 xl:p-8">
             <Outlet />
           </main>
+
+          {/* Footer */}
+          <CustomerFooter />
         </div>
       </div>
     </div>

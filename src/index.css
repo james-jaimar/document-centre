@@ -129,10 +129,7 @@
   }
 
   .print-sidebar {
-    @apply relative flex flex-col border-r border-white/10 text-sidebar-foreground;
-    background:
-      radial-gradient(circle at bottom left, rgba(72, 133, 255, 0.14), transparent 30%),
-      linear-gradient(180deg, hsl(var(--sidebar-background)) 0%, #171c25 100%);
+    @apply relative flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground;
   }
 
   .print-topbar {
@@ -156,11 +153,12 @@
   }
 
   .sidebar-nav-item:hover {
-    @apply bg-white/10 text-white;
+    @apply bg-sidebar-accent/40 text-sidebar-foreground;
   }
 
   .sidebar-nav-item.active {
-    @apply bg-sidebar-accent/90 text-white shadow-lg;
+    background: hsl(var(--tenant-primary, var(--sidebar-accent))) ;
+    @apply text-sidebar-accent-foreground shadow-lg;
   }
 
   .product-tile {
