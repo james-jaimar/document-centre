@@ -200,7 +200,51 @@ function groupResolvedIntoSections(
   return ordered;
 }
 
+function buildPrintColourSection(sections: DocumentSectionRow[]): ConfigSection | null {
+  if (!sections.length) return null;
+  const items: { label: string; value: string }[] = [];
+
+  // Print Colour summary
+  const allBW = sections.every((s) => !s.is_color);
+  const allColour = sections.every((s) => s.is_color);
+  items.push({
+    label: "Print Colour",
+    value: allBW ? "Black & White" : allColour ? "Full Colour" : "Mixed (Colour + B&W)",
+  });
+
+  // Print Sides summary
+  const allSimplex = sections.every((s) => !s.is_duplex);
+  const allDuplex = sections.every((s) => s.is_duplex);
+  items.push({
+    label: "Print Sides",
+    value: allSimplex ? "Simplex (Single-sided)" : allDuplex ? "Duplex (Double-sided)" : "Mixed",
+  });
+
+  return { title: "Print Colour", items };
+}
+
 function buildPerSectionDetail(sections: DocumentSectionRow[]): ConfigSection | null {
+  if (!sections.length) return null;
+  const items = sections
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((s) => {
+      const parts: string[] = [];
+      if (s.paper_stock) parts.push(s.paper_stock);
+      if (s.paper_weight_gsm) parts.push(`${s.paper_weight_gsm}gsm`);
+      parts.push(s.is_color ? "Colour" : "Mono");
+      parts.push(s.is_duplex ? "Duplex" : "Simplex");
+      if (s.lamination && s.lamination !== "none") parts.push(`Lam: ${s.lamination}`);
+      const range =
+        s.page_range_start && s.page_range_end
+          ? ` (p${s.page_range_start}–${s.page_range_end})`
+          : "";
+      return {
+        label: s.label || titleCase(s.section_type),
+        value: parts.join(" · ") + range,
+      };
+    });
+  return { title: "Document Sections", items };
+}
   if (!sections.length) return null;
   const items = sections
     .sort((a, b) => a.sort_order - b.sort_order)
@@ -288,6 +332,9 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
   const totalPages = documents.reduce((s, d) => s + (d.page_count ?? 0), 0);
   const summary = buildSummary(resolved, spec, totalPages);
   const groupedSections = groupResolvedIntoSections(resolved, spec, documents);
+
+  const printColourSection = buildPrintColourSection(sections);
+  if (printColourSection) groupedSections.push(printColourSection);
 
   const perSection = buildPerSectionDetail(sections);
   if (perSection) groupedSections.push(perSection);
