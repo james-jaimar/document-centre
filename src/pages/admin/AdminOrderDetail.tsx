@@ -35,6 +35,13 @@ export default function AdminOrderDetail() {
   const [markingPaid, setMarkingPaid] = useState(false);
   const queryClient = useQueryClient();
 
+  // Auto-select first job once data is loaded.
+  useEffect(() => {
+    if (!selectedJobId && data?.jobs?.[0]) {
+      setSelectedJobId(data.jobs[0].id);
+    }
+  }, [data?.jobs, selectedJobId]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
