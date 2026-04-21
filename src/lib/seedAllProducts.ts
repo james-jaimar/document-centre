@@ -14,7 +14,9 @@ import {
   DOC_SIZE_PORTRAIT, DOC_SIZE_LANDSCAPE, DOC_SIZE_POSTER, DOC_SIZE_FLYER, DOC_SIZE_BOOKLET, DOC_SIZE_BROCHURE,
   FINISHING, FINISHING_STAPLED,
   FOLD_TYPE,
-  PRICING_BOUND, PRICING_SIMPLE_DOC, PRICING_POSTER, PRICING_FLYER, PRICING_BOOKLET,
+  BUSINESS_CARD_SIZE, BUSINESS_CARD_PAPER, BUSINESS_CARD_LAMINATION,
+  BUSINESS_CARD_FINISHING, BUSINESS_CARD_CORNERS, BUSINESS_CARD_PRINT_SIDES, BUSINESS_CARD_PACK_SIZE,
+  PRICING_BOUND, PRICING_SIMPLE_DOC, PRICING_POSTER, PRICING_FLYER, PRICING_BOOKLET, PRICING_BUSINESS_CARDS,
 } from "./productOptionValues";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -255,7 +257,32 @@ export function seedBrochures() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// SEED ALL — runs all 7 in sequence, skipping existing
+// 8. BUSINESS CARDS
+// Standard 90×50mm (UK/AU/ZA) plus US, EU, and specialty sizes.
+// Sold in packs (50–2500). Premium stocks, lamination, foil, spot UV.
+// ═══════════════════════════════════════════════════════════════════
+export function seedBusinessCards() {
+  return seedFamily(
+    "business-cards",
+    "Business Cards",
+    "Premium business cards in standard 90×50mm (UK/AU/ZA), US 88.9×50.8mm, and European 85.6×54mm sizes. Sold in packs from 50 to 2,500 with a full range of card stocks, lamination, foil, spot UV, embossing and letterpress finishes.",
+    "CreditCard",
+    8,
+    [
+      { name: "Document Size", option_type: "select", values: BUSINESS_CARD_SIZE, is_required: true, sort_order: 0 },
+      { name: "Pack Size", option_type: "select", values: BUSINESS_CARD_PACK_SIZE, is_required: true, sort_order: 1 },
+      { name: "Paper Stock", option_type: "select", values: BUSINESS_CARD_PAPER, is_required: true, sort_order: 2 },
+      { name: "Print Sides", option_type: "select", values: BUSINESS_CARD_PRINT_SIDES, is_required: true, sort_order: 3 },
+      { name: "Corner Style", option_type: "select", values: BUSINESS_CARD_CORNERS, is_required: false, sort_order: 4 },
+      { name: "Lamination", option_type: "select", values: BUSINESS_CARD_LAMINATION, is_required: false, sort_order: 5 },
+      { name: "Special Finishing", option_type: "select", values: BUSINESS_CARD_FINISHING, is_required: false, sort_order: 6 },
+    ],
+    PRICING_BUSINESS_CARDS,
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SEED ALL — runs all 8 in sequence, skipping existing
 // ═══════════════════════════════════════════════════════════════════
 export interface SeedAllResult {
   seeded: string[];
@@ -273,6 +300,7 @@ export async function seedAllProducts(): Promise<SeedAllResult> {
     { name: "Booklets", fn: seedBooklets },
     { name: "Flyers", fn: seedFlyers },
     { name: "Brochures / Folded Leaflets", fn: seedBrochures },
+    { name: "Business Cards", fn: seedBusinessCards },
   ];
 
   const seeded: string[] = [];
