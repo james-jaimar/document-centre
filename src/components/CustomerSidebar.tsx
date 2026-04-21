@@ -1,4 +1,4 @@
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   Home,
   Plus,
@@ -30,6 +30,11 @@ export default function CustomerSidebar() {
   const location = useLocation();
   const { slug } = useParams<{ slug: string }>();
   const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/", { replace: true });
+  };
   const cartCount = useCartItemCount();
   const navItems = buildNavItems(slug ?? "");
   const { tenant } = useTenantFromSlug();
@@ -119,7 +124,7 @@ export default function CustomerSidebar() {
           <div>
             <div className="text-sm font-medium text-sidebar-foreground">{displayName}</div>
             <button
-              onClick={signOut}
+              onClick={handleSignOut}
               className="text-xs text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors"
             >
               Sign Out
