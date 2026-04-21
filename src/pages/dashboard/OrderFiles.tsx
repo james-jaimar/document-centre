@@ -148,8 +148,8 @@ export default function OrderFiles() {
           return;
         }
 
-        // 2) Source is valid — now create the order + item.
-        const newItemId = await ensureOrder();
+        // 2) Source is valid — now create the order + item (WITHOUT navigating yet).
+        const newItemId = await ensureOrder({ skipNavigate: true });
 
         // 3) Physically copy the S3 object to a new key keyed by the new order_item_id.
         const sourcePath: string = sourceDoc.file_path;
@@ -181,15 +181,17 @@ export default function OrderFiles() {
         });
         if (insErr) throw insErr;
 
-        // 5) Clear the ?fromDoc param so refresh doesn't re-copy.
-        setSearchParams((prev) => {
-          const next = new URLSearchParams(prev);
-          next.delete("fromDoc");
-          return next;
-        }, { replace: true });
-
+        // 5) Invalidate caches so the file list and dashboard update.
+        qc.invalidateQueries({ queryKey: ["documents", newItemId] });
         refetchDocuments();
         invalidateUserOrderCaches(qc);
+
+        // 6) NOW navigate to the canonical order URL (clone is complete).
+        const newOrderId = createdOrderId ?? orderId;
+        if (newOrderId) {
+          navigate(`/t/${slug}/orders/${newOrderId}/files`, { replace: true });
+        }
+
         toast.success(`Copied "${sourceDoc.file_name}" into new order`);
       } catch (err: any) {
         toast.error("Failed to copy file", { description: err.message });
