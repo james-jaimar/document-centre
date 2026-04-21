@@ -28,104 +28,96 @@ export function JobDetailPanel({ job, documents }: Props) {
   const [previewOpen, setPreviewOpen] = useState(false);
 
   return (
-    <div className="space-y-4">
-      {/* Job header */}
-      <div className="rounded-lg border bg-card p-4">
-        <div className="flex items-start justify-between gap-3">
+    <div className="space-y-2">
+      {/* Merged Job header + info card */}
+      <div className="rounded-lg border bg-card p-3 space-y-2">
+        {/* Header row */}
+        <div className="flex items-start justify-between gap-2">
           <div>
-            <div className="text-xs text-muted-foreground">Job ID</div>
-            <div className="text-lg font-bold font-mono">{job.job_number}</div>
+            <div className="text-[11px] text-muted-foreground">Job ID</div>
+            <div className="text-sm font-bold font-mono">{job.job_number}</div>
           </div>
           <div className="text-right">
-            <div className="text-xs text-muted-foreground">Job Name</div>
-            <div className="text-sm font-semibold">{job.job_name || job.product_name}</div>
+            <div className="text-[11px] text-muted-foreground">Job Name</div>
+            <div className="text-xs font-semibold">{job.job_name || job.product_name}</div>
           </div>
         </div>
 
-        {/* Customer preview action — visible to all staff who can view orders */}
-        <div className="mt-3 pt-3 border-t">
-          {hasPreview ? (
-            <Button
-              variant="default"
-              size="sm"
-              className="w-full"
-              onClick={() => setPreviewOpen(true)}
-            >
-              <Eye className="h-4 w-4 mr-2" />
-              View customer preview ({previewThumbs.filter(Boolean).length} pages)
-            </Button>
-          ) : (
-            <div className="text-xs text-muted-foreground italic text-center">
-              No customer preview available for this job
-            </div>
-          )}
-        </div>
-
-        <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-3">
-          <div>
-            <div className="text-xs text-muted-foreground">Job Status</div>
-            <div className="mt-1">
-              <StatusBadge {...JOB_STATUS_CONFIG[job.job_status as keyof typeof JOB_STATUS_CONFIG]} />
-            </div>
+        {/* Status badges inline */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1">
+            <span className="text-[11px] text-muted-foreground">Status:</span>
+            <StatusBadge {...JOB_STATUS_CONFIG[job.job_status as keyof typeof JOB_STATUS_CONFIG]} />
           </div>
-          <div>
-            <div className="text-xs text-muted-foreground">Proof Status</div>
-            <div className="mt-1">
-              <StatusBadge {...PROOF_STATUS_CONFIG[job.proof_status as keyof typeof PROOF_STATUS_CONFIG]} />
-            </div>
+          <div className="flex items-center gap-1">
+            <span className="text-[11px] text-muted-foreground">Proof:</span>
+            <StatusBadge {...PROOF_STATUS_CONFIG[job.proof_status as keyof typeof PROOF_STATUS_CONFIG]} />
           </div>
-          <div>
-            <div className="text-xs text-muted-foreground">Urgency</div>
-            <div className="mt-1">
-              <StatusBadge {...URGENCY_CONFIG[job.urgency as keyof typeof URGENCY_CONFIG]} />
-            </div>
+          <div className="flex items-center gap-1">
+            <span className="text-[11px] text-muted-foreground">Urgency:</span>
+            <StatusBadge {...URGENCY_CONFIG[job.urgency as keyof typeof URGENCY_CONFIG]} />
           </div>
         </div>
-      </div>
 
-      {/* Job Info — rendered from configuration JSON */}
-      <div className="rounded-lg border bg-card p-4 space-y-4">
-        <h3 className="text-sm font-semibold">Job Info</h3>
+        {/* Preview button */}
+        {hasPreview ? (
+          <Button
+            variant="default"
+            size="sm"
+            className="w-full h-7 text-xs"
+            onClick={() => setPreviewOpen(true)}
+          >
+            <Eye className="h-3.5 w-3.5 mr-1.5" />
+            View preview ({previewThumbs.filter(Boolean).length} pages)
+          </Button>
+        ) : (
+          <div className="text-[11px] text-muted-foreground italic text-center">
+            No customer preview available
+          </div>
+        )}
 
-        <div className="grid grid-cols-[120px_1fr] gap-y-2 text-sm">
-          <span className="text-muted-foreground text-xs">Product</span>
+        <Separator className="my-1" />
+
+        {/* Job info */}
+        <div className="grid grid-cols-[100px_1fr] gap-y-1 text-xs">
+          <span className="text-muted-foreground">Product</span>
           <span className="font-medium">{job.product_name}</span>
 
           {job.product_category && (
             <>
-              <span className="text-muted-foreground text-xs">Category</span>
+              <span className="text-muted-foreground">Category</span>
               <span>{job.product_category}</span>
             </>
           )}
 
-          <span className="text-muted-foreground text-xs">Quantity</span>
+          <span className="text-muted-foreground">Quantity</span>
           <span>
-            <span className="text-lg font-bold">{Number(job.quantity).toLocaleString()}</span>
-            {job.unit_label && <span className="text-muted-foreground ml-1 text-xs">{job.unit_label}</span>}
-            <span className="text-xs text-muted-foreground ml-2">
+            <span className="text-base font-semibold">{Number(job.quantity).toLocaleString()}</span>
+            {job.unit_label && <span className="text-muted-foreground ml-1">{job.unit_label}</span>}
+            <span className="text-muted-foreground ml-1.5">
               ({Number(job.qty_sent).toLocaleString()} sent, {Number(job.qty_remaining).toLocaleString()} remaining)
             </span>
           </span>
         </div>
 
-        {/* Summary specs from configuration.summary */}
+        {/* Summary specs */}
         {(summary.primary_spec_1_label || summary.primary_spec_2_label || summary.primary_spec_3_label) && (
-          <div className="grid grid-cols-[120px_1fr] gap-y-2 text-sm">
+          <div className="grid grid-cols-[100px_1fr] gap-y-1 text-xs">
             {summary.primary_spec_1_label && (
               <>
-                <span className="text-muted-foreground text-xs">{summary.primary_spec_1_label}</span>
+                <span className="text-muted-foreground">{summary.primary_spec_1_label}</span>
                 <span>{summary.primary_spec_1_value}</span>
               </>
             )}
             {summary.primary_spec_2_label && (
               <>
-                <span className="text-muted-foreground text-xs">{summary.primary_spec_2_label}</span>
+                <span className="text-muted-foreground">{summary.primary_spec_2_label}</span>
                 <span>{summary.primary_spec_2_value}</span>
               </>
             )}
             {summary.primary_spec_3_label && (
               <>
-                <span className="text-muted-foreground text-xs">{summary.primary_spec_3_label}</span>
+                <span className="text-muted-foreground">{summary.primary_spec_3_label}</span>
                 <span>{summary.primary_spec_3_value}</span>
               </>
             )}
@@ -135,14 +127,14 @@ export function JobDetailPanel({ job, documents }: Props) {
         {/* Configuration sections */}
         {sections.map((section, idx) => (
           <div key={idx}>
-            <Separator className="my-2" />
-            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            <Separator className="my-1" />
+            <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
               {section.title}
             </h4>
-            <div className="grid grid-cols-[120px_1fr] gap-y-1.5 text-sm">
+            <div className="grid grid-cols-[100px_1fr] gap-y-0.5 text-xs">
               {section.items.map((item, iIdx) => (
                 <div key={iIdx} className="contents">
-                  <span className="text-muted-foreground text-xs">{item.label}</span>
+                  <span className="text-muted-foreground">{item.label}</span>
                   <span>{item.value}</span>
                 </div>
               ))}
@@ -150,19 +142,19 @@ export function JobDetailPanel({ job, documents }: Props) {
           </div>
         ))}
 
-        <Separator />
+        <Separator className="my-1" />
 
         {/* Pricing */}
-        <div className="grid grid-cols-[120px_1fr] gap-y-1.5 text-sm">
-          <span className="text-muted-foreground text-xs">Net Price</span>
+        <div className="grid grid-cols-[100px_1fr] gap-y-0.5 text-xs">
+          <span className="text-muted-foreground">Net Price</span>
           <span className="font-medium">{fmt(job.net_price)}</span>
 
-          <span className="text-muted-foreground text-xs">Cost Price</span>
+          <span className="text-muted-foreground">Cost Price</span>
           <span>{fmt(job.cost_price)}</span>
 
           {job.weight_kg && (
             <>
-              <span className="text-muted-foreground text-xs">Weight</span>
+              <span className="text-muted-foreground">Weight</span>
               <span>{job.weight_kg}kg</span>
             </>
           )}
@@ -171,9 +163,9 @@ export function JobDetailPanel({ job, documents }: Props) {
 
       {/* Attached files */}
       {jobDocs.length > 0 && (
-        <div className="rounded-lg border bg-card p-4">
-          <h3 className="text-sm font-semibold mb-2">Customer's Attached Files</h3>
-          <div className="space-y-1">
+        <div className="rounded-lg border bg-card p-3">
+          <h3 className="text-xs font-semibold mb-1.5">Customer's Attached Files</h3>
+          <div className="space-y-0.5">
             {jobDocs.map((doc: any) => (
               <div key={doc.id} className="flex items-center gap-2 text-xs">
                 <span className="text-primary hover:underline cursor-pointer">{doc.file_name}</span>
