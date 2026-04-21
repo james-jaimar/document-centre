@@ -25,6 +25,61 @@ async function invokeOrderEngine<T = unknown>(
   return data as T;
 }
 
+// ── Secure document access helpers ──────────────────────────
+
+/**
+ * Download or view a document via the secure document-access edge function.
+ * Never exposes direct Supabase storage URLs to the browser.
+ */
+async function accessDocument(
+  type: "invoice" | "document",
+  id: string,
+  fileName: string,
+  disposition: "attachment" | "inline" = "attachment"
+) {
+  const { data, error } = await supabase.functions.invoke("document-access", {
+    body: { type, id, disposition },
+  });
+
+  if (error) {
+    throw new Error(error.message || "Failed to access document");
+  }
+
+  // data is a Blob when the function returns binary
+  const blob = data instanceof Blob ? data : new Blob([data], { type: "application/pdf" });
+  const blobUrl = URL.createObjectURL(blob);
+
+  if (disposition === "inline") {
+    window.open(blobUrl, "_blank");
+    // Revoke after a delay so the tab can load
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  } else {
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(blobUrl);
+  }
+}
+
+export async function downloadInvoice(invoiceId: string, fileName: string) {
+  return accessDocument("invoice", invoiceId, fileName, "attachment");
+}
+
+export async function viewInvoice(invoiceId: string, fileName: string) {
+  return accessDocument("invoice", invoiceId, fileName, "inline");
+}
+
+export async function downloadDocument(documentId: string, fileName: string) {
+  return accessDocument("document", documentId, fileName, "attachment");
+}
+
+export async function viewDocument(documentId: string, fileName: string) {
+  return accessDocument("document", documentId, fileName, "inline");
+}
+
 // ── Exported mutation functions ─────────────────────────────
 
 export async function createOrderWithJobs(payload: CreateOrderPayload) {
@@ -104,18 +159,4 @@ export async function generateInvoice(payload: {
   kind?: "proforma" | "invoice" | "credit_note" | "receipt";
 }) {
   return invokeOrderEngine<{ success: boolean }>("generateInvoice", payload);
-}
-
-export async function downloadInvoice(storage_bucket: string, storage_path: string, file_name: string) {
-  const { supabase } = await import("@/integrations/supabase/client");
-  const { data, error } = await supabase.storage.from(storage_bucket).createSignedUrl(storage_path, 60);
-  if (error || !data?.signedUrl) throw new Error(error?.message || "Failed to get download URL");
-  const a = document.createElement("a");
-  a.href = data.signedUrl;
-  a.download = file_name;
-  a.target = "_blank";
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
 }
