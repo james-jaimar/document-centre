@@ -522,6 +522,88 @@ export function usePlaceOrder() {
         };
       });
 
+      // ── Trigger PDF server processing (grayscale / resize) ──
+      // Fire-and-forget: failures are logged but don't block the order.
+      try {
+        const { processDocumentForProduction } = await import("@/lib/orders/mutations");
+        const { getTargetDimensions } = await import("@/lib/paperSizes");
+
+        const processingPromises: Promise<any>[] = [];
+
+        for (const item of items as any[]) {
+          const itemSections = ((sectionsData ?? []) as any[]).filter(
+            (s: any) => s.order_item_id === item.id
+          );
+          const itemDocs = ((documentsData ?? []) as any[]).filter(
+            (d: any) => d.order_item_id === item.id
+          );
+
+          // Determine if any section is B&W
+          const anyBW = itemSections.some((s: any) => !s.is_color);
+
+          // Determine selected size slug from spec
+          const selectedOptions = item.spec?.selected_options ?? {};
+          const sizeOptionKey = Object.keys(selectedOptions).find(
+            (k) => k.toLowerCase().includes("size")
+          );
+          const sizeSlug = sizeOptionKey ? selectedOptions[sizeOptionKey] : null;
+          const targetDims = sizeSlug ? getTargetDimensions(sizeSlug) : null;
+
+          for (const doc of itemDocs) {
+            if (!doc.backend_asset_id) continue;
+
+            const needsGrayscale = anyBW;
+            let needsResize = false;
+            let targetW: number | undefined;
+            let targetH: number | undefined;
+
+            if (targetDims && doc.page_width_mm && doc.page_height_mm) {
+              const TOLERANCE = 3;
+              const wDiff = Math.abs(doc.page_width_mm - targetDims.widthMm);
+              const hDiff = Math.abs(doc.page_height_mm - targetDims.heightMm);
+              // Check both orientations
+              const wDiffL = Math.abs(doc.page_width_mm - targetDims.heightMm);
+              const hDiffL = Math.abs(doc.page_height_mm - targetDims.widthMm);
+              const matchesPortrait = wDiff <= TOLERANCE && hDiff <= TOLERANCE;
+              const matchesLandscape = wDiffL <= TOLERANCE && hDiffL <= TOLERANCE;
+              if (!matchesPortrait && !matchesLandscape) {
+                needsResize = true;
+                // Use orientation matching document
+                if (doc.page_width_mm > doc.page_height_mm) {
+                  targetW = Math.max(targetDims.widthMm, targetDims.heightMm);
+                  targetH = Math.min(targetDims.widthMm, targetDims.heightMm);
+                } else {
+                  targetW = targetDims.widthMm;
+                  targetH = targetDims.heightMm;
+                }
+              }
+            }
+
+            if (needsGrayscale || needsResize) {
+              processingPromises.push(
+                processDocumentForProduction({
+                  backendAssetId: doc.backend_asset_id,
+                  needsGrayscale,
+                  needsResize,
+                  targetWidthMm: targetW,
+                  targetHeightMm: targetH,
+                })
+              );
+            }
+          }
+        }
+
+        if (processingPromises.length > 0) {
+          // Run in parallel, don't await completion — jobs run on the PDF server
+          Promise.allSettled(processingPromises).then((results) => {
+            const failed = results.filter((r) => r.status === "rejected");
+            if (failed.length) console.warn("[placeOrder] Some document processing failed:", failed);
+          });
+        }
+      } catch (e) {
+        console.warn("[placeOrder] Document processing setup failed (non-blocking):", e);
+      }
+
       const subtotal = jobs.reduce((sum: number, j: any) => sum + j.net_price, 0);
       const vatAmount = Math.round(subtotal * 0.15 * 100) / 100;
       const totalAmount = subtotal + vatAmount;
