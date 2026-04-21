@@ -245,27 +245,6 @@ function buildPerSectionDetail(sections: DocumentSectionRow[]): ConfigSection | 
     });
   return { title: "Document Sections", items };
 }
-  if (!sections.length) return null;
-  const items = sections
-    .sort((a, b) => a.sort_order - b.sort_order)
-    .map((s) => {
-      const parts: string[] = [];
-      if (s.paper_stock) parts.push(s.paper_stock);
-      if (s.paper_weight_gsm) parts.push(`${s.paper_weight_gsm}gsm`);
-      parts.push(s.is_color ? "Colour" : "Mono");
-      parts.push(s.is_duplex ? "Duplex" : "Simplex");
-      if (s.lamination && s.lamination !== "none") parts.push(`Lam: ${s.lamination}`);
-      const range =
-        s.page_range_start && s.page_range_end
-          ? ` (p${s.page_range_start}–${s.page_range_end})`
-          : "";
-      return {
-        label: s.label || titleCase(s.section_type),
-        value: parts.join(" · ") + range,
-      };
-    });
-  return { title: "Document Sections", items };
-}
 
 function buildFilesSection(documents: DocumentRow[]): ConfigSection | null {
   if (!documents.length) return null;

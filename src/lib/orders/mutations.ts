@@ -223,10 +223,3 @@ export async function processDocumentForProduction(params: {
 
   return result;
 }
-  const { data, error } = await supabase.functions.invoke("send-order-email", {
-    body: { order_id: orderId, event_key: "payment_request", force: true },
-  });
-  if (error) throw new Error(error.message || "Failed to send payment request");
-  if (data?.error) throw new Error(data.error);
-  return data;
-}
