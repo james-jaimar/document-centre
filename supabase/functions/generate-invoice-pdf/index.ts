@@ -21,6 +21,14 @@ function getTenantSetting(settings: any[], category: string, key: string): any {
   return settings.find((s) => s.category === category && s.setting_key === key)?.setting_value ?? null;
 }
 
+function parseJsonArr(val: unknown): string[] {
+  if (Array.isArray(val)) return val.map(String);
+  if (typeof val === "string") {
+    try { const p = JSON.parse(val); return Array.isArray(p) ? p.map(String) : []; } catch { return []; }
+  }
+  return [];
+}
+
 async function buildPdf(opts: {
   invoiceNumber: string;
   kind: string;
@@ -30,10 +38,11 @@ async function buildPdf(opts: {
   branding: Record<string, any>;
   financial: Record<string, any>;
   bank: Record<string, any>;
+  docs: Record<string, any>;
   billingAddress: any | null;
   deliveryAddress: any | null;
 }): Promise<Uint8Array> {
-  const { invoiceNumber, kind, order, jobs, tenant, branding, financial, bank, billingAddress, deliveryAddress } = opts;
+  const { invoiceNumber, kind, order, jobs, tenant, branding, financial, bank, docs, billingAddress, deliveryAddress } = opts;
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([595, 842]); // A4 portrait
   const font = await pdf.embedFont(StandardFonts.Helvetica);
@@ -54,24 +63,67 @@ async function buildPdf(opts: {
     });
   };
 
-  // Header band
+  // --- Header band ---
   const primaryHex = (branding.primary_color as string) || "#1a1a2e";
   const c = hexToRgb(primaryHex);
   page.drawRectangle({ x: 0, y: 780, width: W, height: 62, color: rgb(c.r, c.g, c.b) });
-  text(branding.portal_name || tenant.trading_name || tenant.name, M, 815, { size: 18, bold: true, color: rgb(1, 1, 1) });
-  text(kind === "credit_note" ? "CREDIT NOTE" : kind === "proforma" ? "PROFORMA INVOICE" : "TAX INVOICE", W - M - 130, 815, { size: 14, bold: true, color: rgb(1, 1, 1) });
+
+  // Header left: logo or name
+  const headerMode = (docs.header_mode as string) || "name";
+  let logoEmbedded = false;
+
+  if (headerMode === "logo" && docs.header_logo_url) {
+    try {
+      const logoRes = await fetch(docs.header_logo_url as string);
+      if (logoRes.ok) {
+        const logoBytes = new Uint8Array(await logoRes.arrayBuffer());
+        const contentType = logoRes.headers.get("content-type") || "";
+        let logoImage;
+        if (contentType.includes("png")) {
+          logoImage = await pdf.embedPng(logoBytes);
+        } else {
+          logoImage = await pdf.embedJpg(logoBytes);
+        }
+        const logoH = 40;
+        const logoW = (logoImage.width / logoImage.height) * logoH;
+        page.drawImage(logoImage, { x: M, y: 790, width: logoW, height: logoH });
+        logoEmbedded = true;
+      }
+    } catch {
+      // Fall back to text
+    }
+  }
+
+  if (!logoEmbedded) {
+    const headerText = (headerMode === "name" && docs.header_name)
+      ? (docs.header_name as string)
+      : branding.portal_name || tenant.trading_name || tenant.name;
+    text(headerText, M, 815, { size: 18, bold: true, color: rgb(1, 1, 1) });
+  }
+
+  // Header right: document title
+  const docTitle = kind === "credit_note"
+    ? "CREDIT NOTE"
+    : kind === "proforma"
+      ? ((docs.proforma_title as string) || "PROFORMA INVOICE")
+      : ((docs.invoice_title as string) || "TAX INVOICE");
+  const titleWidth = fontBold.widthOfTextAtSize(docTitle, 14);
+  text(docTitle, W - M - titleWidth, 815, { size: 14, bold: true, color: rgb(1, 1, 1) });
 
   y = 760;
 
-  // Tenant / from block
-  const fromLines = [
-    tenant.legal_name || tenant.name,
-    tenant.vat_number ? `VAT: ${tenant.vat_number}` : "",
-    tenant.registration_number ? `Reg: ${tenant.registration_number}` : "",
-    tenant.support_email || "",
-    tenant.support_phone || "",
-  ].filter(Boolean);
-  fromLines.forEach((line, i) => text(line, M, y - i * 12, { size: 9 }));
+  // --- From block: use invoice_address if set, otherwise tenant fields ---
+  const invoiceAddress = (docs.invoice_address as string) || "";
+  const fromLines = invoiceAddress
+    ? invoiceAddress.split("\n").map((l: string) => l.trim()).filter(Boolean)
+    : [
+        tenant.legal_name || tenant.name,
+        tenant.vat_number ? `VAT: ${tenant.vat_number}` : "",
+        tenant.registration_number ? `Reg: ${tenant.registration_number}` : "",
+        tenant.support_email || "",
+        tenant.support_phone || "",
+      ].filter(Boolean);
+  fromLines.forEach((line: string, i: number) => text(line, M, y - i * 12, { size: 9 }));
 
   // Invoice meta block right
   const meta = [
@@ -86,6 +138,16 @@ async function buildPdf(opts: {
   });
 
   y -= Math.max(fromLines.length, meta.length) * 12 + 18;
+
+  // --- Invoice custom fields ---
+  const invoiceCustomFields = parseJsonArr(docs.invoice_custom_fields).filter(Boolean);
+  if (invoiceCustomFields.length > 0) {
+    invoiceCustomFields.forEach((label, i) => {
+      text(`${label}:`, M, y - i * 12, { size: 9, bold: true });
+      text("_______________", M + font.widthOfTextAtSize(`${label}: `, 9) + 4, y - i * 12, { size: 9, color: rgb(0.6, 0.6, 0.6) });
+    });
+    y -= invoiceCustomFields.length * 12 + 10;
+  }
 
   // Bill to / Ship to
   const billY = y;
@@ -128,9 +190,7 @@ async function buildPdf(opts: {
 
   for (const job of jobs) {
     if (y < 180) {
-      // simplistic page break
       const np = pdf.addPage([595, 842]);
-      // continue on new page
       y = 800;
     }
     const qty = Number(job.quantity || 0);
@@ -140,7 +200,6 @@ async function buildPdf(opts: {
     text(fmtMoney(unit, order.currency), W - M - 140, y, { size: 9 });
     text(fmtMoney(Number(job.net_price), order.currency), W - M - 70, y, { size: 9 });
     y -= 16;
-    // configuration summary line (small)
     const summary = (job.configuration as any)?.summary;
     if (summary) {
       const chips: string[] = [];
@@ -195,13 +254,13 @@ async function buildPdf(opts: {
     bankLines.forEach((l, i) => text(l, M + 8, y - 26 - i * 10, { size: 9 }));
   }
 
-  // Footer
-  text(
-    `${tenant.legal_name || tenant.name} • Generated ${new Date().toLocaleString("en-ZA")}`,
-    M,
-    30,
-    { size: 8, color: rgb(0.5, 0.5, 0.55) }
-  );
+  // Footer: use legal_footer_text if set, otherwise generic
+  const footerText = (docs.legal_footer_text as string) || `${tenant.legal_name || tenant.name} • Generated ${new Date().toLocaleString("en-ZA")}`;
+  const footerLines = footerText.split("\n").map((l: string) => l.trim()).filter(Boolean);
+  const footerStartY = 20 + (footerLines.length - 1) * 10;
+  footerLines.forEach((line: string, i: number) => {
+    text(line, M, footerStartY - i * 10, { size: 8, color: rgb(0.5, 0.5, 0.55) });
+  });
 
   return pdf.save();
 }
@@ -241,7 +300,6 @@ Deno.serve(async (req) => {
       .eq("id", order_id)
       .single();
     if (oErr || !order) return json({ error: "Order not found" }, 404);
-    // Demo orders are allowed — invoices are harmless and exercise the full flow
 
     const [{ data: jobs }, { data: addresses }, { data: tenant }, { data: settings }] = await Promise.all([
       admin.from("order_jobs").select("*").eq("order_id", order_id).order("sequence_no"),
@@ -254,10 +312,12 @@ Deno.serve(async (req) => {
     const branding: Record<string, any> = {};
     const financial: Record<string, any> = {};
     const bank: Record<string, any> = {};
+    const docs: Record<string, any> = {};
     settingsArr.forEach((s) => {
       if (s.category === "branding") branding[s.setting_key] = s.setting_value;
       if (s.category === "financial") financial[s.setting_key] = s.setting_value;
       if (s.category === "payments") bank[s.setting_key] = s.setting_value;
+      if (s.category === "documents") docs[s.setting_key] = s.setting_value;
     });
 
     // Issue invoice number
@@ -279,6 +339,7 @@ Deno.serve(async (req) => {
       branding,
       financial,
       bank,
+      docs,
       billingAddress: billing,
       deliveryAddress: delivery,
     });
