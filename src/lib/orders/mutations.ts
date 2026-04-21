@@ -160,3 +160,21 @@ export async function generateInvoice(payload: {
 }) {
   return invokeOrderEngine<{ success: boolean }>("generateInvoice", payload);
 }
+
+export async function sendInvoiceEmail(invoiceId: string, orderId: string) {
+  const { data, error } = await supabase.functions.invoke("send-order-email", {
+    body: { order_id: orderId, event_key: "invoice_sent", invoice_id: invoiceId, force: true },
+  });
+  if (error) throw new Error(error.message || "Failed to send invoice email");
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+export async function requestPayment(orderId: string) {
+  const { data, error } = await supabase.functions.invoke("send-order-email", {
+    body: { order_id: orderId, event_key: "payment_request", force: true },
+  });
+  if (error) throw new Error(error.message || "Failed to send payment request");
+  if (data?.error) throw new Error(data.error);
+  return data;
+}

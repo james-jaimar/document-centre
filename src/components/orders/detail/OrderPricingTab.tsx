@@ -1,20 +1,44 @@
 import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
+import { Send } from "lucide-react";
+import { useState } from "react";
+import { requestPayment } from "@/lib/orders/mutations";
+import { toast } from "sonner";
 
 interface Props {
   order: any;
   jobs: any[];
   payments: any[];
+  addresses?: any[];
 }
 
 const fmt = (amount: number, currency = "ZAR") =>
   new Intl.NumberFormat("en-ZA", { style: "currency", currency, minimumFractionDigits: 2 }).format(amount);
 
-export function OrderPricingTab({ order, jobs, payments }: Props) {
+export function OrderPricingTab({ order, jobs, payments, addresses = [] }: Props) {
+  const [requesting, setRequesting] = useState(false);
+
+  const billing = addresses.find((a: any) => a.address_type === "billing");
+
   const fulfilmentLine = order.fulfillment_type === "collection"
     ? `Collection${order.branch?.name ? ` — ${order.branch.name}` : ""}`
     : order.fulfillment_type === "delivery"
     ? "Delivery"
     : null;
+
+  const deliveryDescription = order.metadata?.delivery_description as string | undefined;
+
+  const handleRequestPayment = async () => {
+    setRequesting(true);
+    try {
+      await requestPayment(order.id);
+      toast.success("Payment request sent to customer");
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setRequesting(false);
+    }
+  };
 
   return (
     <div className="rounded-lg border bg-card p-4 space-y-4 text-sm">
@@ -47,9 +71,14 @@ export function OrderPricingTab({ order, jobs, payments }: Props) {
           <span className="font-medium">{fmt(order.subtotal)}</span>
         </div>
         {(order.fulfillment_type === "delivery" || order.delivery_amount > 0) && (
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Delivery</span>
-            <span>{fmt(order.delivery_amount || 0)}</span>
+          <div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Delivery</span>
+              <span>{fmt(order.delivery_amount || 0)}</span>
+            </div>
+            {deliveryDescription && (
+              <p className="text-[11px] text-muted-foreground mt-0.5 ml-0.5">{deliveryDescription}</p>
+            )}
           </div>
         )}
         {order.discount_amount > 0 && (
@@ -83,15 +112,48 @@ export function OrderPricingTab({ order, jobs, payments }: Props) {
         </div>
       )}
 
-      <div className="flex justify-between text-sm font-bold">
+      <div className="flex justify-between items-center text-sm font-bold">
         <span>Amount Due</span>
         <span className={order.amount_due > 0 ? "text-destructive" : "text-green-600"}>
           {fmt(order.amount_due)}
         </span>
       </div>
 
-      {/* Billing address */}
-      {/* (Billing will be rendered on the Delivery tab; included here per the reference) */}
+      {/* Request Payment button */}
+      {order.amount_due > 0 && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="w-full"
+          onClick={handleRequestPayment}
+          disabled={requesting}
+        >
+          <Send className="h-3.5 w-3.5 mr-2" />
+          {requesting ? "Sending..." : "Request Payment"}
+        </Button>
+      )}
+
+      {/* Billing Address */}
+      {billing && (
+        <>
+          <Separator />
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground mb-1.5">Billing Address</p>
+            <div className="space-y-0.5 text-xs">
+              {billing.company_name && <p className="font-medium">{billing.company_name}</p>}
+              {billing.contact_name && <p>{billing.contact_name}</p>}
+              {billing.line1 && <p>{billing.line1}</p>}
+              {billing.line2 && <p>{billing.line2}</p>}
+              {billing.suburb && <p>{billing.suburb}</p>}
+              {billing.city && <p>{billing.city}</p>}
+              {(billing.postal_code || billing.province) && (
+                <p>{[billing.postal_code, billing.province].filter(Boolean).join(" ")}</p>
+              )}
+              {billing.country && <p>{billing.country}</p>}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

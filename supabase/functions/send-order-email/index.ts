@@ -22,9 +22,11 @@ type EventKey =
   | "dispatched"
   | "completed"
   | "refunded"
-  | "order_cancelled";
+  | "order_cancelled"
+  | "invoice_sent"
+  | "payment_request";
 
-const SUBJECTS: Record<EventKey, (n: string) => string> = {
+const SUBJECTS: Record<EventKey, (n: string, extra?: any) => string> = {
   order_received: (n) => `Order ${n} received — thank you!`,
   payment_received: (n) => `Payment received for order ${n}`,
   proof_ready: (n) => `Proof ready for order ${n}`,
@@ -34,6 +36,8 @@ const SUBJECTS: Record<EventKey, (n: string) => string> = {
   completed: (n) => `Order ${n} is complete`,
   refunded: (n) => `Refund processed for order ${n}`,
   order_cancelled: (n) => `Order ${n} has been cancelled`,
+  invoice_sent: (n, e) => `${e?.invoiceLabel || "Invoice"} for order ${n}`,
+  payment_request: (n) => `Payment request for order ${n}`,
 };
 
 const HEADLINES: Record<EventKey, string> = {
@@ -46,6 +50,15 @@ const HEADLINES: Record<EventKey, string> = {
   completed: "Your order is complete",
   refunded: "A refund has been processed",
   order_cancelled: "Your order has been cancelled",
+  invoice_sent: "Your invoice is attached",
+  payment_request: "Payment required",
+};
+
+const KIND_LABEL: Record<string, string> = {
+  proforma: "Proforma Invoice",
+  invoice: "Tax Invoice",
+  credit_note: "Credit Note",
+  receipt: "Receipt",
 };
 
 const BODIES: Record<EventKey, (ctx: any) => string> = {
@@ -64,6 +77,14 @@ const BODIES: Record<EventKey, (ctx: any) => string> = {
     `Order <strong>${c.orderNo}</strong> has been cancelled.${c.reason ? ` Reason: ${c.reason}.` : ""}${
       c.refundPending ? " Any payment received will be refunded separately." : ""
     } If you have any questions, please get in touch.`,
+  invoice_sent: (c) =>
+    `Please find your <strong>${c.invoiceLabel}</strong> (<strong>${c.invoiceNumber}</strong>) for order <strong>${c.orderNo}</strong> attached.` +
+    `<br><br>Total: <strong>${c.totalFmt}</strong>` +
+    (c.unpaid ? `<br>Amount due: <strong>${c.amountDueFmt}</strong>` : "") +
+    (c.unpaid ? `<br><br>Please pay via EFT using <strong>${c.orderNo}</strong> as your reference.` : ""),
+  payment_request: (c) =>
+    `A payment of <strong>${c.amountDueFmt}</strong> is due for order <strong>${c.orderNo}</strong>.` +
+    `<br><br>Please pay via EFT using <strong>${c.orderNo}</strong> as your reference.`,
 };
 
 function renderHtml(opts: {
@@ -79,7 +100,11 @@ function renderHtml(opts: {
   const logo = opts.branding.logo_url as string | undefined;
   const headline = HEADLINES[opts.event];
   const body = BODIES[opts.event](opts.ctx);
-  const showBank = opts.event === "order_received" && opts.ctx.unpaid && (opts.bank.bank_name || opts.bank.account_number);
+  const showBank =
+    ((opts.event === "order_received" && opts.ctx.unpaid) ||
+      opts.event === "payment_request" ||
+      (opts.event === "invoice_sent" && opts.ctx.unpaid)) &&
+    (opts.bank.bank_name || opts.bank.account_number);
   const bankBlock = showBank
     ? `<table style="margin-top:18px;border:1px solid #e5e7eb;border-radius:8px;border-collapse:separate;width:100%">
         <tr><td style="padding:12px 14px"><strong style="display:block;margin-bottom:6px;font-size:13px">Banking details (EFT)</strong>
@@ -128,7 +153,7 @@ Deno.serve(async (req) => {
     const admin = createClient(url, serviceKey);
 
     const body = await req.json();
-    const { order_id, event_key, force = false } = body || {};
+    const { order_id, event_key, force = false, invoice_id } = body || {};
     if (!order_id || !event_key) return json({ error: "order_id and event_key required" }, 400);
 
     const eventKey = event_key as EventKey;
@@ -156,6 +181,13 @@ Deno.serve(async (req) => {
     if ((order as any).is_demo) return json({ success: true, skipped: true, reason: "demo_order" });
     if (!order.customer_email) return json({ success: true, skipped: true, reason: "no_email" });
 
+    // Fetch invoice details if invoice_sent
+    let invoice: any = null;
+    if (eventKey === "invoice_sent" && invoice_id) {
+      const { data: inv } = await admin.from("order_invoices").select("*").eq("id", invoice_id).single();
+      invoice = inv;
+    }
+
     const [{ data: tenant }, { data: settings }, { data: addresses }] = await Promise.all([
       admin.from("tenants").select("*").eq("id", order.tenant_id).single(),
       admin.from("tenant_settings").select("*").eq("tenant_id", order.tenant_id),
@@ -169,7 +201,8 @@ Deno.serve(async (req) => {
       if (s.category === "payments") bank[s.setting_key] = s.setting_value;
     });
 
-    const enabledMap: Record<EventKey, string> = {
+    // For standard events, check notification enable/disable settings
+    const enabledMap: Record<string, string> = {
       order_received: "order_confirmation",
       payment_received: "payment_received",
       proof_ready: "proof_ready",
@@ -181,7 +214,7 @@ Deno.serve(async (req) => {
       order_cancelled: "order_cancelled",
     };
     const settingKey = enabledMap[eventKey];
-    if (notif[settingKey] === false) {
+    if (settingKey && notif[settingKey] === false) {
       return json({ success: true, skipped: true, reason: "tenant_disabled" });
     }
 
@@ -193,17 +226,22 @@ Deno.serve(async (req) => {
       ? `Shipping to ${[delivery.line1, delivery.suburb, delivery.city].filter(Boolean).join(", ")}.`
       : "";
 
+    const invoiceLabel = invoice ? (KIND_LABEL[invoice.kind] || invoice.kind) : "Invoice";
+
     const ctx = {
       orderNo: order.order_number || order.id.slice(0, 8),
       totalFmt: fmtMoney(order.total_amount),
       unpaid: order.payment_status === "unpaid",
+      amountDueFmt: fmtMoney(order.amount_due),
       deliveryLine,
       refundFmt: body.refund_amount != null ? fmtMoney(body.refund_amount) : undefined,
       reason: body.reason || undefined,
       refundPending: body.refund_pending === true,
+      invoiceLabel,
+      invoiceNumber: invoice?.invoice_number || "",
     };
 
-    const subject = SUBJECTS[eventKey](ctx.orderNo);
+    const subject = SUBJECTS[eventKey](ctx.orderNo, ctx);
     const ctaUrl = tenant?.slug ? `https://document-centre.lovable.app/t/${tenant.slug}/orders/${order_id}` : undefined;
     const html = renderHtml({ branding, tenant, bank, event: eventKey, ctx, ctaUrl });
 
@@ -223,7 +261,7 @@ Deno.serve(async (req) => {
       category: "order",
       related_type: "order",
       related_id: order_id,
-      metadata: { event_key: eventKey, order_number: ctx.orderNo },
+      metadata: { event_key: eventKey, order_number: ctx.orderNo, ...(invoice_id ? { invoice_id } : {}) },
     });
 
     // Kick the dispatcher so the customer email goes out promptly.
