@@ -28,8 +28,45 @@ const PAPER_SHADOW = "inset 0 0 0 1px rgba(0,0,0,0.12), inset 0 0 6px rgba(0,0,0
 /** Roles that are solid card material (edge-to-edge, no paper styling) */
 const CARD_ROLES = new Set(["inside_back_cover_card", "back_cover_card"]);
 
-/** Tab card color (light gray card stock) */
-const TAB_CARD_COLOR = "#e8e8e8";
+/** White tab card colour (off-white card stock) */
+const WHITE_TAB_COLOR = "#f5f5f5";
+
+/** Solid PVC tab body palette — must match TAB_COLORS / FlipBook resolveTabColor */
+const TAB_BODY_COLORS: Record<string, string> = {
+  red: "#ef4444",
+  blue: "#3b82f6",
+  green: "#22c55e",
+  yellow: "#eab308",
+  orange: "#f97316",
+  pink: "#ec4899",
+  purple: "#8b5cf6",
+  black: "#1f2937",
+  navy: "#1e3a5f",
+  gray: "#9ca3af",
+  grey: "#9ca3af",
+  pastel_blue: "#93c5fd",
+  pastel_green: "#86efac",
+  pastel_yellow: "#fde68a",
+  pastel_pink: "#fbcfe8",
+};
+
+/** Resolve a tab body colour from a slug or hex value. Empty/white → off-white card. */
+function resolveTabBodyColor(value: string | undefined): string {
+  if (!value || value === "white" || value === "") return WHITE_TAB_COLOR;
+  // Already a hex value (passed through from cycled multicolor)
+  if (value.startsWith("#")) return value;
+  return TAB_BODY_COLORS[value] ?? WHITE_TAB_COLOR;
+}
+
+/** Lightish colours where dark text reads better than white */
+const LIGHT_TAB_BACKGROUNDS = new Set([
+  WHITE_TAB_COLOR,
+  "#eab308", // yellow
+  "#fde68a", // pastel yellow
+  "#fbcfe8", // pastel pink
+  "#93c5fd", // pastel blue
+  "#86efac", // pastel green
+]);
 
 /** Roles that are blank paper faces */
 const BLANK_PAPER_ROLES = new Set(["blank_back", "inside_back_blank"]);

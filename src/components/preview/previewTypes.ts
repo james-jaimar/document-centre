@@ -70,8 +70,8 @@ export interface PreviewComponentProps {
   tabPositions?: TabPosition[];
 }
 
-/** Multi-colour tab cycling palette */
-export const TAB_COLORS = ["#ef4444", "#3b82f6", "#22c55e", "#eab308", "#f97316"];
+/** Multi-colour tab cycling palette: blue, red, orange, yellow, green (PVC pre-made dividers) */
+export const TAB_COLORS = ["#3b82f6", "#ef4444", "#f97316", "#eab308", "#22c55e"];
 
 /** Position metadata for a single tab in the document sequence */
 export interface TabPosition {
