@@ -1622,6 +1622,7 @@ export type Database = {
             | null
           fulfilment_status: string
           id: string
+          is_demo: boolean
           metadata: Json
           notes: string | null
           notes_customer: string | null
@@ -1665,6 +1666,7 @@ export type Database = {
             | null
           fulfilment_status?: string
           id?: string
+          is_demo?: boolean
           metadata?: Json
           notes?: string | null
           notes_customer?: string | null
@@ -1708,6 +1710,7 @@ export type Database = {
             | null
           fulfilment_status?: string
           id?: string
+          is_demo?: boolean
           metadata?: Json
           notes?: string | null
           notes_customer?: string | null
@@ -1997,6 +2000,7 @@ export type Database = {
           global_role: string
           id: string
           is_active: boolean
+          is_demo: boolean
           last_name: string | null
           phone: string | null
           tenant_id: string | null
@@ -2011,6 +2015,7 @@ export type Database = {
           global_role?: string
           id: string
           is_active?: boolean
+          is_demo?: boolean
           last_name?: string | null
           phone?: string | null
           tenant_id?: string | null
@@ -2025,6 +2030,7 @@ export type Database = {
           global_role?: string
           id?: string
           is_active?: boolean
+          is_demo?: boolean
           last_name?: string | null
           phone?: string | null
           tenant_id?: string | null
@@ -2263,6 +2269,7 @@ export type Database = {
           external_ref: string | null
           id: string
           is_active: boolean
+          is_demo: boolean
           legal_name: string | null
           locale: string
           logo_url: string | null
@@ -2292,6 +2299,7 @@ export type Database = {
           external_ref?: string | null
           id?: string
           is_active?: boolean
+          is_demo?: boolean
           legal_name?: string | null
           locale?: string
           logo_url?: string | null
@@ -2321,6 +2329,7 @@ export type Database = {
           external_ref?: string | null
           id?: string
           is_active?: boolean
+          is_demo?: boolean
           legal_name?: string | null
           locale?: string
           logo_url?: string | null
@@ -2545,6 +2554,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_demo_tenant: { Args: { p_tenant_id: string }; Returns: boolean }
       issue_invoice_number: {
         Args: { p_app_id: string; p_tenant_id: string }
         Returns: string
