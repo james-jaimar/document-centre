@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useOrderDetail } from "@/hooks/useOrders";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { Button } from "@/components/ui/button";
@@ -61,7 +61,7 @@ export default function BranchOrderDetail() {
     );
   }
 
-  const { order, jobs, addresses, timeline, messages, payments, documents } = data;
+  const { order, jobs, addresses, timeline, messages, payments, documents, orderedByProfile } = data;
 
   // Defensive: if RLS somehow lets a foreign order through, refuse to render it.
   if (branchId && order.branch_id && order.branch_id !== branchId) {
@@ -82,10 +82,6 @@ export default function BranchOrderDetail() {
   const selectedJob = selectedJobId
     ? jobs.find((j: any) => j.id === selectedJobId)
     : jobs[0] || null;
-
-  if (!selectedJobId && jobs.length > 0 && jobs[0]) {
-    setSelectedJobId(jobs[0].id);
-  }
 
   const handleMarkAsPaid = async () => {
     if (!order || order.amount_due <= 0) return;
@@ -188,11 +184,11 @@ export default function BranchOrderDetail() {
             </TabsContent>
 
             <TabsContent value="delivery" className="mt-3">
-              <OrderDeliveryTab addresses={addresses} />
+              <OrderDeliveryTab addresses={addresses} order={order} />
             </TabsContent>
 
             <TabsContent value="ordered_by" className="mt-3">
-              <OrderedByTab order={order} />
+              <OrderedByTab order={order} orderedByProfile={orderedByProfile} />
             </TabsContent>
           </Tabs>
         </div>

@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useOrderDetail } from "@/hooks/useOrders";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -58,11 +58,6 @@ export default function AdminOrderDetail() {
   const selectedJob = selectedJobId
     ? jobs.find((j: any) => j.id === selectedJobId)
     : jobs[0] || null;
-
-  // Auto-select first job
-  if (!selectedJobId && jobs.length > 0 && jobs[0]) {
-    setSelectedJobId(jobs[0].id);
-  }
 
   const handleMarkAsPaid = async () => {
     if (!order || order.amount_due <= 0) return;
