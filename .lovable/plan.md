@@ -1,144 +1,130 @@
 
 
-## Goal
+## Customer Portal — Theme + Branding + Header/Footer pass
 
-Wire up `documentcentre.com` so a visitor can hit one button, drop straight into a fully working **My Print Centre** (was "Dashboard"), upload, configure and "checkout" a real-looking print order — with no signup. All of that activity flows into a dedicated **Demo** tenant that you, as Platform Admin, can monitor from a single backend view.
+The "My Print Centre" view (and every customer-portal page under `/t/:slug/*`) needs four fixes:
 
-This plan covers four pieces:
-
-1. Wire up the marketing CTAs (`Try it free` / `Start Free Trial`)
-2. Build the one-click anonymous demo flow into a dedicated **Demo** tenant
-3. Rename customer “Dashboard” → **My Print Centre**
-4. Give Platform Admin a **Demo Activity** view to watch live
+1. **Naming** — settle on what we call this whole area
+2. **Tenant-branded sidebar** — logo + colours come from the tenant, not hard-coded "printflow"
+3. **Sidebar dark theme alignment** with the rest of the UI
+4. **A real header + footer** wrapping the print area
 
 ---
 
-## 1. Marketing landing → Try it now
+### 1. Naming — the recommendation
 
-Today the hero CTAs jump to `/auth` or scroll to `#cta`. We change them to the demo flow:
+You've been mixing "dashboard", "print area", "print centre". Recommendation, and what we'll standardise on across code, comments, and UI:
 
-- Primary CTA in hero: **“Try it now — no signup”** → `/try`
-- Secondary CTA: **“Start Free Trial”** → `/auth?mode=register` (kept for the lead-gen path)
-- Footer/secondary CTAs that currently point at `#cta` get the same split: a green “Try it now” + a lighter “Start Free Trial”.
+- **Customer-facing label**: **"Print Centre"** (the page they land on is "My Print Centre"; the whole portal is "your Print Centre"). Already in use — keep.
+- **Internal/code term**: **`printCentre`** for the customer portal area (route segment `/print-centre`, layout `CustomerLayout` becomes the print-centre layout conceptually but we won't rename the file to avoid churn — just align comments).
+- **Sidebar nav label**: stays **"Home"** (the home of your Print Centre).
 
-We keep the existing pricing section. I’ll wire the **Pricing → CTA buttons** to the same `/try` route so visitors can go from “see the price” → “play with it” in one click.
-
-`/try` is a thin React page that:
-- Calls Supabase `auth.signInAnonymously()`
-- Calls a new edge function `demo-bootstrap` that joins the new user to the **Demo** tenant as a `customer` membership (and tags the profile as a demo user)
-- Redirects to `/t/demo/print-centre`
+No code rename of files needed beyond what's already done. This is just a naming decision so we stop drifting.
 
 ---
 
-## 2. The Demo tenant + isolation model
+### 2. Tenant-branded sidebar (replace "printflow" + green tile)
 
-We create one dedicated tenant (slug `demo`) that ALL anonymous demo visitors share. This is simple, easy to wipe, and gives you one place to watch activity.
+**File: `src/components/CustomerSidebar.tsx`**
 
-**One-time DB setup (migration):**
-- Insert a tenant `slug = 'demo'`, `name = 'Document Centre Demo'`, with onboarding marked complete.
-- Seed it with one branch, the standard product families, and a basic pricing rule set (clone of an existing template tenant — likely PostNet — minus their identity).
-- Add a `is_demo boolean` column to:
-  - `profiles` (so we can identify demo users)
-  - `orders` (so we can hide demo orders from real tenant reporting + show them in the platform admin view)
-  - `tenants` (one row, `demo`, marked true)
-- Add an RLS-safe security definer helper `is_demo_tenant(tenant_id)`.
+- Remove the hard-coded green `Package` tile + literal `"printflow"` wordmark.
+- Pull the tenant from `useTenantFromSlug()` and branding from `useTenantBranding(tenant.id)`.
+- Render: `tenant.logo_url` (or `branding.logo_url`) at the top, with `branding.portal_name || tenant.name` as the wordmark beside it.
+- For the demo tenant specifically: we'll seed `logo_url` + `portal_name = "Document Centre"` + the marketing palette (navy / blue / sky / green / orange per `mem://design/marketing-brand-tokens`) into `tenants.logo_url` and `tenant_settings (category='branding')` via a small migration so the Demo print centre actually reads "Document Centre" with the proper logo, not "printflow".
+- Fallback chain when neither is set: tenant name as text only, no orphan green tile.
 
-**Demo user identity:**
-- Anonymous user is created via Supabase `auth.signInAnonymously()`.
-- `handle_new_user` trigger is extended: if the signup metadata contains `is_demo: true`, set `profiles.is_demo = true`.
-- `demo-bootstrap` edge function inserts a `tenant_memberships` row for that user into the Demo tenant as `customer`, then returns `{ slug: 'demo' }`.
+**File: `src/components/CustomerLayout.tsx`** — top-bar avatar + user button already exist; we'll feed `displayName` / initials from the profile (already wired) and tint the active-nav pill using the tenant's `primary_color` (CSS variable injected at the layout root).
 
-**Lifecycle / cleanup:**
-- New scheduled edge function `cleanup-demo-data` (daily): deletes anonymous demo users and their orders older than 7 days. Keeps the Demo tenant itself, its branch, products, pricing intact.
-- Storage objects uploaded by demo users go into the existing `documents` bucket but are scoped under `demo/<user_id>/...` for easy deletion.
+**Tenant colour injection**: at the root of `CustomerLayoutInner`, set CSS vars `--tenant-primary`, `--tenant-accent` from `useTenantBranding`. Sidebar active item, top-bar accent dot, and the "Home" pill consume these. Default falls back to existing `--sidebar-primary`.
 
 ---
 
-## 3. Real flow, never fulfilled
+### 3. Sidebar dark theme — bring in line with the rest of the app
 
-The demo storefront is the existing customer portal — same upload, preflight, preview, configurator, cart, checkout — pointed at the Demo tenant. The only changes:
+Right now the customer sidebar uses a custom near-black gradient (`#171c25` → `hsl(var(--sidebar-background))`) which doesn't quite match the admin sidebar (flat `bg-sidebar` from the design tokens).
 
-- **Checkout submission** (`useCart.placeOrder` + `order-engine`): if the order’s tenant is the Demo tenant, set `orders.is_demo = true` and force `admin_status = 'demo'` (new state). The order still goes through `submitted → confirmed` so the customer sees the full confirmation page, invoice screen, and order-detail UI.
-- **Demo orders never trigger production-side automation**: `email-dispatcher`, `send-order-email`, `generate-invoice-pdf` short-circuit when `is_demo = true` (no real emails, no PDFs sent anywhere).
-- **Subtle “DEMO” watermark/badge**: a slim banner on the customer portal when the user’s profile is `is_demo`, plus a “DEMO” chip on every order row in their list. This sells the point without breaking the experience.
-- **Conversion CTA**: a persistent “Save my work — create a free trial account” button in the demo banner. Clicking it takes them to `/auth?mode=register&from=demo` where, on signup, the existing `handle_new_user` trigger is extended to migrate the anonymous user’s orders/documents over to the new identity (link the new auth user to the same profile row instead of creating a new one — Supabase supports converting anonymous → permanent via `updateUser({ email, password })`, no migration of rows needed).
+Fix:
+- Drop the custom radial/linear gradient on `.print-sidebar` — switch to `@apply bg-sidebar text-sidebar-foreground border-r border-sidebar-border`, identical to `AppSidebar`.
+- Keep the rounded "active pill" treatment that the customer sidebar has (it's nicer than admin's flat one — we'll uplift admin to match in a later pass, not now).
+- Active item background: `bg-sidebar-accent` (token, not hard-coded teal).
+- User card at bottom: switch from `bg-white/5` to a `bg-sidebar-accent/40` so it reads on the new flat surface.
 
----
-
-## 4. Rename Dashboard → My Print Centre
-
-Customer portal only. This is a label/route change, not a functional one.
-
-- Sidebar item label: `Home` → keep `Home` (unchanged) but the page itself is rebranded.
-- Page title in `CustomerDashboard.tsx`: `Welcome back` headline area → “**My Print Centre**”.
-- Browser title: “My Print Centre — {Tenant Name}”.
-- Route: keep `/t/:slug/dashboard` working as a redirect for back-compat, but introduce `/t/:slug/print-centre` as the canonical URL. All internal `navigate()` / `<Link>` references updated. `AppEntryRedirect` updated. `CustomerSidebar` updated. `StorefrontRedirect` updated.
-- Marketing hero copy referencing “dashboard” updated to “your Print Centre”.
-
-(Admin / Branch / Platform “dashboards” are not touched — they’re different surfaces.)
+Net effect: the sidebar is the same dark navy as `/admin` and `/platform`, but with the customer-portal's softer pill nav. Visually consistent across all three portals.
 
 ---
 
-## 5. Platform Admin → Demo Activity view
+### 4. Header + footer for the print area
 
-A new page at `/platform/demo` (linked from the Platform sidebar):
+**Header (`print-topbar` in CustomerLayout)** — currently exists but is anaemic (just search + bell + cart + avatar). Upgrade to:
 
-- **Top stats**: anonymous demo users in the last 24h / 7d, demo orders submitted, most-configured product family.
-- **Live orders table**: every `orders.is_demo = true` row, newest first, with: time, anon user id (short), product family, page count, qty, total, configurator path taken.
-- **Click-through**: opens the existing `AdminOrderDetail` page for the demo tenant (uses the existing platform-admin override RLS we already fixed today).
-- **One-button “Wipe demo data now”**: calls `cleanup-demo-data` with `force=true`.
+- Left: tenant logo + portal name (mirrors sidebar, useful when sidebar is collapsed).
+- Centre: the existing search.
+- Right: bell, cart (with live count from `useCartItemCount`), avatar dropdown with "My Account" / "Sign Out".
+- Background: white/80 with backdrop blur (already there) — keep, just polish padding/heights.
 
-This is your sales tool — “look, here’s a real prospect playing with the product right now.”
+**Footer — new** (`<CustomerFooter />` component, mounted at the bottom of `<main>` inside `CustomerLayout`):
 
----
+- Slim (~44px), border-top, white background, text-muted small.
+- Left: `© {year} {tenant.name}` + "Powered by Document Centre" link (small, subtle — this is the SaaS attribution that's important for your sales pitch).
+- Centre: links to tenant's `support_email` / `support_phone` if set in `tenant_settings (category='general')`, otherwise hidden.
+- Right: links to "Terms" / "Privacy" — route to `/t/:slug/terms` and `/t/:slug/privacy` (placeholder pages for now, just static "Coming soon" so the links don't 404).
+- Hidden on `/order/:id/build` and other immersive flows where chrome would distract — controlled by a `hideFooter` prop on routes that need it (we'll start with footer everywhere, then suppress on the order builder if it crowds the UI).
 
-## Technical changes summary
+**Layout change** — `CustomerLayout` becomes:
 
-### Database
-- New tenant row + branch + product families + pricing rules for `demo` (seed migration).
-- `profiles.is_demo`, `orders.is_demo`, `tenants.is_demo` columns.
-- RLS: extend `user_can_read_order` / `user_is_staff_for` (no change needed — platform admin already covers it). Add policies so demo customers (anonymous users) can only see their own demo orders inside the demo tenant.
-- Extend `handle_new_user` to honour `is_demo` metadata.
-- New `order_status` value `'demo'` is NOT added — we use `is_demo` flag on the existing lifecycle so the customer sees the real confirmed flow.
-
-### Edge functions
-- New: `demo-bootstrap` — joins anon user to demo tenant, returns slug.
-- New: `cleanup-demo-data` — scheduled daily; manual trigger from platform admin.
-- Modified: `email-dispatcher`, `send-order-email`, `generate-invoice-pdf`, `order-engine` — short-circuit on `is_demo`.
-
-### Frontend
-- New: `src/pages/Try.tsx` — the `/try` entry point.
-- New: `src/pages/platform/PlatformDemoActivity.tsx`.
-- Modified: `MarketingLanding.tsx` — wire CTAs.
-- Modified: `CustomerLayout.tsx` — demo banner + “Save my work” CTA when `profile.is_demo`.
-- Modified: `CustomerDashboard.tsx` — rebrand to **My Print Centre**.
-- Modified: `CustomerSidebar.tsx` — point at `/print-centre`.
-- Modified: `App.tsx` — add `/try`, `/t/:slug/print-centre`, `/platform/demo` routes; legacy `/dashboard` keeps redirecting.
-- Modified: `useAuth.tsx` / `AppEntryRedirect.tsx` — anonymous demo users always land in the demo storefront.
-- Modified: `Auth.tsx` register flow — when `?from=demo`, calls `updateUser` to upgrade the anonymous user to a permanent account instead of creating a new one (preserves their orders).
-
-### Supabase config
-- Enable “Allow anonymous sign-ins” in Auth settings (you’ll need to flip this on in the Supabase dashboard — I’ll flag it).
+```text
+DemoBanner (only when is_demo)
+┌──────────────────────────────────────────┐
+│ Sidebar │ Header                          │
+│         ├─────────────────────────────────┤
+│         │ Main (Outlet)                   │
+│         │                                 │
+│         ├─────────────────────────────────┤
+│         │ Footer                          │
+└─────────┴─────────────────────────────────┘
+```
 
 ---
 
-## Verification
+### 5. Demo tenant seed (so it actually shows "Document Centre" branding)
 
-1. Open `documentcentre.com` (incognito) → click **Try it now** → land in **My Print Centre** at `/t/demo/print-centre` with no login screen, with a “DEMO MODE” banner.
-2. Upload a PDF → preflight runs → preview renders → configure → add to cart → checkout → see the confirmation page with a full (demo) invoice number.
-3. No real email is sent.
-4. Sign in as Platform Admin → `/platform/demo` → see the order I just placed within seconds, click through to its full order detail.
-5. Click “Save my work” in the demo banner → register with email/password → land back in `/t/demo/print-centre` as a real account → previous demo order is still there under my new identity.
-6. Run cleanup → demo orders older than 7 days disappear; the Demo tenant + products remain intact.
-7. Real tenants (PostNet, etc.) — their order lists are unaffected; their dashboards do not show any demo data.
+One-off migration:
+
+- `update tenants set logo_url = '/document-centre-logo.svg' where slug='demo';` (we already have this asset at `src/assets/doc-centre-logo.svg` — copy to `public/`).
+- Insert `tenant_settings` rows for the demo tenant under `category='branding'`:
+  - `portal_name` = `"Document Centre"`
+  - `primary_color` = marketing navy
+  - `accent_color` = marketing green
+  - `secondary_color` = marketing sky-blue
+- This is the only tenant we touch — every other tenant keeps whatever they've configured (or empty defaults).
 
 ---
 
-## Out of scope (deliberately)
+### Files changed
 
-- Per-visitor ephemeral tenants (rejected — too much overhead).
-- Real payment gateway in demo (never charge).
-- Renaming Admin / Branch / Platform “dashboards” (only the customer-facing one is renamed).
-- Marketing copy rewrite beyond the CTAs and the dashboard rename references.
-- A separate “sandbox” code path with mocked data (we deliberately keep the flow real so the demo sells the product honestly).
+- `src/components/CustomerSidebar.tsx` — pull tenant logo + portal name; remove hard-coded printflow wordmark and green tile.
+- `src/components/CustomerLayout.tsx` — wire tenant CSS vars; mount `<CustomerHeader />` and `<CustomerFooter />`; richer top bar.
+- `src/components/CustomerHeader.tsx` — **new**, extracted from current top-bar block, with tenant logo, search, bell, cart, avatar dropdown.
+- `src/components/CustomerFooter.tsx` — **new**.
+- `src/index.css` — flatten `.print-sidebar` gradient to use `bg-sidebar` tokens; add `--tenant-primary` consumer rules for active nav.
+- `public/document-centre-logo.svg` — copied from `src/assets`.
+- New migration: seed demo tenant `logo_url` + branding settings.
+- `src/App.tsx` — register `/t/:slug/terms` and `/t/:slug/privacy` placeholder routes.
+- `src/pages/dashboard/PortalTerms.tsx` + `PortalPrivacy.tsx` — **new**, minimal stubs.
+
+### Out of scope
+
+- Changing the admin / platform sidebar visual language (separate pass — they're "utilitarian" by spec).
+- Per-route footer suppression (we'll add later if a page actually needs it).
+- Real legal copy for Terms / Privacy — placeholder pages for now.
+- Custom tenant fonts in the print centre (already handled by `BrandingTab`; this change just consumes them).
+
+### Verification
+
+1. Visit `/try` → land in `/t/demo/print-centre` → sidebar shows **Document Centre** logo + name (not "printflow"), navy palette.
+2. Sidebar's active "Home" pill uses Document Centre's primary navy/green, not the old teal.
+3. Sidebar dark base is the same shade as admin/platform sidebars.
+4. New header sits above main content with cart count + avatar dropdown.
+5. New footer at bottom: "© 2026 Document Centre Demo · Powered by Document Centre · Terms · Privacy".
+6. Sign in to a real tenant (e.g. PostNet) → sidebar shows their logo + name + their branding colours, footer shows their tenant name. No demo styling leaks.
 
