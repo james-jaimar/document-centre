@@ -1,57 +1,92 @@
 
+## Fix: "Create from recently uploaded file" should actually carry the file into the new session
 
-## Fix: Sidebar picks up tenant branding colours
+### Root cause
 
-### Problem
+The dashboard is passing `?fromDoc={doc.id}` correctly when the user picks a product from "Recently Uploaded Files".
 
-The sidebar background is hard-coded to `hsl(var(--sidebar-background))` -- the generic dark theme token. The tenant's `primary_color`, `secondary_color`, and `accent_color` from branding settings are injected as CSS variables (`--tenant-primary`, `--tenant-accent`, `--tenant-secondary`) but only consumed by the active nav pill and its accent bar. The sidebar surface itself never changes per-tenant.
+The break happens inside `OrderFiles.tsx`:
+
+- the `fromDoc` effect starts
+- `ensureOrder()` creates the draft order
+- `ensureOrder()` immediately navigates to `/t/:slug/orders/{orderId}/files`
+- that route change drops the `?fromDoc=` query param and remounts the screen before the clone flow has safely completed
+
+So the user lands in a brand-new order session with no copied document.
 
 ### Fix
 
-**1. Sidebar background uses tenant primary colour** (`src/index.css`)
+### 1. Stop redirecting too early during the clone flow
+File: `src/pages/dashboard/OrderFiles.tsx`
 
-Change `.print-sidebar` to use the tenant's primary colour as the sidebar background, falling back to the existing `--sidebar-background` token when no branding is set:
+Refactor `ensureOrder()` so it can create the order/item without immediately navigating away.
 
-```css
-.print-sidebar {
-  background: linear-gradient(
-    180deg,
-    hsl(var(--tenant-primary, var(--sidebar-background))) 0%,
-    hsl(var(--tenant-primary, var(--sidebar-background)) / 0.92) 100%
-  );
-}
-```
+Recommended shape:
 
-This gives each tenant a distinct sidebar colour (Document Centre = navy `#0B2A66`, PostNet = their brand colour) while keeping the same dark feel.
+- keep `setCreatedOrderId(order.id)` so the current screen can already work against the new order
+- add an option like `ensureOrder({ navigateToCanonicalUrl?: boolean })`
+- default normal uploads to `true`
+- call it from the `fromDoc` copy flow with `false`
 
-**2. Active nav pill adjusts for branded sidebar** (`src/index.css`)
+That keeps the user on the `orders/new/:familyId?fromDoc=...` route long enough for the copy and DB insert to complete reliably.
 
-With the sidebar now branded, the active pill needs to contrast against it. Switch from using `--tenant-primary` (which is now the background) to using `--tenant-accent` for the active state, falling back to a lighter shade:
+### 2. Navigate only after the document clone succeeds
+File: `src/pages/dashboard/OrderFiles.tsx`
 
-```css
-.sidebar-nav-item.active {
-  background: hsl(var(--tenant-accent, var(--sidebar-accent)) / 0.85);
-}
-```
+In the `fromDoc` effect:
 
-The left accent bar keeps using `--tenant-accent` as it already does.
+1. validate the source document
+2. create the new order/item without redirecting
+3. copy the S3 object to the new `order-items/{newItemId}/...` path
+4. insert the cloned `documents` row
+5. invalidate/refetch the new order’s documents
+6. clear `fromDoc`
+7. only then replace the URL to `/t/${slug}/orders/${order.id}/files`
 
-**3. User card avatar tints** (`src/components/CustomerSidebar.tsx`)
+This makes the canonical route update the final step, not the first step.
 
-The user card avatar circle already uses `--tenant-primary` -- since that's now the sidebar background, switch it to `--tenant-accent` so it's visible:
+### 3. Preserve the normal lazy-create flow for regular uploads
+File: `src/pages/dashboard/OrderFiles.tsx`
 
-```css
-background: hsl(var(--tenant-accent, var(--tenant-primary, var(--sidebar-accent))) / 0.35)
-```
+The normal uploader path still needs current behavior:
+
+- user selects a product
+- first real upload creates the order
+- then the screen can move to the canonical `/orders/{id}/files` URL
+
+So the redirect suppression must be scoped only to the recent-upload clone path, not to all order creation.
+
+### 4. Tighten post-copy refresh logic
+File: `src/pages/dashboard/OrderFiles.tsx`
+
+After the cloned document row is inserted:
+
+- invalidate the `["documents", newItemId]` query explicitly
+- keep `refetchDocuments()` for the live screen
+- keep `invalidateUserOrderCaches(qc)` so the dashboard tiles update correctly
+
+This ensures the file list populates immediately after the copy succeeds.
+
+### Why this approach
+This fixes the actual race instead of masking it:
+
+- the dashboard link is already correct
+- the S3 copy helper is already wired
+- the broken part is the premature route replacement during an in-flight clone
 
 ### Files changed
 
-- `src/index.css` -- `.print-sidebar` background uses `--tenant-primary`; `.sidebar-nav-item.active` uses `--tenant-accent`.
-- `src/components/CustomerSidebar.tsx` -- user card avatar background uses `--tenant-accent`.
+- `src/pages/dashboard/OrderFiles.tsx`
+  - refactor `ensureOrder()` to support no-redirect mode
+  - update the `fromDoc` auto-copy effect to finish cloning before navigation
+  - explicitly invalidate the new item’s documents query after insert
 
 ### Verification
 
-1. Demo Print Centre sidebar is Document Centre navy (`#0B2A66`), not generic black.
-2. Active nav pill is green (`#34B34A` accent), visible against navy background.
-3. A tenant with no branding configured falls back to the standard `--sidebar-background` dark theme -- no breakage.
-
+1. Open Print Centre dashboard.
+2. In "Recently Uploaded Files", click `Create`.
+3. Choose a product, e.g. `Bound Documents`.
+4. The new order session opens with the selected file already present in the file list.
+5. Refresh the page: the file is still there.
+6. Confirm the URL ends on `/t/demo/orders/{newOrderId}/files`, without `?fromDoc=`.
+7. Normal manual upload flow still works and still creates the draft lazily on first upload.
