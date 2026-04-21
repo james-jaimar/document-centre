@@ -389,7 +389,7 @@ export default function MarketingLanding() {
           <nav className="hidden lg:flex items-center gap-9 text-[15px] font-medium" style={{ color: "hsl(var(--dc-navy))" }}>
             <a href="#features" className="hover:text-[hsl(var(--dc-blue))]">Features</a>
             <a href="#how-it-works" className="hover:text-[hsl(var(--dc-blue))]">How It Works</a>
-            <a href="#pricing" className="hover:text-[hsl(var(--dc-blue))]">Pricing</a>
+            <Link to="/pricing" className="hover:text-[hsl(var(--dc-blue))]">Pricing</Link>
             <a href="#resources" className="hover:text-[hsl(var(--dc-blue))]">Resources ▾</a>
           </nav>
           <div className="flex items-center gap-3">
@@ -686,7 +686,10 @@ export default function MarketingLanding() {
         <div className="max-w-[1240px] mx-auto px-6 flex flex-wrap items-center justify-between gap-6">
           <Logo />
           <nav className="flex flex-wrap gap-7 text-sm font-medium" style={{ color: "hsl(var(--dc-navy))" }}>
-            {["Features", "How It Works", "Pricing", "Resources", "Support", "Contact"].map((l) => (
+            <Link to="/#features" className="hover:text-[hsl(var(--dc-blue))]">Features</Link>
+            <Link to="/#how-it-works" className="hover:text-[hsl(var(--dc-blue))]">How It Works</Link>
+            <Link to="/pricing" className="hover:text-[hsl(var(--dc-blue))]">Pricing</Link>
+            {["Resources", "Support", "Contact"].map((l) => (
               <a key={l} href="#" className="hover:text-[hsl(var(--dc-blue))]">{l}</a>
             ))}
           </nav>

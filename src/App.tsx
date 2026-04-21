@@ -20,6 +20,7 @@ import { AppEntryRedirect } from "@/components/AppEntryRedirect";
 import StorefrontLanding from "@/pages/storefront/StorefrontLanding";
 import MarketingLanding from "@/pages/MarketingLanding";
 import Try from "@/pages/Try";
+import Pricing from "@/pages/Pricing";
 import PlatformDemoActivity from "@/pages/platform/PlatformDemoActivity";
 
 // Customer
@@ -238,6 +239,7 @@ const App = () => (
             <Route path="/" element={<MarketingLanding />} />
             {/* One-click demo entry */}
             <Route path="/try" element={<Try />} />
+            <Route path="/pricing" element={<Pricing />} />
             {/* Authenticated entry: redirects users to their portal */}
             <Route path="/app" element={<AppEntryRedirect />} />
             <Route path="*" element={<NotFound />} />
