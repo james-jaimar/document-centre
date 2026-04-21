@@ -174,23 +174,28 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
     );
   }
 
-  // ── Tab divider front: light gray card with label ──
+  // ── Tab divider front: solid PVC sheet (or off-white card for white) with label ──
   if (role === "tab") {
+    const tabBg = resolveTabBodyColor(color);
+    const isLight = LIGHT_TAB_BACKGROUNDS.has(tabBg);
+    const labelColor = isLight ? "#374151" : "#ffffff";
+    const labelOpacity = isLight ? 0.35 : 0.55;
     return (
-      <div className="w-full h-full" style={{ backgroundColor: TAB_CARD_COLOR, boxShadow: PAPER_SHADOW }}>
+      <div className="w-full h-full" style={{ backgroundColor: tabBg, boxShadow: PAPER_SHADOW }}>
         <div className="w-full h-full flex items-center justify-center">
-          <div className="text-center opacity-30">
-            <p style={{ fontSize: 11, fontWeight: 600, color: "#555" }}>{label || "TAB"}</p>
+          <div className="text-center" style={{ opacity: labelOpacity }}>
+            <p style={{ fontSize: 11, fontWeight: 700, color: labelColor, letterSpacing: 0.5 }}>{label || "TAB"}</p>
           </div>
         </div>
       </div>
     );
   }
 
-  // ── Tab divider back: plain gray card ──
+  // ── Tab divider back: solid PVC sheet (same colour as front face) ──
   if (role === "tab_back") {
+    const tabBg = resolveTabBodyColor(color);
     return (
-      <div className="w-full h-full" style={{ backgroundColor: TAB_CARD_COLOR, boxShadow: PAPER_SHADOW }} />
+      <div className="w-full h-full" style={{ backgroundColor: tabBg, boxShadow: PAPER_SHADOW }} />
     );
   }
 
