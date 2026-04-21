@@ -129,11 +129,12 @@
   }
 
   .print-sidebar {
-    @apply relative flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground;
+    @apply relative flex flex-col border-r border-sidebar-border text-sidebar-foreground;
+    background: linear-gradient(180deg, hsl(var(--sidebar-background)) 0%, hsl(var(--sidebar-background) / 0.96) 100%);
   }
 
   .print-topbar {
-    @apply sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-border bg-white/80 px-6 backdrop-blur;
+    @apply sticky top-0 z-30 flex h-[88px] items-center gap-6 border-b border-border bg-white/90 px-6 backdrop-blur-md lg:px-10;
   }
 
   .glass-card {
@@ -149,16 +150,36 @@
   }
 
   .sidebar-nav-item {
-    @apply flex items-center gap-3 rounded-2xl px-4 py-3 text-[15px] font-medium text-sidebar-foreground/90 transition-all;
+    @apply relative flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-sidebar-foreground/85 transition-all;
   }
 
   .sidebar-nav-item:hover {
-    @apply bg-sidebar-accent/40 text-sidebar-foreground;
+    @apply bg-sidebar-accent/30 text-sidebar-foreground;
   }
 
   .sidebar-nav-item.active {
-    background: hsl(var(--tenant-primary, var(--sidebar-accent))) ;
-    @apply text-sidebar-accent-foreground shadow-lg;
+    background: hsl(var(--tenant-primary, var(--sidebar-accent)) / 0.85);
+    @apply text-sidebar-accent-foreground shadow-md;
+  }
+
+  .sidebar-nav-item.active::before {
+    content: "";
+    @apply absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-r-full;
+    background: hsl(var(--tenant-accent, var(--tenant-primary, var(--sidebar-accent))));
+  }
+
+  .header-nav-link {
+    @apply relative inline-flex items-center px-1 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground;
+  }
+
+  .header-nav-link.active {
+    @apply text-foreground;
+  }
+
+  .header-nav-link.active::after {
+    content: "";
+    @apply absolute -bottom-0.5 left-0 right-0 h-0.5 rounded-full;
+    background: hsl(var(--tenant-primary, var(--primary)));
   }
 
   .product-tile {
