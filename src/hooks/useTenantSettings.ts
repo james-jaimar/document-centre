@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useTenantContext } from "@/hooks/useTenantContext";
@@ -42,13 +43,16 @@ export function useTenantSettings(category?: string) {
 /** Returns a record of { setting_key: setting_value } for a category */
 export function useTenantSettingsMap(category: string) {
   const query = useTenantSettings(category);
-  const map: Record<string, unknown> = {};
-  if (query.data) {
-    for (const s of query.data) {
-      map[s.setting_key] = s.setting_value;
+  const settingsMap = useMemo(() => {
+    const map: Record<string, unknown> = {};
+    if (query.data) {
+      for (const s of query.data) {
+        map[s.setting_key] = s.setting_value;
+      }
     }
-  }
-  return { ...query, settingsMap: map };
+    return map;
+  }, [query.data]);
+  return { ...query, settingsMap };
 }
 
 export function useUpsertTenantSetting() {
