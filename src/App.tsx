@@ -50,6 +50,7 @@ import AdminBranchDetail from "@/pages/admin/AdminBranchDetail";
 import AdminCustomers from "@/pages/admin/AdminCustomers";
 import AdminCustomerDetail from "@/pages/admin/AdminCustomerDetail";
 import AdminSentMail from "@/pages/admin/AdminSentMail";
+import AdminDocuments from "@/pages/admin/AdminDocuments";
 
 // Branch portal
 import BranchDashboard from "@/pages/branch/BranchDashboard";
