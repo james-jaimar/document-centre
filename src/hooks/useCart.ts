@@ -547,8 +547,10 @@ export function usePlaceOrder() {
           branch_id: input.branchId || cartOrder.branch_id || null,
           customer: {
             profile_id: user.id,
-            email: profile?.email || user.email,
-            name: [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || profile?.display_name || null,
+            email: profile?.email || user.email || `demo-${user.id.slice(0, 8)}@demo.document-centre.com`,
+            name: [profile?.first_name, profile?.last_name].filter(Boolean).join(" ")
+                  || profile?.display_name
+                  || (isDemo ? "Demo User" : null),
           },
           order: {
             source_channel: isDemo ? "demo" : "storefront",
