@@ -120,6 +120,7 @@ const ADMIN_SECTIONS: NavSection[] = [
     membershipRoles: ["owner", "admin"],
     items: [
       { to: "/admin/sent-mail", icon: <Mail size={20} />, label: "Sent Mail" },
+      { to: "/admin/documents", icon: <FileText size={20} />, label: "Documents" },
     ],
   },
   {

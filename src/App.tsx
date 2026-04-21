@@ -205,6 +205,11 @@ const App = () => (
                   <AdminSentMail />
                 </ProtectedRoute>
               } />
+              <Route path="/admin/documents" element={
+                <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
+                  <AdminDocuments />
+                </ProtectedRoute>
+              } />
 
               {/* Admin — Settings */}
               <Route path="/admin/settings" element={
