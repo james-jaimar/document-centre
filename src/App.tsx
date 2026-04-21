@@ -19,6 +19,8 @@ import { StorefrontRedirect } from "@/components/StorefrontRedirect";
 import { AppEntryRedirect } from "@/components/AppEntryRedirect";
 import StorefrontLanding from "@/pages/storefront/StorefrontLanding";
 import MarketingLanding from "@/pages/MarketingLanding";
+import Try from "@/pages/Try";
+import PlatformDemoActivity from "@/pages/platform/PlatformDemoActivity";
 
 // Customer
 import CustomerDashboard from "@/pages/dashboard/CustomerDashboard";
@@ -101,6 +103,7 @@ const App = () => (
             {/* Customer portal — slug-based storefront */}
             <Route path="/t/:slug" element={<ProtectedRoute><CustomerLayout /></ProtectedRoute>}>
               <Route path="dashboard" element={<CustomerDashboard />} />
+              <Route path="print-centre" element={<CustomerDashboard />} />
               <Route path="orders/:id" element={<CustomerOrderDetail />} />
               <Route path="orders" element={<CustomerOrders />} />
               <Route path="orders/new" element={<NewOrder />} />
@@ -220,10 +223,17 @@ const App = () => (
                   <PlatformSettings />
                 </ProtectedRoute>
               } />
+              <Route path="/platform/demo" element={
+                <ProtectedRoute allowedRoles={["platform_admin"]}>
+                  <PlatformDemoActivity />
+                </ProtectedRoute>
+              } />
             </Route>
 
             {/* Public marketing landing — always shown at root */}
             <Route path="/" element={<MarketingLanding />} />
+            {/* One-click demo entry */}
+            <Route path="/try" element={<Try />} />
             {/* Authenticated entry: redirects users to their portal */}
             <Route path="/app" element={<AppEntryRedirect />} />
             <Route path="*" element={<NotFound />} />
