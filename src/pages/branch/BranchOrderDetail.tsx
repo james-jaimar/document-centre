@@ -187,7 +187,7 @@ export default function BranchOrderDetail() {
 
             <TabsContent value="pricing" className="mt-3 space-y-3">
               <OrderPricingTab order={order} jobs={jobs} payments={payments} />
-              <OrderInvoicesList orderId={order.id} canIssue />
+              <OrderInvoicesList orderId={order.id} />
             </TabsContent>
 
             <TabsContent value="delivery" className="mt-3">

@@ -2,9 +2,8 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Download, Eye, FileText } from "lucide-react";
-import { downloadInvoice, viewInvoice, generateInvoice } from "@/lib/orders/mutations";
+import { downloadInvoice, viewInvoice } from "@/lib/orders/mutations";
 import { toast } from "sonner";
-import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 
 interface Invoice {
@@ -25,17 +24,9 @@ const KIND_LABEL: Record<string, string> = {
   receipt: "Receipt",
 };
 
-export function OrderInvoicesList({
-  orderId,
-  canIssue = false,
-}: {
-  orderId: string;
-  canIssue?: boolean;
-}) {
+export function OrderInvoicesList({ orderId }: { orderId: string }) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
-  const [issuing, setIssuing] = useState(false);
-  const qc = useQueryClient();
 
   const load = async () => {
     setLoading(true);
@@ -68,30 +59,12 @@ export function OrderInvoicesList({
     }
   };
 
-  const handleIssue = async (kind: "invoice" | "proforma") => {
-    setIssuing(true);
-    try {
-      await generateInvoice({ order_id: orderId, kind });
-      toast.success("Invoice generated");
-      setTimeout(() => { load(); qc.invalidateQueries({ queryKey: ["order-detail", orderId] }); }, 1500);
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      setIssuing(false);
-    }
-  };
-
   return (
     <div className="rounded-lg border bg-card">
-      <div className="px-4 py-3 border-b flex items-center justify-between">
+      <div className="px-4 py-3 border-b">
         <h3 className="font-semibold text-sm flex items-center gap-2">
           <FileText className="h-4 w-4" /> Invoices & Receipts
         </h3>
-        {canIssue && (
-          <Button size="sm" variant="outline" onClick={() => handleIssue("invoice")} disabled={issuing}>
-            {issuing ? "Generating..." : "Generate Invoice"}
-          </Button>
-        )}
       </div>
       <div className="divide-y">
         {loading ? (
@@ -99,13 +72,6 @@ export function OrderInvoicesList({
         ) : invoices.length === 0 ? (
           <div className="px-4 py-6 text-center text-xs text-muted-foreground">
             No invoices yet
-            {canIssue && (
-              <div className="mt-2">
-                <Button size="sm" variant="outline" onClick={() => handleIssue("proforma")} disabled={issuing}>
-                  Generate Proforma
-                </Button>
-              </div>
-            )}
           </div>
         ) : (
           invoices.map((inv) => (
