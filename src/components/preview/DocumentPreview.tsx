@@ -33,7 +33,7 @@ export interface DocumentPreviewProps {
 }
 
 const BOUND_TYPES = new Set([
-  "wire_bound", "comb_bound", "saddle_stitched", "perfect_bound", "ring_binder",
+  "wire_bound", "comb_bound", "saddle_stitched", "perfect_bound",
 ]);
 const FOLD_TYPES = new Set(["bi_fold", "tri_fold", "z_fold", "gate_fold"]);
 
