@@ -1,50 +1,39 @@
 
 
-## Upgrade Pricing Tab to Match Reference System
+## Compact the Order Detail UI
 
-### What the reference system shows (and we currently lack)
+### Problem
+The Job Detail panel and Invoices list are too large and spread out. The reference system displays job info in a much tighter, denser layout. Two areas need attention:
 
-1. **Delivery line with description** — "Road Freight 2-3 days (transit time only, not production)" shown as a labelled row with amount
-2. **"Send" button on each invoice** — ability to email the Proforma or Tax Invoice directly to the customer
-3. **"Request" payment button** — sends a payment request email to the customer
-4. **Invoice dates** — each invoice row shows the issued date
-5. **Billing Address** — displayed within the Pricing tab (not just on Delivery tab)
+1. **Invoices list** -- each row is too tall with text wrapping; the Send/View/PDF buttons take too much space
+2. **Job Detail panel** -- excessive padding, large font sizes, and too much vertical spacing between sections
 
 ### Changes
 
-**`src/components/orders/OrderInvoicesList.tsx`**
-- Add a "Send" button next to each invoice's View/Download buttons
-- Sends the invoice to the customer via the existing `send-order-email` edge function (or a new `sendInvoiceEmail` mutation)
-- Show a loading/sending state and success toast
+**`src/components/orders/detail/JobDetailPanel.tsx`** -- Tighten the entire panel:
+- Reduce outer `space-y-4` to `space-y-2`
+- Reduce card padding from `p-4` to `p-3`
+- Shrink Job ID from `text-lg` to `text-sm`
+- Reduce quantity font from `text-lg font-bold` to `text-base font-semibold`
+- Merge the Job header card and Job Info card into a single card to eliminate the gap between them
+- Reduce grid `gap-y-2` to `gap-y-1` throughout
+- Reduce section separator margins from `my-2` to `my-1`
+- Make the preview button more compact (smaller padding)
+- Status badges row: tighter `gap-2` instead of `gap-3`, rendered inline with the header rather than in a separate block
+- Attached files section: reduce padding from `p-4` to `p-3`
 
-**`src/lib/orders/mutations.ts`**
-- Add `sendInvoiceEmail(invoiceId: string, orderId: string)` function that invokes `send-order-email` with an appropriate event key or a new dedicated endpoint
+**`src/components/orders/OrderInvoicesList.tsx`** -- Make rows more compact:
+- Reduce row padding from `py-2.5` to `py-1.5`
+- Use icon-only buttons (remove text labels "Send", "View", "PDF") with tooltips
+- Shrink button icon size to `h-3 w-3`
 
-**`src/components/orders/detail/OrderPricingTab.tsx`**
-- Add delivery description text (from order metadata or fulfilment settings) below the Delivery amount line
-- Show Billing Address at the bottom of the Pricing tab (pull from `addresses` prop — needs to be passed in)
-- Add a "Request Payment" button in the payments section that triggers a payment request email to the customer
-
-**`src/pages/admin/AdminOrderDetail.tsx`**
-- Pass `addresses` to `OrderPricingTab` so it can render the billing address
-
-**`supabase/functions/send-order-email/index.ts`**
-- Add `invoice_sent` event key for manually sending an invoice PDF as an email attachment
-- Add `payment_request` event key for requesting payment from the customer
+### Result
+A denser, more professional layout matching the reference system's clean presentation. No data is removed -- everything is still visible, just tighter.
 
 ### Files changed
 
 | File | Change |
 |------|--------|
-| `src/components/orders/OrderInvoicesList.tsx` | Add "Send" button per invoice row, call send mutation |
-| `src/components/orders/detail/OrderPricingTab.tsx` | Add delivery description, billing address, request payment button |
-| `src/pages/admin/AdminOrderDetail.tsx` | Pass `addresses` prop to `OrderPricingTab` |
-| `src/lib/orders/mutations.ts` | Add `sendInvoiceEmail` and `requestPayment` mutation helpers |
-| `supabase/functions/send-order-email/index.ts` | Add `invoice_sent` and `payment_request` event types with email templates |
-
-### Technical notes
-- The "Send" button will invoke `send-order-email` with `event_key: "invoice_sent"` and the invoice ID, which will attach the PDF to the email
-- "Request Payment" sends a `payment_request` email containing banking details and amount due
-- Billing address rendering reuses the same address format from `OrderDeliveryTab`
-- No new database tables needed
+| `src/components/orders/detail/JobDetailPanel.tsx` | Merge cards, reduce padding/spacing/font sizes throughout |
+| `src/components/orders/OrderInvoicesList.tsx` | Icon-only action buttons, tighter row padding |
 
