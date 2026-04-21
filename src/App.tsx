@@ -33,6 +33,8 @@ import Cart from "@/pages/dashboard/Cart";
 import Checkout from "@/pages/dashboard/Checkout";
 import OrderConfirmation from "@/pages/dashboard/OrderConfirmation";
 import CustomerOrderDetail from "@/pages/dashboard/CustomerOrderDetail";
+import PortalTerms from "@/pages/dashboard/PortalTerms";
+import PortalPrivacy from "@/pages/dashboard/PortalPrivacy";
 
 // Admin
 import AdminDashboard from "@/pages/admin/AdminDashboard";
@@ -115,6 +117,8 @@ const App = () => (
               <Route path="checkout" element={<Checkout />} />
               <Route path="account" element={<CustomerAccount />} />
               <Route path="settings" element={<CustomerAccount />} />
+              <Route path="terms" element={<PortalTerms />} />
+              <Route path="privacy" element={<PortalPrivacy />} />
             </Route>
 
             {/* Legacy /dashboard redirects to slug-based URL */}

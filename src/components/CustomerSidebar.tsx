@@ -4,9 +4,7 @@ import {
   Plus,
   ClipboardList,
   Settings,
-  LogOut,
   HelpCircle,
-  Package,
   PanelLeftClose,
   ShoppingCart,
 } from "lucide-react";
@@ -16,6 +14,8 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { useCartItemCount } from "@/hooks/useCart";
+import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
+import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { resolveDisplayName, resolveInitials } from "@/lib/displayName";
 
 const buildNavItems = (slug: string) => [
@@ -32,6 +32,8 @@ export default function CustomerSidebar() {
   const { user, signOut } = useAuth();
   const cartCount = useCartItemCount();
   const navItems = buildNavItems(slug ?? "");
+  const { tenant } = useTenantFromSlug();
+  const { data: branding } = useTenantBranding(tenant?.id ?? null);
 
   const { data: profile } = useQuery({
     queryKey: ["profile", user?.id],
@@ -54,23 +56,31 @@ export default function CustomerSidebar() {
   const displayName = resolveDisplayName(nameSource, "User");
   const initials = resolveInitials(nameSource, "U").toLowerCase();
 
-   const { collapsed, toggle } = useSidebarCollapse();
+  const { toggle } = useSidebarCollapse();
+
+  const portalName = branding?.portal_name || tenant?.name || "";
+  const logoUrl = branding?.logo_url || tenant?.logo_url || "";
 
   return (
     <aside className="print-sidebar w-64 shrink-0 px-5 py-6 hidden lg:flex">
       {/* Brand + collapse toggle */}
-      <div className="mb-8 flex items-center justify-between px-2">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-300 to-emerald-500 shadow-md">
-            <Package className="h-5 w-5 text-foreground" />
-          </div>
-          <div className="text-3xl font-semibold tracking-tight text-sidebar-foreground">
-            printflow
-          </div>
+      <div className="mb-8 flex items-center justify-between gap-2 px-1">
+        <div className="flex min-w-0 items-center gap-3">
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt={portalName}
+              className="h-9 w-auto max-w-[150px] object-contain"
+            />
+          ) : (
+            <div className="truncate text-xl font-semibold tracking-tight text-sidebar-foreground">
+              {portalName || "Print Centre"}
+            </div>
+          )}
         </div>
         <button
           onClick={toggle}
-          className="rounded-lg p-1.5 hover:bg-white/10 transition-colors"
+          className="shrink-0 rounded-lg p-1.5 hover:bg-sidebar-accent/40 transition-colors"
           title="Collapse sidebar"
         >
           <PanelLeftClose className="h-4 w-4 text-sidebar-foreground/60 hover:text-sidebar-foreground" />
@@ -101,7 +111,7 @@ export default function CustomerSidebar() {
       </nav>
 
       {/* User card */}
-      <div className="mt-8 flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+      <div className="mt-8 flex items-center justify-between rounded-2xl border border-sidebar-border bg-sidebar-accent/40 px-3 py-3">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-full bg-warning text-foreground font-semibold text-sm">
             {initials}
