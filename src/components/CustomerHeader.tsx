@@ -47,7 +47,7 @@ export default function CustomerHeader() {
           <img
             src={logoUrl}
             alt={portalName}
-            className="h-12 w-auto max-w-[200px] object-contain"
+            className="h-16 w-auto max-w-[260px] object-contain"
           />
         ) : (
           <span className="text-lg font-semibold text-foreground truncate">{portalName}</span>
