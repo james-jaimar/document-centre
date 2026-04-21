@@ -116,9 +116,14 @@ export function OrderInvoicesList({
                   {KIND_LABEL[inv.kind] || inv.kind} · {format(new Date(inv.issued_at), "dd MMM yyyy")}
                 </p>
               </div>
-              <Button size="sm" variant="ghost" onClick={() => handleDownload(inv)}>
-                <Download className="h-3.5 w-3.5 mr-1.5" /> PDF
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button size="sm" variant="ghost" onClick={() => handleView(inv)} title="View PDF">
+                  <Eye className="h-3.5 w-3.5 mr-1" /> View
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => handleDownload(inv)} title="Download PDF">
+                  <Download className="h-3.5 w-3.5 mr-1" /> PDF
+                </Button>
+              </div>
             </div>
           ))
         )}
