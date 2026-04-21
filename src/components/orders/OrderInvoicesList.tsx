@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Download, FileText } from "lucide-react";
-import { downloadInvoice, generateInvoice } from "@/lib/orders/mutations";
+import { Download, Eye, FileText } from "lucide-react";
+import { downloadInvoice, viewInvoice, generateInvoice } from "@/lib/orders/mutations";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -54,7 +54,15 @@ export function OrderInvoicesList({
 
   const handleDownload = async (inv: Invoice) => {
     try {
-      await downloadInvoice(inv.storage_bucket, inv.storage_path, `${inv.invoice_number}.pdf`);
+      await downloadInvoice(inv.id, `${inv.invoice_number}.pdf`);
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
+  const handleView = async (inv: Invoice) => {
+    try {
+      await viewInvoice(inv.id, `${inv.invoice_number}.pdf`);
     } catch (e: any) {
       toast.error(e.message);
     }
