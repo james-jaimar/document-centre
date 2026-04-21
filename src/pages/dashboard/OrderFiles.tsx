@@ -198,7 +198,7 @@ export default function OrderFiles() {
         setCopyError(err.message ?? "Unknown error");
       }
     })();
-  }, [fromDocId, isNewMode, ensureOrder, refetchDocuments, setSearchParams, activeTenantId, qc]);
+  }, [fromDocId, isNewMode, ensureOrder, refetchDocuments, activeTenantId, qc, createdOrderId, orderId, navigate, slug]);
 
 
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
