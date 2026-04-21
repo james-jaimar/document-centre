@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Download, FileText } from "lucide-react";
-import { downloadInvoice, generateInvoice } from "@/lib/orders/mutations";
+import { Download, Eye, FileText } from "lucide-react";
+import { downloadInvoice, viewInvoice, generateInvoice } from "@/lib/orders/mutations";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -54,7 +54,15 @@ export function OrderInvoicesList({
 
   const handleDownload = async (inv: Invoice) => {
     try {
-      await downloadInvoice(inv.storage_bucket, inv.storage_path, `${inv.invoice_number}.pdf`);
+      await downloadInvoice(inv.id, `${inv.invoice_number}.pdf`);
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
+  const handleView = async (inv: Invoice) => {
+    try {
+      await viewInvoice(inv.id, `${inv.invoice_number}.pdf`);
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -108,9 +116,14 @@ export function OrderInvoicesList({
                   {KIND_LABEL[inv.kind] || inv.kind} · {format(new Date(inv.issued_at), "dd MMM yyyy")}
                 </p>
               </div>
-              <Button size="sm" variant="ghost" onClick={() => handleDownload(inv)}>
-                <Download className="h-3.5 w-3.5 mr-1.5" /> PDF
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button size="sm" variant="ghost" onClick={() => handleView(inv)} title="View PDF">
+                  <Eye className="h-3.5 w-3.5 mr-1" /> View
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => handleDownload(inv)} title="Download PDF">
+                  <Download className="h-3.5 w-3.5 mr-1" /> PDF
+                </Button>
+              </div>
             </div>
           ))
         )}

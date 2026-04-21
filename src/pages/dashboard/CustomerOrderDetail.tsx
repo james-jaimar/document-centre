@@ -350,16 +350,22 @@ const CustomerOrderDetail = () => {
                                     </span>
                                   )}
                                 </div>
-                                {doc.public_url && (
-                                  <a
-                                    href={doc.public_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                {(doc.storage_bucket && doc.storage_path) && (
+                                  <button
+                                    onClick={async () => {
+                                      const { downloadDocument } = await import("@/lib/orders/mutations");
+                                      try {
+                                        await downloadDocument(doc.id, doc.file_name);
+                                      } catch (e: any) {
+                                        const { toast } = await import("sonner");
+                                        toast.error(e.message);
+                                      }
+                                    }}
                                     className="text-primary hover:underline flex items-center gap-1"
                                   >
                                     <Download className="h-3 w-3" />
                                     Download
-                                  </a>
+                                  </button>
                                 )}
                               </li>
                             ))}

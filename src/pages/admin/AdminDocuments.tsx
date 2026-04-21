@@ -2,10 +2,10 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useTenantContext } from "@/hooks/useTenantContext";
-import { downloadInvoice } from "@/lib/orders/mutations";
+import { downloadInvoice, viewInvoice } from "@/lib/orders/mutations";
 import { Link } from "react-router-dom";
 import { buildAdminPath } from "@/lib/adminRouting";
-import { FileText, Download, ExternalLink, Search } from "lucide-react";
+import { FileText, Download, Eye, ExternalLink, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -77,9 +77,17 @@ export default function AdminDocuments() {
 
   const handleDownload = async (inv: any) => {
     try {
-      await downloadInvoice(inv.storage_bucket, inv.storage_path, `${inv.invoice_number}.pdf`);
+      await downloadInvoice(inv.id, `${inv.invoice_number}.pdf`);
     } catch (err: any) {
       toast.error("Download failed", { description: err.message });
+    }
+  };
+
+  const handleView = async (inv: any) => {
+    try {
+      await viewInvoice(inv.id, `${inv.invoice_number}.pdf`);
+    } catch (err: any) {
+      toast.error("View failed", { description: err.message });
     }
   };
 
@@ -189,6 +197,14 @@ export default function AdminDocuments() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleView(inv)}
+                        title="View PDF"
+                      >
+                        <Eye size={16} />
+                      </Button>
                       <Button
                         size="sm"
                         variant="ghost"
