@@ -766,3 +766,192 @@ export const PRICING_BOOKLET = [
   { name: "Volume Discount 100+", rule_type: "surcharge", price_value: -0.10, conditions: { min_quantity: 100 }, sort_order: 4 },
   { name: "Volume Discount 250+", rule_type: "surcharge", price_value: -0.15, conditions: { min_quantity: 250 }, sort_order: 5 },
 ];
+
+// ═══════════════════════════════════════════════════════════════════
+// BUSINESS CARD OPTIONS
+// Standard size across UK / Australia / South Africa / English-speaking
+// world is 90 × 50 mm. US standard (3.5 × 2 in / 88.9 × 50.8 mm) and
+// European ISO 7810 ID-1 (85.6 × 53.98 mm) are also offered.
+// Cards are sold per pack — pricing is per_pack via the pack_size option.
+// ═══════════════════════════════════════════════════════════════════
+export const BUSINESS_CARD_SIZE: StructuredOptionValue[] = [
+  createOptionValue("Standard (90 × 50 mm)", "Standard Sizes", {
+    price_impact: 0, price_type: "per_document", is_default: true,
+    metadata: { width_mm: 90, height_mm: 50, region: "UK / AU / ZA" },
+  }),
+  createOptionValue("US Standard (88.9 × 50.8 mm)", "Standard Sizes", {
+    price_impact: 0, price_type: "per_document",
+    metadata: { width_mm: 88.9, height_mm: 50.8, region: "US / CA", inches: "3.5 × 2" },
+  }),
+  createOptionValue("European ISO (85.6 × 54 mm)", "Standard Sizes", {
+    price_impact: 0, price_type: "per_document",
+    metadata: { width_mm: 85.6, height_mm: 53.98, region: "EU", iso: "7810 ID-1" },
+  }),
+  createOptionValue("Square (55 × 55 mm)", "Specialty Sizes", {
+    price_impact: 5, price_type: "per_document",
+    metadata: { width_mm: 55, height_mm: 55, shape: "square" },
+  }),
+  createOptionValue("Folded (90 × 100 mm flat → 90 × 50 mm)", "Specialty Sizes", {
+    price_impact: 8, price_type: "per_document",
+    metadata: { width_mm: 90, height_mm: 50, flat_height_mm: 100, folded: true },
+  }),
+];
+
+export const BUSINESS_CARD_PAPER: StructuredOptionValue[] = [
+  createOptionValue("300gsm Silk", "Standard Card", {
+    price_impact: 0, price_type: "per_document", is_default: true,
+    metadata: { weight_gsm: 300, finish: "silk" },
+  }),
+  createOptionValue("350gsm Silk", "Standard Card", {
+    price_impact: 5, price_type: "per_document",
+    metadata: { weight_gsm: 350, finish: "silk" },
+  }),
+  createOptionValue("300gsm Gloss", "Standard Card", {
+    price_impact: 0, price_type: "per_document",
+    metadata: { weight_gsm: 300, finish: "gloss" },
+  }),
+  createOptionValue("350gsm Gloss", "Standard Card", {
+    price_impact: 5, price_type: "per_document",
+    metadata: { weight_gsm: 350, finish: "gloss" },
+  }),
+  createOptionValue("350gsm Uncoated", "Premium Card", {
+    price_impact: 8, price_type: "per_document",
+    metadata: { weight_gsm: 350, finish: "uncoated" },
+  }),
+  createOptionValue("400gsm Uncoated", "Premium Card", {
+    price_impact: 12, price_type: "per_document",
+    metadata: { weight_gsm: 400, finish: "uncoated" },
+  }),
+  createOptionValue("450gsm Recycled Kraft", "Premium Card", {
+    price_impact: 15, price_type: "per_document",
+    metadata: { weight_gsm: 450, finish: "kraft", recycled: true },
+  }),
+  createOptionValue("540gsm Triplex (Black Core)", "Luxury Card", {
+    price_impact: 35, price_type: "per_document",
+    metadata: { weight_gsm: 540, finish: "triplex", core_color: "black" },
+  }),
+  createOptionValue("600gsm Cotton", "Luxury Card", {
+    price_impact: 45, price_type: "per_document",
+    metadata: { weight_gsm: 600, finish: "cotton" },
+  }),
+];
+
+export const BUSINESS_CARD_LAMINATION: StructuredOptionValue[] = [
+  createOptionValue("None", "Lamination", {
+    price_impact: 0, price_type: "per_document", is_default: true,
+    metadata: {},
+  }),
+  createOptionValue("Matt Lamination", "Lamination", {
+    price_impact: 8, price_type: "per_document",
+    metadata: { finish: "matt", both_sides: true },
+  }),
+  createOptionValue("Gloss Lamination", "Lamination", {
+    price_impact: 8, price_type: "per_document",
+    metadata: { finish: "gloss", both_sides: true },
+  }),
+  createOptionValue("Soft-Touch Lamination", "Lamination", {
+    price_impact: 18, price_type: "per_document",
+    metadata: { finish: "soft_touch", both_sides: true },
+  }),
+];
+
+export const BUSINESS_CARD_FINISHING: StructuredOptionValue[] = [
+  createOptionValue("None", "Special Finishing", {
+    price_impact: 0, price_type: "per_document", is_default: true,
+    metadata: {},
+  }),
+  createOptionValue("Spot UV (Front)", "Special Finishing", {
+    price_impact: 25, price_type: "per_document",
+    metadata: { finish: "spot_uv", side: "front" },
+  }),
+  createOptionValue("Spot UV (Both Sides)", "Special Finishing", {
+    price_impact: 40, price_type: "per_document",
+    metadata: { finish: "spot_uv", both_sides: true },
+  }),
+  createOptionValue("Foil Stamping (Gold)", "Special Finishing", {
+    price_impact: 55, price_type: "per_document",
+    metadata: { finish: "foil", color: "gold" },
+  }),
+  createOptionValue("Foil Stamping (Silver)", "Special Finishing", {
+    price_impact: 55, price_type: "per_document",
+    metadata: { finish: "foil", color: "silver" },
+  }),
+  createOptionValue("Foil Stamping (Rose Gold)", "Special Finishing", {
+    price_impact: 65, price_type: "per_document",
+    metadata: { finish: "foil", color: "rose_gold" },
+  }),
+  createOptionValue("Embossed", "Special Finishing", {
+    price_impact: 50, price_type: "per_document",
+    metadata: { finish: "emboss" },
+  }),
+  createOptionValue("Letterpress (1 colour)", "Special Finishing", {
+    price_impact: 75, price_type: "per_document",
+    metadata: { finish: "letterpress", colors: 1 },
+  }),
+];
+
+export const BUSINESS_CARD_CORNERS: StructuredOptionValue[] = [
+  createOptionValue("Square Corners", "Corner Style", {
+    price_impact: 0, price_type: "per_document", is_default: true,
+    metadata: { shape: "square" },
+  }),
+  createOptionValue("Rounded Corners (3mm radius)", "Corner Style", {
+    price_impact: 6, price_type: "per_document",
+    metadata: { shape: "rounded", radius_mm: 3 },
+  }),
+  createOptionValue("Rounded Corners (6mm radius)", "Corner Style", {
+    price_impact: 6, price_type: "per_document",
+    metadata: { shape: "rounded", radius_mm: 6 },
+  }),
+];
+
+export const BUSINESS_CARD_PRINT_SIDES: StructuredOptionValue[] = [
+  createOptionValue("Single-Sided", "Print Sides", {
+    price_impact: 0, price_type: "per_document",
+    metadata: { is_duplex: false },
+  }),
+  createOptionValue("Double-Sided", "Print Sides", {
+    price_impact: 0, price_type: "per_document", is_default: true,
+    metadata: { is_duplex: true },
+  }),
+];
+
+export const BUSINESS_CARD_PACK_SIZE: StructuredOptionValue[] = [
+  createOptionValue("Pack of 50", "Pack Size", {
+    price_impact: 0, price_type: "per_document",
+    metadata: { quantity: 50 },
+  }),
+  createOptionValue("Pack of 100", "Pack Size", {
+    price_impact: 0, price_type: "per_document", is_default: true,
+    metadata: { quantity: 100 },
+  }),
+  createOptionValue("Pack of 250", "Pack Size", {
+    price_impact: 0, price_type: "per_document",
+    metadata: { quantity: 250 },
+  }),
+  createOptionValue("Pack of 500", "Pack Size", {
+    price_impact: 0, price_type: "per_document",
+    metadata: { quantity: 500 },
+  }),
+  createOptionValue("Pack of 1000", "Pack Size", {
+    price_impact: 0, price_type: "per_document",
+    metadata: { quantity: 1000 },
+  }),
+  createOptionValue("Pack of 2500", "Pack Size", {
+    price_impact: 0, price_type: "per_document",
+    metadata: { quantity: 2500 },
+  }),
+];
+
+export const PRICING_BUSINESS_CARDS = [
+  // Per-pack base rates (priced as per_document — the "document" is one pack of cards)
+  { name: "Pack of 50 Base Rate", rule_type: "per_document", price_value: 95.0, conditions: { pack_size: 50 }, sort_order: 0 },
+  { name: "Pack of 100 Base Rate", rule_type: "per_document", price_value: 145.0, conditions: { pack_size: 100 }, sort_order: 1 },
+  { name: "Pack of 250 Base Rate", rule_type: "per_document", price_value: 285.0, conditions: { pack_size: 250 }, sort_order: 2 },
+  { name: "Pack of 500 Base Rate", rule_type: "per_document", price_value: 475.0, conditions: { pack_size: 500 }, sort_order: 3 },
+  { name: "Pack of 1000 Base Rate", rule_type: "per_document", price_value: 795.0, conditions: { pack_size: 1000 }, sort_order: 4 },
+  { name: "Pack of 2500 Base Rate", rule_type: "per_document", price_value: 1695.0, conditions: { pack_size: 2500 }, sort_order: 5 },
+  // Volume discount on multiple packs
+  { name: "Multi-Pack Discount 5+", rule_type: "surcharge", price_value: -0.05, conditions: { min_quantity: 5 }, sort_order: 6 },
+  { name: "Multi-Pack Discount 10+", rule_type: "surcharge", price_value: -0.10, conditions: { min_quantity: 10 }, sort_order: 7 },
+];
