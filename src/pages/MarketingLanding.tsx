@@ -400,9 +400,9 @@ export default function MarketingLanding() {
             >
               Login
             </Link>
-            <a href="#cta" className="dc-btn dc-btn-primary" style={{ padding: "0.6rem 1.4rem" }}>
-              Get Started
-            </a>
+            <Link to="/try" className="dc-btn dc-btn-primary" style={{ padding: "0.6rem 1.4rem" }}>
+              Try it now
+            </Link>
           </div>
         </div>
       </header>
@@ -458,13 +458,12 @@ export default function MarketingLanding() {
               ))}
             </ul>
             <div className="mt-5 flex flex-wrap gap-3">
-              <a href="#cta" className="dc-btn dc-btn-primary" style={{ padding: "0.7rem 1.3rem", fontSize: "0.92rem" }}>
-                Start Your Free Trial <ArrowRight className="h-4 w-4" />
-              </a>
-              <a href="#cta" className="dc-btn dc-btn-outline" style={{ padding: "0.7rem 1.3rem", fontSize: "0.92rem" }}>
-                <Play className="h-4 w-4" style={{ color: "hsl(var(--dc-blue))" }} fill="hsl(var(--dc-blue))" />
-                See It in Action
-              </a>
+              <Link to="/try" className="dc-btn dc-btn-green" style={{ padding: "0.7rem 1.3rem", fontSize: "0.92rem" }}>
+                Try it now — no signup <ArrowRight className="h-4 w-4" />
+              </Link>
+              <Link to="/auth?mode=register" className="dc-btn dc-btn-outline" style={{ padding: "0.7rem 1.3rem", fontSize: "0.92rem" }}>
+                Start Your Free Trial
+              </Link>
             </div>
             <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-[12.5px] dc-muted">
               {["No credit card required", "Set up in minutes", "UK-based & GBP"].map((t) => (
@@ -656,12 +655,12 @@ export default function MarketingLanding() {
               Join hundreds of copy shops &amp; printers using Document Centre to grow.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
-              <a href="/auth" className="dc-btn dc-btn-green" style={{ padding: "1rem 2rem", fontSize: "0.98rem" }}>
-                Start Your Free Trial <ArrowRight className="h-4 w-4" />
-              </a>
-              <a href="mailto:hello@document-centre.com" className="dc-btn dc-btn-light-outline" style={{ padding: "1rem 2rem", fontSize: "0.98rem" }}>
-                Book a Demo
-              </a>
+              <Link to="/try" className="dc-btn dc-btn-green" style={{ padding: "1rem 2rem", fontSize: "0.98rem" }}>
+                Try it now — no signup <ArrowRight className="h-4 w-4" />
+              </Link>
+              <Link to="/auth?mode=register" className="dc-btn dc-btn-light-outline" style={{ padding: "1rem 2rem", fontSize: "0.98rem" }}>
+                Start Your Free Trial
+              </Link>
             </div>
           </div>
 

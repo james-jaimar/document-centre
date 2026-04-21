@@ -153,6 +153,7 @@ Deno.serve(async (req) => {
       .eq("id", order_id)
       .single();
     if (oErr || !order) return json({ error: "Order not found" }, 404);
+    if ((order as any).is_demo) return json({ success: true, skipped: true, reason: "demo_order" });
     if (!order.customer_email) return json({ success: true, skipped: true, reason: "no_email" });
 
     const [{ data: tenant }, { data: settings }, { data: addresses }] = await Promise.all([

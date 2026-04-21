@@ -526,12 +526,24 @@ export function usePlaceOrder() {
       const vatAmount = Math.round(subtotal * 0.15 * 100) / 100;
       const totalAmount = subtotal + vatAmount;
 
+      // Detect demo tenant — tagged orders skip emails/invoices in the engine.
+      const orderTenantId = tenantId || cartOrder.tenant_id;
+      let isDemo = false;
+      if (orderTenantId) {
+        const { data: tRow } = await supabase
+          .from("tenants")
+          .select("is_demo")
+          .eq("id", orderTenantId)
+          .maybeSingle();
+        isDemo = !!tRow?.is_demo;
+      }
+
       // Call order-engine to create the real order
       const { data, error } = await supabase.functions.invoke("order-engine", {
         body: {
           action: "createOrderWithJobs",
           app_slug: app.slug,
-          tenant_id: tenantId || cartOrder.tenant_id,
+          tenant_id: orderTenantId,
           branch_id: input.branchId || cartOrder.branch_id || null,
           customer: {
             profile_id: user.id,
@@ -539,10 +551,10 @@ export function usePlaceOrder() {
             name: [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || profile?.display_name || null,
           },
           order: {
-            source_channel: "storefront",
+            source_channel: isDemo ? "demo" : "storefront",
             notes_customer: input.notes || null,
             date_required: null,
-            metadata: { cart_order_id: input.cartOrderId },
+            metadata: { cart_order_id: input.cartOrderId, is_demo: isDemo },
           },
           pricing: {
             currency: "ZAR",
@@ -555,6 +567,7 @@ export function usePlaceOrder() {
           delivery_address: input.deliveryMethod === "delivery" ? input.deliveryAddress : undefined,
           fulfillment_type: input.deliveryMethod,
           jobs,
+          is_demo: isDemo,
         },
       });
 

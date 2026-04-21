@@ -1,90 +1,136 @@
-import { Outlet } from "react-router-dom";
+import { Outlet, useNavigate } from "react-router-dom";
 import CustomerSidebar from "@/components/CustomerSidebar";
-import { Bell, Menu, Search, ShoppingCart, User, PanelLeftOpen } from "lucide-react";
+import { Bell, Menu, Search, ShoppingCart, User, PanelLeftOpen, Sparkles, X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useState } from "react";
 import { SidebarCollapseProvider, useSidebarCollapse } from "@/hooks/useSidebarCollapse";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+
+function DemoBanner({ onUpgrade }: { onUpgrade: () => void }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-amber-300/60 bg-gradient-to-r from-amber-100 via-amber-50 to-amber-100 px-4 py-2.5 text-sm text-amber-900">
+      <div className="flex items-center gap-2 min-w-0">
+        <Sparkles className="h-4 w-4 shrink-0 text-amber-700" />
+        <span className="truncate">
+          <strong>Demo mode</strong> — explore the full ordering flow. No real orders are placed.
+        </span>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <button
+          onClick={onUpgrade}
+          className="rounded-md bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-800"
+        >
+          Save my work — start free trial
+        </button>
+        <button
+          onClick={() => setDismissed(true)}
+          className="rounded-md p-1 hover:bg-amber-200/60"
+          aria-label="Dismiss"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function CustomerLayoutInner() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { collapsed, toggle } = useSidebarCollapse();
 
+  const { data: profile } = useQuery({
+    queryKey: ["profile_demo_flag", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data } = await supabase.from("profiles").select("is_demo").eq("id", user.id).maybeSingle();
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
+  const isDemo = !!profile?.is_demo;
+
   return (
-    <div className="flex h-screen w-full">
-      {/* Desktop sidebar — animated collapse */}
-      <div
-        className={`hidden lg:flex transition-all duration-300 ease-in-out overflow-hidden ${
-          collapsed ? "w-0" : "w-64"
-        }`}
-      >
-        <CustomerSidebar />
-      </div>
-
-      {/* Collapse toggle tab — visible when sidebar is collapsed */}
-      {collapsed && (
-        <button
-          onClick={toggle}
-          className="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 z-30 items-center justify-center w-6 h-16 rounded-r-lg bg-sidebar border border-l-0 border-sidebar-border shadow-md hover:w-8 transition-all duration-200 group"
-          title="Open sidebar"
-        >
-          <PanelLeftOpen className="h-4 w-4 text-sidebar-foreground/70 group-hover:text-sidebar-foreground transition-colors" />
-        </button>
-      )}
-
-      {/* Mobile sidebar overlay */}
-      {mobileOpen && (
+    <div className="flex h-screen w-full flex-col">
+      {isDemo && <DemoBanner onUpgrade={() => navigate("/auth?mode=register&from=demo")} />}
+      <div className="flex flex-1 w-full min-h-0">
+        {/* Desktop sidebar — animated collapse */}
         <div
-          className="fixed inset-0 z-40 bg-black/40 lg:hidden"
-          onClick={() => setMobileOpen(false)}
+          className={`hidden lg:flex transition-all duration-300 ease-in-out overflow-hidden ${
+            collapsed ? "w-0" : "w-64"
+          }`}
         >
-          <div
-            className="print-sidebar w-64 h-full px-5 py-6 flex"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Reuses sidebar styles inline for mobile — in future can extract */}
-          </div>
+          <CustomerSidebar />
         </div>
-      )}
 
-      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-        {/* Top bar */}
-        <header className="print-topbar">
+        {/* Collapse toggle tab — visible when sidebar is collapsed */}
+        {collapsed && (
           <button
-            className="rounded-xl p-2 hover:bg-secondary lg:hidden"
-            onClick={() => setMobileOpen(!mobileOpen)}
+            onClick={toggle}
+            className="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 z-30 items-center justify-center w-6 h-16 rounded-r-lg bg-sidebar border border-l-0 border-sidebar-border shadow-md hover:w-8 transition-all duration-200 group"
+            title="Open sidebar"
           >
-            <Menu className="h-5 w-5 text-muted-foreground" />
+            <PanelLeftOpen className="h-4 w-4 text-sidebar-foreground/70 group-hover:text-sidebar-foreground transition-colors" />
           </button>
+        )}
 
-          <div className="search-shell max-w-3xl">
-            <Search className="h-5 w-5 text-muted-foreground" />
-            <input
-              className="search-input"
-              placeholder="Search files, products or orders"
+        {/* Mobile sidebar overlay */}
+        {mobileOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+            onClick={() => setMobileOpen(false)}
+          >
+            <div
+              className="print-sidebar w-64 h-full px-5 py-6 flex"
+              onClick={(e) => e.stopPropagation()}
             />
           </div>
+        )}
 
-          <div className="ml-auto flex items-center gap-2">
-            <button className="relative rounded-xl p-2 hover:bg-secondary">
-              <Bell className="h-5 w-5 text-muted-foreground" />
-              <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-success" />
+        <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+          {/* Top bar */}
+          <header className="print-topbar">
+            <button
+              className="rounded-xl p-2 hover:bg-secondary lg:hidden"
+              onClick={() => setMobileOpen(!mobileOpen)}
+            >
+              <Menu className="h-5 w-5 text-muted-foreground" />
             </button>
-            <button className="relative rounded-xl p-2 hover:bg-secondary">
-              <ShoppingCart className="h-5 w-5 text-muted-foreground" />
-            </button>
-            <button className="rounded-full border border-border bg-card p-1 shadow-sm">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-violet-400 to-primary text-primary-foreground">
-                <User className="h-4 w-4" />
-              </div>
-            </button>
-          </div>
-        </header>
 
-        {/* Content */}
-        <main className="flex-1 overflow-auto customer-body p-6 xl:p-8">
-          <Outlet />
-        </main>
+            <div className="search-shell max-w-3xl">
+              <Search className="h-5 w-5 text-muted-foreground" />
+              <input
+                className="search-input"
+                placeholder="Search files, products or orders"
+              />
+            </div>
+
+            <div className="ml-auto flex items-center gap-2">
+              <button className="relative rounded-xl p-2 hover:bg-secondary">
+                <Bell className="h-5 w-5 text-muted-foreground" />
+                <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-success" />
+              </button>
+              <button className="relative rounded-xl p-2 hover:bg-secondary">
+                <ShoppingCart className="h-5 w-5 text-muted-foreground" />
+              </button>
+              <button className="rounded-full border border-border bg-card p-1 shadow-sm">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-violet-400 to-primary text-primary-foreground">
+                  <User className="h-4 w-4" />
+                </div>
+              </button>
+            </div>
+          </header>
+
+          {/* Content */}
+          <main className="flex-1 overflow-auto customer-body p-6 xl:p-8">
+            <Outlet />
+          </main>
+        </div>
       </div>
     </div>
   );

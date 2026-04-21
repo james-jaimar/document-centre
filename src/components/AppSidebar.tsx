@@ -16,6 +16,7 @@ import {
   Wrench,
   UserSquare2,
   Mail,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -74,6 +75,7 @@ const PLATFORM_SECTIONS: NavSection[] = [
     items: [
       { to: "/platform", icon: <Globe size={20} />, label: "Tenants" },
       { to: "/platform/users", icon: <Users size={20} />, label: "All Users" },
+      { to: "/platform/demo", icon: <Sparkles size={20} />, label: "Demo Activity" },
       { to: "/platform/settings", icon: <Settings size={20} />, label: "Platform Settings" },
     ],
   },

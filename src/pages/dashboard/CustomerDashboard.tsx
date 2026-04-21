@@ -221,6 +221,14 @@ const CustomerDashboard = () => {
 
   return (
     <div className="space-y-8">
+      {/* ── Page heading ── */}
+      <div>
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">My Print Centre</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Upload a file or pick a product to get started.
+        </p>
+      </div>
+
       {/* ── Product Picker ── */}
       <div className="glass-card overflow-hidden">
         <div className="border-b border-border bg-gradient-to-r from-secondary/90 to-secondary/40 px-6 py-5">
