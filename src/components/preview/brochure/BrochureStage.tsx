@@ -62,18 +62,19 @@ export default function BrochureStage({
       surface === "inside" ? fc.insideLayer : fc.outsideLayer;
 
     const layerNum = foldedLayer === "front" ? 1 : -1;
-    const depthOffset = layerNum * fc.foldSequence * DEPTH_STEP;
+    const seq = surface === "inside" ? fc.insideFoldSequence : fc.outsideFoldSequence;
+    const depthOffset = layerNum * seq * DEPTH_STEP;
 
     return { index: i, layer: layerNum, depthOffset };
   });
 
   const sorted = [...renderInfos].sort((a, b) => {
     if (a.layer !== b.layer) return a.layer - b.layer;
-    // Within same layer, sort by foldSequence so later folds render on top
+    // Within same layer, sort by surface-appropriate fold sequence so later folds render on top
     const aFc = foldLookup.get(panels[a.index].id);
     const bFc = foldLookup.get(panels[b.index].id);
-    const aSeq = aFc ? aFc.foldSequence : 0;
-    const bSeq = bFc ? bFc.foldSequence : 0;
+    const aSeq = aFc ? (surface === "inside" ? aFc.insideFoldSequence : aFc.outsideFoldSequence) : 0;
+    const bSeq = bFc ? (surface === "inside" ? bFc.insideFoldSequence : bFc.outsideFoldSequence) : 0;
     return aSeq - bSeq;
   });
 
