@@ -34,10 +34,15 @@ export interface PanelFoldConfig {
   /** Where this panel ends up when folded, viewing the inside surface */
   insideLayer: FoldedLayer;
   /**
-   * Stacking rank when multiple panels are folded on the same layer.
+   * Stacking rank when multiple panels are folded on the same layer, for the OUTSIDE view.
    * Higher rank = further from the base sheet (i.e. on top if "front", further behind if "behind").
    */
-  foldSequence: number;
+  outsideFoldSequence: number;
+  /**
+   * Stacking rank when multiple panels are folded on the same layer, for the INSIDE view.
+   * Higher rank = further from the base sheet (i.e. on top if "front", further behind if "behind").
+   */
+  insideFoldSequence: number;
   /** Label for the fold toggle button */
   label: string;
 }

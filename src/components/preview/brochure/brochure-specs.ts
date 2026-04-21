@@ -19,7 +19,8 @@ export function buildHalfFoldSpec(): BrochureSpec {
         insideFoldedAngle: 180,
         outsideLayer: "front",
         insideLayer: "front",
-        foldSequence: 1,
+        outsideFoldSequence: 1,
+        insideFoldSequence: 1,
         label: "Right",
       },
     ],
@@ -31,13 +32,20 @@ export function buildHalfFoldSpec(): BrochureSpec {
  * Tri-fold / C-fold / Roll-fold: 3 equal panels.
  * [p0 left | p1 centre (root) | p2 right]
  *
- * Outside view: both flaps fold AWAY from viewer (behind the sheet).
- *   - p2 (right): hinges left, +180° → goes behind
- *   - p0 (left): hinges right, -180° → goes behind, on top of p2 behind
+ * Faces (paper has two sides):
+ *   p0.front = face 0, p0.back = face 5
+ *   p1.front = face 1, p1.back = face 4
+ *   p2.front = face 2, p2.back = face 3
  *
- * Inside view (scene flipped 180°): same angles → visually fold TOWARD viewer.
- *   - p2: ends up in front
- *   - p0: ends up in front, on top of p2
+ * Outside view fold sequence:
+ *   1. p0 (face 0) folds away first (behind sheet)
+ *   2. p2 (face 2) folds away second, sitting further behind p0
+ *   Final visible top = face 1 (p1.front, centre)
+ *
+ * Inside view fold sequence:
+ *   1. p0 (back = face 5) folds toward viewer first → reveals face 0
+ *   2. p2 (back = face 3) folds toward viewer second → reveals face 2 on top
+ *   Final visible top = face 2 (p2.front)
  */
 export function buildTriFoldCSpec(): BrochureSpec {
   return {
@@ -54,7 +62,8 @@ export function buildTriFoldCSpec(): BrochureSpec {
         insideFoldedAngle: -180,
         outsideLayer: "behind",
         insideLayer: "front",
-        foldSequence: 2,
+        outsideFoldSequence: 1,
+        insideFoldSequence: 1,
         label: "Left",
       },
       {
@@ -64,7 +73,8 @@ export function buildTriFoldCSpec(): BrochureSpec {
         insideFoldedAngle: 180,
         outsideLayer: "behind",
         insideLayer: "front",
-        foldSequence: 1,
+        outsideFoldSequence: 2,
+        insideFoldSequence: 2,
         label: "Right",
       },
     ],
@@ -75,14 +85,6 @@ export function buildTriFoldCSpec(): BrochureSpec {
 /**
  * Z-fold: 3 equal panels, alternating fold directions (accordion).
  * [p0 left | p1 centre (root) | p2 right]
- *
- * Outside view:
- *   - p0 (left): hinges right, +180° → folds TOWARD viewer (in front)
- *   - p2 (right): hinges left, +180° → folds AWAY from viewer (behind)
- *
- * Inside view: same angles, scene flip inverts directions.
- *   - p0: ends up behind
- *   - p2: ends up in front
  */
 export function buildTriFoldZSpec(): BrochureSpec {
   return {
@@ -99,7 +101,8 @@ export function buildTriFoldZSpec(): BrochureSpec {
         insideFoldedAngle: 180,
         outsideLayer: "front",
         insideLayer: "behind",
-        foldSequence: 1,
+        outsideFoldSequence: 1,
+        insideFoldSequence: 1,
         label: "Left",
       },
       {
@@ -109,7 +112,8 @@ export function buildTriFoldZSpec(): BrochureSpec {
         insideFoldedAngle: 180,
         outsideLayer: "behind",
         insideLayer: "front",
-        foldSequence: 1,
+        outsideFoldSequence: 1,
+        insideFoldSequence: 1,
         label: "Right",
       },
     ],
@@ -120,9 +124,6 @@ export function buildTriFoldZSpec(): BrochureSpec {
 /**
  * Gate-fold: 4 panels, outer flaps fold inward.
  * [p0 left gate | p1 left-centre (root) | p2 right-centre | p3 right gate]
- *
- * Outside: both gates fold away (behind).
- * Inside: both gates fold toward viewer (in front).
  */
 export function buildGateFoldSpec(): BrochureSpec {
   return {
@@ -140,7 +141,8 @@ export function buildGateFoldSpec(): BrochureSpec {
         insideFoldedAngle: -180,
         outsideLayer: "behind",
         insideLayer: "front",
-        foldSequence: 1,
+        outsideFoldSequence: 1,
+        insideFoldSequence: 1,
         label: "Left",
       },
       {
@@ -150,7 +152,8 @@ export function buildGateFoldSpec(): BrochureSpec {
         insideFoldedAngle: 180,
         outsideLayer: "behind",
         insideLayer: "front",
-        foldSequence: 1,
+        outsideFoldSequence: 1,
+        insideFoldSequence: 1,
         label: "Right",
       },
     ],
