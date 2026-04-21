@@ -103,7 +103,7 @@ export default function CustomerSidebar() {
       <div className="mt-6 flex items-center gap-3 rounded-2xl border border-sidebar-border bg-sidebar-accent/30 px-3 py-3">
         <div
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-sidebar-foreground"
-          style={{ background: "hsl(var(--tenant-primary, var(--sidebar-accent)) / 0.35)" }}
+          style={{ background: "hsl(var(--tenant-accent, var(--tenant-primary, var(--sidebar-accent))) / 0.35)" }}
         >
           {initials}
         </div>

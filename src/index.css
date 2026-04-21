@@ -129,8 +129,8 @@
   }
 
   .print-sidebar {
-    @apply relative flex flex-col border-r border-sidebar-border text-sidebar-foreground;
-    background: linear-gradient(180deg, hsl(var(--sidebar-background)) 0%, hsl(var(--sidebar-background) / 0.96) 100%);
+  @apply relative flex flex-col border-r border-sidebar-border text-sidebar-foreground;
+    background: linear-gradient(180deg, hsl(var(--tenant-primary, var(--sidebar-background))) 0%, hsl(var(--tenant-primary, var(--sidebar-background)) / 0.92) 100%);
   }
 
   .print-topbar {
@@ -158,7 +158,7 @@
   }
 
   .sidebar-nav-item.active {
-    background: hsl(var(--tenant-primary, var(--sidebar-accent)) / 0.85);
+    background: hsl(var(--tenant-accent, var(--sidebar-accent)) / 0.85);
     @apply text-sidebar-accent-foreground shadow-md;
   }
 
