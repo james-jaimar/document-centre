@@ -17,6 +17,7 @@ import {
   UserSquare2,
   Mail,
   Sparkles,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -119,6 +120,7 @@ const ADMIN_SECTIONS: NavSection[] = [
     membershipRoles: ["owner", "admin"],
     items: [
       { to: "/admin/sent-mail", icon: <Mail size={20} />, label: "Sent Mail" },
+      { to: "/admin/documents", icon: <FileText size={20} />, label: "Documents" },
     ],
   },
   {
