@@ -19,7 +19,7 @@ import { useCartItemCount } from "@/hooks/useCart";
 import { resolveDisplayName, resolveInitials } from "@/lib/displayName";
 
 const buildNavItems = (slug: string) => [
-  { to: `/t/${slug}/dashboard`, icon: Home, label: "Home", exact: true },
+  { to: `/t/${slug}/print-centre`, icon: Home, label: "Home", exact: true },
   { to: `/t/${slug}/orders/new`, icon: Plus, label: "Create", exact: false },
   { to: `/t/${slug}/orders`, icon: ClipboardList, label: "Orders", exact: false },
   { to: `/t/${slug}/cart`, icon: ShoppingCart, label: "Cart", exact: false, badge: true },
