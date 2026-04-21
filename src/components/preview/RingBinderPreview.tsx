@@ -1,15 +1,46 @@
-import { useState } from "react";
 import type { PreviewComponentProps } from "./previewTypes";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, FileText } from "lucide-react";
+import binderClosedImg from "@/assets/bindings/ring_binder_white_closed.png";
+import binderOpenImg from "@/assets/bindings/ring_binder_white_open.png";
 
 /**
- * Ring Binder Preview — placeholder shell awaiting actual binder background image.
- * Shows a stylised binder outline with pages overlaid at A4 aspect ratio.
+ * Ring Binder Preview — uses real photographic assets of a white PVC ring binder.
+ * - Page 0: closed binder with cover thumbnail visible through the clear PVC pocket.
+ * - Page >= 1: open spread showing the 4 D-rings, with previous + current page overlaid.
  */
 
-const BINDER_ASPECT = 270 / 320; // ~0.84375
-const PAGE_ASPECT = 210 / 297;   // ~0.707 (A4 inside binder)
+const BINDER_CLOSED_ASPECT = 793 / 833;   // ~0.952 portrait
+const BINDER_OPEN_ASPECT = 1781 / 840;    // ~2.12 landscape
+
+// Inside-page clear area of the closed binder cover pocket (% of binder image)
+const CLOSED_PAGE_INSET = { top: 0.05, bottom: 0.05, left: 0.06, right: 0.06 };
+
+// Open binder page positioning (% of binder image)
+const OPEN_PAGE_INSET = {
+  top: 0.05,
+  bottom: 0.05,
+  sideMargin: 0.05,
+  spineHalfWidth: 0.07,
+};
+
+function PageImage({ src, grayscale }: { src?: string; grayscale?: boolean }) {
+  if (!src) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-card/40">
+        <FileText className="h-8 w-8 text-muted-foreground/30" />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt=""
+      className="w-full h-full object-contain bg-white"
+      style={{ filter: grayscale ? "grayscale(100%)" : "none" }}
+    />
+  );
+}
 
 export default function RingBinderPreview({
   urls,
@@ -19,101 +50,93 @@ export default function RingBinderPreview({
   height,
   colorFlags,
 }: PreviewComponentProps) {
-  // Scale binder to fit container
-  const binderHeight = Math.min(height * 0.85, width * 0.6 / BINDER_ASPECT);
-  const binderWidth = binderHeight * BINDER_ASPECT;
-
-  // Inner page area (A4 centered inside binder, with padding)
-  const pagePadding = binderWidth * 0.06;
-  const pageAreaWidth = binderWidth - pagePadding * 2;
-  const pageAreaHeight = pageAreaWidth / PAGE_ASPECT;
-  const pageTop = (binderHeight - pageAreaHeight) * 0.55; // slight top offset
-
   const total = urls.length;
-  const page = Math.min(currentPage, total - 1);
+  const page = Math.min(Math.max(currentPage, 0), Math.max(total - 1, 0));
+  const isCover = page === 0 || total <= 1;
+
+  // Pick aspect for the active view and fit binder inside the container.
+  const aspect = isCover ? BINDER_CLOSED_ASPECT : BINDER_OPEN_ASPECT;
+  const navHeight = total > 1 ? 36 : 0;
+  const availableHeight = Math.max(height - navHeight - 12, 100);
+  const availableWidth = Math.max(width, 100);
+
+  let binderWidth = availableWidth;
+  let binderHeight = binderWidth / aspect;
+  if (binderHeight > availableHeight) {
+    binderHeight = availableHeight;
+    binderWidth = binderHeight * aspect;
+  }
 
   return (
     <div className="flex flex-col items-center justify-center gap-3" style={{ width, height }}>
-      {/* Binder container */}
       <div
         className="relative"
-        style={{ width: binderWidth, height: binderHeight }}
+        style={{
+          width: binderWidth,
+          height: binderHeight,
+          filter: "drop-shadow(0 6px 16px rgba(0,0,0,0.18))",
+        }}
       >
-        {/* Binder outline — placeholder until real image is supplied */}
-        <div
-          className="absolute inset-0 rounded-lg border-2 border-muted-foreground/30"
-          style={{
-            background: "linear-gradient(135deg, hsl(var(--muted)) 0%, hsl(var(--card)) 100%)",
-            boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
-          }}
+        {/* Binder photograph */}
+        <img
+          src={isCover ? binderClosedImg : binderOpenImg}
+          alt={isCover ? "Closed ring binder" : "Open ring binder"}
+          className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
+          draggable={false}
         />
 
-        {/* Ring mechanism (3 D-rings) */}
-        <div
-          className="absolute flex flex-col justify-evenly items-center"
-          style={{
-            left: -6,
-            top: binderHeight * 0.15,
-            height: binderHeight * 0.7,
-            width: 14,
-          }}
-        >
-          {[0, 1, 2].map((i) => (
+        {isCover ? (
+          // Cover thumbnail behind the clear PVC pocket
+          <div
+            className="absolute overflow-hidden"
+            style={{
+              left: `${CLOSED_PAGE_INSET.left * 100}%`,
+              right: `${CLOSED_PAGE_INSET.right * 100}%`,
+              top: `${CLOSED_PAGE_INSET.top * 100}%`,
+              bottom: `${CLOSED_PAGE_INSET.bottom * 100}%`,
+            }}
+          >
+            <PageImage src={urls[0]} grayscale={colorFlags?.[0] === false} />
+            {/* Subtle PVC pocket sheen overlay */}
             <div
-              key={i}
-              className="rounded-full border-2 border-muted-foreground/50"
+              className="absolute inset-0 pointer-events-none"
               style={{
-                width: 14,
-                height: 20,
-                background: "linear-gradient(90deg, hsl(var(--muted-foreground) / 0.15), hsl(var(--muted-foreground) / 0.3))",
+                background:
+                  "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 35%, rgba(255,255,255,0) 65%, rgba(255,255,255,0.10) 100%)",
               }}
             />
-          ))}
-        </div>
-
-        {/* Page area */}
-        <div
-          className="absolute bg-card border border-border/60 overflow-hidden"
-          style={{
-            left: pagePadding,
-            top: pageTop,
-            width: pageAreaWidth,
-            height: pageAreaHeight,
-            boxShadow: "inset 0 1px 3px rgba(0,0,0,0.05)",
-          }}
-        >
-          {urls[page] ? (
-            <img
-              src={urls[page]}
-              alt={`Page ${page + 1}`}
-              className="w-full h-full object-contain"
-              style={{ filter: colorFlags?.[page] === false ? "grayscale(100%)" : "none" }}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <FileText className="h-8 w-8 text-muted-foreground/30" />
-            </div>
-          )}
-        </div>
-
-        {/* 4-hole punch marks on left side of page */}
-        <div
-          className="absolute flex flex-col justify-evenly items-center pointer-events-none"
-          style={{
-            left: pagePadding + 4,
-            top: pageTop + 10,
-            height: pageAreaHeight - 20,
-            width: 8,
-          }}
-        >
-          {[0, 1, 2, 3].map((i) => (
+          </div>
+        ) : (
+          <>
+            {/* Left page (previous) */}
             <div
-              key={i}
-              className="rounded-full bg-muted-foreground/15"
-              style={{ width: 5, height: 5 }}
-            />
-          ))}
-        </div>
+              className="absolute overflow-hidden"
+              style={{
+                left: `${OPEN_PAGE_INSET.sideMargin * 100}%`,
+                right: `${(0.5 + OPEN_PAGE_INSET.spineHalfWidth) * 100}%`,
+                top: `${OPEN_PAGE_INSET.top * 100}%`,
+                bottom: `${OPEN_PAGE_INSET.bottom * 100}%`,
+              }}
+            >
+              <PageImage
+                src={urls[page - 1]}
+                grayscale={colorFlags?.[page - 1] === false}
+              />
+            </div>
+            {/* Right page (current) */}
+            <div
+              className="absolute overflow-hidden"
+              style={{
+                left: `${(0.5 + OPEN_PAGE_INSET.spineHalfWidth) * 100}%`,
+                right: `${OPEN_PAGE_INSET.sideMargin * 100}%`,
+                top: `${OPEN_PAGE_INSET.top * 100}%`,
+                bottom: `${OPEN_PAGE_INSET.bottom * 100}%`,
+              }}
+            >
+              <PageImage src={urls[page]} grayscale={colorFlags?.[page] === false} />
+            </div>
+          </>
+        )}
       </div>
 
       {/* Navigation */}
@@ -129,7 +152,7 @@ export default function RingBinderPreview({
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <span className="text-xs text-muted-foreground">
-            Page {page + 1} of {total}
+            {isCover ? "Cover" : `Page ${page + 1} of ${total}`}
           </span>
           <Button
             variant="ghost"
