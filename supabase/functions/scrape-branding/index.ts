@@ -29,7 +29,7 @@ serve(async (req) => {
     }
 
     const { createClient } = await import(
-      "https://esm.sh/@supabase/supabase-js@2.49.1"
+      "https://esm.sh/@supabase/supabase-js@2.57.4"
     );
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -37,10 +37,8 @@ serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } =
-      await supabase.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
