@@ -17,6 +17,10 @@ export default function CustomerHeader() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/", { replace: true });
+  };
   const { tenant } = useTenantFromSlug();
   const { data: branding } = useTenantBranding(tenant?.id ?? null);
   const cartCount = useCartItemCount();
@@ -86,7 +90,7 @@ export default function CustomerHeader() {
               My Orders
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={signOut}>
+            <DropdownMenuItem onClick={handleSignOut}>
               <LogOut className="mr-2 h-4 w-4" />
               Sign Out
             </DropdownMenuItem>
