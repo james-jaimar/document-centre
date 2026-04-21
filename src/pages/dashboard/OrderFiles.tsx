@@ -84,7 +84,9 @@ export default function OrderFiles() {
   });
 
   // Helper: ensure an order exists before uploading, returns the orderItemId
-  const ensureOrder = useCallback(async (): Promise<string> => {
+  // When skipNavigate is true the caller is responsible for navigating after
+  // its own async work completes (used by the fromDoc clone flow).
+  const ensureOrder = useCallback(async (opts?: { skipNavigate?: boolean }): Promise<string> => {
     // Already have an order
     if (orderItem?.id) return orderItem.id;
 
@@ -103,7 +105,9 @@ export default function OrderFiles() {
     if (error || !newItem) throw new Error("Failed to create order item");
 
     // Replace URL so browser shows the real order ID (no history push — use replace)
-    navigate(`/t/${slug}/orders/${order.id}/files`, { replace: true });
+    if (!opts?.skipNavigate) {
+      navigate(`/t/${slug}/orders/${order.id}/files`, { replace: true });
+    }
 
     return newItem.id;
   }, [orderItem?.id, routeFamilyId, createOrder, slug, navigate]);
@@ -144,8 +148,8 @@ export default function OrderFiles() {
           return;
         }
 
-        // 2) Source is valid — now create the order + item.
-        const newItemId = await ensureOrder();
+        // 2) Source is valid — now create the order + item (WITHOUT navigating yet).
+        const newItemId = await ensureOrder({ skipNavigate: true });
 
         // 3) Physically copy the S3 object to a new key keyed by the new order_item_id.
         const sourcePath: string = sourceDoc.file_path;
@@ -177,22 +181,24 @@ export default function OrderFiles() {
         });
         if (insErr) throw insErr;
 
-        // 5) Clear the ?fromDoc param so refresh doesn't re-copy.
-        setSearchParams((prev) => {
-          const next = new URLSearchParams(prev);
-          next.delete("fromDoc");
-          return next;
-        }, { replace: true });
-
+        // 5) Invalidate caches so the file list and dashboard update.
+        qc.invalidateQueries({ queryKey: ["documents", newItemId] });
         refetchDocuments();
         invalidateUserOrderCaches(qc);
+
+        // 6) NOW navigate to the canonical order URL (clone is complete).
+        const newOrderId = createdOrderId ?? orderId;
+        if (newOrderId) {
+          navigate(`/t/${slug}/orders/${newOrderId}/files`, { replace: true });
+        }
+
         toast.success(`Copied "${sourceDoc.file_name}" into new order`);
       } catch (err: any) {
         toast.error("Failed to copy file", { description: err.message });
         setCopyError(err.message ?? "Unknown error");
       }
     })();
-  }, [fromDocId, isNewMode, ensureOrder, refetchDocuments, setSearchParams, activeTenantId, qc]);
+  }, [fromDocId, isNewMode, ensureOrder, refetchDocuments, activeTenantId, qc, createdOrderId, orderId, navigate, slug]);
 
 
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
