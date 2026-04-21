@@ -178,3 +178,48 @@ export async function requestPayment(orderId: string) {
   if (data?.error) throw new Error(data.error);
   return data;
 }
+
+// ── Production document processing ──────────────────────────
+
+export interface ProcessDocumentResult {
+  assetId: string;
+  grayscaleJobId?: string;
+  resizeJobId?: string;
+  error?: string;
+}
+
+/**
+ * Orchestrate grayscale/resize calls for a single document.
+ * Fires and forgets — returns immediately with job IDs for optional polling.
+ * Does NOT block order placement on failure (graceful degradation).
+ */
+export async function processDocumentForProduction(params: {
+  backendAssetId: string;
+  needsGrayscale: boolean;
+  needsResize: boolean;
+  targetWidthMm?: number;
+  targetHeightMm?: number;
+}): Promise<ProcessDocumentResult> {
+  const { grayscale, resize } = await import("@/lib/documentCentreApi");
+  const result: ProcessDocumentResult = { assetId: params.backendAssetId };
+
+  try {
+    if (params.needsGrayscale) {
+      const { job_id } = await grayscale(params.backendAssetId);
+      result.grayscaleJobId = job_id;
+    }
+    if (params.needsResize && params.targetWidthMm && params.targetHeightMm) {
+      const { job_id } = await resize(
+        params.backendAssetId,
+        params.targetWidthMm,
+        params.targetHeightMm
+      );
+      result.resizeJobId = job_id;
+    }
+  } catch (e: any) {
+    console.warn("[processDocumentForProduction] failed (non-blocking):", e?.message);
+    result.error = e?.message ?? "Processing failed";
+  }
+
+  return result;
+}

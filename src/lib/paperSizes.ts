@@ -91,6 +91,29 @@ export function isLandscape(widthMm: number, heightMm: number): boolean {
   return widthMm > heightMm;
 }
 
+// ── Size lookup for production processing ────────────────────────
+
+const ALL_KNOWN_SIZES: Record<string, { widthMm: number; heightMm: number }> = {
+  a2: { widthMm: 420, heightMm: 594 },
+  a3: { widthMm: 297, heightMm: 420 },
+  a4: { widthMm: 210, heightMm: 297 },
+  a5: { widthMm: 148, heightMm: 210 },
+  a6: { widthMm: 105, heightMm: 148 },
+  letter: { widthMm: 216, heightMm: 279 },
+  legal: { widthMm: 216, heightMm: 356 },
+  tabloid: { widthMm: 279, heightMm: 432 },
+};
+
+/**
+ * Look up target dimensions for a size slug (e.g. "a4", "letter").
+ * Returns null for unknown slugs.
+ */
+export function getTargetDimensions(
+  sizeSlug: string
+): { widthMm: number; heightMm: number } | null {
+  return ALL_KNOWN_SIZES[sizeSlug?.toLowerCase()] ?? null;
+}
+
 // ── Near-ISO bleed detection ─────────────────────────────────────
 
 export interface NearIsoMatch {
