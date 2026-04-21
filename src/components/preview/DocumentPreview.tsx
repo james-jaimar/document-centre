@@ -157,6 +157,10 @@ export default function DocumentPreview({
     tabPositions,
   };
 
+  if (productType === "ring_binder") {
+    return <RingBinderPreview {...commonProps} />;
+  }
+
   if (BOUND_TYPES.has(productType)) {
     return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} displayPageNumbers={displayPageNumbers} faceLabels={faceLabels} bindingEdge={bindingEdge} rawPaths={thumbnailPaths} />;
   }
