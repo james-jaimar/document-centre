@@ -1,25 +1,51 @@
 
 
-## Remove "Generate Invoice" button from order detail pages
+## Fix: Documents Tab inputs reset on every keystroke
 
-### Problem
-The "Generate Invoice" button on the admin and branch order detail pages allows staff to manually create additional invoices/proformas at any time. Since invoices are already generated automatically when an order is placed, this button creates duplicate, non-real invoice records.
+### Root cause
 
-### Changes
+In `useTenantSettingsMap`, the `settingsMap` object is created inline on every render:
+```ts
+const map: Record<string, unknown> = {};
+// ...rebuilt every render
+return { ...query, settingsMap: map };
+```
 
-**`src/components/orders/OrderInvoicesList.tsx`**
-- Remove the `canIssue` prop entirely
-- Remove the "Generate Invoice" button from the header
-- Remove the "Generate Proforma" button from the empty state
-- Remove the `handleIssue` function and `issuing` state
-- Keep the list display, View, and Download actions as-is
+The `DocumentsTab` useEffect depends on `settingsMap`:
+```ts
+useEffect(() => { /* set all state from settingsMap */ }, [isLoading, settingsMap]);
+```
 
-**`src/pages/admin/AdminOrderDetail.tsx`**
-- Remove `canIssue` prop from `<OrderInvoicesList>`
+Since `settingsMap` is a new object reference every render, the effect fires after every keystroke, immediately resetting all inputs back to the database values.
 
-**`src/pages/branch/BranchOrderDetail.tsx`**
-- Remove `canIssue` prop from `<OrderInvoicesList>`
+### Fix
+
+**File: `src/hooks/useTenantSettings.ts`** -- Wrap the `settingsMap` computation in `useMemo` so it only changes when `query.data` changes:
+
+```ts
+import { useMemo } from "react";
+
+export function useTenantSettingsMap(category: string) {
+  const query = useTenantSettings(category);
+  const settingsMap = useMemo(() => {
+    const map: Record<string, unknown> = {};
+    if (query.data) {
+      for (const s of query.data) {
+        map[s.setting_key] = s.setting_value;
+      }
+    }
+    return map;
+  }, [query.data]);
+  return { ...query, settingsMap };
+}
+```
 
 ### Result
-The Invoices & Receipts section becomes read-only -- it lists automatically generated invoices with View/Download actions only. No manual generation possible.
+Inputs will accept and retain typed values. The useEffect only resets state when actual data from the database changes (initial load or after save), not on every render.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `src/hooks/useTenantSettings.ts` | Memoize `settingsMap` with `useMemo` |
 
