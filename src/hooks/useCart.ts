@@ -658,25 +658,25 @@ export function usePlaceOrder() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      // Clean up the cart in the background — don't block navigation
+      // Clean up the cart synchronously so the refetched cart is empty.
       const itemIdsToDelete = items.map((i: any) => i.id);
-      void (async () => {
-        try {
-          await supabase.from("document_sections").delete().in("order_item_id", itemIdsToDelete);
-          await supabase.from("documents").delete().in("order_item_id", itemIdsToDelete);
-          await supabase.from("order_items").delete().eq("order_id", input.cartOrderId);
-          await supabase.from("orders").delete().eq("id", input.cartOrderId);
-        } catch (e) {
-          console.error("Cart cleanup failed (non-critical):", e);
-        }
-      })();
+      try {
+        await supabase.from("document_sections").delete().in("order_item_id", itemIdsToDelete);
+        await supabase.from("documents").delete().in("order_item_id", itemIdsToDelete);
+        await supabase.from("order_items").delete().eq("order_id", input.cartOrderId);
+        await supabase.from("orders").delete().eq("id", input.cartOrderId);
+      } catch (e) {
+        console.error("Cart cleanup failed (non-critical):", e);
+      }
+
+      // Optimistically clear the cart cache so the badge/Cart page update instantly,
+      // even before the React Query refetch completes.
+      qc.setQueryData(["cart", user.id, tenantId], null);
 
       return data.order_id;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["cart"] });
-      qc.invalidateQueries({ queryKey: ["all_orders"] });
-      qc.invalidateQueries({ queryKey: ["orders"] });
+      invalidateUserOrderCaches(qc);
     },
   });
 }
