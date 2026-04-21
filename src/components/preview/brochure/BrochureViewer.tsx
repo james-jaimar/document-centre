@@ -141,13 +141,17 @@ export default function BrochureViewer({
 
   // Tri-fold / Roll-fold: when fully closed, show static single-panel view
   if (isTriFold && allFoldsClosed) {
-    // Front of closed brochure = centre outside panel (p1 = back cover area visually, but it's what you see)
-    // Back of closed brochure = left outside panel (p0)
-    const frontPanel = outsideSpec.panels[1]; // centre = visible front of closed
-    const backPanel = outsideSpec.panels[0];  // left = visible back of closed
+    // Surface-aware closed view:
+    //   Outside: top = face 1 (p1.front, centre), back-when-flipped = face 0 (p0.front)
+    //   Inside:  top = face 2 (p2.front, last folded on top), back-when-flipped = face 5 (p0.back)
+    const isOutside = surface === "outside";
+    const frontPanel = isOutside ? outsideSpec.panels[1] : outsideSpec.panels[2];
+    const backPanel = outsideSpec.panels[0];
     const showingFront = !rotatedFolded;
     const displayPanel = showingFront ? frontPanel : backPanel;
-    const displayFace = displayPanel.front;
+    const displayFace = showingFront
+      ? frontPanel.front // face 1 (outside) or face 2 (inside)
+      : (isOutside ? backPanel.front : backPanel.back); // face 0 (outside) or face 5 (inside)
 
     const sheetRatio = 3 / 2;
     const panelRatio = sheetRatio * (displayPanel.widthFraction || 1/3);
