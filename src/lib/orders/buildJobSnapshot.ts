@@ -220,7 +220,7 @@ function buildPrintColourSection(sections: DocumentSectionRow[]): ConfigSection 
     value: allSimplex ? "Simplex (Single-sided)" : allDuplex ? "Duplex (Double-sided)" : "Mixed",
   });
 
-  return { title: "Print Colour", items };
+  return { title: "Print", items };
 }
 
 function buildPerSectionDetail(sections: DocumentSectionRow[]): ConfigSection | null {
@@ -301,10 +301,17 @@ export interface JobSnapshot {
   product_snapshot: Record<string, any>;
 }
 
+// Options whose values come exclusively from per-section data (document_sections).
+// Strip them from selected_options so the snapshot doesn't render duplicate rows.
+const SECTION_CONTROLLED_KEYS = new Set(["Print Colour", "Print Sides"]);
+
 export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
   const { item, productOptions, sections, documents } = input;
   const spec = item.spec || {};
-  const selected: Record<string, string | string[]> = spec.selected_options || {};
+  const rawSelected: Record<string, string | string[]> = spec.selected_options || {};
+  const selected: Record<string, string | string[]> = Object.fromEntries(
+    Object.entries(rawSelected).filter(([k]) => !SECTION_CONTROLLED_KEYS.has(k))
+  );
 
   const resolved = resolveSelectedOptions(selected, productOptions);
 

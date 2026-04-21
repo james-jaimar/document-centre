@@ -183,12 +183,25 @@ export default function OrderBuild() {
   // Track whether auto-size-match has fired so it only runs once
   const autoSizeMatchedRef = useRef(false);
 
+  // Options whose values are derived per-section from the uploaded files list
+  // (Print Colour / Print Sides). These must NEVER be seeded as defaults on
+  // spec.selected_options — the per-section truth is the single source.
+  const SECTION_CONTROLLED_OPTIONS = new Set(["Print Colour", "Print Sides"]);
+
   useEffect(() => {
     if (options.length === 0) return;
     setSpec((prev) => {
       const selected = { ...prev.selected_options };
       let changed = false;
+      // Strip any legacy section-controlled keys that may already be persisted
+      for (const key of Object.keys(selected)) {
+        if (SECTION_CONTROLLED_OPTIONS.has(key)) {
+          delete selected[key];
+          changed = true;
+        }
+      }
       for (const opt of options) {
+        if (SECTION_CONTROLLED_OPTIONS.has(opt.name)) continue;
         if (selected[opt.name]) continue;
         if (isStructuredValues(opt.values)) {
           const defaultVal = opt.values.find((v) => v.is_default);

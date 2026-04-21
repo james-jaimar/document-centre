@@ -482,6 +482,34 @@ export function usePlaceOrder() {
           product_snapshot,
         });
 
+        // Build production_specs from the per-section truth so the work order
+        // carries an authoritative, machine-readable record for the PDF pipeline.
+        const allBW = itemSections.length > 0 && itemSections.every((s: any) => !s.is_color);
+        const allColour = itemSections.length > 0 && itemSections.every((s: any) => s.is_color);
+        const allSimplex = itemSections.length > 0 && itemSections.every((s: any) => !s.is_duplex);
+        const allDuplex = itemSections.length > 0 && itemSections.every((s: any) => s.is_duplex);
+
+        const production_specs = {
+          print_colour: allBW ? "black_and_white" : allColour ? "full_colour" : "mixed",
+          print_sides: allSimplex ? "simplex" : allDuplex ? "duplex" : "mixed",
+          sections: itemSections.map((s: any) => ({
+            label: s.label,
+            section_type: s.section_type,
+            is_color: s.is_color,
+            is_duplex: s.is_duplex,
+            paper_stock: s.paper_stock,
+            paper_weight_gsm: s.paper_weight_gsm,
+          })),
+          documents: itemDocs.map((d: any) => ({
+            file_name: d.file_name,
+            backend_asset_id: d.backend_asset_id,
+            page_count: d.page_count,
+            page_width_mm: d.page_width_mm,
+            page_height_mm: d.page_height_mm,
+          })),
+          derived_assets: {},
+        };
+
         // Full preview snapshot — bleed/covers/lamination/paper colour/tabs/inserts
         // resolved at place-order time so the read-only preview matches the
         // customer's chosen finishing options exactly.
