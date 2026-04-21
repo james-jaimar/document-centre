@@ -200,6 +200,14 @@ export default function AdminDocuments() {
                       <Button
                         size="sm"
                         variant="ghost"
+                        onClick={() => handleView(inv)}
+                        title="View PDF"
+                      >
+                        <Eye size={16} />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
                         onClick={() => handleDownload(inv)}
                         title="Download PDF"
                       >
