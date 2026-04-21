@@ -351,18 +351,12 @@ async function buildPdf(opts: {
       text(ctx, line, colDesc + 8, rowTop - li * 12, { size: 9 });
     });
     text(ctx, String(qty), colQty + 8, rowTop, { size: 9 });
-    const unitStr = fmtMoney(unit, order.currency);
-    const unitStrW = textWidth(ctx, unitStr, 9);
-    text(ctx, unitStr, colTotal - unitStrW + 15, rowTop, { size: 9 }); // right-align total col
-    // Actually put unit price in unit col, total in total col
-    // Fix column alignment
     const unitPriceStr = fmtMoney(unit, order.currency);
-    const totalStr = fmtMoney(Number(job.net_price), order.currency);
-    // Clear and re-draw properly — we'll overwrite. Just position correctly:
-    // Unit price right-aligned in its column
     const upW = textWidth(ctx, unitPriceStr, 9);
-    // Overwrite by just drawing at the right spot
-    text(ctx, totalStr, colTotal + 30 - textWidth(ctx, totalStr, 9), rowTop, { size: 9 });
+    text(ctx, unitPriceStr, colUnit + 30 - upW, rowTop, { size: 9 });
+    const totalStr = fmtMoney(Number(job.net_price), order.currency);
+    const totW2 = textWidth(ctx, totalStr, 9);
+    text(ctx, totalStr, colTotal + 30 - totW2, rowTop, { size: 9 });
 
     // Spec chips
     if (chips.length) {
