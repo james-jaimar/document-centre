@@ -438,7 +438,7 @@ export function usePlaceOrder() {
             ? supabase
                 .from("documents")
                 .select(
-                  "id, order_item_id, file_name, page_count, file_size, page_width_mm, page_height_mm, thumbnail_urls, sort_order"
+                  "id, order_item_id, file_name, page_count, file_size, page_width_mm, page_height_mm, thumbnail_urls, sort_order, backend_asset_id"
                 )
                 .in("order_item_id", itemIds)
                 .order("sort_order")
@@ -547,6 +547,7 @@ export function usePlaceOrder() {
           vat_rate: 15,
           configuration: configurationWithPreview,
           product_snapshot,
+          production_specs,
         };
       });
 
