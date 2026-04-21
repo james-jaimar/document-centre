@@ -13,6 +13,7 @@ import postersImg from "@/assets/products/posters.jpg";
 import bookletsImg from "@/assets/products/booklets.jpg";
 import flyersImg from "@/assets/products/flyers.jpg";
 import brochuresImg from "@/assets/products/brochures.jpg";
+import businessCardsImg from "@/assets/product-business-cards.jpg";
 
 const SLUG_IMAGE_MAP: Record<string, string> = {
   "bound-documents": boundDocumentsImg,
@@ -23,6 +24,7 @@ const SLUG_IMAGE_MAP: Record<string, string> = {
   "booklets": bookletsImg,
   "flyers": flyersImg,
   "brochures": brochuresImg,
+  "business-cards": businessCardsImg,
 };
 
 const ICON_MAP: Record<string, React.ElementType> = {
