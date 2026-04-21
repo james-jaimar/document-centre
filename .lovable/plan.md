@@ -1,75 +1,67 @@
 
 
-## Realistic colored PVC tab dividers — solid sheet + matching protrusion
+## Replace ring binder placeholder with real binder images
 
-### Problem
+### What changes
 
-Pre-made colored tab dividers are **solid PVC** dyed all the way through — the protrusion AND the full sheet are the same color. Currently:
-- The tab sheet body renders **light gray** (`#e8e8e8`) regardless of color choice.
-- Multicolor cycle order is `red → blue → green → yellow → orange`. The user wants **blue → red → orange → yellow → green** (then repeats).
-- For multicolor sets, only the protrusion gets a color; the sheet body stays gray.
+The current `RingBinderPreview.tsx` is a CSS-drawn placeholder (gray rectangle + 3 fake D-rings). Replace it with the two real photographs the user uploaded so the preview shows an authentic white PVC binder.
 
-### Reference (from uploaded product images)
+### Assets
 
-- Standard 5-tab and 10-tab packs are sold in a fixed cycle of **blue, red, orange, yellow, green**, repeating for the 10-tab pack.
-- Each divider sheet is solid PVC — the entire A4 sheet is the tab's color, with the tab protrusion an integral extension of that sheet.
-- Tab heights are equal: `pageHeight / tabsPerBank` (already implemented correctly via banking).
+Copy the two uploads into `src/assets/bindings/`:
 
-### Changes
+| Source | Destination |
+|---|---|
+| `user-uploads://ring_binder_closed.png` | `src/assets/bindings/ring_binder_white_closed.png` |
+| `user-uploads://ring_bind_open.png` | `src/assets/bindings/ring_binder_white_open.png` |
 
-**1. `src/components/preview/previewTypes.ts`**
+Naming follows the existing convention (`coil_binding_black_closed.png`, etc.) and leaves room for future colours (e.g. black binder).
 
-Reorder `TAB_COLORS` to the correct PVC cycle:
+### Component rewrite — `src/components/preview/RingBinderPreview.tsx`
+
+Two render modes:
+
+**1. Single-page (cover) mode** — `currentPage === 0` or `urls.length === 1`
+- Render the **closed** binder image as the background (portrait, ~1:1.05 aspect).
+- If a front-cover thumbnail exists, overlay it inside the visible cover pocket window with a small inset margin (the binder has a clear PVC overlay pocket — the doc image sits behind it).
+
+**2. Open spread mode** — `currentPage >= 1`
+- Render the **open** binder image as the background (landscape ~2.4:1, with the 4-ring spine visible down the centre).
+- Overlay the current page thumbnail on the **right** half of the spread (page area only — clear of the spine and rings).
+- Show the previous page on the **left** half if it exists, mimicking a real open binder.
+- Apply the existing `colorFlags` grayscale filter per page.
+
+### Geometry constants
+
+Derived from the uploaded images:
+
 ```ts
-export const TAB_COLORS = ["#3b82f6", "#ef4444", "#f97316", "#eab308", "#22c55e"];
-// blue, red, orange, yellow, green
+const BINDER_CLOSED_ASPECT = 760 / 800;   // ~0.95 portrait
+const BINDER_OPEN_ASPECT   = 1800 / 760;  // ~2.37 landscape
+// Inside-page clear area as % of binder image (measured from photo)
+const CLOSED_PAGE_INSET = { top: 0.04, bottom: 0.04, left: 0.05, right: 0.05 };
+const OPEN_PAGE_INSET   = { top: 0.04, bottom: 0.04, sideMargin: 0.04, spineHalfWidth: 0.06 };
 ```
 
-**2. `src/components/preview/PageEffects.tsx`**
+Pages on the open spread are positioned: left page from `sideMargin` to `0.5 - spineHalfWidth`, right page from `0.5 + spineHalfWidth` to `1 - sideMargin`.
 
-Replace the gray `TAB_CARD_COLOR` constant with a small palette + resolver so `role === "tab"` and `role === "tab_back"` render the same solid color the protrusion uses. Add a `tabIndex`/`tabTotal` prop or piggy-back on existing `color` slug + `pageIndex` info already available.
+### Navigation
 
-Simpler: PageEffects already receives `color` (slug) per page. We extend the `color` field for tab pages so it carries the **resolved hex** (passed in upstream from `buildPreviewSnapshot.ts` / `PreviewPanel.tsx` where multicolor cycling happens). PageEffects then renders both `tab` and `tab_back` faces with that hex as background. White tabs continue to render as `#f5f5f5` paper-style (not gray).
+Keep the existing prev/next chevron + "Page X of Y" footer unchanged.
 
-```ts
-// New TAB_BODY_COLORS resolver mirroring the protrusion logic
-function resolveTabBodyColor(slug: string): string { ... }
+### Drop legacy placeholder bits
 
-if (role === "tab" || role === "tab_back") {
-  const bg = resolveTabBodyColor(color || "white");
-  // Solid sheet edge-to-edge; protrusion overlay handles the tab itself
-  return <div className="w-full h-full" style={{ backgroundColor: bg, boxShadow: PAPER_SHADOW }}>
-    {role === "tab" && <CenteredLabel text={label} dark={isLightColor(bg)} />}
-  </div>;
-}
-```
-
-White tab variant keeps the off-white card look (`#f5f5f5`) so white labels remain legible.
-
-**3. `src/lib/orders/buildPreviewSnapshot.ts` and `src/components/order/PreviewPanel.tsx`**
-
-Where `pageColors` is built and where `tabPositions` is built, when the divider set is **multicolor** (no per-tab override and tab count > 1, matching today's `isMultiColor` flag), assign each tab page (front face + back face) a cycled color from the new `TAB_COLORS` order based on its `tabIndex`. Today this cycling only happens inside `TabOverlay`; we lift it to snapshot time so both protrusion AND sheet body get the same hex.
-
-The cycled color is written into `page.color` for both `pageIndex: 0` and `pageIndex: -1` faces of each tab section. `TabOverlay`'s `resolveTabColor` keeps working unchanged (it already reads `tab.color`).
-
-**4. `src/components/preview/FlipBook.tsx` — `resolveTabColor`**
-
-Update the named-color map to match the new palette (already mostly in sync; just confirm `red`, `blue`, `orange`, `yellow`, `green` map to the same hexes as the new `TAB_COLORS` for visual parity between protrusion and sheet body).
+Remove: the gradient border-rectangle, the three CSS D-rings, the four CSS hole-punch dots — all replaced by the real photo. Drop the unused `useState` and `RING_BINDER_COVER_MM` constant references in this component.
 
 ### Files changed
 
 | File | Change |
 |---|---|
-| `src/components/preview/previewTypes.ts` | Reorder `TAB_COLORS` to blue/red/orange/yellow/green |
-| `src/components/preview/PageEffects.tsx` | Render `tab` + `tab_back` faces as solid color (using resolved color slug/hex), white = off-white card |
-| `src/lib/orders/buildPreviewSnapshot.ts` | When multicolor, write cycled hex into `page.color` for both tab faces |
-| `src/components/order/PreviewPanel.tsx` | Same cycling logic for the live preview path |
-| `src/components/preview/FlipBook.tsx` | Sync named-color map to new palette so protrusion + body match exactly |
+| `src/assets/bindings/ring_binder_white_closed.png` | New — copied from upload |
+| `src/assets/bindings/ring_binder_white_open.png` | New — copied from upload |
+| `src/components/preview/RingBinderPreview.tsx` | Rewrite to use real binder photos with cover/spread overlay logic |
 
 ### Result
 
-- **White tab pack**: sheet looks like off-white card (`#f5f5f5`), protrusion light gray with dark label — unchanged behaviour.
-- **Multicolor 5-tab pack**: tabs cycle **blue → red → orange → yellow → green**. Each divider sheet AND its protrusion are the same solid PVC color.
-- **Multicolor 10-tab pack**: cycle repeats — blue, red, orange, yellow, green, blue, red, orange, yellow, green. Banking (already correct) splits them into two columns of 5.
-- Labels overlay the colored sheet in white (or dark for yellow) — readable on every color.
+Ring binder previews now show the actual white PVC binder — closed view for the cover/page 1, open spread (with visible 4 D-rings down the spine) for any subsequent page — with the user's document thumbnails overlaid in the correct pocket/page positions.
 
