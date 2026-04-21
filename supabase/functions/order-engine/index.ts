@@ -18,6 +18,13 @@ function err(message: string, status = 400) {
 }
 
 // ── Side-effect helpers (fire-and-forget) ───────────────────
+async function isDemoOrder(admin: ReturnType<typeof createClient>, order_id: string): Promise<boolean> {
+  try {
+    const { data } = await admin.from("orders").select("is_demo").eq("id", order_id).maybeSingle();
+    return !!(data as any)?.is_demo;
+  } catch { return false; }
+}
+
 async function triggerEmail(authHeader: string, order_id: string, event_key: string, extra: Record<string, unknown> = {}) {
   try {
     const url = Deno.env.get("SUPABASE_URL")!;
@@ -130,8 +137,9 @@ async function createOrderWithJobs(
       notes_customer: order?.notes_customer || null,
       metadata: order?.metadata || {},
       submitted_at: new Date().toISOString(),
+      is_demo: payload.is_demo === true,
     })
-    .select("id, order_number")
+    .select("id, order_number, is_demo")
     .single();
 
   if (orderErr || !newOrder) return err(`Failed to create order: ${orderErr?.message}`);
