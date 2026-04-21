@@ -1,73 +1,70 @@
 
 
-## Expand Documents Tab: Printable Document Settings
+## Upgrade Invoice PDF to Professional Layout
 
-Based on the reference screenshot, the Documents settings tab needs to be significantly expanded to match the full configurability of the emulated system.
+### What changes
 
-### What gets built
+The `generate-invoice-pdf` edge function will be rewritten with a polished, professional layout inspired by the reference project's clean design. The PDF generation stays server-side using `pdf-lib` (no library change needed -- the issue is layout and typography, not tooling).
 
-The existing `DocumentsTab` component will be rebuilt to include all the settings shown in the reference, organized into clear card sections. All values will be stored in the `tenant_settings` table under the `"documents"` category using the existing `useBulkUpsertTenantSettings` hook. No database schema changes are needed.
+### Design improvements
 
-### Settings to add
+**Header band**
+- Increase height to 70pt with better vertical centering
+- Logo or company name centered vertically within the band
+- Document title (TAX INVOICE / PROFORMA) right-aligned with larger, bolder type
+- Subtle bottom shadow effect via a thin gradient-like strip below the band
 
-**Card 1: Header Name or Logo**
-- Radio toggle: "Name" or "Logo"
-- Text input for header name (when "Name" is selected)
-- Logo preview + file upload button (when "Logo" is selected; uploads to the `assets` bucket under the tenant path)
-- Settings keys: `header_mode` ("name" | "logo"), `header_name`, `header_logo_url`
+**Company info + invoice meta**
+- Two-column layout with clear visual separation
+- Left: company address block with slightly larger company name (bold, 11pt) and details below (9pt)
+- Right: invoice meta in a neat bordered box with alternating light background rows (Invoice No, Order No, Date, Currency)
 
-**Card 2: Invoice Address**
-- Textarea for the sender/company address block that appears on invoices
-- Description: "Your company address displayed on invoices and proformas"
-- Setting key: `invoice_address`
+**Bill To / Ship To**
+- Section headers with a small colored accent bar (4pt wide, using primary color) to the left of the label
+- Cleaner spacing between address lines (13pt line height)
+- Light gray background card behind each address block
 
-**Card 3: Document Titles**
-- Proforma Invoice Title (input, default empty = "PROFORMA INVOICE")
-- Invoice Title (input, e.g. "Vat # 4890102587", default empty = "TAX INVOICE")
-- Setting keys: `proforma_title`, `invoice_title`
+**Items table**
+- Dark header row using tenant's primary color with white text
+- Alternating row backgrounds (white / very light gray)
+- Thin horizontal separators between rows
+- Better column alignment: Description (left, wide), Qty (center, narrow), Unit Price (right), Total (right)
+- Spec chips rendered on a second line in italic, slightly indented
+- Proper page-break handling: repeat table header on new pages
 
-**Card 4: Footer** (replaces the existing Legal Footer card)
-- Larger textarea (6 rows) for full footer content including banking details, payment instructions, etc.
-- Setting key: `legal_footer_text` (reuse existing key)
+**Totals section**
+- Right-aligned summary box with a subtle border
+- Clear visual hierarchy: regular items in 9pt, Total and Amount Due in 11pt bold with a top rule
+- Skip zero-value lines (e.g. no discount line if discount is 0)
 
-**Card 5: Document Numbering** (existing, kept as-is)
-- Proforma Prefix, Delivery Note Prefix
+**Banking details**
+- Centered section with a light background fill and rounded-corner effect (simulated with filled rectangle)
+- "BANKING DETAILS" header centered and bold
+- Details in a clean centered layout below
 
-**Card 6: Jobsheet/Ordersheet Custom Fields**
-- 5 text inputs for custom field labels (e.g. Date, Print Name, Signature)
-- Setting key: `jobsheet_custom_fields` (stored as JSON array of strings)
+**Footer**
+- Thin horizontal rule across page width
+- Footer text centered in 8pt gray
+- Page number bottom-right if multi-page
 
-**Card 7: Delivery Note Custom Fields**
-- 5 text inputs for custom field labels (e.g. Date, Picked By, No. of Boxes, Print Name, Signature)
-- Setting key: `delivery_note_custom_fields` (stored as JSON array)
+**Typography**
+- Continue using Helvetica/HelveticaBold (universally available in pdf-lib)
+- Better size hierarchy: 18pt header name, 14pt doc title, 11pt section headers, 10pt body, 9pt details, 8pt footer
+- Consistent color: dark navy (#1a1a2e) for body text, medium gray for secondary text
 
-**Card 8: Invoice Custom Fields**
-- 5 text inputs for custom field labels (e.g. "vat no.")
-- Setting key: `invoice_custom_fields` (stored as JSON array)
+### Technical approach
 
-### Layout
-- Main column (left, wider): Header/Logo, Invoice Address, Document Titles, Footer, Document Numbering
-- Side column (right, narrower): Jobsheet Custom Fields, Delivery Note Custom Fields, Invoice Custom Fields
-- On mobile: single column, side cards stack below
-
-### Wire up to PDF generation
-Update `supabase/functions/generate-invoice-pdf/index.ts` to read the new `documents` category settings and apply them:
-- Use `header_mode` / `header_name` / `header_logo_url` for the PDF header (embed logo image if mode is "logo")
-- Use `invoice_title` / `proforma_title` for the document type heading instead of hardcoded strings
-- Use `invoice_address` for the "From" block instead of constructing it from tenant fields
-- Use `invoice_custom_fields` to render additional labeled fields on the invoice
-- Footer text already wired via `legal_footer_text`
+The entire `buildPdf` function will be rewritten with:
+- A `drawPage` helper that tracks current page and handles page breaks with header repetition
+- Proper Y-position tracking with configurable line heights and section spacing
+- A `drawTableRow` helper for consistent item rendering with alternating backgrounds
+- A `drawTotalsBox` that draws a bordered summary aligned to the right margin
 
 ### Files changed
 
 | File | Change |
 |------|--------|
-| `src/pages/admin/settings/DocumentsTab.tsx` | Rebuild with all new settings cards, two-column layout, logo upload |
-| `supabase/functions/generate-invoice-pdf/index.ts` | Read and apply new document settings (titles, address, header mode, custom fields) |
+| `supabase/functions/generate-invoice-pdf/index.ts` | Rewrite `buildPdf` function with professional layout, better spacing, colored table headers, alternating rows, accent bars, totals box, and proper multi-page support |
 
-### Technical notes
-- Logo upload uses `supabase.storage.from("assets").upload(...)` with tenant-scoped path
-- Custom fields stored as JSON arrays in `tenant_settings.setting_value` (JSONB column)
-- All settings use `value_type: "string"` or `value_type: "json"` as appropriate
-- No new database tables or migrations required
+No new dependencies, no database changes, no client-side changes needed. The function will be redeployed after the update.
 
