@@ -84,7 +84,9 @@ export default function OrderFiles() {
   });
 
   // Helper: ensure an order exists before uploading, returns the orderItemId
-  const ensureOrder = useCallback(async (): Promise<string> => {
+  // When skipNavigate is true the caller is responsible for navigating after
+  // its own async work completes (used by the fromDoc clone flow).
+  const ensureOrder = useCallback(async (opts?: { skipNavigate?: boolean }): Promise<string> => {
     // Already have an order
     if (orderItem?.id) return orderItem.id;
 
@@ -103,7 +105,9 @@ export default function OrderFiles() {
     if (error || !newItem) throw new Error("Failed to create order item");
 
     // Replace URL so browser shows the real order ID (no history push — use replace)
-    navigate(`/t/${slug}/orders/${order.id}/files`, { replace: true });
+    if (!opts?.skipNavigate) {
+      navigate(`/t/${slug}/orders/${order.id}/files`, { replace: true });
+    }
 
     return newItem.id;
   }, [orderItem?.id, routeFamilyId, createOrder, slug, navigate]);
