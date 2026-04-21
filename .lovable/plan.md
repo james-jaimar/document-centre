@@ -1,50 +1,47 @@
 
 
-## Create Pricing Page for Document Centre
+## Fix: Invoice PDF Generation and Download
 
-A new `/pricing` public marketing page using the same `.dc-marketing` design system as the landing page -- same header, footer, colours, typography, and card styles.
+### Problem
 
----
+Two issues prevent invoice PDFs from working:
 
-### What gets built
+1. **Demo orders are silently skipped** -- The `generate-invoice-pdf` edge function (line 244) returns `{ success: true, skipped: true }` for any order where `is_demo === true`. Since the "Try It Now" demo flow marks orders as demo, no invoices are ever generated for those users. The order-engine treats this as a success (no error), so nothing is logged or surfaced.
 
-A full pricing page with these sections (top to bottom):
+2. **Download uses Supabase Storage but invoices are never created** -- Since generation is skipped, the `order_invoices` table has no rows, and the "No invoices yet" empty state is all that's shown. The download mechanism itself (signed URL from the `documents` Supabase bucket) is correctly implemented but has nothing to serve.
 
-1. **Header** -- reuses the same sticky header as the landing page (logo, nav links, Sign In / Try It Now buttons)
-2. **Hero** -- "Online ordering for print shops, without the usual file headaches" with eyebrow, subtitle, and trust line
-3. **Three pricing cards** -- Starter ($149), Core ($199, featured with "Most Popular" badge), Multi-Branch ($349) with feature lists and CTAs
-4. **Expansion note** -- "Need more branches? We can scale with you."
-5. **Value section** -- "Why shops choose Document Centre" with 4 value cards (fewer file problems, less manual checking, better confidence, print-ready output)
-6. **Comparison table** -- 12-row feature matrix across the 3 plans with check marks and dashes
-7. **FAQ section** -- 6 questions in a 2-column grid (setup fees, branding, file types, PDFs, small shops, branches, trial)
-8. **Bottom CTA** -- "Sell print online without making it complicated" with gradient card, two buttons
-9. **Footer** -- same footer as landing page
+### Fix
 
-### Design approach
+#### 1. Allow invoice generation for demo orders (`supabase/functions/generate-invoice-pdf/index.ts`)
 
-- Wrapped in `.dc-marketing` so all existing CSS variables (`--dc-navy`, `--dc-blue`, `--dc-green`, `--dc-orange`, `--dc-sky`, `--dc-border`) and utility classes (`.dc-card`, `.dc-btn`, `.dc-eyebrow`, `.dc-muted`) apply automatically
-- Same `max-w-[1240px]` container, same font stack, same card border-radius (24px)
-- Featured card gets a blue border, upward translate, and gradient "Most Popular" badge
-- Feature list items use green checkmarks
-- Comparison table in a `.dc-card` wrapper with sticky first column on mobile
-- FAQ items styled as `.dc-card` cards in a 2x3 grid
-- Fully responsive: single column on mobile, 3-col pricing grid on desktop
+Remove the early-return guard that skips demo orders. Demo invoices are harmless -- they exercise the full flow and show users the feature works. The invoice is stored in the `documents` bucket under a tenant-scoped path and recorded in `order_invoices`, so there's no data pollution.
 
-### Technical details
+Change line 244 from:
+```
+if ((order as any).is_demo) return json({ success: true, skipped: true, reason: "demo_order" });
+```
+to simply removing that check entirely, or gating it behind a separate "suppress invoices" tenant setting if desired. For now, removing the guard is the right call.
 
-**Files created:**
+#### 2. Ensure the `generate-invoice-pdf` function is deployed
 
-- `src/pages/Pricing.tsx` -- the full pricing page component, sharing the header/footer pattern from `MarketingLanding.tsx` (extracted as inline components or duplicated with the same markup)
+Deploy the updated function so it's active and reachable when `order-engine` calls `triggerInvoice()`.
 
-**Files modified:**
+#### 3. Validate the download path works end-to-end
 
-- `src/App.tsx` -- add `<Route path="/pricing" element={<Pricing />} />` as a public route
-- `src/pages/MarketingLanding.tsx` -- update the "Pricing" nav link from `href="#pricing"` to `to="/pricing"` (using `Link` from react-router-dom), and similarly in the footer
+The `downloadInvoice` function in `src/lib/orders/mutations.ts` uses `supabase.storage.from(storage_bucket).createSignedUrl(storage_path, 60)`. This works for the `documents` bucket (which is private). No code changes needed here -- once invoices are generated and stored, downloads will work.
 
-**No new CSS file needed** -- the existing `.dc-marketing` scoped styles in `src/index.css` plus Tailwind utilities cover everything. A few pricing-specific styles (featured card border, badge gradient, comparison table) will be inline or as small Tailwind classes.
+#### 4. Add manual "Generate Invoice" for existing demo orders
 
-**No new dependencies.**
+Currently, clicking "Generate Invoice" in the admin order detail calls `order-engine` with action `generateInvoice`, which calls `triggerInvoice()`. With the demo guard removed, this will work for existing demo orders too -- admins can retroactively generate invoices.
 
-### Content
+### Files changed
 
-All copy comes directly from the ChatGPT draft provided. Prices in USD. CTAs link to `/try` (Try It Now / Start Free Trial) and `/auth?mode=register` (Start Plan). "Book a Demo" / "Talk to Us" on Multi-Branch links to a `#cta` anchor or contact route.
+- `supabase/functions/generate-invoice-pdf/index.ts` -- remove the `is_demo` early-return guard (line 244)
+
+### Verification
+
+1. Place a demo order via "Try It Now".
+2. Check the admin order detail -- a proforma invoice should appear automatically (triggered by `createOrderWithJobs` side-effect).
+3. Click "PDF" on the invoice row -- the browser should download the PDF.
+4. Click "Generate Invoice" -- a tax invoice should be created and appear in the list.
+
