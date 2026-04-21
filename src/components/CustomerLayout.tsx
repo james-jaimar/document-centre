@@ -101,6 +101,11 @@ function CustomerLayoutInner() {
   return (
     <div className="flex h-screen w-full flex-col" style={tenantStyle}>
       {isDemo && <DemoBanner onUpgrade={() => navigate("/auth?mode=register&from=demo")} />}
+
+      {/* Header — full width across the top */}
+      <CustomerHeader />
+
+      {/* Sidebar + main content row */}
       <div className="flex flex-1 w-full min-h-0">
         {/* Desktop sidebar — animated collapse */}
         <div
@@ -136,18 +141,15 @@ function CustomerLayoutInner() {
         )}
 
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-          {/* Top bar — mobile menu trigger + header */}
-          <div className="flex items-stretch">
+          {/* Mobile menu trigger row */}
+          <div className="lg:hidden flex items-center border-b border-border bg-white/80">
             <button
-              className="lg:hidden self-stretch px-4 hover:bg-secondary"
+              className="self-stretch px-4 py-2 hover:bg-secondary"
               onClick={() => setMobileOpen(!mobileOpen)}
               aria-label="Toggle menu"
             >
               <Menu className="h-5 w-5 text-muted-foreground" />
             </button>
-            <div className="flex-1 min-w-0">
-              <CustomerHeader />
-            </div>
           </div>
 
           {/* Content */}

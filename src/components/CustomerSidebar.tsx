@@ -4,9 +4,9 @@ import {
   Plus,
   ClipboardList,
   Settings,
-  HelpCircle,
   PanelLeftClose,
   ShoppingCart,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -14,8 +14,6 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { useCartItemCount } from "@/hooks/useCart";
-import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
-import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { resolveDisplayName, resolveInitials } from "@/lib/displayName";
 
 const buildNavItems = (slug: string) => [
@@ -37,8 +35,6 @@ export default function CustomerSidebar() {
   };
   const cartCount = useCartItemCount();
   const navItems = buildNavItems(slug ?? "");
-  const { tenant } = useTenantFromSlug();
-  const { data: branding } = useTenantBranding(tenant?.id ?? null);
 
   const { data: profile } = useQuery({
     queryKey: ["profile", user?.id],
@@ -59,41 +55,26 @@ export default function CustomerSidebar() {
 
   const nameSource = { ...(profile ?? {}), email: profile?.email ?? user?.email ?? null };
   const displayName = resolveDisplayName(nameSource, "User");
-  const initials = resolveInitials(nameSource, "U").toLowerCase();
+  const initials = resolveInitials(nameSource, "U").toUpperCase();
 
   const { toggle } = useSidebarCollapse();
 
-  const portalName = branding?.portal_name || tenant?.name || "";
-  const logoUrl = branding?.logo_url || tenant?.logo_url || "";
-
   return (
-    <aside className="print-sidebar w-64 shrink-0 px-5 py-6 hidden lg:flex">
-      {/* Brand + collapse toggle */}
-      <div className="mb-8 flex items-center justify-between gap-2 px-1">
-        <div className="flex min-w-0 items-center gap-3">
-          {logoUrl ? (
-            <img
-              src={logoUrl}
-              alt={portalName}
-              className="h-9 w-auto max-w-[150px] object-contain"
-            />
-          ) : (
-            <div className="truncate text-xl font-semibold tracking-tight text-sidebar-foreground">
-              {portalName || "Print Centre"}
-            </div>
-          )}
-        </div>
+    <aside className="print-sidebar w-64 shrink-0 px-4 py-5 hidden lg:flex">
+      {/* Collapse toggle (no logo here — header owns the brand) */}
+      <div className="mb-6 flex items-center justify-end px-1">
         <button
           onClick={toggle}
           className="shrink-0 rounded-lg p-1.5 hover:bg-sidebar-accent/40 transition-colors"
           title="Collapse sidebar"
+          aria-label="Collapse sidebar"
         >
           <PanelLeftClose className="h-4 w-4 text-sidebar-foreground/60 hover:text-sidebar-foreground" />
         </button>
       </div>
 
       {/* Nav */}
-      <nav className="flex flex-1 flex-col gap-2">
+      <nav className="flex flex-1 flex-col gap-1.5">
         {navItems.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.to, item.exact);
@@ -103,10 +84,13 @@ export default function CustomerSidebar() {
               to={item.to}
               className={cn("sidebar-nav-item", active && "active")}
             >
-              <Icon className="h-5 w-5" />
+              <Icon className="h-[18px] w-[18px]" />
               <span>{item.label}</span>
               {(item as any).badge && cartCount > 0 && (
-                <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                <span
+                  className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold text-primary-foreground"
+                  style={{ background: "hsl(var(--tenant-accent, var(--tenant-primary, var(--primary))))" }}
+                >
                   {cartCount}
                 </span>
               )}
@@ -116,22 +100,30 @@ export default function CustomerSidebar() {
       </nav>
 
       {/* User card */}
-      <div className="mt-8 flex items-center justify-between rounded-2xl border border-sidebar-border bg-sidebar-accent/40 px-3 py-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-warning text-foreground font-semibold text-sm">
-            {initials}
-          </div>
-          <div>
-            <div className="text-sm font-medium text-sidebar-foreground">{displayName}</div>
-            <button
-              onClick={handleSignOut}
-              className="text-xs text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors"
-            >
-              Sign Out
-            </button>
-          </div>
+      <div className="mt-6 flex items-center gap-3 rounded-2xl border border-sidebar-border bg-sidebar-accent/30 px-3 py-3">
+        <div
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-sidebar-foreground"
+          style={{ background: "hsl(var(--tenant-primary, var(--sidebar-accent)) / 0.35)" }}
+        >
+          {initials}
         </div>
-        <HelpCircle className="h-5 w-5 text-sidebar-foreground/60" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium text-sidebar-foreground">{displayName}</div>
+          <button
+            onClick={handleSignOut}
+            className="text-xs text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors"
+          >
+            Sign Out
+          </button>
+        </div>
+        <button
+          onClick={handleSignOut}
+          className="shrink-0 rounded-lg p-1.5 hover:bg-sidebar-accent/50 transition-colors"
+          aria-label="Sign out"
+          title="Sign out"
+        >
+          <LogOut className="h-4 w-4 text-sidebar-foreground/60" />
+        </button>
       </div>
     </aside>
   );
