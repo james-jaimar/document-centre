@@ -1,73 +1,114 @@
 
+## Rework ring binder preview as a dedicated single-sheet binder viewer
 
-## Make ring binder behave like a flip book
+### What’s broken now
 
-### The goal
+The current ring binder implementation is fighting the generic wire-bound `FlipBook` model, which is why it looks wrong:
 
-Reuse the existing `FlipBook` (react-pageflip) animation for ring binders, but render it on top of the open binder photograph so the pages flip exactly like a wire/comb-bound document while the metal D-rings remain visible down the centre — matching the Mimeo reference.
+- The **binder photo is being stretched from the page stage**, so the background gets squashed.
+- The preview still behaves like a **two-page spread**, but the ring binder reference behaves like a **single loose sheet mounted on the right side of an open binder**.
+- The generic bound-document logic assumes **spread navigation (`step=2`) and solo cover states**, which is why the **page numbering and page progression drift out of sync**.
+- The current ring overlay is just a clipped strip on top of a spread, instead of a layout where the page is actually **anchored to the binder’s right-hand sheet area**.
 
-### Approach
+### New approach
 
-Add a new `bindingType: "ring"` mode to `FlipBook` that:
+Stop forcing ring binders through the normal spread-based `FlipBook` layout.
 
-1. **Renders the binder photo as a backdrop** behind the pageflip stage (`ring_binder_white_open.png` for the open spread, `ring_binder_white_closed.png` for solo cover).
-2. **Insets the page-flip area** so it sits inside the binder's page region — leaving margin on the outside edges and a narrow gap down the centre where the rings show through.
-3. **Replaces `BindingSpine`** for ring binders: instead of a wire/coil image, the spine "gap" is just the open binder photo showing through between the two halves. No CSS spine overlay is drawn.
-4. **Cover state**: page 0 / final back cover renders the **closed** binder photo with the cover thumbnail in the PVC pocket (carried over from current `RingBinderPreview` logic). Mid-document flips use the open binder backdrop.
+Instead, build a **dedicated `RingBinderFlipBook`** that still uses the same `react-pageflip` animation engine, but with a binder-specific layout model:
 
-### Geometry (matches the open binder photo asset)
+1. **Closed state for the cover**
+   - Render the closed binder photo at its **natural aspect ratio**.
+   - Place the cover sheet flat in the PVC pocket area.
+   - No mini spread, no centered flipbook stage.
 
+2. **Open state for body pages**
+   - Render the open binder photo at its **natural aspect ratio**.
+   - Keep the **left side as the binder interior**.
+   - Mount the page-flip stage only in the **right-hand printable sheet area**.
+   - Keep the **ring strip centered and fixed** so pages flip against it cleanly.
+
+3. **Single-sheet navigation**
+   - Ring binders should advance **one printable face at a time**, not two.
+   - Cover sheet = first state.
+   - Then each body page flips individually inside the open binder.
+
+### Implementation
+
+#### 1) Add a dedicated ring binder preview component
+Create a new component, e.g. `src/components/preview/RingBinderFlipBook.tsx`, that:
+
+- uses `react-pageflip`
+- reuses existing page rendering/effects logic where possible
+- measures the binder viewport from the **asset aspect ratio**, not from spread width
+- defines binder-specific rectangles:
+  - closed pocket area
+  - open right-page area
+  - ring/spine strip
+- renders:
+  - **closed binder + cover sheet** for index 0
+  - **open binder + right-side flipping page** for the rest
+
+#### 2) Route ring binders away from the generic FlipBook
+Update `src/components/preview/DocumentPreview.tsx` so:
+
+- `ring_binder` renders `RingBinderFlipBook`
+- other bound products still render the existing `FlipBook`
+
+This isolates ring binder behavior instead of continuing to overload the generic bound preview.
+
+#### 3) Remove the current ring-specific hacks from `FlipBook`
+Refactor `src/components/preview/FlipBook.tsx` to remove the current `bindingType === "ring"` backdrop/stretch logic.
+
+That code is the source of the squashed background and bad geometry. `FlipBook` should go back to being the clean spread-based renderer for wire/comb/saddle/perfect only.
+
+#### 4) Fix preview navigation and page text for ring binders
+Update `src/components/order/PreviewPanel.tsx` so ring binders use a **single-face progression model**:
+
+- navigation step = `1` for ring binders
+- page info text should read from `faceLabels` / `displayPageNumbers`
+- cover sheet should display as **Cover Sheet**
+- body pages should display as `Page N`
+- no spread-style label formatting (`Left – Right`) for ring binders
+
+#### 5) Fix fullscreen/lightbox navigation
+Update `src/components/order/PreviewLightbox.tsx` so ring binders:
+
+- also move by `1`, not `2`
+- show the correct bottom counter/label for single-sheet navigation
+- stay in sync with the main preview
+
+#### 6) Keep the existing ring-binder section model
+Preserve the product logic already introduced:
+
+- optional **Cover Sheet**
+- no wraparound front/back cover model
+- body pages remain separate from the slip-in cover sheet
+
+If needed, only make small adjustments so the preview sequence remains:
+```text
+Closed binder with Cover Sheet
+→ Open binder with body page 1
+→ Open binder with body page 2
+→ Open binder with body page 3
+...
 ```
-Binder image aspect (open):  1781 / 840 ≈ 2.12
-Page area inside binder:
-  - top inset:    5% of binder height
-  - bottom inset: 5%
-  - outside edge: 5% from binder edge
-  - centre gap:   7% half-width either side of midline (rings show through here)
-```
 
-The pageflip stage is sized to fit those insets, then layered above the binder photo with `z-index` ordering.
-
-### Implementation outline
-
-**`src/components/preview/previewTypes.ts`**
-- Add `"ring"` to the `BindingType` union.
-- Update `getBindingType("ring_binder")` to return `"ring"` (currently returns `"wire"`).
-
-**`src/components/preview/DocumentPreview.tsx`**
-- Remove the `if (productType === "ring_binder") return <RingBinderPreview />;` short-circuit.
-- Re-add `ring_binder` to `BOUND_TYPES` so it routes through `FlipBook` with `bindingType="ring"`.
-
-**`src/components/preview/FlipBook.tsx`**
-- When `bindingType === "ring"`:
-  - Wrap the existing scale wrapper in a positioned container that renders the open binder photo (`object-fit: fill`) as an absolutely-positioned backdrop sized to the spread.
-  - Inset the pageflip stage by the page-area percentages above (apply via padding / inner positioning) so the flipping pages sit inside the binder's visible page region.
-  - For solo-page states (front cover, back cover), swap the backdrop to the closed binder photo and centre the flipping page inside the cover pocket inset.
-- `BindingSpine` is **not rendered** when `bindingType === "ring"` — the photo provides the spine.
-- Drop shadow / paper boundary: keep the existing per-page shadow so flipping pages still look layered above the binder.
-
-**`src/components/preview/BindingSpine.tsx`**
-- Add an early return for `bindingType === "ring"` (defensive — `FlipBook` won't pass it, but keeps the contract clean).
-
-**`src/components/preview/RingBinderPreview.tsx`**
-- **Delete** this file — its job is now done by `FlipBook` with the new `"ring"` binding mode.
-
-### What stays the same
-
-- All existing FlipBook features still work: tab dividers protruding from the right, page numbering, finishing effects, bleed handling, colour flags, structural-key remount logic, navigation, page-corner peel, swipe / click flip — every behaviour the user already loves about wire-bound previews now applies to ring binders.
-- Closed-cover front view keeps the PVC-pocket cover thumbnail look.
-
-### Files changed
+### Files to change
 
 | File | Change |
 |---|---|
-| `src/components/preview/previewTypes.ts` | Add `"ring"` to `BindingType`; map `ring_binder` → `"ring"` |
-| `src/components/preview/DocumentPreview.tsx` | Re-add `ring_binder` to `BOUND_TYPES`; drop the early `RingBinderPreview` branch |
-| `src/components/preview/FlipBook.tsx` | New `"ring"` mode: open binder photo backdrop, inset pageflip stage, closed-cover handling |
-| `src/components/preview/BindingSpine.tsx` | Skip rendering when `bindingType === "ring"` |
-| `src/components/preview/RingBinderPreview.tsx` | Delete (superseded) |
+| `src/components/preview/DocumentPreview.tsx` | Route `ring_binder` to a dedicated component |
+| `src/components/preview/RingBinderFlipBook.tsx` | New dedicated binder-specific animated preview |
+| `src/components/preview/FlipBook.tsx` | Remove the current ring-specific backdrop/stretch implementation |
+| `src/components/order/PreviewPanel.tsx` | Fix step, page info, and single-sheet ring binder behavior |
+| `src/components/order/PreviewLightbox.tsx` | Fix fullscreen navigation/counting for ring binders |
 
 ### Result
 
-Ring binder previews now flip page-for-page exactly like wire-bound documents — same animation, same tab overlay, same finishing effects — but visually framed by the white PVC binder photo with the four D-rings sitting cleanly down the centre between the flipping pages.
+Ring binders will preview correctly as:
 
+- a **flat closed front cover** in the PVC pocket
+- then an **open binder** with the page flipping on the **right-hand side**
+- with the **original binder image kept in proportion**
+- the **ring gap aligned properly**
+- and **page numbering/navigation working normally again**
