@@ -44,8 +44,10 @@ const RING_INNER = {
   top: 0.06,
   bottom: 0.06,
   outer: 0.05,        // inset from left edge of left page and right edge of right page
-  centerGap: 0.10,    // total normalised width of the ring-mechanism gap
+  centerGap: 0.13,    // real CSS gap between the two single-page flipbooks
 };
+// Ring mechanism PNG aspect (width / height) — matches ring_bind_mechanism.png
+const RING_MECH_ASPECT = 223 / 840;
 
 /**
  * Each page must be a forwardRef component for react-pageflip.
