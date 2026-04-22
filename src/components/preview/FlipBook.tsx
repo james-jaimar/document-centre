@@ -431,11 +431,30 @@ export default function FlipBook({
             top: 0,
             width: displayedViewportWidth,
             height: displayedPageHeight,
-            boxShadow: "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
+            boxShadow: isRing ? "none" : "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
           }}
         >
 
-          {/* Binding spine — skip for ring binders (they get the ring gap instead) */}
+          {/* Ring binder artwork background */}
+          {isRing && (
+            <img
+              src={isSoloPage && isShowingFrontCover ? ringBinderClosed : ringBinderOpen}
+              alt=""
+              style={{
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                objectFit: "fill",
+                zIndex: 0,
+                pointerEvents: "none",
+                borderRadius: 6,
+                boxShadow: "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
+              }}
+            />
+          )}
+
+          {/* Binding spine — skip for ring binders */}
           {!isRing && (
             <BindingSpine
               bindingType={bindingType}
@@ -446,44 +465,13 @@ export default function FlipBook({
             />
           )}
 
-          {/* Ring binder centre hardware strip */}
-          {isRing && !isSoloPage && (
-            <div
-              className="absolute z-30 pointer-events-none"
-              style={{
-                left: "50%",
-                transform: "translateX(-50%)",
-                width: displayedRingGap,
-                height: displayedPageHeight,
-                top: 0,
-                background: "linear-gradient(90deg, rgba(0,0,0,0.03) 0%, rgba(200,200,200,0.15) 20%, rgba(180,180,180,0.25) 50%, rgba(200,200,200,0.15) 80%, rgba(0,0,0,0.03) 100%)",
-              }}
-            >
-              {/* D-ring hardware: 4 evenly spaced rings */}
-              <div className="flex flex-col justify-evenly items-center h-full py-4">
-                {[0, 1, 2, 3].map((i) => (
-                  <div
-                    key={i}
-                    style={{
-                      width: displayedRingGap * 0.6,
-                      height: displayedRingGap * 0.6,
-                      borderRadius: "50%",
-                      border: "2px solid rgba(180,180,180,0.7)",
-                      background: "rgba(220,220,220,0.15)",
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Tab overlay — persistent, visible from every page */}
           {tabPositions && tabPositions.length > 0 && (
             <div
               style={{
                 position: "absolute",
-                top: 0,
-                left: 0,
+                top: isRing ? displayedRingPadding : 0,
+                left: isRing ? displayedRingPadding : 0,
                 width: isSoloPage ? displayedPageWidth : displayedSpreadWidth,
                 height: displayedPageHeight,
                 pointerEvents: "none",
@@ -505,14 +493,17 @@ export default function FlipBook({
 
           {/*
             PRESENTATION LAYER: offset/clip at display scale for solo pages.
+            For ring binders, inset from edges so artwork shows around pages.
           */}
           <div
             style={{
               width: displayedSpreadWidth,
-              height: displayedPageHeight,
+              height: displayedPageHeight - (isRing ? displayedRingPadding * 2 : 0),
               position: "absolute",
-              top: 0,
-              left: isShowingFrontCover ? -displayedPageWidth : 0,
+              top: isRing ? displayedRingPadding : 0,
+              left: isShowingFrontCover
+                ? -displayedPageWidth + (isRing ? displayedRingPadding : 0)
+                : (isRing && !isSoloPage ? displayedRingPadding + displayedRingGap / 2 : 0),
               transition: "left 0.4s ease-in-out",
               ...(isShowingFrontCover
                 ? { clipPath: `inset(0 0 0 ${displayedPageWidth}px)` }
@@ -521,9 +512,6 @@ export default function FlipBook({
                   : {}),
             }}
           >
-            {/*
-              SCALE WRAPPER: transforms the fixed-resolution stage to display size.
-            */}
             <div
               style={{
                 transform: `scale(${scaleFactor})`,
@@ -532,9 +520,6 @@ export default function FlipBook({
                 height: basePageHeight,
               }}
             >
-              {/*
-                MEASUREMENT STAGE: ALWAYS baseSpreadWidth × basePageHeight.
-              */}
               <div
                 style={{
                   width: baseSpreadWidth,
@@ -553,7 +538,7 @@ export default function FlipBook({
                   maxWidth={basePageWidth}
                   minHeight={basePageHeight}
                   maxHeight={basePageHeight}
-                  showCover={true}
+                  showCover={hasRealFrontCover}
                   flippingTime={600}
                   drawShadow={true}
                   maxShadowOpacity={0.5}
