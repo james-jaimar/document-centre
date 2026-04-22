@@ -582,6 +582,27 @@ export default function FlipBook({
                 </div>
               </div>
             </div>
+
+            {/* Ring mechanism overlay — sits over the spine seam so the rings
+                appear to clamp over the page edges. Only visible in open spread. */}
+            {isRing && !isSoloPage && (
+              <div
+                style={{
+                  position: "absolute",
+                  left: displayedViewportWidth / 2 - (displayedViewportWidth * RING_STRIP_W) / 2,
+                  top: -displayedPageHeight * 0.02,
+                  width: displayedViewportWidth * RING_STRIP_W,
+                  height: displayedPageHeight * 1.04,
+                  pointerEvents: "none",
+                  zIndex: 30,
+                  backgroundImage: `url(${ringBinderOpen})`,
+                  backgroundSize: `${100 / RING_STRIP_W}% 100%`,
+                  backgroundPosition: `${(RING_STRIP_X / (1 - RING_STRIP_W)) * 100}% center`,
+                  backgroundRepeat: "no-repeat",
+                  filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.25))",
+                }}
+              />
+            )}
           </div>
         </div>
       </div>
