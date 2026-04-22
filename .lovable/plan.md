@@ -1,99 +1,142 @@
 
-## Rework ring binders back onto the wire-bound flip-book model
+## Fix ring binders by restoring the actual flip-book stack and layering binder artwork behind it
 
-### What needs to change
+### What is actually wrong
 
-The current ring binder preview is wrong for two separate reasons:
+The current ring binder path is failing in two specific places:
 
-1. `RingBinderFlipBook` always treats the first face as a cover, so when the customer only uploads **Body Pages**, page 1 gets incorrectly shown as a cover.
-2. The dedicated single-sheet ring binder viewer moved ring binders away from the same spread-based model as wire binding, which is why the inside view, page progression, and numbering are now out of sync.
+1. `FlipBook` is still a plain white page-stage with only a synthetic centre strip. It never renders the real ring binder artwork (`ring_binder_white_closed.png` / `ring_binder_white_open.png`), which is why there is no cover/inside background image.
+2. `FlipBook` still hard-codes `showCover={true}` and `isShowingFrontCover = currentPage === 0`, so ring binders always behave as if they have a cover state, even when the first real face is body content. That is why “No Cover” still shows a cover and why the spread logic drifts.
 
-The correct model is simpler:
+### Target behaviour
 
-- ring binders should behave like the **wire-bound flip book**
-- the only visual difference is a **wider centre gap** to accommodate the ring mechanism
-- a cover must appear **only if a Cover Sheet section was actually assigned**
+Ring binders should use the same `react-pageflip` spread model as wire bound documents, with only these differences:
+
+- real binder artwork behind the pages
+- wider centre gutter for the D-ring mechanism
+- no dedicated spine image
+- no cover state unless a real `front_cover`/cover-sheet face exists
+
+That means:
+
+- **With Cover Sheet**: closed/front state first, then normal inside spreads
+- **Without Cover Sheet**: start directly on the open inside spread
+- same flipping animation as wire binding
+- same spread navigation (`step = 2`)
+- same numbering model as other bound documents
 
 ### Implementation
 
-#### 1) Stop using the dedicated single-sheet ring binder viewer
-Update `src/components/preview/DocumentPreview.tsx` so `ring_binder` goes back through the normal `FlipBook` path instead of `RingBinderFlipBook`.
+#### 1) Keep ring binders on the unified `FlipBook` path
+In `src/components/preview/DocumentPreview.tsx`:
 
-That restores the same spread-based `react-pageflip` behaviour as wire-bound products:
-- solo front state when a real cover exists
-- normal two-page inside spreads
-- normal page curling / page-corner behaviour
-- normal spread progression
+- keep `ring_binder` routed through `FlipBook`
+- do not reintroduce any dedicated ring-binder component
 
-`src/components/preview/RingBinderFlipBook.tsx` should then be removed so there is only one ring-binder preview path.
+This keeps one animation engine and one spread model.
 
-#### 2) Make `FlipBook` support a ring-binder spread layout
-Refactor `src/components/preview/FlipBook.tsx` so `bindingType === "ring"` becomes a **wire-bound-style spread with a wider centre hardware gap**, not a separate pagination model.
+#### 2) Rebuild the ring-binder visual layout inside `FlipBook`
+In `src/components/preview/FlipBook.tsx`:
 
-Implementation details:
-- keep the existing fixed-dimension measurement stage and `react-pageflip` setup
-- render the binder background independently from the page stage so it keeps its natural aspect ratio and never gets squashed
-- add a ring-specific centre strip / gutter width
-- inset the visible page areas away from the centre so the left and right pages sit either side of the ring mechanism
-- do **not** render the normal `BindingSpine` image for ring binders
+- import the real binder assets from `src/assets/bindings/`
+  - `ring_binder_white_closed.png`
+  - `ring_binder_white_open.png`
+- render the binder artwork as a separate background layer behind the flipbook stage
+- preserve the image aspect ratio independently from the page stage so it never squashes
+- define ring-binder layout geometry:
+  - closed cover artwork box
+  - open inside artwork box
+  - printable left page area
+  - printable right page area
+  - widened centre hardware gutter
+- keep the `react-pageflip` stage at its fixed internal measurement size, but place it inside a ring-specific masked viewport above the artwork
+- for open spreads, inset both pages away from the centre so the visible content sits either side of the ring mechanism
+- remove the current fake centre strip / circle-ring overlay approach
+- continue skipping `BindingSpine` when `bindingType === "ring"`
 
-This should preserve all the normal flip-book behaviour while visually creating:
+Visually the structure should become:
+
 ```text
-[left page]   wider ring gap / hardware strip   [right page]
+binder artwork background
+  -> masked spread viewport
+      -> left page area
+      -> widened ring gutter
+      -> right page area
+          -> react-pageflip pages
 ```
 
-#### 3) Only show a cover when a real Cover Sheet exists
-Fix cover detection so ring binders no longer invent a cover from the first body page.
+#### 3) Make cover mode conditional, not automatic
+Still in `src/components/preview/FlipBook.tsx`:
 
-The rule should be:
-- if the first real face is `front_cover` / `pvc_cover_front`, show the cover state
-- if the first real face is `body`, start directly on the open inside spread
+- derive `hasRealFrontCover` from `pageRoles?.[0]`
+- only treat page 0 as a solo cover when the first role is an actual cover face:
+  - `front_cover`
+  - `pvc_cover_front`
+- if the first role is `body`, do not use front-cover solo behaviour for ring binders
+- drive `showCover` dynamically:
+  - normal bound docs: keep existing cover behaviour
+  - ring binder with real cover: `showCover=true`
+  - ring binder without cover: `showCover=false`
+- update `isShowingFrontCover`, solo-page clipping, viewport width, and centering logic to use this computed `hasRealFrontCover` flag instead of `currentPage === 0`
 
-This preserves the product model already agreed:
-- **Cover Sheet** is optional
-- **Body Pages** alone means no front slip-in sheet
-- the binder itself is not treated as a printed cover file
+This is the key fix for “No Cover still shows a cover”.
 
-#### 4) Revert ring binder navigation to the normal bound-document model
-Update `src/components/order/PreviewPanel.tsx` so ring binders use the same spread progression as wire binding again:
+#### 4) Correct spread centering for ring binders
+In `src/components/preview/FlipBook.tsx`:
 
-- `step = 2`
-- page text uses the normal bound spread logic
-- left/right visible-face logic is shared with other bound products
-- no special single-face “Cover Sheet / Page N” progression for ring binders
+- compute the displayed width from the actual binder artwork box, not just `baseSpreadWidth + ringGapPx`
+- separately compute:
+  - page-stage scale
+  - binder-artwork display size
+  - overlay offsets that align the flip pages to the artwork
+- ensure closed state is centered on the closed-binder background
+- ensure open state is centered on the open-binder background
+- adjust tab overlay width/offsets to follow the shifted printable area, not the old plain spread width
 
-This will bring the numbering back into sync with what the flipbook is actually showing.
+This fixes the current “flat sheets / static position / no correct inside placement” problem.
 
-#### 5) Fix fullscreen/lightbox to match the same spread model
-Update `src/components/order/PreviewLightbox.tsx` so ring binders also move by `2` again and stay aligned with the main preview.
+#### 5) Keep ring binders on normal spread navigation
+In `src/components/order/PreviewPanel.tsx`:
 
-That prevents the fullscreen preview from drifting away from the in-page preview state.
+- keep `step = 2` for ring binders
+- remove any special single-sheet assumptions
+- make front-cover text conditional on a real cover existing
+- when there is no cover sheet, page info should start from the first inside spread rather than forcing “Front Cover”
+- keep face labels and visible-left/visible-right logic aligned with the same `hasRealFrontCover` rule used by `FlipBook`
 
-#### 6) Keep snapshot parity for placed-order previews
-Review `src/lib/orders/buildPreviewSnapshot.ts` to make sure it still mirrors the same rule:
+This restores numbering parity with the actual spreads being shown.
 
-- do not inject a cover state unless a real `front_cover` section exists
-- ring binders without a cover sheet should still begin with body content
+#### 6) Keep fullscreen/lightbox in sync
+In `src/components/order/PreviewLightbox.tsx`:
 
-If the live preview logic changes, snapshot generation should stay consistent so order-detail previews match.
+- keep ring binders as bound products with `step = 2`
+- no special ring-binder paging mode
+- ensure the lightbox counter stays consistent with the same spread model as the main preview
+
+#### 7) Preserve snapshot parity
+In `src/lib/orders/buildPreviewSnapshot.ts`:
+
+- keep the existing “only inject PVC cover pages when a real front cover section exists” rule
+- review `faceLabels` generation so ring binders without a cover do not imply a front-cover state in persisted previews
+- ensure snapshot data matches the new `FlipBook` expectations for conditional cover mode
 
 ### Files to change
 
 | File | Change |
 |---|---|
-| `src/components/preview/DocumentPreview.tsx` | Route `ring_binder` back through `FlipBook` |
-| `src/components/preview/FlipBook.tsx` | Add ring-specific wider centre gap / binder backdrop layout while keeping spread-based `react-pageflip` |
-| `src/components/order/PreviewPanel.tsx` | Revert ring binders to bound spread navigation and page text |
-| `src/components/order/PreviewLightbox.tsx` | Revert ring binders to spread-based stepping |
-| `src/lib/orders/buildPreviewSnapshot.ts` | Parity check / small adjustment so persisted previews follow the same no-implicit-cover rule |
-| `src/components/preview/RingBinderFlipBook.tsx` | Remove (superseded by the unified `FlipBook` approach) |
+| `src/components/preview/DocumentPreview.tsx` | Keep `ring_binder` on unified `FlipBook` routing |
+| `src/components/preview/FlipBook.tsx` | Add real ring binder background artwork, conditional `showCover`, wider centred gutter, proper stage/artwork alignment |
+| `src/components/order/PreviewPanel.tsx` | Make page text and solo/spread logic depend on whether a real cover exists |
+| `src/components/order/PreviewLightbox.tsx` | Keep ring binders on normal bound spread stepping |
+| `src/lib/orders/buildPreviewSnapshot.ts` | Keep snapshot labels/roles consistent with no-implicit-cover behaviour |
 
 ### Result
 
-After this rework, ring binders will behave like the wire-bound preview again, but with a larger centre gap for the O-ring mechanism:
+After this rework, ring binders will work the way you described:
 
-- **No Cover Sheet uploaded** → no fake cover; preview starts on the inside spread
-- **Cover Sheet uploaded** → cover shows correctly first, then flips into inside spreads
-- inside pages align properly
-- the binder background keeps its correct proportions
-- page progression and numbering match the visible spreads again
+- real closed binder background behind the cover preview
+- real open binder inside background behind the flipping spreads
+- proper wire-bound-style page-flip animation
+- wider centre gap for the O-ring hardware
+- no fake cover when the customer only uploads body pages
+- correct inside spread alignment and corrected numbering
