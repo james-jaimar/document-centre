@@ -391,8 +391,32 @@ export default function FlipBook({
   }
 
   /* ══════════════════════════════════════════════════════════════
-   * STANDARD BOUND DOCUMENTS (wire, comb, saddle, perfect)
+   * RING BINDER — open state (Plan B: two independent flipbooks
+   * with a real CSS centre gap for the ring mechanism)
    * ══════════════════════════════════════════════════════════════ */
+  if (isRing && currentPage > 0) {
+    return (
+      <RingOpenSpread
+        urls={urls}
+        currentPage={currentPage}
+        onPageChange={onPageChange}
+        width={width}
+        height={height}
+        pageAspectRatio={ratio}
+        effects={resolvedEffects}
+        sectionTypes={sectionTypes}
+        pageRoles={pageRoles}
+        bleedFlags={bleedFlags}
+        pageLabels={pageLabels}
+        pageColors={pageColors}
+        tabPositions={tabPositions}
+        colorFlags={colorFlags}
+        leftRef={ringLeftRef}
+        rightRef={ringRightRef}
+        structuralKey={structuralKey}
+      />
+    );
+  }
 
   // ── CSS scale factor to fit into available container ──
   const availableWidth = width - 80;
