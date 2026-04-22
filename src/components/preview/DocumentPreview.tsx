@@ -3,7 +3,6 @@ import { batchSignUrls, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import type { ProductPreviewType } from "./previewTypes";
 import { getBindingType } from "./previewTypes";
 import FlipBook from "./FlipBook";
-import RingBinderFlipBook from "./RingBinderFlipBook";
 import FoldPreview from "./FoldPreview";
 import LooseSheetsPreview from "./LooseSheetsPreview";
 import { Loader2 } from "lucide-react";
