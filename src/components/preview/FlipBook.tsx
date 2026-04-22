@@ -272,8 +272,11 @@ export default function FlipBook({
 
   const isRing = bindingType === "ring";
 
-  // Ring binders always have pvc_cover_front injected, so hasRealFrontCover is always true
-  const hasRealFrontCover = true;
+  // hasRealFrontCover is derived from real role data — true only when the
+  // first face is a genuine front cover (uploaded artwork) or a PVC cover sheet.
+  const firstRole = pageRoles?.[0];
+  const hasRealFrontCover =
+    firstRole === "front_cover" || firstRole === "pvc_cover_front";
 
   // ── STRUCTURAL key ──
   const structuralKey = useMemo(
