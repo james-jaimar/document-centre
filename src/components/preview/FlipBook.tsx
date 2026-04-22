@@ -638,6 +638,26 @@ export default function FlipBook({
               </div>
             </div>
           </div>
+
+          {/* Ring mechanism overlay — sits ABOVE the spread so pages appear
+              tucked behind the rings (only on the open ring binder view). */}
+          {isRingOpen && (
+            <img
+              src={ringMechanism}
+              alt=""
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                left: tabGutter + binderFrameWidth / 2 - (displayedPageHeight * (223 / 840)) / 2,
+                top: innerTop,
+                width: displayedPageHeight * (223 / 840),
+                height: displayedPageHeight,
+                pointerEvents: "none",
+                zIndex: 5,
+                objectFit: "fill",
+              }}
+            />
+          )}
         </div>
       </div>
     </div>
