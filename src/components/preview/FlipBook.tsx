@@ -374,16 +374,26 @@ export default function FlipBook({
     const artH = Math.min(availH, availW / RING_OPEN_ASPECT);
     const artW = artH * RING_OPEN_ASPECT;
 
-    // Content area: the full spread of both pages + ring gap
+    // Content area within the artwork
     const contentX = artW * RING_CONTENT.x;
     const contentY = artH * RING_CONTENT.y;
     const contentW = artW * (1 - 2 * RING_CONTENT.x);
     const contentH = artH * (1 - 2 * RING_CONTENT.y);
 
-    // Each flipbook page = half of content area
-    const flipPageW = Math.round(contentW / 2);
-    const flipPageH = Math.round(contentH);
+    // Use standard fixed page dimensions (same as wire-bound)
+    const flipPageW = basePageWidth;
+    const flipPageH = basePageHeight;
     const flipSpreadW = flipPageW * 2;
+
+    // CSS-scale the flipbook stage to fit within the artwork content area
+    const ringScaleX = contentW / flipSpreadW;
+    const ringScaleY = contentH / flipPageH;
+    const ringScale = Math.min(ringScaleX, ringScaleY, 1);
+    const scaledSpreadW = flipSpreadW * ringScale;
+    const scaledPageH = flipPageH * ringScale;
+    // Centre the scaled stage within the content area
+    const stageOffsetX = contentX + (contentW - scaledSpreadW) / 2;
+    const stageOffsetY = contentY + (contentH - scaledPageH) / 2;
 
     // Ring mechanism strip overlay (extracted from same artwork image)
     const stripDisplayX = artW * RING_STRIP_X;
