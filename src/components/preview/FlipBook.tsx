@@ -473,26 +473,30 @@ export default function FlipBook({
       >
         <div
           style={{
-            width: displayedViewportWidth + tabGutter * 2,
-            height: displayedPageHeight,
+            width: isRingOpen
+              ? binderFrameWidth + tabGutter * 2
+              : displayedViewportWidth + tabGutter * 2,
+            height: isRingOpen ? binderFrameHeight : displayedPageHeight,
             position: "relative",
             overflow: "visible",
             transition: "width 0.4s ease-in-out",
           }}
         >
-          {/* Open-binder background — drawn behind the flipbook for ring binders.
-              Sized to match the spread width so the rings line up with the spine. */}
-          {isRing && !isSoloPage && (
+          {/* Ring binder OPEN-state frame: the binder PNG is the OUTER frame.
+              The flipbook spread is positioned inside the inner printable
+              rectangle, with its spine aligned to the centre of the ring
+              mechanism (which is part of the background image). */}
+          {isRingOpen && (
             <img
               src={ringBinderOpen}
               alt=""
               aria-hidden="true"
               style={{
                 position: "absolute",
-                left: tabGutter - displayedPageHeight * RING_OPEN_ASPECT * 0.02,
-                top: -displayedPageHeight * 0.04,
-                width: displayedPageHeight * RING_OPEN_ASPECT * 1.04,
-                height: displayedPageHeight * 1.08,
+                left: tabGutter,
+                top: 0,
+                width: binderFrameWidth,
+                height: binderFrameHeight,
                 pointerEvents: "none",
                 zIndex: 0,
                 objectFit: "fill",
@@ -504,8 +508,10 @@ export default function FlipBook({
           <div
             style={{
               position: "absolute",
-              left: tabGutter,
-              top: 0,
+              left: isRingOpen
+                ? tabGutter + (binderFrameWidth - displayedViewportWidth) / 2
+                : tabGutter,
+              top: isRingOpen ? innerTop : 0,
               width: displayedViewportWidth,
               height: displayedPageHeight,
               boxShadow: isRing && !isSoloPage
@@ -515,7 +521,7 @@ export default function FlipBook({
             }}
           >
             {/* Suppress wire/comb spine for ring binders — the ring mechanism
-                overlay is drawn separately below to avoid drawing a wire. */}
+                is part of the open binder background artwork. */}
             {!isRing && (
               <BindingSpine
                 bindingType={bindingType}
@@ -630,27 +636,6 @@ export default function FlipBook({
                 </div>
               </div>
             </div>
-
-            {/* Ring mechanism overlay — sits over the spine seam so the rings
-                appear to clamp over the page edges. Only visible in open spread. */}
-            {isRing && !isSoloPage && (
-              <div
-                style={{
-                  position: "absolute",
-                  left: displayedViewportWidth / 2 - (displayedViewportWidth * RING_STRIP_W) / 2,
-                  top: -displayedPageHeight * 0.02,
-                  width: displayedViewportWidth * RING_STRIP_W,
-                  height: displayedPageHeight * 1.04,
-                  pointerEvents: "none",
-                  zIndex: 30,
-                  backgroundImage: `url(${ringBinderOpen})`,
-                  backgroundSize: `${100 / RING_STRIP_W}% 100%`,
-                  backgroundPosition: `${(RING_STRIP_X / (1 - RING_STRIP_W)) * 100}% center`,
-                  backgroundRepeat: "no-repeat",
-                  filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.25))",
-                }}
-              />
-            )}
           </div>
         </div>
       </div>
