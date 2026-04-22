@@ -5,23 +5,6 @@ import { DEFAULT_PREVIEW_EFFECTS, TAB_COLORS } from "./previewTypes";
 import BindingSpine from "./BindingSpine";
 import PageEffects from "./PageEffects";
 import { FileText, Loader2 } from "lucide-react";
-import binderClosedImg from "@/assets/bindings/ring_binder_white_closed.png";
-import binderOpenImg from "@/assets/bindings/ring_binder_white_open.png";
-
-/**
- * Ring binder open photo geometry — pages occupy 5%–43% and 57%–95% horizontally,
- * 5%–95% vertically. Centre rings strip occupies 43%–57% (14% of binder width).
- */
-const RING_OPEN_PAGE_FRACTION_W = 0.38; // each page = 38% of binder width
-const RING_OPEN_PAGE_FRACTION_H = 0.90; // page area = 90% of binder height
-const RING_OPEN_OUTSIDE_INSET = 0.05;   // 5% outside margin
-const RING_OPEN_TOP_INSET = 0.05;       // 5% top/bottom margin
-const RING_OPEN_RINGS_FRACTION_W = 0.14; // centre rings strip width
-
-/** Closed binder pocket: page visible behind clear PVC. */
-const RING_CLOSED_PAGE_FRACTION_W = 0.88; // page = 88% of binder width
-const RING_CLOSED_PAGE_FRACTION_H = 0.90; // page = 90% of binder height
-
 
 /**
  * Fixed internal resolution for the flipbook.
