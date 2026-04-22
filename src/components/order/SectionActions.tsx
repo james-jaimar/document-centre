@@ -34,6 +34,13 @@ const BOUND_ACTIONS: ActionDef[] = [
   { type: "back_cover", label: "Back Cover", icon: BookOpen },
 ];
 
+// Ring binders use a slip-in cover sheet (single side, sits in front PVC pocket).
+// No back cover — the binder itself provides the rear panel.
+const RING_BINDER_ACTIONS: ActionDef[] = [
+  { type: "front_cover", label: "Cover Sheet", icon: BookOpen },
+  { type: "body", label: "Body Pages", icon: FileText },
+];
+
 const BROCHURE_ACTIONS: ActionDef[] = [
   { type: "front_cover", label: "Outside (front of sheet)", icon: Layers },
   { type: "back_cover", label: "Inside (back of sheet)", icon: Layers },
@@ -61,6 +68,7 @@ function getActions(familySlug?: string | null): ActionDef[] {
   if (familySlug === "brochures") return BROCHURE_ACTIONS;
   if (familySlug === "flyers") return FLYER_ACTIONS;
   if (familySlug === "posters") return POSTER_ACTIONS;
+  if (familySlug === "ring_binders" || familySlug === "ring-binders") return RING_BINDER_ACTIONS;
   if (BOUND_SLUGS.has(familySlug)) return BOUND_ACTIONS;
   return BOUND_ACTIONS;
 }
