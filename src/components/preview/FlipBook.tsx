@@ -430,9 +430,90 @@ export default function FlipBook({
             top: 0,
             width: displayedViewportWidth,
             height: displayedPageHeight,
-            boxShadow: "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
+            boxShadow: bindingType === "ring"
+              ? "none"
+              : "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
           }}
         >
+          {/* Ring binder photographic backdrop (behind pages) */}
+          {bindingType === "ring" && (() => {
+            const isClosed = isSoloPage;
+            if (isClosed) {
+              const binderW = displayedPageWidth / RING_CLOSED_PAGE_FRACTION_W;
+              const binderH = displayedPageHeight / RING_CLOSED_PAGE_FRACTION_H;
+              const binderLeft = -(binderW - displayedPageWidth) / 2;
+              const binderTop = -(binderH - displayedPageHeight) / 2;
+              return (
+                <img
+                  src={binderClosedImg}
+                  alt=""
+                  draggable={false}
+                  className="absolute pointer-events-none select-none"
+                  style={{
+                    left: binderLeft,
+                    top: binderTop,
+                    width: binderW,
+                    height: binderH,
+                    zIndex: 0,
+                    filter: "drop-shadow(0 6px 16px rgba(0,0,0,0.18))",
+                  }}
+                />
+              );
+            }
+            // Open spread: pages region (displayedSpreadWidth) = 90% of binder width
+            const binderW = displayedSpreadWidth / 0.90;
+            const binderH = displayedPageHeight / RING_OPEN_PAGE_FRACTION_H;
+            const binderLeft = -binderW * RING_OPEN_OUTSIDE_INSET;
+            const binderTop = -binderH * RING_OPEN_TOP_INSET;
+            const ringsW = binderW * RING_OPEN_RINGS_FRACTION_W;
+            const ringsLeft = displayedSpreadWidth / 2 - ringsW / 2;
+            // Clip-path on the rings overlay reveals only the centre 14% column of the binder photo
+            return (
+              <>
+                {/* Backdrop binder photo (behind pages) */}
+                <img
+                  src={binderOpenImg}
+                  alt=""
+                  draggable={false}
+                  className="absolute pointer-events-none select-none"
+                  style={{
+                    left: binderLeft,
+                    top: binderTop,
+                    width: binderW,
+                    height: binderH,
+                    zIndex: 0,
+                    filter: "drop-shadow(0 6px 16px rgba(0,0,0,0.18))",
+                  }}
+                />
+                {/* Centre rings strip overlay (above pages) */}
+                <div
+                  className="absolute pointer-events-none overflow-hidden"
+                  style={{
+                    left: ringsLeft,
+                    top: 0,
+                    width: ringsW,
+                    height: displayedPageHeight,
+                    zIndex: 25,
+                  }}
+                >
+                  <img
+                    src={binderOpenImg}
+                    alt=""
+                    draggable={false}
+                    className="absolute select-none"
+                    style={{
+                      // Position the same binder photo so its centre rings column lines up inside the strip
+                      left: -(binderW * 0.43 - 0), // shift photo left so 43% mark sits at strip left edge
+                      top: -binderH * RING_OPEN_TOP_INSET,
+                      width: binderW,
+                      height: binderH,
+                    }}
+                  />
+                </div>
+              </>
+            );
+          })()}
+
           {/* Binding spine */}
           <BindingSpine
             bindingType={bindingType}
