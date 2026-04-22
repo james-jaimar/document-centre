@@ -374,31 +374,39 @@ export default function FlipBook({
     const artH = Math.min(availH, availW / RING_OPEN_ASPECT);
     const artW = artH * RING_OPEN_ASPECT;
 
-    // Content area: the full spread of both pages + ring gap
+    // Content area within the artwork
     const contentX = artW * RING_CONTENT.x;
     const contentY = artH * RING_CONTENT.y;
     const contentW = artW * (1 - 2 * RING_CONTENT.x);
     const contentH = artH * (1 - 2 * RING_CONTENT.y);
 
-    // Each flipbook page = half of content area
-    const flipPageW = Math.round(contentW / 2);
-    const flipPageH = Math.round(contentH);
+    // Use standard fixed page dimensions (same as wire-bound)
+    const flipPageW = basePageWidth;
+    const flipPageH = basePageHeight;
     const flipSpreadW = flipPageW * 2;
+
+    // CSS-scale the flipbook stage to fit within the artwork content area
+    const ringScaleX = contentW / flipSpreadW;
+    const ringScaleY = contentH / flipPageH;
+    const ringScale = Math.min(ringScaleX, ringScaleY, 1);
+    const scaledSpreadW = flipSpreadW * ringScale;
+    const scaledPageH = flipPageH * ringScale;
+    // Centre the scaled stage within the content area
+    const stageOffsetX = contentX + (contentW - scaledSpreadW) / 2;
+    const stageOffsetY = contentY + (contentH - scaledPageH) / 2;
 
     // Ring mechanism strip overlay (extracted from same artwork image)
     const stripDisplayX = artW * RING_STRIP_X;
     const stripDisplayW = artW * RING_STRIP_W;
 
-    // Scale factor: the HTMLFlipBook renders at its fixed internal size,
-    // but here we compute page dimensions directly from the artwork so scale = 1.
-    // No CSS transform scaling needed.
-
-    // Solo page detection for the open state
+    // Solo page detection — showCover is always true so page 0 is solo right,
+    // and if total pages is even the last page is also solo
     const lastIdx = urls.length - 1;
     const lastRole = pageRoles?.[lastIdx];
+    const isShowingFrontSolo = currentPage === 0;
     const isShowingBackCover = lastRole === "back_cover_card" && currentPage >= lastIdx;
-    const isShowingLastSolo = hasRealFrontCover && lastRole !== "back_cover_card" && currentPage >= lastIdx;
-    const isSoloPage = isShowingBackCover || isShowingLastSolo;
+    const isShowingLastSolo = lastRole !== "back_cover_card" && currentPage >= lastIdx && urls.length % 2 === 0;
+    const isSoloPage = isShowingFrontSolo || isShowingBackCover || isShowingLastSolo;
 
     // Tab overlay gutter
     const tabGutter = (tabPositions?.length ?? 0) > 0 ? 24 : 0;
@@ -418,24 +426,24 @@ export default function FlipBook({
             }}
           />
 
-          {/* HTMLFlipBook spread positioned within content area */}
+          {/* HTMLFlipBook spread — CSS-scaled into content area */}
           <div style={{
             position: "absolute",
-            left: tabGutter + contentX,
-            top: contentY,
+            left: tabGutter + stageOffsetX,
+            top: stageOffsetY,
             width: flipSpreadW,
             height: flipPageH,
+            transform: `scale(${ringScale})`,
+            transformOrigin: "top left",
             zIndex: 1,
             overflow: isSoloPage ? "hidden" : "visible",
-            // For solo pages (back cover / last page), clip to show only one side
             ...(isSoloPage
               ? { clipPath: isShowingBackCover
                   ? `inset(0 ${flipPageW}px 0 0)`
                   : `inset(0 0 0 ${flipPageW}px)` }
               : {}),
-            // If solo, shift the spread so the visible page is centered
             ...(isSoloPage && !isShowingBackCover
-              ? { left: tabGutter + contentX - flipPageW }
+              ? { left: tabGutter + stageOffsetX - flipPageW * ringScale }
               : {}),
           }}>
             {/* @ts-ignore — react-pageflip types are imprecise */}
@@ -449,13 +457,13 @@ export default function FlipBook({
               maxWidth={flipPageW}
               minHeight={flipPageH}
               maxHeight={flipPageH}
-              showCover={hasRealFrontCover}
+              showCover={true}
               flippingTime={600}
               drawShadow={true}
               maxShadowOpacity={0.5}
               mobileScrollSupport={false}
               onFlip={handleFlip}
-              startPage={hasRealFrontCover ? 1 : 0}
+              startPage={0}
               usePortrait={false}
               startZIndex={0}
               autoSize={false}
@@ -505,10 +513,12 @@ export default function FlipBook({
           {tabPositions && tabPositions.length > 0 && (
             <div style={{
               position: "absolute",
-              top: contentY,
-              left: tabGutter + contentX,
+              top: stageOffsetY,
+              left: tabGutter + stageOffsetX,
               width: flipSpreadW,
               height: flipPageH,
+              transform: `scale(${ringScale})`,
+              transformOrigin: "top left",
               pointerEvents: "none",
               zIndex: 20,
             }}>
@@ -518,7 +528,7 @@ export default function FlipBook({
                 pageWidth={flipPageW}
                 pageHeight={flipPageH}
                 isSoloPage={isSoloPage}
-                isShowingFrontCover={false}
+                isShowingFrontCover={isShowingFrontSolo}
               />
             </div>
           )}
