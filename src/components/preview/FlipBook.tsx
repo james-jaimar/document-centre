@@ -34,11 +34,17 @@ const RING_CLOSED_ASPECT = 793 / 833;   // width / height
 const RING_OPEN_ASPECT   = 1781 / 840;
 // Pocket rectangle on the closed front (for cover overlay)
 const RING_POCKET = { x: 0.05, y: 0.025, w: 0.90, h: 0.95 };
-// Content area within the open binder
-const RING_CONTENT = { x: 0.03, y: 0.03 };  // inset from each edge
-// Ring mechanism strip (normalised x-position and width)
-const RING_STRIP_X = 0.455;
-const RING_STRIP_W = 0.09;
+// Inner printable rectangle on the OPEN binder artwork (where the two
+// pages physically sit). Tuned to the ring_binder_white_open.png artwork:
+// excludes the binder cover edges (top/bottom/outer) and the central ring
+// mechanism column. Pages are pushed to the outer halves with a centre gap
+// that clears the rings.
+const RING_INNER = {
+  top: 0.06,
+  bottom: 0.06,
+  outer: 0.05,        // inset from left edge of left page and right edge of right page
+  centerGap: 0.10,    // total normalised width of the ring-mechanism gap
+};
 
 /**
  * Each page must be a forwardRef component for react-pageflip.
@@ -383,21 +389,60 @@ export default function FlipBook({
   // ── CSS scale factor to fit into available container ──
   const availableWidth = width - 80;
   const availableHeight = height - 60;
-  const scaleX = availableWidth / baseSpreadWidth;
-  const scaleY = availableHeight / basePageHeight;
-  const scaleFactor = Math.min(scaleX, scaleY, 1);
 
-  const displayedSpreadWidth = baseSpreadWidth * scaleFactor;
-  const displayedPageWidth = basePageWidth * scaleFactor;
-  const displayedPageHeight = basePageHeight * scaleFactor;
-
-  // ── Solo-page detection ──
+  // ── Solo-page detection (needed early for ring-open layout sizing) ──
   const lastIdx = urls.length - 1;
   const lastRole = pageRoles?.[lastIdx];
   const isShowingFrontCover = hasRealFrontCover && currentPage === 0;
   const isShowingBackCover = lastRole === "back_cover_card" && currentPage >= lastIdx;
   const isShowingLastSolo = hasRealFrontCover && lastRole !== "back_cover_card" && currentPage >= lastIdx;
   const isSoloPage = isShowingFrontCover || isShowingBackCover || (hasRealFrontCover && isShowingLastSolo);
+
+  /* ── Ring binder OPEN-state layout ──
+   * The binder artwork is the OUTER FRAME. The flipbook spread is sized
+   * to fit inside the binder's inner printable rectangle so pages no
+   * longer float over the binder edges and there is a real centre gap
+   * for the ring mechanism (already part of the background image). */
+  const isRingOpen = isRing && !isSoloPage;
+  let binderFrameWidth = 0;
+  let binderFrameHeight = 0;
+  let innerLeft = 0;
+  let innerTop = 0;
+  let innerWidth = 0;
+  let innerHeight = 0;
+  let centerGapPx = 0;
+
+  let scaleFactor: number;
+  let displayedSpreadWidth: number;
+  let displayedPageWidth: number;
+  let displayedPageHeight: number;
+
+  if (isRingOpen) {
+    // Fit the binder artwork into the available container at its true aspect
+    binderFrameHeight = Math.min(availableHeight, availableWidth / RING_OPEN_ASPECT);
+    binderFrameWidth = binderFrameHeight * RING_OPEN_ASPECT;
+
+    // Inner printable rectangle on the binder
+    innerLeft = binderFrameWidth * RING_INNER.outer;
+    innerTop = binderFrameHeight * RING_INNER.top;
+    innerWidth = binderFrameWidth * (1 - 2 * RING_INNER.outer);
+    innerHeight = binderFrameHeight * (1 - RING_INNER.top - RING_INNER.bottom);
+    centerGapPx = binderFrameWidth * RING_INNER.centerGap;
+
+    // The spread sits inside the inner rectangle, with two pages whose
+    // combined width = innerWidth - centerGapPx
+    displayedSpreadWidth = innerWidth - centerGapPx;
+    displayedPageWidth = displayedSpreadWidth / 2;
+    displayedPageHeight = innerHeight;
+    scaleFactor = displayedPageWidth / basePageWidth;
+  } else {
+    const scaleX = availableWidth / baseSpreadWidth;
+    const scaleY = availableHeight / basePageHeight;
+    scaleFactor = Math.min(scaleX, scaleY, 1);
+    displayedSpreadWidth = baseSpreadWidth * scaleFactor;
+    displayedPageWidth = basePageWidth * scaleFactor;
+    displayedPageHeight = basePageHeight * scaleFactor;
+  }
 
   const displayedViewportWidth = isSoloPage ? displayedPageWidth : displayedSpreadWidth;
   const spinePosition = isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center";
@@ -428,26 +473,30 @@ export default function FlipBook({
       >
         <div
           style={{
-            width: displayedViewportWidth + tabGutter * 2,
-            height: displayedPageHeight,
+            width: isRingOpen
+              ? binderFrameWidth + tabGutter * 2
+              : displayedViewportWidth + tabGutter * 2,
+            height: isRingOpen ? binderFrameHeight : displayedPageHeight,
             position: "relative",
             overflow: "visible",
             transition: "width 0.4s ease-in-out",
           }}
         >
-          {/* Open-binder background — drawn behind the flipbook for ring binders.
-              Sized to match the spread width so the rings line up with the spine. */}
-          {isRing && !isSoloPage && (
+          {/* Ring binder OPEN-state frame: the binder PNG is the OUTER frame.
+              The flipbook spread is positioned inside the inner printable
+              rectangle, with its spine aligned to the centre of the ring
+              mechanism (which is part of the background image). */}
+          {isRingOpen && (
             <img
               src={ringBinderOpen}
               alt=""
               aria-hidden="true"
               style={{
                 position: "absolute",
-                left: tabGutter - displayedPageHeight * RING_OPEN_ASPECT * 0.02,
-                top: -displayedPageHeight * 0.04,
-                width: displayedPageHeight * RING_OPEN_ASPECT * 1.04,
-                height: displayedPageHeight * 1.08,
+                left: tabGutter,
+                top: 0,
+                width: binderFrameWidth,
+                height: binderFrameHeight,
                 pointerEvents: "none",
                 zIndex: 0,
                 objectFit: "fill",
@@ -459,8 +508,10 @@ export default function FlipBook({
           <div
             style={{
               position: "absolute",
-              left: tabGutter,
-              top: 0,
+              left: isRingOpen
+                ? tabGutter + (binderFrameWidth - displayedViewportWidth) / 2
+                : tabGutter,
+              top: isRingOpen ? innerTop : 0,
               width: displayedViewportWidth,
               height: displayedPageHeight,
               boxShadow: isRing && !isSoloPage
@@ -470,7 +521,7 @@ export default function FlipBook({
             }}
           >
             {/* Suppress wire/comb spine for ring binders — the ring mechanism
-                overlay is drawn separately below to avoid drawing a wire. */}
+                is part of the open binder background artwork. */}
             {!isRing && (
               <BindingSpine
                 bindingType={bindingType}
@@ -585,27 +636,6 @@ export default function FlipBook({
                 </div>
               </div>
             </div>
-
-            {/* Ring mechanism overlay — sits over the spine seam so the rings
-                appear to clamp over the page edges. Only visible in open spread. */}
-            {isRing && !isSoloPage && (
-              <div
-                style={{
-                  position: "absolute",
-                  left: displayedViewportWidth / 2 - (displayedViewportWidth * RING_STRIP_W) / 2,
-                  top: -displayedPageHeight * 0.02,
-                  width: displayedViewportWidth * RING_STRIP_W,
-                  height: displayedPageHeight * 1.04,
-                  pointerEvents: "none",
-                  zIndex: 30,
-                  backgroundImage: `url(${ringBinderOpen})`,
-                  backgroundSize: `${100 / RING_STRIP_W}% 100%`,
-                  backgroundPosition: `${(RING_STRIP_X / (1 - RING_STRIP_W)) * 100}% center`,
-                  backgroundRepeat: "no-repeat",
-                  filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.25))",
-                }}
-              />
-            )}
           </div>
         </div>
       </div>
