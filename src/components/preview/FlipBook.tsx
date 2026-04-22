@@ -367,13 +367,16 @@ export default function FlipBook({
   const lastIdx = urls.length - 1;
   const lastRole = pageRoles?.[lastIdx];
 
-  const isShowingFrontCover = currentPage === 0;
+  const isShowingFrontCover = hasRealFrontCover && currentPage === 0;
   const isShowingBackCover = lastRole === "back_cover_card" && currentPage >= lastIdx;
-  const isShowingLastSolo = lastRole !== "back_cover_card" && currentPage >= lastIdx;
-  const isSoloPage = isShowingFrontCover || isShowingBackCover || isShowingLastSolo;
+  const isShowingLastSolo = hasRealFrontCover && lastRole !== "back_cover_card" && currentPage >= lastIdx;
+  // Without a real front cover (ring binder body-only), no solo states except back cover
+  const isSoloPage = isShowingFrontCover || isShowingBackCover || (hasRealFrontCover && isShowingLastSolo);
 
-  // Viewport width at display scale (include ring gap for ring binders)
-  const displayedViewportWidth = isSoloPage ? displayedPageWidth : displayedSpreadWidth + displayedRingGap;
+  // Viewport width at display scale (include ring gap for ring binders, plus ring padding)
+  const displayedViewportWidth = isSoloPage
+    ? displayedPageWidth + (isRing ? displayedRingPadding * 2 : 0)
+    : displayedSpreadWidth + displayedRingGap + (isRing ? displayedRingPadding * 2 : 0);
   const spinePosition = isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center";
 
   // Tab overlay gutter (extra space for tabs to protrude)
