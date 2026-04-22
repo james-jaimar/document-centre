@@ -467,50 +467,21 @@ export default function FlipBook({
       >
         <div
           style={{
-            width: isRingOpen
-              ? binderFrameWidth + tabGutter * 2
-              : displayedViewportWidth + tabGutter * 2,
-            height: isRingOpen ? binderFrameHeight : displayedPageHeight,
+            width: displayedViewportWidth + tabGutter * 2,
+            height: displayedPageHeight,
             position: "relative",
             overflow: "visible",
             transition: "width 0.4s ease-in-out",
           }}
         >
-          {/* Ring binder OPEN-state frame: the binder PNG is the OUTER frame.
-              The flipbook spread is positioned inside the inner printable
-              rectangle, with its spine aligned to the centre of the ring
-              mechanism (which is part of the background image). */}
-          {isRingOpen && (
-            <img
-              src={ringBinderOpen}
-              alt=""
-              aria-hidden="true"
-              style={{
-                position: "absolute",
-                left: tabGutter,
-                top: 0,
-                width: binderFrameWidth,
-                height: binderFrameHeight,
-                pointerEvents: "none",
-                zIndex: 0,
-                objectFit: "fill",
-                filter: "drop-shadow(0 6px 18px rgba(0,0,0,0.18))",
-              }}
-            />
-          )}
-
           <div
             style={{
               position: "absolute",
-              left: isRingOpen
-                ? tabGutter + (binderFrameWidth - displayedViewportWidth) / 2
-                : tabGutter,
-              top: isRingOpen ? innerTop : 0,
+              left: tabGutter,
+              top: 0,
               width: displayedViewportWidth,
               height: displayedPageHeight,
-              boxShadow: isRing && !isSoloPage
-                ? "none"
-                : "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
               zIndex: 1,
             }}
           >
