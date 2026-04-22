@@ -212,8 +212,11 @@ export default function PreviewPanel({
   const [containerSize, setContainerSize] = useState({ width: 500, height: 400 });
 
   const isBound = BOUND_TYPES.has(productType);
+  const isRingBinder = RING_BINDER_TYPES.has(productType);
   const isFold = FOLD_TYPES.has(productType);
-  const step = isBound ? 2 : 1;
+  // Ring binders advance one face at a time (single-sheet binder model);
+  // other bound products use spread-based (two-page) navigation.
+  const step = isRingBinder ? 1 : isBound ? 2 : 1;
 
   // Measure container
   useEffect(() => {
