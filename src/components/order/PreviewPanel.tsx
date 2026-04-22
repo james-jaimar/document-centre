@@ -486,9 +486,11 @@ export default function PreviewPanel({
     prevPageCount.current = totalPages;
   }, [totalPages, currentPage]);
 
-  // Ring binders always have a physical front sheet (pvc_cover_front is always injected)
+  // hasRealFrontCover is derived from real role data — true only when the
+  // first face is an actual front cover (uploaded artwork) or a PVC cover sheet.
   const isRingBinder = productType === "ring_binder";
-  const hasRealFrontCover = true; // always true now — ring binders always inject pvc_cover
+  const firstRole = computedPageRoles[0];
+  const hasRealFrontCover = firstRole === "front_cover" || firstRole === "pvc_cover_front";
   const isShowingFrontCover = isBound && hasRealFrontCover && currentPage === 0;
   const hasBackCoverCard = computedPageRoles.includes("back_cover_card");
   const isShowingBackCover = isBound && hasBackCoverCard && currentPage >= totalPages - 1;
