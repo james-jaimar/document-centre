@@ -3,7 +3,6 @@ import { batchSignUrls, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import type { ProductPreviewType } from "./previewTypes";
 import { getBindingType } from "./previewTypes";
 import FlipBook from "./FlipBook";
-import RingBinderFlipBook from "./RingBinderFlipBook";
 import FoldPreview from "./FoldPreview";
 import LooseSheetsPreview from "./LooseSheetsPreview";
 import { Loader2 } from "lucide-react";
@@ -156,10 +155,6 @@ export default function DocumentPreview({
     pageColors,
     tabPositions,
   };
-
-  if (productType === "ring_binder") {
-    return <RingBinderFlipBook {...commonProps} displayPageNumbers={displayPageNumbers} faceLabels={faceLabels} rawPaths={thumbnailPaths} />;
-  }
 
   if (BOUND_TYPES.has(productType)) {
     return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} displayPageNumbers={displayPageNumbers} faceLabels={faceLabels} bindingEdge={bindingEdge} rawPaths={thumbnailPaths} />;
