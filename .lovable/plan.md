@@ -1,167 +1,85 @@
 
-## Fix ring binder preview by separating “physical binder cover” from “uploaded cover artwork”
 
-### Core correction
+## Ring binder preview — back to first principles
 
-The current implementation is using one flag (`hasRealFrontCover`) for two different things:
+### Root cause of the current mess
 
-- whether the ring binder has a **physical outer/front sheet**
-- whether the customer uploaded **printed cover artwork**
+The current code does two wrong things:
 
-For ring binders, the physical front sheet should always exist. The uploaded cover file is optional.
+1. **It always injects a PVC front sheet for ring binders, even when no cover is uploaded.** Then when grabbing the "front cover artwork" it does `frontThumb = fp[0]?.thumbnailUrl`, which is the **first body page**. That is literally why your body page is showing up as the front cover artwork.
+2. **There is no ring-specific open-state renderer anymore.** Once past page 0, ring binders fall through to the standard wire/comb/perfect/saddle renderer with no binder background, no widened centre gap, and no ring mechanism — which is why the inside looks like a normal saddle-stitched spread with a wire spine.
 
-That means the preview model should become:
+This is also why the "Page 1 — Blank (Back)" label appears with your body image bleeding through — it is the injected `pvc_cover_back` blank face.
 
-- **Closed view at page 0 always**
-  - show the closed binder artwork every time
-  - if the customer uploaded a cover file, place it in the pocket
-  - if not, show the same closed binder with a blank outer sheet
+### Correct model (what you actually asked for)
 
-- **Open view after page 0**
-  - use the same spread/flip logic as wire bound
-  - first content page must start on the **right-hand side**
-  - pages must keep normal A4 proportions
-  - tabs/inserts must keep working exactly like bound documents
+- **Front view = closed binder image**
+  - if a cover sheet is uploaded → overlay that file in the pocket
+  - if no cover sheet → show the closed binder with a plain blank pocket, **do not** invent a PVC front sheet from a body page
+- **Inside view = open binder image as background + the wire-bound flipbook on top**
+  - same flip animation as wire-bound
+  - no wire spine drawn
+  - the two pages are pushed apart so the centre gap clears the ring mechanism
+- Inside spread starts on the right-hand side (page 1 solo right), exactly like wire-bound's first page
 
 ### Implementation
 
-#### 1) Always inject a physical front sheet for ring binders
-In both the live preview builder and the persisted preview snapshot:
+#### 1) Stop forcing PVC injection for ring binders without an uploaded cover
+In `PreviewPanel.tsx`:
 
-- split the concepts into:
-  - `hasPhysicalFrontSheet` → always `true` for `ring_binder`
-  - `hasPrintedFrontArtwork` → only true when a real `front_cover` section exists
-- always inject the front sheet roles for ring binders:
-  - `pvc_cover_front`
-  - `pvc_cover_back`
-- if there is no uploaded cover file:
-  - `pvc_cover_front` should be blank
-  - `pvc_cover_back` should be blank
-- if there is an uploaded cover file:
-  - `pvc_cover_front` uses that thumbnail
-  - `pvc_cover_back` stays blank
+- Keep PVC front-sheet injection **only when** `effects.frontCover` is one of `clear_pvc | frosted_pvc | matte_pvc` (the existing `isPvcOption` rule).
+- Remove the `(isRingBinder && fp.length > 0)` clause that forces PVC for ring binders unconditionally.
+- Set `hasRealFrontCover = computedPageRoles[0] === "front_cover" || computedPageRoles[0] === "pvc_cover_front"` — i.e. derived from real data, not hard-coded `true`.
+- Same fix mirrored in `buildPreviewSnapshot.ts` so saved orders match.
 
-This fixes two things at once:
+This single change kills the "body page appears as cover" bug.
 
-- the closed outer view always exists
-- the first body page shifts to the correct even/right-hand index after the inner blank face
+#### 2) Make the closed front state conditional in `FlipBook.tsx`
+- Render the closed binder image at `currentPage === 0` **only when** `hasRealFrontCover` is true (real cover) OR when the user explicitly has a cover artwork file at index 0.
+- When no cover exists, ring binder skips the closed state entirely and lands on the open spread immediately at page 0.
 
-#### 2) Make the ring binder closed view always render from page 0
-In `FlipBook.tsx`:
+#### 3) Rebuild a real ring-binder open state (binder background + wire-bound flipbook with widened gap)
+This is the part that has been missing. Add a dedicated ring-binder open-state branch in `FlipBook.tsx` that runs **before** the standard bound renderer:
 
-- remove the current “closed only when a real cover exists” rule
-- replace it with:
-  - for ring binders, `currentPage === 0` always shows the closed binder artwork
-- render a single-sheet overlay inside the pocket rectangle:
-  - if page 0 has printable artwork, show it
-  - otherwise show a blank sheet surface
-- keep this closed state visually separate from the open spread renderer
+- Render the `ring_binder_white_open.png` background at its natural aspect ratio, centred in the available area.
+- Compute a content rectangle inside the artwork (`RING_CONTENT` inset already exists) and split it into two page rectangles with a configurable **`RING_CENTER_GAP`** (e.g. ~10–14% of artwork width) between them — this is the space that clears the rings.
+- Inside that, mount the **same `HTMLFlipBook`** used by wire-bound, with the **same `BASE_PAGE_WIDTH` / `basePageHeight`** approach, the same `showCover`, same solo-page detection, same tab overlay, same back-cover handling — but:
+  - `BindingSpine` is **not** rendered (no wire down the middle)
+  - the flipbook stage is CSS-scaled into the two page rectangles, with the centre gap baked into the layout
+  - the ring mechanism strip from the artwork sits visually behind the gap (no overlay needed — it's part of the background image)
 
-#### 3) Rebuild the open ring binder state as a wire-bound clone with mapped placement
-Still in `FlipBook.tsx`:
+Use a single shared bound-render function so ring inherits all wire-bound flip/clip/solo behaviour automatically; ring just supplies (a) a background image, (b) a wider centre gap, and (c) "no spine".
 
-- stop using the current ring-specific open-state solo/clipping logic as its own behaviour model
-- reuse the same internals as the standard bound preview:
-  - fixed `BASE_PAGE_WIDTH` / computed page height
-  - same `react-pageflip` setup
-  - same solo/spread detection
-  - same front/back/last-page clipping behaviour
-  - same tab overlay behaviour
-- only make ring binders different in two ways:
-  - draw the open binder background image behind the stage
-  - place the stage into mapped printable left/right rectangles with a wider centre gutter
+#### 4) About the centre gap — `react-pageflip` constraint
+`react-pageflip` does not support a built-in gutter between the two pages of a spread (pages always meet at the spine). To create the visual gap for the ring mechanism, the gap is faked in the **outer layout**, not inside the flipbook:
 
-Use ring-specific geometry such as:
+- The flipbook itself stays as a normal spread (pages touching).
+- Wrap left and right halves in two separate scaled containers positioned over the two page rectangles with the gap between them. Because `react-pageflip` renders the whole spread as one DOM block, we instead:
+  - keep a single flipbook
+  - scale it to fit the **combined** page width (`leftPageW + rightPageW`)
+  - position it inside the artwork content area where the centre line of the flipbook spread aligns with the centre of the ring mechanism
+  - cover the centre seam with an overlay strip from the open binder artwork (just the rings cropped out, sitting at `z-index` above the pages)
 
-```text
-open binder artwork
-  left printable rect   -> left page
-  centre mechanism gap  -> wider than wire bound
-  right printable rect  -> right page
-```
+That overlay strip is the realistic way to make the rings appear to sit over the page edges without breaking the flipbook's internal geometry. **If at QA this overlay still looks wrong, I'll come back to you with the alternative (rendering left/right pages as two separate flipbooks side by side, which loses the page-flip animation across the spine).**
 
-This keeps the exact wire-bound flip behaviour while aligning it to the ring artwork.
-
-#### 4) Fix page cropping by scaling into printable rectangles, not the full artwork box
-In `FlipBook.tsx`:
-
-- replace the current “content area” fit with page-box fitting
-- define explicit normalized page rectangles for:
-  - left printable area
-  - right printable area
-- derive the open-stage scale from those page rectangles so each page keeps the real document aspect ratio
-- do not stretch pages to fill a large white content container
-- centre the stage inside those mapped page boxes
-
-This removes the heavy crop/floating-white-rectangle look.
-
-#### 5) Make the first inside spread start correctly on the right
-Because ring binders will now always have:
-
-- page 0 = outer front sheet
-- page 1 = inside front blank sheet
-
-the first body page will naturally land on the first right-hand position in the open spread model.
-
-In addition:
-
-- keep bound stepping at `2`
-- keep the existing right-hand tab/insert parity rules
-- ensure the ring open state uses the same bound spread indexing as wire bound
-
-This fixes the current “inside starts on the left” issue.
-
-#### 6) Remove the disappearing-last-page bug by using the standard bound end-state logic
-The ring branch currently has custom solo-page rules that diverge from the standard bound branch.
-
-Replace those with the same end-of-book rules used by wire/comb/perfect/saddle:
-
-- same last-solo detection
-- same back-cover handling
-- same clipping/origin rules
-
-With the corrected ring page injection parity, the last page should no longer vanish after turning.
-
-#### 7) Keep page labels and counters aligned with the new physical model
-In `PreviewPanel.tsx` and the snapshot builder:
-
-- update ring binder page info to reflect that the preview always has a closed outer state
-- keep “Front Cover” available even when the outer sheet is blank
-- keep numbering content-only, but preserve the physical sheet parity for the preview engine
-- ensure lightbox/main preview remain consistent
+#### 5) Fix labels and counters
+In `PreviewPanel.tsx`:
+- `pageInfoText`: only show "Front Cover" when `hasRealFrontCover` is genuinely true (not the always-true override).
+- Remove the hard-coded `hasRealFrontCover = true` and derive it from `computedPageRoles[0]`.
+- Step stays at `2` for ring binders.
 
 ### Files to change
 
 | File | Change |
 |---|---|
-| `src/components/preview/FlipBook.tsx` | Always show closed ring cover at page 0; rebuild open ring state as a mapped wire-bound clone; replace custom ring solo/crop logic with standard bound behaviour plus ring geometry |
-| `src/components/order/PreviewPanel.tsx` | Always inject ring front-sheet faces, even when no uploaded cover exists; keep labels/counters aligned with the physical front sheet |
-| `src/lib/orders/buildPreviewSnapshot.ts` | Mirror the same always-present ring front-sheet injection and preview metadata so placed-order previews match live preview |
-| `src/components/order/PreviewLightbox.tsx` | Only adjust if needed to keep counters/stepping aligned with the updated ring physical sequence |
-
-### Technical details
-
-Use two separate booleans in the ring path:
-
-- `hasPhysicalFrontSheet` = `bindingType === "ring"`
-- `hasPrintedFrontArtwork` = first real assigned cover exists
-
-And for ring preview sequencing:
-
-```text
-page 0  = closed outer/front sheet
-page 1  = inside front blank
-page 2  = first body page (right-hand side)
-page 3+ = normal wire-bound spread flow
-```
+| `src/components/order/PreviewPanel.tsx` | Remove unconditional ring-binder PVC injection; derive `hasRealFrontCover` from real roles; correct `pageInfoText` |
+| `src/lib/orders/buildPreviewSnapshot.ts` | Same parity fix — no PVC injection unless the cover option/section actually exists |
+| `src/components/preview/FlipBook.tsx` | Closed front state only when real cover exists; new ring-binder open-state branch reusing the wire-bound flipbook with no spine, widened centre gap, and the ring mechanism artwork overlaid over the spine |
 
 ### Result
 
-After this rework, ring binders will behave correctly:
+- **No cover uploaded** → straight to open binder view, first body page solo on the right, no fake PVC cover with body artwork
+- **Cover uploaded** → closed binder front with that cover in the pocket; flipping forward goes into open binder spreads
+- **Inside** → real open binder background, wire-bound flipbook on top, no wire down the centre, gap between pages for the rings, last page no longer disappears (because it inherits wire-bound end-state logic)
+- Tabs and inserts continue to work because the ring open state is the wire-bound renderer
 
-- closed front view always appears, even with “No Cover”
-- uploaded cover artwork overlays that front when present
-- open view starts with the first real body page on the right-hand side
-- pages retain proper A4 proportions instead of being cropped into a large white block
-- tabs/inserts continue to work because the open state uses the normal wire-bound flip model
-- the last page no longer disappears at the end
