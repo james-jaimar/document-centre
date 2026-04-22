@@ -527,6 +527,15 @@ export default function PreviewPanel({
 
   const pageInfoText = useMemo(() => {
     if (totalPages === 0) return "";
+    // Ring binders use a single-sheet model — one face at a time
+    if (isRingBinder) {
+      if (currentPage === 0) {
+        const role = computedPageRoles[0];
+        if (role === "front_cover" || role === "pvc_cover_front") return "Cover Sheet";
+        return "Closed Binder";
+      }
+      return `${faceLabel(currentPage)} of ${totalContentPages}`;
+    }
     if (isBound) {
       if (isShowingFrontCover) {
         const role = computedPageRoles[0];
@@ -541,7 +550,7 @@ export default function PreviewPanel({
       return `${leftLabel} – ${rightLabel}  (${totalContentPages} pages)`;
     }
     return `${faceLabel(currentPage)} of ${totalContentPages}`;
-  }, [currentPage, totalPages, totalContentPages, isBound, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers]);
+  }, [currentPage, totalPages, totalContentPages, isBound, isRingBinder, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers]);
 
   const colourStatus = useMemo(() => {
     if (totalPages === 0) return "";
