@@ -34,11 +34,17 @@ const RING_CLOSED_ASPECT = 793 / 833;   // width / height
 const RING_OPEN_ASPECT   = 1781 / 840;
 // Pocket rectangle on the closed front (for cover overlay)
 const RING_POCKET = { x: 0.05, y: 0.025, w: 0.90, h: 0.95 };
-// Content area within the open binder
-const RING_CONTENT = { x: 0.03, y: 0.03 };  // inset from each edge
-// Ring mechanism strip (normalised x-position and width)
-const RING_STRIP_X = 0.455;
-const RING_STRIP_W = 0.09;
+// Inner printable rectangle on the OPEN binder artwork (where the two
+// pages physically sit). Tuned to the ring_binder_white_open.png artwork:
+// excludes the binder cover edges (top/bottom/outer) and the central ring
+// mechanism column. Pages are pushed to the outer halves with a centre gap
+// that clears the rings.
+const RING_INNER = {
+  top: 0.06,
+  bottom: 0.06,
+  outer: 0.05,        // inset from left edge of left page and right edge of right page
+  centerGap: 0.10,    // total normalised width of the ring-mechanism gap
+};
 
 /**
  * Each page must be a forwardRef component for react-pageflip.
