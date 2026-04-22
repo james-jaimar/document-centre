@@ -428,24 +428,24 @@ export default function FlipBook({
             }}
           />
 
-          {/* HTMLFlipBook spread positioned within content area */}
+          {/* HTMLFlipBook spread — CSS-scaled into content area */}
           <div style={{
             position: "absolute",
-            left: tabGutter + contentX,
-            top: contentY,
+            left: tabGutter + stageOffsetX,
+            top: stageOffsetY,
             width: flipSpreadW,
             height: flipPageH,
+            transform: `scale(${ringScale})`,
+            transformOrigin: "top left",
             zIndex: 1,
             overflow: isSoloPage ? "hidden" : "visible",
-            // For solo pages (back cover / last page), clip to show only one side
             ...(isSoloPage
               ? { clipPath: isShowingBackCover
                   ? `inset(0 ${flipPageW}px 0 0)`
                   : `inset(0 0 0 ${flipPageW}px)` }
               : {}),
-            // If solo, shift the spread so the visible page is centered
             ...(isSoloPage && !isShowingBackCover
-              ? { left: tabGutter + contentX - flipPageW }
+              ? { left: tabGutter + stageOffsetX - flipPageW * ringScale }
               : {}),
           }}>
             {/* @ts-ignore — react-pageflip types are imprecise */}
@@ -459,13 +459,13 @@ export default function FlipBook({
               maxWidth={flipPageW}
               minHeight={flipPageH}
               maxHeight={flipPageH}
-              showCover={hasRealFrontCover}
+              showCover={true}
               flippingTime={600}
               drawShadow={true}
               maxShadowOpacity={0.5}
               mobileScrollSupport={false}
               onFlip={handleFlip}
-              startPage={hasRealFrontCover ? 1 : 0}
+              startPage={0}
               usePortrait={false}
               startZIndex={0}
               autoSize={false}
