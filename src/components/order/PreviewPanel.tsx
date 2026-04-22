@@ -342,7 +342,16 @@ export default function PreviewPanel({
     });
 
     // ── Physical PVC front cover ──
-    const isPvc = isBound && effects?.frontCover && ["clear_pvc", "frosted_pvc", "matte_pvc"].includes(effects.frontCover);
+    // Ring binders always have a clear PVC front pocket — but only inject the
+    // pocket pages when the customer has actually assigned a Cover Sheet section.
+    // Without a cover sheet, the binder pocket is simply empty (no shifted body page).
+    const hasFrontCoverSection = fp[0]?.section?.section_type === "front_cover";
+    const isRingBinder = productType === "ring_binder";
+    const isPvcOption = effects?.frontCover && ["clear_pvc", "frosted_pvc", "matte_pvc"].includes(effects.frontCover);
+    const isPvc =
+      isBound &&
+      ((isPvcOption && fp.length > 0) ||
+        (isRingBinder && hasFrontCoverSection));
     if (isPvc && fp.length > 0) {
       const frontThumb = fp[0]?.thumbnailUrl ?? "";
       fp.unshift({ thumbnailUrl: frontThumb, pageIndex: 0, documentName: "PVC Cover", section: undefined, isColor: true });
