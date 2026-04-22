@@ -1,144 +1,60 @@
 
-## Fix the ring binder preview by simplifying it to two mapped artwork states
 
-### What the actual issue is
+## Fix ring binder preview: correct page sizing, positioning, and no-cover behaviour
 
-The current ring binder preview is mixing two incompatible models:
+### What is wrong
 
-- the **binder artwork is being stretched to the flip stage viewport**
-- the **pageflip stage is still centered like a normal spread**
-- the preview still assumes a **cover state from page index 0**, even when the first real page is body content
+Three specific bugs in the ring binder branch of `FlipBook.tsx`:
 
-That is why you are seeing all three failures at once:
+1. **Pages are the wrong size** — `flipPageW` and `flipPageH` are derived from the artwork content area dimensions, not from the document's actual aspect ratio (`BASE_PAGE_WIDTH` / `basePageHeight`). This makes A4 pages appear as squashed rectangles that fill the binder artwork rather than maintaining their real proportions.
 
-1. **No real front/inside background behavior** because the artwork is tied to the wrong container.
-2. **Fake cover appears when no cover exists** because page 0 is still treated like a cover mode.
-3. **Inside looks like a saddle/wire spread dumped on top of the image** because the flipping pages are not mapped to the printable rectangles of the open binder artwork.
+2. **Pages do not start on the right-hand side** — when no cover exists, `showCover={hasRealFrontCover}` is `false`, so `react-pageflip` pairs pages as `[0,1], [2,3]` instead of placing page 0 solo on the right. The first page should always appear solo on the right side of the open binder.
 
-### Target behavior
+3. **No cover still shows closed binder** — `startPage={hasRealFrontCover ? 1 : 0}` tries to skip past the cover but the logic is inverted. When "No Cover" is selected, the preview should go straight to the open binder view with no closed-front state at all.
 
-Use a much simpler ring binder model:
+### Fix
 
-- **Closed front**
-  - show `ring_binder_white_closed.png`
-  - if a real cover sheet exists, place that page centered in the front pocket area
-  - if no cover sheet exists, do not invent one
+All changes are in `src/components/preview/FlipBook.tsx`, ring binder branch (lines 324–528).
 
-- **Open inside**
-  - show `ring_binder_white_open.png`
-  - run the normal `react-pageflip` spread behavior
-  - place the spread into mapped left/right printable areas
-  - widen the centre gap to clear the ring mechanism
-  - keep the artwork independent from the flip stage so it never squashes
-
-### Implementation
-
-#### 1) Rebuild ring binder layout in `FlipBook.tsx` around artwork coordinates
-Replace the current ring-specific approach with a coordinate-mapped layout:
-
-- keep `react-pageflip` as the animation engine
-- keep ring binders on the shared `FlipBook` path
-- define two ring-binder layouts:
-  - `closedArtworkBox`
-  - `openArtworkBox`
-- define mapped printable regions inside those artworks:
-  - `closedPocketRect`
-  - `openLeftPageRect`
-  - `openRightPageRect`
-  - `centerMechanismGap`
-
-The binder artwork should render at its own aspect ratio first.
-Then the page content/stage should be positioned on top using those relative rectangles.
-
-#### 2) Split ring binder rendering into two explicit states
-In `FlipBook.tsx`, ring binders should render differently depending on whether a real cover exists and whether the current state is front or inside:
-
-- `hasRealFrontCover = pageRoles[0] === "front_cover" || pageRoles[0] === "pvc_cover_front"`
-- if `hasRealFrontCover && currentPage === 0`
-  - render the **closed binder artwork**
-  - render a simple centered page overlay in the pocket rectangle
-  - do not mount the spread viewport for this state
-- otherwise
-  - render the **open binder artwork**
-  - mount the standard pageflip spread viewport over the inside page rectangles
-
-This removes the fake front-cover behavior completely.
-
-#### 3) Stop stretching the binder artwork to the book viewport
-The current issue comes from this coupling:
-
-- artwork fills `displayedViewportWidth`
-- page stage is then clipped/shifted inside that same box
-
-Instead:
-
-- compute artwork display size from the asset aspect ratio
-- center the artwork inside the preview area
-- compute the page-stage overlay position relative to the displayed artwork bounds
-- apply the wider ring gap only to the page overlay, not to the full artwork image
-
-That will keep the cover and inside images visually correct.
-
-#### 4) Map the open spread to left/right printable rectangles
-For the inside state:
-
-- treat the ring binder like the wire-bound preview for flipping behavior
-- but do not let the spread occupy the full artwork width
-- position the spread so:
-  - left page sits inside the left printable panel
-  - right page sits inside the right printable panel
-  - the centre gap aligns with the D-ring mechanism
-
-Use a ring-specific geometry object in `FlipBook.tsx`, for example:
-
-```text
-closed:
-  pocket rect = { x, y, w, h }
-
-open:
-  left page rect  = { x, y, w, h }
-  right page rect = { x, y, w, h }
-  center gap      = number
+#### A) Use the standard fixed-resolution approach for page dimensions
+Replace the current artwork-derived page sizing:
 ```
+const flipPageW = Math.round(contentW / 2);
+const flipPageH = Math.round(contentH);
+```
+with the same `BASE_PAGE_WIDTH` / `basePageHeight` approach used by wire-bound:
+```
+const flipPageW = basePageWidth;    // 400
+const flipPageH = basePageHeight;   // ~566 for A4
+```
+Then CSS-scale the `HTMLFlipBook` stage to fit within the artwork's content area, just like the standard path scales to fit the available container.
 
-This is the core fix for the “inside not working” problem.
+#### B) Always use `showCover={true}` so page 0 is solo on the right
+Change the `HTMLFlipBook` prop from `showCover={hasRealFrontCover}` to `showCover={true}`. This ensures the first page always renders solo on the right-hand side of the spread, matching wire-bound behaviour.
 
-#### 5) Keep navigation spread-based, but make cover conditional
-In `PreviewPanel.tsx`:
+Set `startPage={0}` always (remove the conditional).
 
-- keep `step = 2` for ring binders
-- keep normal spread navigation
-- only show “Front Cover” when a real cover sheet exists
-- if there is no real cover sheet, the first visible state should be the first inside spread
-- update `pageInfoText` so body-only ring binders never label page 0 as a front cover or closed binder
+#### C) Skip the closed binder state entirely when no cover exists
+The `showClosedCover` guard already handles this (`hasRealFrontCover && currentPage === 0`), but the `isShowingFrontCover` logic in the open state also needs to account for the solo first page. When there is no real cover, page 0 is still a solo page visually (right-side only) — it just shows the open binder background instead of the closed one.
 
-In `PreviewLightbox.tsx`:
-- keep the same spread stepping as the main preview
-- no special single-sheet logic
-
-#### 6) Keep snapshot parity with live preview
-In `buildPreviewSnapshot.ts`:
-
-- preserve the existing rule that ring binders only get PVC/front-pocket pages when a real front-cover section exists
-- ensure no preview metadata implies a front cover for body-only jobs
-
-That keeps placed-order previews aligned with the live configurator.
+#### D) Scale the flipbook stage into the artwork content area
+Compute a `ringScale` factor:
+```
+const ringScaleX = contentW / (basePageWidth * 2);
+const ringScaleY = contentH / basePageHeight;
+const ringScale = Math.min(ringScaleX, ringScaleY, 1);
+```
+Apply `transform: scale(ringScale)` with `transformOrigin: top left` to the flipbook wrapper div, and centre it within the content area. This keeps pages at correct A4 proportions while fitting inside the binder artwork.
 
 ### Files to change
 
 | File | Change |
 |---|---|
-| `src/components/preview/FlipBook.tsx` | Replace current ring-binder stretch/clip logic with artwork-first rendering and mapped overlay coordinates |
-| `src/components/order/PreviewPanel.tsx` | Keep spread navigation, but make front-cover labels conditional on a real cover sheet |
-| `src/components/order/PreviewLightbox.tsx` | Keep ring binders aligned with spread-based stepping |
-| `src/lib/orders/buildPreviewSnapshot.ts` | Preserve no-implicit-cover parity for persisted previews |
+| `src/components/preview/FlipBook.tsx` | Ring binder branch: use `BASE_PAGE_WIDTH`/`basePageHeight` for flipbook, CSS-scale into artwork content area, always `showCover={true}`, `startPage={0}`, fix solo-page detection for no-cover case |
 
 ### Result
 
-After this rework, ring binders will behave as expected:
+- **No cover selected**: straight to open binder view, no closed-front state
+- **First page**: always solo on the right-hand side
+- **Page proportions**: correct A4 ratio maintained, scaled to fit the binder artwork
 
-- **No cover sheet assigned**: no fake cover, no closed-binder front preview
-- **Cover sheet assigned**: closed binder image with a simple centered cover overlay
-- **Inside**: real open binder image plus normal flip preview mapped into the printable page areas
-- **Centre mechanism**: wider gap between pages for the O-rings
-- **No more squashed artwork or saddle-style spread dumped across the whole background**
