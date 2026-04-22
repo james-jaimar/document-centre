@@ -358,6 +358,20 @@ export default function PreviewPanel({
       roles.splice(1, 0, "pvc_cover_back");
     }
 
+    // ── Ring binder virtual cover ──
+    // Ring binders ALWAYS show a closed-binder view at page 0. When no real
+    // front_cover or PVC cover exists, inject a blank cover pair so the
+    // flipbook's showCover behaviour doesn't promote the first body page
+    // into the solo right-hand cover slot.
+    const isRingBinder = productType === "ring_binder";
+    const hasRealCover = roles[0] === "front_cover" || roles[0] === "pvc_cover_front";
+    if (isRingBinder && !hasRealCover && fp.length > 0) {
+      fp.unshift({ thumbnailUrl: "", pageIndex: 0, documentName: "Binder Cover", section: undefined, isColor: true });
+      roles.unshift("pvc_cover_front");
+      fp.splice(1, 0, { thumbnailUrl: "", pageIndex: 0, documentName: "Binder Cover Inside", section: undefined, isColor: true });
+      roles.splice(1, 0, "pvc_cover_back");
+    }
+
     // Tab/insert alignment is now handled inside buildPageSequence()
     // via the pending-queue flush — no post-processing pass needed.
 
