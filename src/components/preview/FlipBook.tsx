@@ -399,16 +399,14 @@ export default function FlipBook({
     const stripDisplayX = artW * RING_STRIP_X;
     const stripDisplayW = artW * RING_STRIP_W;
 
-    // Scale factor: the HTMLFlipBook renders at its fixed internal size,
-    // but here we compute page dimensions directly from the artwork so scale = 1.
-    // No CSS transform scaling needed.
-
-    // Solo page detection for the open state
+    // Solo page detection — showCover is always true so page 0 is solo right,
+    // and if total pages is even the last page is also solo
     const lastIdx = urls.length - 1;
     const lastRole = pageRoles?.[lastIdx];
+    const isShowingFrontSolo = currentPage === 0;
     const isShowingBackCover = lastRole === "back_cover_card" && currentPage >= lastIdx;
-    const isShowingLastSolo = hasRealFrontCover && lastRole !== "back_cover_card" && currentPage >= lastIdx;
-    const isSoloPage = isShowingBackCover || isShowingLastSolo;
+    const isShowingLastSolo = lastRole !== "back_cover_card" && currentPage >= lastIdx && urls.length % 2 === 0;
+    const isSoloPage = isShowingFrontSolo || isShowingBackCover || isShowingLastSolo;
 
     // Tab overlay gutter
     const tabGutter = (tabPositions?.length ?? 0) > 0 ? 24 : 0;
