@@ -415,7 +415,7 @@ export default function PreviewPanel({
     });
 
     return { finalPages: fp, pageRoles: roles };
-  }, [pages, effects, isBound]);
+  }, [pages, effects, isBound, productType]);
 
   const thumbnailPaths = useMemo(() => {
     if (isFold && foldThumbnails) return foldThumbnails;
