@@ -50,6 +50,8 @@ const BOUND_TYPES = new Set([
   "wire_bound", "comb_bound", "saddle_stitched", "perfect_bound", "ring_binder",
 ]);
 
+const RING_BINDER_TYPES = new Set(["ring_binder"]);
+
 const FOLD_TYPES = new Set([
   "bi_fold", "tri_fold", "z_fold", "gate_fold",
 ]);
@@ -210,8 +212,11 @@ export default function PreviewPanel({
   const [containerSize, setContainerSize] = useState({ width: 500, height: 400 });
 
   const isBound = BOUND_TYPES.has(productType);
+  const isRingBinder = RING_BINDER_TYPES.has(productType);
   const isFold = FOLD_TYPES.has(productType);
-  const step = isBound ? 2 : 1;
+  // Ring binders advance one face at a time (single-sheet binder model);
+  // other bound products use spread-based (two-page) navigation.
+  const step = isRingBinder ? 1 : isBound ? 2 : 1;
 
   // Measure container
   useEffect(() => {
@@ -522,6 +527,15 @@ export default function PreviewPanel({
 
   const pageInfoText = useMemo(() => {
     if (totalPages === 0) return "";
+    // Ring binders use a single-sheet model — one face at a time
+    if (isRingBinder) {
+      if (currentPage === 0) {
+        const role = computedPageRoles[0];
+        if (role === "front_cover" || role === "pvc_cover_front") return "Cover Sheet";
+        return "Closed Binder";
+      }
+      return `${faceLabel(currentPage)} of ${totalContentPages}`;
+    }
     if (isBound) {
       if (isShowingFrontCover) {
         const role = computedPageRoles[0];
@@ -536,7 +550,7 @@ export default function PreviewPanel({
       return `${leftLabel} – ${rightLabel}  (${totalContentPages} pages)`;
     }
     return `${faceLabel(currentPage)} of ${totalContentPages}`;
-  }, [currentPage, totalPages, totalContentPages, isBound, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers]);
+  }, [currentPage, totalPages, totalContentPages, isBound, isRingBinder, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers]);
 
   const colourStatus = useMemo(() => {
     if (totalPages === 0) return "";

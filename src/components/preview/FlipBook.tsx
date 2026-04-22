@@ -5,23 +5,6 @@ import { DEFAULT_PREVIEW_EFFECTS, TAB_COLORS } from "./previewTypes";
 import BindingSpine from "./BindingSpine";
 import PageEffects from "./PageEffects";
 import { FileText, Loader2 } from "lucide-react";
-import binderClosedImg from "@/assets/bindings/ring_binder_white_closed.png";
-import binderOpenImg from "@/assets/bindings/ring_binder_white_open.png";
-
-/**
- * Ring binder open photo geometry — pages occupy 5%–43% and 57%–95% horizontally,
- * 5%–95% vertically. Centre rings strip occupies 43%–57% (14% of binder width).
- */
-const RING_OPEN_PAGE_FRACTION_W = 0.38; // each page = 38% of binder width
-const RING_OPEN_PAGE_FRACTION_H = 0.90; // page area = 90% of binder height
-const RING_OPEN_OUTSIDE_INSET = 0.05;   // 5% outside margin
-const RING_OPEN_TOP_INSET = 0.05;       // 5% top/bottom margin
-const RING_OPEN_RINGS_FRACTION_W = 0.14; // centre rings strip width
-
-/** Closed binder pocket: page visible behind clear PVC. */
-const RING_CLOSED_PAGE_FRACTION_W = 0.88; // page = 88% of binder width
-const RING_CLOSED_PAGE_FRACTION_H = 0.90; // page = 90% of binder height
-
 
 /**
  * Fixed internal resolution for the flipbook.
@@ -430,89 +413,9 @@ export default function FlipBook({
             top: 0,
             width: displayedViewportWidth,
             height: displayedPageHeight,
-            boxShadow: bindingType === "ring"
-              ? "none"
-              : "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
           }}
         >
-          {/* Ring binder photographic backdrop (behind pages) */}
-          {bindingType === "ring" && (() => {
-            const isClosed = isSoloPage;
-            if (isClosed) {
-              const binderW = displayedPageWidth / RING_CLOSED_PAGE_FRACTION_W;
-              const binderH = displayedPageHeight / RING_CLOSED_PAGE_FRACTION_H;
-              const binderLeft = -(binderW - displayedPageWidth) / 2;
-              const binderTop = -(binderH - displayedPageHeight) / 2;
-              return (
-                <img
-                  src={binderClosedImg}
-                  alt=""
-                  draggable={false}
-                  className="absolute pointer-events-none select-none"
-                  style={{
-                    left: binderLeft,
-                    top: binderTop,
-                    width: binderW,
-                    height: binderH,
-                    zIndex: 0,
-                    filter: "drop-shadow(0 6px 16px rgba(0,0,0,0.18))",
-                  }}
-                />
-              );
-            }
-            // Open spread: pages region (displayedSpreadWidth) = 90% of binder width
-            const binderW = displayedSpreadWidth / 0.90;
-            const binderH = displayedPageHeight / RING_OPEN_PAGE_FRACTION_H;
-            const binderLeft = -binderW * RING_OPEN_OUTSIDE_INSET;
-            const binderTop = -binderH * RING_OPEN_TOP_INSET;
-            const ringsW = binderW * RING_OPEN_RINGS_FRACTION_W;
-            const ringsLeft = displayedSpreadWidth / 2 - ringsW / 2;
-            // Clip-path on the rings overlay reveals only the centre 14% column of the binder photo
-            return (
-              <>
-                {/* Backdrop binder photo (behind pages) */}
-                <img
-                  src={binderOpenImg}
-                  alt=""
-                  draggable={false}
-                  className="absolute pointer-events-none select-none"
-                  style={{
-                    left: binderLeft,
-                    top: binderTop,
-                    width: binderW,
-                    height: binderH,
-                    zIndex: 0,
-                    filter: "drop-shadow(0 6px 16px rgba(0,0,0,0.18))",
-                  }}
-                />
-                {/* Centre rings strip overlay (above pages) */}
-                <div
-                  className="absolute pointer-events-none overflow-hidden"
-                  style={{
-                    left: ringsLeft,
-                    top: 0,
-                    width: ringsW,
-                    height: displayedPageHeight,
-                    zIndex: 25,
-                  }}
-                >
-                  <img
-                    src={binderOpenImg}
-                    alt=""
-                    draggable={false}
-                    className="absolute select-none"
-                    style={{
-                      // Position the same binder photo so its centre rings column lines up inside the strip
-                      left: -(binderW * 0.43 - 0), // shift photo left so 43% mark sits at strip left edge
-                      top: -binderH * RING_OPEN_TOP_INSET,
-                      width: binderW,
-                      height: binderH,
-                    }}
-                  />
-                </div>
-              </>
-            );
-          })()}
 
           {/* Binding spine */}
           <BindingSpine
