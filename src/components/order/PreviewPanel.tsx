@@ -490,10 +490,15 @@ export default function PreviewPanel({
     prevPageCount.current = totalPages;
   }, [totalPages, currentPage]);
 
-  const isShowingFrontCover = isBound && currentPage === 0;
+  // Ring binders only show cover state if a real cover section exists
+  const isRingBinder = productType === "ring_binder";
+  const hasRealFrontCover = isRingBinder
+    ? (computedPageRoles[0] === "front_cover" || computedPageRoles[0] === "pvc_cover_front")
+    : true;
+  const isShowingFrontCover = isBound && hasRealFrontCover && currentPage === 0;
   const hasBackCoverCard = computedPageRoles.includes("back_cover_card");
   const isShowingBackCover = isBound && hasBackCoverCard && currentPage >= totalPages - 1;
-  const isShowingLastSolo = isBound && !hasBackCoverCard && currentPage >= totalPages - 1;
+  const isShowingLastSolo = isBound && hasRealFrontCover && !hasBackCoverCard && currentPage >= totalPages - 1;
   const isSoloState = isShowingFrontCover || isShowingBackCover || isShowingLastSolo;
 
   const visibleLeft = isSoloState && isShowingFrontCover ? null : currentPage;
