@@ -272,8 +272,11 @@ export default function FlipBook({
 
   const isRing = bindingType === "ring";
 
-  // Ring binders always have pvc_cover_front injected, so hasRealFrontCover is always true
-  const hasRealFrontCover = true;
+  // hasRealFrontCover is derived from real role data — true only when the
+  // first face is a genuine front cover (uploaded artwork) or a PVC cover sheet.
+  const firstRole = pageRoles?.[0];
+  const hasRealFrontCover =
+    firstRole === "front_cover" || firstRole === "pvc_cover_front";
 
   // ── STRUCTURAL key ──
   const structuralKey = useMemo(
@@ -319,7 +322,7 @@ export default function FlipBook({
   /* ══════════════════════════════════════════════════════════════
    * RING BINDER — closed cover state (static artwork overlay)
    * ══════════════════════════════════════════════════════════════ */
-  if (isRing && currentPage === 0) {
+  if (isRing && hasRealFrontCover && currentPage === 0) {
     const availW = width - 80;
     const availH = height - 20;
     const artH = Math.min(availH, availW / RING_CLOSED_ASPECT);
@@ -429,6 +432,27 @@ export default function FlipBook({
             transition: "width 0.4s ease-in-out",
           }}
         >
+          {/* Open-binder background — drawn behind the flipbook for ring binders.
+              Sized to match the spread width so the rings line up with the spine. */}
+          {isRing && !isSoloPage && (
+            <img
+              src={ringBinderOpen}
+              alt=""
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                left: tabGutter - displayedPageHeight * RING_OPEN_ASPECT * 0.02,
+                top: -displayedPageHeight * 0.04,
+                width: displayedPageHeight * RING_OPEN_ASPECT * 1.04,
+                height: displayedPageHeight * 1.08,
+                pointerEvents: "none",
+                zIndex: 0,
+                objectFit: "fill",
+                filter: "drop-shadow(0 6px 18px rgba(0,0,0,0.18))",
+              }}
+            />
+          )}
+
           <div
             style={{
               position: "absolute",
@@ -436,17 +460,23 @@ export default function FlipBook({
               top: 0,
               width: displayedViewportWidth,
               height: displayedPageHeight,
-              boxShadow: "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
+              boxShadow: isRing && !isSoloPage
+                ? "none"
+                : "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
+              zIndex: 1,
             }}
           >
-            <BindingSpine
-              bindingType={bindingType}
-              height={displayedPageHeight}
-              isOpen={!isSoloPage}
-              position={spinePosition}
-              bindingEdge={bindingEdge}
-            />
-
+            {/* Suppress wire/comb spine for ring binders — the ring mechanism
+                overlay is drawn separately below to avoid drawing a wire. */}
+            {!isRing && (
+              <BindingSpine
+                bindingType={bindingType}
+                height={displayedPageHeight}
+                isOpen={!isSoloPage}
+                position={spinePosition}
+                bindingEdge={bindingEdge}
+              />
+            )}
             {tabPositions && tabPositions.length > 0 && (
               <div
                 style={{
@@ -552,6 +582,27 @@ export default function FlipBook({
                 </div>
               </div>
             </div>
+
+            {/* Ring mechanism overlay — sits over the spine seam so the rings
+                appear to clamp over the page edges. Only visible in open spread. */}
+            {isRing && !isSoloPage && (
+              <div
+                style={{
+                  position: "absolute",
+                  left: displayedViewportWidth / 2 - (displayedViewportWidth * RING_STRIP_W) / 2,
+                  top: -displayedPageHeight * 0.02,
+                  width: displayedViewportWidth * RING_STRIP_W,
+                  height: displayedPageHeight * 1.04,
+                  pointerEvents: "none",
+                  zIndex: 30,
+                  backgroundImage: `url(${ringBinderOpen})`,
+                  backgroundSize: `${100 / RING_STRIP_W}% 100%`,
+                  backgroundPosition: `${(RING_STRIP_X / (1 - RING_STRIP_W)) * 100}% center`,
+                  backgroundRepeat: "no-repeat",
+                  filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.25))",
+                }}
+              />
+            )}
           </div>
         </div>
       </div>

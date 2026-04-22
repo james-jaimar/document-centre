@@ -344,16 +344,12 @@ export default function PreviewPanel({
     });
 
     // ── Physical PVC front cover ──
-    // Ring binders ALWAYS have a physical front sheet (clear PVC pocket),
-    // regardless of whether the customer uploaded cover artwork.
-    // Other bound types only get PVC when the option is selected.
-    const hasFrontCoverSection = fp[0]?.section?.section_type === "front_cover";
-    const isRingBinder = productType === "ring_binder";
+    // Only inject a PVC front sheet when the customer has explicitly chosen
+    // a PVC cover option. Ring binders without an uploaded cover should NOT
+    // get a fake PVC sheet built from the first body page — that produces
+    // the "body page appears as cover" bug.
     const isPvcOption = effects?.frontCover && ["clear_pvc", "frosted_pvc", "matte_pvc"].includes(effects.frontCover);
-    const isPvc =
-      isBound &&
-      ((isPvcOption && fp.length > 0) ||
-        (isRingBinder && fp.length > 0));
+    const isPvc = isBound && isPvcOption && fp.length > 0;
     if (isPvc && fp.length > 0) {
       const frontThumb = fp[0]?.thumbnailUrl ?? "";
       fp.unshift({ thumbnailUrl: frontThumb, pageIndex: 0, documentName: "PVC Cover", section: undefined, isColor: true });
@@ -490,9 +486,11 @@ export default function PreviewPanel({
     prevPageCount.current = totalPages;
   }, [totalPages, currentPage]);
 
-  // Ring binders always have a physical front sheet (pvc_cover_front is always injected)
+  // hasRealFrontCover is derived from real role data — true only when the
+  // first face is an actual front cover (uploaded artwork) or a PVC cover sheet.
   const isRingBinder = productType === "ring_binder";
-  const hasRealFrontCover = true; // always true now — ring binders always inject pvc_cover
+  const firstRole = computedPageRoles[0];
+  const hasRealFrontCover = firstRole === "front_cover" || firstRole === "pvc_cover_front";
   const isShowingFrontCover = isBound && hasRealFrontCover && currentPage === 0;
   const hasBackCoverCard = computedPageRoles.includes("back_cover_card");
   const isShowingBackCover = isBound && hasBackCoverCard && currentPage >= totalPages - 1;
