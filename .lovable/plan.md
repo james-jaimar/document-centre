@@ -1,114 +1,99 @@
 
-## Rework ring binder preview as a dedicated single-sheet binder viewer
+## Rework ring binders back onto the wire-bound flip-book model
 
-### What’s broken now
+### What needs to change
 
-The current ring binder implementation is fighting the generic wire-bound `FlipBook` model, which is why it looks wrong:
+The current ring binder preview is wrong for two separate reasons:
 
-- The **binder photo is being stretched from the page stage**, so the background gets squashed.
-- The preview still behaves like a **two-page spread**, but the ring binder reference behaves like a **single loose sheet mounted on the right side of an open binder**.
-- The generic bound-document logic assumes **spread navigation (`step=2`) and solo cover states**, which is why the **page numbering and page progression drift out of sync**.
-- The current ring overlay is just a clipped strip on top of a spread, instead of a layout where the page is actually **anchored to the binder’s right-hand sheet area**.
+1. `RingBinderFlipBook` always treats the first face as a cover, so when the customer only uploads **Body Pages**, page 1 gets incorrectly shown as a cover.
+2. The dedicated single-sheet ring binder viewer moved ring binders away from the same spread-based model as wire binding, which is why the inside view, page progression, and numbering are now out of sync.
 
-### New approach
+The correct model is simpler:
 
-Stop forcing ring binders through the normal spread-based `FlipBook` layout.
-
-Instead, build a **dedicated `RingBinderFlipBook`** that still uses the same `react-pageflip` animation engine, but with a binder-specific layout model:
-
-1. **Closed state for the cover**
-   - Render the closed binder photo at its **natural aspect ratio**.
-   - Place the cover sheet flat in the PVC pocket area.
-   - No mini spread, no centered flipbook stage.
-
-2. **Open state for body pages**
-   - Render the open binder photo at its **natural aspect ratio**.
-   - Keep the **left side as the binder interior**.
-   - Mount the page-flip stage only in the **right-hand printable sheet area**.
-   - Keep the **ring strip centered and fixed** so pages flip against it cleanly.
-
-3. **Single-sheet navigation**
-   - Ring binders should advance **one printable face at a time**, not two.
-   - Cover sheet = first state.
-   - Then each body page flips individually inside the open binder.
+- ring binders should behave like the **wire-bound flip book**
+- the only visual difference is a **wider centre gap** to accommodate the ring mechanism
+- a cover must appear **only if a Cover Sheet section was actually assigned**
 
 ### Implementation
 
-#### 1) Add a dedicated ring binder preview component
-Create a new component, e.g. `src/components/preview/RingBinderFlipBook.tsx`, that:
+#### 1) Stop using the dedicated single-sheet ring binder viewer
+Update `src/components/preview/DocumentPreview.tsx` so `ring_binder` goes back through the normal `FlipBook` path instead of `RingBinderFlipBook`.
 
-- uses `react-pageflip`
-- reuses existing page rendering/effects logic where possible
-- measures the binder viewport from the **asset aspect ratio**, not from spread width
-- defines binder-specific rectangles:
-  - closed pocket area
-  - open right-page area
-  - ring/spine strip
-- renders:
-  - **closed binder + cover sheet** for index 0
-  - **open binder + right-side flipping page** for the rest
+That restores the same spread-based `react-pageflip` behaviour as wire-bound products:
+- solo front state when a real cover exists
+- normal two-page inside spreads
+- normal page curling / page-corner behaviour
+- normal spread progression
 
-#### 2) Route ring binders away from the generic FlipBook
-Update `src/components/preview/DocumentPreview.tsx` so:
+`src/components/preview/RingBinderFlipBook.tsx` should then be removed so there is only one ring-binder preview path.
 
-- `ring_binder` renders `RingBinderFlipBook`
-- other bound products still render the existing `FlipBook`
+#### 2) Make `FlipBook` support a ring-binder spread layout
+Refactor `src/components/preview/FlipBook.tsx` so `bindingType === "ring"` becomes a **wire-bound-style spread with a wider centre hardware gap**, not a separate pagination model.
 
-This isolates ring binder behavior instead of continuing to overload the generic bound preview.
+Implementation details:
+- keep the existing fixed-dimension measurement stage and `react-pageflip` setup
+- render the binder background independently from the page stage so it keeps its natural aspect ratio and never gets squashed
+- add a ring-specific centre strip / gutter width
+- inset the visible page areas away from the centre so the left and right pages sit either side of the ring mechanism
+- do **not** render the normal `BindingSpine` image for ring binders
 
-#### 3) Remove the current ring-specific hacks from `FlipBook`
-Refactor `src/components/preview/FlipBook.tsx` to remove the current `bindingType === "ring"` backdrop/stretch logic.
-
-That code is the source of the squashed background and bad geometry. `FlipBook` should go back to being the clean spread-based renderer for wire/comb/saddle/perfect only.
-
-#### 4) Fix preview navigation and page text for ring binders
-Update `src/components/order/PreviewPanel.tsx` so ring binders use a **single-face progression model**:
-
-- navigation step = `1` for ring binders
-- page info text should read from `faceLabels` / `displayPageNumbers`
-- cover sheet should display as **Cover Sheet**
-- body pages should display as `Page N`
-- no spread-style label formatting (`Left – Right`) for ring binders
-
-#### 5) Fix fullscreen/lightbox navigation
-Update `src/components/order/PreviewLightbox.tsx` so ring binders:
-
-- also move by `1`, not `2`
-- show the correct bottom counter/label for single-sheet navigation
-- stay in sync with the main preview
-
-#### 6) Keep the existing ring-binder section model
-Preserve the product logic already introduced:
-
-- optional **Cover Sheet**
-- no wraparound front/back cover model
-- body pages remain separate from the slip-in cover sheet
-
-If needed, only make small adjustments so the preview sequence remains:
+This should preserve all the normal flip-book behaviour while visually creating:
 ```text
-Closed binder with Cover Sheet
-→ Open binder with body page 1
-→ Open binder with body page 2
-→ Open binder with body page 3
-...
+[left page]   wider ring gap / hardware strip   [right page]
 ```
+
+#### 3) Only show a cover when a real Cover Sheet exists
+Fix cover detection so ring binders no longer invent a cover from the first body page.
+
+The rule should be:
+- if the first real face is `front_cover` / `pvc_cover_front`, show the cover state
+- if the first real face is `body`, start directly on the open inside spread
+
+This preserves the product model already agreed:
+- **Cover Sheet** is optional
+- **Body Pages** alone means no front slip-in sheet
+- the binder itself is not treated as a printed cover file
+
+#### 4) Revert ring binder navigation to the normal bound-document model
+Update `src/components/order/PreviewPanel.tsx` so ring binders use the same spread progression as wire binding again:
+
+- `step = 2`
+- page text uses the normal bound spread logic
+- left/right visible-face logic is shared with other bound products
+- no special single-face “Cover Sheet / Page N” progression for ring binders
+
+This will bring the numbering back into sync with what the flipbook is actually showing.
+
+#### 5) Fix fullscreen/lightbox to match the same spread model
+Update `src/components/order/PreviewLightbox.tsx` so ring binders also move by `2` again and stay aligned with the main preview.
+
+That prevents the fullscreen preview from drifting away from the in-page preview state.
+
+#### 6) Keep snapshot parity for placed-order previews
+Review `src/lib/orders/buildPreviewSnapshot.ts` to make sure it still mirrors the same rule:
+
+- do not inject a cover state unless a real `front_cover` section exists
+- ring binders without a cover sheet should still begin with body content
+
+If the live preview logic changes, snapshot generation should stay consistent so order-detail previews match.
 
 ### Files to change
 
 | File | Change |
 |---|---|
-| `src/components/preview/DocumentPreview.tsx` | Route `ring_binder` to a dedicated component |
-| `src/components/preview/RingBinderFlipBook.tsx` | New dedicated binder-specific animated preview |
-| `src/components/preview/FlipBook.tsx` | Remove the current ring-specific backdrop/stretch implementation |
-| `src/components/order/PreviewPanel.tsx` | Fix step, page info, and single-sheet ring binder behavior |
-| `src/components/order/PreviewLightbox.tsx` | Fix fullscreen navigation/counting for ring binders |
+| `src/components/preview/DocumentPreview.tsx` | Route `ring_binder` back through `FlipBook` |
+| `src/components/preview/FlipBook.tsx` | Add ring-specific wider centre gap / binder backdrop layout while keeping spread-based `react-pageflip` |
+| `src/components/order/PreviewPanel.tsx` | Revert ring binders to bound spread navigation and page text |
+| `src/components/order/PreviewLightbox.tsx` | Revert ring binders to spread-based stepping |
+| `src/lib/orders/buildPreviewSnapshot.ts` | Parity check / small adjustment so persisted previews follow the same no-implicit-cover rule |
+| `src/components/preview/RingBinderFlipBook.tsx` | Remove (superseded by the unified `FlipBook` approach) |
 
 ### Result
 
-Ring binders will preview correctly as:
+After this rework, ring binders will behave like the wire-bound preview again, but with a larger centre gap for the O-ring mechanism:
 
-- a **flat closed front cover** in the PVC pocket
-- then an **open binder** with the page flipping on the **right-hand side**
-- with the **original binder image kept in proportion**
-- the **ring gap aligned properly**
-- and **page numbering/navigation working normally again**
+- **No Cover Sheet uploaded** → no fake cover; preview starts on the inside spread
+- **Cover Sheet uploaded** → cover shows correctly first, then flips into inside spreads
+- inside pages align properly
+- the binder background keeps its correct proportions
+- page progression and numbering match the visible spreads again
