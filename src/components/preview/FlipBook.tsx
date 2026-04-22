@@ -29,6 +29,17 @@ const CONTENT_LESS_ROLES = new Set([
   "tab_back",
 ]);
 
+/* ── Ring binder artwork geometry (normalised 0–1) ────────────── */
+const RING_CLOSED_ASPECT = 793 / 833;   // width / height
+const RING_OPEN_ASPECT   = 1781 / 840;
+// Pocket rectangle on the closed front (for cover overlay)
+const RING_POCKET = { x: 0.05, y: 0.025, w: 0.90, h: 0.95 };
+// Content area within the open binder
+const RING_CONTENT = { x: 0.03, y: 0.03 };  // inset from each edge
+// Ring mechanism strip (normalised x-position and width)
+const RING_STRIP_X = 0.455;
+const RING_STRIP_W = 0.09;
+
 /**
  * Each page must be a forwardRef component for react-pageflip.
  */
@@ -102,22 +113,17 @@ const FlipPage = forwardRef<
 });
 FlipPage.displayName = "FlipPage";
 
-/**
- * Persistent tab overlay — renders tab protrusions visible from every page.
- * Tabs ahead of the current spread stick out from the right edge.
- * Tabs behind the current spread stick out from the left edge.
- */
+/* ── Tab helpers ─────────────────────────────────────────────── */
+
 /** Map color slugs to CSS colors. Cycled hex values pass through unchanged. */
 function resolveTabColor(colorSlug: string, tabIndex: number): string {
   if (!colorSlug || colorSlug === "white" || colorSlug === "") {
-    return "#e5e7eb"; // light gray for white tabs
+    return "#e5e7eb";
   }
-  // Already a hex value (pre-cycled upstream) — honour it directly
   if (colorSlug.startsWith("#")) return colorSlug;
   if (colorSlug === "multi" || colorSlug === "multicolor") {
     return TAB_COLORS[tabIndex % TAB_COLORS.length];
   }
-  // Named colours — must match PageEffects TAB_BODY_COLORS for visual parity
   const COLOR_MAP: Record<string, string> = {
     blue: "#3b82f6", red: "#ef4444", orange: "#f97316", yellow: "#eab308", green: "#22c55e",
     pink: "#ec4899", purple: "#8b5cf6", black: "#1f2937",
@@ -154,7 +160,6 @@ function TabOverlay({
   const banks = Math.ceil(tabTotal / MAX_PER_BANK);
   const bankSize = Math.ceil(tabTotal / banks);
 
-  // Tab protrusion dimensions
   const tabWidth = 22;
   const tabHeight = Math.max(30, Math.min(80, (pageHeight - 10) / bankSize));
   const spreadWidth = isSoloPage ? pageWidth : pageWidth * 2;
@@ -170,15 +175,10 @@ function TabOverlay({
         const isBehind = tab.pageIndex <= currentPage;
         const isCurrent = !isAhead && !isBehind;
 
-        // Banking: which bank and position within bank
         const bankIndex = Math.floor(tab.tabIndex / bankSize);
         const indexInBank = tab.tabIndex % bankSize;
-
-        // Vertical position: evenly distribute within the page height
         const segmentHeight = pageHeight / bankSize;
         const topOffset = segmentHeight * indexInBank + (segmentHeight - tabHeight) / 2;
-
-        // Horizontal offset for second+ banks (stack inward)
         const bankOffset = bankIndex * (tabWidth + 2);
 
         const tabColor = resolveTabColor(tab.color, tab.tabIndex);
@@ -197,29 +197,16 @@ function TabOverlay({
                 zIndex: 10 + tab.tabIndex,
               }}
             >
-              <svg
-                width={tabWidth}
-                height={tabHeight}
-                viewBox={`0 0 ${tabWidth} ${tabHeight}`}
-                style={{ filter: "drop-shadow(2px 1px 3px rgba(0,0,0,0.2))" }}
-              >
+              <svg width={tabWidth} height={tabHeight} viewBox={`0 0 ${tabWidth} ${tabHeight}`}
+                style={{ filter: "drop-shadow(2px 1px 3px rgba(0,0,0,0.2))" }}>
                 <path
                   d={`M0,0 C${tabWidth * 0.3},${tabHeight * 0.04} ${tabWidth * 0.7},${tabHeight * 0.06} ${tabWidth},${tabHeight * 0.1} L${tabWidth},${tabHeight * 0.9} C${tabWidth * 0.7},${tabHeight * 0.94} ${tabWidth * 0.3},${tabHeight * 0.96} 0,${tabHeight} Z`}
-                  fill={tabColor}
-                  stroke="rgba(0,0,0,0.15)"
-                  strokeWidth="0.5"
+                  fill={tabColor} stroke="rgba(0,0,0,0.15)" strokeWidth="0.5"
                 />
-                <text
-                  x={tabWidth / 2 + 1}
-                  y={tabHeight / 2}
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  fill={textColor}
-                  fontSize={Math.max(6, Math.min(8, tabHeight * 0.12))}
-                  fontWeight="700"
+                <text x={tabWidth / 2 + 1} y={tabHeight / 2} textAnchor="middle" dominantBaseline="central"
+                  fill={textColor} fontSize={Math.max(6, Math.min(8, tabHeight * 0.12))} fontWeight="700"
                   style={{ writingMode: "tb" } as any}
-                  transform={`rotate(180, ${tabWidth / 2 + 1}, ${tabHeight / 2})`}
-                >
+                  transform={`rotate(180, ${tabWidth / 2 + 1}, ${tabHeight / 2})`}>
                   {tab.label.length > 8 ? tab.label.slice(0, 7) + "…" : tab.label}
                 </text>
               </svg>
@@ -240,17 +227,11 @@ function TabOverlay({
                 zIndex: 10 + tab.tabIndex,
               }}
             >
-              <svg
-                width={tabWidth}
-                height={tabHeight}
-                viewBox={`0 0 ${tabWidth} ${tabHeight}`}
-                style={{ filter: "drop-shadow(-2px 1px 3px rgba(0,0,0,0.15))", transform: "scaleX(-1)" }}
-              >
+              <svg width={tabWidth} height={tabHeight} viewBox={`0 0 ${tabWidth} ${tabHeight}`}
+                style={{ filter: "drop-shadow(-2px 1px 3px rgba(0,0,0,0.15))", transform: "scaleX(-1)" }}>
                 <path
                   d={`M0,0 C${tabWidth * 0.3},${tabHeight * 0.04} ${tabWidth * 0.7},${tabHeight * 0.06} ${tabWidth},${tabHeight * 0.1} L${tabWidth},${tabHeight * 0.9} C${tabWidth * 0.7},${tabHeight * 0.94} ${tabWidth * 0.3},${tabHeight * 0.96} 0,${tabHeight} Z`}
-                  fill={tabColor}
-                  stroke="rgba(0,0,0,0.15)"
-                  strokeWidth="0.5"
+                  fill={tabColor} stroke="rgba(0,0,0,0.15)" strokeWidth="0.5"
                 />
               </svg>
             </div>
@@ -262,6 +243,8 @@ function TabOverlay({
     </div>
   );
 }
+
+/* ── Main FlipBook component ─────────────────────────────────── */
 
 export default function FlipBook({
   urls,
@@ -287,58 +270,30 @@ export default function FlipBook({
   const flipBookRef = useRef<any>(null);
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
 
-  // ── STRUCTURAL key: only remount when page structure changes ──
-  // Use raw storage paths (not signed URLs) so re-signing doesn't cause remounts
-  const structuralKey = useMemo(
-    () => JSON.stringify({
-      n: urls.length,
-      p: rawPaths,
-      r: pageRoles,
-      s: sectionTypes,
-      l: pageLabels,
-      c: pageColors,
-    }),
-    [urls.length, rawPaths, pageRoles, sectionTypes, pageLabels, pageColors]
-  );
-
-  // ── FIXED internal resolution — never changes ──
-  const ratio = pageAspectRatio ?? 0.707;
-  const basePageWidth = BASE_PAGE_WIDTH;
-  const basePageHeight = Math.round(basePageWidth / ratio);
-  const baseSpreadWidth = basePageWidth * 2;
-
-  // Ring binders get a wider centre gap for the O-ring hardware
   const isRing = bindingType === "ring";
-  const ringGapPx = isRing ? 40 : 0; // extra px at display scale
-  // Ring binder padding — space for the binder edge to show around pages
-  const ringPadding = isRing ? 16 : 0;
 
   // Conditional cover: ring binders only show a cover if a real cover face exists
   const hasRealFrontCover = isRing
     ? (pageRoles?.[0] === "front_cover" || pageRoles?.[0] === "pvc_cover_front")
     : true;
 
-  // Fixed pixel inset — constant because base width is constant
+  // ── STRUCTURAL key ──
+  const structuralKey = useMemo(
+    () => JSON.stringify({
+      n: urls.length, p: rawPaths, r: pageRoles, s: sectionTypes, l: pageLabels, c: pageColors,
+    }),
+    [urls.length, rawPaths, pageRoles, sectionTypes, pageLabels, pageColors]
+  );
+
+  // ── Fixed internal resolution ──
+  const ratio = pageAspectRatio ?? 0.707;
+  const basePageWidth = BASE_PAGE_WIDTH;
+  const basePageHeight = Math.round(basePageWidth / ratio);
+  const baseSpreadWidth = basePageWidth * 2;
   const bleedInsetPx = Math.round(basePageWidth * 0.03);
 
-  // ── CSS scale factor to fit into available container ──
-  const availableWidth = width - 80; // extra gutter for tab protrusions
-  const availableHeight = height - 60;
-  const scaleX = availableWidth / (baseSpreadWidth + ringGapPx + ringPadding * 2);
-  const scaleY = availableHeight / (basePageHeight + ringPadding * 2);
-  const scaleFactor = Math.min(scaleX, scaleY, 1); // never upscale beyond 1:1
-
-  // The displayed (scaled) dimensions
-  const displayedSpreadWidth = baseSpreadWidth * scaleFactor;
-  const displayedPageWidth = basePageWidth * scaleFactor;
-  const displayedPageHeight = basePageHeight * scaleFactor;
-  const displayedRingGap = ringGapPx * scaleFactor;
-  const displayedRingPadding = ringPadding * scaleFactor;
-
   const handleFlip = useCallback(
-    (e: any) => {
-      onPageChange(e.data);
-    },
+    (e: any) => { onPageChange(e.data); },
     [onPageChange]
   );
 
@@ -363,23 +318,240 @@ export default function FlipBook({
     );
   }
 
+  /* ══════════════════════════════════════════════════════════════
+   * RING BINDER — artwork-first rendering with mapped coordinates
+   * ══════════════════════════════════════════════════════════════ */
+  if (isRing) {
+    const availW = width - 80;   // gutter for tab protrusions
+    const availH = height - 20;
+    const showClosedCover = hasRealFrontCover && currentPage === 0;
+
+    if (showClosedCover) {
+      /* ── CLOSED BINDER (static cover in pocket) ── */
+      const artH = Math.min(availH, availW / RING_CLOSED_ASPECT);
+      const artW = artH * RING_CLOSED_ASPECT;
+      const pocketX = artW * RING_POCKET.x;
+      const pocketY = artH * RING_POCKET.y;
+      const pocketW = artW * RING_POCKET.w;
+      const pocketH = artH * RING_POCKET.h;
+
+      return (
+        <div className="flex items-center justify-center" style={{ width, height }}>
+          <div style={{ width: artW, height: artH, position: "relative" }}>
+            <img
+              src={ringBinderClosed}
+              alt="Ring binder front"
+              style={{ width: "100%", height: "100%", objectFit: "fill", borderRadius: 6,
+                boxShadow: "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)" }}
+            />
+            {/* Cover page in the clear pocket */}
+            {urls[0] && (
+              <div style={{
+                position: "absolute", left: pocketX, top: pocketY,
+                width: pocketW, height: pocketH, overflow: "hidden",
+                borderRadius: 3,
+              }}>
+                <PageEffects
+                  effects={resolvedEffects}
+                  pageIndex={0}
+                  totalPages={urls.length}
+                  pageRole={pageRoles?.[0]}
+                  allowBleed={bleedFlags?.[0] ?? false}
+                  bleedInsetPx={Math.round(pocketW * 0.03)}
+                  label={pageLabels?.[0]}
+                  color={pageColors?.[0]}
+                >
+                  <img src={urls[0]} alt="Front cover" className="w-full h-full object-contain" />
+                </PageEffects>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    /* ── OPEN BINDER (flip-book spread + artwork background) ── */
+    const artH = Math.min(availH, availW / RING_OPEN_ASPECT);
+    const artW = artH * RING_OPEN_ASPECT;
+
+    // Content area: the full spread of both pages + ring gap
+    const contentX = artW * RING_CONTENT.x;
+    const contentY = artH * RING_CONTENT.y;
+    const contentW = artW * (1 - 2 * RING_CONTENT.x);
+    const contentH = artH * (1 - 2 * RING_CONTENT.y);
+
+    // Each flipbook page = half of content area
+    const flipPageW = Math.round(contentW / 2);
+    const flipPageH = Math.round(contentH);
+    const flipSpreadW = flipPageW * 2;
+
+    // Ring mechanism strip overlay (extracted from same artwork image)
+    const stripDisplayX = artW * RING_STRIP_X;
+    const stripDisplayW = artW * RING_STRIP_W;
+
+    // Scale factor: the HTMLFlipBook renders at its fixed internal size,
+    // but here we compute page dimensions directly from the artwork so scale = 1.
+    // No CSS transform scaling needed.
+
+    // Solo page detection for the open state
+    const lastIdx = urls.length - 1;
+    const lastRole = pageRoles?.[lastIdx];
+    const isShowingBackCover = lastRole === "back_cover_card" && currentPage >= lastIdx;
+    const isShowingLastSolo = hasRealFrontCover && lastRole !== "back_cover_card" && currentPage >= lastIdx;
+    const isSoloPage = isShowingBackCover || isShowingLastSolo;
+
+    // Tab overlay gutter
+    const tabGutter = (tabPositions?.length ?? 0) > 0 ? 24 : 0;
+
+    return (
+      <div className="flex items-center justify-center" style={{ width, height }}>
+        <div style={{ width: artW + tabGutter * 2, height: artH, position: "relative" }}>
+          {/* Artwork background */}
+          <img
+            src={ringBinderOpen}
+            alt="Ring binder open"
+            style={{
+              position: "absolute", left: tabGutter, top: 0,
+              width: artW, height: artH, objectFit: "fill",
+              borderRadius: 6, zIndex: 0,
+              boxShadow: "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
+            }}
+          />
+
+          {/* HTMLFlipBook spread positioned within content area */}
+          <div style={{
+            position: "absolute",
+            left: tabGutter + contentX,
+            top: contentY,
+            width: flipSpreadW,
+            height: flipPageH,
+            zIndex: 1,
+            overflow: isSoloPage ? "hidden" : "visible",
+            // For solo pages (back cover / last page), clip to show only one side
+            ...(isSoloPage
+              ? { clipPath: isShowingBackCover
+                  ? `inset(0 ${flipPageW}px 0 0)`
+                  : `inset(0 0 0 ${flipPageW}px)` }
+              : {}),
+            // If solo, shift the spread so the visible page is centered
+            ...(isSoloPage && !isShowingBackCover
+              ? { left: tabGutter + contentX - flipPageW }
+              : {}),
+          }}>
+            {/* @ts-ignore — react-pageflip types are imprecise */}
+            <HTMLFlipBook
+              key={structuralKey}
+              ref={flipBookRef}
+              width={flipPageW}
+              height={flipPageH}
+              size="fixed"
+              minWidth={flipPageW}
+              maxWidth={flipPageW}
+              minHeight={flipPageH}
+              maxHeight={flipPageH}
+              showCover={hasRealFrontCover}
+              flippingTime={600}
+              drawShadow={true}
+              maxShadowOpacity={0.5}
+              mobileScrollSupport={false}
+              onFlip={handleFlip}
+              startPage={hasRealFrontCover ? 1 : 0}
+              usePortrait={false}
+              startZIndex={0}
+              autoSize={false}
+              clickEventForward={false}
+              useMouseEvents={true}
+              swipeDistance={30}
+              showPageCorners={true}
+              disableFlipByClick={false}
+              style={{}}
+              className=""
+            >
+              {urls.map((url, i) => (
+                <FlipPage
+                  key={i}
+                  url={url}
+                  pageNum={i + 1}
+                  isColor={colorFlags?.[i] ?? true}
+                  effects={resolvedEffects}
+                  pageIndex={i}
+                  totalPages={urls.length}
+                  sectionType={sectionTypes?.[i]}
+                  pageRole={pageRoles?.[i]}
+                  allowBleed={bleedFlags?.[i] ?? false}
+                  bleedInsetPx={Math.round(flipPageW * 0.03)}
+                  label={pageLabels?.[i]}
+                  color={pageColors?.[i]}
+                />
+              ))}
+            </HTMLFlipBook>
+          </div>
+
+          {/* Ring mechanism strip overlay — sits on top of pages */}
+          <div style={{
+            position: "absolute",
+            left: tabGutter + stripDisplayX,
+            top: 0,
+            width: stripDisplayW,
+            height: artH,
+            backgroundImage: `url(${ringBinderOpen})`,
+            backgroundSize: `${artW}px ${artH}px`,
+            backgroundPosition: `-${stripDisplayX}px 0`,
+            zIndex: 5,
+            pointerEvents: "none",
+          }} />
+
+          {/* Tab overlay */}
+          {tabPositions && tabPositions.length > 0 && (
+            <div style={{
+              position: "absolute",
+              top: contentY,
+              left: tabGutter + contentX,
+              width: flipSpreadW,
+              height: flipPageH,
+              pointerEvents: "none",
+              zIndex: 20,
+            }}>
+              <TabOverlay
+                tabPositions={tabPositions}
+                currentPage={currentPage}
+                pageWidth={flipPageW}
+                pageHeight={flipPageH}
+                isSoloPage={isSoloPage}
+                isShowingFrontCover={false}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+   * STANDARD BOUND DOCUMENTS (wire, comb, saddle, perfect)
+   * ══════════════════════════════════════════════════════════════ */
+
+  // ── CSS scale factor to fit into available container ──
+  const availableWidth = width - 80;
+  const availableHeight = height - 60;
+  const scaleX = availableWidth / baseSpreadWidth;
+  const scaleY = availableHeight / basePageHeight;
+  const scaleFactor = Math.min(scaleX, scaleY, 1);
+
+  const displayedSpreadWidth = baseSpreadWidth * scaleFactor;
+  const displayedPageWidth = basePageWidth * scaleFactor;
+  const displayedPageHeight = basePageHeight * scaleFactor;
+
   // ── Solo-page detection ──
   const lastIdx = urls.length - 1;
   const lastRole = pageRoles?.[lastIdx];
-
   const isShowingFrontCover = hasRealFrontCover && currentPage === 0;
   const isShowingBackCover = lastRole === "back_cover_card" && currentPage >= lastIdx;
   const isShowingLastSolo = hasRealFrontCover && lastRole !== "back_cover_card" && currentPage >= lastIdx;
-  // Without a real front cover (ring binder body-only), no solo states except back cover
   const isSoloPage = isShowingFrontCover || isShowingBackCover || (hasRealFrontCover && isShowingLastSolo);
 
-  // Viewport width at display scale (include ring gap for ring binders, plus ring padding)
-  const displayedViewportWidth = isSoloPage
-    ? displayedPageWidth + (isRing ? displayedRingPadding * 2 : 0)
-    : displayedSpreadWidth + displayedRingGap + (isRing ? displayedRingPadding * 2 : 0);
+  const displayedViewportWidth = isSoloPage ? displayedPageWidth : displayedSpreadWidth;
   const spinePosition = isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center";
-
-  // Tab overlay gutter (extra space for tabs to protrude)
   const tabGutter = (tabPositions?.length ?? 0) > 0 ? 30 * scaleFactor : 0;
 
   // For top-edge binding, rotate the entire container 90° clockwise
@@ -391,11 +563,7 @@ export default function FlipBook({
   return (
     <div
       className="flex flex-col items-center justify-center gap-2"
-      style={{
-        width,
-        height,
-        overflow: "visible",
-      }}
+      style={{ width, height, overflow: "visible" }}
     >
       <div
         style={{
@@ -409,53 +577,25 @@ export default function FlipBook({
           gap: 8,
         }}
       >
-      {/*
-        VIEWER WRAPPER: visible viewport, animates width for solo/spread.
-        Uses DISPLAYED (scaled) dimensions — purely cosmetic.
-        Extra padding for tab protrusions.
-      */}
-      <div
-        style={{
-          width: displayedViewportWidth + tabGutter * 2,
-          height: displayedPageHeight,
-          position: "relative",
-          overflow: "visible",
-          transition: "width 0.4s ease-in-out",
-        }}
-      >
-        {/* Inner container for the book + spine, centered with tab gutters */}
         <div
           style={{
-            position: "absolute",
-            left: tabGutter,
-            top: 0,
-            width: displayedViewportWidth,
+            width: displayedViewportWidth + tabGutter * 2,
             height: displayedPageHeight,
-            boxShadow: isRing ? "none" : "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
+            position: "relative",
+            overflow: "visible",
+            transition: "width 0.4s ease-in-out",
           }}
         >
-
-          {/* Ring binder artwork background */}
-          {isRing && (
-            <img
-              src={isSoloPage && isShowingFrontCover ? ringBinderClosed : ringBinderOpen}
-              alt=""
-              style={{
-                position: "absolute",
-                inset: 0,
-                width: "100%",
-                height: "100%",
-                objectFit: "fill",
-                zIndex: 0,
-                pointerEvents: "none",
-                borderRadius: 6,
-                boxShadow: "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
-              }}
-            />
-          )}
-
-          {/* Binding spine — skip for ring binders */}
-          {!isRing && (
+          <div
+            style={{
+              position: "absolute",
+              left: tabGutter,
+              top: 0,
+              width: displayedViewportWidth,
+              height: displayedPageHeight,
+              boxShadow: "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
+            }}
+          >
             <BindingSpine
               bindingType={bindingType}
               height={displayedPageHeight}
@@ -463,123 +603,114 @@ export default function FlipBook({
               position={spinePosition}
               bindingEdge={bindingEdge}
             />
-          )}
 
-          {/* Tab overlay — persistent, visible from every page */}
-          {tabPositions && tabPositions.length > 0 && (
+            {tabPositions && tabPositions.length > 0 && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: isSoloPage ? displayedPageWidth : displayedSpreadWidth,
+                  height: displayedPageHeight,
+                  pointerEvents: "none",
+                  zIndex: 20,
+                  transform: `scale(${scaleFactor})`,
+                  transformOrigin: "top left",
+                }}
+              >
+                <TabOverlay
+                  tabPositions={tabPositions}
+                  currentPage={currentPage}
+                  pageWidth={basePageWidth}
+                  pageHeight={basePageHeight}
+                  isSoloPage={isSoloPage}
+                  isShowingFrontCover={isShowingFrontCover}
+                />
+              </div>
+            )}
+
             <div
               style={{
-                position: "absolute",
-                top: isRing ? displayedRingPadding : 0,
-                left: isRing ? displayedRingPadding : 0,
-                width: isSoloPage ? displayedPageWidth : displayedSpreadWidth,
+                width: displayedSpreadWidth,
                 height: displayedPageHeight,
-                pointerEvents: "none",
-                zIndex: 20,
-                transform: `scale(${scaleFactor})`,
-                transformOrigin: "top left",
-              }}
-            >
-              <TabOverlay
-                tabPositions={tabPositions}
-                currentPage={currentPage}
-                pageWidth={basePageWidth}
-                pageHeight={basePageHeight}
-                isSoloPage={isSoloPage}
-                isShowingFrontCover={isShowingFrontCover}
-              />
-            </div>
-          )}
-
-          {/*
-            PRESENTATION LAYER: offset/clip at display scale for solo pages.
-            For ring binders, inset from edges so artwork shows around pages.
-          */}
-          <div
-            style={{
-              width: displayedSpreadWidth,
-              height: displayedPageHeight - (isRing ? displayedRingPadding * 2 : 0),
-              position: "absolute",
-              top: isRing ? displayedRingPadding : 0,
-              left: isShowingFrontCover
-                ? -displayedPageWidth + (isRing ? displayedRingPadding : 0)
-                : (isRing && !isSoloPage ? displayedRingPadding + displayedRingGap / 2 : 0),
-              transition: "left 0.4s ease-in-out",
-              ...(isShowingFrontCover
-                ? { clipPath: `inset(0 0 0 ${displayedPageWidth}px)` }
-                : (isShowingBackCover || isShowingLastSolo)
-                  ? { clipPath: `inset(0 ${displayedPageWidth}px 0 0)` }
-                  : {}),
-            }}
-          >
-            <div
-              style={{
-                transform: `scale(${scaleFactor})`,
-                transformOrigin: "top left",
-                width: baseSpreadWidth,
-                height: basePageHeight,
+                position: "absolute",
+                top: 0,
+                left: isShowingFrontCover ? -displayedPageWidth : 0,
+                transition: "left 0.4s ease-in-out",
+                ...(isShowingFrontCover
+                  ? { clipPath: `inset(0 0 0 ${displayedPageWidth}px)` }
+                  : (isShowingBackCover || isShowingLastSolo)
+                    ? { clipPath: `inset(0 ${displayedPageWidth}px 0 0)` }
+                    : {}),
               }}
             >
               <div
                 style={{
+                  transform: `scale(${scaleFactor})`,
+                  transformOrigin: "top left",
                   width: baseSpreadWidth,
                   height: basePageHeight,
-                  position: "relative",
                 }}
               >
-                {/* @ts-ignore — react-pageflip types are imprecise */}
-                <HTMLFlipBook
-                  key={structuralKey}
-                  ref={flipBookRef}
-                  width={basePageWidth}
-                  height={basePageHeight}
-                  size="fixed"
-                  minWidth={basePageWidth}
-                  maxWidth={basePageWidth}
-                  minHeight={basePageHeight}
-                  maxHeight={basePageHeight}
-                  showCover={hasRealFrontCover}
-                  flippingTime={600}
-                  drawShadow={true}
-                  maxShadowOpacity={0.5}
-                  mobileScrollSupport={false}
-                  onFlip={handleFlip}
-                  startPage={0}
-                  usePortrait={false}
-                  startZIndex={0}
-                  autoSize={false}
-                  clickEventForward={false}
-                  useMouseEvents={true}
-                  swipeDistance={30}
-                  showPageCorners={true}
-                  disableFlipByClick={false}
-                  style={{}}
-                  className=""
+                <div
+                  style={{
+                    width: baseSpreadWidth,
+                    height: basePageHeight,
+                    position: "relative",
+                  }}
                 >
-                  {urls.map((url, i) => (
-                    <FlipPage
-                      key={i}
-                      url={url}
-                      pageNum={i + 1}
-                      isColor={colorFlags?.[i] ?? true}
-                      effects={resolvedEffects}
-                      pageIndex={i}
-                      totalPages={urls.length}
-                      sectionType={sectionTypes?.[i]}
-                      pageRole={pageRoles?.[i]}
-                      allowBleed={bleedFlags?.[i] ?? false}
-                      bleedInsetPx={bleedInsetPx}
-                      label={pageLabels?.[i]}
-                      color={pageColors?.[i]}
-                    />
-                  ))}
-                </HTMLFlipBook>
+                  {/* @ts-ignore — react-pageflip types are imprecise */}
+                  <HTMLFlipBook
+                    key={structuralKey}
+                    ref={flipBookRef}
+                    width={basePageWidth}
+                    height={basePageHeight}
+                    size="fixed"
+                    minWidth={basePageWidth}
+                    maxWidth={basePageWidth}
+                    minHeight={basePageHeight}
+                    maxHeight={basePageHeight}
+                    showCover={hasRealFrontCover}
+                    flippingTime={600}
+                    drawShadow={true}
+                    maxShadowOpacity={0.5}
+                    mobileScrollSupport={false}
+                    onFlip={handleFlip}
+                    startPage={0}
+                    usePortrait={false}
+                    startZIndex={0}
+                    autoSize={false}
+                    clickEventForward={false}
+                    useMouseEvents={true}
+                    swipeDistance={30}
+                    showPageCorners={true}
+                    disableFlipByClick={false}
+                    style={{}}
+                    className=""
+                  >
+                    {urls.map((url, i) => (
+                      <FlipPage
+                        key={i}
+                        url={url}
+                        pageNum={i + 1}
+                        isColor={colorFlags?.[i] ?? true}
+                        effects={resolvedEffects}
+                        pageIndex={i}
+                        totalPages={urls.length}
+                        sectionType={sectionTypes?.[i]}
+                        pageRole={pageRoles?.[i]}
+                        allowBleed={bleedFlags?.[i] ?? false}
+                        bleedInsetPx={bleedInsetPx}
+                        label={pageLabels?.[i]}
+                        color={pageColors?.[i]}
+                      />
+                    ))}
+                  </HTMLFlipBook>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-
       </div>
     </div>
   );
