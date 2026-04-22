@@ -305,13 +305,17 @@ export default function FlipBook({
   const basePageHeight = Math.round(basePageWidth / ratio);
   const baseSpreadWidth = basePageWidth * 2;
 
+  // Ring binders get a wider centre gap for the O-ring hardware
+  const isRing = bindingType === "ring";
+  const ringGapPx = isRing ? 40 : 0; // extra px at display scale
+
   // Fixed pixel inset — constant because base width is constant
   const bleedInsetPx = Math.round(basePageWidth * 0.03);
 
   // ── CSS scale factor to fit into available container ──
   const availableWidth = width - 80; // extra gutter for tab protrusions
   const availableHeight = height - 60;
-  const scaleX = availableWidth / baseSpreadWidth;
+  const scaleX = availableWidth / (baseSpreadWidth + ringGapPx);
   const scaleY = availableHeight / basePageHeight;
   const scaleFactor = Math.min(scaleX, scaleY, 1); // never upscale beyond 1:1
 
@@ -319,6 +323,7 @@ export default function FlipBook({
   const displayedSpreadWidth = baseSpreadWidth * scaleFactor;
   const displayedPageWidth = basePageWidth * scaleFactor;
   const displayedPageHeight = basePageHeight * scaleFactor;
+  const displayedRingGap = ringGapPx * scaleFactor;
 
   const handleFlip = useCallback(
     (e: any) => {
