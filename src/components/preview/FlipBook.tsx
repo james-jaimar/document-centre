@@ -322,7 +322,7 @@ export default function FlipBook({
   /* ══════════════════════════════════════════════════════════════
    * RING BINDER — closed cover state (static artwork overlay)
    * ══════════════════════════════════════════════════════════════ */
-  if (isRing && currentPage === 0) {
+  if (isRing && hasRealFrontCover && currentPage === 0) {
     const availW = width - 80;
     const availH = height - 20;
     const artH = Math.min(availH, availW / RING_CLOSED_ASPECT);
