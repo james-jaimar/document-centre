@@ -5,7 +5,6 @@ import { getBindingType } from "./previewTypes";
 import FlipBook from "./FlipBook";
 import FoldPreview from "./FoldPreview";
 import LooseSheetsPreview from "./LooseSheetsPreview";
-import RingBinderPreview from "./RingBinderPreview";
 import { Loader2 } from "lucide-react";
 
 import type { PreviewEffects, TabPosition } from "./previewTypes";
@@ -33,7 +32,7 @@ export interface DocumentPreviewProps {
 }
 
 const BOUND_TYPES = new Set([
-  "wire_bound", "comb_bound", "saddle_stitched", "perfect_bound",
+  "wire_bound", "comb_bound", "saddle_stitched", "perfect_bound", "ring_binder",
 ]);
 const FOLD_TYPES = new Set(["bi_fold", "tri_fold", "z_fold", "gate_fold"]);
 
@@ -156,10 +155,6 @@ export default function DocumentPreview({
     pageColors,
     tabPositions,
   };
-
-  if (productType === "ring_binder") {
-    return <RingBinderPreview {...commonProps} />;
-  }
 
   if (BOUND_TYPES.has(productType)) {
     return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} displayPageNumbers={displayPageNumbers} faceLabels={faceLabels} bindingEdge={bindingEdge} rawPaths={thumbnailPaths} />;
