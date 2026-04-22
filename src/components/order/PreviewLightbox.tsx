@@ -15,7 +15,7 @@ interface PreviewLightboxProps extends Partial<ExtraProps> {
 }
 
 const BOUND_TYPES = new Set([
-  "wire_bound", "comb_bound", "saddle_stitched", "perfect_bound", "ring_binder",
+  "wire_bound", "comb_bound", "saddle_stitched", "perfect_bound",
 ]);
 
 export default function PreviewLightbox({
