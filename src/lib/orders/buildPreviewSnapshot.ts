@@ -311,6 +311,18 @@ export function buildPreviewSnapshot(input: {
     roles.splice(1, 0, "pvc_cover_back");
   }
 
+  // Ring binders ALWAYS show a closed-binder view at page 0. Inject a
+  // blank cover pair when no real cover/PVC exists so the first body
+  // page is not promoted into the solo right-hand cover slot.
+  const isRingBinder = productType === "ring_binder";
+  const hasRealCover = roles[0] === "front_cover" || roles[0] === "pvc_cover_front";
+  if (isRingBinder && !hasRealCover && fp.length > 0) {
+    fp.unshift({ thumbnailUrl: "", pageIndex: 0, isColor: true });
+    roles.unshift("pvc_cover_front");
+    fp.splice(1, 0, { thumbnailUrl: "", pageIndex: 0, isColor: true });
+    roles.splice(1, 0, "pvc_cover_back");
+  }
+
   const hasBackCover = isBound && effects.backCover && effects.backCover !== "none";
   if (isBound) {
     if (hasBackCover) {
