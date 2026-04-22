@@ -44,8 +44,10 @@ const RING_INNER = {
   top: 0.06,
   bottom: 0.06,
   outer: 0.05,        // inset from left edge of left page and right edge of right page
-  centerGap: 0.10,    // total normalised width of the ring-mechanism gap
+  centerGap: 0.13,    // real CSS gap between the two single-page flipbooks
 };
+// Ring mechanism PNG aspect (width / height) — matches ring_bind_mechanism.png
+const RING_MECH_ASPECT = 223 / 840;
 
 /**
  * Each page must be a forwardRef component for react-pageflip.
@@ -275,6 +277,8 @@ export default function FlipBook({
   rawPaths,
 }: FlipBookProps) {
   const flipBookRef = useRef<any>(null);
+  const ringLeftRef = useRef<any>(null);
+  const ringRightRef = useRef<any>(null);
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
 
   const isRing = bindingType === "ring";
@@ -308,7 +312,10 @@ export default function FlipBook({
     [onPageChange]
   );
 
+  // Sync the standard flipbook with currentPage (skip for ring-open which uses
+  // its own dual-book wiring below).
   useEffect(() => {
+    if (isRing) return;
     const pageFlip = flipBookRef.current?.pageFlip?.();
     if (!pageFlip) return;
     const current = pageFlip.getCurrentPageIndex();
@@ -319,7 +326,7 @@ export default function FlipBook({
     } else {
       pageFlip.flip(currentPage);
     }
-  }, [currentPage]);
+  }, [currentPage, isRing]);
 
   if (urls.length === 0) {
     return (
@@ -384,8 +391,32 @@ export default function FlipBook({
   }
 
   /* ══════════════════════════════════════════════════════════════
-   * STANDARD BOUND DOCUMENTS (wire, comb, saddle, perfect)
+   * RING BINDER — open state (Plan B: two independent flipbooks
+   * with a real CSS centre gap for the ring mechanism)
    * ══════════════════════════════════════════════════════════════ */
+  if (isRing && currentPage > 0) {
+    return (
+      <RingOpenSpread
+        urls={urls}
+        currentPage={currentPage}
+        onPageChange={onPageChange}
+        width={width}
+        height={height}
+        pageAspectRatio={ratio}
+        effects={resolvedEffects}
+        sectionTypes={sectionTypes}
+        pageRoles={pageRoles}
+        bleedFlags={bleedFlags}
+        pageLabels={pageLabels}
+        pageColors={pageColors}
+        tabPositions={tabPositions}
+        colorFlags={colorFlags}
+        leftRef={ringLeftRef}
+        rightRef={ringRightRef}
+        structuralKey={structuralKey}
+      />
+    );
+  }
 
   // ── CSS scale factor to fit into available container ──
   const availableWidth = width - 80;
@@ -399,51 +430,13 @@ export default function FlipBook({
   const isShowingLastSolo = hasRealFrontCover && lastRole !== "back_cover_card" && currentPage >= lastIdx;
   const isSoloPage = isShowingFrontCover || isShowingBackCover || (hasRealFrontCover && isShowingLastSolo);
 
-  /* ── Ring binder OPEN-state layout ──
-   * The binder artwork is the OUTER FRAME. The flipbook spread is sized
-   * to fit inside the binder's inner printable rectangle so pages no
-   * longer float over the binder edges and there is a real centre gap
-   * for the ring mechanism (already part of the background image). */
-  const isRingOpen = isRing && !isSoloPage;
-  let binderFrameWidth = 0;
-  let binderFrameHeight = 0;
-  let innerLeft = 0;
-  let innerTop = 0;
-  let innerWidth = 0;
-  let innerHeight = 0;
-  let centerGapPx = 0;
-
-  let scaleFactor: number;
-  let displayedSpreadWidth: number;
-  let displayedPageWidth: number;
-  let displayedPageHeight: number;
-
-  if (isRingOpen) {
-    // Fit the binder artwork into the available container at its true aspect
-    binderFrameHeight = Math.min(availableHeight, availableWidth / RING_OPEN_ASPECT);
-    binderFrameWidth = binderFrameHeight * RING_OPEN_ASPECT;
-
-    // Inner printable rectangle on the binder
-    innerLeft = binderFrameWidth * RING_INNER.outer;
-    innerTop = binderFrameHeight * RING_INNER.top;
-    innerWidth = binderFrameWidth * (1 - 2 * RING_INNER.outer);
-    innerHeight = binderFrameHeight * (1 - RING_INNER.top - RING_INNER.bottom);
-    centerGapPx = binderFrameWidth * RING_INNER.centerGap;
-
-    // The spread sits inside the inner rectangle, with two pages whose
-    // combined width = innerWidth - centerGapPx
-    displayedSpreadWidth = innerWidth - centerGapPx;
-    displayedPageWidth = displayedSpreadWidth / 2;
-    displayedPageHeight = innerHeight;
-    scaleFactor = displayedPageWidth / basePageWidth;
-  } else {
-    const scaleX = availableWidth / baseSpreadWidth;
-    const scaleY = availableHeight / basePageHeight;
-    scaleFactor = Math.min(scaleX, scaleY, 1);
-    displayedSpreadWidth = baseSpreadWidth * scaleFactor;
-    displayedPageWidth = basePageWidth * scaleFactor;
-    displayedPageHeight = basePageHeight * scaleFactor;
-  }
+  // Standard layout sizing (ring-open is handled by the early return above)
+  const scaleX = availableWidth / baseSpreadWidth;
+  const scaleY = availableHeight / basePageHeight;
+  const scaleFactor = Math.min(scaleX, scaleY, 1);
+  const displayedSpreadWidth = baseSpreadWidth * scaleFactor;
+  const displayedPageWidth = basePageWidth * scaleFactor;
+  const displayedPageHeight = basePageHeight * scaleFactor;
 
   const displayedViewportWidth = isSoloPage ? displayedPageWidth : displayedSpreadWidth;
   const spinePosition = isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center";
@@ -474,50 +467,21 @@ export default function FlipBook({
       >
         <div
           style={{
-            width: isRingOpen
-              ? binderFrameWidth + tabGutter * 2
-              : displayedViewportWidth + tabGutter * 2,
-            height: isRingOpen ? binderFrameHeight : displayedPageHeight,
+            width: displayedViewportWidth + tabGutter * 2,
+            height: displayedPageHeight,
             position: "relative",
             overflow: "visible",
             transition: "width 0.4s ease-in-out",
           }}
         >
-          {/* Ring binder OPEN-state frame: the binder PNG is the OUTER frame.
-              The flipbook spread is positioned inside the inner printable
-              rectangle, with its spine aligned to the centre of the ring
-              mechanism (which is part of the background image). */}
-          {isRingOpen && (
-            <img
-              src={ringBinderOpen}
-              alt=""
-              aria-hidden="true"
-              style={{
-                position: "absolute",
-                left: tabGutter,
-                top: 0,
-                width: binderFrameWidth,
-                height: binderFrameHeight,
-                pointerEvents: "none",
-                zIndex: 0,
-                objectFit: "fill",
-                filter: "drop-shadow(0 6px 18px rgba(0,0,0,0.18))",
-              }}
-            />
-          )}
-
           <div
             style={{
               position: "absolute",
-              left: isRingOpen
-                ? tabGutter + (binderFrameWidth - displayedViewportWidth) / 2
-                : tabGutter,
-              top: isRingOpen ? innerTop : 0,
+              left: tabGutter,
+              top: 0,
               width: displayedViewportWidth,
               height: displayedPageHeight,
-              boxShadow: isRing && !isSoloPage
-                ? "none"
-                : "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1)",
               zIndex: 1,
             }}
           >
@@ -639,26 +603,297 @@ export default function FlipBook({
             </div>
           </div>
 
-          {/* Ring mechanism overlay — sits ABOVE the spread so pages appear
-              tucked behind the rings (only on the open ring binder view). */}
-          {isRingOpen && (
-            <img
-              src={ringMechanism}
-              alt=""
-              aria-hidden="true"
-              style={{
-                position: "absolute",
-                left: tabGutter + binderFrameWidth / 2 - (displayedPageHeight * (223 / 840)) / 2,
-                top: innerTop,
-                width: displayedPageHeight * (223 / 840),
-                height: displayedPageHeight,
-                pointerEvents: "none",
-                zIndex: 5,
-                objectFit: "fill",
-              }}
-            />
-          )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+ * RingOpenSpread — Plan B
+ * Two independent single-page HTMLFlipBook instances side-by-side
+ * with a real CSS centre gap for the ring mechanism PNG to sit in.
+ * ══════════════════════════════════════════════════════════════ */
+type RingOpenSpreadProps = {
+  urls: string[];
+  currentPage: number;
+  onPageChange: (p: number) => void;
+  width: number;
+  height: number;
+  pageAspectRatio: number;
+  effects: PreviewEffects;
+  sectionTypes?: string[];
+  pageRoles?: string[];
+  bleedFlags?: boolean[];
+  pageLabels?: string[];
+  pageColors?: string[];
+  tabPositions?: TabPosition[];
+  colorFlags?: boolean[];
+  leftRef: React.MutableRefObject<any>;
+  rightRef: React.MutableRefObject<any>;
+  structuralKey: string;
+};
+
+function RingOpenSpread({
+  urls,
+  currentPage,
+  onPageChange,
+  width,
+  height,
+  pageAspectRatio,
+  effects,
+  sectionTypes,
+  pageRoles,
+  bleedFlags,
+  pageLabels,
+  pageColors,
+  tabPositions,
+  colorFlags,
+  leftRef,
+  rightRef,
+  structuralKey,
+}: RingOpenSpreadProps) {
+  // Sizing — frame-first, binder PNG is the outer frame
+  const availableWidth = width - 80;
+  const availableHeight = height - 60;
+
+  const binderFrameHeight = Math.min(availableHeight, availableWidth / RING_OPEN_ASPECT);
+  const binderFrameWidth = binderFrameHeight * RING_OPEN_ASPECT;
+
+  const innerLeft = binderFrameWidth * RING_INNER.outer;
+  const innerTop = binderFrameHeight * RING_INNER.top;
+  const innerWidth = binderFrameWidth * (1 - 2 * RING_INNER.outer);
+  const innerHeight = binderFrameHeight * (1 - RING_INNER.top - RING_INNER.bottom);
+  const centerGapPx = binderFrameWidth * RING_INNER.centerGap;
+
+  const pageWidth = (innerWidth - centerGapPx) / 2;
+  const pageHeight = innerHeight;
+
+  // Internal page dims — keep aspect tied to provided pageAspectRatio
+  const basePageWidth = BASE_PAGE_WIDTH;
+  const basePageHeight = Math.round(basePageWidth / pageAspectRatio);
+  const scaleFactor = pageWidth / basePageWidth;
+  const bleedInsetPx = Math.round(basePageWidth * 0.03);
+
+  // Left page = even-indexed page that "faces" the right page.
+  // currentPage is the right-hand page index (since cover is solo on the right
+  // when opening). leftIndex = currentPage - 1; rightIndex = currentPage.
+  // For the very first open spread (just past the cover), leftIndex is the
+  // inside-front (already injected as a blank PVC back), so it renders empty.
+  const rightIndex = currentPage;
+  const leftIndex = Math.max(0, currentPage - 1);
+
+  // Sync flipbooks when currentPage changes externally
+  useEffect(() => {
+    const lf = leftRef.current?.pageFlip?.();
+    const rf = rightRef.current?.pageFlip?.();
+    if (lf && lf.getCurrentPageIndex() !== leftIndex) {
+      lf.turnToPage(leftIndex);
+    }
+    if (rf && rf.getCurrentPageIndex() !== rightIndex) {
+      rf.turnToPage(rightIndex);
+    }
+  }, [leftIndex, rightIndex, leftRef, rightRef]);
+
+  const onLeftFlip = useCallback(
+    (e: any) => {
+      const newLeft = e.data;
+      // The user flipped the LEFT side. The right side should follow
+      // so the spread stays in sync (right = left + 1).
+      const newRight = newLeft + 1;
+      const rf = rightRef.current?.pageFlip?.();
+      if (rf && rf.getCurrentPageIndex() !== newRight && newRight < urls.length) {
+        rf.turnToPage(newRight);
+      }
+      onPageChange(newRight);
+    },
+    [onPageChange, rightRef, urls.length]
+  );
+
+  const onRightFlip = useCallback(
+    (e: any) => {
+      const newRight = e.data;
+      const newLeft = Math.max(0, newRight - 1);
+      const lf = leftRef.current?.pageFlip?.();
+      if (lf && lf.getCurrentPageIndex() !== newLeft) {
+        lf.turnToPage(newLeft);
+      }
+      onPageChange(newRight);
+    },
+    [onPageChange, leftRef]
+  );
+
+  const renderPages = (sideStart: number) =>
+    urls.map((url, i) => (
+      <FlipPage
+        key={i}
+        url={url}
+        pageNum={i + 1}
+        isColor={colorFlags?.[i] ?? true}
+        effects={effects}
+        pageIndex={i}
+        totalPages={urls.length}
+        sectionType={sectionTypes?.[i]}
+        pageRole={pageRoles?.[i]}
+        allowBleed={bleedFlags?.[i] ?? false}
+        bleedInsetPx={bleedInsetPx}
+        label={pageLabels?.[i]}
+        color={pageColors?.[i]}
+      />
+    ));
+
+  // Centre-gap geometry for the rings PNG (inside the inner rectangle)
+  const ringMechWidth = pageHeight * RING_MECH_ASPECT;
+  const ringGapCenterX = innerLeft + pageWidth + centerGapPx / 2;
+
+  return (
+    <div className="flex items-center justify-center" style={{ width, height, overflow: "visible" }}>
+      <div
+        style={{
+          width: binderFrameWidth,
+          height: binderFrameHeight,
+          position: "relative",
+        }}
+      >
+        {/* Binder background PNG = outer frame */}
+        <img
+          src={ringBinderOpen}
+          alt=""
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            pointerEvents: "none",
+            zIndex: 0,
+            objectFit: "fill",
+            filter: "drop-shadow(0 6px 18px rgba(0,0,0,0.18))",
+          }}
+        />
+
+        {/* LEFT flipbook (single-page) */}
+        <div
+          style={{
+            position: "absolute",
+            left: innerLeft,
+            top: innerTop,
+            width: pageWidth,
+            height: pageHeight,
+            zIndex: 1,
+          }}
+        >
+          <div
+            style={{
+              transform: `scale(${scaleFactor})`,
+              transformOrigin: "top left",
+              width: basePageWidth,
+              height: basePageHeight,
+            }}
+          >
+            {/* @ts-ignore — react-pageflip types are imprecise */}
+            <HTMLFlipBook
+              key={`left-${structuralKey}`}
+              ref={leftRef}
+              width={basePageWidth}
+              height={basePageHeight}
+              size="fixed"
+              minWidth={basePageWidth}
+              maxWidth={basePageWidth}
+              minHeight={basePageHeight}
+              maxHeight={basePageHeight}
+              showCover={false}
+              flippingTime={600}
+              drawShadow={true}
+              maxShadowOpacity={0.4}
+              mobileScrollSupport={false}
+              onFlip={onLeftFlip}
+              startPage={leftIndex}
+              usePortrait={true}
+              startZIndex={0}
+              autoSize={false}
+              clickEventForward={false}
+              useMouseEvents={true}
+              swipeDistance={30}
+              showPageCorners={true}
+              disableFlipByClick={false}
+              style={{}}
+              className=""
+            >
+              {renderPages(leftIndex)}
+            </HTMLFlipBook>
+          </div>
+        </div>
+
+        {/* RIGHT flipbook (single-page) */}
+        <div
+          style={{
+            position: "absolute",
+            left: innerLeft + pageWidth + centerGapPx,
+            top: innerTop,
+            width: pageWidth,
+            height: pageHeight,
+            zIndex: 1,
+          }}
+        >
+          <div
+            style={{
+              transform: `scale(${scaleFactor})`,
+              transformOrigin: "top left",
+              width: basePageWidth,
+              height: basePageHeight,
+            }}
+          >
+            {/* @ts-ignore — react-pageflip types are imprecise */}
+            <HTMLFlipBook
+              key={`right-${structuralKey}`}
+              ref={rightRef}
+              width={basePageWidth}
+              height={basePageHeight}
+              size="fixed"
+              minWidth={basePageWidth}
+              maxWidth={basePageWidth}
+              minHeight={basePageHeight}
+              maxHeight={basePageHeight}
+              showCover={false}
+              flippingTime={600}
+              drawShadow={true}
+              maxShadowOpacity={0.4}
+              mobileScrollSupport={false}
+              onFlip={onRightFlip}
+              startPage={rightIndex}
+              usePortrait={true}
+              startZIndex={0}
+              autoSize={false}
+              clickEventForward={false}
+              useMouseEvents={true}
+              swipeDistance={30}
+              showPageCorners={true}
+              disableFlipByClick={false}
+              style={{}}
+              className=""
+            >
+              {renderPages(rightIndex)}
+            </HTMLFlipBook>
+          </div>
+        </div>
+
+        {/* Ring mechanism PNG sits in the centre gap, above the pages */}
+        <img
+          src={ringMechanism}
+          alt=""
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            left: ringGapCenterX - ringMechWidth / 2,
+            top: innerTop,
+            width: ringMechWidth,
+            height: pageHeight,
+            pointerEvents: "none",
+            zIndex: 5,
+            objectFit: "fill",
+          }}
+        />
       </div>
     </div>
   );
