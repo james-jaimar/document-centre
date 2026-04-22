@@ -513,10 +513,12 @@ export default function FlipBook({
           {tabPositions && tabPositions.length > 0 && (
             <div style={{
               position: "absolute",
-              top: contentY,
-              left: tabGutter + contentX,
+              top: stageOffsetY,
+              left: tabGutter + stageOffsetX,
               width: flipSpreadW,
               height: flipPageH,
+              transform: `scale(${ringScale})`,
+              transformOrigin: "top left",
               pointerEvents: "none",
               zIndex: 20,
             }}>
@@ -526,7 +528,7 @@ export default function FlipBook({
                 pageWidth={flipPageW}
                 pageHeight={flipPageH}
                 isSoloPage={isSoloPage}
-                isShowingFrontCover={false}
+                isShowingFrontCover={isShowingFrontSolo}
               />
             </div>
           )}
