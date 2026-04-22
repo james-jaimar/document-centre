@@ -275,9 +275,12 @@ export default function FlipBook({
   // hasRealFrontCover is derived from real role data — true only when the
   // first face is a genuine front cover (uploaded artwork) or a PVC cover sheet.
   const firstRole = pageRoles?.[0];
-  const hasRealFrontCover =
+  const realFrontCover =
     firstRole === "front_cover" || firstRole === "pvc_cover_front";
-
+  // For ring binders we ALWAYS show a closed-binder view at page 0 (with or
+  // without uploaded cover artwork). Treat this as a virtual cover so the
+  // flipbook renders the first body page solo on the right after "opening".
+  const hasRealFrontCover = realFrontCover || isRing;
   // ── STRUCTURAL key ──
   const structuralKey = useMemo(
     () => JSON.stringify({
