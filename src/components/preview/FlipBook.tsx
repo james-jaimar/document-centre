@@ -430,51 +430,13 @@ export default function FlipBook({
   const isShowingLastSolo = hasRealFrontCover && lastRole !== "back_cover_card" && currentPage >= lastIdx;
   const isSoloPage = isShowingFrontCover || isShowingBackCover || (hasRealFrontCover && isShowingLastSolo);
 
-  /* ── Ring binder OPEN-state layout ──
-   * The binder artwork is the OUTER FRAME. The flipbook spread is sized
-   * to fit inside the binder's inner printable rectangle so pages no
-   * longer float over the binder edges and there is a real centre gap
-   * for the ring mechanism (already part of the background image). */
-  const isRingOpen = isRing && !isSoloPage;
-  let binderFrameWidth = 0;
-  let binderFrameHeight = 0;
-  let innerLeft = 0;
-  let innerTop = 0;
-  let innerWidth = 0;
-  let innerHeight = 0;
-  let centerGapPx = 0;
-
-  let scaleFactor: number;
-  let displayedSpreadWidth: number;
-  let displayedPageWidth: number;
-  let displayedPageHeight: number;
-
-  if (isRingOpen) {
-    // Fit the binder artwork into the available container at its true aspect
-    binderFrameHeight = Math.min(availableHeight, availableWidth / RING_OPEN_ASPECT);
-    binderFrameWidth = binderFrameHeight * RING_OPEN_ASPECT;
-
-    // Inner printable rectangle on the binder
-    innerLeft = binderFrameWidth * RING_INNER.outer;
-    innerTop = binderFrameHeight * RING_INNER.top;
-    innerWidth = binderFrameWidth * (1 - 2 * RING_INNER.outer);
-    innerHeight = binderFrameHeight * (1 - RING_INNER.top - RING_INNER.bottom);
-    centerGapPx = binderFrameWidth * RING_INNER.centerGap;
-
-    // The spread sits inside the inner rectangle, with two pages whose
-    // combined width = innerWidth - centerGapPx
-    displayedSpreadWidth = innerWidth - centerGapPx;
-    displayedPageWidth = displayedSpreadWidth / 2;
-    displayedPageHeight = innerHeight;
-    scaleFactor = displayedPageWidth / basePageWidth;
-  } else {
-    const scaleX = availableWidth / baseSpreadWidth;
-    const scaleY = availableHeight / basePageHeight;
-    scaleFactor = Math.min(scaleX, scaleY, 1);
-    displayedSpreadWidth = baseSpreadWidth * scaleFactor;
-    displayedPageWidth = basePageWidth * scaleFactor;
-    displayedPageHeight = basePageHeight * scaleFactor;
-  }
+  // Standard layout sizing (ring-open is handled by the early return above)
+  const scaleX = availableWidth / baseSpreadWidth;
+  const scaleY = availableHeight / basePageHeight;
+  const scaleFactor = Math.min(scaleX, scaleY, 1);
+  const displayedSpreadWidth = baseSpreadWidth * scaleFactor;
+  const displayedPageWidth = basePageWidth * scaleFactor;
+  const displayedPageHeight = basePageHeight * scaleFactor;
 
   const displayedViewportWidth = isSoloPage ? displayedPageWidth : displayedSpreadWidth;
   const spinePosition = isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center";
