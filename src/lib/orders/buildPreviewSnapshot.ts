@@ -296,8 +296,8 @@ export function buildPreviewSnapshot(input: {
     return "body";
   });
 
-  // Ring binders implicitly have a clear PVC front pocket — but only inject
-  // the pocket pages when a Cover Sheet section is actually assigned.
+  // Ring binders ALWAYS have a physical front sheet (clear PVC pocket),
+  // regardless of whether the customer uploaded cover artwork.
   const hasFrontCoverSection = fp[0]?.section?.section_type === "front_cover";
   const isRingBinder = productType === "ring_binder";
   const isPvcOption =
@@ -306,7 +306,7 @@ export function buildPreviewSnapshot(input: {
   const isPvc =
     isBound &&
     ((isPvcOption && fp.length > 0) ||
-      (isRingBinder && hasFrontCoverSection));
+      (isRingBinder && fp.length > 0));
   if (isPvc && fp.length > 0) {
     const frontThumb = fp[0]?.thumbnailUrl ?? "";
     fp.unshift({ thumbnailUrl: frontThumb, pageIndex: 0, isColor: true });
