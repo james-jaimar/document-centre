@@ -1,4 +1,4 @@
-export type BindingType = "coil" | "wire" | "saddle" | "perfect" | "comb" | "none";
+export type BindingType = "coil" | "wire" | "saddle" | "perfect" | "comb" | "ring" | "none";
 
 export type FoldType = "bi_fold" | "tri_fold" | "z_fold" | "gate_fold";
 
@@ -112,7 +112,7 @@ export function getBindingType(productType: ProductPreviewType): BindingType {
     case "comb_bound": return "comb";
     case "saddle_stitched": return "saddle";
     case "perfect_bound": return "perfect";
-    case "ring_binder": return "wire";
+    case "ring_binder": return "ring";
     default: return "none";
   }
 }

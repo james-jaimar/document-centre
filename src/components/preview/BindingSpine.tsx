@@ -17,7 +17,7 @@ interface BindingSpineProps {
 }
 
 export default function BindingSpine({ bindingType, height, isOpen = false, position = "center", bindingEdge = "left" }: BindingSpineProps) {
-  if (bindingType === "none") return null;
+  if (bindingType === "none" || bindingType === "ring") return null;
 
   const positionStyle: React.CSSProperties =
     position === "left"
