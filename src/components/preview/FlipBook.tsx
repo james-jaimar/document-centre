@@ -422,14 +422,47 @@ export default function FlipBook({
           }}
         >
 
-          {/* Binding spine */}
-          <BindingSpine
-            bindingType={bindingType}
-            height={displayedPageHeight}
-            isOpen={!isSoloPage}
-            position={spinePosition}
-            bindingEdge={bindingEdge}
-          />
+          {/* Binding spine — skip for ring binders (they get the ring gap instead) */}
+          {!isRing && (
+            <BindingSpine
+              bindingType={bindingType}
+              height={displayedPageHeight}
+              isOpen={!isSoloPage}
+              position={spinePosition}
+              bindingEdge={bindingEdge}
+            />
+          )}
+
+          {/* Ring binder centre hardware strip */}
+          {isRing && !isSoloPage && (
+            <div
+              className="absolute z-30 pointer-events-none"
+              style={{
+                left: "50%",
+                transform: "translateX(-50%)",
+                width: displayedRingGap,
+                height: displayedPageHeight,
+                top: 0,
+                background: "linear-gradient(90deg, rgba(0,0,0,0.03) 0%, rgba(200,200,200,0.15) 20%, rgba(180,180,180,0.25) 50%, rgba(200,200,200,0.15) 80%, rgba(0,0,0,0.03) 100%)",
+              }}
+            >
+              {/* D-ring hardware: 4 evenly spaced rings */}
+              <div className="flex flex-col justify-evenly items-center h-full py-4">
+                {[0, 1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    style={{
+                      width: displayedRingGap * 0.6,
+                      height: displayedRingGap * 0.6,
+                      borderRadius: "50%",
+                      border: "2px solid rgba(180,180,180,0.7)",
+                      background: "rgba(220,220,220,0.15)",
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Tab overlay — persistent, visible from every page */}
           {tabPositions && tabPositions.length > 0 && (
