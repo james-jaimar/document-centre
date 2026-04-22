@@ -7,6 +7,7 @@ import PageEffects from "./PageEffects";
 import { FileText, Loader2 } from "lucide-react";
 import ringBinderClosed from "@/assets/bindings/ring_binder_white_closed.png";
 import ringBinderOpen from "@/assets/bindings/ring_binder_white_open.png";
+import ringMechanism from "@/assets/ring_bind_mechanism.png";
 
 /**
  * Fixed internal resolution for the flipbook.
@@ -637,6 +638,26 @@ export default function FlipBook({
               </div>
             </div>
           </div>
+
+          {/* Ring mechanism overlay — sits ABOVE the spread so pages appear
+              tucked behind the rings (only on the open ring binder view). */}
+          {isRingOpen && (
+            <img
+              src={ringMechanism}
+              alt=""
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                left: tabGutter + binderFrameWidth / 2 - (displayedPageHeight * (223 / 840)) / 2,
+                top: innerTop,
+                width: displayedPageHeight * (223 / 840),
+                height: displayedPageHeight,
+                pointerEvents: "none",
+                zIndex: 5,
+                objectFit: "fill",
+              }}
+            />
+          )}
         </div>
       </div>
     </div>
