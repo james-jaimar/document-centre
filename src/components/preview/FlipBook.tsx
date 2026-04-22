@@ -277,6 +277,8 @@ export default function FlipBook({
   rawPaths,
 }: FlipBookProps) {
   const flipBookRef = useRef<any>(null);
+  const ringLeftRef = useRef<any>(null);
+  const ringRightRef = useRef<any>(null);
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
 
   const isRing = bindingType === "ring";
@@ -310,7 +312,10 @@ export default function FlipBook({
     [onPageChange]
   );
 
+  // Sync the standard flipbook with currentPage (skip for ring-open which uses
+  // its own dual-book wiring below).
   useEffect(() => {
+    if (isRing) return;
     const pageFlip = flipBookRef.current?.pageFlip?.();
     if (!pageFlip) return;
     const current = pageFlip.getCurrentPageIndex();
@@ -321,7 +326,7 @@ export default function FlipBook({
     } else {
       pageFlip.flip(currentPage);
     }
-  }, [currentPage]);
+  }, [currentPage, isRing]);
 
   if (urls.length === 0) {
     return (
