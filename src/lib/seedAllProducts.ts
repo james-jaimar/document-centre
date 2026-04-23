@@ -16,7 +16,9 @@ import {
   FOLD_TYPE,
   BUSINESS_CARD_SIZE, BUSINESS_CARD_PAPER, BUSINESS_CARD_LAMINATION,
   BUSINESS_CARD_FINISHING, BUSINESS_CARD_CORNERS, BUSINESS_CARD_PRINT_SIDES, BUSINESS_CARD_PACK_SIZE,
+  PRINT_SIZE_PHOTO, PHOTO_FINISH, PHOTO_BORDER,
   PRICING_BOUND, PRICING_SIMPLE_DOC, PRICING_POSTER, PRICING_FLYER, PRICING_BOOKLET, PRICING_BUSINESS_CARDS,
+  PRICING_PHOTO,
 } from "./productOptionValues";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -281,7 +283,26 @@ export function seedBusinessCards() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// SEED ALL — runs all 8 in sequence, skipping existing
+// 9. PHOTO PRINTS — Per-photo crop & quantity flow (dedicated builder)
+// ═══════════════════════════════════════════════════════════════════
+export function seedPhotoPrints() {
+  return seedFamily(
+    "photo-prints",
+    "Photo Prints",
+    "Upload your photos, choose a print size, drag and zoom each photo into the print frame, and order any quantity per image. Ideal for 4×6, 5×7, 6×8, 8×10 and A4 photo prints on gloss or matte paper.",
+    "Image",
+    9,
+    [
+      { name: "Print Size", option_type: "select", values: PRINT_SIZE_PHOTO, is_required: true, sort_order: 0 },
+      { name: "Finish", option_type: "select", values: PHOTO_FINISH, is_required: true, sort_order: 1 },
+      { name: "Border", option_type: "select", values: PHOTO_BORDER, is_required: false, sort_order: 2 },
+    ],
+    PRICING_PHOTO,
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SEED ALL — runs all 9 in sequence, skipping existing
 // ═══════════════════════════════════════════════════════════════════
 export interface SeedAllResult {
   seeded: string[];
@@ -300,6 +321,7 @@ export async function seedAllProducts(): Promise<SeedAllResult> {
     { name: "Flyers", fn: seedFlyers },
     { name: "Brochures / Folded Leaflets", fn: seedBrochures },
     { name: "Business Cards", fn: seedBusinessCards },
+    { name: "Photo Prints", fn: seedPhotoPrints },
   ];
 
   const seeded: string[] = [];

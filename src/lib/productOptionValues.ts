@@ -955,3 +955,60 @@ export const PRICING_BUSINESS_CARDS = [
   { name: "Multi-Pack Discount 5+", rule_type: "surcharge", price_value: -0.05, conditions: { min_quantity: 5 }, sort_order: 6 },
   { name: "Multi-Pack Discount 10+", rule_type: "surcharge", price_value: -0.10, conditions: { min_quantity: 10 }, sort_order: 7 },
 ];
+
+// ═══════════════════════════════════════════════════════════════════
+// PHOTO PRINTS — Sizes, Finish, Border, and per-print pricing
+// ═══════════════════════════════════════════════════════════════════
+export const PRINT_SIZE_PHOTO: StructuredOptionValue[] = [
+  createOptionValue('4×6" (102×152 mm)', "Print Size", {
+    price_impact: 0, price_type: "fixed", is_default: true, slug: "4x6",
+    metadata: { width_mm: 152, height_mm: 102, aspect: 152 / 102 },
+  }),
+  createOptionValue('5×7" (127×178 mm)', "Print Size", {
+    price_impact: 0, price_type: "fixed", slug: "5x7",
+    metadata: { width_mm: 178, height_mm: 127, aspect: 178 / 127 },
+  }),
+  createOptionValue('6×8" (152×203 mm)', "Print Size", {
+    price_impact: 0, price_type: "fixed", slug: "6x8",
+    metadata: { width_mm: 203, height_mm: 152, aspect: 203 / 152 },
+  }),
+  createOptionValue('8×10" (203×254 mm)', "Print Size", {
+    price_impact: 0, price_type: "fixed", slug: "8x10",
+    metadata: { width_mm: 254, height_mm: 203, aspect: 254 / 203 },
+  }),
+  createOptionValue("A4 (210×297 mm)", "Print Size", {
+    price_impact: 0, price_type: "fixed", slug: "a4",
+    metadata: { width_mm: 297, height_mm: 210, aspect: 297 / 210 },
+  }),
+];
+
+export const PHOTO_FINISH: StructuredOptionValue[] = [
+  createOptionValue("Gloss", "Finish", {
+    price_impact: 0, price_type: "fixed", is_default: true, slug: "gloss",
+    metadata: { finish: "gloss" },
+  }),
+  createOptionValue("Matte", "Finish", {
+    price_impact: 0, price_type: "fixed", slug: "matte",
+    metadata: { finish: "matte" },
+  }),
+];
+
+export const PHOTO_BORDER: StructuredOptionValue[] = [
+  createOptionValue("No Border", "Border", {
+    price_impact: 0, price_type: "fixed", is_default: true, slug: "none",
+    metadata: { border_mm: 0 },
+  }),
+  createOptionValue("White Border (3 mm)", "Border", {
+    price_impact: 0, price_type: "fixed", slug: "white_3mm",
+    metadata: { border_mm: 3, color: "white" },
+  }),
+];
+
+// Per-print pricing keyed by Print Size slug. Total = sum of per-photo qty × rate.
+export const PRICING_PHOTO = [
+  { name: "4×6 Photo Print", rule_type: "per_unit", price_value: 3.5, conditions: { print_size: "4x6" }, sort_order: 0 },
+  { name: "5×7 Photo Print", rule_type: "per_unit", price_value: 5.5, conditions: { print_size: "5x7" }, sort_order: 1 },
+  { name: "6×8 Photo Print", rule_type: "per_unit", price_value: 8.0, conditions: { print_size: "6x8" }, sort_order: 2 },
+  { name: "8×10 Photo Print", rule_type: "per_unit", price_value: 12.0, conditions: { print_size: "8x10" }, sort_order: 3 },
+  { name: "A4 Photo Print", rule_type: "per_unit", price_value: 15.0, conditions: { print_size: "a4" }, sort_order: 4 },
+];
