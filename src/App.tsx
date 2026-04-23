@@ -30,6 +30,7 @@ import CustomerAccount from "@/pages/dashboard/CustomerAccount";
 import NewOrder from "@/pages/dashboard/NewOrder";
 import OrderFiles from "@/pages/dashboard/OrderFiles";
 import OrderBuild from "@/pages/dashboard/OrderBuild";
+import PhotoPrintsBuilder from "@/pages/dashboard/PhotoPrintsBuilder";
 import Cart from "@/pages/dashboard/Cart";
 import Checkout from "@/pages/dashboard/Checkout";
 import OrderConfirmation from "@/pages/dashboard/OrderConfirmation";
@@ -112,7 +113,9 @@ const App = () => (
               <Route path="orders/:id" element={<CustomerOrderDetail />} />
               <Route path="orders" element={<CustomerOrders />} />
               <Route path="orders/new" element={<NewOrder />} />
+              <Route path="orders/new/photo-prints" element={<PhotoPrintsBuilder />} />
               <Route path="orders/new/:familyId" element={<OrderFiles />} />
+              <Route path="orders/:id/photo-prints" element={<PhotoPrintsBuilder />} />
               <Route path="orders/:id/files" element={<OrderFiles />} />
               <Route path="orders/:id/build" element={<OrderBuild />} />
               <Route path="orders/:id/confirmation" element={<OrderConfirmation />} />
