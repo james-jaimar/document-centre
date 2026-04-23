@@ -560,16 +560,20 @@ export default function PreviewPanel({
   const pageInfoText = useMemo(() => {
     if (totalPages === 0) return "";
     if (isBound) {
+      // Ring binder: closed view at currentPage=0, then static spreads.
+      if (isRingBinder) {
+        if (currentPage === 0) return "Ring Binder (Closed)";
+        const leftLabel = faceLabel(currentPage);
+        const rightLabel = currentPage + 1 < totalPages ? faceLabel(currentPage + 1) : "";
+        if (rightLabel) return `${leftLabel} – ${rightLabel}  (${totalContentPages} pages)`;
+        return `${leftLabel}  (${totalContentPages} pages)`;
+      }
       if (isShowingFrontCover) {
         if (!hasRealFrontCover) return faceLabel(0);
         const role = computedPageRoles[0];
         return role === "pvc_cover_front" ? "Front Cover (PVC)" : "Front Cover";
       }
       if (isShowingBackCover) return "Back Cover";
-      // Ring binder: single-page info (no spread pairs)
-      if (isRingBinder) {
-        return `${faceLabel(currentPage)} of ${totalContentPages}`;
-      }
       if (isShowingLastSolo) {
         return `${faceLabel(totalPages - 1)} of ${totalContentPages}`;
       }
@@ -578,7 +582,7 @@ export default function PreviewPanel({
       return `${leftLabel} – ${rightLabel}  (${totalContentPages} pages)`;
     }
     return `${faceLabel(currentPage)} of ${totalContentPages}`;
-  }, [currentPage, totalPages, totalContentPages, isBound, isRingBinder, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers]);
+  }, [currentPage, totalPages, totalContentPages, isBound, isRingBinder, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers, hasRealFrontCover]);
 
   const colourStatus = useMemo(() => {
     if (totalPages === 0) return "";
