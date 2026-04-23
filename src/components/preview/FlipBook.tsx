@@ -317,10 +317,14 @@ export default function FlipBook({
   // ── Solo-page detection ──
   const lastIdx = urls.length - 1;
   const lastRole = pageRoles?.[lastIdx];
-  const isShowingFrontCover = hasRealFrontCover && currentPage === 0;
+  // Every bound document opens with page 1 solo on the right (showCover={true}).
+  // Solo-page detection must NOT depend on hasRealFrontCover — it's structural.
+  const isShowingFirstSolo = currentPage === 0;
   const isShowingBackCover = lastRole === "back_cover_card" && currentPage >= lastIdx;
-  const isShowingLastSolo = hasRealFrontCover && lastRole !== "back_cover_card" && currentPage >= lastIdx;
-  const isSoloPage = isShowingFrontCover || isShowingBackCover || (hasRealFrontCover && isShowingLastSolo);
+  const isShowingLastSolo = lastRole !== "back_cover_card" && currentPage >= lastIdx;
+  const isSoloPage = isShowingFirstSolo || isShowingBackCover || isShowingLastSolo;
+  // Alias for tab overlay (suppress left tabs when showing front solo)
+  const isShowingFrontCover = isShowingFirstSolo;
 
   const scaleX = availableWidth / baseSpreadWidth;
   const scaleY = availableHeight / basePageHeight;
@@ -449,7 +453,7 @@ export default function FlipBook({
                     maxWidth={basePageWidth}
                     minHeight={basePageHeight}
                     maxHeight={basePageHeight}
-                    showCover={hasRealFrontCover}
+                    showCover={true}
                     flippingTime={600}
                     drawShadow={true}
                     maxShadowOpacity={0.5}
