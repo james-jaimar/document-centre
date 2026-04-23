@@ -49,8 +49,8 @@ const RING_OPEN = {
   // Binder artwork extends beyond the spread footprint by these fractions
   // of pageWidth (per side) for the cover edges, and these fractions of
   // pageHeight (top/bottom) for the binder top/bottom rims.
-  binderInsetXFraction: 0.08,
-  binderInsetYFraction: 0.06,
+  binderInsetXFraction: 0.12,
+  binderInsetYFraction: 0.10,
 };
 
 /**
