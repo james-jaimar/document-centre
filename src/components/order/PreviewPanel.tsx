@@ -474,7 +474,7 @@ export default function PreviewPanel({
     const bleedScope = effects?.bleed ?? "none";
     return computedPageRoles.map((role) => {
       if (["pvc_cover_front", "pvc_cover_back", "inside_back_cover_card", "back_cover_card"].includes(role)) return true;
-      if (["blank_back", "inside_back_blank", "binder_closed", "binder_left_blank"].includes(role)) return false;
+      if (["blank_back", "inside_back_blank"].includes(role)) return false;
       // Ring binder body pages sit inside a mechanism — never edge-to-edge.
       // Only PVC/card cover materials (handled above) get full bleed.
       if (isRingBinder && role === "body") return false;
@@ -496,7 +496,15 @@ export default function PreviewPanel({
     return undefined;
   }, [documents, isBusinessCards]);
 
-  const totalPages = finalPages.length;
+  // For ring binders, navigation uses a "view index" model on top of the
+  // pure physical sequence:
+  //   view 0       = closed binder (hardware only)
+  //   view 1       = left hardware, right sequence[0]
+  //   view k (1..N)= left sequence[k-2], right sequence[k-1]
+  //   view N+1     = left sequence[N-1], right hardware
+  // So total navigable views = sequence.length + 2.
+  const ringTotalViews = isRingBinder ? finalPages.length + 2 : 0;
+  const totalPages = isRingBinder ? ringTotalViews : finalPages.length;
 
   useEffect(() => {
     if (prevPageCount.current !== 0 && totalPages > 0 && currentPage >= totalPages) {
@@ -514,7 +522,7 @@ export default function PreviewPanel({
   // hasRealFrontCover is used ONLY for labels, never for layout decisions.
   // Ring binder uses static rendering — its component handles left/right internally,
   // so we treat it like a non-bound type for pagination/solo-state purposes.
-  const isShowingFrontCover = isBound && currentPage === 0;
+  const isShowingFrontCover = isBound && !isRingBinder && currentPage === 0;
   const hasBackCoverCard = computedPageRoles.includes("back_cover_card");
   const isShowingBackCover = isBound && !isRingBinder && hasBackCoverCard && currentPage >= totalPages - 1;
   const isShowingLastSolo = isBound && !isRingBinder && !hasBackCoverCard && currentPage >= totalPages - 1;
