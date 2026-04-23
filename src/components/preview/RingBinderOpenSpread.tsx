@@ -376,8 +376,10 @@ function RingOpenSpread({
 
   const bleedInsetPx = Math.round(pageWidth * 0.03);
 
-  const rightIndex = currentPage;
-  const leftIndex = Math.max(0, currentPage - 1);
+  // Standard spread indexing: left = currentPage, right = currentPage + 1
+  // (matches FlipBook pairing with showCover=true where index 0 is solo right)
+  const leftIndex = currentPage;
+  const rightIndex = currentPage + 1;
   const rightBeyondEnd = rightIndex >= urls.length;
 
   const spreadLeft = tabGutter + binderInsetX;
@@ -442,7 +444,7 @@ function RingOpenSpread({
           >
             <RingTabOverlay
               tabPositions={tabPositions}
-              currentPage={currentPage}
+              currentPage={rightIndex}
               pageWidth={pageWidth}
               pageHeight={pageHeight}
             />
@@ -462,11 +464,7 @@ function RingOpenSpread({
             transition: "opacity 0.15s ease",
           }}
         >
-          {leftIndex === 0 && currentPage === 1 ? (
-            <div style={{ width: pageWidth, height: pageHeight, backgroundColor: "white", borderRadius: 2, boxShadow: "inset 0 0 8px rgba(0,0,0,0.05)" }} />
-          ) : (
-            renderStaticPage(leftIndex, pageWidth, pageHeight)
-          )}
+          {renderStaticPage(leftIndex, pageWidth, pageHeight)}
         </div>
 
         {/* RIGHT static page */}
