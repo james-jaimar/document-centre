@@ -38,12 +38,12 @@ async function detectCountry(): Promise<string | null> {
   if (cached) return cached;
 
   try {
-    const res = await fetch("https://ip-api.com/json/?fields=countryCode", {
+    const res = await fetch("https://ipapi.co/json/", {
       signal: AbortSignal.timeout(3000),
     });
     if (!res.ok) return null;
     const data = await res.json();
-    const code = data.countryCode as string;
+    const code = data.country_code as string;
     if (code) sessionStorage.setItem(SESSION_COUNTRY_KEY, code);
     return code || null;
   } catch {
