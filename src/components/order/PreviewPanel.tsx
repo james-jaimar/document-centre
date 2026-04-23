@@ -598,21 +598,6 @@ export default function PreviewPanel({
     }
     return `${faceLabel(currentPage)} of ${totalContentPages}`;
   }, [currentPage, totalPages, totalContentPages, isBound, isRingBinder, ringLeftFace, ringRightFace, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers, hasRealFrontCover]);
-      if (isShowingFrontCover) {
-        if (!hasRealFrontCover) return faceLabel(0);
-        const role = computedPageRoles[0];
-        return role === "pvc_cover_front" ? "Front Cover (PVC)" : "Front Cover";
-      }
-      if (isShowingBackCover) return "Back Cover";
-      if (isShowingLastSolo) {
-        return `${faceLabel(totalPages - 1)} of ${totalContentPages}`;
-      }
-      const leftLabel = faceLabel(currentPage);
-      const rightLabel = faceLabel(currentPage + 1);
-      return `${leftLabel} – ${rightLabel}  (${totalContentPages} pages)`;
-    }
-    return `${faceLabel(currentPage)} of ${totalContentPages}`;
-  }, [currentPage, totalPages, totalContentPages, isBound, isRingBinder, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers, hasRealFrontCover]);
 
   const colourStatus = useMemo(() => {
     if (totalPages === 0) return "";
