@@ -378,7 +378,7 @@ export function buildPreviewSnapshot(input: {
       ["pvc_cover_front", "pvc_cover_back", "inside_back_cover_card", "back_cover_card"].includes(role)
     )
       return true;
-    if (["blank_back", "inside_back_blank"].includes(role)) return false;
+    if (["blank_back", "inside_back_blank", "binder_closed", "binder_left_blank"].includes(role)) return false;
     // Ring binder body pages sit inside a mechanism — never edge-to-edge.
     if (isRingBinder && role === "body") return false;
     if (bleedScope === "all") return true;
