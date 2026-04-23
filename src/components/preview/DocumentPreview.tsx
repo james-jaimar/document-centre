@@ -3,6 +3,7 @@ import { batchSignUrls, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import type { ProductPreviewType } from "./previewTypes";
 import { getBindingType } from "./previewTypes";
 import FlipBook from "./FlipBook";
+import RingBinderPreview from "./RingBinderOpenSpread";
 import FoldPreview from "./FoldPreview";
 import LooseSheetsPreview from "./LooseSheetsPreview";
 import { Loader2 } from "lucide-react";
@@ -155,6 +156,17 @@ export default function DocumentPreview({
     pageColors,
     tabPositions,
   };
+
+  // Ring binders use a completely separate renderer — never route through FlipBook
+  if (productType === "ring_binder") {
+    return (
+      <RingBinderPreview
+        {...commonProps}
+        tabPositions={tabPositions}
+        rawPaths={thumbnailPaths}
+      />
+    );
+  }
 
   if (BOUND_TYPES.has(productType)) {
     return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} displayPageNumbers={displayPageNumbers} faceLabels={faceLabels} bindingEdge={bindingEdge} rawPaths={thumbnailPaths} />;

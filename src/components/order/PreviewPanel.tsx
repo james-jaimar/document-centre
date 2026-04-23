@@ -502,12 +502,9 @@ export default function PreviewPanel({
 
   // hasRealFrontCover is derived from real role data — true only when the
   // first face is an actual front cover (uploaded artwork) or a PVC cover sheet.
-  // Ring binders always show a closed-binder view at page 0 (virtual cover),
-  // so treat them as having a front cover for navigation/labelling purposes.
-  const isRingBinder = productType === "ring_binder";
   const firstRole = computedPageRoles[0];
   const realFrontCover = firstRole === "front_cover" || firstRole === "pvc_cover_front";
-  const hasRealFrontCover = realFrontCover || isRingBinder;
+  const hasRealFrontCover = realFrontCover;
   const isShowingFrontCover = isBound && hasRealFrontCover && currentPage === 0;
   const hasBackCoverCard = computedPageRoles.includes("back_cover_card");
   const isShowingBackCover = isBound && hasBackCoverCard && currentPage >= totalPages - 1;
