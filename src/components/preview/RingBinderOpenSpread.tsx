@@ -116,20 +116,30 @@ function resolveTabColor(colorSlug: string, tabIndex: number): string {
 
 /**
  * Ring-binder-specific tab overlay.
- * Tabs ONLY appear on the right outer edge — once flipped past, they vanish.
- * This is physically correct: in a ring binder, tabs stick out on the right
- * and disappear behind the left page stack when turned.
+ *
+ * `side="right"` — tabs that are AT or AHEAD of the right-pane page stick
+ *   out on the right outer edge (default original behaviour).
+ *
+ * `side="left"` — when a tab sheet has been physically turned over the rings
+ *   and is now sitting on the left pane, the same tab is rendered mirrored on
+ *   the left outer edge. This matches the real-world product where the tab
+ *   stays attached to its sheet whichever side of the binder it's on.
+ *
+ * Same colour, label, height and bank-stacking logic for both sides — a
+ * Tab 5 always reads as "Tab 5" no matter which side it's on.
  */
 function RingTabOverlay({
   tabPositions,
   currentPage,
   pageWidth,
   pageHeight,
+  side = "right",
 }: {
   tabPositions: TabPosition[];
   currentPage: number;
   pageWidth: number;
   pageHeight: number;
+  side?: "right" | "left";
 }) {
   if (tabPositions.length === 0) return null;
 
@@ -147,8 +157,10 @@ function RingTabOverlay({
       style={{ width: pageWidth, height: pageHeight, overflow: "visible", top: 0, left: 0 }}
     >
       {tabPositions.map((tab) => {
-        // Only show tabs that are AT or AHEAD of the current right-hand page
-        const isVisible = tab.pageIndex >= currentPage;
+        // Right side: show tabs at or ahead of the right-hand page (not yet turned).
+        // Left side: show ONLY the tab whose sheet IS the current left page (just turned).
+        const isVisible =
+          side === "right" ? tab.pageIndex >= currentPage : tab.pageIndex === currentPage;
         if (!isVisible) return null;
 
         const bankIndex = Math.floor(tab.tabIndex / bankSize);
@@ -160,12 +172,38 @@ function RingTabOverlay({
         const tabColor = resolveTabColor(tab.color, tab.tabIndex);
         const textColor = ["#e5e7eb", "#fde68a", "#ffffff"].includes(tabColor) ? "#374151" : "#ffffff";
 
+        // Position: right side sticks out past the right edge; left side sticks
+        // out past the left edge (negative offset into the tabGutter).
+        const horizontalLeft =
+          side === "right"
+            ? pageWidth + bankOffset
+            : -(tabWidth + bankOffset);
+
+        // Mirrored shape for left side so the curved outer edge points left.
+        const pathD =
+          side === "right"
+            ? `M0,0 C${tabWidth * 0.3},${tabHeight * 0.04} ${tabWidth * 0.7},${tabHeight * 0.06} ${tabWidth},${tabHeight * 0.1} L${tabWidth},${tabHeight * 0.9} C${tabWidth * 0.7},${tabHeight * 0.94} ${tabWidth * 0.3},${tabHeight * 0.96} 0,${tabHeight} Z`
+            : `M${tabWidth},0 C${tabWidth * 0.7},${tabHeight * 0.04} ${tabWidth * 0.3},${tabHeight * 0.06} 0,${tabHeight * 0.1} L0,${tabHeight * 0.9} C${tabWidth * 0.3},${tabHeight * 0.94} ${tabWidth * 0.7},${tabHeight * 0.96} ${tabWidth},${tabHeight} Z`;
+
+        // Text rotation: right side reads bottom-to-top (rotate 180), left
+        // side mirrored so it still reads correctly from outside the binder.
+        const textRotation =
+          side === "right"
+            ? `rotate(180, ${tabWidth / 2 + 1}, ${tabHeight / 2})`
+            : `rotate(0, ${tabWidth / 2 - 1}, ${tabHeight / 2})`;
+        const textX = side === "right" ? tabWidth / 2 + 1 : tabWidth / 2 - 1;
+
+        const dropShadow =
+          side === "right"
+            ? "drop-shadow(2px 1px 3px rgba(0,0,0,0.2))"
+            : "drop-shadow(-2px 1px 3px rgba(0,0,0,0.2))";
+
         return (
           <div
-            key={`tab-r-${tab.tabIndex}`}
+            key={`tab-${side}-${tab.tabIndex}`}
             className="absolute"
             style={{
-              left: pageWidth + bankOffset,
+              left: horizontalLeft,
               top: topOffset,
               width: tabWidth,
               height: tabHeight,
@@ -173,15 +211,15 @@ function RingTabOverlay({
             }}
           >
             <svg width={tabWidth} height={tabHeight} viewBox={`0 0 ${tabWidth} ${tabHeight}`}
-              style={{ filter: "drop-shadow(2px 1px 3px rgba(0,0,0,0.2))" }}>
+              style={{ filter: dropShadow }}>
               <path
-                d={`M0,0 C${tabWidth * 0.3},${tabHeight * 0.04} ${tabWidth * 0.7},${tabHeight * 0.06} ${tabWidth},${tabHeight * 0.1} L${tabWidth},${tabHeight * 0.9} C${tabWidth * 0.7},${tabHeight * 0.94} ${tabWidth * 0.3},${tabHeight * 0.96} 0,${tabHeight} Z`}
+                d={pathD}
                 fill={tabColor} stroke="rgba(0,0,0,0.15)" strokeWidth="0.5"
               />
-              <text x={tabWidth / 2 + 1} y={tabHeight / 2} textAnchor="middle" dominantBaseline="central"
+              <text x={textX} y={tabHeight / 2} textAnchor="middle" dominantBaseline="central"
                 fill={textColor} fontSize={Math.max(6, Math.min(8, tabHeight * 0.12))} fontWeight="700"
                 style={{ writingMode: "tb" } as any}
-                transform={`rotate(180, ${tabWidth / 2 + 1}, ${tabHeight / 2})`}>
+                transform={textRotation}>
                 {tab.label.length > 8 ? tab.label.slice(0, 7) + "…" : tab.label}
               </text>
             </svg>
