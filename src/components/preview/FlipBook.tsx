@@ -867,7 +867,7 @@ function RingOpenSpread({
           </div>
         </div>
 
-        {/* RIGHT flipbook (single-page) */}
+        {/* RIGHT flipbook (single-page) — or blank back cover when past end */}
         <div
           style={{
             position: "absolute",
@@ -879,45 +879,63 @@ function RingOpenSpread({
             overflow: "visible",
           }}
         >
-          <div
-            style={{
-              transform: `scale(${scaleFactor})`,
-              transformOrigin: "top left",
-              width: basePageWidth,
-              height: basePageHeight,
-            }}
-          >
-            {/* @ts-ignore — react-pageflip types are imprecise */}
-            <HTMLFlipBook
-              key={`right-${structuralKey}`}
-              ref={rightRef}
-              width={basePageWidth}
-              height={basePageHeight}
-              size="fixed"
-              minWidth={basePageWidth}
-              maxWidth={basePageWidth}
-              minHeight={basePageHeight}
-              maxHeight={basePageHeight}
-              showCover={false}
-              flippingTime={600}
-              drawShadow={true}
-              maxShadowOpacity={0.4}
-              mobileScrollSupport={false}
-              onFlip={onRightFlip}
-              startPage={rightIndex}
-              usePortrait={true}
-              startZIndex={0}
-              autoSize={false}
-              clickEventForward={false}
-              useMouseEvents={true}
-              swipeDistance={30}
-              showPageCorners={true}
-              disableFlipByClick={false}
-              style={{}}
-              className=""
+          {rightBeyondEnd ? (
+            <div
+              style={{
+                width: pageWidth,
+                height: pageHeight,
+                backgroundColor: "white",
+                borderRadius: 2,
+                boxShadow: "inset 0 0 8px rgba(0,0,0,0.05)",
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                transform: `scale(${scaleFactor})`,
+                transformOrigin: "top left",
+                width: basePageWidth,
+                height: basePageHeight,
+              }}
             >
-              {renderPages()}
-            </HTMLFlipBook>
+              {/* @ts-ignore — react-pageflip types are imprecise */}
+              <HTMLFlipBook
+                key={`right-${structuralKey}`}
+                ref={rightRef}
+                width={basePageWidth}
+                height={basePageHeight}
+                size="fixed"
+                minWidth={basePageWidth}
+                maxWidth={basePageWidth}
+                minHeight={basePageHeight}
+                maxHeight={basePageHeight}
+                showCover={false}
+                flippingTime={600}
+                drawShadow={true}
+                maxShadowOpacity={0.4}
+                mobileScrollSupport={false}
+                onFlip={onRightFlip}
+                startPage={rightIndex}
+                usePortrait={true}
+                startZIndex={0}
+                autoSize={false}
+                clickEventForward={false}
+                useMouseEvents={true}
+                swipeDistance={30}
+                showPageCorners={true}
+                disableFlipByClick={false}
+                style={{}}
+                className=""
+              >
+                {renderPages()}
+              </HTMLFlipBook>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
           </div>
         </div>
       </div>
