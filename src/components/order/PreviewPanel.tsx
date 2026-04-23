@@ -369,7 +369,7 @@ export default function PreviewPanel({
     // These virtual faces NEVER count as document pages and never inject
     // a fake "front cover" sheet derived from the body.
     const isRingBinderType = productType === "ring_binder";
-    if (isRingBinderType && !isPvc && fp.length > 0 && firstRoleIsBody(roles)) {
+    if (isRingBinderType && !isPvc && fp.length > 0) {
       fp.unshift({ thumbnailUrl: "", pageIndex: 0, documentName: "", section: undefined, isColor: true });
       roles.unshift("binder_left_blank");
       fp.unshift({ thumbnailUrl: "", pageIndex: 0, documentName: "Ring Binder", section: undefined, isColor: true });
