@@ -611,8 +611,21 @@ export default function PreviewPanel({
 
   const goFirst = () => setCurrentPage(0);
   const goLast = () => setCurrentPage(totalPages - 1);
-  const goPrev = () => setCurrentPage((p) => Math.max(0, p - step));
-  const goNext = () => setCurrentPage((p) => Math.min(totalPages - 1, p + step));
+  const goPrev = () => setCurrentPage((p) => {
+    if (isRingBinder) {
+      // Ring binder: 0 (closed) → 1 (first spread) → 3 → 5 ...
+      if (p <= 1) return 0;
+      return Math.max(1, p - 2);
+    }
+    return Math.max(0, p - step);
+  });
+  const goNext = () => setCurrentPage((p) => {
+    if (isRingBinder) {
+      if (p === 0) return Math.min(totalPages - 1, 1);
+      return Math.min(totalPages - 1, p + 2);
+    }
+    return Math.min(totalPages - 1, p + step);
+  });
 
   if (totalPages === 0 && (!foldThumbnails || foldThumbnails.length === 0)) {
     return (
