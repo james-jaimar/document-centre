@@ -359,10 +359,22 @@ export default function PreviewPanel({
       roles.splice(1, 0, "pvc_cover_back");
     }
 
-    // ── Ring binder: NO virtual cover injection ──
-    // When the user picks "No Cover", the ring binder component shows the
-    // first body page through the clear binder window on page 0. Don't
-    // inject blank cover filler pages — that creates a blank initial view.
+    // ── Ring binder physical model ──
+    // The binder is hardware, not a printed cover. We prepend two virtual
+    // non-content faces so the user can:
+    //   • currentPage=0 → see the CLOSED binder (with optional pocket artwork)
+    //   • currentPage=1 → first OPEN spread with body[0] on the RIGHT
+    //                     (the left side represents the inside of the binder
+    //                     front panel, which is empty)
+    // These virtual faces NEVER count as document pages and never inject
+    // a fake "front cover" sheet derived from the body.
+    const isRingBinderType = productType === "ring_binder";
+    if (isRingBinderType && !isPvc && fp.length > 0 && firstRoleIsBody(roles)) {
+      fp.unshift({ thumbnailUrl: "", pageIndex: 0, documentName: "", section: undefined, isColor: true });
+      roles.unshift("binder_left_blank");
+      fp.unshift({ thumbnailUrl: "", pageIndex: 0, documentName: "Ring Binder", section: undefined, isColor: true });
+      roles.unshift("binder_closed");
+    }
 
     // Tab/insert alignment is now handled inside buildPageSequence()
     // via the pending-queue flush — no post-processing pass needed.
