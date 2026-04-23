@@ -381,7 +381,9 @@ export default function PreviewPanel({
 
     // ── Physical back cover card ──
     const hasBackCover = isBound && effects?.backCover && effects.backCover !== "none";
-    if (isBound) {
+    // Ring binders are hardware — they have no printed back cover sheet.
+    const skipBackCoverCard = isRingBinderType;
+    if (isBound && !skipBackCoverCard) {
       if (hasBackCover) {
         if (fp.length % 2 !== 0) {
           fp.push({ thumbnailUrl: "", pageIndex: 0, documentName: "", section: undefined, isColor: true });
