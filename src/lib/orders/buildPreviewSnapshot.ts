@@ -327,7 +327,9 @@ export function buildPreviewSnapshot(input: {
   }
 
   const hasBackCover = isBound && effects.backCover && effects.backCover !== "none";
-  if (isBound) {
+  // Ring binders are hardware — they have no printed back cover sheet.
+  const skipBackCoverCard = isRingBinder;
+  if (isBound && !skipBackCoverCard) {
     if (hasBackCover) {
       if (fp.length % 2 !== 0) {
         fp.push({ thumbnailUrl: "", pageIndex: 0, isColor: true });
