@@ -64,6 +64,7 @@ import BranchSettings from "@/pages/branch/BranchSettings";
 import PlatformTenants from "@/pages/platform/PlatformTenants";
 import PlatformUsers from "@/pages/platform/PlatformUsers";
 import PlatformSettings from "@/pages/platform/PlatformSettings";
+import PlatformPricingRegions from "@/pages/platform/PlatformPricingRegions";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -237,6 +238,11 @@ const App = () => (
               <Route path="/platform/demo" element={
                 <ProtectedRoute allowedRoles={["platform_admin"]}>
                   <PlatformDemoActivity />
+                </ProtectedRoute>
+              } />
+              <Route path="/platform/pricing" element={
+                <ProtectedRoute allowedRoles={["platform_admin"]}>
+                  <PlatformPricingRegions />
                 </ProtectedRoute>
               } />
             </Route>
