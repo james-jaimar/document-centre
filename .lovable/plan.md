@@ -1,43 +1,60 @@
 
 
-## Fix insert sheet positioning for single-sided documents
+## Simplify ring binder to static page rendering (no flipbook)
 
-### Problem
+### Problems
 
-In `InsertManager.tsx`, the `bodyPages` array gives every page within a document section the **same `sortOrder`** (the section's `sort_order` value). When a single 8-page document is uploaded as one section, all 8 pages share the same sort order. The dropdown deduplicates or skips entries, resulting in only even-numbered pages appearing as insert targets.
+1. **Cover artwork not rendering** — The closed-state branch at `currentPage === 0` checks `urls[0]`, but if the URL is empty or fails to sign, it falls through to a white rectangle silently.
 
-### Root cause (line 53)
+2. **Left-side page curl** — The left `HTMLFlipBook` has `showPageCorners={true}` and `overflow: "visible"`, so react-pageflip draws interactive curl corners on the far-left edge, outside the binder frame.
 
-```ts
-pages.push({ label: `Page ${pageNum}`, sortOrder: section.sort_order });
-```
+3. **Both flipbooks contain ALL pages** — `renderPages()` dumps every page into both the left and right `HTMLFlipBook`. Each instance is independently interactive, producing phantom curls and impossible left-side tab artifacts.
 
-Every page `p` in the loop gets `section.sort_order` regardless of which page within the document it is.
+### Root cause
 
-### Fix
+Using two full `HTMLFlipBook` instances for ring binders is architecturally wrong. Ring binder pages do not flip like a bound book — you physically lift individual pages over the rings. The dual-flipbook approach creates synchronisation bugs, phantom curls, and interaction zones that leak outside the binder frame.
 
-Generate a unique fractional sort order per page within each section so every page becomes a distinct insert target:
+### Solution: static page rendering
 
-```ts
-pages.push({
-  label: `Page ${pageNum}`,
-  sortOrder: section.sort_order + (p / count),
-});
-```
+Replace the dual-flipbook open state with two static page `div`s (left page and right page). Navigation is handled entirely by the external prev/next arrows and slider that `PreviewPanel` already provides. No flip animation needed — this is more physically accurate and eliminates all the dual-book complexity.
 
-This gives an 8-page section with `sort_order = 1` the values `1.000, 1.125, 1.250, 1.375, 1.500, 1.625, 1.750, 1.875` — each unique, each a valid insert-after target.
+### Changes to `src/components/preview/RingBinderOpenSpread.tsx`
 
-The `handleAddAfterPage` callback already does `sortOrder + 1`, and `getInsertPageLabel` compares with `<`, so fractional values work without any other changes.
+**Remove:**
+- Both `HTMLFlipBook` instances and the `renderPages()` function
+- The `onLeftFlip` / `onRightFlip` callbacks and `isSyncing` ref
+- The `leftRef` / `rightRef` refs and their `useEffect` sync logic
+- All react-pageflip-related props (`showPageCorners`, `flippingTime`, etc.)
 
-### File to change
+**Replace with:**
+- Two simple `div` containers positioned in the existing binder layout (left page area, center gap, right page area)
+- Left div renders `RingFlipPage` (already exists, just a styled div) for `currentPage - 1` — or a white blank if `currentPage === 1` (inside front cover)
+- Right div renders `RingFlipPage` for `currentPage` — or a white blank if `currentPage >= urls.length` (inside back cover)
+- The `RingOpenSpread` component simplifies to a pure layout component with no animation state
+- Optional: add a subtle CSS `transition` on opacity when pages change for a smooth visual effect
 
-| File | Change |
-|---|---|
-| `src/components/order/InsertManager.tsx` | Line 53: use `section.sort_order + (p / count)` instead of `section.sort_order` |
+**Keep unchanged:**
+- Closed-cover state at `currentPage === 0` (binder PNG + cover artwork pocket)
+- Binder background PNG positioning and inset geometry
+- `RingTabOverlay` (right-edge-only tabs)
+- `RingFlipPage` component (reused as the static page renderer)
+- All `PageEffects` integration
+
+**Fix cover detection:**
+- Add a loading/fallback state for the cover: if `urls[0]` is truthy but the image fails to load, show a placeholder instead of silently rendering nothing
 
 ### Result
 
-- Single-sided 8-page document shows "After Page 1" through "After Page 8"
-- Double-sided documents continue to work correctly
-- No changes to any other component
+- Cover artwork renders correctly when a printed cover is uploaded
+- No phantom page curls — pages are static divs, not interactive flipbooks
+- No left-side interaction artifacts
+- Tabs remain right-edge-only and physically correct
+- Navigation works via existing external controls (arrows, slider)
+- Simpler code, no synchronisation bugs, no animation state to manage
+
+### Files to change
+
+| File | Change |
+|---|---|
+| `src/components/preview/RingBinderOpenSpread.tsx` | Replace dual-HTMLFlipBook with static left/right page divs; fix cover fallback |
 
