@@ -1,83 +1,78 @@
 
 
-## Ring binder — Plan B: two independent flipbooks with a real centre gap
+## Ring binder preview — full clean rebuild of the open-state renderer
 
-### Why the current approach can't work
+### What's wrong in the screenshots
 
-`react-pageflip` renders a spread as a single contiguous DOM block where the two pages always touch at the spine. **There is no API to inject a gutter between left and right pages** — confirmed in the library's GitHub issues and the npm docs. Every "centre gap" we've tried so far has been faked by overlaying a ring strip on top of touching pages, which is why the rings keep clipping content and the geometry never lines up.
+1. **Pages are bigger than the binder background** — the binder PNG aspect (1781 × 840 ≈ 2.12) is far wider/shorter than two real A4 pages plus a ring gap, so when we fit the binder to the available area the inner page rectangle ends up taller than it is wide-enough-for and the pages spill outside the artwork.
+2. **Tabs cropped on both outer edges** — the frame container has no horizontal padding for the tab gutter, so right-page tabs and left-page back-tabs render outside the binder frame and get clipped.
+3. **Page-curl half-way across the page** — `react-pageflip` in single-page (`usePortrait`) mode draws the corner curl across a fraction of the page width. Nothing wrong with the curl itself; it just looks wrong because the page is the wrong size.
+4. **Two sets of rings** — `ring_binder_white_open.png` already has the ring mechanism baked in. The transparent rings PNG overlay is a duplicate sitting on top of it.
 
-The only way to get a true physical gap (with the rings sitting in clear space and pages cleanly tucked under them) is **two separate `HTMLFlipBook` instances** — one for the left half, one for the right half — with a real CSS gap between them.
+### The clean rebuild
 
-### Trade-off you must accept for Plan B
+Throw away the current open-state ring code and restart from a single principle: **the page geometry comes first, the binder artwork wraps around it**. Not the other way round.
 
-You lose the **cross-spine page-flip animation** (the corner-curl that crosses from right page to left page). Each side flips independently. In practice:
+**Step 1 — derive page size from the available area.** Reserve outer padding for tab gutters and a small breathing margin, then compute the largest page rectangle that fits, given a real A4 portrait aspect. Two of those side-by-side, plus a sensible centre gap for the rings, gives the spread footprint.
 
-- Click the **right page corner** → the right-hand sheet flips over to reveal the next right-hand page; the left page swaps in place at the same time
-- Same in reverse on the left
-- It still looks like a binder turning pages, just without the curl crossing the rings — which is physically correct anyway, because in a real ring binder pages don't curl across the mechanism
+**Step 2 — fit the binder background to wrap the spread.** The binder PNG is sized so its inner printable region matches the spread footprint. Where the binder's natural aspect would force overflow, the artwork is allowed to extend horizontally beyond the spread (inside the container), which is fine — that's exactly where the binder cover edges should be.
 
-If you'd rather keep the cross-spine curl and live with the rings clipping content, say so and I'll stop here. Otherwise this is the plan.
+**Step 3 — rings come from the background, not from an overlay.** The supplied composite `ring_binder_white_open.png` already includes the ring mechanism in the centre. The transparent `ring_bind_mechanism.png` overlay is removed entirely — it was the source of the duplicate rings.
 
-### Layout
+**Step 4 — two single-page flipbooks, one per side, with a real CSS gap between them.** Same Plan B architecture, but now sized correctly. Each side's container reserves a tab-gutter on its outer edge so tabs render fully without clipping.
 
-```text
-        ┌─────── binder background PNG (open) ───────┐
-        │                                            │
-        │   ┌──────────┐  ╭──────╮  ┌──────────┐    │
-        │   │  LEFT    │  │ ring │  │  RIGHT   │    │
-        │   │ flipbook │  │ mech │  │ flipbook │    │
-        │   │  (solo)  │  │ PNG  │  │  (solo)  │    │
-        │   └──────────┘  ╰──────╯  └──────────┘    │
-        │                                            │
-        └────────────────────────────────────────────┘
-```
+**Step 5 — the binder background sits behind both flipbooks.** It is never sized from the page rectangle math; instead it's positioned to overlay the spread with a fixed proportional inset on each side so the ring column lines up with the centre gap.
 
-- Left and right are each their own `HTMLFlipBook` running in **single-page mode** (`usePortrait={true}`), sized to one A4 page at correct aspect.
-- A real CSS gap between them — wide enough to clear the ring mechanism artwork.
-- The transparent rings PNG sits in that gap, so it visually clears both pages.
-- The open binder background PNG sits behind everything.
-
-### Page wiring
-
-A single `currentPage` index already exists. We split it into:
-- `leftIndex = currentPage` (the left-hand page in the spread)
-- `rightIndex = currentPage + 1`
-
-Two flip books, each driven independently by `turnToPage`. Flip events on either side update `currentPage` by ±2, and we call `turnToPage` on the other book to keep them in sync.
-
-Edge cases:
-- **First open spread** (after closed cover): left side shows a blank "inside-front" face, right side shows page 1 of body — this is exactly the existing solo-right behaviour, just enforced by leaving the left book on a blank page
-- **Last spread** with odd page count: right side shows blank
-- **Tabs**: stay on the right book (tabs always belong to the right page in the existing model — already correct)
-- **Inserts**: same as standard — they're full sheets, render naturally on whichever side they fall
-
-### Sizing
-
-The binder background drives the layout (frame-first, as before). Inside the frame:
+### Concrete layout
 
 ```text
-RING_INNER = {
-  top:    0.06,
-  bottom: 0.06,
-  outer:  0.05,
-  centerGap: 0.13,   // a touch wider than today, sized to the rings PNG
-}
+┌── container (width × height) ─────────────────────────┐
+│                                                       │
+│   ┌── binder background PNG ──────────────────────┐   │
+│   │  ╔═══ spread region ══════════════════════╗   │   │
+│   │  ║ [tab    ┌─ left ─┐  gap  ┌─ right ─┐    ║   │   │
+│   │  ║  gutter │  page  │ rings │  page   │tab ║   │   │
+│   │  ║    L]   │ flipbk │       │ flipbk  │gut ║   │   │
+│   │  ║         └────────┘       └─────────┘ R  ║   │   │
+│   │  ╚════════════════════════════════════════╝   │   │
+│   └───────────────────────────────────────────────┘   │
+└───────────────────────────────────────────────────────┘
 ```
 
-Each page rectangle is computed from the inner rectangle minus the centre gap, divided by 2. The two flipbooks are positioned absolutely into those rectangles. The rings PNG is positioned in the centre gap, sized to match the gap's width.
+Sizing rules:
+
+- `pageHeight = min(availableHeight, derived from pageAspectRatio × pageWidth)`
+- `pageWidth = pageHeight × pageAspectRatio` (A4 portrait ratio)
+- `centerGapPx ≈ pageWidth × 0.16` — wide enough to clear the ring mechanism in the artwork
+- `tabGutterPx = tabPositions ? 30 : 0` per side
+- Binder frame width = `2 × pageWidth + centerGapPx + binderHorizontalInsetFraction × 2`, height = `pageHeight + binderVerticalInsetFraction × 2`. The inset fractions are tuned once against the PNG.
+- Binder PNG is rendered inside the frame with `objectFit: "fill"` so the rings line up with the centre gap.
+
+### Behaviour preserved from current code
+
+- Closed-binder cover view at `currentPage === 0` stays exactly as it is (the ring binder closed image with optional pocket cover overlay) — that part already looks right.
+- Two `HTMLFlipBook` instances in `usePortrait` mode, synced via `turnToPage` on flip events.
+- `leftIndex = currentPage − 1`, `rightIndex = currentPage`. First open spread shows blank inside-front on the left and body page 1 on the right.
+- Tab overlay and inserts continue to work — tabs render in the per-side gutter, inserts render inside their respective single-page flipbook.
+
+### What gets deleted
+
+- The transparent `ring_bind_mechanism.png` overlay block (no longer rendered — the background already has rings).
+- The current `RING_INNER` constants and frame-first scaling math — replaced with page-first sizing.
+- The keep-around `ringMechanism` import.
 
 ### Files to change
 
 | File | Change |
 |---|---|
-| `src/components/preview/FlipBook.tsx` | Replace the ring open-state branch: render two `HTMLFlipBook` instances side-by-side in single-page mode, separated by a real centre gap, with the rings PNG positioned in that gap. Sync flips between the two books via `turnToPage`. Closed-state cover handling stays as-is. Standard wire/comb/saddle/perfect path stays untouched. |
+| `src/components/preview/FlipBook.tsx` | Delete the existing `RingOpenSpread` body and rewrite from scratch using the page-first layout above. Remove the `ringMechanism` import and the centre overlay `<img>`. Re-tune the binder inset constants once against the artwork. Keep the closed-state ring branch and the standard wire/comb/saddle/perfect path untouched. |
 
 ### Result
 
-- Real, physical centre gap between the two pages
-- Rings sit in clear space — never overlap content
-- Pages cleanly tucked under the rings (because they end where the ring gap begins)
-- Background binder is correctly sized, with pages sitting inside the printable area
-- Page-flip animation still works on each side, just doesn't cross the spine (which is physically correct for ring binders)
-- Tabs and inserts continue to behave correctly
+- Pages sit cleanly inside the binder artwork at correct A4 portrait proportions
+- Tabs render fully on the outer edges of each page — never clipped
+- Only one set of rings (from the background artwork) — no duplicate overlay
+- Page-flip curl looks proportional because the page rectangle is now the right size
+- Real CSS gap between the two pages, matching the ring column in the artwork
+- Closed-cover state, standard-binding path, tabs, inserts all unchanged
 
