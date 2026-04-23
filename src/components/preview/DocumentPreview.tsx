@@ -157,6 +157,17 @@ export default function DocumentPreview({
     tabPositions,
   };
 
+  // Ring binders use a completely separate renderer — never route through FlipBook
+  if (productType === "ring_binder") {
+    return (
+      <RingBinderPreview
+        {...commonProps}
+        tabPositions={tabPositions}
+        rawPaths={thumbnailPaths}
+      />
+    );
+  }
+
   if (BOUND_TYPES.has(productType)) {
     return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} displayPageNumbers={displayPageNumbers} faceLabels={faceLabels} bindingEdge={bindingEdge} rawPaths={thumbnailPaths} />;
   }
