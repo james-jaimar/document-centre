@@ -64,6 +64,7 @@ const NON_CONTENT_ROLES = new Set([
   "tab", "tab_back", "insert", "insert_back", "blank_back",
   "pvc_cover_front", "pvc_cover_back",
   "inside_back_cover_card", "back_cover_card", "inside_back_blank",
+  "binder_closed", "binder_left_blank",
 ]);
 
 function resolveEffects(
@@ -312,13 +313,23 @@ export function buildPreviewSnapshot(input: {
     roles.splice(1, 0, "pvc_cover_back");
   }
 
-  // Ring binder: NO virtual cover injection when no cover selected.
-  // The ring binder component shows the first body page through the clear
-  // binder window on page 0 — don't inject blank filler pages.
+  // Ring binder physical model: prepend two virtual non-content faces so the
+  // binder is modelled as hardware (not as a printed cover).
+  //   • index 0 → closed binder view
+  //   • index 1 → inside of binder front panel (blank left of first spread)
+  // Body pages then start at index 2 on the RIGHT of the first open spread.
   const isRingBinder = productType === "ring_binder";
+  if (isRingBinder && !isPvc && fp.length > 0) {
+    fp.unshift({ thumbnailUrl: "", pageIndex: 0, isColor: true });
+    roles.unshift("binder_left_blank");
+    fp.unshift({ thumbnailUrl: "", pageIndex: 0, isColor: true });
+    roles.unshift("binder_closed");
+  }
 
   const hasBackCover = isBound && effects.backCover && effects.backCover !== "none";
-  if (isBound) {
+  // Ring binders are hardware — they have no printed back cover sheet.
+  const skipBackCoverCard = isRingBinder;
+  if (isBound && !skipBackCoverCard) {
     if (hasBackCover) {
       if (fp.length % 2 !== 0) {
         fp.push({ thumbnailUrl: "", pageIndex: 0, isColor: true });
@@ -369,7 +380,7 @@ export function buildPreviewSnapshot(input: {
       ["pvc_cover_front", "pvc_cover_back", "inside_back_cover_card", "back_cover_card"].includes(role)
     )
       return true;
-    if (["blank_back", "inside_back_blank"].includes(role)) return false;
+    if (["blank_back", "inside_back_blank", "binder_closed", "binder_left_blank"].includes(role)) return false;
     // Ring binder body pages sit inside a mechanism — never edge-to-edge.
     if (isRingBinder && role === "body") return false;
     if (bleedScope === "all") return true;
@@ -422,6 +433,8 @@ export function buildPreviewSnapshot(input: {
       case "inside_back_cover_card": return "Back Cover (Inside)";
       case "back_cover_card": return "Back Cover";
       case "inside_back_blank": return "Blank (Inside Back)";
+      case "binder_closed": return "Ring Binder (Closed)";
+      case "binder_left_blank": return "Inside Front Panel";
       default: return "";
     }
   };

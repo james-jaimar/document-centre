@@ -253,7 +253,27 @@ export default function RingBinderPreview({
     const pocketY = artH * RING_POCKET.y;
     const pocketW = artW * RING_POCKET.w;
     const pocketH = artH * RING_POCKET.h;
-    const hasCoverArtwork = urls[0] && urls[0] !== "";
+
+    // Pocket artwork resolution (DISPLAY-ONLY — never consumes a sequence index):
+    //   1. Real uploaded front_cover section (if present)
+    //   2. First body page thumbnail as visual fallback through the clear window
+    //   3. Plain white pocket if nothing assigned yet
+    let pocketArtworkUrl = "";
+    let pocketRoleIndex = -1;
+    if (pageRoles && pageRoles.length > 0) {
+      const fcIdx = pageRoles.findIndex((r) => r === "front_cover" || r === "pvc_cover_front");
+      if (fcIdx >= 0 && urls[fcIdx]) {
+        pocketArtworkUrl = urls[fcIdx];
+        pocketRoleIndex = fcIdx;
+      } else {
+        const bodyIdx = pageRoles.findIndex((r) => r === "body");
+        if (bodyIdx >= 0 && urls[bodyIdx]) {
+          pocketArtworkUrl = urls[bodyIdx];
+          pocketRoleIndex = bodyIdx;
+        }
+      }
+    }
+    const hasCoverArtwork = !!pocketArtworkUrl;
 
     return (
       <div className="flex items-center justify-center" style={{ width, height }}>
@@ -273,17 +293,17 @@ export default function RingBinderPreview({
             {hasCoverArtwork ? (
               <PageEffects
                 effects={resolvedEffects}
-                pageIndex={0}
+                pageIndex={pocketRoleIndex}
                 totalPages={urls.length}
-                pageRole={pageRoles?.[0]}
-                allowBleed={bleedFlags?.[0] ?? false}
+                pageRole={pageRoles?.[pocketRoleIndex]}
+                allowBleed={false}
                 bleedInsetPx={Math.round(pocketW * 0.03)}
-                label={pageLabels?.[0]}
-                color={pageColors?.[0]}
+                label={pageLabels?.[pocketRoleIndex]}
+                color={pageColors?.[pocketRoleIndex]}
               >
                 <img
-                  src={urls[0]}
-                  alt="Front cover"
+                  src={pocketArtworkUrl}
+                  alt="Front pocket"
                   className="w-full h-full object-contain"
                   onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                 />

@@ -359,17 +359,31 @@ export default function PreviewPanel({
       roles.splice(1, 0, "pvc_cover_back");
     }
 
-    // ── Ring binder: NO virtual cover injection ──
-    // When the user picks "No Cover", the ring binder component shows the
-    // first body page through the clear binder window on page 0. Don't
-    // inject blank cover filler pages — that creates a blank initial view.
+    // ── Ring binder physical model ──
+    // The binder is hardware, not a printed cover. We prepend two virtual
+    // non-content faces so the user can:
+    //   • currentPage=0 → see the CLOSED binder (with optional pocket artwork)
+    //   • currentPage=1 → first OPEN spread with body[0] on the RIGHT
+    //                     (the left side represents the inside of the binder
+    //                     front panel, which is empty)
+    // These virtual faces NEVER count as document pages and never inject
+    // a fake "front cover" sheet derived from the body.
+    const isRingBinderType = productType === "ring_binder";
+    if (isRingBinderType && !isPvc && fp.length > 0) {
+      fp.unshift({ thumbnailUrl: "", pageIndex: 0, documentName: "", section: undefined, isColor: true });
+      roles.unshift("binder_left_blank");
+      fp.unshift({ thumbnailUrl: "", pageIndex: 0, documentName: "Ring Binder", section: undefined, isColor: true });
+      roles.unshift("binder_closed");
+    }
 
     // Tab/insert alignment is now handled inside buildPageSequence()
     // via the pending-queue flush — no post-processing pass needed.
 
     // ── Physical back cover card ──
     const hasBackCover = isBound && effects?.backCover && effects.backCover !== "none";
-    if (isBound) {
+    // Ring binders are hardware — they have no printed back cover sheet.
+    const skipBackCoverCard = isRingBinderType;
+    if (isBound && !skipBackCoverCard) {
       if (hasBackCover) {
         if (fp.length % 2 !== 0) {
           fp.push({ thumbnailUrl: "", pageIndex: 0, documentName: "", section: undefined, isColor: true });
@@ -423,6 +437,7 @@ export default function PreviewPanel({
     "tab", "tab_back", "insert", "insert_back", "blank_back",
     "pvc_cover_front", "pvc_cover_back",
     "inside_back_cover_card", "back_cover_card", "inside_back_blank",
+    "binder_closed", "binder_left_blank",
   ]);
 
   // Compute display page numbers — only body/cover content faces get numbered.
@@ -470,7 +485,7 @@ export default function PreviewPanel({
     const bleedScope = effects?.bleed ?? "none";
     return computedPageRoles.map((role) => {
       if (["pvc_cover_front", "pvc_cover_back", "inside_back_cover_card", "back_cover_card"].includes(role)) return true;
-      if (["blank_back", "inside_back_blank"].includes(role)) return false;
+      if (["blank_back", "inside_back_blank", "binder_closed", "binder_left_blank"].includes(role)) return false;
       // Ring binder body pages sit inside a mechanism — never edge-to-edge.
       // Only PVC/card cover materials (handled above) get full bleed.
       if (isRingBinder && role === "body") return false;
@@ -532,6 +547,8 @@ export default function PreviewPanel({
       case "inside_back_cover_card": return "Back Cover (Inside)";
       case "back_cover_card": return "Back Cover";
       case "inside_back_blank": return "Blank (Inside Back)";
+      case "binder_closed": return "Ring Binder (Closed)";
+      case "binder_left_blank": return "Inside Front Panel";
       default: return "";
     }
   };
@@ -545,16 +562,20 @@ export default function PreviewPanel({
   const pageInfoText = useMemo(() => {
     if (totalPages === 0) return "";
     if (isBound) {
+      // Ring binder: closed view at currentPage=0, then static spreads.
+      if (isRingBinder) {
+        if (currentPage === 0) return "Ring Binder (Closed)";
+        const leftLabel = faceLabel(currentPage);
+        const rightLabel = currentPage + 1 < totalPages ? faceLabel(currentPage + 1) : "";
+        if (rightLabel) return `${leftLabel} – ${rightLabel}  (${totalContentPages} pages)`;
+        return `${leftLabel}  (${totalContentPages} pages)`;
+      }
       if (isShowingFrontCover) {
         if (!hasRealFrontCover) return faceLabel(0);
         const role = computedPageRoles[0];
         return role === "pvc_cover_front" ? "Front Cover (PVC)" : "Front Cover";
       }
       if (isShowingBackCover) return "Back Cover";
-      // Ring binder: single-page info (no spread pairs)
-      if (isRingBinder) {
-        return `${faceLabel(currentPage)} of ${totalContentPages}`;
-      }
       if (isShowingLastSolo) {
         return `${faceLabel(totalPages - 1)} of ${totalContentPages}`;
       }
@@ -563,7 +584,7 @@ export default function PreviewPanel({
       return `${leftLabel} – ${rightLabel}  (${totalContentPages} pages)`;
     }
     return `${faceLabel(currentPage)} of ${totalContentPages}`;
-  }, [currentPage, totalPages, totalContentPages, isBound, isRingBinder, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers]);
+  }, [currentPage, totalPages, totalContentPages, isBound, isRingBinder, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers, hasRealFrontCover]);
 
   const colourStatus = useMemo(() => {
     if (totalPages === 0) return "";
@@ -592,8 +613,21 @@ export default function PreviewPanel({
 
   const goFirst = () => setCurrentPage(0);
   const goLast = () => setCurrentPage(totalPages - 1);
-  const goPrev = () => setCurrentPage((p) => Math.max(0, p - step));
-  const goNext = () => setCurrentPage((p) => Math.min(totalPages - 1, p + step));
+  const goPrev = () => setCurrentPage((p) => {
+    if (isRingBinder) {
+      // Ring binder: 0 (closed) → 1 (first spread) → 3 → 5 ...
+      if (p <= 1) return 0;
+      return Math.max(1, p - 2);
+    }
+    return Math.max(0, p - step);
+  });
+  const goNext = () => setCurrentPage((p) => {
+    if (isRingBinder) {
+      if (p === 0) return Math.min(totalPages - 1, 1);
+      return Math.min(totalPages - 1, p + 2);
+    }
+    return Math.min(totalPages - 1, p + step);
+  });
 
   if (totalPages === 0 && (!foldThumbnails || foldThumbnails.length === 0)) {
     return (
