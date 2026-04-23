@@ -5,6 +5,7 @@ import PageEffects from "./PageEffects";
 import { FileText, Loader2 } from "lucide-react";
 import ringBinderClosed from "@/assets/bindings/ring_binder_white_closed.png";
 import ringBinderOpen from "@/assets/bindings/ring_binder_white_open.png";
+import { resolveRingView } from "@/lib/preview/ringBinderModel";
 
 const BASE_PAGE_WIDTH = 400;
 
@@ -254,10 +255,10 @@ export default function RingBinderPreview({
     const pocketW = artW * RING_POCKET.w;
     const pocketH = artH * RING_POCKET.h;
 
-    // Pocket artwork resolution (DISPLAY-ONLY — never consumes a sequence index):
-    //   1. Real uploaded front_cover section (if present)
-    //   2. First body page thumbnail as visual fallback through the clear window
-    //   3. Plain white pocket if nothing assigned yet
+    // Pocket artwork (DISPLAY-ONLY — never consumes a sequence index):
+    //   - real uploaded front_cover / pvc_cover_front section, if present
+    //   - otherwise the pocket is blank (no body-page fallback — the binder
+    //     hardware's pocket is empty when the customer hasn't uploaded a cover)
     let pocketArtworkUrl = "";
     let pocketRoleIndex = -1;
     if (pageRoles && pageRoles.length > 0) {
@@ -265,12 +266,6 @@ export default function RingBinderPreview({
       if (fcIdx >= 0 && urls[fcIdx]) {
         pocketArtworkUrl = urls[fcIdx];
         pocketRoleIndex = fcIdx;
-      } else {
-        const bodyIdx = pageRoles.findIndex((r) => r === "body");
-        if (bodyIdx >= 0 && urls[bodyIdx]) {
-          pocketArtworkUrl = urls[bodyIdx];
-          pocketRoleIndex = bodyIdx;
-        }
       }
     }
     const hasCoverArtwork = !!pocketArtworkUrl;
@@ -396,16 +391,14 @@ function RingOpenSpread({
 
   const bleedInsetPx = Math.round(pageWidth * 0.03);
 
-  // Ring binder view-index model:
-  //   view 0       = closed (handled above, never reaches here)
-  //   view 1       = left=hardware, right=urls[0]
-  //   view k (1..N)= left=urls[k-2], right=urls[k-1]
-  //   view N+1     = left=urls[N-1], right=hardware
-  // Negative or out-of-range face index = render hardware (no paper sheet).
-  const leftIndex = currentPage - 2;
-  const rightIndex = currentPage - 1;
-  const leftIsHardware = leftIndex < 0 || leftIndex >= urls.length;
-  const rightIsHardware = rightIndex < 0 || rightIndex >= urls.length;
+  // Resolve the current view index to explicit left/right pane kinds.
+  // The shared model guarantees the geometry is fixed and either pane
+  // can be hardware (no paper) instead of inventing a blank sheet.
+  const view = resolveRingView(currentPage, urls.length);
+  const leftIsHardware = view.left.kind !== "sheet";
+  const rightIsHardware = view.right.kind !== "sheet";
+  const leftIndex = view.left.kind === "sheet" ? view.left.faceIndex : -1;
+  const rightIndex = view.right.kind === "sheet" ? view.right.faceIndex : -1;
 
   const spreadLeft = tabGutter + binderInsetX;
   const spreadTop = binderInsetY;
@@ -432,7 +425,7 @@ function RingOpenSpread({
   return (
     <div className="flex items-center justify-center" style={{ width, height, overflow: "visible" }}>
       <div style={{ width: containerWidth, height: containerHeight, position: "relative", overflow: "visible" }}>
-        {/* Binder background PNG */}
+        {/* Binder background PNG — always visible; covers hardware panes */}
         <img
           src={ringBinderOpen}
           alt=""
@@ -473,7 +466,7 @@ function RingOpenSpread({
           </div>
         )}
 
-        {/* LEFT pane — paper face or binder hardware (no white sheet) */}
+        {/* LEFT pane — paper face only when present; hardware shows the binder PNG */}
         {!leftIsHardware && (
           <div
             style={{
@@ -484,14 +477,13 @@ function RingOpenSpread({
               height: pageHeight,
               zIndex: 1,
               overflow: "hidden",
-              transition: "opacity 0.15s ease",
             }}
           >
             {renderStaticPage(leftIndex, pageWidth, pageHeight)}
           </div>
         )}
 
-        {/* RIGHT pane — paper face or binder hardware (no white sheet) */}
+        {/* RIGHT pane — paper face only when present; hardware shows the binder PNG */}
         {!rightIsHardware && (
           <div
             style={{
@@ -502,7 +494,6 @@ function RingOpenSpread({
               height: pageHeight,
               zIndex: 1,
               overflow: "hidden",
-              transition: "opacity 0.15s ease",
             }}
           >
             {renderStaticPage(rightIndex, pageWidth, pageHeight)}

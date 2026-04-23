@@ -16,6 +16,7 @@ import PreviewLightbox from "@/components/order/PreviewLightbox";
 import DocumentPreview from "@/components/preview/DocumentPreview";
 import type { ProductPreviewType, PreviewEffects, TabPosition } from "@/components/preview/previewTypes";
 import { TAB_COLORS } from "@/components/preview/previewTypes";
+import { ringTotalViews, resolveRingView, stepRingView } from "@/lib/preview/ringBinderModel";
 
 type Document = Tables<"documents">;
 type DocumentSection = Tables<"document_sections">;
@@ -496,15 +497,13 @@ export default function PreviewPanel({
     return undefined;
   }, [documents, isBusinessCards]);
 
-  // For ring binders, navigation uses a "view index" model on top of the
-  // pure physical sequence:
-  //   view 0       = closed binder (hardware only)
-  //   view 1       = left hardware, right sequence[0]
-  //   view k (1..N)= left sequence[k-2], right sequence[k-1]
-  //   view N+1     = left sequence[N-1], right hardware
-  // So total navigable views = sequence.length + 2.
-  const ringTotalViews = isRingBinder ? finalPages.length + 2 : 0;
-  const totalPages = isRingBinder ? ringTotalViews : finalPages.length;
+  // For ring binders, navigation uses the shared sheet-flip view model:
+  //   view 0   = closed (hardware only)
+  //   view 1   = left=hardware, right=seq[0]
+  //   view k≥2 = left=seq[2k-3], right=seq[2k-2]
+  //   final    = left=seq[N-1], right=hardware
+  const ringTotal = isRingBinder ? ringTotalViews(finalPages.length) : 0;
+  const totalPages = isRingBinder ? ringTotal : finalPages.length;
 
   useEffect(() => {
     if (prevPageCount.current !== 0 && totalPages > 0 && currentPage >= totalPages) {
@@ -528,16 +527,10 @@ export default function PreviewPanel({
   const isShowingLastSolo = isBound && !isRingBinder && !hasBackCoverCard && currentPage >= totalPages - 1;
   const isSoloState = isRingBinder ? false : (isShowingFrontCover || isShowingBackCover || isShowingLastSolo);
 
-  // Ring binder: currentPage is a view index, not a face index.
-  //   view 0       = closed              → no visible faces
-  //   view k (1..N)= left=seq[k-2] (or hardware), right=seq[k-1]
-  //   view N+1     = left=seq[N-1], right=hardware
-  const ringLeftFace = isRingBinder
-    ? (currentPage >= 2 && currentPage - 2 < finalPages.length ? currentPage - 2 : null)
-    : null;
-  const ringRightFace = isRingBinder
-    ? (currentPage >= 1 && currentPage - 1 < finalPages.length ? currentPage - 1 : null)
-    : null;
+  // Ring binder: derive visible faces from the shared view model.
+  const ringView = isRingBinder ? resolveRingView(currentPage, finalPages.length) : null;
+  const ringLeftFace = ringView && ringView.left.kind === "sheet" ? ringView.left.faceIndex : null;
+  const ringRightFace = ringView && ringView.right.kind === "sheet" ? ringView.right.faceIndex : null;
 
   const visibleLeft = isRingBinder
     ? ringLeftFace
@@ -559,8 +552,6 @@ export default function PreviewPanel({
       case "inside_back_cover_card": return "Back Cover (Inside)";
       case "back_cover_card": return "Back Cover";
       case "inside_back_blank": return "Blank (Inside Back)";
-      case "binder_closed": return "Ring Binder (Closed)";
-      case "binder_left_blank": return "Inside Front Panel";
       default: return "";
     }
   };
@@ -574,14 +565,17 @@ export default function PreviewPanel({
   const pageInfoText = useMemo(() => {
     if (totalPages === 0) return "";
     if (isBound) {
-      // Ring binder uses view-index navigation (closed + open turns).
+      // Ring binder uses sheet-flip view-index navigation. Hardware panes
+      // are not pages and never get a label — show only the visible faces.
       if (isRingBinder) {
         if (currentPage === 0) return "Ring Binder (Closed)";
-        const leftLbl = ringLeftFace !== null ? faceLabel(ringLeftFace) : "Inside Front Panel";
+        const leftLbl = ringLeftFace !== null ? faceLabel(ringLeftFace) : "";
         const rightLbl = ringRightFace !== null ? faceLabel(ringRightFace) : "";
-        if (rightLbl && ringLeftFace === null) return `${rightLbl}  (${totalContentPages} pages)`;
-        if (!rightLbl) return `${leftLbl}  (${totalContentPages} pages)`;
-        return `${leftLbl} – ${rightLbl}  (${totalContentPages} pages)`;
+        const suffix = totalContentPages > 0 ? `  (${totalContentPages} pages)` : "";
+        if (leftLbl && rightLbl) return `${leftLbl} – ${rightLbl}${suffix}`;
+        if (rightLbl) return `${rightLbl}${suffix}`;
+        if (leftLbl) return `${leftLbl}${suffix}`;
+        return "Ring Binder";
       }
       if (isShowingFrontCover) {
         if (!hasRealFrontCover) return faceLabel(0);
@@ -627,16 +621,11 @@ export default function PreviewPanel({
   const goFirst = () => setCurrentPage(0);
   const goLast = () => setCurrentPage(totalPages - 1);
   const goPrev = () => setCurrentPage((p) => {
-    if (isRingBinder) {
-      // One physical face per step (+ closed view at 0).
-      return Math.max(0, p - 1);
-    }
+    if (isRingBinder) return stepRingView(p, finalPages.length, -1);
     return Math.max(0, p - step);
   });
   const goNext = () => setCurrentPage((p) => {
-    if (isRingBinder) {
-      return Math.min(totalPages - 1, p + 1);
-    }
+    if (isRingBinder) return stepRingView(p, finalPages.length, 1);
     return Math.min(totalPages - 1, p + step);
   });
 
