@@ -14,9 +14,19 @@ export default function LooseSheetsPreview({
 }: PreviewComponentProps) {
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
   const ratio = pageAspectRatio ?? 0.707; // fallback to A4
-  const invRatio = 1 / ratio; // height/width
-  const pageHeight = Math.min(height * 0.9, width * 0.65 * invRatio);
-  const pageWidth = pageHeight * ratio;
+  const isLandscape = ratio > 1;
+
+  // Fit page to available space, respecting aspect ratio
+  const maxW = width * (isLandscape ? 0.85 : 0.65);
+  const maxH = height * 0.85;
+
+  let pageWidth = maxW;
+  let pageHeight = pageWidth / ratio;
+  if (pageHeight > maxH) {
+    pageHeight = maxH;
+    pageWidth = pageHeight * ratio;
+  }
+
   const url = urls[currentPage];
   const bleedInsetPx = Math.round(pageWidth * 0.03);
 
