@@ -528,8 +528,23 @@ export default function PreviewPanel({
   const isShowingLastSolo = isBound && !isRingBinder && !hasBackCoverCard && currentPage >= totalPages - 1;
   const isSoloState = isRingBinder ? false : (isShowingFrontCover || isShowingBackCover || isShowingLastSolo);
 
-  const visibleLeft = isSoloState && isShowingFrontCover ? null : currentPage;
-  const visibleRight = isShowingFrontCover && !isRingBinder ? 0 : (isSoloState ? null : currentPage + 1);
+  // Ring binder: currentPage is a view index, not a face index.
+  //   view 0       = closed              → no visible faces
+  //   view k (1..N)= left=seq[k-2] (or hardware), right=seq[k-1]
+  //   view N+1     = left=seq[N-1], right=hardware
+  const ringLeftFace = isRingBinder
+    ? (currentPage >= 2 && currentPage - 2 < finalPages.length ? currentPage - 2 : null)
+    : null;
+  const ringRightFace = isRingBinder
+    ? (currentPage >= 1 && currentPage - 1 < finalPages.length ? currentPage - 1 : null)
+    : null;
+
+  const visibleLeft = isRingBinder
+    ? ringLeftFace
+    : (isSoloState && isShowingFrontCover ? null : currentPage);
+  const visibleRight = isRingBinder
+    ? ringRightFace
+    : (isShowingFrontCover ? 0 : (isSoloState ? null : currentPage + 1));
 
   /** Human-friendly label for a role when it has no page number */
   const roleFriendlyName = (role: string): string => {
@@ -559,14 +574,30 @@ export default function PreviewPanel({
   const pageInfoText = useMemo(() => {
     if (totalPages === 0) return "";
     if (isBound) {
-      // Ring binder: closed view at currentPage=0, then static spreads.
+      // Ring binder uses view-index navigation (closed + open turns).
       if (isRingBinder) {
         if (currentPage === 0) return "Ring Binder (Closed)";
-        const leftLabel = faceLabel(currentPage);
-        const rightLabel = currentPage + 1 < totalPages ? faceLabel(currentPage + 1) : "";
-        if (rightLabel) return `${leftLabel} – ${rightLabel}  (${totalContentPages} pages)`;
-        return `${leftLabel}  (${totalContentPages} pages)`;
+        const leftLbl = ringLeftFace !== null ? faceLabel(ringLeftFace) : "Inside Front Panel";
+        const rightLbl = ringRightFace !== null ? faceLabel(ringRightFace) : "";
+        if (rightLbl && ringLeftFace === null) return `${rightLbl}  (${totalContentPages} pages)`;
+        if (!rightLbl) return `${leftLbl}  (${totalContentPages} pages)`;
+        return `${leftLbl} – ${rightLbl}  (${totalContentPages} pages)`;
       }
+      if (isShowingFrontCover) {
+        if (!hasRealFrontCover) return faceLabel(0);
+        const role = computedPageRoles[0];
+        return role === "pvc_cover_front" ? "Front Cover (PVC)" : "Front Cover";
+      }
+      if (isShowingBackCover) return "Back Cover";
+      if (isShowingLastSolo) {
+        return `${faceLabel(totalPages - 1)} of ${totalContentPages}`;
+      }
+      const leftLabel = faceLabel(currentPage);
+      const rightLabel = faceLabel(currentPage + 1);
+      return `${leftLabel} – ${rightLabel}  (${totalContentPages} pages)`;
+    }
+    return `${faceLabel(currentPage)} of ${totalContentPages}`;
+  }, [currentPage, totalPages, totalContentPages, isBound, isRingBinder, ringLeftFace, ringRightFace, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers, hasRealFrontCover]);
       if (isShowingFrontCover) {
         if (!hasRealFrontCover) return faceLabel(0);
         const role = computedPageRoles[0];
@@ -612,16 +643,14 @@ export default function PreviewPanel({
   const goLast = () => setCurrentPage(totalPages - 1);
   const goPrev = () => setCurrentPage((p) => {
     if (isRingBinder) {
-      // Ring binder: 0 (closed) → 1 (first spread) → 3 → 5 ...
-      if (p <= 1) return 0;
-      return Math.max(1, p - 2);
+      // One physical face per step (+ closed view at 0).
+      return Math.max(0, p - 1);
     }
     return Math.max(0, p - step);
   });
   const goNext = () => setCurrentPage((p) => {
     if (isRingBinder) {
-      if (p === 0) return Math.min(totalPages - 1, 1);
-      return Math.min(totalPages - 1, p + 2);
+      return Math.min(totalPages - 1, p + 1);
     }
     return Math.min(totalPages - 1, p + step);
   });
