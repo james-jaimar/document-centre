@@ -14,6 +14,7 @@ import bookletsImg from "@/assets/products/booklets.jpg";
 import flyersImg from "@/assets/products/flyers.jpg";
 import brochuresImg from "@/assets/products/brochures.jpg";
 import businessCardsImg from "@/assets/product-business-cards.jpg";
+import photoPrintsImg from "@/assets/products/photo-prints.jpg";
 
 const SLUG_IMAGE_MAP: Record<string, string> = {
   "bound-documents": boundDocumentsImg,
@@ -25,6 +26,7 @@ const SLUG_IMAGE_MAP: Record<string, string> = {
   "flyers": flyersImg,
   "brochures": brochuresImg,
   "business-cards": businessCardsImg,
+  "photo-prints": photoPrintsImg,
 };
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -55,7 +57,11 @@ export default function NewOrder() {
     },
   });
 
-  const handleSelect = (familyId: string) => {
+  const handleSelect = (familyId: string, familySlug: string) => {
+    if (familySlug === "photo-prints") {
+      navigate(`/t/${slug}/orders/new/photo-prints`);
+      return;
+    }
     navigate(`/t/${slug}/orders/new/${familyId}`);
   };
 
@@ -84,7 +90,7 @@ export default function NewOrder() {
               <Card
                 key={family.id}
                 className="cursor-pointer border-2 border-transparent hover:border-primary/50 hover:shadow-lg transition-all group overflow-hidden"
-                onClick={() => handleSelect(family.id)}
+                onClick={() => handleSelect(family.id, family.slug)}
               >
                 {heroImage ? (
                   <div className="relative h-36 overflow-hidden bg-muted">
