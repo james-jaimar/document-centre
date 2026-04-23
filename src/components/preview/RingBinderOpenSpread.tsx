@@ -5,6 +5,7 @@ import PageEffects from "./PageEffects";
 import { FileText, Loader2 } from "lucide-react";
 import ringBinderClosed from "@/assets/bindings/ring_binder_white_closed.png";
 import ringBinderOpen from "@/assets/bindings/ring_binder_white_open.png";
+import { resolveRingView } from "@/lib/preview/ringBinderModel";
 
 const BASE_PAGE_WIDTH = 400;
 
