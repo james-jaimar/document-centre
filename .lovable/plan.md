@@ -1,93 +1,193 @@
 
-## Fix ring binder preview to follow the actual product model
+## Rebuild ring binder preview around the real physical model
 
-### What the preview should model
+### What is actually wrong
 
-A ring binder is not a normal bound document.
+The current ring binder logic is still half-thinking like a book.
 
-- The binder itself is hardware, not a printed cover
-- The clear front pocket may show an optional uploaded **Cover Sheet**
-- If no cover sheet was uploaded, the closed binder may show the **first body page through the window**, but that must **not** become a real inserted page in the sequence
-- Inside pages are still physical sheets:
-  - simplex = printed front + blank reverse
-  - tabs/inserts behave like physical divider sheets
-- Open binder navigation must follow the agreed static model:
-  - first active sheet starts on the **right**
-  - turned/completed sheets accumulate on the **left**
+There are three separate problems in the code right now:
 
-### Root cause
+1. `PreviewPanel.tsx` and `buildPreviewSnapshot.ts` are prepending fake binder faces (`binder_closed`, `binder_left_blank`) into the actual page sequence
+   - that makes the closed hardware state behave like real pages
+   - that is why numbering, labels, and simplex backs drift
 
-The current ring binder flow is mixing two different ideas:
+2. `RingBinderOpenSpread.tsx` is rendering “missing” faces as white paper placeholders
+   - so the last state shows a fake blank page on the right
+   - physically that should be binder hardware / empty side, not a sheet
 
-1. **Closed binder display**
-   - `RingBinderOpenSpread.tsx` uses `urls[0]` for the front pocket artwork whenever page 0 is shown
-   - if there is no real `front_cover` section, that means the first body page is being visually treated like a cover
+3. Ring binder navigation is stepping like a spreaded book
+   - but a ring binder should advance one physical face at a time once opened
+   - first open = page starts on the right
+   - each next step moves that face over the rings to the left and reveals the next face on the right
+   - final step = last face sits on the left, right side is empty hardware
 
-2. **Underlying physical sequence**
-   - the first body page is still also part of the inside sequence
-   - so the preview ends up visually “using” page 1 twice:
-     - once as a fake cover sheet
-     - again as part of the body stack
-   - that is why inside numbering/drift becomes wrong
+### Correct ring binder model
+
+A ring binder preview should use:
+
+- **Closed state**
+  - hardware only
+  - front pocket may display:
+    - real uploaded `front_cover` face first
+    - otherwise first real content face as display-only fallback
+  - this display must never become part of the physical sequence
+
+- **Physical sequence**
+  - only real inserted faces:
+    - `front_cover` if actually uploaded
+    - `body`
+    - `blank_back` for simplex
+    - `tab` / `tab_back`
+    - `insert` / `insert_back`
+  - no `binder_closed`
+  - no `binder_left_blank`
+
+- **Open navigation**
+  - `view 0` = closed binder
+  - `view 1` = left hardware, right first physical face
+  - `view 2` = left previous face, right next face
+  - ...
+  - final view = left last physical face, right hardware
 
 ### Implementation plan
 
-#### 1. Separate “front pocket display” from the actual page sequence
-Update the ring binder renderer so the closed-binder pocket artwork is derived from:
+#### 1. Remove fake binder pages from the sequence layer
+Update both:
 
-- real uploaded `front_cover` section first
-- otherwise first body page as a **display-only fallback**
-- but without mutating the page sequence or consuming a body index
+- `src/components/order/PreviewPanel.tsx`
+- `src/lib/orders/buildPreviewSnapshot.ts`
 
-This keeps the closed front visual nice without creating a fake cover page.
+So ring binders no longer prepend:
 
-#### 2. Make ring binders use an explicit ring-binder page model
-Keep the shared bound-document sequence logic intact for other products, but add ring-binder-specific interpretation on top of it:
+- `binder_closed`
+- `binder_left_blank`
 
-- treat body pages, blank backs, tabs, and inserts as real physical faces
-- do not auto-create any front cover face for ring binders unless a real `front_cover` section exists
-- do not treat the binder hardware/back panel as a content face
+The sequence must remain a pure list of real inserted faces only.
 
-#### 3. Correct the open-spread mapping for the ring binder
-Rework `RingBinderOpenSpread.tsx` so the static open state follows the agreed physical behaviour:
+Keep:
+- simplex `blank_back`
+- tabs/inserts as physical sheets
+- ring binder bleed suppression for body pages
+- no printed back-cover card for ring binders
 
-- closed state = binder front
-- open state = first active printed sheet starts on the **right**
-- left side represents the turned/completed stack
-- blank backs for simplex pages remain part of the physical model
-- tabs/inserts stay aligned to the right-hand insertion flow
+#### 2. Replace raw page-index navigation with a ring-binder view model
+In `PreviewPanel.tsx`, stop treating ring binder navigation as raw page indices.
 
-This will likely require recalculating which sequence indices feed the left and right panes instead of using the current generic spread pairing.
+Introduce a ring-binder-specific view count:
 
-#### 4. Fix page numbering so the cover window does not count as an inserted page
-Update the ring binder numbering/display text so:
+- `view 0` = closed
+- `view 1..N+1` = open turns across the real sequence of `N` physical faces
 
-- if no real cover sheet exists, page numbering starts from the first body page
-- the closed front pocket view does not shift the internal page count
-- inside view labels stay aligned with the actual body/document sequence
+Use this mapping:
 
-#### 5. Mirror the same logic in saved order previews
-Apply the same ring-binder rules in `buildPreviewSnapshot.ts` so placed-order previews behave exactly like the live configurator.
+```text
+turn = viewIndex - 1
+
+if viewIndex === 0:
+  closed view
+
+else:
+  leftFace  = turn === 0 ? hardware-left : sequence[turn - 1]
+  rightFace = turn < sequence.length ? sequence[turn] : hardware-right
+```
+
+This fixes all four symptoms at once:
+
+- no auto-inserted cover
+- correct first open state
+- correct simplex backs
+- correct final empty-right state
+
+#### 3. Rework `RingBinderOpenSpread.tsx` to render hardware states explicitly
+Update the component so it stops assuming every pane is a paper face.
+
+Add explicit rendering modes for each side:
+
+- `sheet`
+- `hardware-left`
+- `hardware-right`
+
+Rules:
+
+- closed view: use pocket artwork only for display
+- first open view: left hardware panel, right first physical face
+- middle views: left previous face, right next face
+- final view: left last physical face, right hardware only
+
+Critically:
+- do not render a white paper placeholder when the right side is past the end
+- let the binder artwork remain visible there instead
+
+#### 4. Fix numbering/footer labels from the new view model
+Update `pageInfoText`, section labels, and visible-face metadata in `PreviewPanel.tsx` so labels come from the mapped left/right physical faces, not from fake prepended roles.
+
+Expected behaviour:
+
+- closed = `Ring Binder (Closed)`
+- first open with no real cover = first body page starts as Page 1 on the right
+- no “Front Cover” badge unless there is an actual uploaded front-cover section
+- last view shows only the last physical face as the active labelled face
+- hardware states do not count as pages
+
+#### 5. Fix ring binder navigation in fullscreen too
+Update `src/components/order/PreviewLightbox.tsx` so ring binders no longer use the shared `step = 2` bound-document rule.
+
+The lightbox must use the same ring-binder view model as the inline preview, otherwise fullscreen and inline will disagree again.
+
+#### 6. Mirror the same sequence rules into saved order previews
+Update `buildPreviewSnapshot.ts` so persisted previews store only the real physical ring-binder faces.
+
+The saved preview should not contain any fake binder roles either. The viewer should reconstruct closed/open hardware states at render time, not from snapshot data.
 
 ### Files to update
 
 | File | Change |
 |---|---|
-| `src/components/preview/RingBinderOpenSpread.tsx` | Split closed-pocket display from real sequence, remap open spread to right-first ring-binder logic |
-| `src/components/order/PreviewPanel.tsx` | Adjust ring-binder page info / numbering / visible-page logic so no fake front cover is counted |
-| `src/lib/orders/buildPreviewSnapshot.ts` | Mirror the same ring-binder sequencing and numbering rules for saved previews |
+| `src/components/order/PreviewPanel.tsx` | Remove fake binder roles from sequence, add ring-binder view indexing, fix page info/footer/slider logic |
+| `src/components/preview/RingBinderOpenSpread.tsx` | Render hardware-left/hardware-right explicitly, use display-only pocket fallback, remove fake white right page at end |
+| `src/components/order/PreviewLightbox.tsx` | Give ring binders their own navigation model instead of shared bound-doc stepping |
+| `src/lib/orders/buildPreviewSnapshot.ts` | Mirror the real physical sequence only; no binder virtual pages in persisted preview data |
 
 ### Guardrails
 
-- Do not modify `FlipBook.tsx` or shared bound-document behaviour
-- Keep ring-binder-specific logic isolated to the ring binder path
-- After implementation, verify wire/comb/perfect/saddle previews still behave exactly as before
+- Do not touch `FlipBook.tsx`
+- Keep ring binder logic isolated to the ring binder path
+- Do not reintroduce any fake binder roles into the physical page sequence
+- Treat the binder hardware as viewer state, not document content
+
+### Verification checklist
+
+Test these cases after implementation:
+
+1. **No cover + simplex body pages**
+   - closed pocket may show first body page
+   - first open shows left hardware / right Page 1
+   - next open shows left Blank Back / right Page 2
+
+2. **No cover + last page**
+   - final state shows last face on the left
+   - right side is hardware only, not a blank paper page
+
+3. **Real uploaded front cover**
+   - closed pocket shows real front cover
+   - inside numbering remains correct
+   - front cover only appears if actually uploaded
+
+4. **Tabs and inserts**
+   - still start on the right
+   - never split across the binder
+
+5. **Fullscreen**
+   - same order, same labels, same end-state as inline preview
+
+6. **Regression check**
+   - wire / comb / perfect / saddle unchanged
 
 ### Expected result
 
-- No auto-inserted front cover when the user only assigned body pages
-- Closed binder can still show artwork in the pocket without corrupting the sequence
-- Inside page numbering matches the real body pages
-- Simplex sheets remain front + blank back
-- Tabs/inserts continue to work as physical divider sheets
-- Ring binder behaviour matches the real-world product instead of the generic book model
+- No auto-inserted front cover when only body pages were assigned
+- Closed binder can still show artwork in the window without corrupting numbering
+- Ring binder advances like a real turned-sheet model, not a book spread model
+- First open starts on the right
+- Final state shows the last turned page on the left and hardware on the right
+- No zoom/layout drift between open states because the open binder geometry stays fixed
