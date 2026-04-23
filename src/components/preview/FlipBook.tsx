@@ -657,37 +657,48 @@ function RingOpenSpread({
   rightRef,
   structuralKey,
 }: RingOpenSpreadProps) {
-  // Sizing — frame-first, binder PNG is the outer frame
-  const availableWidth = width - 80;
-  const availableHeight = height - 60;
+  // ── PAGE-FIRST SIZING ──
+  // Available area inside the container, minus breathing padding and tab gutters
+  const hasTabs = (tabPositions?.length ?? 0) > 0;
+  const tabGutter = hasTabs ? RING_OPEN.tabGutterPx : 0;
 
-  const binderFrameHeight = Math.min(availableHeight, availableWidth / RING_OPEN_ASPECT);
-  const binderFrameWidth = binderFrameHeight * RING_OPEN_ASPECT;
+  const availableWidth = width - RING_OPEN.containerPaddingX * 2 - tabGutter * 2;
+  const availableHeight = height - RING_OPEN.containerPaddingY * 2;
 
-  const innerLeft = binderFrameWidth * RING_INNER.outer;
-  const innerTop = binderFrameHeight * RING_INNER.top;
-  const innerWidth = binderFrameWidth * (1 - 2 * RING_INNER.outer);
-  const innerHeight = binderFrameHeight * (1 - RING_INNER.top - RING_INNER.bottom);
-  const centerGapPx = binderFrameWidth * RING_INNER.centerGap;
+  // Spread footprint = pageWidth*2 + centerGap. Find the largest pageHeight
+  // that fits available area at the given A4 portrait aspect ratio.
+  // Constraint A: heightFromWidth = availableWidth / (2*ratio + centerGapFraction*ratio)
+  // Constraint B: pageHeight ≤ availableHeight
+  const widthDivisor = 2 + RING_OPEN.centerGapFraction; // pageWidths needed across spread
+  const heightFromWidth = availableWidth / (widthDivisor * pageAspectRatio);
+  const pageHeight = Math.max(80, Math.min(availableHeight, heightFromWidth));
+  const pageWidth = pageHeight * pageAspectRatio;
+  const centerGapPx = pageWidth * RING_OPEN.centerGapFraction;
 
-  const pageWidth = (innerWidth - centerGapPx) / 2;
-  const pageHeight = innerHeight;
+  // Spread footprint (the inner area where pages + ring column live)
+  const spreadWidth = pageWidth * 2 + centerGapPx;
+  const spreadHeight = pageHeight;
 
-  // Internal page dims — keep aspect tied to provided pageAspectRatio
+  // Binder background extends beyond the spread by these absolute insets
+  const binderInsetX = pageWidth * RING_OPEN.binderInsetXFraction;
+  const binderInsetY = pageHeight * RING_OPEN.binderInsetYFraction;
+  const binderFrameWidth = spreadWidth + binderInsetX * 2;
+  const binderFrameHeight = spreadHeight + binderInsetY * 2;
+
+  // Container (incl. tab gutters) — the binder sits centred inside this
+  const containerWidth = binderFrameWidth + tabGutter * 2;
+  const containerHeight = binderFrameHeight;
+
+  // Internal flipbook resolution (fixed; CSS-scaled to fit pageWidth)
   const basePageWidth = BASE_PAGE_WIDTH;
   const basePageHeight = Math.round(basePageWidth / pageAspectRatio);
   const scaleFactor = pageWidth / basePageWidth;
   const bleedInsetPx = Math.round(basePageWidth * 0.03);
 
-  // Left page = even-indexed page that "faces" the right page.
-  // currentPage is the right-hand page index (since cover is solo on the right
-  // when opening). leftIndex = currentPage - 1; rightIndex = currentPage.
-  // For the very first open spread (just past the cover), leftIndex is the
-  // inside-front (already injected as a blank PVC back), so it renders empty.
+  // Page wiring — left = currentPage-1, right = currentPage
   const rightIndex = currentPage;
   const leftIndex = Math.max(0, currentPage - 1);
 
-  // Sync flipbooks when currentPage changes externally
   useEffect(() => {
     const lf = leftRef.current?.pageFlip?.();
     const rf = rightRef.current?.pageFlip?.();
@@ -702,8 +713,6 @@ function RingOpenSpread({
   const onLeftFlip = useCallback(
     (e: any) => {
       const newLeft = e.data;
-      // The user flipped the LEFT side. The right side should follow
-      // so the spread stays in sync (right = left + 1).
       const newRight = newLeft + 1;
       const rf = rightRef.current?.pageFlip?.();
       if (rf && rf.getCurrentPageIndex() !== newRight && newRight < urls.length) {
@@ -727,7 +736,7 @@ function RingOpenSpread({
     [onPageChange, leftRef]
   );
 
-  const renderPages = (sideStart: number) =>
+  const renderPages = () =>
     urls.map((url, i) => (
       <FlipPage
         key={i}
@@ -746,29 +755,33 @@ function RingOpenSpread({
       />
     ));
 
-  // Centre-gap geometry for the rings PNG (inside the inner rectangle)
-  const ringMechWidth = pageHeight * RING_MECH_ASPECT;
-  const ringGapCenterX = innerLeft + pageWidth + centerGapPx / 2;
+  // Spread origin within the container (after tab gutter)
+  const spreadLeft = tabGutter + binderInsetX;
+  const spreadTop = binderInsetY;
 
   return (
     <div className="flex items-center justify-center" style={{ width, height, overflow: "visible" }}>
       <div
         style={{
-          width: binderFrameWidth,
-          height: binderFrameHeight,
+          width: containerWidth,
+          height: containerHeight,
           position: "relative",
+          overflow: "visible",
         }}
       >
-        {/* Binder background PNG = outer frame */}
+        {/* Binder background PNG — wraps around the spread.
+            The artwork already includes the ring mechanism in its centre,
+            so we do NOT layer a second ring overlay. */}
         <img
           src={ringBinderOpen}
           alt=""
           aria-hidden="true"
           style={{
             position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
+            left: tabGutter,
+            top: 0,
+            width: binderFrameWidth,
+            height: binderFrameHeight,
             pointerEvents: "none",
             zIndex: 0,
             objectFit: "fill",
@@ -780,11 +793,12 @@ function RingOpenSpread({
         <div
           style={{
             position: "absolute",
-            left: innerLeft,
-            top: innerTop,
+            left: spreadLeft,
+            top: spreadTop,
             width: pageWidth,
             height: pageHeight,
             zIndex: 1,
+            overflow: "visible",
           }}
         >
           <div
@@ -824,7 +838,7 @@ function RingOpenSpread({
               style={{}}
               className=""
             >
-              {renderPages(leftIndex)}
+              {renderPages()}
             </HTMLFlipBook>
           </div>
         </div>
@@ -833,11 +847,12 @@ function RingOpenSpread({
         <div
           style={{
             position: "absolute",
-            left: innerLeft + pageWidth + centerGapPx,
-            top: innerTop,
+            left: spreadLeft + pageWidth + centerGapPx,
+            top: spreadTop,
             width: pageWidth,
             height: pageHeight,
             zIndex: 1,
+            overflow: "visible",
           }}
         >
           <div
@@ -877,27 +892,10 @@ function RingOpenSpread({
               style={{}}
               className=""
             >
-              {renderPages(rightIndex)}
+              {renderPages()}
             </HTMLFlipBook>
           </div>
         </div>
-
-        {/* Ring mechanism PNG sits in the centre gap, above the pages */}
-        <img
-          src={ringMechanism}
-          alt=""
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            left: ringGapCenterX - ringMechWidth / 2,
-            top: innerTop,
-            width: ringMechWidth,
-            height: pageHeight,
-            pointerEvents: "none",
-            zIndex: 5,
-            objectFit: "fill",
-          }}
-        />
       </div>
     </div>
   );
