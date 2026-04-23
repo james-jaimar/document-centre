@@ -706,10 +706,10 @@ function RingOpenSpread({
     if (lf && lf.getCurrentPageIndex() !== leftIndex) {
       lf.turnToPage(leftIndex);
     }
-    if (rf && rf.getCurrentPageIndex() !== rightIndex) {
+    if (!rightBeyondEnd && rf && rf.getCurrentPageIndex() !== rightIndex) {
       rf.turnToPage(rightIndex);
     }
-  }, [leftIndex, rightIndex, leftRef, rightRef]);
+  }, [leftIndex, rightIndex, leftRef, rightRef, rightBeyondEnd]);
 
   const onLeftFlip = useCallback(
     (e: any) => {
