@@ -790,7 +790,30 @@ function RingOpenSpread({
           }}
         />
 
-        {/* LEFT flipbook (single-page) */}
+        {/* Tab overlay (sits on top of everything, overflow visible) */}
+        {tabPositions && tabPositions.length > 0 && (
+          <div
+            style={{
+              position: "absolute",
+              left: spreadLeft,
+              top: spreadTop,
+              width: spreadWidth,
+              height: pageHeight,
+              pointerEvents: "none",
+              zIndex: 20,
+              overflow: "visible",
+            }}
+          >
+            <TabOverlay
+              tabPositions={tabPositions}
+              currentPage={currentPage}
+              pageWidth={pageWidth}
+              pageHeight={pageHeight}
+              isSoloPage={false}
+              isShowingFrontCover={false}
+            />
+          </div>
+        )}
         <div
           style={{
             position: "absolute",
