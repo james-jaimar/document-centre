@@ -265,6 +265,40 @@ function buildFilesSection(documents: DocumentRow[]): ConfigSection | null {
   };
 }
 
+/* ─── Photo Prints section ───────────────────────────────── */
+
+interface PhotoPrintEntryLite {
+  file_name?: string;
+  print_size_slug?: string;
+  quantity?: number;
+}
+
+function buildPhotoPrintsSection(spec: any): ConfigSection | null {
+  const photos: PhotoPrintEntryLite[] = Array.isArray(spec?.photo_prints)
+    ? spec.photo_prints
+    : [];
+  if (!photos.length) return null;
+
+  const items = photos.map((p, idx) => {
+    const sizeLabel = p.print_size_slug
+      ? niceSize(p.print_size_slug, titleCase(p.print_size_slug))
+      : "—";
+    const qty = p.quantity ?? 1;
+    return {
+      label: p.file_name || `Photo ${idx + 1}`,
+      value: `${sizeLabel} · ${qty} print${qty === 1 ? "" : "s"}`,
+    };
+  });
+
+  const totalPrints = photos.reduce((s, p) => s + (p.quantity ?? 0), 0);
+  items.unshift({
+    label: "Total",
+    value: `${photos.length} photo${photos.length === 1 ? "" : "s"} · ${totalPrints} print${totalPrints === 1 ? "" : "s"}`,
+  });
+
+  return { title: "Photos", items };
+}
+
 /* ─── Summary ────────────────────────────────────────── */
 
 function buildSummary(resolved: ResolvedOption[], spec: any, totalPages: number): ConfigSummary {
