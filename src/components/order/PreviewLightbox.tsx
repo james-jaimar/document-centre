@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import DocumentPreview from "@/components/preview/DocumentPreview";
 import type { DocumentPreviewProps } from "@/components/preview/DocumentPreview";
 import type { ProductPreviewType } from "@/components/preview/previewTypes";
+import { ringTotalViews, stepRingView } from "@/lib/preview/ringBinderModel";
 
 type ExtraProps = Omit<DocumentPreviewProps, "thumbnailPaths" | "productType" | "width" | "height" | "currentPage" | "onPageChange">;
 
@@ -15,7 +16,7 @@ interface PreviewLightboxProps extends Partial<ExtraProps> {
 }
 
 const BOUND_TYPES = new Set([
-  "wire_bound", "comb_bound", "saddle_stitched", "perfect_bound", "ring_binder",
+  "wire_bound", "comb_bound", "saddle_stitched", "perfect_bound",
 ]);
 
 export default function PreviewLightbox({
@@ -27,13 +28,30 @@ export default function PreviewLightbox({
 }: PreviewLightboxProps) {
   const [page, setPage] = useState(initialPage);
   const isRingBinder = productType === "ring_binder";
-  // Ring binder: navigation is one physical face per turn (view-index model
-  // where view 0 = closed binder). Other bound docs step by 2 (spread).
-  const total = isRingBinder ? thumbnailPaths.length + 2 : thumbnailPaths.length;
-  const step = isRingBinder ? 1 : (BOUND_TYPES.has(productType) ? 2 : 1);
 
-  const goNext = useCallback(() => setPage((p) => Math.min(p + step, total - 1)), [total, step]);
-  const goPrev = useCallback(() => setPage((p) => Math.max(p - step, 0)), [step]);
+  // Ring binder uses the shared sheet-flip view model: total navigable views
+  // depend on the physical sequence length (closed + open turns).
+  const total = isRingBinder
+    ? ringTotalViews(thumbnailPaths.length)
+    : thumbnailPaths.length;
+
+  const step = BOUND_TYPES.has(productType) ? 2 : 1;
+
+  const goNext = useCallback(() => {
+    if (isRingBinder) {
+      setPage((p) => stepRingView(p, thumbnailPaths.length, 1));
+    } else {
+      setPage((p) => Math.min(p + step, total - 1));
+    }
+  }, [isRingBinder, thumbnailPaths.length, step, total]);
+
+  const goPrev = useCallback(() => {
+    if (isRingBinder) {
+      setPage((p) => stepRingView(p, thumbnailPaths.length, -1));
+    } else {
+      setPage((p) => Math.max(p - step, 0));
+    }
+  }, [isRingBinder, thumbnailPaths.length, step]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
