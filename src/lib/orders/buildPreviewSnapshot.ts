@@ -313,10 +313,18 @@ export function buildPreviewSnapshot(input: {
     roles.splice(1, 0, "pvc_cover_back");
   }
 
-  // Ring binder: NO virtual cover injection when no cover selected.
-  // The ring binder component shows the first body page through the clear
-  // binder window on page 0 — don't inject blank filler pages.
+  // Ring binder physical model: prepend two virtual non-content faces so the
+  // binder is modelled as hardware (not as a printed cover).
+  //   • index 0 → closed binder view
+  //   • index 1 → inside of binder front panel (blank left of first spread)
+  // Body pages then start at index 2 on the RIGHT of the first open spread.
   const isRingBinder = productType === "ring_binder";
+  if (isRingBinder && !isPvc && fp.length > 0) {
+    fp.unshift({ thumbnailUrl: "", pageIndex: 0, isColor: true });
+    roles.unshift("binder_left_blank");
+    fp.unshift({ thumbnailUrl: "", pageIndex: 0, isColor: true });
+    roles.unshift("binder_closed");
+  }
 
   const hasBackCover = isBound && effects.backCover && effects.backCover !== "none";
   if (isBound) {
