@@ -1,53 +1,43 @@
 
 
-## Fix bound documents always opening as solo right-hand page
+## Fix insert sheet positioning for single-sided documents
 
-### Root cause
+### Problem
 
-`showCover` in `react-pageflip` is set to `hasRealFrontCover`, which is only true when the first page role is `front_cover` or `pvc_cover_front`. When the user selects "No Cover", the first role is `body`, so `showCover` becomes `false` — react-pageflip then renders the opening view as a spread instead of a solo right-hand page.
+In `InsertManager.tsx`, the `bodyPages` array gives every page within a document section the **same `sortOrder`** (the section's `sort_order` value). When a single 8-page document is uploaded as one section, all 8 pages share the same sort order. The dropdown deduplicates or skips entries, resulting in only even-numbered pages appearing as insert targets.
 
-The same conditional gates all solo-page detection in both `FlipBook.tsx` and `PreviewPanel.tsx`, breaking pagination labels and visible-page logic for no-cover documents.
+### Root cause (line 53)
 
-### The fix
+```ts
+pages.push({ label: `Page ${pageNum}`, sortOrder: section.sort_order });
+```
 
-Every bound document physically opens with its first page on the right, whether that page is a cover or a body page. The `showCover` prop should always be `true` for bound documents. The cover/body distinction should only affect **labels**, not **layout**.
+Every page `p` in the loop gets `section.sort_order` regardless of which page within the document it is.
 
-### Changes
+### Fix
 
-**`src/components/preview/FlipBook.tsx`**
+Generate a unique fractional sort order per page within each section so every page becomes a distinct insert target:
 
-- Change `showCover={hasRealFrontCover}` to `showCover={true}` (it is only rendered for bound types already)
-- Update solo-page detection to work for all bound documents regardless of cover presence:
-  - `isShowingFrontCover` → rename to `isShowingFirstSolo` — true when `currentPage === 0` (always, for bound)
-  - `isShowingLastSolo` — true when `currentPage >= lastIdx` (remove the `hasRealFrontCover` guard)
-  - `isSoloPage` — true at first page or last page for all bound documents
+```ts
+pages.push({
+  label: `Page ${pageNum}`,
+  sortOrder: section.sort_order + (p / count),
+});
+```
 
-**`src/components/order/PreviewPanel.tsx`**
+This gives an 8-page section with `sort_order = 1` the values `1.000, 1.125, 1.250, 1.375, 1.500, 1.625, 1.750, 1.875` — each unique, each a valid insert-after target.
 
-- Mirror the same solo-state logic: the first page of a bound document is always a solo right-hand page
-  - `isShowingFrontCover` → true when `isBound && currentPage === 0` (regardless of role)
-  - `isShowingLastSolo` → true when `isBound && !hasBackCoverCard && currentPage >= totalPages - 1` (remove `hasRealFrontCover` guard)
-  - `isSoloState` updated accordingly
-- `visibleLeft` / `visibleRight` derivation stays the same — it already uses `isSoloState` correctly
-- Label logic in `pageInfoText`: when `currentPage === 0`, use `hasRealFrontCover` to decide between "Front Cover" label vs the `faceLabel(0)` content-page label — structural layout is unaffected
+The `handleAddAfterPage` callback already does `sortOrder + 1`, and `getInsertPageLabel` compares with `<`, so fractional values work without any other changes.
 
-### What stays untouched
-
-- Ring binder code in `RingBinderOpenSpread.tsx` — completely isolated, not affected
-- Tab overlay logic — uses `currentPage` which will now be correct
-- All non-bound preview types (loose sheets, folds)
-
-### Files to change
+### File to change
 
 | File | Change |
 |---|---|
-| `src/components/preview/FlipBook.tsx` | `showCover={true}` always; remove `hasRealFrontCover` from solo-page structural guards |
-| `src/components/order/PreviewPanel.tsx` | Remove `hasRealFrontCover` from solo-state structural guards; keep it only for label text |
+| `src/components/order/InsertManager.tsx` | Line 53: use `section.sort_order + (p / count)` instead of `section.sort_order` |
 
 ### Result
 
-- Wire-bound, comb-bound, saddle-stitched, and perfect-bound documents all open with the first page solo on the right — whether or not a cover is configured
-- Pagination labels correctly show "Front Cover" when there is one, or "Page 1" when there is not
-- Tab positions stay correct because the spread parity is restored
-- Ring binder is not touched
+- Single-sided 8-page document shows "After Page 1" through "After Page 8"
+- Double-sided documents continue to work correctly
+- No changes to any other component
 
