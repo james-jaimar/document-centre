@@ -360,21 +360,11 @@ export default function PreviewPanel({
     }
 
     // ── Ring binder physical model ──
-    // The binder is hardware, not a printed cover. We prepend two virtual
-    // non-content faces so the user can:
-    //   • currentPage=0 → see the CLOSED binder (with optional pocket artwork)
-    //   • currentPage=1 → first OPEN spread with body[0] on the RIGHT
-    //                     (the left side represents the inside of the binder
-    //                     front panel, which is empty)
-    // These virtual faces NEVER count as document pages and never inject
-    // a fake "front cover" sheet derived from the body.
+    // The binder is hardware, NOT a printed cover. We do NOT inject any
+    // virtual faces into the physical sequence. The viewer (RingBinderOpenSpread
+    // + the navigation logic below) reconstructs the closed/open hardware
+    // states at render time from view-index mapping.
     const isRingBinderType = productType === "ring_binder";
-    if (isRingBinderType && !isPvc && fp.length > 0) {
-      fp.unshift({ thumbnailUrl: "", pageIndex: 0, documentName: "", section: undefined, isColor: true });
-      roles.unshift("binder_left_blank");
-      fp.unshift({ thumbnailUrl: "", pageIndex: 0, documentName: "Ring Binder", section: undefined, isColor: true });
-      roles.unshift("binder_closed");
-    }
 
     // Tab/insert alignment is now handled inside buildPageSequence()
     // via the pending-queue flush — no post-processing pass needed.
@@ -437,7 +427,6 @@ export default function PreviewPanel({
     "tab", "tab_back", "insert", "insert_back", "blank_back",
     "pvc_cover_front", "pvc_cover_back",
     "inside_back_cover_card", "back_cover_card", "inside_back_blank",
-    "binder_closed", "binder_left_blank",
   ]);
 
   // Compute display page numbers — only body/cover content faces get numbered.
@@ -485,7 +474,7 @@ export default function PreviewPanel({
     const bleedScope = effects?.bleed ?? "none";
     return computedPageRoles.map((role) => {
       if (["pvc_cover_front", "pvc_cover_back", "inside_back_cover_card", "back_cover_card"].includes(role)) return true;
-      if (["blank_back", "inside_back_blank", "binder_closed", "binder_left_blank"].includes(role)) return false;
+      if (["blank_back", "inside_back_blank"].includes(role)) return false;
       // Ring binder body pages sit inside a mechanism — never edge-to-edge.
       // Only PVC/card cover materials (handled above) get full bleed.
       if (isRingBinder && role === "body") return false;
@@ -507,7 +496,15 @@ export default function PreviewPanel({
     return undefined;
   }, [documents, isBusinessCards]);
 
-  const totalPages = finalPages.length;
+  // For ring binders, navigation uses a "view index" model on top of the
+  // pure physical sequence:
+  //   view 0       = closed binder (hardware only)
+  //   view 1       = left hardware, right sequence[0]
+  //   view k (1..N)= left sequence[k-2], right sequence[k-1]
+  //   view N+1     = left sequence[N-1], right hardware
+  // So total navigable views = sequence.length + 2.
+  const ringTotalViews = isRingBinder ? finalPages.length + 2 : 0;
+  const totalPages = isRingBinder ? ringTotalViews : finalPages.length;
 
   useEffect(() => {
     if (prevPageCount.current !== 0 && totalPages > 0 && currentPage >= totalPages) {
@@ -525,14 +522,29 @@ export default function PreviewPanel({
   // hasRealFrontCover is used ONLY for labels, never for layout decisions.
   // Ring binder uses static rendering — its component handles left/right internally,
   // so we treat it like a non-bound type for pagination/solo-state purposes.
-  const isShowingFrontCover = isBound && currentPage === 0;
+  const isShowingFrontCover = isBound && !isRingBinder && currentPage === 0;
   const hasBackCoverCard = computedPageRoles.includes("back_cover_card");
   const isShowingBackCover = isBound && !isRingBinder && hasBackCoverCard && currentPage >= totalPages - 1;
   const isShowingLastSolo = isBound && !isRingBinder && !hasBackCoverCard && currentPage >= totalPages - 1;
   const isSoloState = isRingBinder ? false : (isShowingFrontCover || isShowingBackCover || isShowingLastSolo);
 
-  const visibleLeft = isSoloState && isShowingFrontCover ? null : currentPage;
-  const visibleRight = isShowingFrontCover && !isRingBinder ? 0 : (isSoloState ? null : currentPage + 1);
+  // Ring binder: currentPage is a view index, not a face index.
+  //   view 0       = closed              → no visible faces
+  //   view k (1..N)= left=seq[k-2] (or hardware), right=seq[k-1]
+  //   view N+1     = left=seq[N-1], right=hardware
+  const ringLeftFace = isRingBinder
+    ? (currentPage >= 2 && currentPage - 2 < finalPages.length ? currentPage - 2 : null)
+    : null;
+  const ringRightFace = isRingBinder
+    ? (currentPage >= 1 && currentPage - 1 < finalPages.length ? currentPage - 1 : null)
+    : null;
+
+  const visibleLeft = isRingBinder
+    ? ringLeftFace
+    : (isSoloState && isShowingFrontCover ? null : currentPage);
+  const visibleRight = isRingBinder
+    ? ringRightFace
+    : (isShowingFrontCover ? 0 : (isSoloState ? null : currentPage + 1));
 
   /** Human-friendly label for a role when it has no page number */
   const roleFriendlyName = (role: string): string => {
@@ -562,13 +574,14 @@ export default function PreviewPanel({
   const pageInfoText = useMemo(() => {
     if (totalPages === 0) return "";
     if (isBound) {
-      // Ring binder: closed view at currentPage=0, then static spreads.
+      // Ring binder uses view-index navigation (closed + open turns).
       if (isRingBinder) {
         if (currentPage === 0) return "Ring Binder (Closed)";
-        const leftLabel = faceLabel(currentPage);
-        const rightLabel = currentPage + 1 < totalPages ? faceLabel(currentPage + 1) : "";
-        if (rightLabel) return `${leftLabel} – ${rightLabel}  (${totalContentPages} pages)`;
-        return `${leftLabel}  (${totalContentPages} pages)`;
+        const leftLbl = ringLeftFace !== null ? faceLabel(ringLeftFace) : "Inside Front Panel";
+        const rightLbl = ringRightFace !== null ? faceLabel(ringRightFace) : "";
+        if (rightLbl && ringLeftFace === null) return `${rightLbl}  (${totalContentPages} pages)`;
+        if (!rightLbl) return `${leftLbl}  (${totalContentPages} pages)`;
+        return `${leftLbl} – ${rightLbl}  (${totalContentPages} pages)`;
       }
       if (isShowingFrontCover) {
         if (!hasRealFrontCover) return faceLabel(0);
@@ -584,7 +597,7 @@ export default function PreviewPanel({
       return `${leftLabel} – ${rightLabel}  (${totalContentPages} pages)`;
     }
     return `${faceLabel(currentPage)} of ${totalContentPages}`;
-  }, [currentPage, totalPages, totalContentPages, isBound, isRingBinder, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers, hasRealFrontCover]);
+  }, [currentPage, totalPages, totalContentPages, isBound, isRingBinder, ringLeftFace, ringRightFace, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers, hasRealFrontCover]);
 
   const colourStatus = useMemo(() => {
     if (totalPages === 0) return "";
@@ -615,16 +628,14 @@ export default function PreviewPanel({
   const goLast = () => setCurrentPage(totalPages - 1);
   const goPrev = () => setCurrentPage((p) => {
     if (isRingBinder) {
-      // Ring binder: 0 (closed) → 1 (first spread) → 3 → 5 ...
-      if (p <= 1) return 0;
-      return Math.max(1, p - 2);
+      // One physical face per step (+ closed view at 0).
+      return Math.max(0, p - 1);
     }
     return Math.max(0, p - step);
   });
   const goNext = () => setCurrentPage((p) => {
     if (isRingBinder) {
-      if (p === 0) return Math.min(totalPages - 1, 1);
-      return Math.min(totalPages - 1, p + 2);
+      return Math.min(totalPages - 1, p + 1);
     }
     return Math.min(totalPages - 1, p + step);
   });

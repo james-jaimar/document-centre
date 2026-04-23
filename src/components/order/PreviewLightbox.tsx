@@ -26,8 +26,11 @@ export default function PreviewLightbox({
   ...extraProps
 }: PreviewLightboxProps) {
   const [page, setPage] = useState(initialPage);
-  const total = thumbnailPaths.length;
-  const step = BOUND_TYPES.has(productType) ? 2 : 1;
+  const isRingBinder = productType === "ring_binder";
+  // Ring binder: navigation is one physical face per turn (view-index model
+  // where view 0 = closed binder). Other bound docs step by 2 (spread).
+  const total = isRingBinder ? thumbnailPaths.length + 2 : thumbnailPaths.length;
+  const step = isRingBinder ? 1 : (BOUND_TYPES.has(productType) ? 2 : 1);
 
   const goNext = useCallback(() => setPage((p) => Math.min(p + step, total - 1)), [total, step]);
   const goPrev = useCallback(() => setPage((p) => Math.max(p - step, 0)), [step]);

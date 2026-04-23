@@ -64,7 +64,6 @@ const NON_CONTENT_ROLES = new Set([
   "tab", "tab_back", "insert", "insert_back", "blank_back",
   "pvc_cover_front", "pvc_cover_back",
   "inside_back_cover_card", "back_cover_card", "inside_back_blank",
-  "binder_closed", "binder_left_blank",
 ]);
 
 function resolveEffects(
@@ -313,18 +312,12 @@ export function buildPreviewSnapshot(input: {
     roles.splice(1, 0, "pvc_cover_back");
   }
 
-  // Ring binder physical model: prepend two virtual non-content faces so the
-  // binder is modelled as hardware (not as a printed cover).
-  //   • index 0 → closed binder view
-  //   • index 1 → inside of binder front panel (blank left of first spread)
-  // Body pages then start at index 2 on the RIGHT of the first open spread.
+  // Ring binder physical model: do NOT prepend any virtual binder faces.
+  // The binder hardware (closed view + inside-front-panel) is reconstructed
+  // by the viewer at render time via a view-index mapping. The persisted
+  // sequence stores ONLY real physical faces (front_cover if uploaded, body,
+  // blank_back, tab/tab_back, insert/insert_back).
   const isRingBinder = productType === "ring_binder";
-  if (isRingBinder && !isPvc && fp.length > 0) {
-    fp.unshift({ thumbnailUrl: "", pageIndex: 0, isColor: true });
-    roles.unshift("binder_left_blank");
-    fp.unshift({ thumbnailUrl: "", pageIndex: 0, isColor: true });
-    roles.unshift("binder_closed");
-  }
 
   const hasBackCover = isBound && effects.backCover && effects.backCover !== "none";
   // Ring binders are hardware — they have no printed back cover sheet.
@@ -380,7 +373,7 @@ export function buildPreviewSnapshot(input: {
       ["pvc_cover_front", "pvc_cover_back", "inside_back_cover_card", "back_cover_card"].includes(role)
     )
       return true;
-    if (["blank_back", "inside_back_blank", "binder_closed", "binder_left_blank"].includes(role)) return false;
+    if (["blank_back", "inside_back_blank"].includes(role)) return false;
     // Ring binder body pages sit inside a mechanism — never edge-to-edge.
     if (isRingBinder && role === "body") return false;
     if (bleedScope === "all") return true;
