@@ -552,6 +552,10 @@ export default function PreviewPanel({
         return role === "pvc_cover_front" ? "Front Cover (PVC)" : "Front Cover";
       }
       if (isShowingBackCover) return "Back Cover";
+      // Ring binder: single-page info (no spread pairs)
+      if (isRingBinder) {
+        return `${faceLabel(currentPage)} of ${totalContentPages}`;
+      }
       if (isShowingLastSolo) {
         return `${faceLabel(totalPages - 1)} of ${totalContentPages}`;
       }
@@ -560,7 +564,7 @@ export default function PreviewPanel({
       return `${leftLabel} – ${rightLabel}  (${totalContentPages} pages)`;
     }
     return `${faceLabel(currentPage)} of ${totalContentPages}`;
-  }, [currentPage, totalPages, totalContentPages, isBound, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers]);
+  }, [currentPage, totalPages, totalContentPages, isBound, isRingBinder, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers]);
 
   const colourStatus = useMemo(() => {
     if (totalPages === 0) return "";
