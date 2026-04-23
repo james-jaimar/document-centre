@@ -426,8 +426,6 @@ export function buildPreviewSnapshot(input: {
       case "inside_back_cover_card": return "Back Cover (Inside)";
       case "back_cover_card": return "Back Cover";
       case "inside_back_blank": return "Blank (Inside Back)";
-      case "binder_closed": return "Ring Binder (Closed)";
-      case "binder_left_blank": return "Inside Front Panel";
       default: return "";
     }
   };
