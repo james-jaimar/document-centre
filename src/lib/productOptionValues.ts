@@ -961,45 +961,45 @@ export const PRICING_BUSINESS_CARDS = [
 // ═══════════════════════════════════════════════════════════════════
 export const PRINT_SIZE_PHOTO: StructuredOptionValue[] = [
   createOptionValue('4×6" (102×152 mm)', "Print Size", {
-    price_impact: 0, price_type: "per_unit", is_default: true, slug: "4x6",
+    price_impact: 0, price_type: "fixed", is_default: true, slug: "4x6",
     metadata: { width_mm: 152, height_mm: 102, aspect: 152 / 102 },
   }),
   createOptionValue('5×7" (127×178 mm)', "Print Size", {
-    price_impact: 0, price_type: "per_unit", slug: "5x7",
+    price_impact: 0, price_type: "fixed", slug: "5x7",
     metadata: { width_mm: 178, height_mm: 127, aspect: 178 / 127 },
   }),
   createOptionValue('6×8" (152×203 mm)', "Print Size", {
-    price_impact: 0, price_type: "per_unit", slug: "6x8",
+    price_impact: 0, price_type: "fixed", slug: "6x8",
     metadata: { width_mm: 203, height_mm: 152, aspect: 203 / 152 },
   }),
   createOptionValue('8×10" (203×254 mm)', "Print Size", {
-    price_impact: 0, price_type: "per_unit", slug: "8x10",
+    price_impact: 0, price_type: "fixed", slug: "8x10",
     metadata: { width_mm: 254, height_mm: 203, aspect: 254 / 203 },
   }),
   createOptionValue("A4 (210×297 mm)", "Print Size", {
-    price_impact: 0, price_type: "per_unit", slug: "a4",
+    price_impact: 0, price_type: "fixed", slug: "a4",
     metadata: { width_mm: 297, height_mm: 210, aspect: 297 / 210 },
   }),
 ];
 
 export const PHOTO_FINISH: StructuredOptionValue[] = [
   createOptionValue("Gloss", "Finish", {
-    price_impact: 0, price_type: "per_unit", is_default: true, slug: "gloss",
+    price_impact: 0, price_type: "fixed", is_default: true, slug: "gloss",
     metadata: { finish: "gloss" },
   }),
   createOptionValue("Matte", "Finish", {
-    price_impact: 0, price_type: "per_unit", slug: "matte",
+    price_impact: 0, price_type: "fixed", slug: "matte",
     metadata: { finish: "matte" },
   }),
 ];
 
 export const PHOTO_BORDER: StructuredOptionValue[] = [
   createOptionValue("No Border", "Border", {
-    price_impact: 0, price_type: "per_unit", is_default: true, slug: "none",
+    price_impact: 0, price_type: "fixed", is_default: true, slug: "none",
     metadata: { border_mm: 0 },
   }),
   createOptionValue("White Border (3 mm)", "Border", {
-    price_impact: 0, price_type: "per_unit", slug: "white_3mm",
+    price_impact: 0, price_type: "fixed", slug: "white_3mm",
     metadata: { border_mm: 3, color: "white" },
   }),
 ];
