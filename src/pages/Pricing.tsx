@@ -144,7 +144,7 @@ export default function Pricing() {
             and print-ready PDFs your team can use straight away.
           </p>
           <p className="mt-3 text-sm dc-muted">
-            Start from <strong style={{ color: "hsl(var(--dc-navy))" }}>$149/month</strong> · Most shops choose Core at <strong style={{ color: "hsl(var(--dc-navy))" }}>$199/month</strong>
+            Start from <strong style={{ color: "hsl(var(--dc-navy))" }}>£149/month</strong> · Most shops choose Core at <strong style={{ color: "hsl(var(--dc-navy))" }}>£199/month</strong>
           </p>
           <p className="mt-4 text-xs dc-muted">No setup headache. No clunky storefront. No prepress ping-pong.</p>
         </div>
@@ -177,7 +177,7 @@ export default function Pricing() {
 
                 <h3 className="text-2xl font-bold" style={{ color: "hsl(var(--dc-navy))" }}>{plan.name}</h3>
                 <div className="mt-3 flex items-baseline gap-1">
-                  <span className="text-lg font-bold" style={{ color: "hsl(var(--dc-navy))" }}>$</span>
+                  <span className="text-lg font-bold" style={{ color: "hsl(var(--dc-navy))" }}>£</span>
                   <span className="text-5xl font-extrabold" style={{ color: "hsl(var(--dc-navy))" }}>{plan.price}</span>
                   <span className="text-base font-semibold dc-muted">/month</span>
                 </div>
