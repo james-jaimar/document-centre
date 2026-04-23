@@ -505,10 +505,12 @@ export default function PreviewPanel({
   const firstRole = computedPageRoles[0];
   const realFrontCover = firstRole === "front_cover" || firstRole === "pvc_cover_front";
   const hasRealFrontCover = realFrontCover;
-  const isShowingFrontCover = isBound && hasRealFrontCover && currentPage === 0;
+  // Structural solo-state: every bound doc opens with page 1 solo on the right.
+  // hasRealFrontCover is used ONLY for labels, never for layout decisions.
+  const isShowingFrontCover = isBound && currentPage === 0;
   const hasBackCoverCard = computedPageRoles.includes("back_cover_card");
   const isShowingBackCover = isBound && hasBackCoverCard && currentPage >= totalPages - 1;
-  const isShowingLastSolo = isBound && hasRealFrontCover && !hasBackCoverCard && currentPage >= totalPages - 1;
+  const isShowingLastSolo = isBound && !hasBackCoverCard && currentPage >= totalPages - 1;
   const isSoloState = isShowingFrontCover || isShowingBackCover || isShowingLastSolo;
 
   const visibleLeft = isSoloState && isShowingFrontCover ? null : currentPage;
