@@ -64,6 +64,7 @@ const NON_CONTENT_ROLES = new Set([
   "tab", "tab_back", "insert", "insert_back", "blank_back",
   "pvc_cover_front", "pvc_cover_back",
   "inside_back_cover_card", "back_cover_card", "inside_back_blank",
+  "binder_closed", "binder_left_blank",
 ]);
 
 function resolveEffects(
