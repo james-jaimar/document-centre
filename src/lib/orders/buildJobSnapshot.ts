@@ -362,6 +362,13 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
   const filesSection = buildFilesSection(documents);
   if (filesSection) groupedSections.push(filesSection);
 
+  // Photo Prints — emit a per-photo breakdown when this product family is in use
+  const isPhotoPrints = item.product_families?.slug === "photo-prints";
+  if (isPhotoPrints) {
+    const photosSection = buildPhotoPrintsSection(spec);
+    if (photosSection) groupedSections.push(photosSection);
+  }
+
   return {
     configuration: {
       summary,
