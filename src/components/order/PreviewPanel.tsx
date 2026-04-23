@@ -483,7 +483,7 @@ export default function PreviewPanel({
     const bleedScope = effects?.bleed ?? "none";
     return computedPageRoles.map((role) => {
       if (["pvc_cover_front", "pvc_cover_back", "inside_back_cover_card", "back_cover_card"].includes(role)) return true;
-      if (["blank_back", "inside_back_blank"].includes(role)) return false;
+      if (["blank_back", "inside_back_blank", "binder_closed", "binder_left_blank"].includes(role)) return false;
       // Ring binder body pages sit inside a mechanism — never edge-to-edge.
       // Only PVC/card cover materials (handled above) get full bleed.
       if (isRingBinder && role === "body") return false;
