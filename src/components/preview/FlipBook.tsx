@@ -698,6 +698,7 @@ function RingOpenSpread({
   // Page wiring — left = currentPage-1, right = currentPage
   const rightIndex = currentPage;
   const leftIndex = Math.max(0, currentPage - 1);
+  const rightBeyondEnd = rightIndex >= urls.length;
 
   useEffect(() => {
     const lf = leftRef.current?.pageFlip?.();
