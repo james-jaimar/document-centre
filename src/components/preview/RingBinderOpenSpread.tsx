@@ -481,7 +481,7 @@ function RingOpenSpread({
           }}
         />
 
-        {/* Right-edge-only tab overlay (only when right side is a real face) */}
+        {/* Right-edge tab overlay (only when right side is a real face) */}
         {!rightIsHardware && tabPositions && tabPositions.length > 0 && (
           <div
             style={{
@@ -496,6 +496,7 @@ function RingOpenSpread({
             }}
           >
             <RingTabOverlay
+              side="right"
               tabPositions={tabPositions}
               currentPage={rightIndex}
               pageWidth={pageWidth}
@@ -503,6 +504,34 @@ function RingOpenSpread({
             />
           </div>
         )}
+
+        {/* Left-edge tab overlay — only when the left pane IS a turned tab sheet.
+            The tab stays attached to its sheet, so once the sheet has flipped over
+            the rings the same tab now sticks out on the left outer edge. */}
+        {!leftIsHardware &&
+          tabPositions && tabPositions.length > 0 &&
+          (pageRoles?.[leftIndex] === "tab" || pageRoles?.[leftIndex] === "tab_back") && (
+            <div
+              style={{
+                position: "absolute",
+                left: spreadLeft,
+                top: spreadTop,
+                width: pageWidth,
+                height: pageHeight,
+                pointerEvents: "none",
+                zIndex: 20,
+                overflow: "visible",
+              }}
+            >
+              <RingTabOverlay
+                side="left"
+                tabPositions={tabPositions}
+                currentPage={leftIndex}
+                pageWidth={pageWidth}
+                pageHeight={pageHeight}
+              />
+            </div>
+          )}
 
         {/* LEFT pane — paper face only when present; hardware shows the binder PNG */}
         {!leftIsHardware && (
