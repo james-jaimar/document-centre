@@ -1838,6 +1838,89 @@ export type Database = {
           },
         ]
       }
+      platform_pricing_plans: {
+        Row: {
+          created_at: string
+          id: string
+          plan_name: string
+          plan_slug: string
+          price: number
+          region_id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          plan_name: string
+          plan_slug: string
+          price?: number
+          region_id: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          plan_name?: string
+          plan_slug?: string
+          price?: number
+          region_id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_pricing_plans_region_id_fkey"
+            columns: ["region_id"]
+            isOneToOne: false
+            referencedRelation: "platform_pricing_regions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_pricing_regions: {
+        Row: {
+          country_codes: string[]
+          created_at: string
+          currency_code: string
+          currency_symbol: string
+          id: string
+          is_default: boolean
+          region_code: string
+          region_label: string
+          sort_order: number
+          tax_note: string | null
+          updated_at: string
+        }
+        Insert: {
+          country_codes?: string[]
+          created_at?: string
+          currency_code: string
+          currency_symbol: string
+          id?: string
+          is_default?: boolean
+          region_code: string
+          region_label: string
+          sort_order?: number
+          tax_note?: string | null
+          updated_at?: string
+        }
+        Update: {
+          country_codes?: string[]
+          created_at?: string
+          currency_code?: string
+          currency_symbol?: string
+          id?: string
+          is_default?: boolean
+          region_code?: string
+          region_label?: string
+          sort_order?: number
+          tax_note?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       pricing_rules: {
         Row: {
           branch_id: string | null
