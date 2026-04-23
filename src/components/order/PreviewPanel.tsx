@@ -543,6 +543,7 @@ export default function PreviewPanel({
     if (totalPages === 0) return "";
     if (isBound) {
       if (isShowingFrontCover) {
+        if (!hasRealFrontCover) return faceLabel(0);
         const role = computedPageRoles[0];
         return role === "pvc_cover_front" ? "Front Cover (PVC)" : "Front Cover";
       }
