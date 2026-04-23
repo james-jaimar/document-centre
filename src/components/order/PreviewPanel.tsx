@@ -360,21 +360,11 @@ export default function PreviewPanel({
     }
 
     // ── Ring binder physical model ──
-    // The binder is hardware, not a printed cover. We prepend two virtual
-    // non-content faces so the user can:
-    //   • currentPage=0 → see the CLOSED binder (with optional pocket artwork)
-    //   • currentPage=1 → first OPEN spread with body[0] on the RIGHT
-    //                     (the left side represents the inside of the binder
-    //                     front panel, which is empty)
-    // These virtual faces NEVER count as document pages and never inject
-    // a fake "front cover" sheet derived from the body.
+    // The binder is hardware, NOT a printed cover. We do NOT inject any
+    // virtual faces into the physical sequence. The viewer (RingBinderOpenSpread
+    // + the navigation logic below) reconstructs the closed/open hardware
+    // states at render time from view-index mapping.
     const isRingBinderType = productType === "ring_binder";
-    if (isRingBinderType && !isPvc && fp.length > 0) {
-      fp.unshift({ thumbnailUrl: "", pageIndex: 0, documentName: "", section: undefined, isColor: true });
-      roles.unshift("binder_left_blank");
-      fp.unshift({ thumbnailUrl: "", pageIndex: 0, documentName: "Ring Binder", section: undefined, isColor: true });
-      roles.unshift("binder_closed");
-    }
 
     // Tab/insert alignment is now handled inside buildPageSequence()
     // via the pending-queue flush — no post-processing pass needed.
@@ -437,7 +427,6 @@ export default function PreviewPanel({
     "tab", "tab_back", "insert", "insert_back", "blank_back",
     "pvc_cover_front", "pvc_cover_back",
     "inside_back_cover_card", "back_cover_card", "inside_back_blank",
-    "binder_closed", "binder_left_blank",
   ]);
 
   // Compute display page numbers — only body/cover content faces get numbered.
