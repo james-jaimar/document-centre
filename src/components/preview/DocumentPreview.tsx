@@ -172,6 +172,11 @@ export default function DocumentPreview({
     return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} displayPageNumbers={displayPageNumbers} faceLabels={faceLabels} bindingEdge={bindingEdge} rawPaths={thumbnailPaths} />;
   }
 
+  // Business cards use the same LooseSheetsPreview renderer
+  if (productType === "business_cards") {
+    return <LooseSheetsPreview {...commonProps} />;
+  }
+
   if (FOLD_TYPES.has(productType)) {
     return (
       <FoldPreview

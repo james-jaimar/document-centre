@@ -472,7 +472,11 @@ export default function PreviewPanel({
     return positions;
   }, [computedPageRoles, finalPages]);
 
+  const isBusinessCards = productType === "business_cards";
+
   const bleedFlags = useMemo(() => {
+    // Business cards: server thumbnails are already trim-cropped — always full bleed
+    if (isBusinessCards) return computedPageRoles.map(() => true);
     const bleedScope = effects?.bleed ?? "none";
     return computedPageRoles.map((role) => {
       if (["pvc_cover_front", "pvc_cover_back", "inside_back_cover_card", "back_cover_card"].includes(role)) return true;
@@ -483,15 +487,17 @@ export default function PreviewPanel({
       if (bleedScope === "covers" && (role === "front_cover" || role === "back_cover")) return true;
       return false;
     });
-  }, [computedPageRoles, effects?.bleed]);
+  }, [computedPageRoles, effects?.bleed, isBusinessCards]);
 
   const pageAspectRatio = useMemo(() => {
     const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
     if (doc && doc.page_width_mm && doc.page_height_mm) {
       return Number(doc.page_width_mm) / Number(doc.page_height_mm);
     }
+    // Business cards fallback: standard 90×50mm = 1.8
+    if (isBusinessCards) return 1.8;
     return undefined;
-  }, [documents]);
+  }, [documents, isBusinessCards]);
 
   const totalPages = finalPages.length;
 

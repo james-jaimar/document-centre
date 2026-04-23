@@ -13,7 +13,8 @@ export type ProductPreviewType =
   | "z_fold"
   | "gate_fold"
   | "loose_sheets"
-  | "poster";
+  | "poster"
+  | "business_cards";
 
 /** Visual finishing effects derived from selected product options */
 export interface PreviewEffects {

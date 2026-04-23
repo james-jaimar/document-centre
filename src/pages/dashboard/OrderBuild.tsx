@@ -83,6 +83,8 @@ export default function OrderBuild() {
     poster: "poster",
     brochures: "bi_fold",
     booklets: "saddle_stitched",
+    "business-cards": "business_cards",
+    business_cards: "business_cards",
   };
 
   const BINDING_METHOD_TO_PREVIEW: Record<string, ProductPreviewType> = {
