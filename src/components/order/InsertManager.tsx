@@ -50,7 +50,7 @@ export default function InsertManager({
       const doc = documents.find((d) => d.id === section.document_id);
       const count = doc?.page_count ?? 1;
       for (let p = 0; p < count; p++) {
-        pages.push({ label: `Page ${pageNum}`, sortOrder: section.sort_order });
+        pages.push({ label: `Page ${pageNum}`, sortOrder: section.sort_order + (p / count) });
         pageNum++;
       }
     }
