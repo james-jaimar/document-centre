@@ -552,8 +552,6 @@ export default function PreviewPanel({
       case "inside_back_cover_card": return "Back Cover (Inside)";
       case "back_cover_card": return "Back Cover";
       case "inside_back_blank": return "Blank (Inside Back)";
-      case "binder_closed": return "Ring Binder (Closed)";
-      case "binder_left_blank": return "Inside Front Panel";
       default: return "";
     }
   };
@@ -567,14 +565,17 @@ export default function PreviewPanel({
   const pageInfoText = useMemo(() => {
     if (totalPages === 0) return "";
     if (isBound) {
-      // Ring binder uses view-index navigation (closed + open turns).
+      // Ring binder uses sheet-flip view-index navigation. Hardware panes
+      // are not pages and never get a label — show only the visible faces.
       if (isRingBinder) {
         if (currentPage === 0) return "Ring Binder (Closed)";
-        const leftLbl = ringLeftFace !== null ? faceLabel(ringLeftFace) : "Inside Front Panel";
+        const leftLbl = ringLeftFace !== null ? faceLabel(ringLeftFace) : "";
         const rightLbl = ringRightFace !== null ? faceLabel(ringRightFace) : "";
-        if (rightLbl && ringLeftFace === null) return `${rightLbl}  (${totalContentPages} pages)`;
-        if (!rightLbl) return `${leftLbl}  (${totalContentPages} pages)`;
-        return `${leftLbl} – ${rightLbl}  (${totalContentPages} pages)`;
+        const suffix = totalContentPages > 0 ? `  (${totalContentPages} pages)` : "";
+        if (leftLbl && rightLbl) return `${leftLbl} – ${rightLbl}${suffix}`;
+        if (rightLbl) return `${rightLbl}${suffix}`;
+        if (leftLbl) return `${leftLbl}${suffix}`;
+        return "Ring Binder";
       }
       if (isShowingFrontCover) {
         if (!hasRealFrontCover) return faceLabel(0);
