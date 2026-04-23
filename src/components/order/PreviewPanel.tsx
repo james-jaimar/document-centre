@@ -497,15 +497,13 @@ export default function PreviewPanel({
     return undefined;
   }, [documents, isBusinessCards]);
 
-  // For ring binders, navigation uses a "view index" model on top of the
-  // pure physical sequence:
-  //   view 0       = closed binder (hardware only)
-  //   view 1       = left hardware, right sequence[0]
-  //   view k (1..N)= left sequence[k-2], right sequence[k-1]
-  //   view N+1     = left sequence[N-1], right hardware
-  // So total navigable views = sequence.length + 2.
-  const ringTotalViews = isRingBinder ? finalPages.length + 2 : 0;
-  const totalPages = isRingBinder ? ringTotalViews : finalPages.length;
+  // For ring binders, navigation uses the shared sheet-flip view model:
+  //   view 0   = closed (hardware only)
+  //   view 1   = left=hardware, right=seq[0]
+  //   view k≥2 = left=seq[2k-3], right=seq[2k-2]
+  //   final    = left=seq[N-1], right=hardware
+  const ringTotal = isRingBinder ? ringTotalViews(finalPages.length) : 0;
+  const totalPages = isRingBinder ? ringTotal : finalPages.length;
 
   useEffect(() => {
     if (prevPageCount.current !== 0 && totalPages > 0 && currentPage >= totalPages) {
@@ -529,16 +527,10 @@ export default function PreviewPanel({
   const isShowingLastSolo = isBound && !isRingBinder && !hasBackCoverCard && currentPage >= totalPages - 1;
   const isSoloState = isRingBinder ? false : (isShowingFrontCover || isShowingBackCover || isShowingLastSolo);
 
-  // Ring binder: currentPage is a view index, not a face index.
-  //   view 0       = closed              → no visible faces
-  //   view k (1..N)= left=seq[k-2] (or hardware), right=seq[k-1]
-  //   view N+1     = left=seq[N-1], right=hardware
-  const ringLeftFace = isRingBinder
-    ? (currentPage >= 2 && currentPage - 2 < finalPages.length ? currentPage - 2 : null)
-    : null;
-  const ringRightFace = isRingBinder
-    ? (currentPage >= 1 && currentPage - 1 < finalPages.length ? currentPage - 1 : null)
-    : null;
+  // Ring binder: derive visible faces from the shared view model.
+  const ringView = isRingBinder ? resolveRingView(currentPage, finalPages.length) : null;
+  const ringLeftFace = ringView && ringView.left.kind === "sheet" ? ringView.left.faceIndex : null;
+  const ringRightFace = ringView && ringView.right.kind === "sheet" ? ringView.right.faceIndex : null;
 
   const visibleLeft = isRingBinder
     ? ringLeftFace
