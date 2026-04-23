@@ -71,6 +71,12 @@ const LIGHT_TAB_BACKGROUNDS = new Set([
 /** Roles that are blank paper faces */
 const BLANK_PAPER_ROLES = new Set(["blank_back", "inside_back_blank"]);
 
+/** Back-facing roles where hole punches should appear on the right */
+const BACK_FACE_ROLES = new Set([
+  "blank_back", "tab_back", "insert_back", "inside_back_blank",
+  "inside_back_cover_card", "pvc_cover_back",
+]);
+
 /** Insert sheet colors */
 const INSERT_COLORS: Record<string, string> = {
   white: "#f8f8f8",
@@ -112,6 +118,7 @@ interface PageEffectsProps {
  */
 export default function PageEffects({ effects, pageIndex, totalPages, children, pageRole, allowBleed, bleedInsetPx, label, color }: PageEffectsProps) {
   const role = pageRole ?? (pageIndex === 0 ? "front_cover" : "body");
+  const holeSide: "left" | "right" = BACK_FACE_ROLES.has(role) ? "right" : "left";
 
   // ── 1. Card material: solid edge-to-edge color ──
   if (CARD_ROLES.has(role)) {
@@ -226,7 +233,7 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
     const paperBg = PAPER_COLORS[effects.paperColor] ?? "#ffffff";
     return (
       <div className="w-full h-full" style={{ backgroundColor: paperBg, boxShadow: PAPER_SHADOW }}>
-        {effects.holePunch > 0 && <HolePunchMarks count={effects.holePunch as 2 | 4} />}
+        {effects.holePunch > 0 && <HolePunchMarks count={effects.holePunch as 2 | 4} side={holeSide} />}
       </div>
     );
   }
@@ -284,12 +291,12 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
       )}
 
       {/* Hole punch marks */}
-      {effects.holePunch > 0 && <HolePunchMarks count={effects.holePunch as 2 | 4} />}
+      {effects.holePunch > 0 && <HolePunchMarks count={effects.holePunch as 2 | 4} side={holeSide} />}
     </div>
   );
 }
 
-function HolePunchMarks({ count }: { count: 2 | 4 }) {
+function HolePunchMarks({ count, side = "left" }: { count: 2 | 4; side?: "left" | "right" }) {
   const positions = count === 2 ? [33, 67] : [20, 40, 60, 80];
   return (
     <>
@@ -298,7 +305,7 @@ function HolePunchMarks({ count }: { count: 2 | 4 }) {
           key={pct}
           className="absolute pointer-events-none"
           style={{
-            left: "3%",
+            ...(side === "left" ? { left: "3%" } : { right: "3%" }),
             top: `${pct}%`,
             width: "2.5%",
             height: 0,
