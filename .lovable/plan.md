@@ -1,97 +1,53 @@
 
-## Restore standard bound-document behaviour first, then isolate ring binders completely
 
-### What changed in the shared architecture
+## Fix bound documents always opening as solo right-hand page
 
-The regression comes from ring-binder work being mixed into the shared `FlipBook` / bound-preview flow instead of being isolated.
+### Root cause
 
-Two shared assumptions were altered:
+`showCover` in `react-pageflip` is set to `hasRealFrontCover`, which is only true when the first page role is `front_cover` or `pvc_cover_front`. When the user selects "No Cover", the first role is `body`, so `showCover` becomes `false` — react-pageflip then renders the opening view as a spread instead of a solo right-hand page.
 
-1. **Opening-page / cover-state logic was changed in shared bound preview code**
-   - `PreviewPanel.tsx` now derives solo-page state with:
-     - `hasRealFrontCover = realFrontCover || isRingBinder`
-   - `FlipBook.tsx` now derives shared cover behaviour with:
-     - `hasRealFrontCover = realFrontCover || isRing`
-   - That split means the standard bound-document flow is no longer using the old “opening solo right-hand page” assumptions consistently, so non-ring bound documents can open as a spread instead of showing page 1 on the right.
+The same conditional gates all solo-page detection in both `FlipBook.tsx` and `PreviewPanel.tsx`, breaking pagination labels and visible-page logic for no-cover documents.
 
-2. **Ring-specific tab/display logic was implemented inside the shared preview component**
-   - `TabOverlay` remains the generic left/right spread overlay, but it is now also being used in the ring-binder open renderer.
-   - That is fine for normal wire/comb/perfect/saddle previews, but physically wrong for ring binders, which should never show tab protrusions on both left and right sides.
+### The fix
 
-### Recovery plan
+Every bound document physically opens with its first page on the right, whether that page is a cover or a body page. The `showCover` prop should always be `true` for bound documents. The cover/body distinction should only affect **labels**, not **layout**.
 
-#### 1) Restore the pre-ring behaviour for standard bound documents
-Revert the shared bound-document path so wire/comb/perfect/saddle behave exactly as before:
+### Changes
 
-- Initial view returns to the **first page on the right**, not an opening spread
-- Standard tab parity returns to normal, so tabs do **not** appear to span the spread
-- Shared `react-pageflip` behaviour for normal bound products remains untouched
+**`src/components/preview/FlipBook.tsx`**
 
-Implementation:
-- In `src/components/preview/FlipBook.tsx`, restore the standard branch so non-ring bindings use the original cover/solo-page behaviour independently of ring logic
-- In `src/components/order/PreviewPanel.tsx`, restore the matching page-info / visible-left / visible-right / solo-state assumptions for non-ring bound previews so pagination text and navigation stay aligned with the flipbook
+- Change `showCover={hasRealFrontCover}` to `showCover={true}` (it is only rendered for bound types already)
+- Update solo-page detection to work for all bound documents regardless of cover presence:
+  - `isShowingFrontCover` → rename to `isShowingFirstSolo` — true when `currentPage === 0` (always, for bound)
+  - `isShowingLastSolo` — true when `currentPage >= lastIdx` (remove the `hasRealFrontCover` guard)
+  - `isSoloPage` — true at first page or last page for all bound documents
 
-#### 2) Ringfence ring binders into their own renderer
-Stop modifying shared bound-document architecture for ring binder needs.
+**`src/components/order/PreviewPanel.tsx`**
 
-Implementation:
-- Extract the ring-binder open-state renderer out of the shared logic into a dedicated ring-only component/helper
-- Keep the shared `FlipBook` path for:
-  - wire
-  - comb
-  - saddle
-  - perfect
-- Route `bindingType === "ring"` into a dedicated code path only
+- Mirror the same solo-state logic: the first page of a bound document is always a solo right-hand page
+  - `isShowingFrontCover` → true when `isBound && currentPage === 0` (regardless of role)
+  - `isShowingLastSolo` → true when `isBound && !hasBackCoverCard && currentPage >= totalPages - 1` (remove `hasRealFrontCover` guard)
+  - `isSoloState` updated accordingly
+- `visibleLeft` / `visibleRight` derivation stays the same — it already uses `isSoloState` correctly
+- Label logic in `pageInfoText`: when `currentPage === 0`, use `hasRealFrontCover` to decide between "Front Cover" label vs the `faceLabel(0)` content-page label — structural layout is unaffected
 
-Recommended structure:
-- `src/components/preview/FlipBook.tsx` keeps shared/default bound logic
-- new dedicated ring-only renderer file, e.g.:
-  - `src/components/preview/RingBinderOpenSpread.tsx`
+### What stays untouched
 
-That way future ring work cannot accidentally alter standard bound documents.
-
-#### 3) Give ring binders their own tab model
-Do not reuse the standard left/right spread `TabOverlay` for ring binders.
-
-Implementation:
-- Keep existing `TabOverlay` as the generic overlay for normal bound documents
-- Create a dedicated ring-only tab overlay that:
-  - renders **only on the right outer edge**
-  - never renders “behind tabs” on the left
-  - follows the right-hand tab page, not the generic spread state
-
-This fixes the physically impossible ring-binder tab behaviour without touching normal documents.
-
-#### 4) Preserve the current ring Plan B layout, but only inside the isolated ring component
-Keep the correct high-level ring direction:
-
-- two independent single-page flipbooks
-- real centre gap
-- binder background behind them
-- blank right page after the last page
-
-But rework those details **inside the new isolated ring component only**, not in the shared flip architecture.
-
-#### 5) Add an explicit dependency/regression check before touching shared preview code
-I will add a permanent project/user memory rule so this does not happen again:
-
-- Before changing shared preview/flipbook code, perform a dependency check on all bound document types affected
-- If a change is ring-binder-specific, isolate it in ring-only code instead of editing shared flip architecture
-- Do not alter wire/comb/perfect/saddle behaviour unless explicitly requested
+- Ring binder code in `RingBinderOpenSpread.tsx` — completely isolated, not affected
+- Tab overlay logic — uses `currentPage` which will now be correct
+- All non-bound preview types (loose sheets, folds)
 
 ### Files to change
 
 | File | Change |
 |---|---|
-| `src/components/preview/FlipBook.tsx` | Restore standard bound-document logic for non-ring bindings and remove ring-specific leakage from the shared path |
-| `src/components/order/PreviewPanel.tsx` | Restore non-ring solo-page/pagination assumptions so labels and visible-page logic match the original behaviour |
-| `src/components/preview/RingBinderOpenSpread.tsx` | New isolated ring-only open-state renderer with two flipbooks, centre gap, right-edge-only tabs, and blank final right page |
+| `src/components/preview/FlipBook.tsx` | `showCover={true}` always; remove `hasRealFrontCover` from solo-page structural guards |
+| `src/components/order/PreviewPanel.tsx` | Remove `hasRealFrontCover` from solo-state structural guards; keep it only for label text |
 
 ### Result
 
-- Wire-bound and other standard bound documents go back to the previous correct behaviour
-- Page 1 shows on the right again
-- Standard tabs stop “crossing the spread”
-- Ring binders remain on the two-flipbook Plan B architecture
-- Ring-binder logic is isolated so future fixes cannot break standard bound previews
-- A dependency-check / ringfencing rule is saved for future prompts
+- Wire-bound, comb-bound, saddle-stitched, and perfect-bound documents all open with the first page solo on the right — whether or not a cover is configured
+- Pagination labels correctly show "Front Cover" when there is one, or "Page 1" when there is not
+- Tab positions stay correct because the spread parity is restored
+- Ring binder is not touched
+
