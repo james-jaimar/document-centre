@@ -89,8 +89,8 @@ export default function PhotoTile({
 
         {isLowRes && (
           <Badge
-            variant="secondary"
-            className="absolute top-2 left-2 gap-1 bg-amber-500/90 text-white border-0 text-[10px]"
+            variant="destructive"
+            className="absolute top-2 left-2 gap-1 border-0 text-[10px]"
           >
             <AlertTriangle className="h-3 w-3" />
             Low resolution
