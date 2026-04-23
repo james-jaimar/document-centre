@@ -1,96 +1,126 @@
 
-## Fix business card preview to use exact trimmed card size and full-bleed rendering
 
-### Problem
+## Regional pricing: IP-based detection, platform admin management, and visitor override
 
-The PDF server is already doing the right thing: it reads the bleed, trims the artwork to the finished card size, and stores `page_width_mm` / `page_height_mm` from the resolved Trim Box. The preview is still wrong because the client is adding a synthetic white inset as if the card were a non-bleed paper page.
+### Overview
 
-For business cards, the user should see the finished 90×50mm face exactly as trimmed by the server — edge to edge, with no extra white margin invented by the UI.
+Add a multi-region pricing system for the public `/pricing` page. Visitors see prices in their local currency (detected from IP), can manually switch region, and you (platform admin) can manage all pricing from a new admin page.
 
-### Root cause
+### Architecture
 
-Two things are working against the preview:
+```text
+  Visitor hits /pricing
+       │
+       ▼
+  React hook: useRegionalPricing()
+       │
+       ├─ Check localStorage for manual override
+       │
+       ├─ If none: call free IP geolocation API (ip-api.com or similar)
+       │   └─ Map country code → region (US/UK/EU/AU/ZA)
+       │
+       ├─ Fetch pricing matrix from Supabase table
+       │
+       └─ Return { region, currency, symbol, plans[], setRegion() }
+```
 
-1. **Business cards are falling through to generic `loose_sheets` behaviour** instead of a card-specific path.
-2. **Bleed is only enabled when a “Print to Edge” option exists**, but business cards do not use that option. As a result, `PageEffects` applies the default non-bleed inset (`bleedInsetPx`), which creates the white border the user is seeing even though the thumbnail is already trim-cropped.
+### Database
 
-### Implementation
+**New table: `platform_pricing_regions`** (no RLS needed — public read, platform admin write)
 
-#### 1) Add a dedicated business-card preview type
-Create a `business_cards` preview type so cards can have their own preview rules without affecting other loose-sheet products.
+| Column | Type | Example |
+|---|---|---|
+| `id` | uuid PK | |
+| `region_code` | text UNIQUE | `US`, `UK`, `EU`, `AU`, `ZA` |
+| `region_label` | text | `United States`, `United Kingdom`, etc. |
+| `currency_code` | text | `USD`, `GBP`, `EUR`, `AUD`, `ZAR` |
+| `currency_symbol` | text | `$`, `£`, `€`, `A$`, `R` |
+| `country_codes` | text[] | `{US}`, `{GB}`, `{DE,FR,IT,ES,NL,BE,...}` |
+| `tax_note` | text nullable | `excl. VAT` or `excl. GST` |
+| `is_default` | boolean | true for one row (fallback) |
+| `sort_order` | int | display order in selector |
 
-Files:
-- `src/components/preview/previewTypes.ts`
-- `src/pages/dashboard/OrderBuild.tsx`
-- `src/lib/orders/inferPreviewType.ts`
+**New table: `platform_pricing_plans`**
 
-Changes:
-- Add `"business_cards"` to `ProductPreviewType`
-- Map product family slug `business-cards` to `"business_cards"` in live preview inference
-- Map placed-order preview inference to `"business_cards"` as well
+| Column | Type | Example |
+|---|---|---|
+| `id` | uuid PK | |
+| `region_id` | uuid FK → platform_pricing_regions | |
+| `plan_slug` | text | `starter`, `core`, `multi_branch` |
+| `plan_name` | text | `Starter` |
+| `price` | numeric(10,2) | `149.00` |
+| `sort_order` | int | 1, 2, 3 |
+| UNIQUE | `(region_id, plan_slug)` | |
 
-This keeps card-specific behaviour isolated and avoids contaminating generic loose-sheet previews.
+**RLS policies:**
+- Both tables: `SELECT` open to `anon` (public page needs to read)
+- `INSERT/UPDATE/DELETE` restricted to `platform_admin` role via `has_role(auth.uid(), 'platform_admin')`
 
-#### 2) Use the finished card dimensions as the preview canvas ratio
-Make the preview ratio come from the trimmed physical size first, not from generic fallback logic.
+**Seed data** (migration INSERT):
+- 5 regions: US, UK, EU, AU, ZA with their country code arrays
+- 15 plan rows (3 plans x 5 regions) with the prices you specified:
+  - Starter: $149 / £119 / €129 / A$219 / R1,799
+  - Core: $199 / £149 / €169 / A$279 / R2,499
+  - Multi-Branch: $349 / £259 / €299 / A$479 / R4,499
 
-Files:
-- `src/components/order/PreviewPanel.tsx`
-- `src/lib/orders/buildPreviewSnapshot.ts`
+### New files
 
-Changes:
-- Continue using document `page_width_mm / page_height_mm` as the primary source, since those values already come from the server’s Trim Box crop
-- Add a fallback to selected `Document Size` metadata when dimensions are missing, so business cards still render at the correct ratio:
-  - Standard ZA/UK/AU card = **90 / 50 = 1.8**
-  - Other card sizes continue to use their own option metadata if selected
-- Persist the same ratio logic into the saved preview snapshot so placed-order previews match the live configurator
+#### 1. `src/hooks/useRegionalPricing.ts`
+- On mount: check `localStorage.getItem('dc_region_override')`
+- If no override: fetch visitor country from a free IP API (e.g. `https://ip-api.com/json/?fields=countryCode` or `https://ipapi.co/json/`)
+- Map the 2-letter country code to a region by checking `country_codes` arrays from `platform_pricing_regions`
+- If no match, fall back to the row where `is_default = true`
+- Fetch `platform_pricing_plans` joined with the matched region
+- Expose: `region`, `plans`, `regions` (for selector), `setRegion(code)` (writes to localStorage and updates state)
+- Cache region detection result in `sessionStorage` to avoid repeat IP calls
 
-#### 3) Force edge-to-edge rendering for business cards
-Because the server thumbnails are already trim-cropped, the preview must not add a fake inner margin for cards.
+#### 2. `src/pages/platform/PlatformPricingRegions.tsx`
+Platform admin page at `/platform/pricing` with:
+- Table of regions (code, label, currency, country codes, tax note, default flag)
+- Inline edit or dialog to add/edit/delete regions
+- Below or as a tab: per-region plan prices in an editable grid
+- Simple CRUD using Supabase client directly (platform admin is authenticated)
 
-Files:
-- `src/components/order/PreviewPanel.tsx`
-- `src/lib/orders/buildPreviewSnapshot.ts`
+### Modified files
 
-Changes:
-- In the `bleedFlags` computation, treat `business_cards` faces as bleed-enabled by default
-- That means `PageEffects` gets `allowBleed=true` for business card faces and uses `inset = 0`
-- Do the same in snapshot generation so customer/admin order detail previews stay identical
+#### 3. `src/pages/Pricing.tsx`
+- Import and call `useRegionalPricing()`
+- Replace hardcoded `plans` array with data from the hook
+- Replace hardcoded `£` with `region.currency_symbol`
+- Add a compact region selector (dropdown or pill group) near the hero or above the pricing cards — shows flag emoji + currency code, e.g. "🇬🇧 GBP"
+- Show `tax_note` beneath prices when present (e.g. "excl. VAT")
+- Keep all feature lists, comparison table, FAQs, and layout unchanged — only the prices and currency symbol change
+- While loading, show skeleton placeholders for prices
 
-This is the key fix for the white border.
+#### 4. `src/App.tsx`
+- Add route `/platform/pricing` → `PlatformPricingRegions` (platform_admin only)
 
-#### 4) Keep the card fitted inside the preview area, but on a correct 90×50 canvas
-The preview box should remain responsive, but its internal artwork canvas must be the true card ratio.
+#### 5. `src/components/AppSidebar.tsx`
+- Add "Pricing Regions" nav item under Platform section, linking to `/platform/pricing`
 
-File:
-- `src/components/preview/LooseSheetsPreview.tsx`
+### Region selector UX
 
-Changes:
-- Reuse the existing fit-to-container sizing, but ensure the page frame is driven by the resolved business-card ratio
-- Keep `object-contain` for the trimmed thumbnail itself; once `allowBleed=true` and the frame ratio is correct, the image will sit edge-to-edge naturally without extra client-side cropping
+A small, elegant selector positioned just above the pricing cards or in the hero section:
+- Row of pill buttons showing: 🇺🇸 USD · 🇬🇧 GBP · 🇪🇺 EUR · 🇦🇺 AUD · 🇿🇦 ZAR
+- Active region is highlighted
+- Clicking sets localStorage override and updates prices instantly
+- Auto-detected region has a subtle "(detected)" label on first load
 
-### Why this fixes the screenshots
+### IP detection approach
 
-- The server already outputs a trimmed 90×50mm result
-- The preview will now use a **1.8 ratio canvas**
-- The preview will **stop injecting the white inset**
-- The user will see the finished card face exactly edge-to-edge, matching the trimmed output shown in Acrobat
+Use a free, no-key-required API called client-side (no edge function needed):
+- Primary: `https://ip-api.com/json/?fields=countryCode` (free for non-commercial, 45 req/min)
+- The call is made once per session and cached in `sessionStorage`
+- If the call fails or is blocked, fall back to the default region (UK, since the page was last set to GBP)
 
-### Files to change
+### Files to create/change
 
 | File | Change |
 |---|---|
-| `src/components/preview/previewTypes.ts` | Add `business_cards` preview type |
-| `src/pages/dashboard/OrderBuild.tsx` | Map `business-cards` family slug to `business_cards` |
-| `src/lib/orders/inferPreviewType.ts` | Map placed-order inference to `business_cards` |
-| `src/components/order/PreviewPanel.tsx` | Use exact trimmed ratio / size fallback and force bleed for business cards |
-| `src/lib/orders/buildPreviewSnapshot.ts` | Mirror live ratio + bleed logic for saved previews |
-| `src/components/preview/LooseSheetsPreview.tsx` | Ensure the preview canvas uses the resolved business-card ratio |
+| **Migration SQL** | Create `platform_pricing_regions` and `platform_pricing_plans` tables with RLS + seed data |
+| `src/hooks/useRegionalPricing.ts` | New hook: IP detection, region matching, plan fetching, manual override |
+| `src/pages/platform/PlatformPricingRegions.tsx` | New platform admin page for managing regions and plan prices |
+| `src/pages/Pricing.tsx` | Replace hardcoded prices with hook data; add region selector UI |
+| `src/App.tsx` | Add `/platform/pricing` route |
+| `src/components/AppSidebar.tsx` | Add nav item for Pricing Regions under Platform section |
 
-### Result
-
-- A 90×50mm business card renders on a **90:50 proportioned preview canvas**
-- Edge-to-edge artwork displays **flush to the card edges**
-- No fake white border is added by the client
-- Live preview and placed-order preview stay consistent
-- Other preview types remain isolated and unchanged
