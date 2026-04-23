@@ -34,19 +34,24 @@ const RING_CLOSED_ASPECT = 793 / 833;   // width / height
 const RING_OPEN_ASPECT   = 1781 / 840;
 // Pocket rectangle on the closed front (for cover overlay)
 const RING_POCKET = { x: 0.05, y: 0.025, w: 0.90, h: 0.95 };
-// Inner printable rectangle on the OPEN binder artwork (where the two
-// pages physically sit). Tuned to the ring_binder_white_open.png artwork:
-// excludes the binder cover edges (top/bottom/outer) and the central ring
-// mechanism column. Pages are pushed to the outer halves with a centre gap
-// that clears the rings.
-const RING_INNER = {
-  top: 0.06,
-  bottom: 0.06,
-  outer: 0.05,        // inset from left edge of left page and right edge of right page
-  centerGap: 0.13,    // real CSS gap between the two single-page flipbooks
+// Page-first sizing constants for the OPEN binder.
+// pageAspectRatio (A4 portrait ≈ 0.707) drives page geometry; the binder
+// artwork wraps around the spread with these inset fractions.
+const RING_OPEN = {
+  // Outer breathing room around the binder frame inside the container
+  containerPaddingX: 24,
+  containerPaddingY: 12,
+  // Tab gutter reserved on each outer edge (only when tabs exist)
+  tabGutterPx: 36,
+  // Centre gap between the two pages, expressed as a fraction of pageWidth.
+  // Sized to match the ring column width in ring_binder_white_open.png.
+  centerGapFraction: 0.16,
+  // Binder artwork extends beyond the spread footprint by these fractions
+  // of pageWidth (per side) for the cover edges, and these fractions of
+  // pageHeight (top/bottom) for the binder top/bottom rims.
+  binderInsetXFraction: 0.08,
+  binderInsetYFraction: 0.06,
 };
-// Ring mechanism PNG aspect (width / height) — matches ring_bind_mechanism.png
-const RING_MECH_ASPECT = 223 / 840;
 
 /**
  * Each page must be a forwardRef component for react-pageflip.
