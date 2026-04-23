@@ -234,6 +234,7 @@ function buildPageSequence(
         section,
       });
 
+      // Simplex: push natural reverse face for ALL bound types including ring binders
       if (!section.is_duplex && !forceDuplex) {
         result.push({
           thumbnailUrl: "", pageIndex: -1, isColor: section.is_color, section,
@@ -311,17 +312,10 @@ export function buildPreviewSnapshot(input: {
     roles.splice(1, 0, "pvc_cover_back");
   }
 
-  // Ring binders ALWAYS show a closed-binder view at page 0. Inject a
-  // blank cover pair when no real cover/PVC exists so the first body
-  // page is not promoted into the solo right-hand cover slot.
+  // Ring binder: NO virtual cover injection when no cover selected.
+  // The ring binder component shows the first body page through the clear
+  // binder window on page 0 — don't inject blank filler pages.
   const isRingBinder = productType === "ring_binder";
-  const hasRealCover = roles[0] === "front_cover" || roles[0] === "pvc_cover_front";
-  if (isRingBinder && !hasRealCover && fp.length > 0) {
-    fp.unshift({ thumbnailUrl: "", pageIndex: 0, isColor: true });
-    roles.unshift("pvc_cover_front");
-    fp.splice(1, 0, { thumbnailUrl: "", pageIndex: 0, isColor: true });
-    roles.splice(1, 0, "pvc_cover_back");
-  }
 
   const hasBackCover = isBound && effects.backCover && effects.backCover !== "none";
   if (isBound) {
@@ -376,6 +370,8 @@ export function buildPreviewSnapshot(input: {
     )
       return true;
     if (["blank_back", "inside_back_blank"].includes(role)) return false;
+    // Ring binder body pages sit inside a mechanism — never edge-to-edge.
+    if (isRingBinder && role === "body") return false;
     if (bleedScope === "all") return true;
     if (bleedScope === "none") return false;
     if (bleedScope === "front_cover" && role === "front_cover") return true;

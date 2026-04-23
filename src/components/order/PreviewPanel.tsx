@@ -173,8 +173,7 @@ function buildPageSequence(
 
       // Simplex: push the natural reverse face of this sheet
       // (skip for booklets — saddle-stitched is always duplex)
-      // (skip for ring binders — static page rendering, no blank backs needed)
-      if (!section.is_duplex && !forceDuplex && productType !== "ring_binder") {
+      if (!section.is_duplex && !forceDuplex) {
         result.push({
           thumbnailUrl: "", pageIndex: -1, documentName: "",
           section, isColor: section.is_color,
@@ -215,7 +214,7 @@ export default function PreviewPanel({
   const isBound = BOUND_TYPES.has(productType);
   const isFold = FOLD_TYPES.has(productType);
   const isRingBinder = productType === "ring_binder";
-  const step = isBound && !isRingBinder ? 2 : 1;
+  const step = isBound ? 2 : 1;
 
   // Measure container
   useEffect(() => {
@@ -360,19 +359,10 @@ export default function PreviewPanel({
       roles.splice(1, 0, "pvc_cover_back");
     }
 
-    // ── Ring binder virtual cover ──
-    // Ring binders ALWAYS show a closed-binder view at page 0. When no real
-    // front_cover or PVC cover exists, inject a blank cover pair so the
-    // flipbook's showCover behaviour doesn't promote the first body page
-    // into the solo right-hand cover slot.
-    const isRingBinderType = productType === "ring_binder";
-    const hasRealCover = roles[0] === "front_cover" || roles[0] === "pvc_cover_front";
-    if (isRingBinderType && !hasRealCover && fp.length > 0) {
-      fp.unshift({ thumbnailUrl: "", pageIndex: 0, documentName: "Binder Cover", section: undefined, isColor: true });
-      roles.unshift("pvc_cover_front");
-      fp.splice(1, 0, { thumbnailUrl: "", pageIndex: 0, documentName: "Binder Cover Inside", section: undefined, isColor: true });
-      roles.splice(1, 0, "pvc_cover_back");
-    }
+    // ── Ring binder: NO virtual cover injection ──
+    // When the user picks "No Cover", the ring binder component shows the
+    // first body page through the clear binder window on page 0. Don't
+    // inject blank cover filler pages — that creates a blank initial view.
 
     // Tab/insert alignment is now handled inside buildPageSequence()
     // via the pending-queue flush — no post-processing pass needed.
@@ -481,13 +471,16 @@ export default function PreviewPanel({
     return computedPageRoles.map((role) => {
       if (["pvc_cover_front", "pvc_cover_back", "inside_back_cover_card", "back_cover_card"].includes(role)) return true;
       if (["blank_back", "inside_back_blank"].includes(role)) return false;
+      // Ring binder body pages sit inside a mechanism — never edge-to-edge.
+      // Only PVC/card cover materials (handled above) get full bleed.
+      if (isRingBinder && role === "body") return false;
       if (bleedScope === "all") return true;
       if (bleedScope === "none") return false;
       if (bleedScope === "front_cover" && role === "front_cover") return true;
       if (bleedScope === "covers" && (role === "front_cover" || role === "back_cover")) return true;
       return false;
     });
-  }, [computedPageRoles, effects?.bleed, isBusinessCards]);
+  }, [computedPageRoles, effects?.bleed, isBusinessCards, isRingBinder]);
 
   const pageAspectRatio = useMemo(() => {
     const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
