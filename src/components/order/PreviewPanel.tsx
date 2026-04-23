@@ -173,7 +173,8 @@ function buildPageSequence(
 
       // Simplex: push the natural reverse face of this sheet
       // (skip for booklets — saddle-stitched is always duplex)
-      if (!section.is_duplex && !forceDuplex) {
+      // (skip for ring binders — static page rendering, no blank backs needed)
+      if (!section.is_duplex && !forceDuplex && productType !== "ring_binder") {
         result.push({
           thumbnailUrl: "", pageIndex: -1, documentName: "",
           section, isColor: section.is_color,
@@ -213,7 +214,8 @@ export default function PreviewPanel({
 
   const isBound = BOUND_TYPES.has(productType);
   const isFold = FOLD_TYPES.has(productType);
-  const step = isBound ? 2 : 1;
+  const isRingBinder = productType === "ring_binder";
+  const step = isBound && !isRingBinder ? 2 : 1;
 
   // Measure container
   useEffect(() => {
@@ -363,9 +365,9 @@ export default function PreviewPanel({
     // front_cover or PVC cover exists, inject a blank cover pair so the
     // flipbook's showCover behaviour doesn't promote the first body page
     // into the solo right-hand cover slot.
-    const isRingBinder = productType === "ring_binder";
+    const isRingBinderType = productType === "ring_binder";
     const hasRealCover = roles[0] === "front_cover" || roles[0] === "pvc_cover_front";
-    if (isRingBinder && !hasRealCover && fp.length > 0) {
+    if (isRingBinderType && !hasRealCover && fp.length > 0) {
       fp.unshift({ thumbnailUrl: "", pageIndex: 0, documentName: "Binder Cover", section: undefined, isColor: true });
       roles.unshift("pvc_cover_front");
       fp.splice(1, 0, { thumbnailUrl: "", pageIndex: 0, documentName: "Binder Cover Inside", section: undefined, isColor: true });
@@ -507,14 +509,16 @@ export default function PreviewPanel({
   const hasRealFrontCover = realFrontCover;
   // Structural solo-state: every bound doc opens with page 1 solo on the right.
   // hasRealFrontCover is used ONLY for labels, never for layout decisions.
+  // Ring binder uses static rendering — its component handles left/right internally,
+  // so we treat it like a non-bound type for pagination/solo-state purposes.
   const isShowingFrontCover = isBound && currentPage === 0;
   const hasBackCoverCard = computedPageRoles.includes("back_cover_card");
-  const isShowingBackCover = isBound && hasBackCoverCard && currentPage >= totalPages - 1;
-  const isShowingLastSolo = isBound && !hasBackCoverCard && currentPage >= totalPages - 1;
-  const isSoloState = isShowingFrontCover || isShowingBackCover || isShowingLastSolo;
+  const isShowingBackCover = isBound && !isRingBinder && hasBackCoverCard && currentPage >= totalPages - 1;
+  const isShowingLastSolo = isBound && !isRingBinder && !hasBackCoverCard && currentPage >= totalPages - 1;
+  const isSoloState = isRingBinder ? false : (isShowingFrontCover || isShowingBackCover || isShowingLastSolo);
 
   const visibleLeft = isSoloState && isShowingFrontCover ? null : currentPage;
-  const visibleRight = isShowingFrontCover ? 0 : (isSoloState ? null : currentPage + 1);
+  const visibleRight = isShowingFrontCover && !isRingBinder ? 0 : (isSoloState ? null : currentPage + 1);
 
   /** Human-friendly label for a role when it has no page number */
   const roleFriendlyName = (role: string): string => {
@@ -548,6 +552,10 @@ export default function PreviewPanel({
         return role === "pvc_cover_front" ? "Front Cover (PVC)" : "Front Cover";
       }
       if (isShowingBackCover) return "Back Cover";
+      // Ring binder: single-page info (no spread pairs)
+      if (isRingBinder) {
+        return `${faceLabel(currentPage)} of ${totalContentPages}`;
+      }
       if (isShowingLastSolo) {
         return `${faceLabel(totalPages - 1)} of ${totalContentPages}`;
       }
@@ -556,7 +564,7 @@ export default function PreviewPanel({
       return `${leftLabel} – ${rightLabel}  (${totalContentPages} pages)`;
     }
     return `${faceLabel(currentPage)} of ${totalContentPages}`;
-  }, [currentPage, totalPages, totalContentPages, isBound, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers]);
+  }, [currentPage, totalPages, totalContentPages, isBound, isRingBinder, isShowingFrontCover, isShowingBackCover, isShowingLastSolo, computedPageRoles, displayPageNumbers]);
 
   const colourStatus = useMemo(() => {
     if (totalPages === 0) return "";
