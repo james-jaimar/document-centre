@@ -77,6 +77,7 @@ const PLATFORM_SECTIONS: NavSection[] = [
       { to: "/platform", icon: <Globe size={20} />, label: "Tenants" },
       { to: "/platform/users", icon: <Users size={20} />, label: "All Users" },
       { to: "/platform/demo", icon: <Sparkles size={20} />, label: "Demo Activity" },
+      { to: "/platform/pricing", icon: <DollarSign size={20} />, label: "Pricing Regions" },
       { to: "/platform/settings", icon: <Settings size={20} />, label: "Platform Settings" },
     ],
   },

@@ -1,16 +1,27 @@
 import { Link } from "react-router-dom";
 import { Check, ArrowRight, Linkedin, Youtube, Mail } from "lucide-react";
 import docCentreLogo from "@/assets/doc-centre-logo.svg";
+import { useRegionalPricing } from "@/hooks/useRegionalPricing";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const Logo = ({ height = 88 }: { height?: number }) => (
   <img src={docCentreLogo} alt="Document Centre" style={{ height }} className="w-auto" />
 );
 
-/* ───────── Plan data ───────── */
-const plans = [
-  {
-    name: "Starter",
-    price: 149,
+const FLAG_MAP: Record<string, string> = {
+  US: "🇺🇸", UK: "🇬🇧", EU: "🇪🇺", AU: "🇦🇺", ZA: "🇿🇦",
+};
+
+/* ───────── Static plan metadata ───────── */
+const planMeta: Record<string, {
+  desc: string;
+  features: string[];
+  cta: string;
+  ctaLink: string;
+  note: string;
+  featured: boolean;
+}> = {
+  starter: {
     desc: "For smaller copy shops and single-location teams getting started online.",
     features: [
       "1 store / location",
@@ -28,9 +39,7 @@ const plans = [
     note: "Best for shops that want a simple online ordering flow without extra admin features.",
     featured: false,
   },
-  {
-    name: "Core",
-    price: 199,
+  core: {
     desc: "For busy print shops that want the best balance of simplicity, control, and automation.",
     features: [
       "Everything in Starter",
@@ -47,9 +56,7 @@ const plans = [
     note: "The easiest way to take print orders online without creating more work for your team.",
     featured: true,
   },
-  {
-    name: "Multi-Branch",
-    price: 349,
+  multi_branch: {
     desc: "For print businesses with multiple branches or central production.",
     features: [
       "Everything in Core",
@@ -66,7 +73,7 @@ const plans = [
     note: "Need more branches? We'll scale with you.",
     featured: false,
   },
-];
+};
 
 const comparisonRows = [
   ["Customer file upload", true, true, true],
@@ -99,8 +106,29 @@ const valueCards = [
   { title: "Print-ready output", desc: "Receive a production-ready PDF, straight or imposed to suit your workflow." },
 ];
 
+function formatPrice(price: number, symbol: string): string {
+  // For ZAR-like large prices, format with commas
+  if (price >= 1000) {
+    return symbol + price.toLocaleString("en", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  }
+  // Remove decimals if whole number
+  return symbol + (price % 1 === 0 ? price.toFixed(0) : price.toFixed(2));
+}
+
 /* ───────── Page ───────── */
 export default function Pricing() {
+  const { region, regions, plans, loading, detected, setRegion } = useRegionalPricing();
+
+  const symbol = region?.currency_symbol || "£";
+  const taxNote = region?.tax_note;
+
+  // Build plan cards from DB plans + static metadata
+  const starterPlan = plans.find((p) => p.plan_slug === "starter");
+  const corePlan = plans.find((p) => p.plan_slug === "core");
+
+  const heroStartPrice = starterPlan ? formatPrice(starterPlan.price, symbol) : `${symbol}149`;
+  const heroCorePrice = corePlan ? formatPrice(corePlan.price, symbol) : `${symbol}199`;
+
   return (
     <div className="dc-marketing">
       {/* ───────── Header ───────── */}
@@ -144,9 +172,39 @@ export default function Pricing() {
             and print-ready PDFs your team can use straight away.
           </p>
           <p className="mt-3 text-sm dc-muted">
-            Start from <strong style={{ color: "hsl(var(--dc-navy))" }}>£149/month</strong> · Most shops choose Core at <strong style={{ color: "hsl(var(--dc-navy))" }}>£199/month</strong>
+            {loading ? (
+              <Skeleton className="h-4 w-64 mx-auto" />
+            ) : (
+              <>
+                Start from <strong style={{ color: "hsl(var(--dc-navy))" }}>{heroStartPrice}/month</strong> · Most shops choose Core at <strong style={{ color: "hsl(var(--dc-navy))" }}>{heroCorePrice}/month</strong>
+                {taxNote && <span className="ml-1 text-xs">({taxNote})</span>}
+              </>
+            )}
           </p>
           <p className="mt-4 text-xs dc-muted">No setup headache. No clunky storefront. No prepress ping-pong.</p>
+
+          {/* Region selector */}
+          {regions.length > 1 && (
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+              {regions.map((r) => (
+                <button
+                  key={r.region_code}
+                  onClick={() => setRegion(r.region_code)}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all border ${
+                    region?.region_code === r.region_code
+                      ? "border-[hsl(var(--dc-blue))] bg-[hsl(var(--dc-blue)/0.08)] text-[hsl(var(--dc-blue))]"
+                      : "border-[hsl(var(--dc-border))] text-[hsl(var(--dc-navy)/0.6)] hover:border-[hsl(var(--dc-blue)/0.4)]"
+                  }`}
+                >
+                  <span>{FLAG_MAP[r.region_code] || ""}</span>
+                  <span>{r.currency_code}</span>
+                  {detected && region?.region_code === r.region_code && (
+                    <span className="text-[10px] opacity-60">(detected)</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
@@ -154,61 +212,79 @@ export default function Pricing() {
       <section className="bg-white py-20 lg:py-24">
         <div className="max-w-[1240px] mx-auto px-6">
           <div className="grid md:grid-cols-3 gap-7 items-start">
-            {plans.map((plan) => (
-              <div
-                key={plan.name}
-                className={`dc-card relative flex flex-col p-8 ${
-                  plan.featured
-                    ? "border-2 border-[hsl(var(--dc-blue))] shadow-xl md:-translate-y-3"
-                    : ""
-                }`}
-              >
-                {plan.featured && (
-                  <span
-                    className="absolute -top-3.5 left-7 text-[13px] font-bold text-white px-4 py-1.5 rounded-full"
-                    style={{
-                      background: "linear-gradient(90deg, hsl(var(--dc-blue)), hsl(var(--dc-sky)))",
-                      boxShadow: "0 8px 20px hsl(var(--dc-blue) / 0.25)",
-                    }}
-                  >
-                    Most Popular
-                  </span>
-                )}
-
-                <h3 className="text-2xl font-bold" style={{ color: "hsl(var(--dc-navy))" }}>{plan.name}</h3>
-                <div className="mt-3 flex items-baseline gap-1">
-                  <span className="text-lg font-bold" style={{ color: "hsl(var(--dc-navy))" }}>£</span>
-                  <span className="text-5xl font-extrabold" style={{ color: "hsl(var(--dc-navy))" }}>{plan.price}</span>
-                  <span className="text-base font-semibold dc-muted">/month</span>
-                </div>
-                <p className="mt-3 text-sm dc-muted leading-relaxed">{plan.desc}</p>
-
-                <ul className="mt-6 space-y-3 flex-1">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2.5 text-sm" style={{ color: "hsl(var(--dc-navy))" }}>
-                      <span
-                        className="mt-0.5 h-[18px] w-[18px] rounded-full flex items-center justify-center shrink-0"
-                        style={{ background: "hsl(var(--dc-green))" }}
-                      >
-                        <Check className="h-2.5 w-2.5 text-white" strokeWidth={3.5} />
-                      </span>
-                      <span className="font-medium">{f}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                <Link
-                  to={plan.ctaLink}
-                  className={`dc-btn mt-7 w-full justify-center text-center ${
-                    plan.featured ? "dc-btn-primary" : "dc-btn-outline"
+            {(plans.length > 0 ? plans : [
+              { plan_slug: "starter", plan_name: "Starter", price: 149, sort_order: 1, id: "s", region_id: "" },
+              { plan_slug: "core", plan_name: "Core", price: 199, sort_order: 2, id: "c", region_id: "" },
+              { plan_slug: "multi_branch", plan_name: "Multi-Branch", price: 349, sort_order: 3, id: "m", region_id: "" },
+            ]).map((plan) => {
+              const meta = planMeta[plan.plan_slug];
+              if (!meta) return null;
+              return (
+                <div
+                  key={plan.plan_slug}
+                  className={`dc-card relative flex flex-col p-8 ${
+                    meta.featured
+                      ? "border-2 border-[hsl(var(--dc-blue))] shadow-xl md:-translate-y-3"
+                      : ""
                   }`}
-                  style={{ padding: "0.75rem 1.5rem" }}
                 >
-                  {plan.cta}
-                </Link>
-                <p className="mt-3 text-xs dc-muted text-center">{plan.note}</p>
-              </div>
-            ))}
+                  {meta.featured && (
+                    <span
+                      className="absolute -top-3.5 left-7 text-[13px] font-bold text-white px-4 py-1.5 rounded-full"
+                      style={{
+                        background: "linear-gradient(90deg, hsl(var(--dc-blue)), hsl(var(--dc-sky)))",
+                        boxShadow: "0 8px 20px hsl(var(--dc-blue) / 0.25)",
+                      }}
+                    >
+                      Most Popular
+                    </span>
+                  )}
+
+                  <h3 className="text-2xl font-bold" style={{ color: "hsl(var(--dc-navy))" }}>{plan.plan_name}</h3>
+                  <div className="mt-3 flex items-baseline gap-1">
+                    {loading ? (
+                      <Skeleton className="h-12 w-32" />
+                    ) : (
+                      <>
+                        <span className="text-5xl font-extrabold" style={{ color: "hsl(var(--dc-navy))" }}>
+                          {formatPrice(plan.price, symbol)}
+                        </span>
+                        <span className="text-base font-semibold dc-muted">/month</span>
+                      </>
+                    )}
+                  </div>
+                  {taxNote && (
+                    <p className="mt-1 text-xs dc-muted">{taxNote}</p>
+                  )}
+                  <p className="mt-3 text-sm dc-muted leading-relaxed">{meta.desc}</p>
+
+                  <ul className="mt-6 space-y-3 flex-1">
+                    {meta.features.map((f) => (
+                      <li key={f} className="flex items-start gap-2.5 text-sm" style={{ color: "hsl(var(--dc-navy))" }}>
+                        <span
+                          className="mt-0.5 h-[18px] w-[18px] rounded-full flex items-center justify-center shrink-0"
+                          style={{ background: "hsl(var(--dc-green))" }}
+                        >
+                          <Check className="h-2.5 w-2.5 text-white" strokeWidth={3.5} />
+                        </span>
+                        <span className="font-medium">{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <Link
+                    to={meta.ctaLink}
+                    className={`dc-btn mt-7 w-full justify-center text-center ${
+                      meta.featured ? "dc-btn-primary" : "dc-btn-outline"
+                    }`}
+                    style={{ padding: "0.75rem 1.5rem" }}
+                  >
+                    {meta.cta}
+                  </Link>
+                  <p className="mt-3 text-xs dc-muted text-center">{meta.note}</p>
+                </div>
+              );
+            })}
           </div>
 
           <p className="mt-8 text-center text-sm dc-muted">
