@@ -1,5 +1,4 @@
-import React, { useRef, useCallback, useEffect, forwardRef, useMemo } from "react";
-import HTMLFlipBook from "react-pageflip";
+import React, { forwardRef, useMemo } from "react";
 import type { PreviewEffects, TabPosition } from "./previewTypes";
 import { DEFAULT_PREVIEW_EFFECTS, TAB_COLORS } from "./previewTypes";
 import PageEffects from "./PageEffects";
@@ -233,17 +232,8 @@ export default function RingBinderPreview({
   colorFlags,
   rawPaths,
 }: RingBinderPreviewProps) {
-  const leftRef = useRef<any>(null);
-  const rightRef = useRef<any>(null);
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
   const ratio = pageAspectRatio ?? 0.707;
-
-  const structuralKey = useMemo(
-    () => JSON.stringify({
-      n: urls.length, p: rawPaths, r: pageRoles, s: sectionTypes, l: pageLabels, c: pageColors,
-    }),
-    [urls.length, rawPaths, pageRoles, sectionTypes, pageLabels, pageColors]
-  );
 
   if (urls.length === 0) {
     return (
@@ -291,7 +281,12 @@ export default function RingBinderPreview({
                 label={pageLabels?.[0]}
                 color={pageColors?.[0]}
               >
-                <img src={urls[0]} alt="Front cover" className="w-full h-full object-contain" />
+                <img
+                  src={urls[0]}
+                  alt="Front cover"
+                  className="w-full h-full object-contain"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                />
               </PageEffects>
             ) : (
               <div style={{ width: "100%", height: "100%", backgroundColor: "white" }} />
@@ -302,12 +297,11 @@ export default function RingBinderPreview({
     );
   }
 
-  /* ── OPEN STATE (two independent flipbooks) ───────────────── */
+  /* ── OPEN STATE (static spread) ───────────────────────────── */
   return (
     <RingOpenSpread
       urls={urls}
       currentPage={currentPage}
-      onPageChange={onPageChange}
       width={width}
       height={height}
       pageAspectRatio={ratio}
@@ -319,21 +313,16 @@ export default function RingBinderPreview({
       pageColors={pageColors}
       tabPositions={tabPositions}
       colorFlags={colorFlags}
-      leftRef={leftRef}
-      rightRef={rightRef}
-      structuralKey={structuralKey}
     />
   );
 }
 
 /* ══════════════════════════════════════════════════════════════
- * RingOpenSpread — two independent single-page HTMLFlipBook
- * instances with a CSS centre gap for the ring mechanism.
+ * RingOpenSpread — static left/right page divs with binder frame
  * ══════════════════════════════════════════════════════════════ */
 type RingOpenSpreadProps = {
   urls: string[];
   currentPage: number;
-  onPageChange: (p: number) => void;
   width: number;
   height: number;
   pageAspectRatio: number;
@@ -345,15 +334,11 @@ type RingOpenSpreadProps = {
   pageColors?: string[];
   tabPositions?: TabPosition[];
   colorFlags?: boolean[];
-  leftRef: React.MutableRefObject<any>;
-  rightRef: React.MutableRefObject<any>;
-  structuralKey: string;
 };
 
 function RingOpenSpread({
   urls,
   currentPage,
-  onPageChange,
   width,
   height,
   pageAspectRatio,
@@ -365,12 +350,7 @@ function RingOpenSpread({
   pageColors,
   tabPositions,
   colorFlags,
-  leftRef,
-  rightRef,
-  structuralKey,
 }: RingOpenSpreadProps) {
-  const isSyncing = useRef(false);
-
   const hasTabs = (tabPositions?.length ?? 0) > 0;
   const tabGutter = hasTabs ? RING_OPEN.tabGutterPx : 0;
 
@@ -394,80 +374,36 @@ function RingOpenSpread({
   const containerWidth = binderFrameWidth + tabGutter * 2;
   const containerHeight = binderFrameHeight;
 
-  const basePageWidth = BASE_PAGE_WIDTH;
-  const basePageHeight = Math.round(basePageWidth / pageAspectRatio);
-  const scaleFactor = pageWidth / basePageWidth;
-  const bleedInsetPx = Math.round(basePageWidth * 0.03);
+  const bleedInsetPx = Math.round(pageWidth * 0.03);
 
   const rightIndex = currentPage;
   const leftIndex = Math.max(0, currentPage - 1);
   const rightBeyondEnd = rightIndex >= urls.length;
 
-  useEffect(() => {
-    if (isSyncing.current) return;
-    const lf = leftRef.current?.pageFlip?.();
-    const rf = rightRef.current?.pageFlip?.();
-    if (lf && lf.getCurrentPageIndex() !== leftIndex) {
-      lf.turnToPage(leftIndex);
-    }
-    if (!rightBeyondEnd && rf && rf.getCurrentPageIndex() !== rightIndex) {
-      rf.turnToPage(rightIndex);
-    }
-  }, [leftIndex, rightIndex, leftRef, rightRef, rightBeyondEnd]);
-
-  const onLeftFlip = useCallback(
-    (e: any) => {
-      if (isSyncing.current) return;
-      const newLeft = e.data;
-      const newRight = newLeft + 1;
-      isSyncing.current = true;
-      const rf = rightRef.current?.pageFlip?.();
-      if (rf && rf.getCurrentPageIndex() !== newRight && newRight < urls.length) {
-        rf.turnToPage(newRight);
-      }
-      onPageChange(newRight);
-      requestAnimationFrame(() => { isSyncing.current = false; });
-    },
-    [onPageChange, rightRef, urls.length]
-  );
-
-  const onRightFlip = useCallback(
-    (e: any) => {
-      if (isSyncing.current) return;
-      const newRight = e.data;
-      const newLeft = Math.max(0, newRight - 1);
-      isSyncing.current = true;
-      const lf = leftRef.current?.pageFlip?.();
-      if (lf && lf.getCurrentPageIndex() !== newLeft) {
-        lf.turnToPage(newLeft);
-      }
-      onPageChange(newRight);
-      requestAnimationFrame(() => { isSyncing.current = false; });
-    },
-    [onPageChange, leftRef]
-  );
-
-  const renderPages = () =>
-    urls.map((url, i) => (
-      <RingFlipPage
-        key={i}
-        url={url}
-        pageNum={i + 1}
-        isColor={colorFlags?.[i] ?? true}
-        effects={effects}
-        pageIndex={i}
-        totalPages={urls.length}
-        sectionType={sectionTypes?.[i]}
-        pageRole={pageRoles?.[i]}
-        allowBleed={bleedFlags?.[i] ?? false}
-        bleedInsetPx={bleedInsetPx}
-        label={pageLabels?.[i]}
-        color={pageColors?.[i]}
-      />
-    ));
-
   const spreadLeft = tabGutter + binderInsetX;
   const spreadTop = binderInsetY;
+
+  const renderStaticPage = (index: number, w: number, h: number) => {
+    if (index < 0 || index >= urls.length) {
+      return <div style={{ width: w, height: h, backgroundColor: "white", borderRadius: 2, boxShadow: "inset 0 0 8px rgba(0,0,0,0.05)" }} />;
+    }
+    return (
+      <RingFlipPage
+        url={urls[index]}
+        pageNum={index + 1}
+        isColor={colorFlags?.[index] ?? true}
+        effects={effects}
+        pageIndex={index}
+        totalPages={urls.length}
+        sectionType={sectionTypes?.[index]}
+        pageRole={pageRoles?.[index]}
+        allowBleed={bleedFlags?.[index] ?? false}
+        bleedInsetPx={bleedInsetPx}
+        label={pageLabels?.[index]}
+        color={pageColors?.[index]}
+      />
+    );
+  };
 
   return (
     <div className="flex items-center justify-center" style={{ width, height, overflow: "visible" }}>
@@ -490,7 +426,7 @@ function RingOpenSpread({
           }}
         />
 
-        {/* Right-edge-only tab overlay — positioned over the right page area */}
+        {/* Right-edge-only tab overlay */}
         {tabPositions && tabPositions.length > 0 && (
           <div
             style={{
@@ -513,81 +449,43 @@ function RingOpenSpread({
           </div>
         )}
 
-        {/* LEFT flipbook */}
-        <div style={{ position: "absolute", left: spreadLeft, top: spreadTop, width: pageWidth, height: pageHeight, zIndex: 1, overflow: "visible" }}>
-          <div style={{ transform: `scale(${scaleFactor})`, transformOrigin: "top left", width: basePageWidth, height: basePageHeight }}>
-            {/* @ts-ignore */}
-            <HTMLFlipBook
-              key={`left-${structuralKey}`}
-              ref={leftRef}
-              width={basePageWidth}
-              height={basePageHeight}
-              size="fixed"
-              minWidth={basePageWidth}
-              maxWidth={basePageWidth}
-              minHeight={basePageHeight}
-              maxHeight={basePageHeight}
-              showCover={false}
-              flippingTime={600}
-              drawShadow={true}
-              maxShadowOpacity={0.4}
-              mobileScrollSupport={false}
-              onFlip={onLeftFlip}
-              startPage={leftIndex}
-              usePortrait={true}
-              startZIndex={0}
-              autoSize={false}
-              clickEventForward={false}
-              useMouseEvents={true}
-              swipeDistance={30}
-              showPageCorners={true}
-              disableFlipByClick={false}
-              style={{}}
-              className=""
-            >
-              {renderPages()}
-            </HTMLFlipBook>
-          </div>
+        {/* LEFT static page */}
+        <div
+          style={{
+            position: "absolute",
+            left: spreadLeft,
+            top: spreadTop,
+            width: pageWidth,
+            height: pageHeight,
+            zIndex: 1,
+            overflow: "hidden",
+            transition: "opacity 0.15s ease",
+          }}
+        >
+          {leftIndex === 0 && currentPage === 1 ? (
+            <div style={{ width: pageWidth, height: pageHeight, backgroundColor: "white", borderRadius: 2, boxShadow: "inset 0 0 8px rgba(0,0,0,0.05)" }} />
+          ) : (
+            renderStaticPage(leftIndex, pageWidth, pageHeight)
+          )}
         </div>
 
-        {/* RIGHT flipbook — or blank white page when past end */}
-        <div style={{ position: "absolute", left: spreadLeft + pageWidth + centerGapPx, top: spreadTop, width: pageWidth, height: pageHeight, zIndex: 1, overflow: "visible" }}>
+        {/* RIGHT static page */}
+        <div
+          style={{
+            position: "absolute",
+            left: spreadLeft + pageWidth + centerGapPx,
+            top: spreadTop,
+            width: pageWidth,
+            height: pageHeight,
+            zIndex: 1,
+            overflow: "hidden",
+            transition: "opacity 0.15s ease",
+          }}
+        >
           {rightBeyondEnd ? (
             <div style={{ width: pageWidth, height: pageHeight, backgroundColor: "white", borderRadius: 2, boxShadow: "inset 0 0 8px rgba(0,0,0,0.05)" }} />
           ) : (
-            <div style={{ transform: `scale(${scaleFactor})`, transformOrigin: "top left", width: basePageWidth, height: basePageHeight }}>
-              {/* @ts-ignore */}
-              <HTMLFlipBook
-                key={`right-${structuralKey}`}
-                ref={rightRef}
-                width={basePageWidth}
-                height={basePageHeight}
-                size="fixed"
-                minWidth={basePageWidth}
-                maxWidth={basePageWidth}
-                minHeight={basePageHeight}
-                maxHeight={basePageHeight}
-                showCover={false}
-                flippingTime={600}
-                drawShadow={true}
-                maxShadowOpacity={0.4}
-                mobileScrollSupport={false}
-                onFlip={onRightFlip}
-                startPage={rightIndex}
-                usePortrait={true}
-                startZIndex={0}
-                autoSize={false}
-                clickEventForward={false}
-                useMouseEvents={true}
-                swipeDistance={30}
-                showPageCorners={true}
-                disableFlipByClick={false}
-                style={{}}
-                className=""
-              >
-                {renderPages()}
-              </HTMLFlipBook>
-            </div>
+            renderStaticPage(rightIndex, pageWidth, pageHeight)
           )}
         </div>
       </div>
