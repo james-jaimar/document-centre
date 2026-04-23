@@ -1,60 +1,66 @@
 
 
-## Simplify ring binder to static page rendering (no flipbook)
+## Fix ring binder single-sided navigation and hole punch mirroring
 
-### Problems
+### Problem 1: Blank backs shown for single-sided ring binder pages
 
-1. **Cover artwork not rendering** — The closed-state branch at `currentPage === 0` checks `urls[0]`, but if the URL is empty or fails to sign, it falls through to a white rectangle silently.
+`buildPageSequence` injects a `blank_back` face after every simplex body page. For wire/comb/saddle/perfect bound documents, this is correct — the flip animation needs both sides of a sheet. But the ring binder now uses static page rendering (no flipbook), so navigating forward through 8 single-sided pages means stepping through 16 faces (8 printed + 8 blank), which is unnecessary and confusing.
 
-2. **Left-side page curl** — The left `HTMLFlipBook` has `showPageCorners={true}` and `overflow: "visible"`, so react-pageflip draws interactive curl corners on the far-left edge, outside the binder frame.
+**Fix**: In `buildPageSequence`, skip `blank_back` injection when `productType === "ring_binder"`. Ring binder pages are individual loose sheets on rings — the user lifts one sheet and sees the next. No need to display the blank reverse.
 
-3. **Both flipbooks contain ALL pages** — `renderPages()` dumps every page into both the left and right `HTMLFlipBook`. Each instance is independently interactive, producing phantom curls and impossible left-side tab artifacts.
+### Problem 2: Hole punches always on the left
 
-### Root cause
+`HolePunchMarks` renders holes at `left: 3%` for every page. Physically, when you flip a page over, the holes move to the right edge. On back-facing pages (`blank_back`, `tab_back`, `insert_back`, and any even-index page in a duplex spread), the holes should render at `right: 3%`.
 
-Using two full `HTMLFlipBook` instances for ring binders is architecturally wrong. Ring binder pages do not flip like a bound book — you physically lift individual pages over the rings. The dual-flipbook approach creates synchronisation bugs, phantom curls, and interaction zones that leak outside the binder frame.
+**Fix**: Add a `side` prop (`"left" | "right"`) to `HolePunchMarks`. `PageEffects` determines the side from `pageRole` — back-facing roles get `"right"`, all others get `"left"`.
 
-### Solution: static page rendering
+### Changes
 
-Replace the dual-flipbook open state with two static page `div`s (left page and right page). Navigation is handled entirely by the external prev/next arrows and slider that `PreviewPanel` already provides. No flip animation needed — this is more physically accurate and eliminates all the dual-book complexity.
+**`src/components/order/PreviewPanel.tsx`**
 
-### Changes to `src/components/preview/RingBinderOpenSpread.tsx`
+- In `buildPageSequence`, add a condition to skip `blank_back` injection when `productType === "ring_binder"`:
+  ```ts
+  if (!section.is_duplex && !forceDuplex && productType !== "ring_binder") {
+    result.push({ ... blank_back ... });
+  }
+  ```
+- The ring binder navigation step in `PreviewPanel` is already `step = 2` for bound types, but with blank backs removed, the ring binder should use `step = 1`. Update the step logic:
+  ```ts
+  const isRingBinder = productType === "ring_binder";
+  const step = isBound && !isRingBinder ? 2 : 1;
+  ```
+- Ring binder solo-state and label logic also needs adjustment: since ring binder pages are now one-per-view (not spread pairs), the `isSoloState` / `visibleLeft` / `visibleRight` logic should treat ring binder like a non-bound type for pagination purposes. The ring binder component itself handles left/right display internally.
 
-**Remove:**
-- Both `HTMLFlipBook` instances and the `renderPages()` function
-- The `onLeftFlip` / `onRightFlip` callbacks and `isSyncing` ref
-- The `leftRef` / `rightRef` refs and their `useEffect` sync logic
-- All react-pageflip-related props (`showPageCorners`, `flippingTime`, etc.)
+**`src/components/preview/PageEffects.tsx`**
 
-**Replace with:**
-- Two simple `div` containers positioned in the existing binder layout (left page area, center gap, right page area)
-- Left div renders `RingFlipPage` (already exists, just a styled div) for `currentPage - 1` — or a white blank if `currentPage === 1` (inside front cover)
-- Right div renders `RingFlipPage` for `currentPage` — or a white blank if `currentPage >= urls.length` (inside back cover)
-- The `RingOpenSpread` component simplifies to a pure layout component with no animation state
-- Optional: add a subtle CSS `transition` on opacity when pages change for a smooth visual effect
-
-**Keep unchanged:**
-- Closed-cover state at `currentPage === 0` (binder PNG + cover artwork pocket)
-- Binder background PNG positioning and inset geometry
-- `RingTabOverlay` (right-edge-only tabs)
-- `RingFlipPage` component (reused as the static page renderer)
-- All `PageEffects` integration
-
-**Fix cover detection:**
-- Add a loading/fallback state for the cover: if `urls[0]` is truthy but the image fails to load, show a placeholder instead of silently rendering nothing
-
-### Result
-
-- Cover artwork renders correctly when a printed cover is uploaded
-- No phantom page curls — pages are static divs, not interactive flipbooks
-- No left-side interaction artifacts
-- Tabs remain right-edge-only and physically correct
-- Navigation works via existing external controls (arrows, slider)
-- Simpler code, no synchronisation bugs, no animation state to manage
+- Add `side` prop to `HolePunchMarks`:
+  ```ts
+  function HolePunchMarks({ count, side = "left" }: { count: 2 | 4; side?: "left" | "right" }) {
+  ```
+- Use `side` to set positioning: `left: "3%"` for left, `right: "3%"` for right (remove `left`).
+- In `PageEffects`, determine the side from `pageRole`:
+  ```ts
+  const BACK_FACE_ROLES = new Set(["blank_back", "tab_back", "insert_back", "inside_back_blank", "inside_back_cover_card", "pvc_cover_back"]);
+  const holeSide = BACK_FACE_ROLES.has(role) ? "right" : "left";
+  ```
+- Pass `side={holeSide}` to all `<HolePunchMarks>` calls.
 
 ### Files to change
 
 | File | Change |
 |---|---|
-| `src/components/preview/RingBinderOpenSpread.tsx` | Replace dual-HTMLFlipBook with static left/right page divs; fix cover fallback |
+| `src/components/order/PreviewPanel.tsx` | Skip `blank_back` for ring binder; set `step = 1` for ring binder; adjust ring binder pagination to use single-page info text |
+| `src/components/preview/PageEffects.tsx` | Add `side` prop to `HolePunchMarks`; determine side from `pageRole` in `PageEffects` |
+
+### What stays untouched
+
+- `RingBinderOpenSpread.tsx` — no changes needed, it already displays left/right pages from the sequence
+- `FlipBook.tsx` — standard bound types keep their existing `blank_back` and spread behaviour
+- All non-bound preview types
+
+### Result
+
+- Single-sided ring binder: navigating forward goes straight from Page 1 to Page 2 (no blank back in between)
+- Duplex ring binder with holes: viewing the back face shows holes on the right edge (physically correct)
+- All other bound types (wire, comb, saddle, perfect) are unchanged
 
