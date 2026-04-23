@@ -620,16 +620,11 @@ export default function PreviewPanel({
   const goFirst = () => setCurrentPage(0);
   const goLast = () => setCurrentPage(totalPages - 1);
   const goPrev = () => setCurrentPage((p) => {
-    if (isRingBinder) {
-      // One physical face per step (+ closed view at 0).
-      return Math.max(0, p - 1);
-    }
+    if (isRingBinder) return stepRingView(p, finalPages.length, -1);
     return Math.max(0, p - step);
   });
   const goNext = () => setCurrentPage((p) => {
-    if (isRingBinder) {
-      return Math.min(totalPages - 1, p + 1);
-    }
+    if (isRingBinder) return stepRingView(p, finalPages.length, 1);
     return Math.min(totalPages - 1, p + step);
   });
 
