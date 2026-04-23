@@ -396,19 +396,21 @@ function RingOpenSpread({
 
   const bleedInsetPx = Math.round(pageWidth * 0.03);
 
-  // Standard spread indexing: left = currentPage, right = currentPage + 1
-  // (matches FlipBook pairing with showCover=true where index 0 is solo right)
-  const leftIndex = currentPage;
-  const rightIndex = currentPage + 1;
-  const rightBeyondEnd = rightIndex >= urls.length;
+  // Ring binder view-index model:
+  //   view 0       = closed (handled above, never reaches here)
+  //   view 1       = left=hardware, right=urls[0]
+  //   view k (1..N)= left=urls[k-2], right=urls[k-1]
+  //   view N+1     = left=urls[N-1], right=hardware
+  // Negative or out-of-range face index = render hardware (no paper sheet).
+  const leftIndex = currentPage - 2;
+  const rightIndex = currentPage - 1;
+  const leftIsHardware = leftIndex < 0 || leftIndex >= urls.length;
+  const rightIsHardware = rightIndex < 0 || rightIndex >= urls.length;
 
   const spreadLeft = tabGutter + binderInsetX;
   const spreadTop = binderInsetY;
 
   const renderStaticPage = (index: number, w: number, h: number) => {
-    if (index < 0 || index >= urls.length) {
-      return <div style={{ width: w, height: h, backgroundColor: "white", borderRadius: 2, boxShadow: "inset 0 0 8px rgba(0,0,0,0.05)" }} />;
-    }
     return (
       <RingFlipPage
         url={urls[index]}
@@ -448,8 +450,8 @@ function RingOpenSpread({
           }}
         />
 
-        {/* Right-edge-only tab overlay */}
-        {tabPositions && tabPositions.length > 0 && (
+        {/* Right-edge-only tab overlay (only when right side is a real face) */}
+        {!rightIsHardware && tabPositions && tabPositions.length > 0 && (
           <div
             style={{
               position: "absolute",
@@ -471,41 +473,41 @@ function RingOpenSpread({
           </div>
         )}
 
-        {/* LEFT static page */}
-        <div
-          style={{
-            position: "absolute",
-            left: spreadLeft,
-            top: spreadTop,
-            width: pageWidth,
-            height: pageHeight,
-            zIndex: 1,
-            overflow: "hidden",
-            transition: "opacity 0.15s ease",
-          }}
-        >
-          {renderStaticPage(leftIndex, pageWidth, pageHeight)}
-        </div>
+        {/* LEFT pane — paper face or binder hardware (no white sheet) */}
+        {!leftIsHardware && (
+          <div
+            style={{
+              position: "absolute",
+              left: spreadLeft,
+              top: spreadTop,
+              width: pageWidth,
+              height: pageHeight,
+              zIndex: 1,
+              overflow: "hidden",
+              transition: "opacity 0.15s ease",
+            }}
+          >
+            {renderStaticPage(leftIndex, pageWidth, pageHeight)}
+          </div>
+        )}
 
-        {/* RIGHT static page */}
-        <div
-          style={{
-            position: "absolute",
-            left: spreadLeft + pageWidth + centerGapPx,
-            top: spreadTop,
-            width: pageWidth,
-            height: pageHeight,
-            zIndex: 1,
-            overflow: "hidden",
-            transition: "opacity 0.15s ease",
-          }}
-        >
-          {rightBeyondEnd ? (
-            <div style={{ width: pageWidth, height: pageHeight, backgroundColor: "white", borderRadius: 2, boxShadow: "inset 0 0 8px rgba(0,0,0,0.05)" }} />
-          ) : (
-            renderStaticPage(rightIndex, pageWidth, pageHeight)
-          )}
-        </div>
+        {/* RIGHT pane — paper face or binder hardware (no white sheet) */}
+        {!rightIsHardware && (
+          <div
+            style={{
+              position: "absolute",
+              left: spreadLeft + pageWidth + centerGapPx,
+              top: spreadTop,
+              width: pageWidth,
+              height: pageHeight,
+              zIndex: 1,
+              overflow: "hidden",
+              transition: "opacity 0.15s ease",
+            }}
+          >
+            {renderStaticPage(rightIndex, pageWidth, pageHeight)}
+          </div>
+        )}
       </div>
     </div>
   );
