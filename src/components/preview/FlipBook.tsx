@@ -936,9 +936,3 @@ function RingOpenSpread({
     </div>
   );
 }
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
