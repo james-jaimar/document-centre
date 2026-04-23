@@ -366,8 +366,11 @@ export function buildPreviewSnapshot(input: {
   const pageLabels = fp.map((p) => p.label ?? "");
   const pageColors = fp.map((p) => p.color ?? "");
 
+  const isBusinessCards = productType === "business_cards";
   const bleedScope = effects.bleed;
   const bleedFlags = roles.map((role) => {
+    // Business cards: server thumbnails are already trim-cropped — always full bleed
+    if (isBusinessCards) return true;
     if (
       ["pvc_cover_front", "pvc_cover_back", "inside_back_cover_card", "back_cover_card"].includes(role)
     )
@@ -404,10 +407,12 @@ export function buildPreviewSnapshot(input: {
   });
 
   const docWithSize = documents.find((d) => d.page_width_mm && d.page_height_mm);
-  const pageAspectRatio =
+  let pageAspectRatio: number | null =
     docWithSize && docWithSize.page_width_mm && docWithSize.page_height_mm
       ? Number(docWithSize.page_width_mm) / Number(docWithSize.page_height_mm)
       : null;
+  // Business cards fallback: standard 90×50mm = 1.8
+  if (pageAspectRatio === null && isBusinessCards) pageAspectRatio = 1.8;
 
   const roleFriendlyName = (role: string): string => {
     switch (role) {
