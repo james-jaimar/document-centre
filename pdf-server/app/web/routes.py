@@ -262,3 +262,20 @@ def op_convert_office(payload: ConvertOfficeRequest, db: Session = Depends(get_d
     job_repo.set_celery_task_id(db, job_id, task.id)
     return {"job_id": job_id}
 
+
+@api_router.post("/operations/normalize-orientation")
+def op_normalize_orientation(payload: NormalizeOrientationRequest, db: Session = Depends(get_db)):
+    """
+    Rotate any pages whose orientation doesn't match `dominant` (90° CW) and
+    promote the resulting PDF to the asset's normalized_storage_path. No-op
+    when nothing needs rotating (job result reports skipped=true).
+
+    Contract: docs/document-centre-api-contract.md (in the Lovable client repo).
+    """
+    asset_id = str(payload.asset_id)
+    body = payload.model_dump(mode="json")
+    job_id = job_repo.create_job(db, asset_id, "normalize_orientation", "documents", body)
+    task = normalize_orientation.delay(asset_id, job_id, payload.dominant)
+    job_repo.set_celery_task_id(db, job_id, task.id)
+    return {"job_id": job_id}
+
