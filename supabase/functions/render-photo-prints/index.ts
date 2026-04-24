@@ -56,15 +56,32 @@ function makeDcRequest(authHeader: string) {
     const maxRetries = 3;
     let lastErr: string = "";
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      const res = await fetch(PDF_API_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: authHeader,
-          apikey: SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify(payload),
-      });
+      let res: Response;
+      try {
+        res = await fetch(PDF_API_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: authHeader,
+            apikey: SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify(payload),
+        });
+      } catch (fetchErr: any) {
+        // Detect thrown rate-limit exceptions (some runtimes surface 429 as throw)
+        const msg = String(fetchErr?.message ?? fetchErr ?? "");
+        const retryAfterMs = Number(fetchErr?.retryAfterMs) ||
+          Number(msg.match(/Retry after (\d+)\s*ms/i)?.[1]) || 0;
+        const isRate = fetchErr?.name === "RateLimitError" || /rate limit/i.test(msg) || retryAfterMs > 0;
+        if (isRate && attempt < maxRetries) {
+          const delayMs = Math.min(Math.max(retryAfterMs || 5000 * (attempt + 1), 1000), 30000);
+          console.log(`[render-photo-prints] thrown rate-limit on ${path}, sleeping ${delayMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+          await new Promise((r) => setTimeout(r, delayMs));
+          continue;
+        }
+        throw fetchErr;
+      }
+
       const text = await res.text();
       console.log(`[render-photo-prints] dc ${method} ${path} -> ${res.status}${attempt > 0 ? ` (retry ${attempt})` : ""}`);
 
