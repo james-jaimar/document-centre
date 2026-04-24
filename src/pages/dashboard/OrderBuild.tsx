@@ -248,12 +248,19 @@ export default function OrderBuild() {
     const sizeOpt = options.find((o) => o.name.toLowerCase() === "document size");
     if (!sizeOpt || !isStructuredValues(sizeOpt.values)) return;
 
-    // Respect any previously persisted Document Size choice (case-insensitive key match)
+    // Respect any previously persisted Document Size choice (case-insensitive
+    // key match) — but ONLY on the first run. If the dimensions later change
+    // (e.g. user scaled US Letter → A4), override the stale selection.
     const existingKey = Object.keys(spec.selected_options).find(
       (k) => k.toLowerCase() === "document size"
     );
-    if (existingKey && spec.selected_options[existingKey]) {
+    if (
+      !initialAutoMatchDoneRef.current &&
+      existingKey &&
+      spec.selected_options[existingKey]
+    ) {
       autoSizeMatchedRef.current = true;
+      initialAutoMatchDoneRef.current = true;
       return;
     }
 
