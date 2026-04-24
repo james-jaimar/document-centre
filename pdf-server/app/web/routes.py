@@ -90,6 +90,58 @@ def list_asset_files(asset_id: str, db: Session = Depends(get_db)):
     return files
 
 
+@api_router.get("/assets/{asset_id}/events")
+def list_asset_events(asset_id: str, db: Session = Depends(get_db)):
+    """Lightweight progress feed for an in-flight asset.
+
+    Returns a derived snapshot the customer UI can poll while a render is
+    running:
+      - asset.status, page_count, thumbnail_storage_path
+      - per-stage progress (normalize, render) with rendered/total counts
+      - the most recent stage message (e.g. "Rendered 47 of 130 pages")
+    """
+    asset = asset_repo.get_asset(db, asset_id)
+    if not asset:
+        raise HTTPException(404, "Asset not found")
+
+    events = job_event_repo.list_for_asset(db, asset_id)
+    rendered = 0
+    total = asset.get('page_count') or 0
+    latest_message: str | None = None
+    latest_stage: str | None = None
+    latest_status: str | None = None
+    for evt in events:
+        meta = evt.metadata_json or {}
+        if evt.stage in ('render', 'page_batch', 'page'):
+            r = int(meta.get('rendered') or meta.get('page') or 0)
+            t = int(meta.get('total') or 0)
+            if r > rendered:
+                rendered = r
+            if t > total:
+                total = t
+        latest_message = evt.message or latest_message
+        latest_stage = evt.stage
+        latest_status = evt.status
+
+    # Surface preview/thumbnail public URLs so the client can prefetch them
+    # without needing a second /assets/{id} round-trip.
+    return {
+        "asset_id": asset_id,
+        "status": asset.get("status"),
+        "page_count": asset.get("page_count"),
+        "rendered_pages": rendered,
+        "total_pages": total or asset.get("page_count") or 0,
+        "thumbnail_storage_path": asset.get("thumbnail_storage_path"),
+        "preview_storage_path": asset.get("preview_storage_path"),
+        "thumbnail_url": storage.public_url(asset["thumbnail_storage_path"]) if asset.get("thumbnail_storage_path") else None,
+        "preview_url": storage.public_url(asset["preview_storage_path"]) if asset.get("preview_storage_path") else None,
+        "latest_stage": latest_stage,
+        "latest_status": latest_status,
+        "latest_message": latest_message,
+        "event_count": len(events),
+    }
+
+
 @api_router.post("/assets/{asset_id}/inspect")
 def queue_asset_inspection(asset_id: str, db: Session = Depends(get_db)):
     asset = asset_repo.get_asset(db, asset_id)
