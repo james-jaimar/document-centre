@@ -61,12 +61,8 @@ export default function OrderFiles() {
     refetchSections,
   } = useOrderData(effectiveOrderId);
 
-  const { uploads, uploadFiles, reprocessDocument, clearUploads, renderWithProgress } = useDocumentUpload(orderItem?.id);
-  const addSection = useAddSection();
-  const updateSection = useUpdateSection();
-  const deleteSection = useDeleteSection();
-
-  // Fetch product family slug for orientation checks
+  // Fetch product family slug for orientation checks (also feeds the upload
+  // hook so it can run orientation normalisation on bound/ring-binder/etc.)
   const productFamilyId = orderItem?.product_family_id ?? routeFamilyId ?? null;
   const { data: productFamily } = useQuery({
     queryKey: ["product_family", productFamilyId],
@@ -82,6 +78,12 @@ export default function OrderFiles() {
     },
     enabled: !!productFamilyId,
   });
+
+  const { uploads, uploadFiles, reprocessDocument, clearUploads, renderWithProgress } =
+    useDocumentUpload(orderItem?.id, productFamily?.slug ?? null);
+  const addSection = useAddSection();
+  const updateSection = useUpdateSection();
+  const deleteSection = useDeleteSection();
 
   // Helper: ensure an order exists before uploading, returns the orderItemId
   // When skipNavigate is true the caller is responsible for navigating after
