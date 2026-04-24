@@ -594,52 +594,6 @@ export default function PhotoPrintsBuilder() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <Dialog open={renderProgressOpen} onOpenChange={() => {}}>
-        <DialogContent
-          className="sm:max-w-md"
-          onPointerDownOutside={(e) => e.preventDefault()}
-          onEscapeKeyDown={(e) => e.preventDefault()}
-        >
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Loader2 className="h-5 w-5 animate-spin text-primary" />
-              Preparing your prints…
-            </DialogTitle>
-            <DialogDescription>
-              We're rendering each photo at print quality. Hang tight — this only takes a moment.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <Progress value={renderAvgPct} />
-            <div className="space-y-1 max-h-[200px] overflow-y-auto">
-              {renderEntries.map((e) => (
-                <div key={e.fileName} className="flex items-center justify-between text-xs">
-                  <span className="truncate flex-1 text-muted-foreground">{e.fileName}</span>
-                  <span
-                    className={
-                      e.status === "done"
-                        ? "text-primary"
-                        : e.status === "error"
-                          ? "text-destructive"
-                          : "text-muted-foreground"
-                    }
-                  >
-                    {e.status === "done"
-                      ? "Ready"
-                      : e.status === "error"
-                        ? "Failed"
-                        : e.statusText || "…"}
-                  </span>
-                </div>
-              ))}
-            </div>
-            {renderDone && (
-              <p className="text-xs text-center text-muted-foreground">Finishing up…</p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
