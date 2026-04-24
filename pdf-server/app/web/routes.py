@@ -26,6 +26,7 @@ from app.services.jobs import job_repo
 from app.services.storage import StorageService
 from app.services.derived_files import derived_file_repo
 from app.services.diagnostics import get_diagnostics
+from app.services.job_event_repo import job_event_repo
 from app.tasks.document_tasks import normalize_asset, inspect_asset
 from app.tasks.operation_tasks import (
     crop_rasterize,
