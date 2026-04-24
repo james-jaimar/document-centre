@@ -372,7 +372,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
             } else if (job.status === "running") {
               updateUpload(originalName, {
                 progress: 30,
-                statusText: "Converting with LibreOffice…",
+                statusText: "Converting document…",
               });
             }
           });
