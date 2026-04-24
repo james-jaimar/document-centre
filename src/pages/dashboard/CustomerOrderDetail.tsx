@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
 import { inferPreviewTypeFromJob } from "@/lib/orders/inferPreviewType";
+import PhotoPrintsAdminGallery from "@/components/orders/detail/PhotoPrintsAdminGallery";
 
 const CUSTOMER_STATUS_LABEL: Record<string, string> = {
   awaiting_payment: "Awaiting Payment",
@@ -329,8 +330,13 @@ const CustomerOrderDetail = () => {
                         </div>
                       )}
 
-                      {/* Files for this job */}
-                      {jobDocs.length > 0 && (
+                      {/* Photo Prints — visual tile grid (same component as admin) */}
+                      {(config.photo_prints || job.product_category === "photo-prints") && (
+                        <PhotoPrintsAdminGallery photoPrints={config.photo_prints} />
+                      )}
+
+                      {/* Files for this job — hidden for photo prints (gallery shows them visually) */}
+                      {jobDocs.length > 0 && !config.photo_prints && job.product_category !== "photo-prints" && (
                         <div className="space-y-1.5">
                           <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                             <FileText className="h-3.5 w-3.5" /> Files
