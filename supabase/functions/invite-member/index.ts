@@ -37,7 +37,7 @@ interface BrandInfo {
   portalName: string;
 }
 
-async function getTenantBranding(admin: ReturnType<typeof createClient>, tenantId: string): Promise<BrandInfo> {
+async function getTenantBranding(admin: any, tenantId: string): Promise<BrandInfo> {
   const [{ data: tenant }, { data: settings }] = await Promise.all([
     admin.from("tenants").select("name").eq("id", tenantId).maybeSingle(),
     admin
@@ -48,7 +48,7 @@ async function getTenantBranding(admin: ReturnType<typeof createClient>, tenantI
   ]);
 
   const map: Record<string, any> = {};
-  for (const row of settings ?? []) map[row.setting_key] = row.setting_value;
+  for (const row of (settings ?? []) as Array<{ setting_key: string; setting_value: any }>) map[row.setting_key] = row.setting_value;
 
   return {
     tenantName: (tenant as any)?.name ?? "Your account",

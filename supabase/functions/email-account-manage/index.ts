@@ -40,7 +40,7 @@ interface TestBody { action: "test_send"; id: string; recipient: string; }
 
 type Body = UpsertBody | DeleteBody | TestBody;
 
-async function assertTenantAdmin(admin: ReturnType<typeof createClient>, callerId: string, tenant_id: string) {
+async function assertTenantAdmin(admin: any, callerId: string, tenant_id: string) {
   const { data } = await admin
     .from("tenant_memberships")
     .select("role")
