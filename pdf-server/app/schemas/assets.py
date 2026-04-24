@@ -121,3 +121,14 @@ class ConvertOfficeRequest(BaseModel):
 class NormalizeOrientationRequest(BaseModel):
     asset_id: UUID
     dominant: Literal["portrait", "landscape"] = "portrait"
+
+
+class PrintReadyRequest(BaseModel):
+    asset_id: UUID
+    intent: Literal[
+        "relative_colorimetric",
+        "perceptual",
+        "absolute_colorimetric",
+        "saturation",
+    ] = "relative_colorimetric"
+    dest_profile: str = "fogra39"

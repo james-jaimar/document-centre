@@ -414,3 +414,95 @@ def normalize_orientation(self, asset_id: str, job_id: str, dominant: str = "por
         raise exc
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Print-ready CMYK conversion
+# ---------------------------------------------------------------------------
+# Contract: POST /v1/operations/print-ready
+#   { asset_id, intent, dest_profile } -> { job_id }
+#
+# Worker:
+#   1. Download the asset's PDF (normalized → falls back to source).
+#   2. Idempotency: if asset.metadata.print_ready_profile == dest_profile,
+#      skip the conversion (job result reports skipped=true).
+#   3. Run pdf_ops.to_print_ready_cmyk with the chosen profile + intent.
+#   4. Upload the result and promote it to asset.normalized_storage_path,
+#      recording { print_ready_profile, print_ready_intent } in metadata.
+#   5. Re-inspect to refresh page count / dimensions.
+@shared_task(bind=True, queue="documents")
+def print_ready(
+    self,
+    asset_id: str,
+    job_id: str,
+    intent: str = "relative_colorimetric",
+    dest_profile: str = "fogra39",
+):
+    db = _db()
+    try:
+        job_repo.mark_running(db, job_id)
+        asset = asset_repo.get_asset(db, asset_id)
+        if not asset:
+            raise ValueError(f"Asset not found: {asset_id}")
+
+        existing_meta = asset.get("metadata") or {}
+        if existing_meta.get("print_ready_profile") == dest_profile and \
+           existing_meta.get("print_ready_intent") == intent:
+            result = {"skipped": True, "reason": "already_print_ready",
+                      "dest_profile": dest_profile, "intent": intent}
+            job_repo.mark_done(db, job_id, result)
+            return result
+
+        prefix = _tenant_prefix(asset.get("source_storage_path"))
+        with Workspace() as ws:
+            src = _download_asset_pdf(db, asset_id, ws)
+            out_pdf = ws.path("print-ready.pdf")
+            stats = pdf_ops.to_print_ready_cmyk(
+                src, out_pdf,
+                dest_profile=dest_profile,
+                intent=intent,
+                preserve_black=True,
+            )
+
+            storage_path = unique_name(f"{prefix}derived/print-ready", ".pdf")
+            storage.upload(out_pdf, storage_path, "application/pdf")
+
+            derived_file_repo.create_file(
+                db,
+                asset_id=asset_id,
+                job_id=job_id,
+                kind="print_ready_pdf",
+                storage_path=storage_path,
+                media_type="application/pdf",
+                metadata=stats,
+            )
+
+            info = pdf_ops.inspect(out_pdf)
+            new_meta = {
+                **existing_meta,
+                "print_ready_profile": dest_profile,
+                "print_ready_intent": intent,
+            }
+            asset_repo.update_asset(db, asset_id, {
+                "normalized_storage_path": storage_path,
+                "page_count": info["page_count"],
+                "width_pt": info["width_pt"],
+                "height_pt": info["height_pt"],
+                "boxes": info["boxes"],
+                "metadata": new_meta,
+            })
+
+            result = {
+                **stats,
+                "storage_path": storage_path,
+                "normalized_storage_path": storage_path,
+                "page_count": info["page_count"],
+            }
+            job_repo.mark_done(db, job_id, result)
+            return result
+
+    except Exception as exc:
+        job_repo.mark_failed(db, job_id, traceback.format_exc())
+        raise exc
+    finally:
+        db.close()

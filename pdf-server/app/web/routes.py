@@ -19,6 +19,7 @@ from app.schemas.assets import (
     SheetImposeRequest,
     ConvertOfficeRequest,
     NormalizeOrientationRequest,
+    PrintReadyRequest,
 )
 from app.services.assets import asset_repo
 from app.services.jobs import job_repo
@@ -38,6 +39,7 @@ from app.tasks.operation_tasks import (
     impose_sheet_pdf,
     convert_office,
     normalize_orientation,
+    print_ready,
 )
 
 api_router = APIRouter()
@@ -276,6 +278,24 @@ def op_normalize_orientation(payload: NormalizeOrientationRequest, db: Session =
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "normalize_orientation", "documents", body)
     task = normalize_orientation.delay(asset_id, job_id, payload.dominant)
+    job_repo.set_celery_task_id(db, job_id, task.id)
+    return {"job_id": job_id}
+
+
+@api_router.post("/operations/print-ready")
+def op_print_ready(payload: PrintReadyRequest, db: Session = Depends(get_db)):
+    """
+    Convert a PDF to print-ready CMYK using the supplied ICC destination
+    profile and rendering intent. Promotes the result to the asset's
+    normalized_storage_path and records the conversion in asset.metadata
+    so subsequent calls with the same profile/intent are no-ops.
+
+    Contract: docs/document-centre-api-contract.md (in the Lovable client repo).
+    """
+    asset_id = str(payload.asset_id)
+    body = payload.model_dump(mode="json")
+    job_id = job_repo.create_job(db, asset_id, "print_ready", "documents", body)
+    task = print_ready.delay(asset_id, job_id, payload.intent, payload.dest_profile)
     job_repo.set_celery_task_id(db, job_id, task.id)
     return {"job_id": job_id}
 
