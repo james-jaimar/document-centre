@@ -317,6 +317,31 @@ export async function normalizeOrientation(
   });
 }
 
+/**
+ * Print-ready CMYK conversion. Runs Ghostscript with the requested ICC
+ * destination profile and rendering intent, preserving K-only text and
+ * overprint settings. The resulting PDF is promoted to the asset's
+ * `normalized_storage_path`. Idempotent: server skips if the asset is
+ * already in the requested colourspace.
+ */
+export async function printReady(
+  assetId: string,
+  options: {
+    intent?:
+      | "relative_colorimetric"
+      | "perceptual"
+      | "absolute_colorimetric"
+      | "saturation";
+    destProfile?: string;
+  } = {},
+): Promise<{ job_id: string }> {
+  return request("v1/operations/print-ready", "POST", {
+    asset_id: assetId,
+    intent: options.intent ?? "relative_colorimetric",
+    dest_profile: options.destProfile ?? "fogra39",
+  });
+}
+
 // ── Health ────────────────────────────────────────────────────────
 
 export async function health(): Promise<{
