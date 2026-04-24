@@ -338,9 +338,10 @@ Deno.serve(async (req) => {
       // Fire-and-forget: customer is already on the cart page.
       // @ts-ignore EdgeRuntime is provided in Supabase Edge runtime
       EdgeRuntime.waitUntil(
-        renderForOrderItem(supabase, orderItemId).catch((err) =>
-          console.error("[render-photo-prints] background failed", err),
-        ),
+        renderForOrderItem(supabase, dcRequest, orderItemId).catch(async (err) => {
+          console.error("[render-photo-prints] background failed", err);
+          await persistFailure(supabase, orderItemId, err);
+        }),
       );
       return new Response(JSON.stringify({ accepted: true, order_item_id: orderItemId }), {
         status: 202,
@@ -348,11 +349,16 @@ Deno.serve(async (req) => {
       });
     }
 
-    const result = await renderForOrderItem(supabase, orderItemId);
-    return new Response(JSON.stringify({ ok: true, ...result }), {
-      status: 200,
-      headers: jsonHeaders,
-    });
+    try {
+      const result = await renderForOrderItem(supabase, dcRequest, orderItemId);
+      return new Response(JSON.stringify({ ok: true, ...result }), {
+        status: 200,
+        headers: jsonHeaders,
+      });
+    } catch (err: any) {
+      await persistFailure(supabase, orderItemId, err);
+      throw err;
+    }
   } catch (err: any) {
     console.error("[render-photo-prints] error", err);
     return new Response(JSON.stringify({ error: err?.message ?? "render failed" }), {
