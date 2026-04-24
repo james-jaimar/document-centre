@@ -34,20 +34,49 @@ def resolve_icc_profile(icc_profile: str | None) -> str | None:
 
 class PdfOps:
     def office_to_pdf(self, src: Path, out_dir: Path) -> Path:
+        """
+        Convert an Office document (doc/docx/ppt/pptx/odt/odp/ods/xls/xlsx/rtf)
+        to PDF using headless LibreOffice.
+
+        Uses a per-call -env:UserInstallation profile so concurrent conversions
+        do not collide on LibreOffice's user-profile lock file.
+        """
+        import tempfile
+        import shutil
+        from urllib.parse import quote
+
         out_dir.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
-            [
-                settings.libreoffice_bin,
-                "--headless",
-                "--convert-to",
-                "pdf",
-                "--outdir",
-                str(out_dir),
-                str(src),
-            ],
-            check=True,
-        )
-        return out_dir / (src.stem + ".pdf")
+        profile_dir = Path(tempfile.mkdtemp(prefix="lo-profile-"))
+        try:
+            user_installation = f"-env:UserInstallation=file://{quote(str(profile_dir))}"
+            subprocess.run(
+                [
+                    settings.libreoffice_bin,
+                    user_installation,
+                    "--headless",
+                    "--nologo",
+                    "--nofirststartwizard",
+                    "--norestore",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    str(out_dir),
+                    str(src),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+        finally:
+            shutil.rmtree(profile_dir, ignore_errors=True)
+
+        produced = out_dir / (src.stem + ".pdf")
+        if not produced.exists():
+            raise RuntimeError(
+                f"LibreOffice did not produce expected output: {produced}"
+            )
+        return produced
 
     def image_to_pdf(
         self,
