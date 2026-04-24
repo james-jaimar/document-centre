@@ -271,30 +271,61 @@ interface PhotoPrintEntryLite {
   file_name?: string;
   print_size_slug?: string;
   quantity?: number;
+  document_id?: string;
+  original_storage_path?: string;
+  rotation?: number;
+  croppedAreaPixels?: { x: number; y: number; width: number; height: number } | null;
 }
 
 function buildPhotoPrintsSection(spec: any): ConfigSection | null {
-  const photos: PhotoPrintEntryLite[] = Array.isArray(spec?.photo_prints)
-    ? spec.photo_prints
-    : [];
+  // Spec shape written by PhotoPrintsBuilder:
+  // spec.photo_prints = { print_size_slug, finish_slug, border_slug, photos: [...] }
+  // Tolerate the legacy array shape too.
+  const pp = spec?.photo_prints;
+  const photos: PhotoPrintEntryLite[] = Array.isArray(pp)
+    ? pp
+    : Array.isArray(pp?.photos)
+      ? pp.photos
+      : [];
   if (!photos.length) return null;
 
-  const items = photos.map((p, idx) => {
+  const items: { label: string; value: string }[] = [];
+
+  // Global settings (size / finish / border)
+  if (!Array.isArray(pp)) {
+    if (pp?.print_size_slug) {
+      items.push({
+        label: "Print Size",
+        value: niceSize(pp.print_size_slug, titleCase(pp.print_size_slug)),
+      });
+    }
+    if (pp?.finish_slug) {
+      items.push({ label: "Finish", value: titleCase(pp.finish_slug) });
+    }
+    if (pp?.border_slug) {
+      items.push({
+        label: "Border",
+        value: pp.border_slug === "none" ? "No border" : titleCase(pp.border_slug),
+      });
+    }
+  }
+
+  const totalPrints = photos.reduce((s, p) => s + (p.quantity ?? 0), 0);
+  items.push({
+    label: "Total",
+    value: `${photos.length} photo${photos.length === 1 ? "" : "s"} · ${totalPrints} print${totalPrints === 1 ? "" : "s"}`,
+  });
+
+  for (const [idx, p] of photos.entries()) {
     const sizeLabel = p.print_size_slug
       ? niceSize(p.print_size_slug, titleCase(p.print_size_slug))
       : "—";
     const qty = p.quantity ?? 1;
-    return {
+    items.push({
       label: p.file_name || `Photo ${idx + 1}`,
       value: `${sizeLabel} · ${qty} print${qty === 1 ? "" : "s"}`,
-    };
-  });
-
-  const totalPrints = photos.reduce((s, p) => s + (p.quantity ?? 0), 0);
-  items.unshift({
-    label: "Total",
-    value: `${photos.length} photo${photos.length === 1 ? "" : "s"} · ${totalPrints} print${totalPrints === 1 ? "" : "s"}`,
-  });
+    });
+  }
 
   return { title: "Photos", items };
 }

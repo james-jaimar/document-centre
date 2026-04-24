@@ -13,12 +13,14 @@ import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { RotateCw, Maximize2, Minimize2, RotateCcw } from "lucide-react";
 import type { PhotoPrintEntry, PhotoFitMode, CroppedAreaPixels } from "@/lib/photoPrints/types";
-import { getPhotoPrintSize } from "@/lib/photoPrints/sizes";
+import { getPhotoPrintSize, PHOTO_BORDER_OPTIONS } from "@/lib/photoPrints/sizes";
+import { borderFractionFor } from "@/lib/photoPrints/renderPreview";
 
 interface PhotoEditorModalProps {
   open: boolean;
   photo: PhotoPrintEntry | null;
   signedUrl: string | null;
+  borderSlug: string;
   onClose: () => void;
   onSave: (
     next: Pick<
@@ -32,6 +34,7 @@ export default function PhotoEditorModal({
   open,
   photo,
   signedUrl,
+  borderSlug,
   onClose,
   onSave,
 }: PhotoEditorModalProps) {
@@ -77,6 +80,10 @@ export default function PhotoEditorModal({
 
   if (!photo) return null;
   const size = getPhotoPrintSize(photo.print_size_slug);
+  const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === borderSlug);
+  const borderMm = border?.border_mm ?? 0;
+  const longEdgeMm = Math.max(size.width_mm, size.height_mm);
+  const borderFraction = borderFractionFor(longEdgeMm, borderMm);
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -85,6 +92,7 @@ export default function PhotoEditorModal({
           <DialogTitle className="text-lg">Edit Photo</DialogTitle>
           <DialogDescription className="text-xs">
             {photo.file_name} · Print size {size.label}
+            {borderFraction > 0 && " · White border (3 mm)"}
           </DialogDescription>
         </DialogHeader>
 
@@ -97,7 +105,7 @@ export default function PhotoEditorModal({
               zoom={zoom}
               rotation={rotation}
               aspect={size.aspect}
-              objectFit={fitMode === "fit" ? "contain" : "cover"}
+              objectFit="cover"
               showGrid={true}
               onCropChange={setCrop}
               onZoomChange={setZoom}
@@ -106,11 +114,32 @@ export default function PhotoEditorModal({
               minZoom={1}
               maxZoom={4}
               zoomSpeed={0.5}
-              restrictPosition={fitMode === "fill"}
+              restrictPosition={true}
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center text-white/70 text-sm">
               Loading photo…
+            </div>
+          )}
+
+          {/* White-border overlay (non-interactive) — drawn over the crop frame */}
+          {borderFraction > 0 && (
+            <div
+              className="pointer-events-none absolute inset-0 flex items-center justify-center"
+              aria-hidden
+            >
+              <div
+                className="relative"
+                style={{
+                  // Match cropper aspect — overlay sized via padding tricks would be hard;
+                  // instead, draw a thin white inset frame across the full container.
+                  // We render four rectangles using outline trick: a transparent inner box
+                  // with white outset. Simpler: a single inset border via box-shadow.
+                  width: "70%",
+                  aspectRatio: size.aspect,
+                  boxShadow: `inset 0 0 0 ${Math.max(2, Math.round(borderFraction * 100))}px rgba(255,255,255,0.85)`,
+                }}
+              />
             </div>
           )}
         </div>
