@@ -104,7 +104,7 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{family ? "Edit Product Family" : "New Product Family"}</DialogTitle>
         </DialogHeader>
@@ -191,6 +191,79 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
                 )}
               />
             </div>
+
+            <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+              <div>
+                <h4 className="text-sm font-semibold">Print Output</h4>
+                <p className="text-xs text-muted-foreground">
+                  How files for this product family are prepared for printing.
+                </p>
+              </div>
+              <FormField
+                control={form.control}
+                name="color_output"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Colour Space</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="cmyk">CMYK (laser / inkjet)</SelectItem>
+                        <SelectItem value="rgb">RGB (dye-sub photo)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              {watchColorOutput === "cmyk" && (
+                <>
+                  <FormField
+                    control={form.control}
+                    name="cmyk_profile"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>CMYK Profile</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {CMYK_PROFILE_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="render_intent"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Render Intent</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {RENDER_INTENT_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </>
+              )}
+            </div>
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
               <Button type="submit" disabled={isPending}>
