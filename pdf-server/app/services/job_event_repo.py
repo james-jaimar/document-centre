@@ -22,12 +22,16 @@ class JobEventRepo:
         queue_name: str | None,
         worker_name: str | None,
         stage: str,
+        tenant_id: str | None = None,
+        app_id: str | None = None,
         metadata: dict | None = None,
         message: str | None = None,
     ) -> JobEvent:
         evt = JobEvent(
             job_id=job_id,
             asset_id=asset_id,
+            tenant_id=tenant_id,
+            app_id=app_id,
             task_name=task_name,
             queue_name=queue_name,
             worker_name=worker_name,

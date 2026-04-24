@@ -15,6 +15,8 @@ class JobEvent(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     job_id: Mapped[str] = mapped_column(String(64), index=True)
     asset_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    tenant_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    app_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     task_name: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
     queue_name: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     worker_name: Mapped[str | None] = mapped_column(String(128), nullable=True)

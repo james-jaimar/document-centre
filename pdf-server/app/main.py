@@ -5,9 +5,11 @@ from fastapi.responses import FileResponse
 from app.core.config import settings
 from app.web.routes import api_router
 from app.web.admin import admin_router
+from app.web.ops_routes import ops_router
 
 app = FastAPI(title=settings.app_name, debug=settings.app_debug)
 app.include_router(api_router, prefix='/v1')
+app.include_router(ops_router, prefix='/v1')
 app.include_router(admin_router)
 app.mount('/static', StaticFiles(directory='app/static'), name='static')
 
