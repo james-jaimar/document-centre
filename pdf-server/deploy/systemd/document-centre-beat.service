@@ -1,0 +1,21 @@
+[Unit]
+Description=Document Centre Celery Beat (scheduler)
+After=network.target redis-server.service document-centre-worker.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/document-centre-api
+EnvironmentFile=/opt/document-centre-api/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStartPre=/bin/mkdir -p /opt/document-centre-api/tmp
+ExecStart=/opt/document-centre-api/.venv/bin/celery -A app.worker.celery_app beat -l info --schedule=/opt/document-centre-api/tmp/celerybeat-schedule
+Restart=always
+RestartSec=5
+TimeoutStartSec=60
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

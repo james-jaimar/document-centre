@@ -25,3 +25,79 @@
     - `curl http://127.0.0.1:8000/health`
     - `sudo systemctl status document-centre-api`
     - `sudo systemctl status document-centre-worker`
+
+---
+
+## Upgrading to Ops & Control API (2026-04-24)
+
+This release adds live system metrics, queue control, worker control,
+storage analytics, an audit log, and an SSE event stream — all consumed
+by the React admin UI under `/platform/document-centre`.
+
+### What changes on the box
+
+- 3 new Python deps: `psutil`, `sse-starlette`, `boto3`
+- 2 new tables: `ops_audit_log`, `ops_storage_snapshots`
+- 2 new columns on `job_events`: `tenant_id`, `app_id`
+- 1 new systemd unit: `document-centre-beat` (Celery Beat scheduler)
+- Updated Nginx site (adds an SSE-friendly `location /v1/ops/events/` block)
+
+### Install steps
+
+```bash
+ssh you@vps
+cd /opt/document-centre-api
+git pull
+sudo bash scripts/install-ops-api.sh
+```
+
+The installer is idempotent and handles everything:
+1. Installs Python deps from `requirements.txt`
+2. Runs `migrations/2026_04_24_ops_api.sql` against your DB
+3. Installs `document-centre-beat.service`
+4. Updates the Nginx site (preserves your existing `server_name`)
+5. Reloads systemd + nginx, restarts api/worker, enables beat
+6. Smoke-tests `/health`, `/v1/ops/health`, `/v1/ops/system`
+
+### Verify
+
+```bash
+sudo systemctl status document-centre-api document-centre-worker document-centre-beat
+curl -s http://127.0.0.1:8000/v1/ops/health | jq
+curl -s http://127.0.0.1:8000/v1/ops/system | jq '.cpu, .memory'
+curl -s http://127.0.0.1:8000/v1/ops/queues | jq
+```
+
+Then open the React admin UI at `/platform/document-centre` — every
+tab (Overview, Queues, Workers, Storage, Jobs, Assets, Metrics,
+Audit, Config) should populate with live data.
+
+### Troubleshooting
+
+- **SSE stream looks frozen in the UI**
+  Check the active Nginx config contains `location /v1/ops/events/`
+  with `proxy_buffering off`:
+  ```
+  sudo grep -A5 'ops/events' /etc/nginx/sites-enabled/document-centre-api.conf
+  ```
+
+- **Scheduled tasks (storage snapshot, tmp cleanup) not firing**
+  ```
+  sudo systemctl status document-centre-beat
+  sudo journalctl -u document-centre-beat -f
+  ```
+
+- **`/v1/ops/queues` shows zero workers**
+  The worker service must be running and on the same Redis broker:
+  ```
+  sudo systemctl status document-centre-worker
+  redis-cli ping
+  ```
+
+- **psql migration fails with "permission denied"**
+  The role in `DATABASE_URL` must own (or have CREATE on) the schema.
+  Confirm by connecting manually: `psql "$DATABASE_URL"`
+
+- **Re-running the installer**
+  Safe — every step is idempotent. Use it any time you `git pull`
+  changes that touch ops API code, deps, or systemd units.
