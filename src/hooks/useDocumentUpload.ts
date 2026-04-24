@@ -198,6 +198,23 @@ export function useDocumentUpload(
           }
         }
 
+        // Print-ready CMYK conversion (driven by per-product-family settings).
+        // Skipped for RGB families (e.g. dye-sub photo prints) — see printIntent.ts.
+        const printPlan = getPrintReadyPlan(productFamilyPrintConfig);
+        if (printPlan) {
+          try {
+            updateUpload(fileName, { progress: 55, statusText: "Optimising for print…" });
+            const { job_id: printJobId } = await printReady(assetId, {
+              intent: printPlan.intent,
+              destProfile: printPlan.destProfile,
+            });
+            await pollJob(printJobId);
+          } catch (printErr: any) {
+            // Non-fatal — fall back to the un-converted PDF.
+            console.warn("[upload] print-ready failed:", printErr);
+          }
+        }
+
         // Poll the asset itself until we have boxes + page_count (metadata may
         // populate slightly after job completes for newly-created assets)
         let asset = await getAsset(assetId);
@@ -285,7 +302,7 @@ export function useDocumentUpload(
         return null;
       }
     },
-    [updateUpload, productFamilySlug],
+    [updateUpload, productFamilySlug, productFamilyPrintConfig],
   );
 
   /* ── Phase A: Inspect — register PDF asset & extract metadata, NO thumbnails yet ── */
