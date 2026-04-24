@@ -372,7 +372,10 @@ export interface JobSnapshot {
 const SECTION_CONTROLLED_KEYS = new Set(["Print Colour", "Print Sides"]);
 
 export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
-  const { item, productOptions, sections, documents } = input;
+  const { item, productOptions, documents } = input;
+  // Sort by role so the placed-order snapshot reflects the physical
+  // sequence (Front Cover → Body → Back Cover), not the user's click order.
+  const sections = sortSectionsByRole(input.sections);
   const spec = item.spec || {};
   const rawSelected: Record<string, string | string[]> = spec.selected_options || {};
   const selected: Record<string, string | string[]> = Object.fromEntries(
