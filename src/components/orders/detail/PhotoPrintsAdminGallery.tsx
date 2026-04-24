@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Download, Image as ImageIcon, Loader2 } from "lucide-react";
+import { Download, Image as ImageIcon, Loader2, AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { resolveUrls } from "@/lib/thumbnailUtils";
 import { renderPhotoPreview, borderFractionFor } from "@/lib/photoPrints/renderPreview";
 import { getPhotoPrintSize, PHOTO_BORDER_OPTIONS } from "@/lib/photoPrints/sizes";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
 
 interface PhotoEntry {
   id?: string;
