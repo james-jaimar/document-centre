@@ -188,6 +188,7 @@ export default function OrderBuild() {
   // reflects the new size instead of the original (e.g. US Letter).
   const autoSizeMatchedRef = useRef(false);
   const lastDimensionSigRef = useRef<string | null>(null);
+  const initialAutoMatchDoneRef = useRef(false);
   const dimensionSig = useMemo(
     () =>
       documents
