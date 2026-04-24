@@ -1,49 +1,124 @@
-## Problem
+## Office → PDF conversion via LibreOffice
 
-When a user adds the **Body Pages** before the **Front Cover** in Step 1, the preview ignores the cover and shows the first body page as page 1 (see screenshot). The same happens to the "Your Document" list on the right of Step 1.
+### Current state
 
-### Why
+- The PDF server (`document-centre-api.jaimar.dev`) has LibreOffice installed but **does not yet expose an HTTP endpoint** for conversion. Confirmed by inspecting `/openapi.json` — the only operations are `rotate, grayscale, cmyk, resize, nup, impose-sheet, booklet, merge, crop-rasterize`.
+- The Lovable client only accepts `application/pdf` and images. `FileUploader.tsx` filters Office files out, and `useDocumentUpload.ts` only auto-converts images (via `imageFileToPdf`).
+- Result: dropping a `.docx`/`.pptx`/`.odt` does nothing — the file is silently rejected.
 
-Sections in `document_sections` are keyed by `sort_order`, which is set to `sections.length` at insert time — i.e. the *click order*, not the document role.
+So this is a two-sided fix: a small server-side endpoint, and a client pipeline that uses it.
 
-- `useOrderData` queries `.order("sort_order", { ascending: true })`
-- `PreviewPanel.buildPageSequence` iterates `bodySections` in that same array order
-- `SectionList` (Your Document panel) renders in that same array order
+---
 
-So a Body added first gets `sort_order = 0` and stays in front of a Front Cover added later. The cover IS in the database with the correct role, but it's appended after the body in the sequence and never injected at the front.
+### Part A — Server endpoint (spec; you implement on the PDF server)
 
-This affects every bound product (bound documents, ring binders, booklets, presentations, stapled/loose) and the right-hand "Your Document" list everywhere. Brochures and posters are not affected the same way because their previews look up sections by role (`sections.find(s => s.section_type === "front_cover")`), not by array order.
-
-## Fix
-
-Apply a **role-based ordering pass** at the read boundary so that, regardless of click order:
+Add one new operation that takes an already-uploaded Office asset and produces a normalized PDF derived file using LibreOffice headless.
 
 ```text
-front_cover  →  body (in user-defined sub-order)  →  back_cover  →  inserts/tabs (anchored)
+POST /v1/operations/convert-office
+body: { "asset_id": "<uuid>" }
+returns: { "job_id": "<uuid>" }
 ```
 
-Sub-ordering of multiple body sections (when a doc is split into chapters, etc.) keeps their relative `sort_order`.
+Worker behaviour:
+1. Download `source_storage_path` from S3.
+2. Run `soffice --headless --convert-to pdf --outdir <tmp> <input>`.
+3. Upload PDF to a derived-files path, register a derived file of `kind = "converted_pdf"`, `media_type = application/pdf`.
+4. **Promote** that PDF to the asset: set `normalized_storage_path` to the new PDF and recompute `page_count`, `width_pt`, `height_pt`, `boxes` (same logic as `inspect`).
+5. Mark job `completed`.
 
-### Implementation
+Accepted input MIME types (mapped from extension if browser sends `application/octet-stream`):
+- Word: `.doc`, `.docx` → `application/msword`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+- PowerPoint: `.ppt`, `.pptx` → `application/vnd.ms-powerpoint`, `application/vnd.openxmlformats-officedocument.presentationml.presentation`
+- OpenDocument: `.odt`, `.odp`, `.ods` → `application/vnd.oasis.opendocument.{text,presentation,spreadsheet}`
 
-1. **`src/lib/orders/sectionOrdering.ts` (new)** — small helper:
-   ```ts
-   const ROLE_RANK = { front_cover: 0, body: 1, back_cover: 2, insert: 3, tab: 3 };
-   export function sortSectionsByRole(sections) { … stable sort by [roleRank, sort_order] … }
-   ```
-2. **`src/components/order/PreviewPanel.tsx`** — apply `sortSectionsByRole` once at the top of `buildPageSequence` (before splitting body vs anchored). This makes every bound preview render Front → Body → Back regardless of click order.
-3. **`src/components/order/SectionList.tsx`** — apply `sortSectionsByRole` to `fileSections` so the right-hand "Your Document" panel mirrors the actual physical order.
-4. **`src/pages/dashboard/OrderFiles.tsx`** — when computing `sort_order` for a newly added section, slot it after the last section of the same-or-lower role rank, so newly added covers physically renumber ahead of body. (Belt-and-braces; the read-side sort already covers display, but this keeps DB rows tidy and avoids surprises for downstream consumers like `buildJobSnapshot`.)
+(I'll commit a stub doc in this repo recording the contract, since the server lives in another repo.)
 
-### Out of scope / not changed
+---
 
-- `buildJobSnapshot` and the order engine — they already consume sections by role, but with (4) above they'll also see a logical sort_order.
-- Brochures, posters, photo prints — they look up sections by role and are unaffected by this bug. The new helper is a safe no-op for them.
-- The anchored-tab/insert flush logic in `buildPageSequence` is untouched; ordering only changes which body section comes first.
+### Part B — Client wiring (this repo)
 
-## Files
+#### 1. `src/lib/officeFiles.ts` (new)
 
-- **New** `src/lib/orders/sectionOrdering.ts`
-- **Edit** `src/components/order/PreviewPanel.tsx` — sort sections at the top of `buildPageSequence`
-- **Edit** `src/components/order/SectionList.tsx` — sort `fileSections` before render
-- **Edit** `src/pages/dashboard/OrderFiles.tsx` — compute role-aware `sort_order` in `handleAddAs` and the auto-assign helpers
+Single source of truth for Office detection.
+
+- `OFFICE_EXTENSIONS = ['doc','docx','ppt','pptx','odt','odp','ods']`
+- `OFFICE_MIME_TYPES = { ... }` (the 8 MIME types above)
+- `isOfficeFile(file: File): boolean` — checks MIME first, falls back to extension (browsers often send `application/octet-stream` for `.odt`).
+- `officeMimeFromFilename(name: string): string` — used when the browser-supplied `file.type` is empty/unknown, so we send a real MIME to the server.
+
+#### 2. `src/lib/documentCentreApi.ts`
+
+Add the new operation wrapper:
+
+```ts
+export async function convertOffice(assetId: string): Promise<{ job_id: string }> {
+  return request("v1/operations/convert-office", "POST", { asset_id: assetId });
+}
+```
+
+#### 3. `supabase/functions/pdf-api/index.ts`
+
+`v1/operations/convert-office` already matches the existing `v1/operations` allowlist prefix, so **no proxy change is required**. Verified against `ALLOWED_PREFIXES`.
+
+#### 4. `src/components/order/FileUploader.tsx`
+
+- Extend the file-input `accept` attribute and the drag-drop filter to include the 8 Office MIME types and the extension fallbacks.
+- Update the helper text from "Drop PDF or image files here" to "Drop PDF, Word, PowerPoint, or image files here" (keeping it short).
+
+#### 5. `src/hooks/useDocumentUpload.ts` — the conversion step
+
+Insert an Office-handling branch into `uploadFile`, BEFORE the existing image branch:
+
+```text
+1. If isOfficeFile(file):
+     a. updateUpload: "Uploading Office document…" (5%)
+     b. Upload the original file to S3 (same path scheme, just keep extension).
+     c. Insert documents row with mime_type = real Office MIME, document_status = 'processing'.
+     d. updateUpload: "Converting to PDF…" (15%)
+     e. createAsset({ original_filename, media_type: officeMime, source_storage_path, auto_queue: false })
+     f. convertOffice(asset_id)  → poll job (uses existing pollJob).
+        - On 'pending' → "Queued — waiting for converter…" (20%)
+        - On 'running' → "Converting with LibreOffice…" (35%)
+        - On 'failed'  → mark documents row as 'error', surface job.error, abort.
+     g. After completion the asset's normalized_storage_path is now a PDF; continue with the existing inspect → render pipeline using that asset_id (skip a second createAsset).
+2. Else if isImageFile(file): existing path.
+3. Else (PDF): existing path.
+```
+
+To make step (g) clean, refactor the current flow slightly: extract `inspectDocument`'s "create asset + inspect" into two pieces, so the Office branch can reuse the inspect+render half against the already-existing asset_id. Concretely:
+
+- Add an internal `inspectExistingAsset(docId, assetId, fileName)` that runs the current `inspectAsset` + advisory logic without re-creating the asset.
+- The PDF branch keeps calling today's `inspectDocument(docId, storagePath, fileName)` (which calls `createAsset` then `inspectExistingAsset` internally).
+- The Office branch calls `createAsset` itself, then `convertOffice` + `pollJob`, then `inspectExistingAsset(docId, assetId, fileName)`.
+
+#### 6. UX — file size & pre-flight
+
+- Keep the existing 50 MB limit for now (matches `mem://constraints/upload-size-limit`).
+- When the converter fails (e.g. corrupt `.docx`), surface the job's `error` string in the toast and mark the document row `error` so the file row in `FileList` shows the existing error chip — no new UI needed.
+
+---
+
+### Files
+
+**Modify**
+- `src/components/order/FileUploader.tsx` — accept Office types
+- `src/hooks/useDocumentUpload.ts` — Office branch + small refactor of inspect helper
+- `src/lib/documentCentreApi.ts` — `convertOffice()` wrapper
+
+**Create**
+- `src/lib/officeFiles.ts` — detection + MIME mapping
+- `docs/document-centre-api-contract.md` — record the `/v1/operations/convert-office` spec for the server team (so it isn't lost)
+
+**No changes needed**
+- `supabase/functions/pdf-api/index.ts` — the `v1/operations/...` path is already allowed.
+- DB migrations — `documents` table already has `mime_type` and `document_status`.
+
+---
+
+### Out of scope (called out so it isn't a surprise)
+
+- Implementing the actual `/v1/operations/convert-office` endpoint on the PDF server — that lives in your separate FastAPI repo. The client work above is harmless until that endpoint exists; once deployed, drag-and-drop of `.docx`/`.pptx`/`.odt` will Just Work.
+- Server-side font embedding / Office-feature compatibility tuning — a vanilla LibreOffice headless conversion is good enough for the print pipeline; we treat the converted PDF as the source of truth from that point on.
+
+Approve and I'll switch to build mode to implement Part B (client + edge proxy verification + spec doc).
