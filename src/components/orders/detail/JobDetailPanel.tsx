@@ -7,6 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
 import { inferPreviewTypeFromJob } from "@/lib/orders/inferPreviewType";
 import type { JobConfiguration, ConfigSection } from "@/lib/orders/types";
+import PhotoPrintsAdminGallery from "./PhotoPrintsAdminGallery";
 
 interface Props {
   job: any;
@@ -160,6 +161,11 @@ export function JobDetailPanel({ job, documents }: Props) {
           )}
         </div>
       </div>
+
+      {/* Photo Prints — admin gallery */}
+      {((config as any).photo_prints || job.product_category === "photo-prints") && (
+        <PhotoPrintsAdminGallery photoPrints={(config as any).photo_prints} />
+      )}
 
       {/* Attached files */}
       {jobDocs.length > 0 && (
