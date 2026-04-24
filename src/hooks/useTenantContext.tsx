@@ -150,6 +150,12 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const effectiveAppId = isOverriding ? overrideAppId : (activeMembership?.app_id ?? null);
   const effectiveTenantName = isOverriding ? overrideTenantName : tenantName;
 
+  // Forward tenant + app context to the Document Centre client so
+  // every backend op (print-ready, inspect, …) is attributed in JobEvents.
+  useEffect(() => {
+    setDocumentCentreContext({ tenantId: effectiveTenantId, appId: effectiveAppId });
+  }, [effectiveTenantId, effectiveAppId]);
+
   return (
     <TenantContext.Provider
       value={{
