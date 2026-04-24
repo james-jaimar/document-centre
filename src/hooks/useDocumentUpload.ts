@@ -128,7 +128,7 @@ export async function renderDocumentThumbnails(
   return thumbnailPaths;
 }
 
-export function useDocumentUpload(orderItemId: string | undefined) {
+export function useDocumentUpload(orderItemId: string | undefined, productFamilySlug?: string | null) {
   const { user } = useAuth();
   const { tenantId } = useTenantContext();
   const qc = useQueryClient();
