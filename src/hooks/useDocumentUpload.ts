@@ -127,52 +127,39 @@ export function useDocumentUpload(orderItemId: string | undefined) {
     []
   );
 
-  /* ── Phase A: Inspect — register asset & extract metadata, NO thumbnails yet ── */
-
-  const inspectDocument = useCallback(
-    async (docId: string, storagePath: string, fileName: string) => {
+  /**
+   * Run inspect + advisory + persistence for an asset that has ALREADY been
+   * registered with the PDF server. Used by both the standard PDF upload
+   * path (after createAsset) and the Office conversion path (after the
+   * conversion job has promoted the asset to a PDF).
+   */
+  const inspectExistingAsset = useCallback(
+    async (docId: string, assetId: string, fileName: string) => {
       try {
-        updateUpload(fileName, { statusText: "Registering file…", progress: 30 });
-
-        // 1. Register asset WITHOUT auto-queuing rasterization
-        const { asset_id, job_ids } = await createAsset({
-          original_filename: fileName,
-          media_type: "application/pdf",
-          source_storage_path: storagePath,
-          auto_queue: false,
-        });
-
         await supabase
           .from("documents")
-          .update({ backend_asset_id: asset_id })
+          .update({ backend_asset_id: assetId })
           .eq("id", docId);
 
-        // 2. Explicitly enqueue an inspect job (this also authorizes the
-        //    asset for subsequent reads — without it GET /v1/assets/:id 401s).
+        // Explicitly enqueue an inspect job (this also authorizes the
+        // asset for subsequent reads — without it GET /v1/assets/:id 401s).
         updateUpload(fileName, { progress: 35, statusText: "Inspecting PDF…" });
-        const { job_id: inspectJobId } = await inspectAsset(asset_id);
+        const { job_id: inspectJobId } = await inspectAsset(assetId);
 
-        const allJobIds = [...job_ids, inspectJobId];
+        await pollJob(inspectJobId, (job) => {
+          if (job.status === "pending") {
+            updateUpload(fileName, { progress: 35, statusText: "Queued — inspecting…" });
+          } else if (job.status === "running") {
+            updateUpload(fileName, { progress: 45, statusText: "Reading page metadata…" });
+          }
+        });
 
-        // 3. Wait for inspect (and any auto-queued metadata jobs) to complete
-        await Promise.all(
-          allJobIds.map((jobId) =>
-            pollJob(jobId, (job) => {
-              if (job.status === "pending") {
-                updateUpload(fileName, { progress: 35, statusText: "Queued — inspecting…" });
-              } else if (job.status === "running") {
-                updateUpload(fileName, { progress: 45, statusText: "Reading page metadata…" });
-              }
-            })
-          )
-        );
-
-        // 4. Poll the asset itself until we have boxes + page_count (metadata may
-        //    populate slightly after job completes for newly-created assets)
-        let asset = await getAsset(asset_id);
+        // Poll the asset itself until we have boxes + page_count (metadata may
+        // populate slightly after job completes for newly-created assets)
+        let asset = await getAsset(assetId);
         for (let i = 0; i < 20 && (!asset.boxes || asset.page_count == null); i++) {
           await new Promise((r) => setTimeout(r, 1000));
-          asset = await getAsset(asset_id);
+          asset = await getAsset(assetId);
         }
 
         const boxes = asset.boxes as Record<string, number[]> | null;
@@ -181,21 +168,21 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         const mediaBox =
           boxes?.MediaBox ?? [0, 0, asset.width_pt ?? 595, asset.height_pt ?? 842];
 
-        // 4. Pick the box for dimensions reporting (TrimBox → CropBox → MediaBox)
+        // Pick the box for dimensions reporting (TrimBox → CropBox → MediaBox)
         const reportingBox = trimBox ?? cropBox ?? mediaBox;
         const widthPt = Math.abs(reportingBox[2] - reportingBox[0]);
         const heightPt = Math.abs(reportingBox[3] - reportingBox[1]);
         const pageWidthMm = (widthPt * 25.4) / 72;
         const pageHeightMm = (heightPt * 25.4) / 72;
 
-        // 5. Detect non-ISO size or near-ISO bleed for the advisory
+        // Detect non-ISO size or near-ISO bleed for the advisory
         const detectedSize = detectNonIsoSize(pageWidthMm, pageHeightMm);
         const nearIsoMatch = !detectedSize
           ? detectNearIsoWithBleed(pageWidthMm, pageHeightMm)
           : null;
 
-        // 6. TrimBox differs from MediaBox? Treat it as an explicit author intent
-        //    (no advisory needed — render to TrimBox directly).
+        // TrimBox differs from MediaBox? Treat it as an explicit author intent
+        // (no advisory needed — render to TrimBox directly).
         const explicitTrim =
           trimBox &&
           mediaBox &&
@@ -208,7 +195,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
 
         const hasAdvisory = !!detectedSize || !!nearIsoMatch;
 
-        // 7. Persist preflight + provisional dimensions. NO thumbnails written yet.
+        // Persist preflight + provisional dimensions. NO thumbnails written yet.
         const preflight: Record<string, unknown> = {
           boxes: asset.boxes,
           width_pt: asset.width_pt,
@@ -240,10 +227,39 @@ export function useDocumentUpload(orderItemId: string | undefined) {
           .eq("id", docId);
 
         return {
-          asset_id,
+          asset_id: assetId,
           hasAdvisory,
           renderBox: (explicitTrim ? trimBox : mediaBox) as [number, number, number, number],
         };
+      } catch (err: any) {
+        console.error("[upload] inspectExistingAsset failed:", err);
+        toast({
+          title: "Processing warning",
+          description: `PDF analysis failed for ${fileName}: ${err.message}`,
+          variant: "destructive",
+        });
+        return null;
+      }
+    },
+    [updateUpload],
+  );
+
+  /* ── Phase A: Inspect — register PDF asset & extract metadata, NO thumbnails yet ── */
+
+  const inspectDocument = useCallback(
+    async (docId: string, storagePath: string, fileName: string) => {
+      try {
+        updateUpload(fileName, { statusText: "Registering file…", progress: 30 });
+
+        // Register asset WITHOUT auto-queuing rasterization
+        const { asset_id } = await createAsset({
+          original_filename: fileName,
+          media_type: "application/pdf",
+          source_storage_path: storagePath,
+          auto_queue: false,
+        });
+
+        return await inspectExistingAsset(docId, asset_id, fileName);
       } catch (err: any) {
         console.error("[upload] inspectDocument failed:", err);
         toast({
@@ -254,7 +270,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         return null;
       }
     },
-    [updateUpload]
+    [updateUpload, inspectExistingAsset]
   );
 
   /* ── Upload a single file ── */
