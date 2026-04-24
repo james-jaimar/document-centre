@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Image as ImageIcon, Loader2 } from "lucide-react";
+import { Image as ImageIcon, ImageOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { resolveUrls } from "@/lib/thumbnailUtils";
 import { renderPhotoPreview, borderFractionFor } from "@/lib/photoPrints/renderPreview";
@@ -22,10 +22,15 @@ interface Props {
 }
 
 /**
- * Read-only admin preview of a Photo Prints order. Shows each photo with
- * its crop, size and quantity. The original images live in the standard
- * `documents` rows attached to the order item — production access them
- * the same way as any other product.
+ * Read-only admin preview of a Photo Prints order.
+ *
+ * Display strategy (fail-open):
+ *   1. Signed original image is shown immediately as the baseline tile.
+ *   2. A canvas-rendered crop preview replaces it once (and if) it succeeds.
+ *   3. If signing fails, an explicit "Preview unavailable" state is shown.
+ *
+ * This avoids the infinite-spinner failure mode where a single canvas/CORS
+ * error blanked every tile.
  */
 export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
   const photos: PhotoEntry[] = Array.isArray(photoPrints?.photos) ? photoPrints.photos : [];
@@ -33,31 +38,38 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
   const finishSlug: string = photoPrints?.finish_slug || "gloss";
   const printSizeSlug: string = photoPrints?.print_size_slug || "4x6";
 
+  // Map: storage path -> signed URL ('' = signing failed, undefined = pending)
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
-  const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [signingFailed, setSigningFailed] = useState(false);
+  // Map: photo id -> canvas-rendered crop preview (best-effort enhancement)
+  const [cropPreviews, setCropPreviews] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const paths = photos.map((p) => p.original_storage_path).filter(Boolean) as string[];
     if (paths.length === 0) return;
     let cancelled = false;
-    resolveUrls(paths).then((urls) => {
-      if (cancelled) return;
-      const next: Record<string, string> = {};
-      paths.forEach((p, i) => {
-        if (urls[i]) next[p] = urls[i];
+    resolveUrls(paths)
+      .then((urls) => {
+        if (cancelled) return;
+        const next: Record<string, string> = {};
+        paths.forEach((p, i) => {
+          if (urls[i]) next[p] = urls[i];
+        });
+        setSignedUrls(next);
+        if (Object.keys(next).length === 0) setSigningFailed(true);
+      })
+      .catch((e) => {
+        console.warn("[photo-prints-admin-gallery] sign failed", e);
+        if (!cancelled) setSigningFailed(true);
       });
-      setSignedUrls(next);
-    });
     return () => {
       cancelled = true;
     };
   }, [photos]);
 
-  // Track which photo IDs have already been rendered (or are in flight) so
-  // that subsequent re-renders triggered by setPreviews don't restart work
-  // and don't accidentally cancel an in-flight render via a stale closure.
+  // Best-effort canvas crop render. Failures are silent — the direct signed
+  // image continues to display.
   const inFlightRef = useRef<Set<string>>(new Set());
-
   useEffect(() => {
     photos.forEach((p) => {
       const path = p.original_storage_path;
@@ -83,11 +95,11 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
         outputLongEdgePx: 360,
       })
         .then((url) => {
-          setPreviews((prev) => ({ ...prev, [p.id!]: url }));
+          setCropPreviews((prev) => ({ ...prev, [p.id!]: url }));
         })
         .catch((e) => {
-          console.warn("[photo-prints-admin-gallery] render failed", e);
-          inFlightRef.current.delete(p.id!);
+          // Non-fatal — the direct signed image stays visible.
+          console.debug("[photo-prints-admin-gallery] crop render skipped", e);
         });
     });
   }, [photos, signedUrls, borderSlug]);
@@ -114,7 +126,12 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
         {photos.map((p, idx) => {
           const size = getPhotoPrintSize(p.print_size_slug);
           const id = p.id || `${idx}`;
-          const url = previews[id];
+          const path = p.original_storage_path;
+          const signed = path ? signedUrls[path] : undefined;
+          const crop = cropPreviews[id];
+          const displayUrl = crop || signed;
+          const unavailable = signingFailed && !displayUrl;
+
           return (
             <div
               key={id}
@@ -124,16 +141,24 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
                 className="relative w-full bg-muted"
                 style={{ aspectRatio: size.aspect }}
               >
-                {url ? (
+                {displayUrl ? (
                   <img
-                    src={url}
+                    src={displayUrl}
                     alt={p.file_name || `Photo ${idx + 1}`}
                     className="absolute inset-0 w-full h-full object-cover"
+                    onError={(e) => {
+                      // If the direct signed URL fails to load, swap to a
+                      // neutral state instead of leaving a broken icon.
+                      (e.currentTarget as HTMLImageElement).style.display = "none";
+                    }}
                   />
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                ) : unavailable ? (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground gap-0.5">
+                    <ImageOff className="h-3.5 w-3.5" />
+                    <span className="text-[8px]">Preview unavailable</span>
                   </div>
+                ) : (
+                  <div className="absolute inset-0 bg-muted animate-pulse" />
                 )}
                 <Badge
                   variant="secondary"

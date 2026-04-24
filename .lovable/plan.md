@@ -1,47 +1,95 @@
-## Photo gallery in admin order — spinners never resolve
+## Fix admin photo previews for placed Photo Prints orders
 
-### What's actually broken
+The missing previews are not a checkout problem anymore.
 
-`src/components/orders/detail/PhotoPrintsAdminGallery.tsx` correctly:
-- Reads `configuration.photo_prints.photos` from the placed job (data confirmed present in DB for INV-00030 — 4 photos with valid `original_storage_path` keys, crops, rotation).
-- Calls `s3-storage` to sign the URLs (network confirms `200 OK`).
+The current admin gallery is doing something the rest of the app does not do: it re-opens the original private photo files at view time, runs them through a browser canvas crop/rotate renderer, and only then shows a preview.
 
-But it then calls `renderPhotoPreview(...)` inside a `useEffect` whose dependency array includes `previews`. The effect's cleanup sets a local `cancelled = true`. So:
+That extra runtime pipeline is what is breaking. The screenshot shows `render failed` coming from `PhotoPrintsAdminGallery`, and the failure value is just an `Event`, which points to the image load/cross-origin stage rather than normal React rendering.
 
-1. Effect run #1 starts a render for photo A.
-2. Photo A finishes → `setPreviews({A: url})` → React re-runs the effect.
-3. Effect run #1's cleanup fires → its `cancelled` becomes `true`.
-4. Photo B's render (started by run #1) eventually resolves, but `cancelled` is `true`, so it's dropped.
-5. Effect run #2 sees `previews[B]` is still empty, kicks off photo B again — but the same race kills it the next time photo A or B finishes.
+Flip previews work because they read an already-built preview snapshot. The photo admin gallery is the outlier.
 
-In practice, only one photo (the very last one to resolve before any setState) ever lands. With 4 photos, in the user's screenshot, none survive. The same renderer works on the customer-side `PhotoTile` because that component uses a per-photo ref-based render key, not a single shared effect.
+## Plan
 
-### Fix
+### 1. Make the admin gallery fail-open instead of spinning forever
+Update `src/components/orders/detail/PhotoPrintsAdminGallery.tsx` so each tile has 3 states:
+- rendered crop preview
+- direct signed original image fallback
+- explicit "Preview unavailable" state
 
-Rewrite the second `useEffect` in `PhotoPrintsAdminGallery.tsx` so it doesn't suffer the cancel-on-self-update race:
+If `renderPhotoPreview(...)` fails, the tile must stop spinning and fall back immediately instead of staying blank.
 
-- Remove `previews` from the dependency array.
-- Use a `Ref<Set<string>>` of photo IDs already rendered (or in flight) to guard against duplicate work, instead of reading the current `previews` state.
-- Keep the `cancelled` flag scoped only to the lifetime of the photos/signedUrls/borderSlug change (not to every preview that lands).
-- Inside the per-photo render, even if the effect is cancelled before the render finishes, still call `setPreviews` — the worst case is a single extra state update on an unmounted component, which React tolerates (and we can guard with a mounted ref to silence the warning).
+### 2. Stop depending on view-time canvas rendering as the primary path
+Refactor the gallery so the default display path is simpler and closer to the rest of the app:
+- use the signed image URL directly for display
+- only use canvas crop rendering as an enhancement, not a requirement
 
-This matches the pattern `PhotoTile` already uses successfully.
+This removes the current hard dependency on:
+- signed URL image load succeeding with canvas-safe CORS behavior
+- `toDataURL()` succeeding
+- redoing crop math every time an admin opens an order
 
-### File to change
+### 3. Preserve existing photo metadata, but use it more defensively
+Keep using the placed order’s immutable `configuration.photo_prints` snapshot for:
+- file name
+- quantity
+- print size
+- rotation / crop metadata
 
-| File | Change |
-|---|---|
-| `src/components/orders/detail/PhotoPrintsAdminGallery.tsx` | Replace the preview-render `useEffect` with a ref-tracked, race-free version. No other behaviour changes. |
+But do not require every historical order to have a perfect renderable crop preview. Older or incompatible orders should still show a usable image tile.
 
-### Out of scope (for this fix)
+### 4. Add compatibility for existing orders
+For already-placed photo orders:
+- try to sign `original_storage_path`
+- if crop-render succeeds, show it
+- otherwise show the original signed image
+- if signing fails too, show a clear unavailable state
 
-- The `FlipBook`/`BindingSpine` `forwardRef` warning visible in the console is from a different component path (bound-document preview) and is unrelated to the photo gallery. Leaving as-is.
-- No changes to `renderPhotoPreview`, `resolveUrls`, or the data shape.
-- No changes to `buildJobSnapshot`, `JobDetailPanel`, or the order placement flow.
+That ensures current broken orders become viewable without needing re-placement.
 
-### Verification
+### 5. Keep the rest of the photo order workflow simple
+Do not reintroduce background render queues or special PDF-generation steps for admin previewing.
 
-1. Open `/admin/orders/<photo-prints-order-id>`.
-2. Within ~1 s the 4 spinners are replaced by cropped photo thumbnails.
-3. No console errors from `[photo-tile]` or `renderPhotoPreview`.
-4. The customer-side `PhotoPrintsBuilder` continues to render previews exactly as before (no regression).
+Photo Prints should remain:
+```text
+upload photos
+-> store spec on order item
+-> place order
+-> snapshot photo metadata onto job configuration
+-> admin reads snapshot and shows stable tiles
+```
+
+Not:
+```text
+open admin order
+-> sign raw private images
+-> canvas-render everything from scratch
+-> fail if image/CORS/canvas step breaks
+```
+
+## Files to change
+
+- `src/components/orders/detail/PhotoPrintsAdminGallery.tsx`
+  - remove permanent-spinner behavior
+  - add direct-image fallback
+  - make canvas preview optional
+- `src/lib/photoPrints/renderPreview.ts`
+  - harden error handling so load/canvas failures are distinguishable
+- `src/lib/orders/buildJobSnapshot.ts`
+  - keep snapshot contract stable; only adjust if a small compatibility field helps the gallery
+
+## Expected result
+
+1. Admin order detail shows photo tiles reliably.
+2. A failed crop render no longer means no preview at all.
+3. Photo previews behave more like the rest of the app: resilient, read-only, and snapshot-driven.
+4. Existing placed photo orders become viewable without changing checkout again.
+
+## Technical details
+
+Most likely failure point:
+- `PhotoPrintsAdminGallery` signs `original_storage_path`
+- `renderPhotoPreview()` loads that URL into an `Image` with `crossOrigin="anonymous"`
+- the browser rejects the image for canvas use or the load fails
+- the component logs `render failed` and stays in a loading UI
+
+The implementation should treat canvas rendering as best-effort only, not as the only way an admin can see the ordered photos.
