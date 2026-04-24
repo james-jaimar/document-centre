@@ -30,7 +30,6 @@ Thumbs.db
 
 # database files
 *.sqlite
-*.sql
 
 # misc
 coverage/
