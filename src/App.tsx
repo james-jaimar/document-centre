@@ -249,6 +249,11 @@ const App = () => (
                   <PlatformPricingRegions />
                 </ProtectedRoute>
               } />
+              <Route path="/platform/document-centre" element={
+                <ProtectedRoute allowedRoles={["platform_admin"]}>
+                  <PlatformDocumentCentreOverview />
+                </ProtectedRoute>
+              } />
             </Route>
 
             {/* Public marketing landing — always shown at root */}
