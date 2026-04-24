@@ -18,6 +18,7 @@ import {
   Mail,
   Sparkles,
   FileText,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -78,6 +79,7 @@ const PLATFORM_SECTIONS: NavSection[] = [
       { to: "/platform/users", icon: <Users size={20} />, label: "All Users" },
       { to: "/platform/demo", icon: <Sparkles size={20} />, label: "Demo Activity" },
       { to: "/platform/pricing", icon: <DollarSign size={20} />, label: "Pricing Regions" },
+      { to: "/platform/document-centre", icon: <Activity size={20} />, label: "Document Centre" },
       { to: "/platform/settings", icon: <Settings size={20} />, label: "Platform Settings" },
     ],
   },

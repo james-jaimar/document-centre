@@ -66,6 +66,7 @@ import PlatformTenants from "@/pages/platform/PlatformTenants";
 import PlatformUsers from "@/pages/platform/PlatformUsers";
 import PlatformSettings from "@/pages/platform/PlatformSettings";
 import PlatformPricingRegions from "@/pages/platform/PlatformPricingRegions";
+import PlatformDocumentCentreOverview from "@/pages/platform/PlatformDocumentCentreOverview";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -246,6 +247,11 @@ const App = () => (
               <Route path="/platform/pricing" element={
                 <ProtectedRoute allowedRoles={["platform_admin"]}>
                   <PlatformPricingRegions />
+                </ProtectedRoute>
+              } />
+              <Route path="/platform/document-centre" element={
+                <ProtectedRoute allowedRoles={["platform_admin"]}>
+                  <PlatformDocumentCentreOverview />
                 </ProtectedRoute>
               } />
             </Route>

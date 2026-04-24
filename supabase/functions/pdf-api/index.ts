@@ -11,11 +11,19 @@ const ALLOWED_PREFIXES = [
   "v1/assets",
   "v1/jobs",
   "v1/operations",
+  "v1/ops",
   "health",
 ];
 
+// ops/* paths require platform_admin
+const OPS_PREFIXES = ["v1/ops"];
+
 function isAllowedPath(path: string): boolean {
   return ALLOWED_PREFIXES.some((prefix) => path === prefix || path.startsWith(prefix + "/"));
+}
+
+function isOpsPath(path: string): boolean {
+  return OPS_PREFIXES.some((prefix) => path === prefix || path.startsWith(prefix + "/"));
 }
 
 Deno.serve(async (req) => {
@@ -47,9 +55,11 @@ Deno.serve(async (req) => {
       });
     }
 
+    const user = userData.user;
+
     // Parse the proxied path and method from the request body
     const body = await req.json();
-    const { path, method: forwardMethod, ...payload } = body;
+    const { path, method: forwardMethod, tenant_id, app_id, ...payload } = body;
 
     if (!path || !isAllowedPath(path)) {
       return new Response(
@@ -58,15 +68,42 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Gate ops/* — require platform_admin role
+    let actorRole = "user";
+    if (isOpsPath(path)) {
+      const { data: roleData } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id);
+      const roles = (roleData ?? []).map((r: { role: string }) => r.role);
+      if (!roles.includes("platform_admin")) {
+        return new Response(
+          JSON.stringify({ error: "Forbidden: platform_admin required", source: "edge_ops_forbidden" }),
+          { status: 403, headers: jsonHeaders }
+        );
+      }
+      actorRole = "platform_admin";
+    }
+
     const baseUrl = Deno.env.get("DOCUMENT_CENTRE_API_URL")!.replace(/\/+$/, "");
     const fullUrl = `${baseUrl}/${path}`;
     const httpMethod = (forwardMethod || "POST").toUpperCase();
 
     console.log(`pdf-api: ${httpMethod} ${fullUrl}`);
 
+    // Forward actor + tenant context for audit + JobEvent attribution
+    const upstreamHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-Ops-Actor-Id": user.id,
+      "X-Ops-Actor-Email": user.email ?? "",
+      "X-Ops-Actor-Role": actorRole,
+    };
+    if (tenant_id) upstreamHeaders["X-Ops-Tenant-Id"] = String(tenant_id);
+    if (app_id) upstreamHeaders["X-Ops-App-Id"] = String(app_id);
+
     const fetchOptions: RequestInit = {
       method: httpMethod,
-      headers: { "Content-Type": "application/json" },
+      headers: upstreamHeaders,
     };
 
     // Only include body for methods that support it
@@ -90,7 +127,7 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error("pdf-api proxy error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500, headers: jsonHeaders,
     });
   }

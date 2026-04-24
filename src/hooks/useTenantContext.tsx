@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback, type React
 import { useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { setDocumentCentreContext } from "@/lib/documentCentreApi";
 
 export interface TenantMembership {
   id: string;
@@ -148,6 +149,12 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const effectiveTenantId = isOverriding ? overrideTenantId : (activeMembership?.tenant_id ?? null);
   const effectiveAppId = isOverriding ? overrideAppId : (activeMembership?.app_id ?? null);
   const effectiveTenantName = isOverriding ? overrideTenantName : tenantName;
+
+  // Forward tenant + app context to the Document Centre client so
+  // every backend op (print-ready, inspect, …) is attributed in JobEvents.
+  useEffect(() => {
+    setDocumentCentreContext({ tenantId: effectiveTenantId, appId: effectiveAppId });
+  }, [effectiveTenantId, effectiveAppId]);
 
   return (
     <TenantContext.Provider
