@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Image as ImageIcon, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { resolveUrls } from "@/lib/thumbnailUtils";
@@ -53,13 +53,20 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
     };
   }, [photos]);
 
+  // Track which photo IDs have already been rendered (or are in flight) so
+  // that subsequent re-renders triggered by setPreviews don't restart work
+  // and don't accidentally cancel an in-flight render via a stale closure.
+  const inFlightRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
-    let cancelled = false;
     photos.forEach((p) => {
       const path = p.original_storage_path;
       if (!path || !p.id) return;
       const src = signedUrls[path];
-      if (!src || previews[p.id]) return;
+      if (!src) return;
+      if (inFlightRef.current.has(p.id)) return;
+      inFlightRef.current.add(p.id);
+
       const size = getPhotoPrintSize(p.print_size_slug);
       const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === borderSlug);
       const borderMm = border?.border_mm ?? 0;
@@ -76,14 +83,14 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
         outputLongEdgePx: 360,
       })
         .then((url) => {
-          if (!cancelled) setPreviews((prev) => ({ ...prev, [p.id!]: url }));
+          setPreviews((prev) => ({ ...prev, [p.id!]: url }));
         })
-        .catch(() => {});
+        .catch((e) => {
+          console.warn("[photo-prints-admin-gallery] render failed", e);
+          inFlightRef.current.delete(p.id!);
+        });
     });
-    return () => {
-      cancelled = true;
-    };
-  }, [photos, signedUrls, borderSlug, previews]);
+  }, [photos, signedUrls, borderSlug]);
 
   if (!photos.length) return null;
 
