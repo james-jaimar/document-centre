@@ -17,6 +17,7 @@ import DocumentPreview from "@/components/preview/DocumentPreview";
 import type { ProductPreviewType, PreviewEffects, TabPosition } from "@/components/preview/previewTypes";
 import { TAB_COLORS } from "@/components/preview/previewTypes";
 import { ringTotalViews, resolveRingView, stepRingView } from "@/lib/preview/ringBinderModel";
+import { sortSectionsByRole } from "@/lib/orders/sectionOrdering";
 
 type Document = Tables<"documents">;
 type DocumentSection = Tables<"document_sections">;
