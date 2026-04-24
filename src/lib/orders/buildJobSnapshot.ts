@@ -407,6 +407,9 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
       ...(isPhotoPrints && spec?.photo_prints
         ? { photo_prints: spec.photo_prints }
         : {}),
+      // Source order_item_id — used by the admin gallery to poll for the
+      // merged PDF if the background render hasn't completed yet.
+      source_order_item_id: item.id,
       // preserve raw spec for debugging/integration
       raw_spec: spec,
     },

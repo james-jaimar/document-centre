@@ -166,7 +166,7 @@ export function JobDetailPanel({ job, documents }: Props) {
       {(config as any).photo_prints || job.product_category === "photo-prints" ? (
         <PhotoPrintsAdminGallery
           photoPrints={(config as any).photo_prints}
-          orderItemId={(config as any).raw_spec?.order_item_id ?? job.order_item_id ?? null}
+          orderItemId={(config as any).source_order_item_id ?? null}
         />
       ) : (
         /* Attached files — hidden for photo prints jobs (gallery shows them visually instead) */
