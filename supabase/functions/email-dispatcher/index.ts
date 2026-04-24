@@ -53,7 +53,7 @@ interface AccountCreds {
   send_delay_ms: number;
 }
 
-async function loadVaultSecret(admin: ReturnType<typeof createClient>, secret_id: string | null): Promise<string | null> {
+async function loadVaultSecret(admin: any, secret_id: string | null): Promise<string | null> {
   if (!secret_id) return null;
   const { data, error } = await admin.rpc("read_email_account_secret", { p_secret_id: secret_id });
   if (error) {
@@ -74,20 +74,21 @@ async function resolveCreds(
       .select("*")
       .eq("id", row.email_account_id)
       .maybeSingle();
-    if (acct && acct.is_active) {
-      const password = await loadVaultSecret(admin, (acct as any).smtp_password_secret_id);
+    const a = acct as any;
+    if (a && a.is_active) {
+      const password = await loadVaultSecret(admin, a.smtp_password_secret_id);
       if (password) {
         return {
-          id: acct.id,
-          host: acct.smtp_host,
-          port: acct.smtp_port,
-          secure: acct.smtp_secure,
-          username: acct.smtp_username,
+          id: a.id,
+          host: a.smtp_host,
+          port: a.smtp_port,
+          secure: a.smtp_secure,
+          username: a.smtp_username,
           password,
-          from_name: acct.from_name,
-          from_email: acct.from_email,
-          reply_to: acct.reply_to,
-          send_delay_ms: acct.send_delay_ms ?? 1500,
+          from_name: a.from_name,
+          from_email: a.from_email,
+          reply_to: a.reply_to,
+          send_delay_ms: a.send_delay_ms ?? 1500,
         };
       }
     }
@@ -128,7 +129,7 @@ async function resolveCreds(
   };
 }
 
-async function processOne(admin: ReturnType<typeof createClient>, row: OutboxRow): Promise<void> {
+async function processOne(admin: any, row: OutboxRow): Promise<void> {
   const creds = await resolveCreds(admin, row);
   if (!creds) {
     await admin

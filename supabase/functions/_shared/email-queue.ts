@@ -1,7 +1,9 @@
 // Shared helper: enqueue an email into public.email_outbox.
 // Used by send-email, send-order-email, manage-user, invite-member,
 // invite-platform-admin, request-password-reset, request-signup.
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+// Note: typed as `any` to avoid cross-version SupabaseClient mismatches
+// between callers pinned to different supabase-js releases.
+type SupabaseClient = any;
 
 export interface EnqueueEmailInput {
   tenant_id?: string | null;
