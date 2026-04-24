@@ -192,6 +192,30 @@ export default function PhotoPrintsAdminGallery({ photoPrints, orderItemId }: Pr
               Print-ready PDF
             </a>
           </Button>
+        ) : renderFailedAt ? (
+          <div className="flex items-center gap-2">
+            <div
+              className="flex items-center gap-1.5 rounded-full border border-destructive/40 bg-destructive/10 px-2.5 py-1 text-[11px] text-destructive max-w-[260px]"
+              title={renderError ?? "Render failed"}
+            >
+              <AlertTriangle className="h-3 w-3 shrink-0" />
+              <span className="truncate">Render failed{renderError ? `: ${renderError}` : ""}</span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs gap-1.5"
+              onClick={handleRetry}
+              disabled={retrying}
+            >
+              {retrying ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3 w-3" />
+              )}
+              Retry
+            </Button>
+          </div>
         ) : (
           <div className="flex items-center gap-1.5 rounded-full border border-border bg-muted/30 px-2.5 py-1 text-[11px] text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" />
