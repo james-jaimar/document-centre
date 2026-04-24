@@ -171,6 +171,27 @@ export function useDocumentUpload(orderItemId: string | undefined, productFamily
           }
         });
 
+        // Normalise mixed-orientation pages for bound/ring-binder/presentation
+        // products before we record the canonical dimensions. Server is a no-op
+        // when nothing needs rotating.
+        const familyKey = (productFamilySlug ?? "").toLowerCase();
+        const dominant: "portrait" | "landscape" | null =
+          PORTRAIT_NORMALIZE_FAMILIES.has(familyKey)
+            ? "portrait"
+            : LANDSCAPE_NORMALIZE_FAMILIES.has(familyKey)
+              ? "landscape"
+              : null;
+        if (dominant) {
+          try {
+            updateUpload(fileName, { progress: 50, statusText: "Aligning page orientation…" });
+            const { job_id: orientJobId } = await normalizeOrientation(assetId, dominant);
+            await pollJob(orientJobId);
+          } catch (orientErr: any) {
+            // Non-fatal — surface a warning but continue with the original PDF.
+            console.warn("[upload] normalize-orientation failed:", orientErr);
+          }
+        }
+
         // Poll the asset itself until we have boxes + page_count (metadata may
         // populate slightly after job completes for newly-created assets)
         let asset = await getAsset(assetId);
