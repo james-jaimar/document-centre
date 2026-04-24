@@ -116,3 +116,8 @@ class CropRasterizeRequest(BaseModel):
 
 class ConvertOfficeRequest(BaseModel):
     asset_id: UUID
+
+
+class NormalizeOrientationRequest(BaseModel):
+    asset_id: UUID
+    dominant: Literal["portrait", "landscape"] = "portrait"
