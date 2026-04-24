@@ -30,6 +30,9 @@ Thumbs.db
 
 # database files
 *.sqlite
+*.sql
+!migrations/
+!migrations/*.sql
 
 # misc
 coverage/
