@@ -40,6 +40,13 @@ class PdfOps:
 
         Uses a per-call -env:UserInstallation profile so concurrent conversions
         do not collide on LibreOffice's user-profile lock file.
+
+        FilterData passed to writer_pdf_Export forces:
+          - All fonts embedded (EmbedStandardFonts, no font subsetting issues)
+          - Tagged PDF 1.7 output (UseTaggedPDF, SelectPdfVersion=17)
+          - Form fields stripped (ExportFormFields=false)
+        These are critical so the downstream CMYK pass keeps text vector +
+        K-only rather than rasterising.
         """
         import tempfile
         import shutil
@@ -49,6 +56,17 @@ class PdfOps:
         profile_dir = Path(tempfile.mkdtemp(prefix="lo-profile-"))
         try:
             user_installation = f"-env:UserInstallation=file://{quote(str(profile_dir))}"
+            # FilterData JSON must be wrapped in the convert-to filter spec.
+            # Format: pdf:writer_pdf_Export:{"Key":{"type":"boolean","value":"true"}, ...}
+            filter_data = (
+                'pdf:writer_pdf_Export:'
+                '{'
+                '"EmbedStandardFonts":{"type":"boolean","value":"true"},'
+                '"SelectPdfVersion":{"type":"long","value":"17"},'
+                '"UseTaggedPDF":{"type":"boolean","value":"true"},'
+                '"ExportFormFields":{"type":"boolean","value":"false"}'
+                '}'
+            )
             subprocess.run(
                 [
                     settings.libreoffice_bin,
@@ -58,7 +76,7 @@ class PdfOps:
                     "--nofirststartwizard",
                     "--norestore",
                     "--convert-to",
-                    "pdf",
+                    filter_data,
                     "--outdir",
                     str(out_dir),
                     str(src),
@@ -525,5 +543,78 @@ class PdfOps:
                         del page[f'/{attr}']
             pdf.save(out_pdf)
         return out_pdf
+
+    def to_print_ready_cmyk(
+        self,
+        src: Path,
+        out_pdf: Path,
+        *,
+        dest_profile: str = "fogra39",
+        intent: str = "relative_colorimetric",
+        preserve_black: bool = True,
+    ) -> dict:
+        """
+        Convert a PDF to print-ready CMYK using Ghostscript.
+
+        Key Ghostscript flags:
+          - sColorConversionStrategy=CMYK + sProcessColorModel=DeviceCMYK:
+              force the output to CMYK device space.
+          - dOverrideICC=true + sOutputICCProfile=<dest>:
+              tag the output with the chosen destination profile (Fogra 39 etc).
+          - sDefaultRGBProfile=<sRGB>:
+              treat untagged RGB content as sRGB during conversion.
+          - dRenderIntent=<n>:
+              0=Perceptual, 1=Relative Colorimetric, 2=Saturation, 3=Absolute.
+          - dBlackPtComp=true:
+              black point compensation — preserves shadow detail.
+          - dKPreserve=2 (when preserve_black):
+              "K-only stays K-only" — black text stays single-channel K
+              (critical for crisp laser/inkjet text).
+          - dPreserveOverprintSettings=true:
+              keep overprint instructions (important for spot colours).
+          - dPDFSETTINGS=/prepress:
+              prepress-quality presets (high-resolution images, embed fonts).
+
+        Returns a dict suitable for storing as the job result.
+        """
+        from app.services.icc_profiles import resolve_profile, resolve_intent
+
+        dest_path = resolve_profile(dest_profile)
+        rgb_path = resolve_profile("srgb")
+        intent_value = resolve_intent(intent)
+
+        cmd = [
+            settings.ghostscript_bin,
+            "-dSAFER",
+            "-dBATCH",
+            "-dNOPAUSE",
+            "-sDEVICE=pdfwrite",
+            "-dPDFSETTINGS=/prepress",
+            "-dCompatibilityLevel=1.7",
+            "-sColorConversionStrategy=CMYK",
+            "-dProcessColorModel=/DeviceCMYK",
+            "-dOverrideICC=true",
+            f"-sDefaultRGBProfile={rgb_path}",
+            f"-sOutputICCProfile={dest_path}",
+            f"-dRenderIntent={intent_value}",
+            "-dBlackPtComp=true",
+            "-dPreserveOverprintSettings=true",
+        ]
+        if preserve_black:
+            cmd.append("-dKPreserve=2")
+
+        cmd.extend(["-o", str(out_pdf), str(src)])
+
+        proc = subprocess.run(cmd, check=True, capture_output=True, text=True)
+
+        return {
+            "dest_profile": dest_profile,
+            "intent": intent,
+            "preserve_black": preserve_black,
+            "before_size": src.stat().st_size,
+            "after_size": out_pdf.stat().st_size,
+            "gs_stderr": proc.stderr[-2000:] if proc.stderr else None,
+        }
+
 
 pdf_ops = PdfOps()

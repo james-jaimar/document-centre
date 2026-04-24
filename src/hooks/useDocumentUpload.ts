@@ -13,11 +13,13 @@ import {
   pollJob,
   convertOffice,
   normalizeOrientation,
+  printReady,
 } from "@/lib/documentCentreApi";
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import { detectNonIsoSize, detectNearIsoWithBleed } from "@/lib/paperSizes";
 import { isImageFile, imageFileToPdf, type TargetSize } from "@/lib/imageToPage";
 import { isOfficeFile, officeMimeFromFilename } from "@/lib/officeFiles";
+import { getPrintReadyPlan, type FamilyPrintConfig } from "@/lib/printIntent";
 
 /**
  * Product families whose output is bound/multi-page and where mixed-orientation
@@ -128,7 +130,11 @@ export async function renderDocumentThumbnails(
   return thumbnailPaths;
 }
 
-export function useDocumentUpload(orderItemId: string | undefined, productFamilySlug?: string | null) {
+export function useDocumentUpload(
+  orderItemId: string | undefined,
+  productFamilySlug?: string | null,
+  productFamilyPrintConfig?: FamilyPrintConfig | null,
+) {
   const { user } = useAuth();
   const { tenantId } = useTenantContext();
   const qc = useQueryClient();
@@ -189,6 +195,23 @@ export function useDocumentUpload(orderItemId: string | undefined, productFamily
           } catch (orientErr: any) {
             // Non-fatal — surface a warning but continue with the original PDF.
             console.warn("[upload] normalize-orientation failed:", orientErr);
+          }
+        }
+
+        // Print-ready CMYK conversion (driven by per-product-family settings).
+        // Skipped for RGB families (e.g. dye-sub photo prints) — see printIntent.ts.
+        const printPlan = getPrintReadyPlan(productFamilyPrintConfig);
+        if (printPlan) {
+          try {
+            updateUpload(fileName, { progress: 55, statusText: "Optimising for print…" });
+            const { job_id: printJobId } = await printReady(assetId, {
+              intent: printPlan.intent,
+              destProfile: printPlan.destProfile,
+            });
+            await pollJob(printJobId);
+          } catch (printErr: any) {
+            // Non-fatal — fall back to the un-converted PDF.
+            console.warn("[upload] print-ready failed:", printErr);
           }
         }
 
@@ -279,7 +302,7 @@ export function useDocumentUpload(orderItemId: string | undefined, productFamily
         return null;
       }
     },
-    [updateUpload, productFamilySlug],
+    [updateUpload, productFamilySlug, productFamilyPrintConfig],
   );
 
   /* ── Phase A: Inspect — register PDF asset & extract metadata, NO thumbnails yet ── */

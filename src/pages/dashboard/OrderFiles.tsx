@@ -70,17 +70,17 @@ export default function OrderFiles() {
       if (!productFamilyId) return null;
       const { data, error } = await supabase
         .from("product_families")
-        .select("slug")
+        .select("slug, color_output, cmyk_profile, render_intent")
         .eq("id", productFamilyId)
         .single();
       if (error) throw error;
-      return data;
+      return data as { slug: string; color_output: string; cmyk_profile: string; render_intent: string };
     },
     enabled: !!productFamilyId,
   });
 
   const { uploads, uploadFiles, reprocessDocument, clearUploads, renderWithProgress } =
-    useDocumentUpload(orderItem?.id, productFamily?.slug ?? null);
+    useDocumentUpload(orderItem?.id, productFamily?.slug ?? null, productFamily ?? null);
   const addSection = useAddSection();
   const updateSection = useUpdateSection();
   const deleteSection = useDeleteSection();

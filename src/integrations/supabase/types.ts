@@ -1987,6 +1987,8 @@ export type Database = {
       }
       product_families: {
         Row: {
+          cmyk_profile: string
+          color_output: string
           created_at: string
           description: string | null
           icon: string | null
@@ -1994,11 +1996,14 @@ export type Database = {
           image_url: string | null
           is_active: boolean
           name: string
+          render_intent: string
           slug: string
           sort_order: number
           tenant_id: string | null
         }
         Insert: {
+          cmyk_profile?: string
+          color_output?: string
           created_at?: string
           description?: string | null
           icon?: string | null
@@ -2006,11 +2011,14 @@ export type Database = {
           image_url?: string | null
           is_active?: boolean
           name: string
+          render_intent?: string
           slug: string
           sort_order?: number
           tenant_id?: string | null
         }
         Update: {
+          cmyk_profile?: string
+          color_output?: string
           created_at?: string
           description?: string | null
           icon?: string | null
@@ -2018,6 +2026,7 @@ export type Database = {
           image_url?: string | null
           is_active?: boolean
           name?: string
+          render_intent?: string
           slug?: string
           sort_order?: number
           tenant_id?: string | null

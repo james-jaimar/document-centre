@@ -14,6 +14,18 @@ const ICON_OPTIONS = [
   "Image", "Scissors", "Paperclip", "Package", "Grid", "Layout",
 ];
 
+const CMYK_PROFILE_OPTIONS = [
+  { value: "fogra39", label: "Fogra 39 (ISO Coated v2)" },
+  { value: "fogra51", label: "Fogra 51 (PSO Coated v3)" },
+];
+
+const RENDER_INTENT_OPTIONS = [
+  { value: "relative_colorimetric", label: "Relative Colorimetric (text & docs)" },
+  { value: "perceptual", label: "Perceptual (photos)" },
+  { value: "absolute_colorimetric", label: "Absolute Colorimetric" },
+  { value: "saturation", label: "Saturation" },
+];
+
 interface FormValues {
   name: string;
   slug: string;
@@ -21,6 +33,9 @@ interface FormValues {
   icon: string;
   is_active: boolean;
   sort_order: number;
+  color_output: "cmyk" | "rgb";
+  cmyk_profile: string;
+  render_intent: "relative_colorimetric" | "perceptual" | "absolute_colorimetric" | "saturation";
 }
 
 interface Props {
@@ -44,6 +59,9 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
       icon: "FileText",
       is_active: true,
       sort_order: 0,
+      color_output: "cmyk",
+      cmyk_profile: "fogra39",
+      render_intent: "relative_colorimetric",
     },
   });
 
@@ -56,6 +74,9 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         icon: family.icon || "FileText",
         is_active: family.is_active,
         sort_order: family.sort_order,
+        color_output: (family.color_output as "cmyk" | "rgb") ?? "cmyk",
+        cmyk_profile: family.cmyk_profile ?? "fogra39",
+        render_intent: (family.render_intent as FormValues["render_intent"]) ?? "relative_colorimetric",
       });
     } else {
       form.reset({
@@ -65,6 +86,9 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         icon: "FileText",
         is_active: true,
         sort_order: 0,
+        color_output: "cmyk",
+        cmyk_profile: "fogra39",
+        render_intent: "relative_colorimetric",
       });
     }
   }, [family, open]);
@@ -76,9 +100,11 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
     }
   }, [watchName, family]);
 
+  const watchColorOutput = form.watch("color_output");
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{family ? "Edit Product Family" : "New Product Family"}</DialogTitle>
         </DialogHeader>
@@ -165,6 +191,79 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
                 )}
               />
             </div>
+
+            <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+              <div>
+                <h4 className="text-sm font-semibold">Print Output</h4>
+                <p className="text-xs text-muted-foreground">
+                  How files for this product family are prepared for printing.
+                </p>
+              </div>
+              <FormField
+                control={form.control}
+                name="color_output"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Colour Space</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="cmyk">CMYK (laser / inkjet)</SelectItem>
+                        <SelectItem value="rgb">RGB (dye-sub photo)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              {watchColorOutput === "cmyk" && (
+                <>
+                  <FormField
+                    control={form.control}
+                    name="cmyk_profile"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>CMYK Profile</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {CMYK_PROFILE_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="render_intent"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Render Intent</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {RENDER_INTENT_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </>
+              )}
+            </div>
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
               <Button type="submit" disabled={isPending}>

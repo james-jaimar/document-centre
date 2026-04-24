@@ -2,9 +2,22 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables, TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
 
-export type ProductFamily = Tables<"product_families">;
-export type ProductFamilyInsert = TablesInsert<"product_families">;
-export type ProductFamilyUpdate = TablesUpdate<"product_families">;
+// NOTE: Print-output columns (color_output, cmyk_profile, render_intent) were
+// added via migration. The generated Supabase types may lag a deploy; we
+// augment the row type here so the admin UI is fully typed.
+type PrintOutputFields = {
+  color_output: "cmyk" | "rgb";
+  cmyk_profile: string;
+  render_intent:
+    | "relative_colorimetric"
+    | "perceptual"
+    | "absolute_colorimetric"
+    | "saturation";
+};
+
+export type ProductFamily = Tables<"product_families"> & PrintOutputFields;
+export type ProductFamilyInsert = TablesInsert<"product_families"> & Partial<PrintOutputFields>;
+export type ProductFamilyUpdate = TablesUpdate<"product_families"> & Partial<PrintOutputFields>;
 
 const QUERY_KEY = ["product_families"];
 
