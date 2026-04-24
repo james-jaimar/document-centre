@@ -68,6 +68,25 @@ export interface Job {
   finished_at: string | null;
 }
 
+// ── Tenant context (forwarded to JobEvent attribution) ─────────
+
+let _tenantId: string | null = null;
+let _appId: string | null = null;
+
+/**
+ * Set the active tenant/app context. The values are forwarded as
+ * `tenant_id` / `app_id` in the request body — the pdf-api edge function
+ * relays them as `X-Ops-Tenant-Id` / `X-Ops-App-Id` headers, and the VPS
+ * stamps them on every JobEvent for per-tenant metrics.
+ */
+export function setDocumentCentreContext(opts: {
+  tenantId: string | null;
+  appId: string | null;
+}): void {
+  _tenantId = opts.tenantId;
+  _appId = opts.appId;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────
 
 async function getAuthToken(): Promise<string> {
