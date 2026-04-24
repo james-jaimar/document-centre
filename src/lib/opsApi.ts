@@ -209,7 +209,7 @@ export const opsApi = {
     }),
   job: (id: string) => call<OpsJob>(`v1/ops/jobs/${encodeURIComponent(id)}`),
   revokeTask: (taskId: string, terminate = false) =>
-    call<{ ok: boolean }>(`v1/ops/tasks/${encodeURIComponent(taskId)}/revoke`, "POST", undefined, { terminate }),
+    call<{ ok: boolean }>(`v1/ops/tasks/${encodeURIComponent(taskId)}/revoke`, "POST", undefined, { terminate: terminate ? "true" : "false" }),
 
   // Assets
   assetPipeline: (assetId: string) =>
