@@ -155,8 +155,34 @@ class PdfOps:
             info["height_pt"] = float(media[3] - media[1])
             return info
 
-    def normalize_pdf(self, src: Path, out_pdf: Path) -> Path:
-        subprocess.run([settings.qpdf_bin, "--replace-input", "--linearize", str(src)], check=False)
+    def normalize_pdf(self, src: Path, out_pdf: Path, *, fast: bool = True) -> Path:
+        """
+        Normalize a PDF for downstream processing.
+
+        Fast path (default): try `qpdf --linearize` only. This is ~10-50x
+        faster than the Ghostscript rewrite for clean modern PDFs. We only
+        fall back to the heavy Ghostscript pdfwrite pass when qpdf can't
+        produce a usable file (encrypted, malformed, or qpdf isn't installed).
+        """
+        if fast:
+            try:
+                # qpdf --linearize writes a brand new file (web-optimised, no
+                # in-place mutation of the source) — safer than --replace-input
+                # for downstream parallel readers.
+                proc = subprocess.run(
+                    [settings.qpdf_bin, "--linearize", str(src), str(out_pdf)],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                # qpdf returns 3 for "warnings only" — still a valid output.
+                if proc.returncode in (0, 3) and out_pdf.exists() and out_pdf.stat().st_size > 0:
+                    return out_pdf
+            except Exception:
+                pass  # fall through to GS rewrite
+
+        # Heavy fallback: full Ghostscript rewrite (rebuilds the PDF tree;
+        # fixes encrypted / malformed / weird producer issues).
         subprocess.run(
             [
                 settings.ghostscript_bin,
@@ -274,24 +300,58 @@ class PdfOps:
         subprocess.run(cmd, check=True)
         return out_pdf
 
-    def rasterize_preview(self, src: Path, out_prefix: Path, dpi: int = 120, fmt: str = "png") -> list[Path]:
+    def rasterize_preview(
+        self,
+        src: Path,
+        out_prefix: Path,
+        dpi: int = 120,
+        fmt: str = "png",
+        first_page: int | None = None,
+        last_page: int | None = None,
+    ) -> list[Path]:
+        """
+        Rasterize PDF pages with Ghostscript. Optional first_page/last_page
+        let callers do a "page-1 fast path" or chunked parallel renders
+        without re-running on the whole document.
+        """
         out_prefix.parent.mkdir(parents=True, exist_ok=True)
         pattern = str(out_prefix) + "-%03d." + fmt
         device = "png16m" if fmt == "png" else "jpeg"
 
-        subprocess.run(
-            [
-                settings.ghostscript_bin,
-                "-dNOPAUSE",
-                "-dBATCH",
-                f"-r{dpi}",
-                f"-sDEVICE={device}",
-                f"-sOutputFile={pattern}",
-                str(src),
-            ],
-            check=True,
-        )
+        cmd = [
+            settings.ghostscript_bin,
+            "-dNOPAUSE",
+            "-dBATCH",
+            "-dSAFER",
+            f"-r{dpi}",
+            f"-sDEVICE={device}",
+            f"-sOutputFile={pattern}",
+        ]
+        if first_page is not None:
+            cmd.append(f"-dFirstPage={first_page}")
+        if last_page is not None:
+            cmd.append(f"-dLastPage={last_page}")
+        cmd.append(str(src))
+
+        subprocess.run(cmd, check=True)
         return sorted(out_prefix.parent.glob(out_prefix.name + "-*." + fmt))
+
+    def downscale_to_thumbnail(
+        self,
+        src_image: Path,
+        out_image: Path,
+        target_max_dim: int = 360,
+    ) -> tuple[int, int]:
+        """
+        Downscale a preview-resolution PNG to a thumbnail using PIL.
+        Replaces a second Ghostscript pass — ~20-100x faster.
+        Returns (width, height) of the resulting thumbnail.
+        """
+        with Image.open(src_image) as im:
+            im = im.convert("RGB") if im.mode not in ("RGB", "L") else im
+            im.thumbnail((target_max_dim, target_max_dim), Image.LANCZOS)
+            im.save(out_image, "PNG", optimize=True)
+            return im.size
 
     def resize_pages(
         self,
