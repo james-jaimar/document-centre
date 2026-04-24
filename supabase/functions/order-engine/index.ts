@@ -95,12 +95,18 @@ async function createOrderWithJobs(
     .eq("is_active", true)
     .single();
 
-  if (appErr || !app) return err(`App not found: ${app_slug}`, 404);
+  if (appErr || !app) {
+    console.error("[order-engine] app_lookup failed", { app_slug, error: appErr });
+    return err(`app_lookup failed: ${appErr?.message ?? `unknown app ${app_slug}`}`, 404);
+  }
   const app_id = app.id;
 
   // Generate order number
   const { data: orderNum, error: numErr } = await admin.rpc("generate_order_number", { p_app_id: app_id });
-  if (numErr || !orderNum) return err(`Failed to generate order number: ${numErr?.message}`);
+  if (numErr || !orderNum) {
+    console.error("[order-engine] generate_order_number failed", numErr);
+    return err(`generate_order_number failed: ${numErr?.message ?? "no number returned"}`);
+  }
 
   // Insert order
   const { data: newOrder, error: orderErr } = await admin
@@ -142,7 +148,10 @@ async function createOrderWithJobs(
     .select("id, order_number, is_demo")
     .single();
 
-  if (orderErr || !newOrder) return err(`Failed to create order: ${orderErr?.message}`);
+  if (orderErr || !newOrder) {
+    console.error("[order-engine] order_insert failed", orderErr);
+    return err(`order_insert failed: ${orderErr?.message ?? "unknown"}`);
+  }
 
   // Build job inserts
   const jobInserts = jobs.map((j: any, idx: number) => {
@@ -182,7 +191,7 @@ async function createOrderWithJobs(
   }
 
   // Run all independent post-order writes in parallel
-  const [jobsResult] = await Promise.all([
+  const [jobsResult, addressesResult, pricingResult, timelineResult, membershipResult] = await Promise.all([
     admin.from("order_jobs").insert(jobInserts).select("id, job_number, sequence_no"),
     addressInserts.length
       ? admin.from("order_addresses").insert(addressInserts)
@@ -228,7 +237,26 @@ async function createOrderWithJobs(
     ),
   ]);
 
-  if (jobsResult.error) return err(`Failed to create jobs: ${jobsResult.error.message}`);
+  if (jobsResult.error) {
+    console.error("[order-engine] jobs_insert failed", jobsResult.error);
+    return err(`jobs_insert failed: ${jobsResult.error.message}`);
+  }
+  if ((addressesResult as any)?.error) {
+    console.error("[order-engine] addresses_insert failed", (addressesResult as any).error);
+    return err(`addresses_insert failed: ${(addressesResult as any).error.message}`);
+  }
+  if ((pricingResult as any)?.error) {
+    console.error("[order-engine] pricing_snapshot_insert failed", (pricingResult as any).error);
+    return err(`pricing_snapshot_insert failed: ${(pricingResult as any).error.message}`);
+  }
+  if ((timelineResult as any)?.error) {
+    console.error("[order-engine] timeline_insert failed", (timelineResult as any).error);
+    return err(`timeline_insert failed: ${(timelineResult as any).error.message}`);
+  }
+  if ((membershipResult as any)?.error) {
+    console.error("[order-engine] membership_upsert failed", (membershipResult as any).error);
+    return err(`membership_upsert failed: ${(membershipResult as any).error.message}`);
+  }
   const newJobs = jobsResult.data;
 
   // Insert proofs only if any jobs request them (rare in checkout flow)

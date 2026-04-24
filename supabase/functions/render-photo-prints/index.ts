@@ -53,27 +53,44 @@ function makeDcRequest(authHeader: string) {
     body?: Record<string, unknown>,
   ): Promise<T> {
     const payload: Record<string, unknown> = { path, method, ...(body ?? {}) };
-    const res = await fetch(PDF_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: authHeader,
-        apikey: SUPABASE_ANON_KEY,
-      },
-      body: JSON.stringify(payload),
-    });
-    const text = await res.text();
-    console.log(`[render-photo-prints] dc ${method} ${path} -> ${res.status}`);
-    if (!res.ok) {
-      throw new Error(
-        `Document Centre ${method} ${path} failed ${res.status}: ${text.slice(0, 300)}`,
-      );
+    const maxRetries = 3;
+    let lastErr: string = "";
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const res = await fetch(PDF_API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: authHeader,
+          apikey: SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify(payload),
+      });
+      const text = await res.text();
+      console.log(`[render-photo-prints] dc ${method} ${path} -> ${res.status}${attempt > 0 ? ` (retry ${attempt})` : ""}`);
+
+      if (res.ok) {
+        try {
+          return JSON.parse(text) as T;
+        } catch {
+          throw new Error(`Document Centre ${method} ${path} returned non-JSON: ${text.slice(0, 200)}`);
+        }
+      }
+
+      // Detect rate-limit and back off
+      const isRateLimited = res.status === 429 || /rate limit/i.test(text);
+      if (isRateLimited && attempt < maxRetries) {
+        const match = text.match(/Retry after (\d+)\s*ms/i);
+        let delayMs = match ? parseInt(match[1], 10) : 5000 * (attempt + 1);
+        delayMs = Math.min(Math.max(delayMs, 1000), 30000);
+        console.log(`[render-photo-prints] 429 rate-limited on ${path}, sleeping ${delayMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+        await new Promise((r) => setTimeout(r, delayMs));
+        continue;
+      }
+
+      lastErr = `Document Centre ${method} ${path} failed ${res.status}: ${text.slice(0, 300)}`;
+      throw new Error(lastErr);
     }
-    try {
-      return JSON.parse(text) as T;
-    } catch {
-      throw new Error(`Document Centre ${method} ${path} returned non-JSON: ${text.slice(0, 200)}`);
-    }
+    throw new Error(lastErr || `Document Centre ${method} ${path} exhausted retries`);
   };
 }
 

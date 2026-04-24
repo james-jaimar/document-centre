@@ -684,7 +684,26 @@ export function usePlaceOrder() {
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        // Surface the real error body from the edge function instead of the
+        // generic "Edge Function returned a non-2xx status code" message.
+        let detail: string | null = null;
+        try {
+          const ctx = (error as any)?.context;
+          if (ctx && typeof ctx.text === "function") {
+            const text = await ctx.text();
+            try {
+              const parsed = JSON.parse(text);
+              detail = parsed?.error || parsed?.message || text;
+            } catch {
+              detail = text;
+            }
+          }
+        } catch {
+          /* ignore — fall back to original error */
+        }
+        throw new Error(detail || (error as any)?.message || "Place order failed");
+      }
       if (data?.error) throw new Error(data.error);
 
       // Clean up the cart synchronously so the refetched cart is empty.
