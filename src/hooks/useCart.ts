@@ -447,8 +447,9 @@ export function usePlaceOrder() {
             : Promise.resolve({ data: [] as any[] }),
         ]);
 
-      const { inferPreviewTypeFromJob } = await import("@/lib/orders/inferPreviewType");
-      const { buildPreviewSnapshot } = await import("@/lib/orders/buildPreviewSnapshot");
+      // Preview enrichment is best-effort. Order placement must NEVER fail
+      // because the preview helpers throw or because a future lazy chunk fails
+      // to load — they are imported statically above to avoid that exact risk.
 
       const jobs = items.map((item: any) => {
         const familyOptions = ((optionsData ?? []) as any[]).filter(
