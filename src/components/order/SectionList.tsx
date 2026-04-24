@@ -9,6 +9,7 @@ import {
   ArrowDown,
 } from "lucide-react";
 import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
+import { sortSectionsByRole } from "@/lib/orders/sectionOrdering";
 
 type DocumentSection = Tables<"document_sections">;
 type Document = Tables<"documents">;
