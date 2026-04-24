@@ -13,11 +13,13 @@ import {
   pollJob,
   convertOffice,
   normalizeOrientation,
+  printReady,
 } from "@/lib/documentCentreApi";
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import { detectNonIsoSize, detectNearIsoWithBleed } from "@/lib/paperSizes";
 import { isImageFile, imageFileToPdf, type TargetSize } from "@/lib/imageToPage";
 import { isOfficeFile, officeMimeFromFilename } from "@/lib/officeFiles";
+import { getPrintReadyPlan, type FamilyPrintConfig } from "@/lib/printIntent";
 
 /**
  * Product families whose output is bound/multi-page and where mixed-orientation
@@ -128,7 +130,11 @@ export async function renderDocumentThumbnails(
   return thumbnailPaths;
 }
 
-export function useDocumentUpload(orderItemId: string | undefined, productFamilySlug?: string | null) {
+export function useDocumentUpload(
+  orderItemId: string | undefined,
+  productFamilySlug?: string | null,
+  productFamilyPrintConfig?: FamilyPrintConfig | null,
+) {
   const { user } = useAuth();
   const { tenantId } = useTenantContext();
   const qc = useQueryClient();
