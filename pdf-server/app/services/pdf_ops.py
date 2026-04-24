@@ -176,6 +176,47 @@ class PdfOps:
             writer.write(f)
         return out_pdf
 
+    def normalize_orientation(
+        self,
+        src: Path,
+        out_pdf: Path,
+        dominant: str = "portrait",
+    ) -> dict:
+        """
+        Rotate pages whose orientation doesn't match the dominant orientation
+        so they all stack the same way up. Rotation is 90° clockwise (the
+        client's chosen convention for CCW vs CW — we use CW).
+
+        - dominant='portrait' (default): rotate landscape pages (w > h) +90 CW.
+        - dominant='landscape': rotate portrait pages (w < h) +90 CW.
+
+        Returns: { 'pages_rotated': int, 'total_pages': int, 'skipped': bool }.
+        """
+        reader = PdfReader(str(src))
+        writer = PdfWriter()
+        rotated = 0
+        for page in reader.pages:
+            w = float(page.mediabox.width)
+            h = float(page.mediabox.height)
+            is_landscape = w > h
+            needs_rotate = (
+                (dominant == "portrait" and is_landscape)
+                or (dominant == "landscape" and not is_landscape)
+            )
+            if needs_rotate:
+                page.rotate(90)  # 90° clockwise
+                rotated += 1
+            writer.add_page(page)
+
+        with open(out_pdf, "wb") as f:
+            writer.write(f)
+
+        return {
+            "pages_rotated": rotated,
+            "total_pages": len(reader.pages),
+            "skipped": rotated == 0,
+        }
+
     def grayscale(self, src: Path, out_pdf: Path) -> Path:
         subprocess.run(
             [

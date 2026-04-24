@@ -12,11 +12,28 @@ import {
   inspectAsset,
   pollJob,
   convertOffice,
+  normalizeOrientation,
 } from "@/lib/documentCentreApi";
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import { detectNonIsoSize, detectNearIsoWithBleed } from "@/lib/paperSizes";
 import { isImageFile, imageFileToPdf, type TargetSize } from "@/lib/imageToPage";
 import { isOfficeFile, officeMimeFromFilename } from "@/lib/officeFiles";
+
+/**
+ * Product families whose output is bound/multi-page and where mixed-orientation
+ * pages must be normalised so they all stack the same way up.
+ *  - presentations: landscape-dominant (rotate portrait pages)
+ *  - everything else here: portrait-dominant (rotate landscape pages)
+ */
+const PORTRAIT_NORMALIZE_FAMILIES = new Set([
+  "bound-documents",
+  "bound_documents",
+  "ring-binder",
+  "ring_binder",
+  "booklets",
+  "brochures",
+]);
+const LANDSCAPE_NORMALIZE_FAMILIES = new Set(["presentations"]);
 
 interface UploadProgress {
   fileName: string;
@@ -111,7 +128,7 @@ export async function renderDocumentThumbnails(
   return thumbnailPaths;
 }
 
-export function useDocumentUpload(orderItemId: string | undefined) {
+export function useDocumentUpload(orderItemId: string | undefined, productFamilySlug?: string | null) {
   const { user } = useAuth();
   const { tenantId } = useTenantContext();
   const qc = useQueryClient();
@@ -153,6 +170,27 @@ export function useDocumentUpload(orderItemId: string | undefined) {
             updateUpload(fileName, { progress: 45, statusText: "Reading page metadata…" });
           }
         });
+
+        // Normalise mixed-orientation pages for bound/ring-binder/presentation
+        // products before we record the canonical dimensions. Server is a no-op
+        // when nothing needs rotating.
+        const familyKey = (productFamilySlug ?? "").toLowerCase();
+        const dominant: "portrait" | "landscape" | null =
+          PORTRAIT_NORMALIZE_FAMILIES.has(familyKey)
+            ? "portrait"
+            : LANDSCAPE_NORMALIZE_FAMILIES.has(familyKey)
+              ? "landscape"
+              : null;
+        if (dominant) {
+          try {
+            updateUpload(fileName, { progress: 50, statusText: "Aligning page orientation…" });
+            const { job_id: orientJobId } = await normalizeOrientation(assetId, dominant);
+            await pollJob(orientJobId);
+          } catch (orientErr: any) {
+            // Non-fatal — surface a warning but continue with the original PDF.
+            console.warn("[upload] normalize-orientation failed:", orientErr);
+          }
+        }
 
         // Poll the asset itself until we have boxes + page_count (metadata may
         // populate slightly after job completes for newly-created assets)
@@ -241,7 +279,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         return null;
       }
     },
-    [updateUpload],
+    [updateUpload, productFamilySlug],
   );
 
   /* ── Phase A: Inspect — register PDF asset & extract metadata, NO thumbnails yet ── */
@@ -372,7 +410,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
             } else if (job.status === "running") {
               updateUpload(originalName, {
                 progress: 30,
-                statusText: "Converting with LibreOffice…",
+                statusText: "Converting document…",
               });
             }
           });

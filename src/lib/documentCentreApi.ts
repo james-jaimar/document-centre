@@ -297,6 +297,26 @@ export async function convertOffice(
   });
 }
 
+/**
+ * Normalize page orientation: rotates landscape pages (width > height) by 90°
+ * clockwise so they sit portrait-up alongside the rest of the document.
+ * Used for bound documents / ring binders / presentations where mixed
+ * orientations would otherwise print with sideways pages.
+ *
+ * The job promotes the rotated PDF to the asset's normalized_storage_path
+ * and updates page boxes / dimensions in place. If no pages need rotating
+ * the job completes as a no-op (skipped=true).
+ */
+export async function normalizeOrientation(
+  assetId: string,
+  dominant: "portrait" | "landscape" = "portrait"
+): Promise<{ job_id: string }> {
+  return request("v1/operations/normalize-orientation", "POST", {
+    asset_id: assetId,
+    dominant,
+  });
+}
+
 // ── Health ────────────────────────────────────────────────────────
 
 export async function health(): Promise<{

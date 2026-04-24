@@ -182,8 +182,26 @@ export default function OrderBuild() {
   }, [sections, documents]);
 
   // Initialize defaults from product options
-  // Track whether auto-size-match has fired so it only runs once
+  // Track whether auto-size-match has fired so it only runs once PER unique
+  // document-dimension signature. When the user scales a doc (e.g. to A4)
+  // the signature changes and we re-run the auto-match so the configurator
+  // reflects the new size instead of the original (e.g. US Letter).
   const autoSizeMatchedRef = useRef(false);
+  const lastDimensionSigRef = useRef<string | null>(null);
+  const initialAutoMatchDoneRef = useRef(false);
+  const dimensionSig = useMemo(
+    () =>
+      documents
+        .map((d) => `${d.id}:${d.page_width_mm ?? ""}x${d.page_height_mm ?? ""}`)
+        .join("|"),
+    [documents],
+  );
+  useEffect(() => {
+    if (lastDimensionSigRef.current !== dimensionSig) {
+      lastDimensionSigRef.current = dimensionSig;
+      autoSizeMatchedRef.current = false;
+    }
+  }, [dimensionSig]);
 
   // Options whose values are derived per-section from the uploaded files list
   // (Print Colour / Print Sides). These must NEVER be seeded as defaults on
@@ -230,12 +248,19 @@ export default function OrderBuild() {
     const sizeOpt = options.find((o) => o.name.toLowerCase() === "document size");
     if (!sizeOpt || !isStructuredValues(sizeOpt.values)) return;
 
-    // Respect any previously persisted Document Size choice (case-insensitive key match)
+    // Respect any previously persisted Document Size choice (case-insensitive
+    // key match) — but ONLY on the first run. If the dimensions later change
+    // (e.g. user scaled US Letter → A4), override the stale selection.
     const existingKey = Object.keys(spec.selected_options).find(
       (k) => k.toLowerCase() === "document size"
     );
-    if (existingKey && spec.selected_options[existingKey]) {
+    if (
+      !initialAutoMatchDoneRef.current &&
+      existingKey &&
+      spec.selected_options[existingKey]
+    ) {
       autoSizeMatchedRef.current = true;
+      initialAutoMatchDoneRef.current = true;
       return;
     }
 
@@ -258,6 +283,7 @@ export default function OrderBuild() {
 
     if (matched) {
       autoSizeMatchedRef.current = true;
+      initialAutoMatchDoneRef.current = true;
       setSpec((prev) => ({
         ...prev,
         selected_options: { ...prev.selected_options, [sizeOpt.name]: matched.slug },

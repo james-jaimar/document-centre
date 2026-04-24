@@ -345,3 +345,72 @@ def convert_office(self, asset_id: str, job_id: str):
         raise exc
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Mixed-orientation normalisation
+# ---------------------------------------------------------------------------
+# Contract: POST /v1/operations/normalize-orientation
+#   { asset_id, dominant: "portrait"|"landscape" } -> { job_id }
+#
+# Worker:
+#   1. Download the asset's PDF (normalized → falls back to source).
+#   2. Rotate any pages whose orientation doesn't match `dominant`
+#      by 90° CLOCKWISE (client convention: CW).
+#   3. If at least one page rotated, upload the new PDF and promote it to
+#      asset.normalized_storage_path, recomputing inspect metadata.
+#      If nothing rotated, skip the upload — job result reports skipped=true.
+@shared_task(bind=True, queue="documents")
+def normalize_orientation(self, asset_id: str, job_id: str, dominant: str = "portrait"):
+    db = _db()
+    try:
+        job_repo.mark_running(db, job_id)
+        prefix = _get_asset_prefix(db, asset_id)
+        with Workspace() as ws:
+            src = _download_asset_pdf(db, asset_id, ws)
+            out_pdf = ws.path("oriented.pdf")
+            stats = pdf_ops.normalize_orientation(src, out_pdf, dominant=dominant)
+
+            if stats["skipped"]:
+                # Nothing changed — no upload, no promotion.
+                job_repo.mark_done(db, job_id, stats)
+                return stats
+
+            storage_path = unique_name(f"{prefix}derived/oriented", ".pdf")
+            storage.upload(out_pdf, storage_path, "application/pdf")
+
+            derived_file_repo.create_file(
+                db,
+                asset_id=asset_id,
+                job_id=job_id,
+                kind="oriented_pdf",
+                storage_path=storage_path,
+                media_type="application/pdf",
+                metadata={"dominant": dominant, **stats},
+            )
+
+            info = pdf_ops.inspect(out_pdf)
+            asset_repo.update_asset(db, asset_id, {
+                "normalized_storage_path": storage_path,
+                "page_count": info["page_count"],
+                "width_pt": info["width_pt"],
+                "height_pt": info["height_pt"],
+                "boxes": info["boxes"],
+            })
+
+            result = {
+                **stats,
+                "storage_path": storage_path,
+                "normalized_storage_path": storage_path,
+                "page_count": info["page_count"],
+                "width_pt": info["width_pt"],
+                "height_pt": info["height_pt"],
+            }
+            job_repo.mark_done(db, job_id, result)
+            return result
+
+    except Exception as exc:
+        job_repo.mark_failed(db, job_id, traceback.format_exc())
+        raise exc
+    finally:
+        db.close()
