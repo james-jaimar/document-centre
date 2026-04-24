@@ -70,3 +70,45 @@ the client depends on so it isn't lost between repos. Any changes to the
 endpoint shape or the accepted MIME list must be reflected in
 `src/lib/officeFiles.ts` and `src/lib/documentCentreApi.ts` at the same
 time.
+
+## Mixed-orientation normalisation
+
+Bound documents, ring binders, presentations and similar multi-page
+products must print with all pages stacked the same way up. The client
+calls a single endpoint after inspect to rotate any "wrong-way" pages.
+
+### Endpoint
+
+```
+POST /v1/operations/normalize-orientation
+Body: { "asset_id": "<uuid>", "dominant": "portrait" | "landscape" }
+Returns: { "job_id": "<uuid>" }
+```
+
+`dominant` defaults to `"portrait"`. Use `"landscape"` for the
+`presentations` family (landscape-dominant).
+
+### Worker behaviour expected
+
+1. Download the asset PDF (`normalized_storage_path` falling back to
+   `source_storage_path`).
+2. For each page where orientation ≠ dominant, rotate **90° clockwise**
+   (CW). Pages already in the dominant orientation are unchanged.
+3. If no pages were rotated → mark the job `completed` with
+   `result = { skipped: true, pages_rotated: 0, total_pages: N }` and
+   exit. **Do not upload or promote.**
+4. Otherwise upload the new PDF, register a derived file with
+   `kind = "oriented_pdf"`, and **promote** it to the asset's
+   `normalized_storage_path`. Recompute `page_count`, `width_pt`,
+   `height_pt`, `boxes` from the new PDF.
+5. Mark the job `completed`. The result includes `pages_rotated`,
+   `total_pages`, the new dimensions and the storage path.
+
+### Client integration
+
+`src/hooks/useDocumentUpload.ts` runs `normalizeOrientation` immediately
+after the inspect job for product families listed in
+`PORTRAIT_NORMALIZE_FAMILIES` / `LANDSCAPE_NORMALIZE_FAMILIES`. Failures
+are non-fatal (logged + warning toast) — the original PDF is kept and
+the rest of the pipeline continues.
+
