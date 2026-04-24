@@ -17,6 +17,7 @@ from app.schemas.assets import (
     BookletRequest,
     MergeRequest,
     SheetImposeRequest,
+    ConvertOfficeRequest,
 )
 from app.services.assets import asset_repo
 from app.services.jobs import job_repo
@@ -34,6 +35,7 @@ from app.tasks.operation_tasks import (
     booklet_pdf,
     merge_pdfs,
     impose_sheet_pdf,
+    convert_office,
 )
 
 api_router = APIRouter()
@@ -242,3 +244,19 @@ def op_crop_rasterize(payload: CropRasterizeRequest, db: Session = Depends(get_d
     task = crop_rasterize.delay(asset_id, job_id, payload.box, payload.dpi)
     job_repo.set_celery_task_id(db, job_id, task.id)
     return {"job_id": job_id}
+
+@api_router.post("/operations/convert-office")
+def op_convert_office(payload: ConvertOfficeRequest, db: Session = Depends(get_db)):
+    """
+    Convert an Office source file (doc/docx/ppt/pptx/odt/odp/ods) to PDF and
+    promote it to the asset's normalized_storage_path.
+
+    Contract: docs/document-centre-api-contract.md (in the Lovable client repo).
+    """
+    asset_id = str(payload.asset_id)
+    body = payload.model_dump(mode="json")
+    job_id = job_repo.create_job(db, asset_id, "convert_office", "documents", body)
+    task = convert_office.delay(asset_id, job_id)
+    job_repo.set_celery_task_id(db, job_id, task.id)
+    return {"job_id": job_id}
+
