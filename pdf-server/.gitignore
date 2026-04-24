@@ -1,0 +1,83 @@
+# --- Secrets ---------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials/
+
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtualenvs
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Packaging / build
+build/
+dist/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+.eggs/
+
+# Test + coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+
+# Type checkers / linters
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+
+# --- Celery / runtime artifacts -------------------------------------------
+celerybeat-schedule
+celerybeat.pid
+*.pid
+*.log
+logs/
+
+# --- Local working files --------------------------------------------------
+tmp/
+scratch/
+samples/
+uploads/
+output/
+*.pdf
+*.docx
+*.pptx
+*.odt
+*.xlsx
+
+# (If you intentionally want to commit example/fixture documents,
+#  put them under pdf-server/fixtures/ and add an explicit allow rule:
+#    !fixtures/
+#    !fixtures/**)
+
+# --- IDE / OS -------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# --- Docker ---------------------------------------------------------------
+# Keep Dockerfile + docker-compose.yml; ignore local volumes
+docker-volumes/
+.data/
