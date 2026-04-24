@@ -162,6 +162,11 @@ export function JobDetailPanel({ job, documents }: Props) {
         </div>
       </div>
 
+      {/* Photo Prints — admin gallery */}
+      {((config as any).photo_prints || job.product_category === "photo-prints") && (
+        <PhotoPrintsAdminGallery photoPrints={(config as any).photo_prints} />
+      )}
+
       {/* Attached files */}
       {jobDocs.length > 0 && (
         <div className="rounded-lg border bg-card p-3">
