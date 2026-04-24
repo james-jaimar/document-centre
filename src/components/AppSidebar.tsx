@@ -18,6 +18,7 @@ import {
   Mail,
   Sparkles,
   FileText,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
