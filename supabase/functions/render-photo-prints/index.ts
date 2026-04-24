@@ -89,7 +89,7 @@ async function pollJob(dcRequest: DcRequest, jobId: string, intervalMs = 2500, m
 }
 
 // ── Main render ─────────────────────────────────────────────────────────
-async function renderForOrderItem(supabase: any, orderItemId: string) {
+async function renderForOrderItem(supabase: any, dcRequest: DcRequest, orderItemId: string) {
   console.log(`[render-photo-prints] start order_item=${orderItemId}`);
 
   const { data: item, error: itemErr } = await supabase
@@ -132,7 +132,7 @@ async function renderForOrderItem(supabase: any, orderItemId: string) {
             dpi: 300,
           },
         );
-        await pollJob(job_id);
+        await pollJob(dcRequest, job_id);
       }
 
       const size = getSize(photo.print_size_slug);
@@ -145,13 +145,13 @@ async function renderForOrderItem(supabase: any, orderItemId: string) {
           "POST",
           { asset_id, width_mm: innerW, height_mm: innerH, fit_mode: "fit" },
         );
-        await pollJob(innerJob);
+        await pollJob(dcRequest, innerJob);
         const { job_id: outerJob } = await dcRequest<{ job_id: string }>(
           "v1/operations/resize",
           "POST",
           { asset_id, width_mm: size.width_mm, height_mm: size.height_mm, fit_mode: "fit" },
         );
-        await pollJob(outerJob);
+        await pollJob(dcRequest, outerJob);
       } else {
         const { job_id } = await dcRequest<{ job_id: string }>(
           "v1/operations/resize",
@@ -163,20 +163,23 @@ async function renderForOrderItem(supabase: any, orderItemId: string) {
             fit_mode: photo.fit_mode === "fit" ? "fit" : "fill",
           },
         );
-        await pollJob(job_id);
+        await pollJob(dcRequest, job_id);
       }
 
       const qty = Math.max(1, Math.floor(photo.quantity || 1));
       for (let i = 0; i < qty; i++) pagesToMerge.push(asset_id);
       perPhoto.push({ entryId: photo.id, assetId: asset_id });
     } catch (err: any) {
-      console.error(`[render-photo-prints] photo failed ${photo.file_name}`, err);
-      perPhoto.push({ entryId: photo.id, assetId: null, error: err?.message ?? "render failed" });
+      const msg = err?.message ?? "render failed";
+      console.error(`[render-photo-prints] photo failed name=${photo.file_name}: ${msg}`);
+      perPhoto.push({ entryId: photo.id, assetId: null, error: msg });
     }
   }
 
   if (pagesToMerge.length === 0) {
-    throw new Error("nothing to merge");
+    throw new Error(
+      `nothing to merge — first error: ${perPhoto.find((p) => p.error)?.error ?? "unknown"}`,
+    );
   }
 
   const filename = `photo-prints-${orderItemId}.pdf`;
@@ -185,7 +188,7 @@ async function renderForOrderItem(supabase: any, orderItemId: string) {
     "POST",
     { asset_ids: pagesToMerge, output_filename: filename },
   );
-  const mergeJob = await pollJob(mergeJobId);
+  const mergeJob = await pollJob(dcRequest, mergeJobId);
 
   let mergedAssetId: string | null =
     mergeJob.result?.asset_id || mergeJob.result?.merged_asset_id || null;
@@ -254,6 +257,8 @@ async function renderForOrderItem(supabase: any, orderItemId: string) {
       merged_storage_path: mergedStoragePath,
       merged_document_id: mergedDocumentId,
       render_completed_at: new Date().toISOString(),
+      render_failed_at: null,
+      render_error: null,
     },
   };
 
@@ -261,6 +266,31 @@ async function renderForOrderItem(supabase: any, orderItemId: string) {
 
   console.log(`[render-photo-prints] done order_item=${orderItemId} merged=${mergedStoragePath}`);
   return { mergedAssetId, mergedStoragePath, mergedDocumentId, perPhoto };
+}
+
+async function persistFailure(supabase: any, orderItemId: string, err: any) {
+  try {
+    const { data: item } = await supabase
+      .from("order_items")
+      .select("spec")
+      .eq("id", orderItemId)
+      .single();
+    if (!item) return;
+    const spec = (item.spec as any) ?? {};
+    const pp = spec.photo_prints ?? {};
+    const newSpec = {
+      ...spec,
+      photo_prints: {
+        ...pp,
+        render_failed_at: new Date().toISOString(),
+        render_error: String(err?.message ?? err ?? "render failed").slice(0, 500),
+        render_attempts: (Number(pp.render_attempts) || 0) + 1,
+      },
+    };
+    await supabase.from("order_items").update({ spec: newSpec }).eq("id", orderItemId);
+  } catch (e) {
+    console.error("[render-photo-prints] persistFailure failed", e);
+  }
 }
 
 Deno.serve(async (req) => {
@@ -289,6 +319,8 @@ Deno.serve(async (req) => {
         headers: jsonHeaders,
       });
     }
+
+    const dcRequest = makeDcRequest(authHeader);
 
     const body = await req.json().catch(() => ({}));
     const orderItemId = body?.order_item_id;
