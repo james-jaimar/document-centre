@@ -11,10 +11,12 @@ import {
   getDerivedFiles,
   inspectAsset,
   pollJob,
+  convertOffice,
 } from "@/lib/documentCentreApi";
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import { detectNonIsoSize, detectNearIsoWithBleed } from "@/lib/paperSizes";
 import { isImageFile, imageFileToPdf, type TargetSize } from "@/lib/imageToPage";
+import { isOfficeFile, officeMimeFromFilename } from "@/lib/officeFiles";
 
 interface UploadProgress {
   fileName: string;
