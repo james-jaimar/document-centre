@@ -279,7 +279,7 @@ export function useDocumentUpload(orderItemId: string | undefined, productFamily
         return null;
       }
     },
-    [updateUpload],
+    [updateUpload, productFamilySlug],
   );
 
   /* ── Phase A: Inspect — register PDF asset & extract metadata, NO thumbnails yet ── */
