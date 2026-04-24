@@ -256,7 +256,7 @@ const CustomerDashboard = () => {
                     <button
                       key={f.id}
                       className="product-tile"
-                      onClick={() => handlePickProduct(f.id)}
+                      onClick={() => handlePickProduct(f.id, f.slug)}
                     >
                       <div className="product-thumb overflow-hidden">
                         {(SLUG_IMAGE_MAP[f.slug] || f.image_url) ? (
