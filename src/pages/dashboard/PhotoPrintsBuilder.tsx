@@ -39,7 +39,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
+
 import { ArrowLeft, ImagePlus, Loader2, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 
