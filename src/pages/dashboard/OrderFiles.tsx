@@ -361,50 +361,65 @@ export default function OrderFiles() {
       setAdvisoryDoc(null);
       return;
     }
+    // Mark resolved + close the dialog IMMEDIATELY so the detect effect can't
+    // re-open it while the resize job is in flight.
+    const docId = advisoryDoc.id;
+    const assetId = advisoryDoc.backendAssetId;
+    const fileName = advisoryDoc.fileName;
+    const originalW = advisoryDoc.widthMm;
+    const originalH = advisoryDoc.heightMm;
+    resolvedDocIds.current.add(docId);
+    setAdvisoryDoc(null);
+
     try {
       toast.info(`Scaling to ${target.name}…`);
-      const landscape = isLandscape(advisoryDoc.widthMm, advisoryDoc.heightMm);
+      const landscape = isLandscape(originalW, originalH);
       const targetW = landscape ? target.heightMm : target.widthMm;
       const targetH = landscape ? target.widthMm : target.heightMm;
 
-      const { job_id } = await resize(advisoryDoc.backendAssetId, targetW, targetH, "fit");
+      const { job_id } = await resize(assetId, targetW, targetH, "fit");
       await pollJob(job_id);
 
       // Single render at the new MediaBox (resize updates the asset's box)
       setUploadModalOpen(true);
-      const newBox = await getMediaBox(advisoryDoc.backendAssetId);
+      const newBox = await getMediaBox(assetId);
       await renderWithProgress(
-        advisoryDoc.id,
-        advisoryDoc.backendAssetId,
+        docId,
+        assetId,
         newBox,
-        advisoryDoc.fileName,
+        fileName,
         `Scaling to ${target.name} and rendering pages…`,
       );
 
-      const existing = documents.find((d) => d.id === advisoryDoc.id);
+      const existing = documents.find((d) => d.id === docId);
       const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
+      // Strip detected_size so the advisory effect can't fire again, and
+      // persist the new dimensions so OrderBuild's auto-size match picks them up.
+      const { detected_size, ...rest } = preflight;
       await supabase
         .from("documents")
         .update({
+          page_width_mm: targetW,
+          page_height_mm: targetH,
           preflight_data: {
-            ...preflight,
+            ...rest,
             awaiting_review: false,
             size_resolved: true,
             size_action: `scaled_to_${target.name}`,
-            original_width_mm: advisoryDoc.widthMm,
-            original_height_mm: advisoryDoc.heightMm,
+            original_width_mm: originalW,
+            original_height_mm: originalH,
+            effective_width_mm: targetW,
+            effective_height_mm: targetH,
           },
         })
-        .eq("id", advisoryDoc.id);
+        .eq("id", docId);
 
-      resolvedDocIds.current.add(advisoryDoc.id);
-      setAdvisoryDoc(null);
       refetchDocuments();
       toast.success(`Scaled to ${target.name} successfully`);
     } catch (err: any) {
       toast.error("Scaling failed", { description: err.message });
     }
-  }, [advisoryDoc, documents, refetchDocuments, getMediaBox]);
+  }, [advisoryDoc, documents, refetchDocuments, getMediaBox, renderWithProgress]);
 
   // Orientation handlers
   const handleRotateToLandscape = useCallback(async () => {
