@@ -191,7 +191,7 @@ async function createOrderWithJobs(
   }
 
   // Run all independent post-order writes in parallel
-  const [jobsResult] = await Promise.all([
+  const [jobsResult, addressesResult, pricingResult, timelineResult, membershipResult] = await Promise.all([
     admin.from("order_jobs").insert(jobInserts).select("id, job_number, sequence_no"),
     addressInserts.length
       ? admin.from("order_addresses").insert(addressInserts)
@@ -237,7 +237,26 @@ async function createOrderWithJobs(
     ),
   ]);
 
-  if (jobsResult.error) return err(`Failed to create jobs: ${jobsResult.error.message}`);
+  if (jobsResult.error) {
+    console.error("[order-engine] jobs_insert failed", jobsResult.error);
+    return err(`jobs_insert failed: ${jobsResult.error.message}`);
+  }
+  if ((addressesResult as any)?.error) {
+    console.error("[order-engine] addresses_insert failed", (addressesResult as any).error);
+    return err(`addresses_insert failed: ${(addressesResult as any).error.message}`);
+  }
+  if ((pricingResult as any)?.error) {
+    console.error("[order-engine] pricing_snapshot_insert failed", (pricingResult as any).error);
+    return err(`pricing_snapshot_insert failed: ${(pricingResult as any).error.message}`);
+  }
+  if ((timelineResult as any)?.error) {
+    console.error("[order-engine] timeline_insert failed", (timelineResult as any).error);
+    return err(`timeline_insert failed: ${(timelineResult as any).error.message}`);
+  }
+  if ((membershipResult as any)?.error) {
+    console.error("[order-engine] membership_upsert failed", (membershipResult as any).error);
+    return err(`membership_upsert failed: ${(membershipResult as any).error.message}`);
+  }
   const newJobs = jobsResult.data;
 
   // Insert proofs only if any jobs request them (rare in checkout flow)
