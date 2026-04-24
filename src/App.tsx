@@ -66,7 +66,16 @@ import PlatformTenants from "@/pages/platform/PlatformTenants";
 import PlatformUsers from "@/pages/platform/PlatformUsers";
 import PlatformSettings from "@/pages/platform/PlatformSettings";
 import PlatformPricingRegions from "@/pages/platform/PlatformPricingRegions";
+import DocumentCentreLayout from "@/components/platform/DocumentCentreLayout";
 import PlatformDocumentCentreOverview from "@/pages/platform/PlatformDocumentCentreOverview";
+import PlatformDocumentCentreQueues from "@/pages/platform/PlatformDocumentCentreQueues";
+import PlatformDocumentCentreWorkers from "@/pages/platform/PlatformDocumentCentreWorkers";
+import PlatformDocumentCentreJobs from "@/pages/platform/PlatformDocumentCentreJobs";
+import PlatformDocumentCentreAssets from "@/pages/platform/PlatformDocumentCentreAssets";
+import PlatformDocumentCentreMetrics from "@/pages/platform/PlatformDocumentCentreMetrics";
+import PlatformDocumentCentreStorage from "@/pages/platform/PlatformDocumentCentreStorage";
+import PlatformDocumentCentreConfig from "@/pages/platform/PlatformDocumentCentreConfig";
+import PlatformDocumentCentreAudit from "@/pages/platform/PlatformDocumentCentreAudit";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -251,9 +260,19 @@ const App = () => (
               } />
               <Route path="/platform/document-centre" element={
                 <ProtectedRoute allowedRoles={["platform_admin"]}>
-                  <PlatformDocumentCentreOverview />
+                  <DocumentCentreLayout />
                 </ProtectedRoute>
-              } />
+              }>
+                <Route index element={<PlatformDocumentCentreOverview />} />
+                <Route path="queues" element={<PlatformDocumentCentreQueues />} />
+                <Route path="workers" element={<PlatformDocumentCentreWorkers />} />
+                <Route path="jobs" element={<PlatformDocumentCentreJobs />} />
+                <Route path="assets" element={<PlatformDocumentCentreAssets />} />
+                <Route path="metrics" element={<PlatformDocumentCentreMetrics />} />
+                <Route path="storage" element={<PlatformDocumentCentreStorage />} />
+                <Route path="config" element={<PlatformDocumentCentreConfig />} />
+                <Route path="audit" element={<PlatformDocumentCentreAudit />} />
+              </Route>
             </Route>
 
             {/* Public marketing landing — always shown at root */}
