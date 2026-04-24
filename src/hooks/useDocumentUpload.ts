@@ -12,11 +12,28 @@ import {
   inspectAsset,
   pollJob,
   convertOffice,
+  normalizeOrientation,
 } from "@/lib/documentCentreApi";
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import { detectNonIsoSize, detectNearIsoWithBleed } from "@/lib/paperSizes";
 import { isImageFile, imageFileToPdf, type TargetSize } from "@/lib/imageToPage";
 import { isOfficeFile, officeMimeFromFilename } from "@/lib/officeFiles";
+
+/**
+ * Product families whose output is bound/multi-page and where mixed-orientation
+ * pages must be normalised so they all stack the same way up.
+ *  - presentations: landscape-dominant (rotate portrait pages)
+ *  - everything else here: portrait-dominant (rotate landscape pages)
+ */
+const PORTRAIT_NORMALIZE_FAMILIES = new Set([
+  "bound-documents",
+  "bound_documents",
+  "ring-binder",
+  "ring_binder",
+  "booklets",
+  "brochures",
+]);
+const LANDSCAPE_NORMALIZE_FAMILIES = new Set(["presentations"]);
 
 interface UploadProgress {
   fileName: string;
