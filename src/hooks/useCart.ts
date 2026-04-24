@@ -5,6 +5,8 @@ import { useTenantContext } from "@/hooks/useTenantContext";
 import { buildJobSnapshot } from "@/lib/orders/buildJobSnapshot";
 import { copyS3Object } from "@/lib/s3Storage";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
+import { inferPreviewTypeFromJob } from "@/lib/orders/inferPreviewType";
+import { buildPreviewSnapshot } from "@/lib/orders/buildPreviewSnapshot";
 
 /**
  * Get or create the user's single open cart order (order_status = 'cart').
