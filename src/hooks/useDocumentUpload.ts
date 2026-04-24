@@ -427,7 +427,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         return null;
       }
     },
-    [orderItemId, user, tenantId, updateUpload, inspectDocument, qc]
+    [orderItemId, user, tenantId, updateUpload, inspectDocument, inspectExistingAsset, qc]
   );
 
   /* ── Reprocess an existing document (re-runs full inspect + render) ── */
