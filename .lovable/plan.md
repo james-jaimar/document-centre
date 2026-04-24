@@ -1,156 +1,120 @@
+## Goal
 
-## Current diagnosis
-
-The recent changes are doing four separate things:
-
-1. `src/hooks/useCart.ts`
-   - Enriches checkout jobs before calling `order-engine`
-   - Builds `buildJobSnapshot(...)`
-   - Dynamically imports `inferPreviewTypeFromJob` and `buildPreviewSnapshot`
-   - Tries to attach a rich `configuration.preview` snapshot to each placed job
-   - Also kicks off non-blocking document processing after the jobs are built
-
-2. `src/lib/orders/buildJobSnapshot.ts` + `src/components/orders/detail/JobDetailPanel.tsx`
-   - Store photo-prints-specific config on the placed job
-   - Hide the generic “Files” section for photo prints
-   - Render the new `PhotoPrintsAdminGallery`
-
-3. `src/components/orders/detail/PhotoPrintsAdminGallery.tsx`
-   - Polls the source `order_item.spec.photo_prints`
-   - Shows either:
-     - “Preparing print-ready PDF…”
-     - a red failed state + Retry
-     - or the final Print-ready PDF button
-
-4. `supabase/functions/render-photo-prints/index.ts`
-   - Sends photo render work through `pdf-api`
-   - Persists success/failure back onto `spec.photo_prints`
-   - Attempts to retry rate limits
-
-`supabase/functions/order-engine/index.ts` is also improved, but only once checkout actually reaches the edge function.
-
-## What is actually breaking now
-
-The current checkout failure is most likely no longer `order-engine`.
-
-The user screenshot shows:
+Make Photo Prints behave like every other product in the app:
 
 ```text
-Failed to fetch dynamically imported module:
-.../assets/buildPreviewSnapshot-BI4pMIx-.js
+upload → cart → Place Order → order-engine → done
 ```
 
-That points directly at this code path in `usePlaceOrder`:
+No custom edge function. No background "preparing" merge. No retry-PDF UI in the admin gallery. The PDF rendering pieces that other products rely on stay exactly as they are.
+
+## Why Place Order is actually failing right now
+
+The error toast in your screenshot is the truth:
+
+```text
+membership_upsert failed: there is no unique or exclusion constraint
+matching the ON CONFLICT specification
+```
+
+In `supabase/functions/order-engine/index.ts`, `createOrderWithJobs` does:
 
 ```ts
-const { inferPreviewTypeFromJob } = await import("@/lib/orders/inferPreviewType");
-const { buildPreviewSnapshot } = await import("@/lib/orders/buildPreviewSnapshot");
+admin.from("tenant_memberships").upsert(
+  { profile_id, tenant_id, app_id, role: "customer", is_active: true },
+  { onConflict: "profile_id,tenant_id,app_id", ignoreDuplicates: true }
+)
 ```
 
-So the order is failing before `supabase.functions.invoke("order-engine", ...)` even runs.
+But `tenant_memberships` has no unique constraint on `(profile_id, tenant_id, app_id)`. The only unique index is:
 
-This means the new preview-enrichment work accidentally made checkout depend on a runtime-loaded hashed chunk. If that chunk is stale/missing after a deploy, checkout dies immediately.
-
-## Fix plan
-
-### 1. Make checkout independent from runtime chunk loading
-
-In `src/hooks/useCart.ts`:
-
-- Remove the critical-path dynamic imports for:
-  - `@/lib/orders/inferPreviewType`
-  - `@/lib/orders/buildPreviewSnapshot`
-- Replace them with one of these safe approaches:
-  - preferred: normal top-level imports
-  - acceptable fallback: keep them lazy, but move the import itself inside a guarded `try/catch`
-
-The important rule:
-- order placement must never fail because a preview snapshot chunk could not load
-
-### 2. Downgrade preview snapshot generation to optional only
-
-Still in `src/hooks/useCart.ts`:
-
-- Keep `configuration.preview` as a nice-to-have enrichment
-- If snapshot generation fails for any reason:
-  - missing chunk
-  - stale deploy
-  - snapshot logic error
-- then fall back to the minimal preview payload already available:
-
-```ts
-{ thumbnails, product_type: previewType }
+```text
+UNIQUE (profile_id, app_id, tenant_id, COALESCE(branch_id, '00…'), role)
 ```
 
-and continue placing the order normally.
+Postgres rejects the upsert before it even runs. This breaks **every checkout for every product**, not just photo prints. It only "looked photo-prints-specific" because that was the most recent flow you were testing.
 
-Right now the fallback only protects the `buildPreviewSnapshot(...)` call.
-It does not protect the preceding dynamic import itself.
-That boundary needs to move outward.
+## The plan
 
-### 3. Leave the admin photo gallery changes in place
+### 1. Fix the membership upsert (the real blocker)
 
-No rollback needed for:
+Two options, doing the second:
 
-- `src/lib/orders/buildJobSnapshot.ts`
-- `src/components/orders/detail/JobDetailPanel.tsx`
-- `src/components/orders/detail/PhotoPrintsAdminGallery.tsx`
+- Replace the `upsert` with a defensive `INSERT … ON CONFLICT DO NOTHING` that targets the **existing** unique index `(profile_id, app_id, tenant_id, COALESCE(branch_id,…), role)`, OR
+- Replace it with a "select first, insert if missing" pattern so we don't depend on the index shape at all.
 
-Those changes are doing the right job:
-- visual operator view
-- hiding the generic file text block for photo prints
-- polling for the merged PDF state
+Going with the **select-then-insert** approach — it's index-shape independent, costs one extra select on order placement (negligible), and removes a class of recurring "ON CONFLICT spec" bugs.
 
-They are not the reason checkout is aborting.
+### 2. Delete the custom photo render pipeline entirely
 
-### 4. Finish the rate-limit fix properly in `render-photo-prints`
+Remove:
 
-The logs show `RateLimitError` being thrown during `fetch(...)`, not just a normal HTTP `429` response.
+- `supabase/functions/render-photo-prints/index.ts`
+- `src/hooks/usePhotoRenderQueue.ts` (no longer referenced)
 
-So in `supabase/functions/render-photo-prints/index.ts`:
+Stop calling it from:
 
-- extend `makeDcRequest(...)` to catch thrown fetch errors as well as `res.status === 429`
-- detect:
-  - `err.name === "RateLimitError"`
-  - `err.retryAfterMs`
-  - or `Retry after Xms` inside the message
-- sleep and retry using the same cap:
-  - max 3 retries
-  - max 30s delay
-- only persist failure after retries are exhausted
+- `src/pages/dashboard/PhotoPrintsBuilder.tsx` — the background `fetch(...render-photo-prints?async=1)` block
+- `src/components/orders/detail/PhotoPrintsAdminGallery.tsx` — the polling, the Retry button, all of `render_failed_at` / `render_error`
 
-That will make the background PDF rendering behave the way the current plan intended.
+The admin gallery becomes a pure read-only preview of the photo entries (thumbnails + size + qty), which is what it was before this whole detour.
 
-### 5. Keep `order-engine` diagnostics, but don’t chase them yet
+### 3. Treat photo prints like any other product at checkout
 
-Do not revert the recent `order-engine` logging work.
+Photo Prints already does the standard things:
 
-Once checkout reaches the function again, those tagged errors will be useful.
-But based on the current screenshot, the frontend import failure is the blocker first.
+- uploads each image to S3 via `usePhotoUpload`
+- creates one `documents` row per photo
+- persists `spec.photo_prints` on `order_items`
+- calls `useAddItemToCart` exactly like flyers/brochures
+
+Place Order then runs the standard `usePlaceOrder` → `order-engine` path, same as every other product, and the "thumbnails snapshot" enrichment in `useCart.ts` already picks up the photo `documents` rows because they're regular `documents` keyed to `order_item_id`.
+
+We don't need a merged print-ready PDF on order placement. The production team has:
+
+- the original images in S3 (pointed at by each `documents` row)
+- the spec snapshot on `order_jobs.configuration` and `order_jobs.product_snapshot`
+
+That's identical in shape to how other products hand off to production.
+
+If a future "Download print-ready PDF" feature is wanted, it gets built as a one-shot **admin-triggered** action against `pdf-api` — not as a background job that runs at checkout. We are explicitly removing that scope from this change.
+
+### 4. Trim the noise added during the last few rounds
+
+- `src/hooks/useCart.ts` — keep the static `inferPreviewTypeFromJob` / `buildPreviewSnapshot` imports and the surfacing of `error.context.text()` on `FunctionsHttpError`. Both are still useful and not the bug. No further changes here.
+- `supabase/functions/order-engine/index.ts` — keep the per-step `console.error` and `*_failed:` messages. They just paid for themselves by making the membership bug visible in one cycle.
+
+### 5. Verify that other products still work
+
+The membership fix is the only change that touches the universal checkout path. Quick smoke test after the change:
+
+1. Place a flyers order in the demo tenant → succeeds.
+2. Place a photo prints order → succeeds, lands on the order page.
+3. Admin opens the photo prints order → sees the per-photo gallery, no Retry button, no "Preparing…" pill.
 
 ## Files to change
 
 | File | Change |
 |---|---|
-| `src/hooks/useCart.ts` | Remove or guard the dynamic imports for `inferPreviewTypeFromJob` and `buildPreviewSnapshot`; ensure preview enrichment can never block order placement |
-| `supabase/functions/render-photo-prints/index.ts` | Retry thrown `RateLimitError` / `retryAfterMs`, not only HTTP 429 responses |
-| `src/lib/orders/buildJobSnapshot.ts` | No functional rollback expected; keep as-is unless a smaller adjustment is needed during implementation |
-| `src/components/orders/detail/PhotoPrintsAdminGallery.tsx` | No functional rollback expected; keep as-is |
+| `supabase/functions/order-engine/index.ts` | Replace the broken `tenant_memberships.upsert(... onConflict ...)` with a select-then-insert. Remove `membership_upsert` from the `Promise.all`; do it before/after as a small idempotent block. |
+| `src/pages/dashboard/PhotoPrintsBuilder.tsx` | Delete the background `fetch("…/render-photo-prints?async=1")` block in `handleConfirmAddToCart`. |
+| `src/components/orders/detail/PhotoPrintsAdminGallery.tsx` | Remove polling, `handleRetry`, retry/failed UI, and references to `merged_storage_path` / `render_failed_at` / `render_error`. Component becomes a clean per-photo preview grid. |
+| `supabase/functions/render-photo-prints/index.ts` | **Delete the function.** |
+| `src/hooks/usePhotoRenderQueue.ts` | **Delete the file.** No remaining importers after the cleanup. |
 
-## Expected result after the fix
+No DB schema changes. No customer-facing UI changes beyond the admin gallery losing the Retry/Preparing pill.
 
-1. Clicking Place Order no longer depends on loading `buildPreviewSnapshot-*.js` at runtime.
-2. Even if preview snapshot enrichment fails, the order still submits.
-3. If a real backend issue remains after that, the improved `order-engine` error handling will finally surface the exact failing step.
-4. Background photo-print PDF rendering will retry real rate-limit exceptions properly instead of failing immediately.
+## Expected result
+
+1. Place Order works for every product (the membership bug is the silent universal blocker).
+2. Photo Prints checkout returns to the cart, then to the orders page, the same way flyers and brochures do.
+3. The admin sees the photo gallery with thumbnails, sizes, quantities — and original-image access via the existing `documents` rows.
+4. No more "Preparing print-ready PDF…" pill, no more polling, no more bespoke retry surface, no more rate-limit chasing.
 
 ## Verification
 
-1. Re-open the same cart and click Place Order.
-2. Confirm there is no longer any `Failed to fetch dynamically imported module ... buildPreviewSnapshot-*.js` error.
-3. Confirm checkout reaches `order-engine`.
-4. If order placement still fails, the toast should now show a real tagged backend error like:
-   - `order_insert failed: ...`
-   - `jobs_insert failed: ...`
-   - etc.
-5. Place a fresh photo-prints order and confirm `render-photo-prints` survives thrown rate-limit exceptions and eventually fills `merged_storage_path`.
+1. Click Place Order on the current photo-prints cart → succeeds, no toast errors.
+2. Place a fresh flyers order → succeeds (regression check).
+3. Edge function logs for `order-engine` show no `membership_upsert failed` lines.
+4. `supabase/functions/render-photo-prints` no longer appears in the Functions list.
+5. Admin view of a photo-prints order shows the per-photo gallery only — no Retry button anywhere.
