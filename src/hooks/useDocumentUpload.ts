@@ -299,7 +299,9 @@ export function useDocumentUpload(orderItemId: string | undefined) {
       updateUpload(originalName, { fileName: originalName, status: "uploading", progress: 0 });
 
       try {
-        if (isImageFile(file)) {
+        const office = isOfficeFile(file);
+
+        if (!office && isImageFile(file)) {
           updateUpload(originalName, { progress: 5, statusText: "Converting image to PDF…" });
           file = await imageFileToPdf(file, targetSize);
         }
@@ -312,6 +314,13 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         await uploadToS3(storagePath, file);
         updateUpload(originalName, { progress: 25, fileName: originalName });
 
+        // Office files keep their original MIME so the converter knows what
+        // to do; everything else is treated as PDF (images were already
+        // converted to PDF above).
+        const recordedMime = office
+          ? officeMimeFromFilename(fileName)
+          : file.type || "application/pdf";
+
         const { data: doc, error: docError } = await supabase
           .from("documents")
           .insert({
@@ -319,7 +328,7 @@ export function useDocumentUpload(orderItemId: string | undefined) {
             file_name: fileName,
             file_path: storagePath,
             file_size: file.size,
-            mime_type: file.type || "application/pdf",
+            mime_type: recordedMime,
             document_status: "processing",
           })
           .select()
@@ -328,8 +337,56 @@ export function useDocumentUpload(orderItemId: string | undefined) {
         if (docError) throw docError;
         updateUpload(originalName, { status: "analyzing", progress: 30 });
 
-        // Phase A: inspect-only (no rasterization)
-        const inspection = await inspectDocument(doc.id, storagePath, originalName);
+        // Phase A: inspect-only (no rasterization).
+        // For Office docs we first run a LibreOffice conversion job on the
+        // PDF server, then inspect the resulting PDF.
+        let inspection: Awaited<ReturnType<typeof inspectDocument>> = null;
+
+        if (office) {
+          updateUpload(originalName, {
+            progress: 12,
+            statusText: "Registering Office document…",
+          });
+          const { asset_id } = await createAsset({
+            original_filename: fileName,
+            media_type: recordedMime,
+            source_storage_path: storagePath,
+            auto_queue: false,
+          });
+          await supabase
+            .from("documents")
+            .update({ backend_asset_id: asset_id })
+            .eq("id", doc.id);
+
+          updateUpload(originalName, {
+            progress: 18,
+            statusText: "Converting to PDF…",
+          });
+          const { job_id: convertJobId } = await convertOffice(asset_id);
+          const convertJob = await pollJob(convertJobId, (job) => {
+            if (job.status === "pending") {
+              updateUpload(originalName, {
+                progress: 22,
+                statusText: "Queued — waiting for converter…",
+              });
+            } else if (job.status === "running") {
+              updateUpload(originalName, {
+                progress: 30,
+                statusText: "Converting with LibreOffice…",
+              });
+            }
+          });
+          if (convertJob.status !== "completed") {
+            throw new Error(
+              convertJob.error ||
+                `Office conversion ${convertJob.status} — please check the file and try again.`,
+            );
+          }
+
+          inspection = await inspectExistingAsset(doc.id, asset_id, originalName);
+        } else {
+          inspection = await inspectDocument(doc.id, storagePath, originalName);
+        }
 
         if (!inspection) {
           await supabase
