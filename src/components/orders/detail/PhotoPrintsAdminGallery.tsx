@@ -1,12 +1,9 @@
 import { useEffect, useState } from "react";
-import { Download, Image as ImageIcon, Loader2, AlertTriangle, RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Image as ImageIcon, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { resolveUrls } from "@/lib/thumbnailUtils";
 import { renderPhotoPreview, borderFractionFor } from "@/lib/photoPrints/renderPreview";
 import { getPhotoPrintSize, PHOTO_BORDER_OPTIONS } from "@/lib/photoPrints/sizes";
-import { supabase } from "@/integrations/supabase/client";
-import { toast } from "@/hooks/use-toast";
 
 interface PhotoEntry {
   id?: string;
@@ -20,88 +17,25 @@ interface PhotoEntry {
 
 interface Props {
   photoPrints: any;
-  /** When provided, the gallery will poll the order item until the merged
-   *  PDF is ready, then show the Download button instead of the pill. */
+  /** Accepted for API compatibility — no longer used for polling. */
   orderItemId?: string | null;
 }
 
-export default function PhotoPrintsAdminGallery({ photoPrints, orderItemId }: Props) {
-  const [livePhotoPrints, setLivePhotoPrints] = useState<any>(photoPrints);
-
-  useEffect(() => {
-    setLivePhotoPrints(photoPrints);
-  }, [photoPrints]);
-
-  const photos: PhotoEntry[] = Array.isArray(livePhotoPrints?.photos)
-    ? livePhotoPrints.photos
-    : [];
-  const borderSlug: string = livePhotoPrints?.border_slug || "none";
-  const finishSlug: string = livePhotoPrints?.finish_slug || "gloss";
-  const printSizeSlug: string = livePhotoPrints?.print_size_slug || "4x6";
-  const mergedStoragePath: string | null =
-    livePhotoPrints?.merged_storage_path ?? livePhotoPrints?.mergedStoragePath ?? null;
-  const renderFailedAt: string | null = livePhotoPrints?.render_failed_at ?? null;
-  const renderError: string | null = livePhotoPrints?.render_error ?? null;
+/**
+ * Read-only admin preview of a Photo Prints order. Shows each photo with
+ * its crop, size and quantity. The original images live in the standard
+ * `documents` rows attached to the order item — production access them
+ * the same way as any other product.
+ */
+export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
+  const photos: PhotoEntry[] = Array.isArray(photoPrints?.photos) ? photoPrints.photos : [];
+  const borderSlug: string = photoPrints?.border_slug || "none";
+  const finishSlug: string = photoPrints?.finish_slug || "gloss";
+  const printSizeSlug: string = photoPrints?.print_size_slug || "4x6";
 
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [previews, setPreviews] = useState<Record<string, string>>({});
-  const [mergedDownloadUrl, setMergedDownloadUrl] = useState<string | null>(null);
-  const [retrying, setRetrying] = useState(false);
 
-  // Poll the order item every 5s until merged_storage_path appears or render fails.
-  useEffect(() => {
-    if (!orderItemId) return;
-    if (mergedStoragePath) return;
-    if (renderFailedAt) return;
-    let cancelled = false;
-    const tick = async () => {
-      const { data } = await supabase
-        .from("order_items")
-        .select("spec")
-        .eq("id", orderItemId)
-        .maybeSingle();
-      if (cancelled) return;
-      const pp = (data?.spec as any)?.photo_prints;
-      if (pp?.merged_storage_path || pp?.render_failed_at) {
-        setLivePhotoPrints(pp);
-      }
-    };
-    const id = setInterval(tick, 5000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [orderItemId, mergedStoragePath, renderFailedAt]);
-
-  const handleRetry = async () => {
-    if (!orderItemId || retrying) return;
-    setRetrying(true);
-    try {
-      // Clear failure state locally so polling resumes.
-      setLivePhotoPrints({
-        ...livePhotoPrints,
-        render_failed_at: null,
-        render_error: null,
-      });
-      const { error } = await supabase.functions.invoke("render-photo-prints", {
-        body: { order_item_id: orderItemId, async: true },
-      });
-      if (error) throw error;
-      toast({ title: "Re-rendering photo prints…" });
-    } catch (err: any) {
-      toast({
-        title: "Retry failed",
-        description: err?.message ?? "Could not start render",
-        variant: "destructive",
-      });
-      setLivePhotoPrints({ ...livePhotoPrints });
-    } finally {
-      setRetrying(false);
-    }
-  };
-
-
-  // Sign source-image URLs
   useEffect(() => {
     const paths = photos.map((p) => p.original_storage_path).filter(Boolean) as string[];
     if (paths.length === 0) return;
@@ -119,22 +53,6 @@ export default function PhotoPrintsAdminGallery({ photoPrints, orderItemId }: Pr
     };
   }, [photos]);
 
-  // Sign merged PDF URL
-  useEffect(() => {
-    if (!mergedStoragePath) {
-      setMergedDownloadUrl(null);
-      return;
-    }
-    let cancelled = false;
-    resolveUrls([mergedStoragePath]).then((urls) => {
-      if (!cancelled && urls[0]) setMergedDownloadUrl(urls[0]);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [mergedStoragePath]);
-
-  // Render previews per-photo
   useEffect(() => {
     let cancelled = false;
     photos.forEach((p) => {
@@ -173,55 +91,16 @@ export default function PhotoPrintsAdminGallery({ photoPrints, orderItemId }: Pr
 
   return (
     <div className="rounded-lg border bg-card p-3 space-y-3">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <h3 className="text-xs font-semibold flex items-center gap-1.5">
-            <ImageIcon className="h-3.5 w-3.5" />
-            Photo Prints — Customer Preview
-          </h3>
-          <p className="text-[11px] text-muted-foreground mt-0.5">
-            {photos.length} photo{photos.length === 1 ? "" : "s"} · {totalPrints} print
-            {totalPrints === 1 ? "" : "s"} · {printSizeSlug.toUpperCase()} · {finishSlug}
-            {borderSlug !== "none" ? " · White border" : ""}
-          </p>
-        </div>
-        {mergedDownloadUrl ? (
-          <Button asChild size="sm" className="h-7 text-xs gap-1.5">
-            <a href={mergedDownloadUrl} target="_blank" rel="noopener noreferrer" download>
-              <Download className="h-3.5 w-3.5" />
-              Print-ready PDF
-            </a>
-          </Button>
-        ) : renderFailedAt ? (
-          <div className="flex items-center gap-2">
-            <div
-              className="flex items-center gap-1.5 rounded-full border border-destructive/40 bg-destructive/10 px-2.5 py-1 text-[11px] text-destructive max-w-[260px]"
-              title={renderError ?? "Render failed"}
-            >
-              <AlertTriangle className="h-3 w-3 shrink-0" />
-              <span className="truncate">Render failed{renderError ? `: ${renderError}` : ""}</span>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs gap-1.5"
-              onClick={handleRetry}
-              disabled={retrying}
-            >
-              {retrying ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <RefreshCw className="h-3 w-3" />
-              )}
-              Retry
-            </Button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1.5 rounded-full border border-border bg-muted/30 px-2.5 py-1 text-[11px] text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Preparing print-ready PDF…
-          </div>
-        )}
+      <div>
+        <h3 className="text-xs font-semibold flex items-center gap-1.5">
+          <ImageIcon className="h-3.5 w-3.5" />
+          Photo Prints
+        </h3>
+        <p className="text-[11px] text-muted-foreground mt-0.5">
+          {photos.length} photo{photos.length === 1 ? "" : "s"} · {totalPrints} print
+          {totalPrints === 1 ? "" : "s"} · {printSizeSlug.toUpperCase()} · {finishSlug}
+          {borderSlug !== "none" ? " · White border" : ""}
+        </p>
       </div>
 
       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">

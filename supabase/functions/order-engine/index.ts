@@ -190,6 +190,31 @@ async function createOrderWithJobs(
     addressInserts.push({ order_id: newOrder.id, address_type: "delivery", ...delivery_address });
   }
 
+  // Idempotent customer membership: select-then-insert. The unique index on
+  // tenant_memberships includes branch_id + role, which makes ON CONFLICT
+  // unreliable across callers — a defensive select avoids that whole class
+  // of bugs.
+  const ensureMembership = (async () => {
+    const { data: existing } = await admin
+      .from("tenant_memberships")
+      .select("id")
+      .eq("profile_id", customer.profile_id)
+      .eq("tenant_id", tenant_id)
+      .eq("app_id", app_id)
+      .eq("role", "customer")
+      .is("branch_id", null)
+      .limit(1)
+      .maybeSingle();
+    if (existing) return { error: null };
+    return await admin.from("tenant_memberships").insert({
+      profile_id: customer.profile_id,
+      tenant_id,
+      app_id,
+      role: "customer",
+      is_active: true,
+    });
+  })();
+
   // Run all independent post-order writes in parallel
   const [jobsResult, addressesResult, pricingResult, timelineResult, membershipResult] = await Promise.all([
     admin.from("order_jobs").insert(jobInserts).select("id, job_number, sequence_no"),
@@ -224,17 +249,7 @@ async function createOrderWithJobs(
       description: `Order ${orderNum} created with ${jobs.length} job(s)`,
       metadata: { job_count: jobs.length },
     }),
-    // Customer membership upsert (idempotent) — runs in parallel
-    admin.from("tenant_memberships").upsert(
-      {
-        profile_id: customer.profile_id,
-        tenant_id,
-        app_id,
-        role: "customer",
-        is_active: true,
-      },
-      { onConflict: "profile_id,tenant_id,app_id", ignoreDuplicates: true }
-    ),
+    ensureMembership,
   ]);
 
   if (jobsResult.error) {
