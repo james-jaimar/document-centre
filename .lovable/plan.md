@@ -1,105 +1,73 @@
 
 
-## Photo Prints — polish pass (icon, editor fidelity, white border, single merged PDF, admin preview)
+## Photo Prints — three fixes
 
-Five tightly-scoped fixes to the new Photo Prints flow. Nothing else in the app changes.
-
----
-
-### 1. Use the Photo Prints hero image on the My Print Centre tile
-
-`CustomerDashboard.tsx` already maps slugs → product images via `SLUG_IMAGE_MAP`, but it does **not** include `photo-prints`. The Create page (`NewOrder.tsx`) already does, hence the discrepancy.
-
-**Fix**: import `photoPrintsImg` in `CustomerDashboard.tsx` and add `"photo-prints": photoPrintsImg` to its `SLUG_IMAGE_MAP`. One-line addition + import.
+Three tightly-scoped fixes. Nothing else changes.
 
 ---
 
-### 2. Editor preview drift — accurately reflect saved crop/zoom/rotation on the tile
+### 1. The "Preparing your prints…" modal is doing real work — and that's fine, but it shouldn't be in front of the customer
 
-Current behaviour: saving crop/zoom/rotation in the editor and returning to the grid shows a tile that doesn't match what was just visible inside the editor, and re-opening the editor reapplies stale state.
+**What it actually is**
 
-Root causes:
+When the customer clicks **Add to Cart**, `usePhotoRenderQueue` runs in the browser and orchestrates the Document Centre PDF server. The browser does **not** rasterise or merge anything itself — it just makes API calls:
 
-- `PhotoTile.tsx` derives its CSS transform from `croppedAreaPixels` *without accounting for rotation* — `react-easy-crop` returns `croppedAreaPixels` in the **rotated source's coordinate space**, so applying `rotate()` afterwards produces a different framing than the cropper showed.
-- The tile uses `transform-origin: top left` plus a percentage-based translate calibrated only for unrotated images, so any rotation throws the framing off-centre.
-- When re-opening the editor, the saved `crop` (UI-space pixels) and `zoom` are restored, but `croppedAreaPixels` is also re-pushed to react-easy-crop on first mount, causing a one-frame mismatch where the cropper recalculates and produces a slightly different `croppedAreaPixels` value than what was saved.
+1. `createAsset` (one per photo)
+2. `cropRasterize` at 300 DPI (one per photo) → polled
+3. `resize` to print size (one per photo) → polled
+4. `merge` all pages into one PDF → polled
+5. Insert one `documents` row pointing at the merged PDF
 
-**Fix**:
-1. Replace `PhotoTile.tsx`'s transform-based "fake crop" with a real, faithful preview built on a `<canvas>` rendered from the source image using the saved `croppedAreaPixels` + `rotation`. Same maths the backend will use, so what the user sees on the tile is exactly what will print.
-2. Cache the rendered canvas as a data URL in component state, keyed by `(croppedAreaPixels, rotation, signedUrl)` so it only re-renders when the saved state actually changes.
-3. In `PhotoEditorModal.tsx`, when opening with an existing `croppedAreaPixels`, derive `zoom` and `crop` from the saved `croppedAreaPixels` rather than restoring the raw `crop`/`zoom` numbers blindly. This keeps re-edits stable.
-4. Drop the `restrictPosition={fitMode === "fill"}` toggle's interaction with `objectFit` — currently switching Fit/Fill mid-edit changes both the cropper's coordinate space and `croppedAreaPixels`, which is what produces the "goes funny" behaviour. Lock `objectFit="cover"` for fill and only change behaviour on save.
+So the heavy lifting is on the PDF server, exactly as you wanted. The modal just shows progress while the browser waits for those server jobs to finish.
 
-This makes the tile, the editor, and the final render mathematically consistent.
+**The problem with showing it to the customer**
 
----
+For 4 photos × ~5 server calls each = 20+ sequential round-trips before the cart is reached. That's slow and exposes server plumbing.
 
-### 3. White Border option must show in the preview and be honoured at render time
+**Fix — move it off the cart path entirely**
 
-Currently selecting "White Border (3 mm)" updates the spec but is invisible in the tile and the editor. The backend `resize` call also ignores it.
+1. **Add to Cart returns instantly.** It writes the spec (with all crop/zoom/rotation state) to the order item and goes straight to the cart. The customer sees no "preparing" modal.
+2. **Render runs server-side, kicked off in the background** by a new edge function `render-photo-prints`. It accepts the `order_item_id`, reads `spec.photo_prints`, performs the same `createAsset → cropRasterize → resize → merge` chain, then writes back:
+   - the merged PDF storage path onto `spec.photo_prints.merged_storage_path` and `merged_asset_id`
+   - one `documents` row tied to the order item with `kind: "photo_prints_merged"`.
+3. The frontend fires the edge function with `fetch(..., { keepalive: true })` and immediately navigates to the cart. No modal, no waiting.
+4. If render hasn't finished by the time the admin opens the order, the gallery shows a small "Print-ready PDF being prepared" pill instead of the Download button. A 5-second poll (admin side only) flips it to the Download button when ready. No customer-visible "preparing" UI anywhere.
 
-**Fix**:
-1. `PhotoTile.tsx`: when `border_slug !== "none"`, wrap the cropped image in an inner box with white padding proportional to the chosen border (3 mm scaled against the print size's long edge → percentage). Background of the outer aspect-ratio frame becomes white so the border shows.
-2. `PhotoEditorModal.tsx`: render a non-interactive white inset overlay inside the cropper at the same proportional thickness, so the user sees the printable area shrink when they enable Border. Add a small caption: `White border (3 mm)`.
-3. Render queue: when `border_slug === "white_3mm"`, after `cropRasterize` call `resize(asset, contentW_mm, contentH_mm, "fit")` against the inset content area, then place that page inside a `width_mm × height_mm` page using the existing `resize` with `fit_mode="fit"` against the full size. (Border is implicit white padding from `fit`.)
-
----
-
-### 4. Confirm S3 storage (no change required)
-
-Yes — `usePhotoUpload.ts` calls `uploadToS3(storagePath, file)` writing originals to:
-
-```
-tenants/<tenantId>/uploads/<userId>/<orderItemId>/photos/<uuid>_<filename>
-```
-
-This is the same `document-uploads` S3 bucket used by every other file. Documented here for the user; no code change needed.
+**What gets removed**: the `UploadProgressModal` usage in `PhotoPrintsBuilder` for the render queue, and the entire `setMergeProgress` / progress-tracking surface in `usePhotoRenderQueue` for the cart flow (the hook itself stays for any future "regenerate" button on the admin side).
 
 ---
 
-### 5. Render ONE consolidated print-ready PDF on Add to Cart
+### 2. Admin order detail — the photo gallery isn't showing, and the file list is overlapping
 
-Today `usePhotoRenderQueue` registers and resizes each photo as its own asset and stores nothing back on the order. Production has no single deliverable.
+**Why the gallery doesn't render**
 
-**Fix** — rewrite `usePhotoRenderQueue.ts` to produce one merged PDF for the whole order:
+`JobDetailPanel.tsx` mounts `PhotoPrintsAdminGallery` only when `config.photo_prints` exists, but `buildJobSnapshot` never copies `spec.photo_prints` onto `config.photo_prints` — it only emits a flat "Photos" config section. So the gallery is dead code today.
 
-1. For each photo entry (in grid order, repeated by `quantity` so duplicates appear consecutively in the final PDF):
-   - `createAsset` with original image
-   - `cropRasterize(asset, box, 300)` using the saved `croppedAreaPixels`
-   - `resize(asset, width_mm, height_mm, fit_mode)` — using the print-size dimensions
-   - When border is on, apply the inset technique from §3.
-   - Wait for each job via `pollJob`.
-2. Collect the resulting per-photo asset IDs.
-3. Call `merge(assetIds, "photo-prints-<orderItemId>.pdf")` (already exposed by `documentCentreApi.ts`) and `pollJob` it.
-4. Resolve the merged PDF's storage path via `getDerivedFiles(mergedAssetId)` (kind = `merged`).
-5. Insert one row into the existing `order_documents` table for the merged PDF with:
-   - `order_item_id = orderItem.id`
-   - `document_type = "print_ready"`
-   - `is_customer_visible = false`
-   - `storage_path` = merged PDF path
-   - `metadata.kind = "photo_prints_merged"`
-6. Stash `{ merged_asset_id, merged_storage_path }` on `spec.photo_prints` so the admin order detail can link to it.
+That's why your screenshot shows no preview: the snapshot builder doesn't surface the data the gallery needs.
 
-Result: production opens the order and gets one continuous N-page PDF (one page per print, in the correct order, repeated for quantity), borders applied if selected, ready to send straight to the photo printer.
+**Fix**
 
-The render-progress modal stays — total progress = (per-photo render % × n + merge step) / total steps.
+1. In `buildJobSnapshot.ts`, when the family is `photo-prints`, write the full `photo_prints` block (with `photos`, `print_size_slug`, `finish_slug`, `border_slug`, `merged_storage_path`, `merged_asset_id`) onto `configuration.photo_prints` so the gallery has what it needs.
+2. In `buildJobSnapshot.ts`, **suppress** the auto-generated `Files` section and the duplicate `Photos` section when the job is photo-prints — the gallery replaces both. This also fixes the overlapping `1341198799653586…5.jpg 13 MB · 1355×762mm` text in your second screenshot, because that section won't render at all for photo-prints jobs.
+3. In `JobDetailPanel.tsx`, also hide the `Customer's Attached Files` block when `config.photo_prints` is present — same reason.
+4. The existing `PhotoPrintsAdminGallery` already shows: cropped preview tiles, filename, size, ×qty badge, and the Download Print-ready PDF button. No changes needed there beyond the polling pill from §1.
+
+Result: the admin sees a clean tile grid identical to what the customer saw, with one prominent **Print-ready PDF** download button at the top.
 
 ---
 
-### 6. Admin order detail — gallery preview of the customer's photo job
+### 3. Edge function `render-photo-prints` (new)
 
-Today admin sees only filenames in the `Customer's Attached Files` block of `JobDetailPanel.tsx`.
+A thin server-side equivalent of the existing `usePhotoRenderQueue`:
 
-**Fix**:
-1. In `JobDetailPanel.tsx`, when `job.product_category` (or the underlying product family slug) is `photo-prints`, render a new `PhotoPrintsAdminGallery` component **above** the attached-files list.
-2. The gallery reads `job.configuration.photo_prints` (already snapshotted at order-place time via §5 and existing `buildPhotoPrintsSection`) and shows a tile per photo with:
-   - Cropped/rotated preview using the same canvas helper from §2 (single source of truth)
-   - Filename
-   - Print size
-   - Quantity
-   - Border indicator
-3. Add a prominent "Download print-ready PDF" button at the top of the gallery linking to the merged file's signed URL (resolved via `resolveUrls` from the storage path saved in §5).
-4. Also fix the existing snapshot bug: `buildPhotoPrintsSection` reads `spec.photo_prints` as an array, but `PhotoPrintsBuilder` writes `spec.photo_prints = { print_size_slug, finish_slug, border_slug, photos: [...] }`. Update the snapshot builder to read `spec.photo_prints.photos` and to include the global size/finish/border so the admin sees them.
+- Auth via `supabase.auth.getUser()` (project standard).
+- Looks up the `order_item` and verifies the caller is the owner or staff.
+- Walks `spec.photo_prints.photos`, calling the existing Document Centre proxy (`pdf-api`) for `createAsset` / `cropRasterize` / `resize` / `merge` — same exact steps the browser does today, just running serverless.
+- Polls each job until done (or times out gracefully — failure is recorded on the spec for the admin to retry).
+- Inserts the `documents` row and patches `spec.photo_prints.merged_*` on the order item.
+- Returns immediately after kickoff if invoked with `?async=1` (uses `EdgeRuntime.waitUntil`), so the frontend's `keepalive` POST is non-blocking.
+
+No DB schema changes. No changes to other product flows. No customer-visible progress UI.
 
 ---
 
@@ -107,30 +75,20 @@ Today admin sees only filenames in the `Customer's Attached Files` block of `Job
 
 | File | Change |
 |---|---|
-| `src/pages/dashboard/CustomerDashboard.tsx` | Add `photo-prints` to `SLUG_IMAGE_MAP` (§1) |
-| `src/components/photo/PhotoTile.tsx` | Replace CSS-transform preview with canvas-based render; add white-border visualisation (§2, §3) |
-| `src/components/photo/PhotoEditorModal.tsx` | Stable re-open from saved crop, white-border overlay, lock objectFit (§2, §3) |
-| `src/lib/photoPrints/renderPreview.ts` (new) | Shared canvas helper used by tile, editor preview, and admin gallery |
-| `src/hooks/usePhotoRenderQueue.ts` | Rewrite to merge into one PDF and persist `order_documents` row + spec metadata (§5) |
-| `src/lib/orders/buildJobSnapshot.ts` | Fix `buildPhotoPrintsSection` to read `spec.photo_prints.photos`; emit size/finish/border (§6) |
-| `src/components/orders/detail/PhotoPrintsAdminGallery.tsx` (new) | Admin gallery (§6) |
-| `src/components/orders/detail/JobDetailPanel.tsx` | Mount gallery for `photo-prints` jobs (§6) |
-
-## Guardrails
-
-- No changes to any non-photo product flow.
-- No DB schema changes — reuses `documents`, `order_documents`, `order_items.spec`.
-- No changes to FlipBook, RingBinder, Brochure preview code.
-- Document Centre endpoints used (`createAsset`, `cropRasterize`, `resize`, `merge`, `getDerivedFiles`, `pollJob`) are already proxied through the existing `pdf-api` edge function — no new edge functions needed.
+| `src/hooks/usePhotoRenderQueue.ts` | Keep helpers but no longer used on the cart path |
+| `src/pages/dashboard/PhotoPrintsBuilder.tsx` | Remove modal & blocking render; fire edge function and navigate to cart immediately |
+| `src/lib/orders/buildJobSnapshot.ts` | Surface `configuration.photo_prints`; skip auto Files/Photos sections for photo-prints jobs |
+| `src/components/orders/detail/JobDetailPanel.tsx` | Hide attached-files list when `config.photo_prints` is present; rely on gallery |
+| `src/components/orders/detail/PhotoPrintsAdminGallery.tsx` | Add a tiny poll: if `merged_storage_path` missing, refetch every 5 s and show "Preparing print-ready PDF…" pill |
+| `supabase/functions/render-photo-prints/index.ts` (new) | Server-side render + merge orchestrator |
+| `supabase/config.toml` | Register the new function |
 
 ## Verification checklist
 
-1. My Print Centre tile shows the photo-prints hero image, identical to Create.
-2. Edit a photo → zoom, drag, rotate → Save → tile reflects exactly what was shown in the editor.
-3. Re-open editor for a previously-saved photo → cropper shows the same framing, no jump.
-4. Toggling White Border updates both the editor and the tile with a visible white inset.
-5. Photos saved to S3 under `tenants/<id>/uploads/<user>/<item>/photos/...` (existing).
-6. Add to Cart triggers the render modal → finishes → exactly one merged PDF appears in the order's `order_documents` (`document_type = print_ready`, `kind = photo_prints_merged`), with one page per print × quantity, borders honoured.
-7. Admin opens the order → sees the photo gallery (cropped previews, sizes, qty) and a "Download print-ready PDF" button that returns the merged PDF.
-8. No regressions in any other product family.
+1. Add to Cart on a 4-photo order returns within ~1 s, no modal, customer lands in cart.
+2. Within ~10–30 s the merged PDF appears in the order's `documents` table with `preflight_data.kind = "photo_prints_merged"`.
+3. Admin opens the order → sees a tile grid (cropped previews, ×qty badges, filename, size) and a **Print-ready PDF** button.
+4. The overlapping `Files` text block on the admin view is gone for photo-prints jobs.
+5. If admin opens the order before render completes, gallery shows "Preparing print-ready PDF…" then auto-flips to the Download button.
+6. No regressions to bound documents, brochures, ring binders, or any other product family.
 
