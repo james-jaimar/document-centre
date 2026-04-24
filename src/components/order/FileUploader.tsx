@@ -1,10 +1,24 @@
 import { useCallback, useRef, useState } from "react";
 import { Cloud } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  OFFICE_ACCEPT_STRING,
+  OFFICE_MIME_TYPES,
+  isOfficeFile,
+} from "@/lib/officeFiles";
 
 interface FileUploaderProps {
   onFiles: (files: File[]) => void;
   disabled?: boolean;
+}
+
+function isAcceptedFile(f: File): boolean {
+  if (f.type === "application/pdf") return true;
+  if (f.type.startsWith("image/")) return true;
+  if (OFFICE_MIME_TYPES.has(f.type)) return true;
+  // Browsers (especially Safari/Firefox) often report empty or
+  // application/octet-stream for .odt/.odp/.ods — fall back to extension.
+  return isOfficeFile(f);
 }
 
 export default function FileUploader({ onFiles, disabled }: FileUploaderProps) {
@@ -16,9 +30,7 @@ export default function FileUploader({ onFiles, disabled }: FileUploaderProps) {
       e.preventDefault();
       setDragOver(false);
       if (disabled) return;
-      const files = Array.from(e.dataTransfer.files).filter(
-        (f) => f.type === "application/pdf" || f.type.startsWith("image/")
-      );
+      const files = Array.from(e.dataTransfer.files).filter(isAcceptedFile);
       if (files.length) onFiles(files);
     },
     [onFiles, disabled]
@@ -54,15 +66,17 @@ export default function FileUploader({ onFiles, disabled }: FileUploaderProps) {
         <Cloud className="h-5 w-5 text-primary" />
       </div>
       <div className="text-center">
-        <p className="font-medium text-sm text-foreground">Drop PDF or image files here</p>
+        <p className="font-medium text-sm text-foreground">
+          Drop PDF, Word, PowerPoint or image files here
+        </p>
         <p className="text-xs text-muted-foreground mt-0.5">
-          or click to browse (PDF, JPG, PNG, WEBP)
+          or click to browse (PDF, DOCX, PPTX, ODT, JPG, PNG, WEBP)
         </p>
       </div>
       <input
         ref={inputRef}
         type="file"
-        accept="application/pdf,image/jpeg,image/png,image/webp,image/tiff"
+        accept={`application/pdf,image/jpeg,image/png,image/webp,image/tiff,${OFFICE_ACCEPT_STRING}`}
         multiple
         onChange={handleChange}
         className="hidden"
