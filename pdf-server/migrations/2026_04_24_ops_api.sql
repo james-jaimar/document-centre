@@ -53,13 +53,23 @@ CREATE INDEX IF NOT EXISTS ix_ops_snap_bucket   ON ops_storage_snapshots (bucket
 
 
 -- ---------------------------------------------------------------------------
--- 3. job_events — add tenant_id / app_id attribution columns.
+-- 3. job_events — add tenant_id / app_id attribution columns (if table exists).
 -- ---------------------------------------------------------------------------
-ALTER TABLE job_events ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(64);
-ALTER TABLE job_events ADD COLUMN IF NOT EXISTS app_id    VARCHAR(64);
-
-CREATE INDEX IF NOT EXISTS ix_job_events_tenant ON job_events (tenant_id);
-CREATE INDEX IF NOT EXISTS ix_job_events_app    ON job_events (app_id);
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'job_events'
+  ) THEN
+    ALTER TABLE job_events ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(64);
+    ALTER TABLE job_events ADD COLUMN IF NOT EXISTS app_id    VARCHAR(64);
+    CREATE INDEX IF NOT EXISTS ix_job_events_tenant ON job_events (tenant_id);
+    CREATE INDEX IF NOT EXISTS ix_job_events_app    ON job_events (app_id);
+    RAISE NOTICE 'job_events: attribution columns ensured';
+  ELSE
+    RAISE NOTICE 'job_events table not found — skipping attribution columns (ops API will still work)';
+  END IF;
+END $$;
 
 
 -- ---------------------------------------------------------------------------

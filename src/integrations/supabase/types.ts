@@ -1086,6 +1086,93 @@ export type Database = {
           },
         ]
       }
+      ops_audit_log: {
+        Row: {
+          action: string
+          actor_email: string | null
+          actor_id: string | null
+          actor_role: string | null
+          app_id: string | null
+          created_at: string
+          id: string
+          message: string | null
+          request_payload: Json | null
+          response_payload: Json | null
+          status: string
+          target_id: string | null
+          target_type: string | null
+          tenant_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_email?: string | null
+          actor_id?: string | null
+          actor_role?: string | null
+          app_id?: string | null
+          created_at?: string
+          id?: string
+          message?: string | null
+          request_payload?: Json | null
+          response_payload?: Json | null
+          status?: string
+          target_id?: string | null
+          target_type?: string | null
+          tenant_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_email?: string | null
+          actor_id?: string | null
+          actor_role?: string | null
+          app_id?: string | null
+          created_at?: string
+          id?: string
+          message?: string | null
+          request_payload?: Json | null
+          response_payload?: Json | null
+          status?: string
+          target_id?: string | null
+          target_type?: string | null
+          tenant_id?: string | null
+        }
+        Relationships: []
+      }
+      ops_storage_snapshots: {
+        Row: {
+          backend: string
+          breakdown: Json | null
+          bucket: string
+          captured_at: string
+          duration_ms: number | null
+          id: string
+          object_count: number
+          prefix: string | null
+          total_bytes: number
+        }
+        Insert: {
+          backend?: string
+          breakdown?: Json | null
+          bucket?: string
+          captured_at?: string
+          duration_ms?: number | null
+          id?: string
+          object_count?: number
+          prefix?: string | null
+          total_bytes?: number
+        }
+        Update: {
+          backend?: string
+          breakdown?: Json | null
+          bucket?: string
+          captured_at?: string
+          duration_ms?: number | null
+          id?: string
+          object_count?: number
+          prefix?: string | null
+          total_bytes?: number
+        }
+        Relationships: []
+      }
       order_addresses: {
         Row: {
           address_type: string
