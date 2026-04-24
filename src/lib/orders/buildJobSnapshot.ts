@@ -8,6 +8,7 @@
 import type { JobConfiguration, ConfigSection, ConfigSummary } from "./types";
 import type { StructuredOptionValue } from "@/lib/productOptionTypes";
 import { isStructuredValues } from "@/lib/productOptionTypes";
+import { sortSectionsByRole } from "./sectionOrdering";
 
 export interface ProductOptionRow {
   id: string;
