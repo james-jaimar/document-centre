@@ -5,6 +5,8 @@ import { useTenantContext } from "@/hooks/useTenantContext";
 import { buildJobSnapshot } from "@/lib/orders/buildJobSnapshot";
 import { copyS3Object } from "@/lib/s3Storage";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
+import { inferPreviewTypeFromJob } from "@/lib/orders/inferPreviewType";
+import { buildPreviewSnapshot } from "@/lib/orders/buildPreviewSnapshot";
 
 /**
  * Get or create the user's single open cart order (order_status = 'cart').
@@ -445,8 +447,9 @@ export function usePlaceOrder() {
             : Promise.resolve({ data: [] as any[] }),
         ]);
 
-      const { inferPreviewTypeFromJob } = await import("@/lib/orders/inferPreviewType");
-      const { buildPreviewSnapshot } = await import("@/lib/orders/buildPreviewSnapshot");
+      // Preview enrichment is best-effort. Order placement must NEVER fail
+      // because the preview helpers throw or because a future lazy chunk fails
+      // to load — they are imported statically above to avoid that exact risk.
 
       const jobs = items.map((item: any) => {
         const familyOptions = ((optionsData ?? []) as any[]).filter(
@@ -477,10 +480,15 @@ export function usePlaceOrder() {
         }
 
         const product_category = item.product_families?.slug || null;
-        const previewType = inferPreviewTypeFromJob({
-          product_category,
-          product_snapshot,
-        });
+        let previewType: any = "loose";
+        try {
+          previewType = inferPreviewTypeFromJob({
+            product_category,
+            product_snapshot,
+          });
+        } catch (e) {
+          console.warn("[placeOrder] preview type inference failed, using fallback", e);
+        }
 
         // Build production_specs from the per-section truth so the work order
         // carries an authoritative, machine-readable record for the PDF pipeline.
@@ -510,22 +518,17 @@ export function usePlaceOrder() {
           derived_assets: {},
         };
 
-        // Full preview snapshot — bleed/covers/lamination/paper colour/tabs/inserts
-        // resolved at place-order time so the read-only preview matches the
-        // customer's chosen finishing options exactly.
+        // Full preview snapshot — best-effort. Never block place-order.
         const selectedOptions = (item.spec?.selected_options ?? {}) as Record<string, string>;
         let previewSnapshot: any = { thumbnails, product_type: previewType };
         try {
-          const snap = buildPreviewSnapshot({
+          previewSnapshot = buildPreviewSnapshot({
             productType: previewType,
             selectedOptions,
             productOptions: familyOptions as any,
             sections: itemSections as any,
             documents: itemDocs as any,
           });
-          // Prefer the snapshot's resolved per-page thumbnails (includes
-          // tab/insert/cover blanks in the right physical positions).
-          previewSnapshot = snap;
         } catch (e) {
           console.warn("[placeOrder] preview snapshot failed, using fallback", e);
         }
