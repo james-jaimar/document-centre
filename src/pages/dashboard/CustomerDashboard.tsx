@@ -36,6 +36,7 @@ import imgBooklets from "@/assets/products/booklets.jpg";
 import imgFlyers from "@/assets/products/flyers.jpg";
 import imgBrochures from "@/assets/products/brochures.jpg";
 import imgBusinessCards from "@/assets/product-business-cards.jpg";
+import imgPhotoPrints from "@/assets/products/photo-prints.jpg";
 
 const SLUG_IMAGE_MAP: Record<string, string> = {
   "bound-documents": imgBoundDocuments,
@@ -47,6 +48,7 @@ const SLUG_IMAGE_MAP: Record<string, string> = {
   flyers: imgFlyers,
   brochures: imgBrochures,
   "business-cards": imgBusinessCards,
+  "photo-prints": imgPhotoPrints,
 };
 
 /* ── Icon map ── */
