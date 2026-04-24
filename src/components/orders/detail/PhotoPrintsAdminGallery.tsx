@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Download, Image as ImageIcon, Loader2 } from "lucide-react";
+import { Download, Image as ImageIcon, Loader2, AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { resolveUrls } from "@/lib/thumbnailUtils";
 import { renderPhotoPreview, borderFractionFor } from "@/lib/photoPrints/renderPreview";
 import { getPhotoPrintSize, PHOTO_BORDER_OPTIONS } from "@/lib/photoPrints/sizes";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
 
 interface PhotoEntry {
   id?: string;
@@ -39,15 +40,19 @@ export default function PhotoPrintsAdminGallery({ photoPrints, orderItemId }: Pr
   const printSizeSlug: string = livePhotoPrints?.print_size_slug || "4x6";
   const mergedStoragePath: string | null =
     livePhotoPrints?.merged_storage_path ?? livePhotoPrints?.mergedStoragePath ?? null;
+  const renderFailedAt: string | null = livePhotoPrints?.render_failed_at ?? null;
+  const renderError: string | null = livePhotoPrints?.render_error ?? null;
 
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [mergedDownloadUrl, setMergedDownloadUrl] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
 
-  // Poll the order item every 5s until merged_storage_path appears.
+  // Poll the order item every 5s until merged_storage_path appears or render fails.
   useEffect(() => {
     if (!orderItemId) return;
     if (mergedStoragePath) return;
+    if (renderFailedAt) return;
     let cancelled = false;
     const tick = async () => {
       const { data } = await supabase
@@ -57,7 +62,7 @@ export default function PhotoPrintsAdminGallery({ photoPrints, orderItemId }: Pr
         .maybeSingle();
       if (cancelled) return;
       const pp = (data?.spec as any)?.photo_prints;
-      if (pp?.merged_storage_path) {
+      if (pp?.merged_storage_path || pp?.render_failed_at) {
         setLivePhotoPrints(pp);
       }
     };
@@ -66,7 +71,35 @@ export default function PhotoPrintsAdminGallery({ photoPrints, orderItemId }: Pr
       cancelled = true;
       clearInterval(id);
     };
-  }, [orderItemId, mergedStoragePath]);
+  }, [orderItemId, mergedStoragePath, renderFailedAt]);
+
+  const handleRetry = async () => {
+    if (!orderItemId || retrying) return;
+    setRetrying(true);
+    try {
+      // Clear failure state locally so polling resumes.
+      setLivePhotoPrints({
+        ...livePhotoPrints,
+        render_failed_at: null,
+        render_error: null,
+      });
+      const { error } = await supabase.functions.invoke("render-photo-prints", {
+        body: { order_item_id: orderItemId, async: true },
+      });
+      if (error) throw error;
+      toast({ title: "Re-rendering photo prints…" });
+    } catch (err: any) {
+      toast({
+        title: "Retry failed",
+        description: err?.message ?? "Could not start render",
+        variant: "destructive",
+      });
+      setLivePhotoPrints({ ...livePhotoPrints });
+    } finally {
+      setRetrying(false);
+    }
+  };
+
 
   // Sign source-image URLs
   useEffect(() => {
@@ -159,6 +192,30 @@ export default function PhotoPrintsAdminGallery({ photoPrints, orderItemId }: Pr
               Print-ready PDF
             </a>
           </Button>
+        ) : renderFailedAt ? (
+          <div className="flex items-center gap-2">
+            <div
+              className="flex items-center gap-1.5 rounded-full border border-destructive/40 bg-destructive/10 px-2.5 py-1 text-[11px] text-destructive max-w-[260px]"
+              title={renderError ?? "Render failed"}
+            >
+              <AlertTriangle className="h-3 w-3 shrink-0" />
+              <span className="truncate">Render failed{renderError ? `: ${renderError}` : ""}</span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs gap-1.5"
+              onClick={handleRetry}
+              disabled={retrying}
+            >
+              {retrying ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3 w-3" />
+              )}
+              Retry
+            </Button>
+          </div>
         ) : (
           <div className="flex items-center gap-1.5 rounded-full border border-border bg-muted/30 px-2.5 py-1 text-[11px] text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" />
