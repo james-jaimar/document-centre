@@ -283,6 +283,7 @@ export default function OrderBuild() {
 
     if (matched) {
       autoSizeMatchedRef.current = true;
+      initialAutoMatchDoneRef.current = true;
       setSpec((prev) => ({
         ...prev,
         selected_options: { ...prev.selected_options, [sizeOpt.name]: matched.slug },
