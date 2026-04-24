@@ -120,6 +120,8 @@ async function request<T>(
     body: JSON.stringify({
       path,
       method,
+      ...(_tenantId ? { tenant_id: _tenantId } : {}),
+      ...(_appId ? { app_id: _appId } : {}),
       ...(body ?? {}),
     }),
   });
