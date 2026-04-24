@@ -148,7 +148,10 @@ async function createOrderWithJobs(
     .select("id, order_number, is_demo")
     .single();
 
-  if (orderErr || !newOrder) return err(`Failed to create order: ${orderErr?.message}`);
+  if (orderErr || !newOrder) {
+    console.error("[order-engine] order_insert failed", orderErr);
+    return err(`order_insert failed: ${orderErr?.message ?? "unknown"}`);
+  }
 
   // Build job inserts
   const jobInserts = jobs.map((j: any, idx: number) => {
