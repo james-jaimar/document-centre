@@ -113,3 +113,6 @@ class CropRasterizeRequest(BaseModel):
     asset_id: UUID
     box: list[float] = Field(min_length=4, max_length=4)
     dpi: int = Field(default=120, ge=36, le=600)
+
+class ConvertOfficeRequest(BaseModel):
+    asset_id: UUID
