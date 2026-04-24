@@ -39,28 +39,47 @@ function getBorderMm(slug: string) {
 }
 
 // ── Document Centre helpers ─────────────────────────────────────────────
-const DC_BASE = (Deno.env.get("DOCUMENT_CENTRE_API_URL") ?? "").replace(/\/+$/, "");
+// We route all Document Centre calls through the existing `pdf-api` edge
+// function (same path the browser uses) so the user's JWT authenticates the
+// upstream request. This avoids drift from the browser hook behaviour.
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const PDF_API_URL = `${SUPABASE_URL.replace(/\/+$/, "")}/functions/v1/pdf-api`;
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-async function dcRequest<T = any>(
-  path: string,
-  method: "GET" | "POST" = "POST",
-  body?: Record<string, unknown>,
-): Promise<T> {
-  const url = `${DC_BASE}/${path}`;
-  const opts: RequestInit = {
-    method,
-    headers: { "Content-Type": "application/json" },
+function makeDcRequest(authHeader: string) {
+  return async function dcRequest<T = any>(
+    path: string,
+    method: "GET" | "POST" = "POST",
+    body?: Record<string, unknown>,
+  ): Promise<T> {
+    const payload: Record<string, unknown> = { path, method, ...(body ?? {}) };
+    const res = await fetch(PDF_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: authHeader,
+        apikey: SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify(payload),
+    });
+    const text = await res.text();
+    console.log(`[render-photo-prints] dc ${method} ${path} -> ${res.status}`);
+    if (!res.ok) {
+      throw new Error(
+        `Document Centre ${method} ${path} failed ${res.status}: ${text.slice(0, 300)}`,
+      );
+    }
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      throw new Error(`Document Centre ${method} ${path} returned non-JSON: ${text.slice(0, 200)}`);
+    }
   };
-  if (method !== "GET" && body) opts.body = JSON.stringify(body);
-  const res = await fetch(url, opts);
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`Document Centre ${method} ${path} failed ${res.status}: ${t.slice(0, 300)}`);
-  }
-  return res.json();
 }
 
-async function pollJob(jobId: string, intervalMs = 2500, maxAttempts = 240): Promise<any> {
+type DcRequest = ReturnType<typeof makeDcRequest>;
+
+async function pollJob(dcRequest: DcRequest, jobId: string, intervalMs = 2500, maxAttempts = 240): Promise<any> {
   for (let i = 0; i < maxAttempts; i++) {
     const job = await dcRequest<any>(`v1/jobs/${jobId}`, "GET");
     if (["completed", "failed", "cancelled"].includes(job.status)) return job;
