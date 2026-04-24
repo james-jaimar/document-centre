@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { resolveUrls } from "@/lib/thumbnailUtils";
 import { renderPhotoPreview, borderFractionFor } from "@/lib/photoPrints/renderPreview";
 import { getPhotoPrintSize, PHOTO_BORDER_OPTIONS } from "@/lib/photoPrints/sizes";
+import { supabase } from "@/integrations/supabase/client";
 
 interface PhotoEntry {
   id?: string;
@@ -18,19 +19,54 @@ interface PhotoEntry {
 
 interface Props {
   photoPrints: any;
+  /** When provided, the gallery will poll the order item until the merged
+   *  PDF is ready, then show the Download button instead of the pill. */
+  orderItemId?: string | null;
 }
 
-export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
-  const photos: PhotoEntry[] = Array.isArray(photoPrints?.photos) ? photoPrints.photos : [];
-  const borderSlug: string = photoPrints?.border_slug || "none";
-  const finishSlug: string = photoPrints?.finish_slug || "gloss";
-  const printSizeSlug: string = photoPrints?.print_size_slug || "4x6";
+export default function PhotoPrintsAdminGallery({ photoPrints, orderItemId }: Props) {
+  const [livePhotoPrints, setLivePhotoPrints] = useState<any>(photoPrints);
+
+  useEffect(() => {
+    setLivePhotoPrints(photoPrints);
+  }, [photoPrints]);
+
+  const photos: PhotoEntry[] = Array.isArray(livePhotoPrints?.photos)
+    ? livePhotoPrints.photos
+    : [];
+  const borderSlug: string = livePhotoPrints?.border_slug || "none";
+  const finishSlug: string = livePhotoPrints?.finish_slug || "gloss";
+  const printSizeSlug: string = livePhotoPrints?.print_size_slug || "4x6";
   const mergedStoragePath: string | null =
-    photoPrints?.merged_storage_path ?? photoPrints?.mergedStoragePath ?? null;
+    livePhotoPrints?.merged_storage_path ?? livePhotoPrints?.mergedStoragePath ?? null;
 
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [mergedDownloadUrl, setMergedDownloadUrl] = useState<string | null>(null);
+
+  // Poll the order item every 5s until merged_storage_path appears.
+  useEffect(() => {
+    if (!orderItemId) return;
+    if (mergedStoragePath) return;
+    let cancelled = false;
+    const tick = async () => {
+      const { data } = await supabase
+        .from("order_items")
+        .select("spec")
+        .eq("id", orderItemId)
+        .maybeSingle();
+      if (cancelled) return;
+      const pp = (data?.spec as any)?.photo_prints;
+      if (pp?.merged_storage_path) {
+        setLivePhotoPrints(pp);
+      }
+    };
+    const id = setInterval(tick, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [orderItemId, mergedStoragePath]);
 
   // Sign source-image URLs
   useEffect(() => {
@@ -52,7 +88,10 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
 
   // Sign merged PDF URL
   useEffect(() => {
-    if (!mergedStoragePath) return;
+    if (!mergedStoragePath) {
+      setMergedDownloadUrl(null);
+      return;
+    }
     let cancelled = false;
     resolveUrls([mergedStoragePath]).then((urls) => {
       if (!cancelled && urls[0]) setMergedDownloadUrl(urls[0]);
@@ -113,13 +152,18 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
             {borderSlug !== "none" ? " · White border" : ""}
           </p>
         </div>
-        {mergedDownloadUrl && (
+        {mergedDownloadUrl ? (
           <Button asChild size="sm" className="h-7 text-xs gap-1.5">
             <a href={mergedDownloadUrl} target="_blank" rel="noopener noreferrer" download>
               <Download className="h-3.5 w-3.5" />
               Print-ready PDF
             </a>
           </Button>
+        ) : (
+          <div className="flex items-center gap-1.5 rounded-full border border-border bg-muted/30 px-2.5 py-1 text-[11px] text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Preparing print-ready PDF…
+          </div>
         )}
       </div>
 

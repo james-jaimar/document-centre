@@ -379,31 +379,37 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
   );
 
   const resolved = resolveSelectedOptions(selected, productOptions);
+  const isPhotoPrints = item.product_families?.slug === "photo-prints";
 
   const totalPages = documents.reduce((s, d) => s + (d.page_count ?? 0), 0);
   const summary = buildSummary(resolved, spec, totalPages);
   const groupedSections = groupResolvedIntoSections(resolved, spec, documents);
 
-  const printColourSection = buildPrintColourSection(sections);
-  if (printColourSection) groupedSections.push(printColourSection);
+  // Print/Per-section/Files blocks are not relevant for photo prints — the
+  // dedicated PhotoPrintsAdminGallery replaces them with a visual tile grid.
+  if (!isPhotoPrints) {
+    const printColourSection = buildPrintColourSection(sections);
+    if (printColourSection) groupedSections.push(printColourSection);
 
-  const perSection = buildPerSectionDetail(sections);
-  if (perSection) groupedSections.push(perSection);
+    const perSection = buildPerSectionDetail(sections);
+    if (perSection) groupedSections.push(perSection);
 
-  const filesSection = buildFilesSection(documents);
-  if (filesSection) groupedSections.push(filesSection);
-
-  // Photo Prints — emit a per-photo breakdown when this product family is in use
-  const isPhotoPrints = item.product_families?.slug === "photo-prints";
-  if (isPhotoPrints) {
-    const photosSection = buildPhotoPrintsSection(spec);
-    if (photosSection) groupedSections.push(photosSection);
+    const filesSection = buildFilesSection(documents);
+    if (filesSection) groupedSections.push(filesSection);
   }
 
   return {
     configuration: {
       summary,
       sections: groupedSections,
+      // Surface the full photo_prints block so PhotoPrintsAdminGallery can render
+      // cropped tile previews + the print-ready PDF download button.
+      ...(isPhotoPrints && spec?.photo_prints
+        ? { photo_prints: spec.photo_prints }
+        : {}),
+      // Source order_item_id — used by the admin gallery to poll for the
+      // merged PDF if the background render hasn't completed yet.
+      source_order_item_id: item.id,
       // preserve raw spec for debugging/integration
       raw_spec: spec,
     },

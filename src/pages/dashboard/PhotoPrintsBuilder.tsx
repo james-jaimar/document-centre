@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useCreateOrder, useOrderData } from "@/hooks/useOrderBuilder";
 import { useAddItemToCart } from "@/hooks/useCart";
 import { usePhotoUpload } from "@/hooks/usePhotoUpload";
-import { usePhotoRenderQueue } from "@/hooks/usePhotoRenderQueue";
+
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { resolveUrls } from "@/lib/thumbnailUtils";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
@@ -39,7 +39,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
+
 import { ArrowLeft, ImagePlus, Loader2, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 
@@ -98,7 +98,6 @@ export default function PhotoPrintsBuilder() {
   }, [orderItem?.id, family?.id, createOrder]);
 
   const { uploads, uploadPhotos, clearUploads } = usePhotoUpload(orderItem?.id);
-  const renderQueue = usePhotoRenderQueue();
 
   const initialSpec: PhotoPrintsSpec = useMemo(
     () => ({
@@ -269,7 +268,6 @@ export default function PhotoPrintsBuilder() {
   const [showCartDialog, setShowCartDialog] = useState(false);
   const [cartReference, setCartReference] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [renderProgressOpen, setRenderProgressOpen] = useState(false);
 
   const handleAddToCartClick = () => {
     if (photoSpec.photos.length === 0) {
@@ -291,44 +289,23 @@ export default function PhotoPrintsBuilder() {
     const ref = cartReference.trim() || `Photo Prints (${photoSpec.photos.length})`;
     setIsSubmitting(true);
     setShowCartDialog(false);
-    setRenderProgressOpen(true);
 
     try {
-      const result = await renderQueue.renderAll({
-        photos: photoSpec.photos,
-        borderSlug: photoSpec.border_slug,
-        orderItemId: orderItem.id,
-      });
-      const failures = result.perPhoto.filter((r) => r.error);
-      if (failures.length > 0) {
-        toast.warning(`${failures.length} photo${failures.length === 1 ? "" : "s"} failed to render — they will need re-upload.`);
-      }
-      if (result.mergeError) {
-        toast.warning("The merged print-ready PDF couldn't be generated. The order will still be placed.");
-      }
-
-      const updatedPhotos = photoSpec.photos.map((p) => {
-        const r = result.perPhoto.find((x) => x.entryId === p.id);
-        if (!r?.assetId) return p;
-        return { ...p, render_asset_id: r.assetId } as PhotoPrintEntry & {
-          render_asset_id: string;
-        };
-      });
-      const finalSpec: PhotoPrintsSpec & {
-        merged_asset_id?: string | null;
-        merged_storage_path?: string | null;
-        merged_document_id?: string | null;
-      } = {
-        ...photoSpec,
-        photos: updatedPhotos,
-        merged_asset_id: result.mergedAssetId,
-        merged_storage_path: result.mergedStoragePath,
-        merged_document_id: result.mergedDocumentId,
-      };
+      // Apply default crops where missing so the server-side render has a box.
+      const photosWithCrops = photoSpec.photos.map((p) =>
+        p.croppedAreaPixels ? p : applyDefaultCrop(p),
+      );
 
       const replacesCartItemId = (order.metadata as any)?.replaces_cart_item_id;
-      const totalQty = updatedPhotos.reduce((s, p) => s + p.quantity, 0);
+      const totalQty = photosWithCrops.reduce((s, p) => s + p.quantity, 0);
 
+      const finalSpec: PhotoPrintsSpec = {
+        ...photoSpec,
+        photos: photosWithCrops,
+      };
+
+      // 1. Persist the spec and add to cart immediately. The customer goes
+      //    straight to the cart — no "preparing" modal.
       await addItemToCart.mutateAsync({
         orderItemId: orderItem.id,
         draftOrderId: order.id,
@@ -337,7 +314,7 @@ export default function PhotoPrintsBuilder() {
         quantity: totalQty,
         totalPrice: totalQty * totals.size.unit_price,
         spec: {
-          page_count: updatedPhotos.length,
+          page_count: photosWithCrops.length,
           quantity: totalQty,
           is_color: true,
           is_duplex: false,
@@ -351,6 +328,29 @@ export default function PhotoPrintsBuilder() {
         replacesCartItemId: replacesCartItemId || undefined,
       });
 
+      // 2. Kick off the server-side render+merge in the background. We do not
+      //    await this — the edge function uses EdgeRuntime.waitUntil so the
+      //    request returns instantly while the merge continues.
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (token) {
+          const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/render-photo-prints?async=1`;
+          fetch(url, {
+            method: "POST",
+            keepalive: true,
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+              apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
+            },
+            body: JSON.stringify({ order_item_id: orderItem.id, async: true }),
+          }).catch((err) => console.warn("[photo] background render kickoff failed", err));
+        }
+      } catch (err) {
+        console.warn("[photo] could not kick off background render", err);
+      }
+
       invalidateUserOrderCaches(qc);
       toast.success("Added to cart!");
       navigate(`/t/${tenantSlug}/cart`);
@@ -359,16 +359,10 @@ export default function PhotoPrintsBuilder() {
       toast.error("Failed to add to cart", { description: err?.message });
     } finally {
       setIsSubmitting(false);
-      setRenderProgressOpen(false);
-      renderQueue.reset();
     }
   };
 
-  const renderEntries = Object.values(renderQueue.progress);
-  const renderDone = renderEntries.length > 0 && renderEntries.every((r) => r.status === "done" || r.status === "error");
-  const renderAvgPct = renderEntries.length > 0
-    ? renderEntries.reduce((s, e) => s + e.progress, 0) / renderEntries.length
-    : 0;
+
 
   if (!family && !loading) {
     return (
@@ -597,52 +591,6 @@ export default function PhotoPrintsBuilder() {
               Confirm & Add to Cart
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={renderProgressOpen} onOpenChange={() => {}}>
-        <DialogContent
-          className="sm:max-w-md"
-          onPointerDownOutside={(e) => e.preventDefault()}
-          onEscapeKeyDown={(e) => e.preventDefault()}
-        >
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Loader2 className="h-5 w-5 animate-spin text-primary" />
-              Preparing your prints…
-            </DialogTitle>
-            <DialogDescription>
-              We're rendering each photo at print quality. Hang tight — this only takes a moment.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <Progress value={renderAvgPct} />
-            <div className="space-y-1 max-h-[200px] overflow-y-auto">
-              {renderEntries.map((e) => (
-                <div key={e.fileName} className="flex items-center justify-between text-xs">
-                  <span className="truncate flex-1 text-muted-foreground">{e.fileName}</span>
-                  <span
-                    className={
-                      e.status === "done"
-                        ? "text-primary"
-                        : e.status === "error"
-                          ? "text-destructive"
-                          : "text-muted-foreground"
-                    }
-                  >
-                    {e.status === "done"
-                      ? "Ready"
-                      : e.status === "error"
-                        ? "Failed"
-                        : e.statusText || "…"}
-                  </span>
-                </div>
-              ))}
-            </div>
-            {renderDone && (
-              <p className="text-xs text-center text-muted-foreground">Finishing up…</p>
-            )}
-          </div>
         </DialogContent>
       </Dialog>
     </div>

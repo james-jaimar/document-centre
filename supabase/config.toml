@@ -29,3 +29,5 @@ project_id = "lcvdhtaqoumyokjqaqfw"
     verify_jwt = false
   [functions.cleanup-stale-drafts]
     verify_jwt = false
+  [functions.render-photo-prints]
+    verify_jwt = false
