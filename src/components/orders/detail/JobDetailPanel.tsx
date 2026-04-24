@@ -7,6 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
 import { inferPreviewTypeFromJob } from "@/lib/orders/inferPreviewType";
 import type { JobConfiguration, ConfigSection } from "@/lib/orders/types";
+import PhotoPrintsAdminGallery from "./PhotoPrintsAdminGallery";
 
 interface Props {
   job: any;
