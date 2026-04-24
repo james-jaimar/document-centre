@@ -93,10 +93,13 @@ function buildPageSequence(
 ): PageInfo[] {
   // Saddle-stitched booklets are always duplex — skip blank_back injection
   const forceDuplex = productType === "saddle_stitched";
-  const bodySections = sections.filter(
+  // Sort by role so Front Cover always renders before Body, regardless of
+  // the order the user added them in Step 1.
+  const orderedSections = sortSectionsByRole(sections);
+  const bodySections = orderedSections.filter(
     (s) => s.section_type !== "tab" && s.section_type !== "insert"
   );
-  const anchoredSections = sections.filter(
+  const anchoredSections = orderedSections.filter(
     (s) => s.section_type === "tab" || s.section_type === "insert"
   );
 
