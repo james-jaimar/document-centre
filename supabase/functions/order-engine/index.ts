@@ -95,12 +95,18 @@ async function createOrderWithJobs(
     .eq("is_active", true)
     .single();
 
-  if (appErr || !app) return err(`App not found: ${app_slug}`, 404);
+  if (appErr || !app) {
+    console.error("[order-engine] app_lookup failed", { app_slug, error: appErr });
+    return err(`app_lookup failed: ${appErr?.message ?? `unknown app ${app_slug}`}`, 404);
+  }
   const app_id = app.id;
 
   // Generate order number
   const { data: orderNum, error: numErr } = await admin.rpc("generate_order_number", { p_app_id: app_id });
-  if (numErr || !orderNum) return err(`Failed to generate order number: ${numErr?.message}`);
+  if (numErr || !orderNum) {
+    console.error("[order-engine] generate_order_number failed", numErr);
+    return err(`generate_order_number failed: ${numErr?.message ?? "no number returned"}`);
+  }
 
   // Insert order
   const { data: newOrder, error: orderErr } = await admin
