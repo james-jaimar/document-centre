@@ -328,29 +328,6 @@ export default function PhotoPrintsBuilder() {
         replacesCartItemId: replacesCartItemId || undefined,
       });
 
-      // 2. Kick off the server-side render+merge in the background. We do not
-      //    await this — the edge function uses EdgeRuntime.waitUntil so the
-      //    request returns instantly while the merge continues.
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        if (token) {
-          const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/render-photo-prints?async=1`;
-          fetch(url, {
-            method: "POST",
-            keepalive: true,
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-              apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
-            },
-            body: JSON.stringify({ order_item_id: orderItem.id, async: true }),
-          }).catch((err) => console.warn("[photo] background render kickoff failed", err));
-        }
-      } catch (err) {
-        console.warn("[photo] could not kick off background render", err);
-      }
-
       invalidateUserOrderCaches(qc);
       toast.success("Added to cart!");
       navigate(`/t/${tenantSlug}/cart`);
