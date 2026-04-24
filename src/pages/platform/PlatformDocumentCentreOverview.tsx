@@ -20,22 +20,10 @@ export default function PlatformDocumentCentreOverview() {
   const storage = useQuery({ queryKey: ["ops", "storage"], queryFn: opsApi.storageLive, refetchInterval: 30000 });
   const { recentJobs, connected } = useOpsStream();
 
-  const overallStatus = health.data?.status ?? (health.isLoading ? "…" : "down");
-  const statusVariant: "default" | "secondary" | "destructive" =
-    overallStatus === "ok" ? "default" : overallStatus === "degraded" ? "secondary" : "destructive";
+  void health; void connected;
 
   return (
     <div className="space-y-6 p-6">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Document Centre — Overview</h1>
-          <p className="text-sm text-muted-foreground">Live operational status of the PDF processing pipeline.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant={statusVariant}>{String(overallStatus).toUpperCase()}</Badge>
-          <Badge variant={connected ? "default" : "secondary"}>{connected ? "LIVE" : "OFFLINE"}</Badge>
-        </div>
-      </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
