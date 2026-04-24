@@ -1,181 +1,136 @@
 
 
-## Photo Prints — new product family
+## Photo Prints — polish pass (icon, editor fidelity, white border, single merged PDF, admin preview)
 
-A dedicated, dead-simple photo print product. Upload photos, pick a print size, drag/zoom each photo inside a fixed crop frame, set quantity per photo, add to cart. The backend renders one print-ready PDF per photo at the chosen size using the existing Document Centre API.
-
-### What the customer experiences
-
-1. Pick **Photo Prints** from the New Order grid (alongside Posters, Flyers, etc.)
-2. Upload one or many JPG/PNG/WEBP/HEIC images (drag-drop or browse). Show thumbnail tiles immediately.
-3. Pick a global **Print Size** (4×6, 5×7, 6×8, 8×10, A4) and **Finish** (Gloss / Matte) and optional **White Border** at the top of the page. Changing size re-applies aspect to all tiles (cropping is preserved if compatible, otherwise centre-fit reset).
-4. Each photo tile shows: thumbnail in the print aspect, filename, low-res warning (if DPI < 150 at chosen size), quantity stepper, Edit, Duplicate, Remove.
-5. Click **Edit** on a tile → modal opens with `react-easy-crop` showing the photo inside the fixed print frame. Controls: drag to reposition, zoom slider (1×–4×), Rotate 90°, Fit / Fill toggle, Reset, Save.
-6. **Add to Cart** uses the existing cart confirmation flow. Each photo becomes one line in the order summary `Photo Print × N`. Total quantity = sum of all per-photo quantities.
-
-### Why this approach
-
-- Reuses every existing piece of infrastructure (orders, sections, documents, cart, checkout, pricing rules, PDF render). No parallel system.
-- The crop editor stays cosmetic — we store `croppedAreaPixels` and let the backend cut the source image at full resolution when rendering the PDF. The browser never produces the production asset.
-- New feature surface is contained in one product family + one editor component.
+Five tightly-scoped fixes to the new Photo Prints flow. Nothing else in the app changes.
 
 ---
 
-## Technical plan
+### 1. Use the Photo Prints hero image on the My Print Centre tile
 
-### 1. Library
+`CustomerDashboard.tsx` already maps slugs → product images via `SLUG_IMAGE_MAP`, but it does **not** include `photo-prints`. The Create page (`NewOrder.tsx`) already does, hence the discrepancy.
 
-- Add **`react-easy-crop`** (lightweight, MIT, purpose-built for this exact UX). No `react-konva`, no Fabric.
-
-### 2. New product family (DB seed only — no schema change)
-
-Add a Photo Prints family via the existing `seedAllProducts.ts` mechanism so it appears automatically wherever product families are listed.
-
-| Field | Value |
-|---|---|
-| slug | `photo-prints` |
-| name | `Photo Prints` |
-| icon | `Image` |
-| sort_order | `9` |
-
-Options (all stored in `product_options` like every other family):
-
-- `Print Size`: `4x6 (102×152mm)`, `5x7 (127×178mm)`, `6x8 (152×203mm)`, `8x10 (203×254mm)`, `A4 (210×297mm)` — each value's `metadata` carries `width_mm`, `height_mm`, `aspect`.
-- `Finish`: `Gloss` (default), `Matte`.
-- `Border`: `None` (default), `White (3mm)`.
-
-Pricing: a new `PRICING_PHOTO` set in `productOptionValues.ts` — per-print price by size, e.g. R3.50 (4×6), R5.50 (5×7), R8 (6×8), R12 (8×10), R15 (A4). Multiplied by per-photo quantity in `calculateItemPrice`.
-
-### 3. Routing — dedicated photo flow, not the generic builder
-
-When a user picks the Photo Prints family from `NewOrder.tsx`, route to a new dedicated page instead of `OrderFiles` → `OrderBuild`:
-
-```
-/t/:slug/orders/new/photo-prints      → PhotoPrintsBuilder (new)
-/t/:slug/orders/:id/photo-prints      → PhotoPrintsBuilder (resume)
-```
-
-`NewOrder.tsx` checks `family.slug === "photo-prints"` and routes accordingly. All other families keep their current path.
-
-### 4. New page: `PhotoPrintsBuilder`
-
-Single-page workflow, mirroring the visual style of `OrderBuild` (compact, glassmorphic Customer portal aesthetic). Sections:
-
-| Section | Purpose |
-|---|---|
-| Top toolbar | Print Size, Finish, Border, total cost summary |
-| Upload dropzone | `FileUploader`-style component, accepts `image/jpeg, image/png, image/webp, image/heic` |
-| Photo grid | Tiles with thumbnail (clipped to chosen aspect), filename, qty stepper, Edit / Duplicate / Remove, low-res warning badge |
-| Photo editor modal | `react-easy-crop` with zoom slider, Rotate 90°, Fit/Fill, Save |
-| Bottom bar | Total photos, total prints, total price, **Add to Cart** |
-
-### 5. Data model — reuse existing tables, no migration
-
-For a Photo Prints order, each uploaded photo maps to:
-
-- One `documents` row holding the **original** uploaded image (stored in the `document-uploads` bucket like every other upload).
-- One `document_sections` row with `section_type = "body"`, `sort_order` = grid position.
-- A new JSONB blob on `order_items.spec` describing the photo job:
-
-```ts
-spec.photo_prints = [
-  {
-    document_id: "...",
-    file_name: "IMG_1234.jpg",
-    original_storage_path: "...",
-    print_size_slug: "5x7",
-    crop: { x: 0, y: 0 },          // react-easy-crop crop position
-    zoom: 1,
-    rotation: 0,
-    croppedAreaPixels: { x, y, width, height },  // pixel rect on source
-    fit_mode: "fill",
-    quantity: 4,
-  },
-  ...
-]
-```
-
-This keeps the schema unchanged and lets `buildJobSnapshot.ts` produce a per-photo line in the job summary by reading `spec.photo_prints`.
-
-`order_items.quantity` = sum of per-photo quantities (so existing total-page / quantity logic still works for invoicing).
-
-### 6. Upload pipeline
-
-- Reuse `useDocumentUpload` for the underlying S3 upload — but skip the PDF preflight steps. Photos do not need PDF normalisation.
-- Add a thin `usePhotoUpload` hook (or a `mode: "photo"` branch on `useDocumentUpload`) that:
-  1. Uploads original image to `document-uploads/<orderItem>/photos/<filename>`.
-  2. Creates a `documents` row with `mime_type` set to the actual image type and `page_count = 1`.
-  3. Stores `page_width_mm`/`page_height_mm` derived from the image's pixel dimensions at 72 DPI (used only for low-res warning).
-  4. Generates a thumbnail client-side (canvas → small JPEG) and uploads it as the document thumbnail so the grid tile displays instantly.
-- HEIC images: best handled server-side. For v1, accept HEIC but show a "Converting…" state and let the Document Centre API normalise to JPEG (a small `v1/operations/normalize-image` extension may be needed; if not in scope, restrict v1 to JPG/PNG/WEBP and surface a clear message for HEIC).
-
-### 7. Add to Cart → render print-ready PDFs
-
-When the user confirms Add to Cart, server-side rendering happens through the existing edge function path. For each photo entry:
-
-1. Create a Document Centre asset from the original image (`createAsset` with the image storage path) — this already supports any media type.
-2. Call `cropRasterize(assetId, box, dpi=300)` where `box` is derived from `croppedAreaPixels` (already in source-pixel units). DPI 300 for print quality.
-3. Call `resize(assetId, widthMm, heightMm, fitMode="fill")` so the cropped image lands on a page exactly matching the chosen print size. Apply white-border padding via `fit` mode if Border = White.
-4. Apply rotation if any (`rotate`).
-5. The resulting derived PDF is stored under `order_documents` as a print-ready file (`document_type = "print_ready"`, `is_customer_visible = false`), one per photo.
-6. Quantity carries through to the production job — printer prints `qty` copies of that PDF. (Optional v1.1: `imposeSheet` to gang-up many prints onto one larger press sheet.)
-
-This work runs as a `usePhotoRenderQueue` hook the moment the user confirms Add to Cart, with the existing `UploadProgressModal` repurposed to show a "Preparing prints…" progress bar. Add to Cart only completes once every print PDF is rendered and recorded.
-
-### 8. Pricing
-
-Use the existing `pricing_rules` engine. Photo print pricing rule = per-unit, conditioned on `Print Size` value slug. `calculateItemPrice` already supports `per_unit` rules and `selected_options` matching. The total quantity = sum of per-photo quantities, so a single `per_unit` rule × quantity gives the right total.
-
-Per-photo line breakdown for the cart confirmation comes from iterating `spec.photo_prints` client-side and computing `qty × per_unit_for(size)`.
-
-### 9. Preview / order detail
-
-`buildJobSnapshot.ts` extended: when the family is `photo-prints`, emit a `Photos` config section that lists one row per photo (filename thumbnail, size, qty, subtotal). `JobDetailPanel` already renders config sections without modification.
-
-### 10. Constraints & guardrails
-
-- Do not touch `FlipBook`, `RingBinderOpenSpread`, or any bound-document preview code.
-- Do not run the bound-document preview pipeline for photo orders. The photo grid IS the preview.
-- Max 50 MB per file (existing constraint).
-- Low-res warning: if the cropped pixel area produces < 150 DPI at the chosen print size, show a yellow badge on the tile.
-- Cart confirmation modal stays the same (Reference + Add to Cart).
+**Fix**: import `photoPrintsImg` in `CustomerDashboard.tsx` and add `"photo-prints": photoPrintsImg` to its `SLUG_IMAGE_MAP`. One-line addition + import.
 
 ---
 
-## Files to create
+### 2. Editor preview drift — accurately reflect saved crop/zoom/rotation on the tile
 
-| File | Purpose |
-|---|---|
-| `src/pages/dashboard/PhotoPrintsBuilder.tsx` | The whole photo flow — toolbar, upload, grid, editor modal, cart bar |
-| `src/components/photo/PhotoTile.tsx` | One grid tile (thumbnail, badges, qty, actions) |
-| `src/components/photo/PhotoEditorModal.tsx` | `react-easy-crop` editor with zoom/rotate/fit controls |
-| `src/components/photo/PhotoUploader.tsx` | Image-only dropzone (wraps `FileUploader` with image MIME filter) |
-| `src/hooks/usePhotoUpload.ts` | Image upload → `documents` row, no PDF preflight |
-| `src/hooks/usePhotoRenderQueue.ts` | On Add to Cart: createAsset → cropRasterize → resize per photo |
-| `src/lib/photoPrints/sizes.ts` | Print size catalogue with `aspect`, `width_mm`, `height_mm` |
-| `src/lib/photoPrints/types.ts` | `PhotoPrintEntry`, `PhotoPrintsSpec` types |
+Current behaviour: saving crop/zoom/rotation in the editor and returning to the grid shows a tile that doesn't match what was just visible inside the editor, and re-opening the editor reapplies stale state.
 
-## Files to update
+Root causes:
+
+- `PhotoTile.tsx` derives its CSS transform from `croppedAreaPixels` *without accounting for rotation* — `react-easy-crop` returns `croppedAreaPixels` in the **rotated source's coordinate space**, so applying `rotate()` afterwards produces a different framing than the cropper showed.
+- The tile uses `transform-origin: top left` plus a percentage-based translate calibrated only for unrotated images, so any rotation throws the framing off-centre.
+- When re-opening the editor, the saved `crop` (UI-space pixels) and `zoom` are restored, but `croppedAreaPixels` is also re-pushed to react-easy-crop on first mount, causing a one-frame mismatch where the cropper recalculates and produces a slightly different `croppedAreaPixels` value than what was saved.
+
+**Fix**:
+1. Replace `PhotoTile.tsx`'s transform-based "fake crop" with a real, faithful preview built on a `<canvas>` rendered from the source image using the saved `croppedAreaPixels` + `rotation`. Same maths the backend will use, so what the user sees on the tile is exactly what will print.
+2. Cache the rendered canvas as a data URL in component state, keyed by `(croppedAreaPixels, rotation, signedUrl)` so it only re-renders when the saved state actually changes.
+3. In `PhotoEditorModal.tsx`, when opening with an existing `croppedAreaPixels`, derive `zoom` and `crop` from the saved `croppedAreaPixels` rather than restoring the raw `crop`/`zoom` numbers blindly. This keeps re-edits stable.
+4. Drop the `restrictPosition={fitMode === "fill"}` toggle's interaction with `objectFit` — currently switching Fit/Fill mid-edit changes both the cropper's coordinate space and `croppedAreaPixels`, which is what produces the "goes funny" behaviour. Lock `objectFit="cover"` for fill and only change behaviour on save.
+
+This makes the tile, the editor, and the final render mathematically consistent.
+
+---
+
+### 3. White Border option must show in the preview and be honoured at render time
+
+Currently selecting "White Border (3 mm)" updates the spec but is invisible in the tile and the editor. The backend `resize` call also ignores it.
+
+**Fix**:
+1. `PhotoTile.tsx`: when `border_slug !== "none"`, wrap the cropped image in an inner box with white padding proportional to the chosen border (3 mm scaled against the print size's long edge → percentage). Background of the outer aspect-ratio frame becomes white so the border shows.
+2. `PhotoEditorModal.tsx`: render a non-interactive white inset overlay inside the cropper at the same proportional thickness, so the user sees the printable area shrink when they enable Border. Add a small caption: `White border (3 mm)`.
+3. Render queue: when `border_slug === "white_3mm"`, after `cropRasterize` call `resize(asset, contentW_mm, contentH_mm, "fit")` against the inset content area, then place that page inside a `width_mm × height_mm` page using the existing `resize` with `fit_mode="fit"` against the full size. (Border is implicit white padding from `fit`.)
+
+---
+
+### 4. Confirm S3 storage (no change required)
+
+Yes — `usePhotoUpload.ts` calls `uploadToS3(storagePath, file)` writing originals to:
+
+```
+tenants/<tenantId>/uploads/<userId>/<orderItemId>/photos/<uuid>_<filename>
+```
+
+This is the same `document-uploads` S3 bucket used by every other file. Documented here for the user; no code change needed.
+
+---
+
+### 5. Render ONE consolidated print-ready PDF on Add to Cart
+
+Today `usePhotoRenderQueue` registers and resizes each photo as its own asset and stores nothing back on the order. Production has no single deliverable.
+
+**Fix** — rewrite `usePhotoRenderQueue.ts` to produce one merged PDF for the whole order:
+
+1. For each photo entry (in grid order, repeated by `quantity` so duplicates appear consecutively in the final PDF):
+   - `createAsset` with original image
+   - `cropRasterize(asset, box, 300)` using the saved `croppedAreaPixels`
+   - `resize(asset, width_mm, height_mm, fit_mode)` — using the print-size dimensions
+   - When border is on, apply the inset technique from §3.
+   - Wait for each job via `pollJob`.
+2. Collect the resulting per-photo asset IDs.
+3. Call `merge(assetIds, "photo-prints-<orderItemId>.pdf")` (already exposed by `documentCentreApi.ts`) and `pollJob` it.
+4. Resolve the merged PDF's storage path via `getDerivedFiles(mergedAssetId)` (kind = `merged`).
+5. Insert one row into the existing `order_documents` table for the merged PDF with:
+   - `order_item_id = orderItem.id`
+   - `document_type = "print_ready"`
+   - `is_customer_visible = false`
+   - `storage_path` = merged PDF path
+   - `metadata.kind = "photo_prints_merged"`
+6. Stash `{ merged_asset_id, merged_storage_path }` on `spec.photo_prints` so the admin order detail can link to it.
+
+Result: production opens the order and gets one continuous N-page PDF (one page per print, in the correct order, repeated for quantity), borders applied if selected, ready to send straight to the photo printer.
+
+The render-progress modal stays — total progress = (per-photo render % × n + merge step) / total steps.
+
+---
+
+### 6. Admin order detail — gallery preview of the customer's photo job
+
+Today admin sees only filenames in the `Customer's Attached Files` block of `JobDetailPanel.tsx`.
+
+**Fix**:
+1. In `JobDetailPanel.tsx`, when `job.product_category` (or the underlying product family slug) is `photo-prints`, render a new `PhotoPrintsAdminGallery` component **above** the attached-files list.
+2. The gallery reads `job.configuration.photo_prints` (already snapshotted at order-place time via §5 and existing `buildPhotoPrintsSection`) and shows a tile per photo with:
+   - Cropped/rotated preview using the same canvas helper from §2 (single source of truth)
+   - Filename
+   - Print size
+   - Quantity
+   - Border indicator
+3. Add a prominent "Download print-ready PDF" button at the top of the gallery linking to the merged file's signed URL (resolved via `resolveUrls` from the storage path saved in §5).
+4. Also fix the existing snapshot bug: `buildPhotoPrintsSection` reads `spec.photo_prints` as an array, but `PhotoPrintsBuilder` writes `spec.photo_prints = { print_size_slug, finish_slug, border_slug, photos: [...] }`. Update the snapshot builder to read `spec.photo_prints.photos` and to include the global size/finish/border so the admin sees them.
+
+---
+
+## Files to change
 
 | File | Change |
 |---|---|
-| `src/lib/seedAllProducts.ts` | Add `seedPhotoPrints()` and include in `seedAllProducts` |
-| `src/lib/productOptionValues.ts` | Add `PRINT_SIZE_PHOTO`, `PHOTO_FINISH`, `PHOTO_BORDER`, `PRICING_PHOTO` |
-| `src/pages/dashboard/NewOrder.tsx` | Route Photo Prints family to `/t/:slug/orders/new/photo-prints` instead of generic builder |
-| `src/App.tsx` | Add the two new routes for `PhotoPrintsBuilder` |
-| `src/lib/orders/buildJobSnapshot.ts` | Emit a `Photos` config section when family slug is `photo-prints` |
-| `package.json` | Add `react-easy-crop` |
+| `src/pages/dashboard/CustomerDashboard.tsx` | Add `photo-prints` to `SLUG_IMAGE_MAP` (§1) |
+| `src/components/photo/PhotoTile.tsx` | Replace CSS-transform preview with canvas-based render; add white-border visualisation (§2, §3) |
+| `src/components/photo/PhotoEditorModal.tsx` | Stable re-open from saved crop, white-border overlay, lock objectFit (§2, §3) |
+| `src/lib/photoPrints/renderPreview.ts` (new) | Shared canvas helper used by tile, editor preview, and admin gallery |
+| `src/hooks/usePhotoRenderQueue.ts` | Rewrite to merge into one PDF and persist `order_documents` row + spec metadata (§5) |
+| `src/lib/orders/buildJobSnapshot.ts` | Fix `buildPhotoPrintsSection` to read `spec.photo_prints.photos`; emit size/finish/border (§6) |
+| `src/components/orders/detail/PhotoPrintsAdminGallery.tsx` (new) | Admin gallery (§6) |
+| `src/components/orders/detail/JobDetailPanel.tsx` | Mount gallery for `photo-prints` jobs (§6) |
+
+## Guardrails
+
+- No changes to any non-photo product flow.
+- No DB schema changes — reuses `documents`, `order_documents`, `order_items.spec`.
+- No changes to FlipBook, RingBinder, Brochure preview code.
+- Document Centre endpoints used (`createAsset`, `cropRasterize`, `resize`, `merge`, `getDerivedFiles`, `pollJob`) are already proxied through the existing `pdf-api` edge function — no new edge functions needed.
 
 ## Verification checklist
 
-1. New family **Photo Prints** appears on the New Order page with the existing card style.
-2. Selecting it opens the photo flow, never the generic OrderBuild.
-3. Multi-image upload populates the grid instantly with correct aspect-clipped thumbnails.
-4. Changing Print Size re-aspects every tile, preserves crop where possible.
-5. Editor modal lets the user drag, zoom (1×–4×), rotate 90°, toggle Fit/Fill, Save.
-6. Per-photo quantity stepper updates the bottom-bar total live.
-7. Low-res warning appears when a 4 MP photo is cropped to fit A4.
-8. Add to Cart renders one print-ready PDF per photo in the background, then enters the cart.
-9. Cart line-item shows `Photo Prints × N (n photos)` with a per-photo breakdown in order detail.
-10. Existing bound documents, ring binders, brochures, etc. behave exactly as before — no regressions.
+1. My Print Centre tile shows the photo-prints hero image, identical to Create.
+2. Edit a photo → zoom, drag, rotate → Save → tile reflects exactly what was shown in the editor.
+3. Re-open editor for a previously-saved photo → cropper shows the same framing, no jump.
+4. Toggling White Border updates both the editor and the tile with a visible white inset.
+5. Photos saved to S3 under `tenants/<id>/uploads/<user>/<item>/photos/...` (existing).
+6. Add to Cart triggers the render modal → finishes → exactly one merged PDF appears in the order's `order_documents` (`document_type = print_ready`, `kind = photo_prints_merged`), with one page per print × quantity, borders honoured.
+7. Admin opens the order → sees the photo gallery (cropped previews, sizes, qty) and a "Download print-ready PDF" button that returns the merged PDF.
+8. No regressions in any other product family.
 
