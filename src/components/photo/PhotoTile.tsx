@@ -1,14 +1,16 @@
-import { useEffect, useState } from "react";
-import { Pencil, Copy, Trash2, Minus, Plus, AlertTriangle, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Pencil, Copy, Trash2, Minus, Plus, AlertTriangle, Loader2, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { PhotoPrintEntry } from "@/lib/photoPrints/types";
-import { getPhotoPrintSize } from "@/lib/photoPrints/sizes";
+import { getPhotoPrintSize, PHOTO_BORDER_OPTIONS } from "@/lib/photoPrints/sizes";
+import { renderPhotoPreview, borderFractionFor } from "@/lib/photoPrints/renderPreview";
 
 interface PhotoTileProps {
   photo: PhotoPrintEntry;
   signedUrl: string | null;
+  borderSlug: string;
   onEdit: () => void;
   onDuplicate: () => void;
   onRemove: () => void;
@@ -18,71 +20,72 @@ interface PhotoTileProps {
 export default function PhotoTile({
   photo,
   signedUrl,
+  borderSlug,
   onEdit,
   onDuplicate,
   onRemove,
   onQuantityChange,
 }: PhotoTileProps) {
   const size = getPhotoPrintSize(photo.print_size_slug);
-  const [imgLoaded, setImgLoaded] = useState(false);
+  const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === borderSlug);
+  const borderMm = border?.border_mm ?? 0;
+  const longEdgeMm = Math.max(size.width_mm, size.height_mm);
+  const borderFraction = borderFractionFor(longEdgeMm, borderMm);
+
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [rendering, setRendering] = useState(false);
+  const renderKey = `${signedUrl}|${photo.croppedAreaPixels?.x ?? "n"},${photo.croppedAreaPixels?.y ?? "n"},${photo.croppedAreaPixels?.width ?? "n"},${photo.croppedAreaPixels?.height ?? "n"}|${photo.rotation}|${size.aspect}|${borderFraction}`;
+  const lastKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    setImgLoaded(false);
-  }, [signedUrl]);
+    if (!signedUrl) return;
+    if (lastKeyRef.current === renderKey) return;
+    lastKeyRef.current = renderKey;
+    let cancelled = false;
+    setRendering(true);
+    renderPhotoPreview({
+      imageUrl: signedUrl,
+      croppedAreaPixels: photo.croppedAreaPixels,
+      rotation: photo.rotation || 0,
+      aspect: size.aspect,
+      borderFraction,
+      outputLongEdgePx: 480,
+    })
+      .then((url) => {
+        if (!cancelled) setPreviewUrl(url);
+      })
+      .catch((e) => {
+        console.warn("[photo-tile] render failed", e);
+      })
+      .finally(() => {
+        if (!cancelled) setRendering(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [renderKey, signedUrl, photo.croppedAreaPixels, photo.rotation, size.aspect, borderFraction]);
 
-  // Low-res check: simulate cropped pixel area at chosen aspect, compare to ideal/min.
+  // Low-res check
   const longEdgePx = Math.max(photo.source_width_px, photo.source_height_px);
   const isLowRes = longEdgePx > 0 && longEdgePx < size.min_pixels_long_edge;
-
-  // CSS transform that mimics the crop preview.
-  // react-easy-crop's `crop` is in pixels relative to the cropper container,
-  // but we don't have that container size on the tile. Instead, derive a
-  // visual approximation from croppedAreaPixels: position + scale the source
-  // so the cropped rect fills the tile.
-  const cap = photo.croppedAreaPixels;
-  let imgStyle: React.CSSProperties = { objectFit: "cover" };
-  if (cap && photo.source_width_px > 0 && photo.source_height_px > 0) {
-    const sx = photo.source_width_px / cap.width;
-    const sy = photo.source_height_px / cap.height;
-    const scale = Math.max(sx, sy);
-    const translateXPercent = -(cap.x / photo.source_width_px) * 100 * sx;
-    const translateYPercent = -(cap.y / photo.source_height_px) * 100 * sy;
-    imgStyle = {
-      width: `${100 * sx}%`,
-      height: `${100 * sy}%`,
-      objectFit: "cover",
-      transform: `translate(${translateXPercent}%, ${translateYPercent}%) rotate(${photo.rotation}deg)`,
-      transformOrigin: "top left",
-    };
-  } else if (photo.rotation) {
-    imgStyle = {
-      objectFit: "cover",
-      transform: `rotate(${photo.rotation}deg)`,
-    };
-  }
 
   return (
     <div className="group relative rounded-xl border border-border bg-card overflow-hidden transition-all hover:shadow-md hover:border-primary/40">
       {/* Aspect-ratio thumbnail clipped to print frame */}
       <div
-        className="relative w-full bg-muted overflow-hidden"
+        className="relative w-full bg-white overflow-hidden"
         style={{ aspectRatio: size.aspect }}
       >
-        {!signedUrl || !imgLoaded ? (
+        {!signedUrl || (!previewUrl && rendering) ? (
           <div className="absolute inset-0 flex items-center justify-center bg-muted">
             <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
           </div>
         ) : null}
-        {signedUrl && (
+        {previewUrl && (
           <img
-            src={signedUrl}
+            src={previewUrl}
             alt={photo.file_name}
-            className={cn(
-              "absolute inset-0 w-full h-full transition-opacity",
-              imgLoaded ? "opacity-100" : "opacity-0",
-            )}
-            style={imgStyle}
-            onLoad={() => setImgLoaded(true)}
+            className={cn("absolute inset-0 w-full h-full object-cover")}
             draggable={false}
           />
         )}
@@ -94,6 +97,16 @@ export default function PhotoTile({
           >
             <AlertTriangle className="h-3 w-3" />
             Low resolution
+          </Badge>
+        )}
+
+        {borderFraction > 0 && (
+          <Badge
+            variant="secondary"
+            className="absolute top-2 right-2 gap-1 border-0 text-[10px] bg-white/90 text-foreground"
+          >
+            <Square className="h-3 w-3" />
+            White border
           </Badge>
         )}
 
