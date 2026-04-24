@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, Check, Linkedin, Youtube, Mail, Star, Play } from "lucide-react";
-import heroImage from "@/assets/hero-image.png";
+import heroImageWide from "@/assets/hero-image-wide.png";
+import heroImageCompact from "@/assets/hero-image-compact.png";
 import sarahPhoto from "@/assets/testimonial-sarah.jpg";
 import printSamples from "@/assets/print-samples.png";
 import docCentreLogo from "@/assets/doc-centre-logo.svg";
@@ -411,22 +412,20 @@ export default function MarketingLanding() {
       <section
         className="relative overflow-hidden bg-white"
       >
-        {/* full-width hero image (already pre-blended to white on the left).
-            Renders as a background that fills the section; copy sits on top
-            within the image's frame. */}
-        <div className="absolute inset-0 hidden md:block pointer-events-none" aria-hidden>
+        {/* Desktop (lg+): wide hero image fills background, copy overlays on left */}
+        <div className="absolute inset-0 hidden lg:block pointer-events-none" aria-hidden>
           <img
-            src={heroImage}
+            src={heroImageWide}
             alt=""
             className="w-full h-full object-cover object-right block"
           />
         </div>
-        {/* mobile fallback: show image as a top banner */}
-        <div className="md:hidden">
-          <img src={heroImage} alt="" className="w-full h-auto block" />
+        {/* Tablet & mobile (<lg): compact image stacks above copy */}
+        <div className="lg:hidden">
+          <img src={heroImageCompact} alt="" className="w-full h-auto block" />
         </div>
 
-        <div className="relative max-w-[1240px] mx-auto px-6 py-8 lg:py-10 min-h-[520px] lg:min-h-[560px] grid lg:grid-cols-2 gap-10 items-start">
+        <div className="relative max-w-[1240px] mx-auto px-6 py-8 lg:py-10 lg:min-h-[560px] grid lg:grid-cols-2 gap-10 items-start">
           {/* left: copy */}
           <div className="relative z-10">
             <img
