@@ -215,7 +215,11 @@ const CustomerDashboard = () => {
 
   // Lazy: navigate to upload step with the family preselected; the order is
   // only created on first file upload (see OrderFiles.ensureOrder).
-  const handlePickProduct = (familyId: string) => {
+  const handlePickProduct = (familyId: string, familySlug: string) => {
+    if (familySlug === "photo-prints") {
+      navigate(`/t/${slug}/orders/new/photo-prints`);
+      return;
+    }
     navigate(`/t/${slug}/orders/new/${familyId}`);
   };
 
@@ -252,7 +256,7 @@ const CustomerDashboard = () => {
                     <button
                       key={f.id}
                       className="product-tile"
-                      onClick={() => handlePickProduct(f.id)}
+                      onClick={() => handlePickProduct(f.id, f.slug)}
                     >
                       <div className="product-thumb overflow-hidden">
                         {(SLUG_IMAGE_MAP[f.slug] || f.image_url) ? (
