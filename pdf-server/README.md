@@ -1,126 +1,81 @@
-# PDF Server (document-centre-api)
+# Document Centre API
 
-Source-of-truth backup for the FastAPI + Celery PDF processing service that runs at
-**`document-centre-api.jaimar.dev`**. The live service is deployed on its own VPS;
-this folder exists so the code lives alongside the Lovable client that consumes it,
-and so the AI assistant in this repo can read both sides of the contract in one place.
+Backend for ecommerce document printing with native Ubuntu deployment support.
 
-> ⚠️ **Lovable does not build or run this folder.** It only builds the React/Vite app
-> at the repo root. These files are reference + backup only.
+## What it does
 
----
+- Accepts uploaded assets already stored in Supabase Storage or local storage
+- Converts office files to PDF
+- Converts images to PDF
+- Inspects PDF page sizes and boxes
+- Normalizes/fixes PDFs with qpdf/Ghostscript where possible
+- Generates thumbnails and previews
+- Merges PDFs
+- Rotates PDFs
+- Converts PDFs to grayscale
+- Converts PDFs to CMYK
+- Resizes/crops pages
+- Performs basic N-up, sheet imposition with bleed/crop marks, and booklet jobs
+- Runs heavy work through a queue
+- Includes a simple admin UI for retry/cancel/delete/reset of jobs
 
-## What this service does
+## Recommended production shape
 
-- Accepts uploaded assets (PDFs, images, Office documents) via S3.
-- Runs operations on them via Celery workers: `inspect`, `rotate`, `grayscale`, `cmyk`,
-  `resize`, `nup`, `impose-sheet`, `booklet`, `merge`, `crop-rasterize`,
-  `convert-office` (LibreOffice headless).
-- Produces normalized PDFs, thumbnails, previews, and derived files; writes them back to S3.
-- Exposes a REST API documented at `/openapi.json` on the live host.
+For now, this repo is best run on a plain Ubuntu VPS with:
 
-The contract consumed by the Lovable client lives at:
-[`docs/document-centre-api-contract.md`](../docs/document-centre-api-contract.md)
+- Ubuntu
+- Python virtualenv
+- Redis installed directly on the server
+- FastAPI API run by systemd
+- Celery worker run by systemd
+- Nginx as reverse proxy
+- Supabase Postgres for the database
+- Supabase Storage for uploaded/generated files
 
-Keep that file and this server in sync — if you change a route here, update the contract.
+## Native Ubuntu deployment
 
----
+Important files:
 
-## Suggested layout
+- `scripts/install-ubuntu.sh` — installs Ubuntu packages you need
+- `scripts/bootstrap-app.sh` — creates the venv and installs Python dependencies
+- `deploy/systemd/document-centre-api.service` — API service unit
+- `deploy/systemd/document-centre-worker.service` — worker service unit
+- `deploy/nginx/document-centre-api.conf` — Nginx site config
+- `deploy/ubuntu/ENV_CHECKLIST.md` — what to put in `.env`
+- `deploy/ubuntu/SETUP_STEPS.md` — plain-English Ubuntu steps
 
-```text
-pdf-server/
-├── README.md                  ← this file
-├── .gitignore
-├── .env.example               ← template; never commit real .env
-├── requirements.txt           ← or pyproject.toml
-├── Dockerfile
-├── docker-compose.yml         ← optional: api + worker + redis
-├── app/
-│   ├── main.py                ← FastAPI app entry
-│   ├── config.py              ← settings (S3, DB, Redis, etc.)
-│   ├── routes/
-│   │   ├── assets.py
-│   │   ├── jobs.py
-│   │   └── operations.py      ← /v1/operations/* incl. convert-office
-│   ├── workers/
-│   │   ├── celery_app.py
-│   │   ├── inspect.py
-│   │   ├── render.py
-│   │   └── office.py          ← LibreOffice conversion task
-│   ├── services/
-│   │   ├── s3.py
-│   │   └── assets.py
-│   └── models/
-└── deploy/
-    ├── systemd/               ← .service unit files
-    ├── nginx/                 ← reverse-proxy config
-    └── scripts/               ← deploy.sh, restart.sh, etc.
-```
+### Quick setup outline
 
-Adjust to match what's actually on the VPS — this is a suggestion, not a mandate.
+1. Create a fresh Ubuntu VPS.
+2. Clone or copy this repo to `/opt/document-centre-api`.
+3. Copy `.env.example` to `.env` and fill in real values.
+4. Run `sudo bash scripts/install-ubuntu.sh`
+5. Run `sudo bash scripts/bootstrap-app.sh`
+6. Install the systemd and Nginx files from `deploy/`
+7. Start the API and worker services
+8. Point your domain to Nginx
+9. Run `supabase/migrations/001_init.sql` in Supabase
 
----
+## Local/Docker use
 
-## How to copy your working code in
+Docker files are still included for local development and experimentation, but Docker/Coolify is no longer the primary deployment path in this repo.
 
-On the VPS (or wherever the working source lives):
+## Frontend flow
 
-```bash
-# 1. Clone this repo somewhere local
-git clone <this-repo-url> document-centre
-cd document-centre
+See `LOVABLE_API_FLOW.md` for the upload → process → preview → impose flow.
 
-# 2. Copy the server source in
-cp -R /path/to/your/pdf-server/* pdf-server/
+## Current milestone focus
 
-# 3. Strip secrets / venv / caches (see .gitignore — these should be excluded already)
-rm -rf pdf-server/.venv pdf-server/__pycache__ pdf-server/.env
+Milestone 1 is:
 
-# 4. Commit + push
-git add pdf-server/
-git commit -m "chore(pdf-server): import working source for backup + reference"
-git push
-```
+- upload/reference file
+- normalize to PDF
+- inspect page sizes/boxes
+- generate thumbnails/previews
+- track derived files
 
-Lovable will sync the new files into the project filesystem automatically.
+## Notes
 
----
+This is a strong working base, not finished pressroom software.
 
-## What MUST NOT be committed
-
-- `.env` files containing real S3 keys, DB passwords, SMTP creds, signing secrets.
-  Use `.env.example` with placeholder values instead.
-- Virtualenvs (`.venv/`, `venv/`, `env/`).
-- Python bytecode (`__pycache__/`, `*.pyc`).
-- Large binary artifacts: built PDFs, sample uploads, model files, log dumps.
-- IDE files (`.idea/`, `.vscode/` — keep workspace-specific).
-
-The included `.gitignore` covers these. Double-check before the first push.
-
----
-
-## Operational notes (for future-you)
-
-- **LibreOffice concurrency**: each `soffice --headless` invocation must use a unique
-  `-env:UserInstallation=file:///tmp/lo-<uuid>` profile path, otherwise parallel jobs
-  collide on the user-profile lock and one will hang. Recommend Celery `-c 2` for the
-  `office` queue on small VPSes.
-- **Fonts**: install `fonts-liberation` and `fonts-dejavu` (or your corporate font set)
-  on the host so converted documents render correctly.
-- **Worker HOME**: the Celery service's `HOME` must be writable (LibreOffice writes a
-  profile on first run). In systemd, set `Environment=HOME=/var/lib/document-centre`
-  and ensure that directory is owned by the service user.
-- **Asset promotion**: after a successful `convert-office` job, the worker MUST update
-  the asset's `normalized_storage_path` to the new PDF and recompute `page_count`,
-  `width_pt`, `height_pt`, `boxes` — otherwise the Lovable client will keep treating
-  the original .docx as the source of truth.
-
----
-
-## Related
-
-- Live API: <https://document-centre-api.jaimar.dev/openapi.json>
-- Client contract: [`../docs/document-centre-api-contract.md`](../docs/document-centre-api-contract.md)
-- Client wrapper: [`../src/lib/documentCentreApi.ts`](../src/lib/documentCentreApi.ts)
-- Edge proxy: [`../supabase/functions/pdf-api/index.ts`](../supabase/functions/pdf-api/index.ts)
+Advanced booklet/signature logic, deeper preflight, and print-tuned grayscale policies still need testing and iteration.

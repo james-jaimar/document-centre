@@ -1,0 +1,22 @@
+body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; color: #222; }
+.wrap { max-width: 1400px; margin: 0 auto; padding: 24px; }
+.grid { display: grid; grid-template-columns: 1fr; gap: 24px; }
+section { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.toolbar { display: flex; gap: 16px; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { background: #fff; color: #222; text-decoration: none; border-radius: 999px; padding: 6px 12px; border: 1px solid #ddd; }
+.chip.active { background: #1e293b; color: #fff; border-color: #1e293b; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 8px; border-bottom: 1px solid #ddd; text-align: left; vertical-align: top; }
+.mono { font-family: monospace; font-size: 12px; }
+.error { max-width: 420px; white-space: pre-wrap; font-size: 12px; }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; }
+button { border: 0; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+.warn { background: #f59e0b; color: #111; }
+.danger { background: #a11; color: #fff; }
+.status { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+.status-completed { background: #d8f5dd; }
+.status-failed { background: #ffd9d9; }
+.status-running { background: #fff1c7; }
+.status-queued { background: #dce8ff; }
+.status-cancelled { background: #e5e7eb; }

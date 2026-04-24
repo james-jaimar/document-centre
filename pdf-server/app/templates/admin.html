@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>PrintForge Admin</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+  <div class="wrap">
+    <h1>PrintForge Admin</h1>
+    <div class="toolbar">
+      <div class="chips">
+        <a class="chip {% if not selected_status %}active{% endif %}" href="/admin">All</a>
+        {% for row in status_counts %}
+          <a class="chip {% if selected_status == row.status %}active{% endif %}" href="/admin?status={{ row.status }}">{{ row.status }} ({{ row.count }})</a>
+        {% endfor %}
+      </div>
+      <form method="post" action="/admin/jobs/reset-stuck">
+        <button>Reset stuck jobs</button>
+      </form>
+    </div>
+    <div class="grid">
+      <section>
+        <h2>Recent jobs</h2>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Operation</th><th>Status</th><th>Asset</th><th>Error</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+          {% for job in jobs %}
+            <tr>
+              <td class="mono">{{ job.id }}</td>
+              <td>{{ job.operation }}</td>
+              <td><span class="status status-{{ job.status }}">{{ job.status }}</span></td>
+              <td class="mono">{{ job.asset_id or '' }}</td>
+              <td class="error">{{ job.error or '' }}</td>
+              <td class="actions">
+                <form method="post" action="/admin/jobs/{{ job.id }}/retry"><button>Retry</button></form>
+                <form method="post" action="/admin/jobs/{{ job.id }}/cancel"><button class="warn">Cancel</button></form>
+                <form method="post" action="/admin/jobs/{{ job.id }}/delete"><button class="danger">Delete</button></form>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </section>
+      <section>
+        <h2>Recent assets</h2>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Filename</th><th>Status</th><th>Pages</th><th>Normalized</th></tr>
+          </thead>
+          <tbody>
+          {% for asset in assets %}
+            <tr>
+              <td class="mono">{{ asset.id }}</td>
+              <td>{{ asset.original_filename }}</td>
+              <td>{{ asset.status }}</td>
+              <td>{{ asset.page_count or '' }}</td>
+              <td class="mono">{{ asset.normalized_storage_path or '' }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </section>
+      <section>
+        <h2>Derived files</h2>
+        <table>
+          <thead>
+            <tr><th>Kind</th><th>Asset</th><th>Page</th><th>Path</th><th>Open</th></tr>
+          </thead>
+          <tbody>
+          {% for file in derived %}
+            <tr>
+              <td>{{ file.kind }}</td>
+              <td class="mono">{{ file.asset_id or '' }}</td>
+              <td>{{ file.page or '' }}</td>
+              <td class="mono">{{ file.storage_path }}</td>
+              <td>{% if file.url %}<a href="{{ file.url }}" target="_blank">open</a>{% endif %}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

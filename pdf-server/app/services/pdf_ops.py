@@ -1,0 +1,459 @@
+from __future__ import annotations
+
+import subprocess
+from io import BytesIO
+from pathlib import Path
+from typing import Iterable
+
+from PIL import Image
+import pikepdf
+from pypdf import PdfReader, PdfWriter, Transformation
+from reportlab.lib.colors import Color
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
+
+from app.core.config import settings
+
+ICC_DIR = Path("/opt/document-centre-api/icc")
+
+
+def resolve_icc_profile(icc_profile: str | None) -> str | None:
+    if not icc_profile:
+        return None
+
+    candidate = Path(icc_profile).expanduser()
+    if candidate.is_absolute() and candidate.exists():
+        return str(candidate)
+
+    mapped = ICC_DIR / icc_profile
+    if mapped.exists():
+        return str(mapped)
+
+    return None
+
+
+class PdfOps:
+    def office_to_pdf(self, src: Path, out_dir: Path) -> Path:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            [
+                settings.libreoffice_bin,
+                "--headless",
+                "--convert-to",
+                "pdf",
+                "--outdir",
+                str(out_dir),
+                str(src),
+            ],
+            check=True,
+        )
+        return out_dir / (src.stem + ".pdf")
+
+    def image_to_pdf(
+        self,
+        src: Path,
+        out_pdf: Path,
+        page_width_mm: float | None = None,
+        page_height_mm: float | None = None,
+        fit_mode: str = "fit",
+    ) -> Path:
+        image = Image.open(src)
+        if image.mode in ("RGBA", "P"):
+            image = image.convert("RGB")
+
+        if not page_width_mm or not page_height_mm:
+            image.save(out_pdf, "PDF", resolution=300.0)
+            return out_pdf
+
+        w_pt = page_width_mm * mm
+        h_pt = page_height_mm * mm
+        c = canvas.Canvas(str(out_pdf), pagesize=(w_pt, h_pt))
+
+        iw, ih = image.size
+        sx = w_pt / iw
+        sy = h_pt / ih
+        scale = min(sx, sy) if fit_mode == "fit" else max(sx, sy)
+
+        draw_w = iw * scale
+        draw_h = ih * scale
+        x = (w_pt - draw_w) / 2
+        y = (h_pt - draw_h) / 2
+
+        tmp = src if src.suffix.lower() in {".jpg", ".jpeg", ".png"} else src.with_suffix(".jpg")
+        if tmp != src:
+            image.save(tmp, "JPEG", quality=95)
+
+        c.drawImage(str(tmp), x, y, draw_w, draw_h)
+        c.showPage()
+        c.save()
+        return out_pdf
+
+    def inspect(self, src: Path) -> dict:
+        with pikepdf.open(src) as pdf:
+            page = pdf.pages[0]
+            info = {
+                "encrypted": pdf.is_encrypted,
+                "page_count": len(pdf.pages),
+                "pdf_version": pdf.pdf_version,
+                "boxes": {},
+            }
+
+            for name in ("MediaBox", "CropBox", "TrimBox", "BleedBox", "ArtBox"):
+                box = getattr(page, name, None)
+                if box:
+                    info["boxes"][name] = list(map(float, box))
+
+            media = page.MediaBox
+            info["width_pt"] = float(media[2] - media[0])
+            info["height_pt"] = float(media[3] - media[1])
+            return info
+
+    def normalize_pdf(self, src: Path, out_pdf: Path) -> Path:
+        subprocess.run([settings.qpdf_bin, "--replace-input", "--linearize", str(src)], check=False)
+        subprocess.run(
+            [
+                settings.ghostscript_bin,
+                "-dBATCH",
+                "-dNOPAUSE",
+                "-sDEVICE=pdfwrite",
+                "-o",
+                str(out_pdf),
+                str(src),
+            ],
+            check=True,
+        )
+        return out_pdf
+
+    def merge(self, files: Iterable[Path], out_pdf: Path) -> Path:
+        writer = PdfWriter()
+        for file in files:
+            reader = PdfReader(str(file))
+            for page in reader.pages:
+                writer.add_page(page)
+
+        with open(out_pdf, "wb") as f:
+            writer.write(f)
+        return out_pdf
+
+    def rotate(self, src: Path, out_pdf: Path, angle: int) -> Path:
+        reader = PdfReader(str(src))
+        writer = PdfWriter()
+
+        for page in reader.pages:
+            page.rotate(angle)
+            writer.add_page(page)
+
+        with open(out_pdf, "wb") as f:
+            writer.write(f)
+        return out_pdf
+
+    def grayscale(self, src: Path, out_pdf: Path) -> Path:
+        subprocess.run(
+            [
+                settings.ghostscript_bin,
+                "-dBATCH",
+                "-dNOPAUSE",
+                "-sDEVICE=pdfwrite",
+                "-sColorConversionStrategy=Gray",
+                "-dProcessColorModel=/DeviceGray",
+                "-o",
+                str(out_pdf),
+                str(src),
+            ],
+            check=True,
+        )
+        return out_pdf
+
+
+    def rgb_to_cmyk(self, src: Path, out_pdf: Path, icc_profile: str | None = None) -> Path:
+        resolved_icc = resolve_icc_profile(icc_profile)
+
+        cmd = [
+            settings.ghostscript_bin,
+            "-dBATCH",
+            "-dNOPAUSE",
+            "-sDEVICE=pdfwrite",
+            "-sColorConversionStrategy=CMYK",
+            "-o",
+            str(out_pdf),
+        ]
+
+        if resolved_icc:
+            cmd.append(f"-sDefaultCMYKProfile={resolved_icc}")
+            cmd.append("-dOverrideICC=true")
+
+        cmd.append(str(src))
+        subprocess.run(cmd, check=True)
+        return out_pdf
+
+    def rasterize_preview(self, src: Path, out_prefix: Path, dpi: int = 120, fmt: str = "png") -> list[Path]:
+        out_prefix.parent.mkdir(parents=True, exist_ok=True)
+        pattern = str(out_prefix) + "-%03d." + fmt
+        device = "png16m" if fmt == "png" else "jpeg"
+
+        subprocess.run(
+            [
+                settings.ghostscript_bin,
+                "-dNOPAUSE",
+                "-dBATCH",
+                f"-r{dpi}",
+                f"-sDEVICE={device}",
+                f"-sOutputFile={pattern}",
+                str(src),
+            ],
+            check=True,
+        )
+        return sorted(out_prefix.parent.glob(out_prefix.name + "-*." + fmt))
+
+    def resize_pages(
+        self,
+        src: Path,
+        out_pdf: Path,
+        width_mm: float,
+        height_mm: float,
+        fit_mode: str = "fit",
+    ) -> Path:
+        reader = PdfReader(str(src))
+        writer = PdfWriter()
+        target_w = width_mm * mm
+        target_h = height_mm * mm
+
+        for page in reader.pages:
+            src_w = float(page.mediabox.width)
+            src_h = float(page.mediabox.height)
+
+            sx = target_w / src_w
+            sy = target_h / src_h
+            scale = min(sx, sy) if fit_mode == "fit" else max(sx, sy)
+
+            page.scale_by(scale)
+            page.transfer_rotation_to_content()
+
+            new_page = writer.add_blank_page(width=target_w, height=target_h)
+            tx = (target_w - float(page.mediabox.width)) / 2
+            ty = (target_h - float(page.mediabox.height)) / 2
+            new_page.merge_transformed_page(page, Transformation().translate(tx, ty))
+
+        with open(out_pdf, "wb") as f:
+            writer.write(f)
+        return out_pdf
+
+    def nup(
+        self,
+        src: Path,
+        out_pdf: Path,
+        columns: int,
+        rows: int,
+        page_width_mm: float,
+        page_height_mm: float,
+        margin_mm: float = 5,
+    ) -> Path:
+        reader = PdfReader(str(src))
+        writer = PdfWriter()
+
+        sheet_w = page_width_mm * mm
+        sheet_h = page_height_mm * mm
+        margin = margin_mm * mm
+        slot_w = (sheet_w - margin * 2) / columns
+        slot_h = (sheet_h - margin * 2) / rows
+
+        pages = list(reader.pages)
+        per_sheet = columns * rows
+
+        for i in range(0, len(pages), per_sheet):
+            sheet = writer.add_blank_page(width=sheet_w, height=sheet_h)
+            chunk = pages[i : i + per_sheet]
+
+            for idx, page in enumerate(chunk):
+                col = idx % columns
+                row = idx // columns
+                pw = float(page.mediabox.width)
+                ph = float(page.mediabox.height)
+                scale = min(slot_w / pw, slot_h / ph)
+
+                x = margin + col * slot_w + (slot_w - pw * scale) / 2
+                y = sheet_h - margin - (row + 1) * slot_h + (slot_h - ph * scale) / 2
+
+                sheet.merge_transformed_page(page, Transformation().scale(scale).translate(x, y))
+
+        with open(out_pdf, "wb") as f:
+            writer.write(f)
+        return out_pdf
+
+    def impose_sheet_with_bleed(
+        self,
+        src: Path,
+        out_pdf: Path,
+        columns: int,
+        rows: int,
+        sheet_width_mm: float,
+        sheet_height_mm: float,
+        bleed_mm: float = 3,
+        gap_mm: float = 2,
+        outer_margin_mm: float = 8,
+        show_crop_marks: bool = True,
+        show_bleed_outline: bool = False,
+    ) -> Path:
+        reader = PdfReader(str(src))
+        pages = list(reader.pages)
+        if not pages:
+            raise ValueError("PDF has no pages")
+
+        writer = PdfWriter()
+        sheet_w = sheet_width_mm * mm
+        sheet_h = sheet_height_mm * mm
+        bleed = bleed_mm * mm
+        gap = gap_mm * mm
+        outer = outer_margin_mm * mm
+
+        slot_w = (sheet_w - (outer * 2) - (gap * (columns - 1))) / columns
+        slot_h = (sheet_h - (outer * 2) - (gap * (rows - 1))) / rows
+        trim_w = max(slot_w - (2 * bleed), 1)
+        trim_h = max(slot_h - (2 * bleed), 1)
+        per_sheet = columns * rows
+
+        for start in range(0, len(pages), per_sheet):
+            sheet = writer.add_blank_page(width=sheet_w, height=sheet_h)
+
+            overlay_buf = BytesIO()
+            c = canvas.Canvas(overlay_buf, pagesize=(sheet_w, sheet_h))
+            c.setLineWidth(0.4)
+            c.setStrokeColor(Color(0, 0, 0, alpha=1))
+
+            chunk = pages[start : start + per_sheet] if len(pages) > 1 else [pages[0]] * per_sheet
+
+            for idx, page in enumerate(chunk):
+                col = idx % columns
+                row = idx // columns
+
+                x0 = outer + col * (slot_w + gap)
+                y0 = sheet_h - outer - ((row + 1) * slot_h) - (row * gap)
+
+                trim_x = x0 + bleed
+                trim_y = y0 + bleed
+
+                pw = float(page.mediabox.width)
+                ph = float(page.mediabox.height)
+                scale = min(trim_w / pw, trim_h / ph)
+
+                tx = trim_x + (trim_w - pw * scale) / 2
+                ty = trim_y + (trim_h - ph * scale) / 2
+                sheet.merge_transformed_page(page, Transformation().scale(scale).translate(tx, ty))
+
+                if show_bleed_outline:
+                    c.rect(x0, y0, slot_w, slot_h, stroke=1, fill=0)
+
+                if show_crop_marks:
+                    mark = 5 * mm
+
+                    # bottom-left
+                    c.line(trim_x - mark, trim_y, trim_x, trim_y)
+                    c.line(trim_x, trim_y - mark, trim_x, trim_y)
+
+                    # bottom-right
+                    c.line(trim_x + trim_w, trim_y, trim_x + trim_w + mark, trim_y)
+                    c.line(trim_x + trim_w, trim_y - mark, trim_x + trim_w, trim_y)
+
+                    # top-left
+                    c.line(trim_x - mark, trim_y + trim_h, trim_x, trim_y + trim_h)
+                    c.line(trim_x, trim_y + trim_h, trim_x, trim_y + trim_h + mark)
+
+                    # top-right
+                    c.line(trim_x + trim_w, trim_y + trim_h, trim_x + trim_w + mark, trim_y + trim_h)
+                    c.line(trim_x + trim_w, trim_y + trim_h, trim_x + trim_w, trim_y + trim_h + mark)
+
+            c.showPage()
+            c.save()
+
+            overlay_buf.seek(0)
+            overlay_pdf = PdfReader(overlay_buf)
+            sheet.merge_page(overlay_pdf.pages[0])
+
+        with open(out_pdf, "wb") as f:
+            writer.write(f)
+
+        return out_pdf
+
+    def booklet(self, src: Path, out_pdf: Path, sheet_width_mm: float, sheet_height_mm: float) -> Path:
+        reader = PdfReader(str(src))
+        pages = list(reader.pages)
+        writer = PdfWriter()
+
+        while len(pages) % 4 != 0:
+            pages.append(None)
+
+        sheet_w = sheet_width_mm * mm
+        sheet_h = sheet_height_mm * mm
+        half_w = sheet_w / 2
+
+        left_index = 0
+        right_index = len(pages) - 1
+
+        while left_index < right_index:
+            # front side: last, first
+            front = writer.add_blank_page(width=sheet_w, height=sheet_h)
+            left_page = pages[right_index]
+            right_page = pages[left_index]
+
+            if left_page is not None:
+                lpw = float(left_page.mediabox.width)
+                lph = float(left_page.mediabox.height)
+                scale = min(half_w / lpw, sheet_h / lph)
+                x = (half_w - lpw * scale) / 2
+                y = (sheet_h - lph * scale) / 2
+                front.merge_transformed_page(left_page, Transformation().scale(scale).translate(x, y))
+
+            if right_page is not None:
+                rpw = float(right_page.mediabox.width)
+                rph = float(right_page.mediabox.height)
+                scale = min(half_w / rpw, sheet_h / rph)
+                x = half_w + (half_w - rpw * scale) / 2
+                y = (sheet_h - rph * scale) / 2
+                front.merge_transformed_page(right_page, Transformation().scale(scale).translate(x, y))
+
+            left_index += 1
+            right_index -= 1
+
+            # back side: second, second-last
+            back = writer.add_blank_page(width=sheet_w, height=sheet_h)
+            left_page = pages[left_index]
+            right_page = pages[right_index]
+
+            if left_page is not None:
+                lpw = float(left_page.mediabox.width)
+                lph = float(left_page.mediabox.height)
+                scale = min(half_w / lpw, sheet_h / lph)
+                x = (half_w - lpw * scale) / 2
+                y = (sheet_h - lph * scale) / 2
+                back.merge_transformed_page(left_page, Transformation().scale(scale).translate(x, y))
+
+            if right_page is not None:
+                rpw = float(right_page.mediabox.width)
+                rph = float(right_page.mediabox.height)
+                scale = min(half_w / rpw, sheet_h / rph)
+                x = half_w + (half_w - rpw * scale) / 2
+                y = (sheet_h - rph * scale) / 2
+                back.merge_transformed_page(right_page, Transformation().scale(scale).translate(x, y))
+
+            left_index += 1
+            right_index -= 1
+
+        with open(out_pdf, "wb") as f:
+            writer.write(f)
+
+        return out_pdf
+
+
+    def crop_to_box(self, src: Path, out_pdf: Path, box: list[float]) -> Path:
+        """Crop all pages to the given box [x0, y0, x1, y1]. Writes a NEW file; source is untouched."""
+        with pikepdf.open(src) as pdf:
+            for page in pdf.pages:
+                page.MediaBox = box
+                page.CropBox = box
+                for attr in ('TrimBox', 'BleedBox'):
+                    if hasattr(page, attr):
+                        del page[f'/{attr}']
+            pdf.save(out_pdf)
+        return out_pdf
+
+pdf_ops = PdfOps()

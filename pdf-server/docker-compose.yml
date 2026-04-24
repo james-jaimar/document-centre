@@ -1,0 +1,30 @@
+version: '3.9'
+services:
+  api:
+    build: .
+    command: /app/scripts/start-api-dev.sh
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+      - ./storage:/app/storage
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+
+  worker:
+    build: .
+    command: /app/scripts/start-worker.sh
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+      - ./storage:/app/storage
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
