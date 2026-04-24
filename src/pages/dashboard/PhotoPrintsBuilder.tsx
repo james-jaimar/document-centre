@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useCreateOrder, useOrderData } from "@/hooks/useOrderBuilder";
 import { useAddItemToCart } from "@/hooks/useCart";
 import { usePhotoUpload } from "@/hooks/usePhotoUpload";
-import { usePhotoRenderQueue } from "@/hooks/usePhotoRenderQueue";
+
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { resolveUrls } from "@/lib/thumbnailUtils";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
@@ -98,7 +98,6 @@ export default function PhotoPrintsBuilder() {
   }, [orderItem?.id, family?.id, createOrder]);
 
   const { uploads, uploadPhotos, clearUploads } = usePhotoUpload(orderItem?.id);
-  const renderQueue = usePhotoRenderQueue();
 
   const initialSpec: PhotoPrintsSpec = useMemo(
     () => ({

@@ -162,28 +162,31 @@ export function JobDetailPanel({ job, documents }: Props) {
         </div>
       </div>
 
-      {/* Photo Prints — admin gallery */}
-      {((config as any).photo_prints || job.product_category === "photo-prints") && (
-        <PhotoPrintsAdminGallery photoPrints={(config as any).photo_prints} />
-      )}
-
-      {/* Attached files */}
-      {jobDocs.length > 0 && (
-        <div className="rounded-lg border bg-card p-3">
-          <h3 className="text-xs font-semibold mb-1.5">Customer's Attached Files</h3>
-          <div className="space-y-0.5">
-            {jobDocs.map((doc: any) => (
-              <div key={doc.id} className="flex items-center gap-2 text-xs">
-                <span className="text-primary hover:underline cursor-pointer">{doc.file_name}</span>
-                {doc.file_size_bytes && (
-                  <span className="text-muted-foreground">
-                    ({(doc.file_size_bytes / 1024).toFixed(0)}KB)
-                  </span>
-                )}
-              </div>
-            ))}
+      {/* Photo Prints — admin gallery (replaces both attached files + photo list) */}
+      {(config as any).photo_prints || job.product_category === "photo-prints" ? (
+        <PhotoPrintsAdminGallery
+          photoPrints={(config as any).photo_prints}
+          orderItemId={(config as any).raw_spec?.order_item_id ?? job.order_item_id ?? null}
+        />
+      ) : (
+        /* Attached files — hidden for photo prints jobs (gallery shows them visually instead) */
+        jobDocs.length > 0 && (
+          <div className="rounded-lg border bg-card p-3">
+            <h3 className="text-xs font-semibold mb-1.5">Customer's Attached Files</h3>
+            <div className="space-y-0.5">
+              {jobDocs.map((doc: any) => (
+                <div key={doc.id} className="flex items-center gap-2 text-xs">
+                  <span className="text-primary hover:underline cursor-pointer">{doc.file_name}</span>
+                  {doc.file_size_bytes && (
+                    <span className="text-muted-foreground">
+                      ({(doc.file_size_bytes / 1024).toFixed(0)}KB)
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )
       )}
 
       {previewOpen && (
