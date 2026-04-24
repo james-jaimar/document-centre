@@ -66,6 +66,7 @@ import PlatformTenants from "@/pages/platform/PlatformTenants";
 import PlatformUsers from "@/pages/platform/PlatformUsers";
 import PlatformSettings from "@/pages/platform/PlatformSettings";
 import PlatformPricingRegions from "@/pages/platform/PlatformPricingRegions";
+import PlatformDocumentCentreOverview from "@/pages/platform/PlatformDocumentCentreOverview";
 
 const queryClient = new QueryClient({
   defaultOptions: {
