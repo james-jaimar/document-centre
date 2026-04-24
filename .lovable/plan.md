@@ -1,51 +1,156 @@
 
+## Current diagnosis
 
-## Place Order is failing for the photo-prints cart — diagnose & fix
+The recent changes are doing four separate things:
 
-The `demo-bootstrap warning` in the console is a red herring (it's from the `/try` boot path, not from clicking Place Order). The real failure is `order-engine` returning a non-2xx, but it's being swallowed because:
+1. `src/hooks/useCart.ts`
+   - Enriches checkout jobs before calling `order-engine`
+   - Builds `buildJobSnapshot(...)`
+   - Dynamically imports `inferPreviewTypeFromJob` and `buildPreviewSnapshot`
+   - Tries to attach a rich `configuration.preview` snapshot to each placed job
+   - Also kicks off non-blocking document processing after the jobs are built
 
-1. The `usePlaceOrder` mutation throws `error` from `supabase.functions.invoke(...)` without surfacing the function's response body — we only see "Edge Function returned a non-2xx status code".
-2. `order-engine` itself has not produced any visible logs for this attempt, so we don't yet know which insert/RPC threw.
-3. Separately, the previous **render-photo-prints** attempt for this exact cart item failed with `Rate limit exceeded for trace ... Retry after 21186ms` (visible in `order_items.spec.photo_prints.render_error`). That's the Document Centre throttling us — not directly the cause of Place Order failing, but it is a real bug we need to address now.
+2. `src/lib/orders/buildJobSnapshot.ts` + `src/components/orders/detail/JobDetailPanel.tsx`
+   - Store photo-prints-specific config on the placed job
+   - Hide the generic “Files” section for photo prints
+   - Render the new `PhotoPrintsAdminGallery`
 
-### Fix — three small, focused changes
+3. `src/components/orders/detail/PhotoPrintsAdminGallery.tsx`
+   - Polls the source `order_item.spec.photo_prints`
+   - Shows either:
+     - “Preparing print-ready PDF…”
+     - a red failed state + Retry
+     - or the final Print-ready PDF button
 
-**1. Surface the real error from `order-engine` (FE)**
+4. `supabase/functions/render-photo-prints/index.ts`
+   - Sends photo render work through `pdf-api`
+   - Persists success/failure back onto `spec.photo_prints`
+   - Attempts to retry rate limits
 
-In `usePlaceOrder` (`src/hooks/useCart.ts`), when `supabase.functions.invoke("order-engine", …)` returns an error, read the response body via `error.context.text()` (or `.json()`) and throw a meaningful `Error` so the toast shows the real reason instead of "Edge Function returned a non-2xx status code". This single change unblocks every future diagnosis of this flow.
+`supabase/functions/order-engine/index.ts` is also improved, but only once checkout actually reaches the edge function.
 
-**2. Add structured logging + per-step error responses inside `order-engine`**
+## What is actually breaking now
 
-In `supabase/functions/order-engine/index.ts` `createOrderWithJobs`, replace the bare `err(...)` returns with messages that include the failing operation (`order_insert`, `jobs_insert`, `pricing_snapshot_insert`, `addresses_insert`, `timeline_insert`, `membership_upsert`) and `console.error` the raw Postgres error before returning. This means the next failed Place Order will tell us exactly which insert dies, in both the network response body (now surfaced by §1) and the function logs.
+The current checkout failure is most likely no longer `order-engine`.
 
-No behaviour change on the success path — purely better error reporting.
+The user screenshot shows:
 
-**3. Make `render-photo-prints` retry on Document Centre rate-limits (instead of giving up)**
+```text
+Failed to fetch dynamically imported module:
+.../assets/buildPreviewSnapshot-BI4pMIx-.js
+```
 
-In `supabase/functions/render-photo-prints/index.ts`, when the proxied `pdf-api` call returns a 429 with `Retry after Xms`, parse the delay, sleep for it (capped at 30s, max 3 retries) and try again. After the retry budget is exhausted, persist the final error to `spec.photo_prints.render_error` as we do today, so the admin gallery shows the Retry button.
+That points directly at this code path in `usePlaceOrder`:
 
-This stops the silent failure the user already saw (`render_error: "Rate limit exceeded for trace … Retry after 21186ms"`).
+```ts
+const { inferPreviewTypeFromJob } = await import("@/lib/orders/inferPreviewType");
+const { buildPreviewSnapshot } = await import("@/lib/orders/buildPreviewSnapshot");
+```
 
-### What we expect after these changes
+So the order is failing before `supabase.functions.invoke("order-engine", ...)` even runs.
 
-- The next "Place Order" click that fails will show the **real DB or RPC error** in the toast and in the function logs.
-- We'll then either (a) immediately patch the offending insert in `order-engine` once we know what it is, or (b) confirm the order writes succeed and the FE was misreporting.
-- New photo-prints carts won't get permanently stuck in "render failed: rate limit" — the function will back off and retry once or twice before giving up.
+This means the new preview-enrichment work accidentally made checkout depend on a runtime-loaded hashed chunk. If that chunk is stale/missing after a deploy, checkout dies immediately.
 
-### Files to change
+## Fix plan
+
+### 1. Make checkout independent from runtime chunk loading
+
+In `src/hooks/useCart.ts`:
+
+- Remove the critical-path dynamic imports for:
+  - `@/lib/orders/inferPreviewType`
+  - `@/lib/orders/buildPreviewSnapshot`
+- Replace them with one of these safe approaches:
+  - preferred: normal top-level imports
+  - acceptable fallback: keep them lazy, but move the import itself inside a guarded `try/catch`
+
+The important rule:
+- order placement must never fail because a preview snapshot chunk could not load
+
+### 2. Downgrade preview snapshot generation to optional only
+
+Still in `src/hooks/useCart.ts`:
+
+- Keep `configuration.preview` as a nice-to-have enrichment
+- If snapshot generation fails for any reason:
+  - missing chunk
+  - stale deploy
+  - snapshot logic error
+- then fall back to the minimal preview payload already available:
+
+```ts
+{ thumbnails, product_type: previewType }
+```
+
+and continue placing the order normally.
+
+Right now the fallback only protects the `buildPreviewSnapshot(...)` call.
+It does not protect the preceding dynamic import itself.
+That boundary needs to move outward.
+
+### 3. Leave the admin photo gallery changes in place
+
+No rollback needed for:
+
+- `src/lib/orders/buildJobSnapshot.ts`
+- `src/components/orders/detail/JobDetailPanel.tsx`
+- `src/components/orders/detail/PhotoPrintsAdminGallery.tsx`
+
+Those changes are doing the right job:
+- visual operator view
+- hiding the generic file text block for photo prints
+- polling for the merged PDF state
+
+They are not the reason checkout is aborting.
+
+### 4. Finish the rate-limit fix properly in `render-photo-prints`
+
+The logs show `RateLimitError` being thrown during `fetch(...)`, not just a normal HTTP `429` response.
+
+So in `supabase/functions/render-photo-prints/index.ts`:
+
+- extend `makeDcRequest(...)` to catch thrown fetch errors as well as `res.status === 429`
+- detect:
+  - `err.name === "RateLimitError"`
+  - `err.retryAfterMs`
+  - or `Retry after Xms` inside the message
+- sleep and retry using the same cap:
+  - max 3 retries
+  - max 30s delay
+- only persist failure after retries are exhausted
+
+That will make the background PDF rendering behave the way the current plan intended.
+
+### 5. Keep `order-engine` diagnostics, but don’t chase them yet
+
+Do not revert the recent `order-engine` logging work.
+
+Once checkout reaches the function again, those tagged errors will be useful.
+But based on the current screenshot, the frontend import failure is the blocker first.
+
+## Files to change
 
 | File | Change |
 |---|---|
-| `src/hooks/useCart.ts` | In `usePlaceOrder`, unwrap `FunctionsHttpError` and throw the actual response body text |
-| `supabase/functions/order-engine/index.ts` | Tag every `err(...)` return in `createOrderWithJobs` with the failing step + `console.error` the raw error |
-| `supabase/functions/render-photo-prints/index.ts` | Detect 429 + `Retry after Xms`, back off and retry up to 3 times before persisting failure |
+| `src/hooks/useCart.ts` | Remove or guard the dynamic imports for `inferPreviewTypeFromJob` and `buildPreviewSnapshot`; ensure preview enrichment can never block order placement |
+| `supabase/functions/render-photo-prints/index.ts` | Retry thrown `RateLimitError` / `retryAfterMs`, not only HTTP 429 responses |
+| `src/lib/orders/buildJobSnapshot.ts` | No functional rollback expected; keep as-is unless a smaller adjustment is needed during implementation |
+| `src/components/orders/detail/PhotoPrintsAdminGallery.tsx` | No functional rollback expected; keep as-is |
 
-No DB schema changes. No customer-facing UI changes beyond a more useful toast message.
+## Expected result after the fix
 
-### Verification
+1. Clicking Place Order no longer depends on loading `buildPreviewSnapshot-*.js` at runtime.
+2. Even if preview snapshot enrichment fails, the order still submits.
+3. If a real backend issue remains after that, the improved `order-engine` error handling will finally surface the exact failing step.
+4. Background photo-print PDF rendering will retry real rate-limit exceptions properly instead of failing immediately.
 
-1. Click Place Order on the stuck cart — the toast now shows a specific message like `"order_insert failed: …"` instead of `"Edge Function returned a non-2xx status code"`.
-2. Edge function logs for `order-engine` show one `console.error` line with the failing operation and the Postgres error.
-3. Place a fresh photo-prints order — `render-photo-prints` logs one or more `429 Retry after …, sleeping` lines and ultimately succeeds, populating `merged_storage_path`.
-4. If Document Centre is genuinely down for the full retry budget, the gallery shows the existing "Render failed — Retry" pill (no regression).
+## Verification
 
+1. Re-open the same cart and click Place Order.
+2. Confirm there is no longer any `Failed to fetch dynamically imported module ... buildPreviewSnapshot-*.js` error.
+3. Confirm checkout reaches `order-engine`.
+4. If order placement still fails, the toast should now show a real tagged backend error like:
+   - `order_insert failed: ...`
+   - `jobs_insert failed: ...`
+   - etc.
+5. Place a fresh photo-prints order and confirm `render-photo-prints` survives thrown rate-limit exceptions and eventually fills `merged_storage_path`.
