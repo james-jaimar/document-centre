@@ -9,6 +9,7 @@ import {
   ArrowDown,
 } from "lucide-react";
 import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
+import { sortSectionsByRole } from "@/lib/orders/sectionOrdering";
 
 type DocumentSection = Tables<"document_sections">;
 type Document = Tables<"documents">;
@@ -102,9 +103,11 @@ export default function SectionList({
   const getDoc = (docId: string | null) =>
     documents.find((d) => d.id === docId);
 
-  // Filter out tabs and inserts — those belong on the Configure Options page
-  const fileSections = sections.filter(
-    (s) => s.section_type !== "tab" && s.section_type !== "insert"
+  // Filter out tabs and inserts — those belong on the Configure Options page —
+  // and present remaining sections in physical order (cover → body → back),
+  // regardless of the order the user added them.
+  const fileSections = sortSectionsByRole(
+    sections.filter((s) => s.section_type !== "tab" && s.section_type !== "insert"),
   );
 
   if (fileSections.length === 0) {
