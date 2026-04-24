@@ -492,6 +492,7 @@ export default function PhotoPrintsBuilder() {
               key={p.id}
               photo={p}
               signedUrl={signedUrls[p.original_storage_path] ?? null}
+              borderSlug={photoSpec.border_slug}
               onEdit={() => setEditorPhotoId(p.id)}
               onDuplicate={() => duplicatePhoto(p.id)}
               onRemove={() => removePhoto(p.id)}
@@ -534,6 +535,7 @@ export default function PhotoPrintsBuilder() {
         open={!!editorPhoto}
         photo={editorPhoto}
         signedUrl={editorPhoto ? signedUrls[editorPhoto.original_storage_path] ?? null : null}
+        borderSlug={photoSpec.border_slug}
         onClose={() => setEditorPhotoId(null)}
         onSave={(next) => {
           if (editorPhotoId) updatePhoto(editorPhotoId, next);
