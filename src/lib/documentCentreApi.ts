@@ -283,6 +283,20 @@ export async function rasterize(
   });
 }
 
+/**
+ * Convert an Office asset (Word, PowerPoint, OpenDocument) to PDF using
+ * LibreOffice headless on the PDF server. On completion the asset's
+ * `normalized_storage_path` points at the converted PDF and standard
+ * inspect/render operations can run against it as if it were a native PDF.
+ */
+export async function convertOffice(
+  assetId: string
+): Promise<{ job_id: string }> {
+  return request("v1/operations/convert-office", "POST", {
+    asset_id: assetId,
+  });
+}
+
 // ── Health ────────────────────────────────────────────────────────
 
 export async function health(): Promise<{
