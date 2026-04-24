@@ -1,10 +1,69 @@
 """S3 / object-storage rollups for the Storage admin page."""
 from __future__ import annotations
 
+import shutil
 import time
 from typing import Any
 
 from app.core.config import settings
+
+
+def _disk_usage() -> dict[str, int]:
+    """Best-effort disk usage for the local storage path (or root)."""
+    path = getattr(settings, "local_storage_path", None) or "/"
+    try:
+        usage = shutil.disk_usage(path)
+        return {"total": usage.total, "used": usage.used, "free": usage.free}
+    except Exception:
+        return {"total": 0, "used": 0, "free": 0}
+
+
+def storage_live() -> dict[str, Any]:
+    """Lightweight live snapshot used by ops dashboard + scheduled task.
+
+    Returns a flat shape:
+      {
+        "backend": "s3"|"local"|...,
+        "bucket": "...",
+        "s3":   {"object_count": int, "bytes": int} | None,
+        "disk": {"total": int, "used": int, "free": int},
+      }
+    """
+    disk = _disk_usage()
+    out: dict[str, Any] = {
+        "backend": settings.storage_mode,
+        "bucket": settings.aws_s3_bucket if settings.storage_mode == "s3" else "(local)",
+        "disk": disk,
+        "s3": None,
+    }
+
+    if settings.storage_mode != "s3":
+        return out
+
+    try:
+        import boto3  # type: ignore
+    except ImportError:
+        return out
+
+    try:
+        s3 = boto3.client(
+            "s3",
+            region_name=settings.aws_s3_region,
+            aws_access_key_id=settings.aws_access_key_id,
+            aws_secret_access_key=settings.aws_secret_access_key,
+        )
+        paginator = s3.get_paginator("list_objects_v2")
+        count = 0
+        total = 0
+        for page in paginator.paginate(Bucket=settings.aws_s3_bucket):
+            for obj in page.get("Contents", []) or []:
+                count += 1
+                total += int(obj.get("Size") or 0)
+        out["s3"] = {"object_count": count, "bytes": total}
+    except Exception as exc:  # noqa: BLE001
+        out["s3"] = {"object_count": 0, "bytes": 0, "error": str(exc)}
+
+    return out
 
 
 def storage_snapshot() -> dict[str, Any]:

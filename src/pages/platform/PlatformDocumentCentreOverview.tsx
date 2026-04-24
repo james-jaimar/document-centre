@@ -69,12 +69,27 @@ export default function PlatformDocumentCentreOverview() {
           <CardHeader><CardTitle className="text-base">Health probes</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             {health.data?.probes
-              ? Object.entries(health.data.probes).map(([name, p]) => (
-                  <div key={name} className="flex items-center justify-between text-sm">
-                    <span className="font-mono">{name}</span>
-                    <Badge variant={p.ok ? "default" : "destructive"}>{p.ok ? "OK" : "FAIL"}{p.latency_ms != null ? ` · ${p.latency_ms}ms` : ""}</Badge>
-                  </div>
-                ))
+              ? Object.entries(health.data.probes).flatMap(([name, p]: [string, any]) => {
+                  // Flat probe: has .ok property
+                  if (p && typeof p === "object" && "ok" in p) {
+                    return [(
+                      <div key={name} className="flex items-center justify-between text-sm">
+                        <span className="font-mono">{name}</span>
+                        <Badge variant={p.ok ? "default" : "destructive"}>{p.ok ? "OK" : "FAIL"}{p.latency_ms != null ? ` · ${p.latency_ms}ms` : ""}</Badge>
+                      </div>
+                    )];
+                  }
+                  // Nested group (e.g. binaries): render each child
+                  if (p && typeof p === "object") {
+                    return Object.entries(p).map(([child, cp]: [string, any]) => (
+                      <div key={`${name}.${child}`} className="flex items-center justify-between text-sm">
+                        <span className="font-mono text-muted-foreground">{name}.<span className="text-foreground">{child}</span></span>
+                        <Badge variant={cp?.ok ? "default" : "destructive"}>{cp?.ok ? "OK" : "FAIL"}{cp?.latency_ms != null ? ` · ${cp.latency_ms}ms` : ""}</Badge>
+                      </div>
+                    ));
+                  }
+                  return [];
+                })
               : <p className="text-sm text-muted-foreground">{health.isLoading ? "Loading…" : "No probe data"}</p>}
           </CardContent>
         </Card>

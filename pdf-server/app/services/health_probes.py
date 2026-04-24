@@ -53,10 +53,12 @@ def probe_redis() -> dict[str, Any]:
 def probe_celery() -> dict[str, Any]:
     """Pings every worker. Returns the response map."""
     def _check():
-        replies = celery_app.control.ping(timeout=2.0) or []
+        broker = getattr(celery_app.conf, "broker_url", "") or ""
+        broker_host = broker.split("@")[-1].split("/")[0] if broker else "unknown"
+        replies = celery_app.control.ping(timeout=5.0) or []
         if not replies:
-            raise RuntimeError("no workers replied to ping")
-        return {"workers": len(replies), "names": [list(r.keys())[0] for r in replies if r]}
+            raise RuntimeError(f"no workers replied to ping (broker={broker_host})")
+        return {"workers": len(replies), "broker": broker_host, "names": [list(r.keys())[0] for r in replies if r]}
     return _timed(_check)
 
 
