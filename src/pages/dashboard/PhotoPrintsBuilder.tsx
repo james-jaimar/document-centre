@@ -294,20 +294,37 @@ export default function PhotoPrintsBuilder() {
     setRenderProgressOpen(true);
 
     try {
-      const results = await renderQueue.renderAll(photoSpec.photos);
-      const failures = results.filter((r) => r.error);
+      const result = await renderQueue.renderAll({
+        photos: photoSpec.photos,
+        borderSlug: photoSpec.border_slug,
+        orderItemId: orderItem.id,
+      });
+      const failures = result.perPhoto.filter((r) => r.error);
       if (failures.length > 0) {
         toast.warning(`${failures.length} photo${failures.length === 1 ? "" : "s"} failed to render — they will need re-upload.`);
       }
+      if (result.mergeError) {
+        toast.warning("The merged print-ready PDF couldn't be generated. The order will still be placed.");
+      }
 
       const updatedPhotos = photoSpec.photos.map((p) => {
-        const r = results.find((x) => x.entryId === p.id);
+        const r = result.perPhoto.find((x) => x.entryId === p.id);
         if (!r?.assetId) return p;
         return { ...p, render_asset_id: r.assetId } as PhotoPrintEntry & {
           render_asset_id: string;
         };
       });
-      const finalSpec: PhotoPrintsSpec = { ...photoSpec, photos: updatedPhotos };
+      const finalSpec: PhotoPrintsSpec & {
+        merged_asset_id?: string | null;
+        merged_storage_path?: string | null;
+        merged_document_id?: string | null;
+      } = {
+        ...photoSpec,
+        photos: updatedPhotos,
+        merged_asset_id: result.mergedAssetId,
+        merged_storage_path: result.mergedStoragePath,
+        merged_document_id: result.mergedDocumentId,
+      };
 
       const replacesCartItemId = (order.metadata as any)?.replaces_cart_item_id;
       const totalQty = updatedPhotos.reduce((s, p) => s + p.quantity, 0);
