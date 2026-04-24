@@ -236,3 +236,112 @@ def crop_rasterize(self, asset_id: str, job_id: str, box: list[float], dpi: int 
         raise exc
     finally:
         db.close()
+
+# ---------------------------------------------------------------------------
+# Office → PDF conversion
+# ---------------------------------------------------------------------------
+# Contract: POST /v1/operations/convert-office { asset_id } -> { job_id }
+# Worker:
+#   1. Download source Office file (asset.source_storage_path) to workspace.
+#   2. soffice --headless --convert-to pdf  (with isolated UserInstallation).
+#   3. Upload converted PDF to S3 under <tenant_prefix>derived/converted/.
+#   4. Register a derived_file with kind='converted_pdf'.
+#   5. Promote: set asset.normalized_storage_path + recomputed page_count /
+#      width_pt / height_pt / boxes / status='normalized'.
+#   6. Mark job done. Client then calls /assets/{id}/inspect (idempotent) and
+#      the rest of the standard PDF pipeline runs against the converted PDF.
+
+OFFICE_MIME_TYPES = {
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.oasis.opendocument.text",
+    "application/vnd.oasis.opendocument.presentation",
+    "application/vnd.oasis.opendocument.spreadsheet",
+    # Excel kept tolerant in case it ever shows up:
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+
+OFFICE_EXTENSIONS = {
+    ".doc", ".docx",
+    ".ppt", ".pptx",
+    ".odt", ".odp", ".ods",
+    ".xls", ".xlsx",
+    ".rtf",
+}
+
+
+@shared_task(bind=True, queue="documents")
+def convert_office(self, asset_id: str, job_id: str):
+    db = _db()
+    try:
+        job_repo.mark_running(db, job_id)
+        asset = asset_repo.get_asset(db, asset_id)
+        if not asset:
+            raise ValueError(f"Asset not found: {asset_id}")
+
+        media_type = (asset.get("media_type") or "").lower()
+        original_filename = asset.get("original_filename") or "document"
+        ext = Path(original_filename).suffix.lower()
+
+        if media_type not in OFFICE_MIME_TYPES and ext not in OFFICE_EXTENSIONS:
+            raise ValueError(
+                f"Asset {asset_id} is not a supported office file "
+                f"(media_type={media_type!r}, ext={ext!r})"
+            )
+
+        prefix = _tenant_prefix(asset.get("source_storage_path"))
+
+        with Workspace() as ws:
+            # 1) Download original office file
+            src_name = original_filename if ext else f"{asset_id}{ext or '.bin'}"
+            src = ws.path(src_name)
+            storage.download(asset["source_storage_path"], src)
+
+            # 2) Convert with LibreOffice
+            converted = pdf_ops.office_to_pdf(src, ws.path("converted"))
+
+            # 3) Upload converted PDF
+            storage_path = unique_name(f"{prefix}derived/converted", ".pdf")
+            storage.upload(converted, storage_path, "application/pdf")
+
+            # 4) Register derived file
+            derived_file_repo.create_file(
+                db,
+                asset_id=asset_id,
+                job_id=job_id,
+                kind="converted_pdf",
+                storage_path=storage_path,
+                media_type="application/pdf",
+                metadata={"source_media_type": media_type, "source_ext": ext},
+            )
+
+            # 5) Inspect + promote to normalized
+            info = pdf_ops.inspect(converted)
+            asset_repo.update_asset(db, asset_id, {
+                "normalized_storage_path": storage_path,
+                "page_count": info["page_count"],
+                "width_pt": info["width_pt"],
+                "height_pt": info["height_pt"],
+                "boxes": info["boxes"],
+                "status": "normalized",
+            })
+
+            # 6) Done
+            result = {
+                "storage_path": storage_path,
+                "normalized_storage_path": storage_path,
+                "page_count": info["page_count"],
+                "width_pt": info["width_pt"],
+                "height_pt": info["height_pt"],
+            }
+            job_repo.mark_done(db, job_id, result)
+            return result
+
+    except Exception as exc:
+        job_repo.mark_failed(db, job_id, traceback.format_exc())
+        raise exc
+    finally:
+        db.close()
