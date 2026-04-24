@@ -4,9 +4,16 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+
+
+# Errors that mean "the table or column doesn't exist yet" — we treat these
+# as empty results so the dashboard can still render while the schema is
+# being rolled out.
+_MISSING_SCHEMA_ERRORS = (ProgrammingError, OperationalError)
 from app.db.models.job_event import JobEvent
 from app.db.models.ops_audit_log import OpsAuditLog
 from app.db.models.ops_storage_snapshot import OpsStorageSnapshot
@@ -139,36 +146,55 @@ class OpsService:
 
     def jobs(self, db: Session, limit: int = 100, status: str | None = None,
              tenant_id: str | None = None) -> dict:
-        stmt = select(JobEvent).order_by(JobEvent.started_at.desc()).limit(limit)
-        if status:
-            stmt = stmt.where(JobEvent.status == status)
-        if tenant_id:
-            stmt = stmt.where(JobEvent.tenant_id == tenant_id)
-        events = list(db.execute(stmt).scalars().all())
-        return {"jobs": [self._serialize_event(e) for e in events]}
+        try:
+            stmt = select(JobEvent).order_by(JobEvent.started_at.desc()).limit(limit)
+            if status:
+                stmt = stmt.where(JobEvent.status == status)
+            if tenant_id:
+                stmt = stmt.where(JobEvent.tenant_id == tenant_id)
+            events = list(db.execute(stmt).scalars().all())
+            return {"jobs": [self._serialize_event(e) for e in events]}
+        except _MISSING_SCHEMA_ERRORS:
+            db.rollback()
+            return {"jobs": []}
 
     def job(self, db: Session, job_id: str) -> dict:
-        events = job_event_repo.list_for_job(db, job_id=job_id)
-        return {"job_id": job_id, "events": [self._serialize_event(e) for e in events]}
+        try:
+            events = job_event_repo.list_for_job(db, job_id=job_id)
+            return {"job_id": job_id, "events": [self._serialize_event(e) for e in events]}
+        except _MISSING_SCHEMA_ERRORS:
+            db.rollback()
+            return {"job_id": job_id, "events": []}
 
     def asset_pipeline(self, db: Session, asset_id: str) -> dict:
-        events = job_event_repo.list_for_asset(db, asset_id=asset_id)
-        return {"asset_id": asset_id, "events": [self._serialize_event(e) for e in events]}
+        try:
+            events = job_event_repo.list_for_asset(db, asset_id=asset_id)
+            return {"asset_id": asset_id, "events": [self._serialize_event(e) for e in events]}
+        except _MISSING_SCHEMA_ERRORS:
+            db.rollback()
+            return {"asset_id": asset_id, "events": []}
 
     # ─── metrics ─────────────────────────────────────────────────
     def stage_metrics(self, db: Session, hours: int = 24) -> dict:
-        return {"hours": hours, "stages": job_event_repo.stage_metrics(db, hours=hours)}
+        try:
+            return {"hours": hours, "stages": job_event_repo.stage_metrics(db, hours=hours)}
+        except _MISSING_SCHEMA_ERRORS:
+            db.rollback()
+            return {"hours": hours, "stages": []}
 
     def throughput(self, db: Session, hours: int = 24, bucket_minutes: int = 60) -> dict:
         """Jobs-per-bucket over the past N hours, grouped by stage."""
         cutoff = _utcnow() - timedelta(hours=hours)
-        # Use a SQL date_trunc-ish bucket via Python after pulling the rows
-        rows = list(
-            db.execute(
-                select(JobEvent.stage, JobEvent.started_at, JobEvent.status)
-                .where(JobEvent.started_at >= cutoff)
-            ).all()
-        )
+        try:
+            rows = list(
+                db.execute(
+                    select(JobEvent.stage, JobEvent.started_at, JobEvent.status)
+                    .where(JobEvent.started_at >= cutoff)
+                ).all()
+            )
+        except _MISSING_SCHEMA_ERRORS:
+            db.rollback()
+            return {"hours": hours, "bucket_minutes": bucket_minutes, "series": []}
         bucket_seconds = max(60, bucket_minutes * 60)
         buckets: dict[int, dict[str, dict[str, int]]] = {}
         for stage, started_at, status in rows:
@@ -185,18 +211,22 @@ class OpsService:
 
     def tenant_usage(self, db: Session, hours: int = 24) -> dict:
         cutoff = _utcnow() - timedelta(hours=hours)
-        rows = list(
-            db.execute(
-                select(
-                    JobEvent.tenant_id,
-                    JobEvent.app_id,
-                    func.count().label("events"),
-                    func.sum(JobEvent.duration_ms).label("total_ms"),
-                )
-                .where(JobEvent.started_at >= cutoff)
-                .group_by(JobEvent.tenant_id, JobEvent.app_id)
-            ).all()
-        )
+        try:
+            rows = list(
+                db.execute(
+                    select(
+                        JobEvent.tenant_id,
+                        JobEvent.app_id,
+                        func.count().label("events"),
+                        func.sum(JobEvent.duration_ms).label("total_ms"),
+                    )
+                    .where(JobEvent.started_at >= cutoff)
+                    .group_by(JobEvent.tenant_id, JobEvent.app_id)
+                ).all()
+            )
+        except _MISSING_SCHEMA_ERRORS:
+            db.rollback()
+            return {"hours": hours, "tenants": []}
         out = [
             {
                 "tenant_id": r.tenant_id,
@@ -215,13 +245,17 @@ class OpsService:
 
     def storage_history(self, db: Session, hours: int = 168) -> dict:
         cutoff = _utcnow() - timedelta(hours=hours)
-        rows = list(
-            db.execute(
-                select(OpsStorageSnapshot)
-                .where(OpsStorageSnapshot.captured_at >= cutoff)
-                .order_by(OpsStorageSnapshot.captured_at.asc())
-            ).scalars().all()
-        )
+        try:
+            rows = list(
+                db.execute(
+                    select(OpsStorageSnapshot)
+                    .where(OpsStorageSnapshot.captured_at >= cutoff)
+                    .order_by(OpsStorageSnapshot.captured_at.asc())
+                ).scalars().all()
+            )
+        except _MISSING_SCHEMA_ERRORS:
+            db.rollback()
+            return {"hours": hours, "snapshots": []}
         return {
             "hours": hours,
             "snapshots": [
@@ -242,14 +276,18 @@ class OpsService:
     def audit_log(self, db: Session, *, limit: int = 200,
                   action: str | None = None, actor_id: str | None = None,
                   tenant_id: str | None = None) -> dict:
-        stmt = select(OpsAuditLog).order_by(OpsAuditLog.created_at.desc()).limit(limit)
-        if action:
-            stmt = stmt.where(OpsAuditLog.action == action)
-        if actor_id:
-            stmt = stmt.where(OpsAuditLog.actor_id == actor_id)
-        if tenant_id:
-            stmt = stmt.where(OpsAuditLog.tenant_id == tenant_id)
-        rows = list(db.execute(stmt).scalars().all())
+        try:
+            stmt = select(OpsAuditLog).order_by(OpsAuditLog.created_at.desc()).limit(limit)
+            if action:
+                stmt = stmt.where(OpsAuditLog.action == action)
+            if actor_id:
+                stmt = stmt.where(OpsAuditLog.actor_id == actor_id)
+            if tenant_id:
+                stmt = stmt.where(OpsAuditLog.tenant_id == tenant_id)
+            rows = list(db.execute(stmt).scalars().all())
+        except _MISSING_SCHEMA_ERRORS:
+            db.rollback()
+            return {"entries": []}
         return {
             "entries": [
                 {
