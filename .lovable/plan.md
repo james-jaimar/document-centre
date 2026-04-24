@@ -1,94 +1,75 @@
 
 
-## Photo Prints — three fixes
+## Photo Prints — fix the silent background render
 
-Three tightly-scoped fixes. Nothing else changes.
+### What's actually happening
 
----
+Edge function logs show:
+```
+[render-photo-prints] start order_item=b04bc610…
+[render-photo-prints] done   order_item=b04bc610… merged=null
+```
 
-### 1. The "Preparing your prints…" modal is doing real work — and that's fine, but it shouldn't be in front of the customer
+The function ran end-to-end without throwing, but produced no merged PDF. That means every photo failed inside its per-photo `try/catch` block, the function then hit `pagesToMerge.length === 0`, threw "nothing to merge", and the spec was never updated — so the admin gallery polls forever.
 
-**What it actually is**
+### Why the photos fail
 
-When the customer clicks **Add to Cart**, `usePhotoRenderQueue` runs in the browser and orchestrates the Document Centre PDF server. The browser does **not** rasterise or merge anything itself — it just makes API calls:
+The browser hook (`usePhotoRenderQueue`) reaches Document Centre via the `pdf-api` edge function, which:
+1. Authenticates the user
+2. Forwards the request to `DOCUMENT_CENTRE_API_URL`
 
-1. `createAsset` (one per photo)
-2. `cropRasterize` at 300 DPI (one per photo) → polled
-3. `resize` to print size (one per photo) → polled
-4. `merge` all pages into one PDF → polled
-5. Insert one `documents` row pointing at the merged PDF
+The new `render-photo-prints` function bypasses that proxy and calls `DOCUMENT_CENTRE_API_URL` **directly with no auth header**. Document Centre almost certainly rejects unauthenticated requests, every `dcRequest` throws, and the merge never happens. The errors are logged inside the per-photo `console.error` but the logs we can see only show the start/done lines.
 
-So the heavy lifting is on the PDF server, exactly as you wanted. The modal just shows progress while the browser waits for those server jobs to finish.
+There are also two secondary problems that would bite us even if the auth was fine:
+- **Failure is invisible**: when the merge step throws, the spec never gets a `render_failed_at` marker, so the gallery shows "Preparing…" indefinitely instead of an actionable error.
+- **Per-photo errors are not surfaced**: only the outer summary line is logged, making future debugging painful.
 
-**The problem with showing it to the customer**
+### Fix
 
-For 4 photos × ~5 server calls each = 20+ sequential round-trips before the cart is reached. That's slow and exposes server plumbing.
+**1. Reuse the `pdf-api` proxy from inside `render-photo-prints`**
 
-**Fix — move it off the cart path entirely**
+Instead of calling `DOCUMENT_CENTRE_API_URL` directly, the edge function will forward each Document Centre call to the existing `pdf-api` edge function over HTTP, passing the caller's JWT. This is the exact path the browser uses, so behaviour is guaranteed to match.
 
-1. **Add to Cart returns instantly.** It writes the spec (with all crop/zoom/rotation state) to the order item and goes straight to the cart. The customer sees no "preparing" modal.
-2. **Render runs server-side, kicked off in the background** by a new edge function `render-photo-prints`. It accepts the `order_item_id`, reads `spec.photo_prints`, performs the same `createAsset → cropRasterize → resize → merge` chain, then writes back:
-   - the merged PDF storage path onto `spec.photo_prints.merged_storage_path` and `merged_asset_id`
-   - one `documents` row tied to the order item with `kind: "photo_prints_merged"`.
-3. The frontend fires the edge function with `fetch(..., { keepalive: true })` and immediately navigates to the cart. No modal, no waiting.
-4. If render hasn't finished by the time the admin opens the order, the gallery shows a small "Print-ready PDF being prepared" pill instead of the Download button. A 5-second poll (admin side only) flips it to the Download button when ready. No customer-visible "preparing" UI anywhere.
+```
+render-photo-prints  ──Bearer <user JWT>──►  pdf-api  ──►  Document Centre
+```
 
-**What gets removed**: the `UploadProgressModal` usage in `PhotoPrintsBuilder` for the render queue, and the entire `setMergeProgress` / progress-tracking surface in `usePhotoRenderQueue` for the cart flow (the hook itself stays for any future "regenerate" button on the admin side).
+The user's JWT is already on the incoming request (we use it for `auth.getUser()`); we just thread it through to `pdf-api`.
 
----
+**2. Persist failure state to the spec**
 
-### 2. Admin order detail — the photo gallery isn't showing, and the file list is overlapping
+Wrap the whole `renderForOrderItem` body in a try/catch that, on failure, patches the order item's `spec.photo_prints` with:
+- `render_failed_at`
+- `render_error` (short message)
+- `render_attempts` (incremented)
 
-**Why the gallery doesn't render**
+The admin gallery will then stop showing "Preparing…" and instead show an error pill with a "Retry" button (calls the function again).
 
-`JobDetailPanel.tsx` mounts `PhotoPrintsAdminGallery` only when `config.photo_prints` exists, but `buildJobSnapshot` never copies `spec.photo_prints` onto `config.photo_prints` — it only emits a flat "Photos" config section. So the gallery is dead code today.
+**3. Log every Document Centre call**
 
-That's why your screenshot shows no preview: the snapshot builder doesn't surface the data the gallery needs.
+Add `console.log` for `path` + upstream status in `dcRequest`, and `console.error` with the photo file name + the raw error text when a per-photo render fails. This makes future regressions diagnosable from edge function logs alone.
 
-**Fix**
+**4. Update the admin gallery**
 
-1. In `buildJobSnapshot.ts`, when the family is `photo-prints`, write the full `photo_prints` block (with `photos`, `print_size_slug`, `finish_slug`, `border_slug`, `merged_storage_path`, `merged_asset_id`) onto `configuration.photo_prints` so the gallery has what it needs.
-2. In `buildJobSnapshot.ts`, **suppress** the auto-generated `Files` section and the duplicate `Photos` section when the job is photo-prints — the gallery replaces both. This also fixes the overlapping `1341198799653586…5.jpg 13 MB · 1355×762mm` text in your second screenshot, because that section won't render at all for photo-prints jobs.
-3. In `JobDetailPanel.tsx`, also hide the `Customer's Attached Files` block when `config.photo_prints` is present — same reason.
-4. The existing `PhotoPrintsAdminGallery` already shows: cropped preview tiles, filename, size, ×qty badge, and the Download Print-ready PDF button. No changes needed there beyond the polling pill from §1.
+`PhotoPrintsAdminGallery.tsx` polls every 5s today. Extend the polling state to recognise:
+- `merged_storage_path` set → show Download button (current behaviour)
+- `render_failed_at` set → show red pill "Render failed: <reason>" with a small **Retry** button that POSTs to `render-photo-prints` again
+- otherwise → "Preparing print-ready PDF…" (current behaviour)
 
-Result: the admin sees a clean tile grid identical to what the customer saw, with one prominent **Print-ready PDF** download button at the top.
-
----
-
-### 3. Edge function `render-photo-prints` (new)
-
-A thin server-side equivalent of the existing `usePhotoRenderQueue`:
-
-- Auth via `supabase.auth.getUser()` (project standard).
-- Looks up the `order_item` and verifies the caller is the owner or staff.
-- Walks `spec.photo_prints.photos`, calling the existing Document Centre proxy (`pdf-api`) for `createAsset` / `cropRasterize` / `resize` / `merge` — same exact steps the browser does today, just running serverless.
-- Polls each job until done (or times out gracefully — failure is recorded on the spec for the admin to retry).
-- Inserts the `documents` row and patches `spec.photo_prints.merged_*` on the order item.
-- Returns immediately after kickoff if invoked with `?async=1` (uses `EdgeRuntime.waitUntil`), so the frontend's `keepalive` POST is non-blocking.
-
-No DB schema changes. No changes to other product flows. No customer-visible progress UI.
-
----
-
-## Files to change
+### Files to change
 
 | File | Change |
 |---|---|
-| `src/hooks/usePhotoRenderQueue.ts` | Keep helpers but no longer used on the cart path |
-| `src/pages/dashboard/PhotoPrintsBuilder.tsx` | Remove modal & blocking render; fire edge function and navigate to cart immediately |
-| `src/lib/orders/buildJobSnapshot.ts` | Surface `configuration.photo_prints`; skip auto Files/Photos sections for photo-prints jobs |
-| `src/components/orders/detail/JobDetailPanel.tsx` | Hide attached-files list when `config.photo_prints` is present; rely on gallery |
-| `src/components/orders/detail/PhotoPrintsAdminGallery.tsx` | Add a tiny poll: if `merged_storage_path` missing, refetch every 5 s and show "Preparing print-ready PDF…" pill |
-| `supabase/functions/render-photo-prints/index.ts` (new) | Server-side render + merge orchestrator |
-| `supabase/config.toml` | Register the new function |
+| `supabase/functions/render-photo-prints/index.ts` | Route all Document Centre calls through the `pdf-api` edge function with the caller's JWT; wrap full render in try/catch and persist `render_failed_at` / `render_error` on failure; add per-call logging |
+| `src/components/orders/detail/PhotoPrintsAdminGallery.tsx` | Surface `render_failed_at` with a Retry button alongside the existing "Preparing…" / Download states |
 
-## Verification checklist
+No DB schema changes. No customer-facing UI changes. No changes to the browser hook (kept for any future "regenerate from admin" button).
 
-1. Add to Cart on a 4-photo order returns within ~1 s, no modal, customer lands in cart.
-2. Within ~10–30 s the merged PDF appears in the order's `documents` table with `preflight_data.kind = "photo_prints_merged"`.
-3. Admin opens the order → sees a tile grid (cropped previews, ×qty badges, filename, size) and a **Print-ready PDF** button.
-4. The overlapping `Files` text block on the admin view is gone for photo-prints jobs.
-5. If admin opens the order before render completes, gallery shows "Preparing print-ready PDF…" then auto-flips to the Download button.
-6. No regressions to bound documents, brochures, ring binders, or any other product family.
+### Verification
+
+1. Place a fresh photo-prints order in the demo tenant.
+2. Edge function logs should show one log line per `pdf-api` call with status `200`.
+3. Within ~30–60 s the order item's `spec.photo_prints.merged_storage_path` is populated and a `documents` row with `kind: "photo_prints_merged"` exists.
+4. Admin opens the order → "Print-ready PDF" download button appears.
+5. If Document Centre is briefly down, the gallery shows "Render failed" with a working **Retry** button instead of looping on "Preparing…".
 
