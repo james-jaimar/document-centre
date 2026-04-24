@@ -18,6 +18,7 @@ from app.schemas.assets import (
     MergeRequest,
     SheetImposeRequest,
     ConvertOfficeRequest,
+    NormalizeOrientationRequest,
 )
 from app.services.assets import asset_repo
 from app.services.jobs import job_repo
