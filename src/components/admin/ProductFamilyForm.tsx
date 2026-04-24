@@ -14,6 +14,18 @@ const ICON_OPTIONS = [
   "Image", "Scissors", "Paperclip", "Package", "Grid", "Layout",
 ];
 
+const CMYK_PROFILE_OPTIONS = [
+  { value: "fogra39", label: "Fogra 39 (ISO Coated v2)" },
+  { value: "fogra51", label: "Fogra 51 (PSO Coated v3)" },
+];
+
+const RENDER_INTENT_OPTIONS = [
+  { value: "relative_colorimetric", label: "Relative Colorimetric (text & docs)" },
+  { value: "perceptual", label: "Perceptual (photos)" },
+  { value: "absolute_colorimetric", label: "Absolute Colorimetric" },
+  { value: "saturation", label: "Saturation" },
+];
+
 interface FormValues {
   name: string;
   slug: string;
@@ -21,6 +33,9 @@ interface FormValues {
   icon: string;
   is_active: boolean;
   sort_order: number;
+  color_output: "cmyk" | "rgb";
+  cmyk_profile: string;
+  render_intent: "relative_colorimetric" | "perceptual" | "absolute_colorimetric" | "saturation";
 }
 
 interface Props {
@@ -44,6 +59,9 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
       icon: "FileText",
       is_active: true,
       sort_order: 0,
+      color_output: "cmyk",
+      cmyk_profile: "fogra39",
+      render_intent: "relative_colorimetric",
     },
   });
 
@@ -56,6 +74,9 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         icon: family.icon || "FileText",
         is_active: family.is_active,
         sort_order: family.sort_order,
+        color_output: (family.color_output as "cmyk" | "rgb") ?? "cmyk",
+        cmyk_profile: family.cmyk_profile ?? "fogra39",
+        render_intent: (family.render_intent as FormValues["render_intent"]) ?? "relative_colorimetric",
       });
     } else {
       form.reset({
@@ -65,6 +86,9 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         icon: "FileText",
         is_active: true,
         sort_order: 0,
+        color_output: "cmyk",
+        cmyk_profile: "fogra39",
+        render_intent: "relative_colorimetric",
       });
     }
   }, [family, open]);
@@ -75,6 +99,8 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
       form.setValue("slug", slugify(watchName));
     }
   }, [watchName, family]);
+
+  const watchColorOutput = form.watch("color_output");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
