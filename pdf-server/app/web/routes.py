@@ -37,6 +37,7 @@ from app.tasks.operation_tasks import (
     merge_pdfs,
     impose_sheet_pdf,
     convert_office,
+    normalize_orientation,
 )
 
 api_router = APIRouter()
