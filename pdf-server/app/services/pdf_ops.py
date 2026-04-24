@@ -40,6 +40,13 @@ class PdfOps:
 
         Uses a per-call -env:UserInstallation profile so concurrent conversions
         do not collide on LibreOffice's user-profile lock file.
+
+        FilterData passed to writer_pdf_Export forces:
+          - All fonts embedded (EmbedStandardFonts, no font subsetting issues)
+          - Tagged PDF 1.7 output (UseTaggedPDF, SelectPdfVersion=17)
+          - Form fields stripped (ExportFormFields=false)
+        These are critical so the downstream CMYK pass keeps text vector +
+        K-only rather than rasterising.
         """
         import tempfile
         import shutil
@@ -49,6 +56,17 @@ class PdfOps:
         profile_dir = Path(tempfile.mkdtemp(prefix="lo-profile-"))
         try:
             user_installation = f"-env:UserInstallation=file://{quote(str(profile_dir))}"
+            # FilterData JSON must be wrapped in the convert-to filter spec.
+            # Format: pdf:writer_pdf_Export:{"Key":{"type":"boolean","value":"true"}, ...}
+            filter_data = (
+                'pdf:writer_pdf_Export:'
+                '{'
+                '"EmbedStandardFonts":{"type":"boolean","value":"true"},'
+                '"SelectPdfVersion":{"type":"long","value":"17"},'
+                '"UseTaggedPDF":{"type":"boolean","value":"true"},'
+                '"ExportFormFields":{"type":"boolean","value":"false"}'
+                '}'
+            )
             subprocess.run(
                 [
                     settings.libreoffice_bin,
@@ -58,7 +76,7 @@ class PdfOps:
                     "--nofirststartwizard",
                     "--norestore",
                     "--convert-to",
-                    "pdf",
+                    filter_data,
                     "--outdir",
                     str(out_dir),
                     str(src),
