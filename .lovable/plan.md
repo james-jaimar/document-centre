@@ -1,75 +1,51 @@
 
 
-## Photo Prints — fix the silent background render
+## Place Order is failing for the photo-prints cart — diagnose & fix
 
-### What's actually happening
+The `demo-bootstrap warning` in the console is a red herring (it's from the `/try` boot path, not from clicking Place Order). The real failure is `order-engine` returning a non-2xx, but it's being swallowed because:
 
-Edge function logs show:
-```
-[render-photo-prints] start order_item=b04bc610…
-[render-photo-prints] done   order_item=b04bc610… merged=null
-```
+1. The `usePlaceOrder` mutation throws `error` from `supabase.functions.invoke(...)` without surfacing the function's response body — we only see "Edge Function returned a non-2xx status code".
+2. `order-engine` itself has not produced any visible logs for this attempt, so we don't yet know which insert/RPC threw.
+3. Separately, the previous **render-photo-prints** attempt for this exact cart item failed with `Rate limit exceeded for trace ... Retry after 21186ms` (visible in `order_items.spec.photo_prints.render_error`). That's the Document Centre throttling us — not directly the cause of Place Order failing, but it is a real bug we need to address now.
 
-The function ran end-to-end without throwing, but produced no merged PDF. That means every photo failed inside its per-photo `try/catch` block, the function then hit `pagesToMerge.length === 0`, threw "nothing to merge", and the spec was never updated — so the admin gallery polls forever.
+### Fix — three small, focused changes
 
-### Why the photos fail
+**1. Surface the real error from `order-engine` (FE)**
 
-The browser hook (`usePhotoRenderQueue`) reaches Document Centre via the `pdf-api` edge function, which:
-1. Authenticates the user
-2. Forwards the request to `DOCUMENT_CENTRE_API_URL`
+In `usePlaceOrder` (`src/hooks/useCart.ts`), when `supabase.functions.invoke("order-engine", …)` returns an error, read the response body via `error.context.text()` (or `.json()`) and throw a meaningful `Error` so the toast shows the real reason instead of "Edge Function returned a non-2xx status code". This single change unblocks every future diagnosis of this flow.
 
-The new `render-photo-prints` function bypasses that proxy and calls `DOCUMENT_CENTRE_API_URL` **directly with no auth header**. Document Centre almost certainly rejects unauthenticated requests, every `dcRequest` throws, and the merge never happens. The errors are logged inside the per-photo `console.error` but the logs we can see only show the start/done lines.
+**2. Add structured logging + per-step error responses inside `order-engine`**
 
-There are also two secondary problems that would bite us even if the auth was fine:
-- **Failure is invisible**: when the merge step throws, the spec never gets a `render_failed_at` marker, so the gallery shows "Preparing…" indefinitely instead of an actionable error.
-- **Per-photo errors are not surfaced**: only the outer summary line is logged, making future debugging painful.
+In `supabase/functions/order-engine/index.ts` `createOrderWithJobs`, replace the bare `err(...)` returns with messages that include the failing operation (`order_insert`, `jobs_insert`, `pricing_snapshot_insert`, `addresses_insert`, `timeline_insert`, `membership_upsert`) and `console.error` the raw Postgres error before returning. This means the next failed Place Order will tell us exactly which insert dies, in both the network response body (now surfaced by §1) and the function logs.
 
-### Fix
+No behaviour change on the success path — purely better error reporting.
 
-**1. Reuse the `pdf-api` proxy from inside `render-photo-prints`**
+**3. Make `render-photo-prints` retry on Document Centre rate-limits (instead of giving up)**
 
-Instead of calling `DOCUMENT_CENTRE_API_URL` directly, the edge function will forward each Document Centre call to the existing `pdf-api` edge function over HTTP, passing the caller's JWT. This is the exact path the browser uses, so behaviour is guaranteed to match.
+In `supabase/functions/render-photo-prints/index.ts`, when the proxied `pdf-api` call returns a 429 with `Retry after Xms`, parse the delay, sleep for it (capped at 30s, max 3 retries) and try again. After the retry budget is exhausted, persist the final error to `spec.photo_prints.render_error` as we do today, so the admin gallery shows the Retry button.
 
-```
-render-photo-prints  ──Bearer <user JWT>──►  pdf-api  ──►  Document Centre
-```
+This stops the silent failure the user already saw (`render_error: "Rate limit exceeded for trace … Retry after 21186ms"`).
 
-The user's JWT is already on the incoming request (we use it for `auth.getUser()`); we just thread it through to `pdf-api`.
+### What we expect after these changes
 
-**2. Persist failure state to the spec**
-
-Wrap the whole `renderForOrderItem` body in a try/catch that, on failure, patches the order item's `spec.photo_prints` with:
-- `render_failed_at`
-- `render_error` (short message)
-- `render_attempts` (incremented)
-
-The admin gallery will then stop showing "Preparing…" and instead show an error pill with a "Retry" button (calls the function again).
-
-**3. Log every Document Centre call**
-
-Add `console.log` for `path` + upstream status in `dcRequest`, and `console.error` with the photo file name + the raw error text when a per-photo render fails. This makes future regressions diagnosable from edge function logs alone.
-
-**4. Update the admin gallery**
-
-`PhotoPrintsAdminGallery.tsx` polls every 5s today. Extend the polling state to recognise:
-- `merged_storage_path` set → show Download button (current behaviour)
-- `render_failed_at` set → show red pill "Render failed: <reason>" with a small **Retry** button that POSTs to `render-photo-prints` again
-- otherwise → "Preparing print-ready PDF…" (current behaviour)
+- The next "Place Order" click that fails will show the **real DB or RPC error** in the toast and in the function logs.
+- We'll then either (a) immediately patch the offending insert in `order-engine` once we know what it is, or (b) confirm the order writes succeed and the FE was misreporting.
+- New photo-prints carts won't get permanently stuck in "render failed: rate limit" — the function will back off and retry once or twice before giving up.
 
 ### Files to change
 
 | File | Change |
 |---|---|
-| `supabase/functions/render-photo-prints/index.ts` | Route all Document Centre calls through the `pdf-api` edge function with the caller's JWT; wrap full render in try/catch and persist `render_failed_at` / `render_error` on failure; add per-call logging |
-| `src/components/orders/detail/PhotoPrintsAdminGallery.tsx` | Surface `render_failed_at` with a Retry button alongside the existing "Preparing…" / Download states |
+| `src/hooks/useCart.ts` | In `usePlaceOrder`, unwrap `FunctionsHttpError` and throw the actual response body text |
+| `supabase/functions/order-engine/index.ts` | Tag every `err(...)` return in `createOrderWithJobs` with the failing step + `console.error` the raw error |
+| `supabase/functions/render-photo-prints/index.ts` | Detect 429 + `Retry after Xms`, back off and retry up to 3 times before persisting failure |
 
-No DB schema changes. No customer-facing UI changes. No changes to the browser hook (kept for any future "regenerate from admin" button).
+No DB schema changes. No customer-facing UI changes beyond a more useful toast message.
 
 ### Verification
 
-1. Place a fresh photo-prints order in the demo tenant.
-2. Edge function logs should show one log line per `pdf-api` call with status `200`.
-3. Within ~30–60 s the order item's `spec.photo_prints.merged_storage_path` is populated and a `documents` row with `kind: "photo_prints_merged"` exists.
-4. Admin opens the order → "Print-ready PDF" download button appears.
-5. If Document Centre is briefly down, the gallery shows "Render failed" with a working **Retry** button instead of looping on "Preparing…".
+1. Click Place Order on the stuck cart — the toast now shows a specific message like `"order_insert failed: …"` instead of `"Edge Function returned a non-2xx status code"`.
+2. Edge function logs for `order-engine` show one `console.error` line with the failing operation and the Postgres error.
+3. Place a fresh photo-prints order — `render-photo-prints` logs one or more `429 Retry after …, sleeping` lines and ultimately succeeds, populating `merged_storage_path`.
+4. If Document Centre is genuinely down for the full retry budget, the gallery shows the existing "Render failed — Retry" pill (no regression).
 
