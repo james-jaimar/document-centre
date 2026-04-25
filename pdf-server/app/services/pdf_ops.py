@@ -234,30 +234,51 @@ class PdfOps:
         - dominant='portrait' (default): rotate landscape pages (w > h) +90 CW.
         - dominant='landscape': rotate portrait pages (w < h) +90 CW.
 
+        We rewrite MediaBox/CropBox to swap width/height so downstream
+        consumers (crop_to_box, rasterize_preview, getAsset clients) see the
+        page's TRUE post-rotation dimensions instead of relying on the
+        /Rotate viewer hint alone. Without this, downstream code that reads
+        page.mediabox.width/height sees the pre-rotation geometry and crops
+        the rotated content with a mismatched box.
+
         Returns: { 'pages_rotated': int, 'total_pages': int, 'skipped': bool }.
         """
-        reader = PdfReader(str(src))
-        writer = PdfWriter()
+        # Use pikepdf for proper geometry manipulation; pypdf's page.rotate()
+        # only writes /Rotate without touching MediaBox.
         rotated = 0
-        for page in reader.pages:
-            w = float(page.mediabox.width)
-            h = float(page.mediabox.height)
-            is_landscape = w > h
-            needs_rotate = (
-                (dominant == "portrait" and is_landscape)
-                or (dominant == "landscape" and not is_landscape)
-            )
-            if needs_rotate:
-                page.rotate(90)  # 90° clockwise
-                rotated += 1
-            writer.add_page(page)
-
-        with open(out_pdf, "wb") as f:
-            writer.write(f)
+        total = 0
+        with pikepdf.open(src) as pdf:
+            total = len(pdf.pages)
+            for page in pdf.pages:
+                mb = page.MediaBox
+                x0 = float(mb[0]); y0 = float(mb[1])
+                x1 = float(mb[2]); y1 = float(mb[3])
+                w = x1 - x0
+                h = y1 - y0
+                is_landscape = w > h
+                needs_rotate = (
+                    (dominant == "portrait" and is_landscape)
+                    or (dominant == "landscape" and not is_landscape)
+                )
+                if needs_rotate:
+                    # Swap geometry: new MediaBox is the rotated dimensions.
+                    new_box = [0, 0, h, w]
+                    page.MediaBox = new_box
+                    page.CropBox = new_box
+                    # Strip stale boxes that would no longer make sense.
+                    for attr in ('TrimBox', 'BleedBox', 'ArtBox'):
+                        if hasattr(page, attr):
+                            del page[f'/{attr}']
+                    # Apply +90 CW rotation hint (renderers will paint the
+                    # original content stream rotated into the new box).
+                    existing_rotate = int(page.get('/Rotate', 0) or 0)
+                    page.Rotate = (existing_rotate + 90) % 360
+                    rotated += 1
+            pdf.save(out_pdf)
 
         return {
             "pages_rotated": rotated,
-            "total_pages": len(reader.pages),
+            "total_pages": total,
             "skipped": rotated == 0,
         }
 
