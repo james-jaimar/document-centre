@@ -1,39 +1,178 @@
 /**
  * Client-side helpers for S3 storage operations via the s3-storage edge function.
+ *
+ * Resilience model (mirrors documentCentreApi.ts):
+ *   • Edge-function calls (sign-upload, sign-download, copy, delete) are retried
+ *     on transient platform failures: HTTP 429/5xx, Supabase edge runtime errors,
+ *     and bare network blips (TypeError from fetch).
+ *   • The actual S3 PUT in uploadToS3 is also retried on 429/5xx/network errors
+ *     — pre-signed URLs stay valid for ~15 minutes so re-using the same URL
+ *     across a few retries is safe.
+ *   • Errors surfaced to the UI are deliberately generic ("Upload temporarily
+ *     unavailable…") so customers never see raw S3/edge wording.
  */
 import { supabase } from "@/integrations/supabase/client";
 
-async function callS3Function(body: Record<string, unknown>) {
-  const { data, error } = await supabase.functions.invoke("s3-storage", {
-    body,
-  });
-  if (error) throw new Error(`s3-storage call failed: ${error.message}`);
-  if (data?.error) throw new Error(`s3-storage: ${data.error}`);
-  return data;
+// ── Retry plumbing ──────────────────────────────────────────────────
+
+const DEFAULT_MAX_RETRIES = 4;
+
+/** ~600ms, 1.2s, 2.4s, 4.8s, capped at 6s, plus 0–250ms jitter. */
+function backoffDelay(attempt: number): number {
+  const base = Math.min(600 * 2 ** attempt, 6000);
+  const jitter = Math.floor(Math.random() * 250);
+  return base + jitter;
 }
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+function isTransientHttpStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || (status >= 500 && status <= 599);
+}
+
+function bodyLooksTransient(text: string | null | undefined): boolean {
+  if (!text) return false;
+  if (text.includes("SUPABASE_EDGE_RUNTIME_ERROR")) return true;
+  if (text.includes("Service is temporarily unavailable")) return true;
+  if (text.includes("WORKER_LIMIT")) return true;
+  if (text.includes("temporarily unavailable")) return true;
+  return false;
+}
+
+/** Heuristic: did this thrown error look like a transient platform failure? */
+function isTransientError(err: unknown): boolean {
+  if (!err) return false;
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/Failed to fetch|NetworkError|network error|load failed/i.test(msg)) return true;
+  if (bodyLooksTransient(msg)) return true;
+  // Embedded "[NNN]" status from our own thrown messages.
+  const m = msg.match(/\[(\d{3})\]/);
+  if (m && isTransientHttpStatus(Number(m[1]))) return true;
+  return false;
+}
+
+interface RetryOpts {
+  /** Max retries on top of the initial attempt. */
+  maxRetries?: number;
+  /** Used in console warnings for traceability. */
+  label?: string;
+}
+
+async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts = {}): Promise<T> {
+  const maxRetries = opts.maxRetries ?? DEFAULT_MAX_RETRIES;
+  const label = opts.label ?? "s3-op";
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      const transient = isTransientError(err);
+      if (!transient || attempt >= maxRetries) {
+        throw err;
+      }
+      const delay = backoffDelay(attempt);
+      console.warn(
+        `[s3-storage] transient ${label} failure, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries}):`,
+        err instanceof Error ? err.message : err,
+      );
+      await sleep(delay);
+    }
+  }
+  throw lastError ?? new Error(`${label} failed`);
+}
+
+/** Convert internal error wording into customer-friendly text. */
+function userFacingError(action: string, err: unknown): Error {
+  const inner = err instanceof Error ? err.message : String(err);
+  // Don't leak "S3"/"edge function"/status codes to end users.
+  const isTransient = isTransientError(err);
+  if (isTransient) {
+    return new Error(
+      `Storage is temporarily unavailable while ${action}. Please try again in a moment.`,
+    );
+  }
+  // Permanent errors — keep diagnostic detail in console, surface a clean
+  // sentence to the UI.
+  console.error(`[s3-storage] ${action} failed:`, inner);
+  return new Error(`Couldn't ${action}. Please try again.`);
+}
+
+// ── Edge-function plumbing ──────────────────────────────────────────
+
+async function callS3Function(body: Record<string, unknown>) {
+  return withRetry(
+    async () => {
+      const { data, error } = await supabase.functions.invoke("s3-storage", { body });
+      if (error) {
+        // supabase.functions.invoke wraps non-2xx responses + network errors.
+        // Re-throw so withRetry can classify (most are transient).
+        throw new Error(`storage call failed: ${error.message}`);
+      }
+      if (data?.error) {
+        // The function returned 200 with a body { error }. Treat platform-style
+        // strings as transient so we keep retrying through Supabase hiccups.
+        throw new Error(data.error);
+      }
+      return data;
+    },
+    { label: `invoke(${body.action ?? "?"})` },
+  );
+}
+
+// ── Public API ──────────────────────────────────────────────────────
 
 /**
  * Get a presigned PUT URL for uploading a file to S3.
  */
 export async function getUploadUrl(objectPath: string): Promise<{ url: string; method: string }> {
-  const data = await callS3Function({
-    action: "sign-upload",
-    object_path: objectPath,
-  });
-  return { url: data.url, method: data.method };
+  try {
+    const data = await callS3Function({
+      action: "sign-upload",
+      object_path: objectPath,
+    });
+    return { url: data.url, method: data.method };
+  } catch (err) {
+    throw userFacingError("preparing the upload", err);
+  }
 }
 
 /**
  * Upload a file to S3 using a presigned URL.
+ *
+ * Both halves of the round-trip are individually retried:
+ *   1. Acquiring the presigned URL via the edge function.
+ *   2. The actual PUT to S3 (re-using the URL for up to a few retries —
+ *      presigned URLs are valid for ~15 minutes).
  */
 export async function uploadToS3(objectPath: string, file: File | Blob): Promise<void> {
-  const { url } = await getUploadUrl(objectPath);
-  const res = await fetch(url, {
-    method: "PUT",
-    body: file,
-  });
-  if (!res.ok) {
-    throw new Error(`S3 upload failed [${res.status}]: ${await res.text()}`);
+  let signed: { url: string; method: string };
+  try {
+    signed = await getUploadUrl(objectPath);
+  } catch (err) {
+    // Already user-facing.
+    throw err;
+  }
+
+  try {
+    await withRetry(
+      async () => {
+        let res: Response;
+        try {
+          res = await fetch(signed.url, { method: "PUT", body: file });
+        } catch (networkErr: any) {
+          // Always treat browser-level fetch failures as transient.
+          throw new Error(`network error: ${networkErr?.message ?? networkErr}`);
+        }
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(`upload failed [${res.status}]: ${text}`);
+        }
+      },
+      { label: "PUT upload" },
+    );
+  } catch (err) {
+    throw userFacingError("uploading the file", err);
   }
 }
 
@@ -43,11 +182,15 @@ export async function uploadToS3(objectPath: string, file: File | Blob): Promise
  */
 export async function getDownloadUrls(objectPaths: string[]): Promise<Record<string, string>> {
   if (objectPaths.length === 0) return {};
-  const data = await callS3Function({
-    action: "sign-download",
-    object_paths: objectPaths,
-  });
-  return data.signed_urls ?? {};
+  try {
+    const data = await callS3Function({
+      action: "sign-download",
+      object_paths: objectPaths,
+    });
+    return data.signed_urls ?? {};
+  } catch (err) {
+    throw userFacingError("loading previews", err);
+  }
 }
 
 /**
@@ -55,21 +198,29 @@ export async function getDownloadUrls(objectPaths: string[]): Promise<Record<str
  */
 export async function deleteFromS3(objectPaths: string[]): Promise<void> {
   if (objectPaths.length === 0) return;
-  await callS3Function({
-    action: "delete",
-    object_paths: objectPaths,
-  });
+  try {
+    await callS3Function({
+      action: "delete",
+      object_paths: objectPaths,
+    });
+  } catch (err) {
+    throw userFacingError("removing files", err);
+  }
 }
 
 /**
- * Physically copy an S3 object to a new key (server-side CopyObject).
+ * Physically copy an S3 object to a new key (server-side stream).
  * Returns the new object path.
  */
 export async function copyS3Object(sourcePath: string, destPath: string): Promise<string> {
-  await callS3Function({
-    action: "copy",
-    source_path: sourcePath,
-    dest_path: destPath,
-  });
-  return destPath;
+  try {
+    await callS3Function({
+      action: "copy",
+      source_path: sourcePath,
+      dest_path: destPath,
+    });
+    return destPath;
+  } catch (err) {
+    throw userFacingError("copying the file", err);
+  }
 }
