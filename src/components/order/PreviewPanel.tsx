@@ -153,11 +153,13 @@ function buildPageSequence(
     }
   };
 
-  for (const section of bodySections) {
+  for (let bIdx = 0; bIdx < bodySections.length; bIdx++) {
+    const section = bodySections[bIdx];
     const doc = documents.find((d) => d.id === section.document_id);
     if (!doc) continue;
     const thumbnails = Array.isArray(doc.thumbnail_urls) ? (doc.thumbnail_urls as string[]) : [];
     const pageCount = doc.page_count ?? thumbnails.length;
+    const nextSection = bodySections[bIdx + 1];
 
     for (let i = 0; i < pageCount; i++) {
       pageNum++;
@@ -176,19 +178,44 @@ function buildPageSequence(
         isColor: section.is_color,
       });
 
-      // Simplex: push the natural reverse face of this sheet
-      // (skip for booklets — saddle-stitched is always duplex)
-      if (!section.is_duplex && !forceDuplex) {
-        result.push({
-          thumbnailUrl: "", pageIndex: -1, documentName: "",
-          section, isColor: section.is_color,
-        });
-      }
+      // Determine whether the natural simplex reverse should be emitted.
+      // We always emit it WITHIN a document so simplex sheets behave
+      // physically. We SKIP it when this is the final page of a document
+      // and the next body section belongs to a DIFFERENT document — that
+      // synthetic blank between two documents was the phantom face users
+      // saw in the preview. Customers who want a real blank between
+      // documents should drop a white insert sheet (InsertManager).
+      const isLastPageOfDoc = i === pageCount - 1;
+      const nextDoc = nextSection
+        ? documents.find((d) => d.id === nextSection.document_id)
+        : null;
+      const nextIsDifferentDoc = isLastPageOfDoc && nextDoc && nextDoc.id !== doc.id;
+      const isFinalBodyPage = isLastPageOfDoc && !nextSection;
 
-      // Queue any dividers anchored after this page number
+      // Anchor any tabs/inserts attached to this page first — parity for
+      // the divider may still require a blank_back BEFORE the divider.
       const anchored = anchorMap.get(pageNum);
       if (anchored) {
         pending.push(...anchored);
+      }
+
+      const hasPendingDivider = pending.length > 0;
+
+      // Simplex reverse face — only when:
+      //   - section is simplex (and not forced duplex)
+      //   - AND we're not at the boundary between two different documents
+      //     (UNLESS a divider is queued after this page, in which case
+      //     parity still matters for the divider to land on a right page)
+      //   - AND we're not at the very end of the body (final blank parity
+      //     is handled by the back-cover logic in buildPreviewSnapshot)
+      if (!section.is_duplex && !forceDuplex) {
+        const skipBlankBack = (nextIsDifferentDoc || isFinalBodyPage) && !hasPendingDivider;
+        if (!skipBlankBack) {
+          result.push({
+            thumbnailUrl: "", pageIndex: -1, documentName: "",
+            section, isColor: section.is_color,
+          });
+        }
       }
 
       // Try to flush immediately (if parity is already correct)
