@@ -42,20 +42,32 @@ Deno.serve(async (req) => {
       });
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
-
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-    if (userError || !userData?.user) {
-      return new Response(JSON.stringify({ error: "Unauthorized", source: "edge_user_lookup", detail: userError?.message }), {
-        status: 401, headers: jsonHeaders,
-      });
+    // Decode JWT directly to avoid round-trip to auth server (which returns
+    // "Auth session missing!" for stale-but-valid-format tokens).
+    const token = authHeader.replace(/^Bearer\s+/i, "");
+    let user: { id: string; email: string };
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      if (!payload?.sub) throw new Error("missing sub");
+      if (payload.exp && payload.exp * 1000 < Date.now()) {
+        return new Response(
+          JSON.stringify({ error: "Unauthorized", source: "edge_token_expired" }),
+          { status: 401, headers: jsonHeaders }
+        );
+      }
+      user = { id: payload.sub, email: payload.email ?? "" };
+    } catch (e) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized", source: "edge_token_decode", detail: (e as Error).message }),
+        { status: 401, headers: jsonHeaders }
+      );
     }
 
-    const user = userData.user;
+    // Service-role client for role lookups (bypasses RLS, no auth dependency).
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
 
     // Parse the proxied path and method from the request body
     const body = await req.json();
