@@ -234,6 +234,55 @@ export async function getAsset(assetId: string): Promise<Asset> {
   return request<Asset>(`v1/assets/${assetId}`, "GET");
 }
 
+/**
+ * Detect a "missing asset" error thrown by `getAsset` / any operation that
+ * targets an asset_id. The pdf-api edge function surfaces upstream 404s as
+ * `Error("Document Centre API error 404: ...")`.
+ */
+export function isAssetMissingError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  return /Document Centre API error 404/i.test(msg);
+}
+
+/**
+ * Verify that a backend asset still exists on the VPS. If the asset has been
+ * garbage-collected (e.g. the user left a modal open for longer than the
+ * server's retention window), re-register it from the original file we still
+ * hold in Supabase Storage and return the new asset_id.
+ *
+ * Callers should persist the returned id back to the documents row when it
+ * differs from the input.
+ *
+ * Returns the original `assetId` when the asset is still healthy.
+ */
+export async function ensureFreshAsset(params: {
+  assetId: string;
+  sourceStoragePath: string;
+  originalFilename: string;
+  mediaType: string;
+}): Promise<{ assetId: string; recreated: boolean }> {
+  try {
+    await getAsset(params.assetId);
+    return { assetId: params.assetId, recreated: false };
+  } catch (err) {
+    if (!isAssetMissingError(err)) throw err;
+    console.warn(
+      `[doc-centre] asset ${params.assetId} missing on VPS — re-registering from ${params.sourceStoragePath}`,
+    );
+    const { asset_id } = await createAsset({
+      original_filename: params.originalFilename,
+      media_type: params.mediaType,
+      source_storage_path: params.sourceStoragePath,
+      auto_queue: false,
+    });
+    // Run a fresh inspect so width/height/page_count are populated before the
+    // caller fires resize / generate-previews against it.
+    const { job_id } = await inspectAsset(asset_id);
+    await pollJob(job_id);
+    return { assetId: asset_id, recreated: true };
+  }
+}
+
 export async function getDerivedFiles(
   assetId: string
 ): Promise<DerivedFile[]> {
