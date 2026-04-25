@@ -153,6 +153,34 @@ class PdfOps:
             media = page.MediaBox
             info["width_pt"] = float(media[2] - media[0])
             info["height_pt"] = float(media[3] - media[1])
+
+            # Per-page geometry so the client can detect mixed orientations
+            # (e.g. Word docs with landscape table sections among portrait
+            # body pages). The top-level width_pt/height_pt/boxes still
+            # reflect page 1 for backwards compatibility.
+            pages_meta = []
+            has_portrait = False
+            has_landscape = False
+            for p in pdf.pages:
+                pmb = p.MediaBox
+                pw = float(pmb[2] - pmb[0])
+                ph = float(pmb[3] - pmb[1])
+                rot = 0
+                try:
+                    rot = int(p.get("/Rotate", 0) or 0)
+                except Exception:
+                    rot = 0
+                pages_meta.append({
+                    "width_pt": pw,
+                    "height_pt": ph,
+                    "rotate": rot,
+                })
+                if pw > ph:
+                    has_landscape = True
+                elif pw < ph:
+                    has_portrait = True
+            info["pages"] = pages_meta
+            info["mixed_orientation"] = has_portrait and has_landscape
             return info
 
     def normalize_pdf(self, src: Path, out_pdf: Path, *, fast: bool = True) -> Path:
@@ -234,30 +262,51 @@ class PdfOps:
         - dominant='portrait' (default): rotate landscape pages (w > h) +90 CW.
         - dominant='landscape': rotate portrait pages (w < h) +90 CW.
 
+        We rewrite MediaBox/CropBox to swap width/height so downstream
+        consumers (crop_to_box, rasterize_preview, getAsset clients) see the
+        page's TRUE post-rotation dimensions instead of relying on the
+        /Rotate viewer hint alone. Without this, downstream code that reads
+        page.mediabox.width/height sees the pre-rotation geometry and crops
+        the rotated content with a mismatched box.
+
         Returns: { 'pages_rotated': int, 'total_pages': int, 'skipped': bool }.
         """
-        reader = PdfReader(str(src))
-        writer = PdfWriter()
+        # Use pikepdf for proper geometry manipulation; pypdf's page.rotate()
+        # only writes /Rotate without touching MediaBox.
         rotated = 0
-        for page in reader.pages:
-            w = float(page.mediabox.width)
-            h = float(page.mediabox.height)
-            is_landscape = w > h
-            needs_rotate = (
-                (dominant == "portrait" and is_landscape)
-                or (dominant == "landscape" and not is_landscape)
-            )
-            if needs_rotate:
-                page.rotate(90)  # 90° clockwise
-                rotated += 1
-            writer.add_page(page)
-
-        with open(out_pdf, "wb") as f:
-            writer.write(f)
+        total = 0
+        with pikepdf.open(src) as pdf:
+            total = len(pdf.pages)
+            for page in pdf.pages:
+                mb = page.MediaBox
+                x0 = float(mb[0]); y0 = float(mb[1])
+                x1 = float(mb[2]); y1 = float(mb[3])
+                w = x1 - x0
+                h = y1 - y0
+                is_landscape = w > h
+                needs_rotate = (
+                    (dominant == "portrait" and is_landscape)
+                    or (dominant == "landscape" and not is_landscape)
+                )
+                if needs_rotate:
+                    # Swap geometry: new MediaBox is the rotated dimensions.
+                    new_box = [0, 0, h, w]
+                    page.MediaBox = new_box
+                    page.CropBox = new_box
+                    # Strip stale boxes that would no longer make sense.
+                    for attr in ('TrimBox', 'BleedBox', 'ArtBox'):
+                        if hasattr(page, attr):
+                            del page[f'/{attr}']
+                    # Apply +90 CW rotation hint (renderers will paint the
+                    # original content stream rotated into the new box).
+                    existing_rotate = int(page.get('/Rotate', 0) or 0)
+                    page.Rotate = (existing_rotate + 90) % 360
+                    rotated += 1
+            pdf.save(out_pdf)
 
         return {
             "pages_rotated": rotated,
-            "total_pages": len(reader.pages),
+            "total_pages": total,
             "skipped": rotated == 0,
         }
 
@@ -593,11 +642,33 @@ class PdfOps:
 
 
     def crop_to_box(self, src: Path, out_pdf: Path, box: list[float]) -> Path:
-        """Crop all pages to the given box [x0, y0, x1, y1]. Writes a NEW file; source is untouched."""
+        """Crop pages to the given box [x0, y0, x1, y1].
+
+        Page-aware: if a page's existing orientation differs from the box's
+        orientation, the box's width/height are swapped for that page so the
+        landscape pages keep their landscape canvas (and vice versa). This
+        prevents mixed-orientation documents (Word docs with landscape table
+        sections, etc.) from having content guillotined off.
+
+        Writes a NEW file; source is untouched.
+        """
+        bw = float(box[2]) - float(box[0])
+        bh = float(box[3]) - float(box[1])
+        box_landscape = bw > bh
         with pikepdf.open(src) as pdf:
             for page in pdf.pages:
-                page.MediaBox = box
-                page.CropBox = box
+                mb = page.MediaBox
+                pw = float(mb[2]) - float(mb[0])
+                ph = float(mb[3]) - float(mb[1])
+                page_landscape = pw > ph
+                if page_landscape == box_landscape:
+                    eff = list(box)
+                else:
+                    # Swap dimensions so width/height align with this page.
+                    eff = [float(box[0]), float(box[1]),
+                           float(box[0]) + bh, float(box[1]) + bw]
+                page.MediaBox = eff
+                page.CropBox = eff
                 for attr in ('TrimBox', 'BleedBox'):
                     if hasattr(page, attr):
                         del page[f'/{attr}']
