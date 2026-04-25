@@ -17,6 +17,50 @@ from app.core.config import settings
 ICC_DIR = Path("/opt/document-centre-api/icc")
 
 
+# ---------------------------------------------------------------------------
+# Orientation helpers
+# ---------------------------------------------------------------------------
+# CRITICAL: PDF page orientation is determined by MediaBox + /Rotate, NOT by
+# MediaBox alone. LibreOffice (and many other producers) export landscape
+# pages as a PORTRAIT MediaBox (e.g. 595×842) plus a `/Rotate 90` viewer hint.
+# Reading raw MediaBox.width vs height misclassifies them as portrait, which
+# was the root cause of repeated "landscape pages get cropped to portrait"
+# bugs across resize/normalize_orientation/crop_to_box.
+#
+# Always use `_effective_dims_*` when deciding orientation or building boxes.
+
+def _effective_dims_pikepdf(page) -> tuple[float, float]:
+    """Return the page's VISUAL (width, height) honouring /Rotate. pikepdf API."""
+    mb = page.MediaBox
+    w = float(mb[2]) - float(mb[0])
+    h = float(mb[3]) - float(mb[1])
+    rot = 0
+    try:
+        rot = int(page.get("/Rotate", 0) or 0) % 360
+    except Exception:
+        rot = 0
+    if rot in (90, 270):
+        return h, w
+    return w, h
+
+
+def _effective_dims_pypdf(page) -> tuple[float, float]:
+    """Return the page's VISUAL (width, height) honouring /Rotate. pypdf API."""
+    w = float(page.mediabox.width)
+    h = float(page.mediabox.height)
+    rot = 0
+    try:
+        # pypdf exposes /Rotate via page.rotation in some versions; use the
+        # raw dict get() for portability.
+        raw = page.get("/Rotate", 0)
+        rot = int(raw or 0) % 360
+    except Exception:
+        rot = 0
+    if rot in (90, 270):
+        return h, w
+    return w, h
+
+
 def resolve_icc_profile(icc_profile: str | None) -> str | None:
     if not icc_profile:
         return None
