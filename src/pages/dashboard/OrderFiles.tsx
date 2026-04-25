@@ -704,7 +704,7 @@ export default function OrderFiles() {
         toast.error("Failed to add section", { description: err.message });
       }
     },
-    [selectedDocId, orderItem, sections.length, addSection, familySlug]
+    [selectedDocId, orderItem, sections.length, addSection, familySlug, documents]
   );
 
   // Auto-assign a 2-3 page document as Outside (page 1) + Inside (page 2) for brochures
