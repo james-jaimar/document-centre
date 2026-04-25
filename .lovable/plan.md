@@ -1,111 +1,73 @@
-# Upload Pipeline Speed-Up
+## Problem
 
-The 8pp A4 upload was slow for **three concrete, measurable reasons** confirmed in the edge logs:
+The current Office (Word/PowerPoint/ODT) pipeline runs in this order:
 
-| Cause | Wasted time per upload | Severity |
-|---|---|---|
-| `pollJob` fixed at 2.5s — short jobs (~200ms) wait the full interval before next check, across 4 sequential job polls | ~7–10s | **Highest** |
-| `getDerivedFiles` polled every 3s, up to 60×, through the Deno proxy (~550ms each) | ~3–6s on small docs | High |
-| `demo-bootstrap` 500 from a bad `ON CONFLICT` spec — fails 1s per Try-flow entry (not upload, but blocks the demo) | ~1s, plus a scary console error | Medium |
+1. Upload original file
+2. **Convert** to PDF via LibreOffice on VPS
+3. **Inspect** (read boxes + page count)
+4. **Normalize orientation** — rotates "non-dominant" pages to match the family's expected orientation. For bound documents this means *every landscape page is rotated to portrait immediately*.
+5. **Print-ready** (CMYK)
+6. **Inspect dimensions** → detect non-ISO size (e.g. US Letter)
+7. **Render** thumbnails
+8. *(Later, in OrderFiles)* Show size advisory → user picks "Scale to A4" or "Keep size" → triggers `resize` and re-render
 
-Edge logs confirm 30+ `pdf-api` round-trips per upload, each 230–975ms (median ~550ms), with constant Deno boot churn (`booted (time: 30-49ms)` repeated dozens of times).
+The bug: for an Office file that legitimately mixes orientations (e.g. 2 portrait → 20 landscape → more portrait, like Word's own "Page Setup → This section" feature produces), step 4 destroys the author's intent **before** the user has even seen the size advisory. Word itself, when "Save as PDF" is used, preserves those orientations perfectly. We should mimic that.
 
----
+## Proposed Order (Office files only)
 
-## Fix 1 — Adaptive `pollJob` cadence
+For Office uploads, reorder to match what Word does natively:
 
-**File:** `src/lib/documentCentreApi.ts` — `pollJob`
+1. Upload original file
+2. **Convert** to PDF via LibreOffice (untouched — preserves per-section orientations exactly as the author set them)
+3. **Inspect** boxes + page count
+4. **Detect size** (Letter / Legal / non-ISO) and surface the size advisory immediately if needed
+5. **Wait for user decision** on size:
+   - "Scale to A4" → call `resize` on the asset, then re-inspect
+   - "Keep size" → continue with original dimensions
+6. **Now** run `normalize-orientation` for bound/booklet/brochure/ring-binder families (rotate landscape → portrait so the bound spine works), or for `presentations` (rotate portrait → landscape). Mixed orientation is then a deliberate transform applied to a sized canvas, not a destructive default.
+7. **Print-ready** (CMYK)
+8. **Render** thumbnails
 
-Replace the fixed 2500ms interval with an adaptive ramp:
-- Start at **300ms** (catches sub-second jobs immediately)
-- Double each attempt up to a **2500ms** ceiling
-- Keep the same `maxAttempts` budget (still 360 polls = ~15 min total)
+The standard PDF path is unchanged — those files arrive already sized and oriented by their author.
 
-Inspect, normalize, and print-ready jobs on small PDFs typically finish in 200–800ms, so this alone saves ~6–8s per upload with zero server impact.
+## Implementation
 
-```ts
-// Pseudocode
-let interval = 300;
-for (let i = 0; i < maxAttempts; i++) {
-  const job = await getJob(jobId);
-  onUpdate?.(job);
-  if (TERMINAL_STATUSES.has(job.status)) return job;
-  await new Promise(r => setTimeout(r, interval));
-  interval = Math.min(interval * 1.5, 2500);
-}
-```
+### 1. `src/hooks/useDocumentUpload.ts`
 
-## Fix 2 — Tighten `getDerivedFiles` polling in `renderDocumentThumbnails`
+- Split `inspectExistingAsset` into two halves:
+  - **`inspectAndDetectSize`** — runs `inspectAsset` + reads boxes + computes `detectNonIsoSize` / `detectNearIsoWithBleed`. Persists `preflight_data` with `awaiting_review: true` if a size advisory is needed. **Does NOT call `normalize-orientation` or `print-ready`.** Returns `{ asset_id, hasAdvisory, renderBox, hasSizeAdvisory }`.
+  - **`finalizeOrientationAndPrintReady`** — runs `normalize-orientation` (when family demands it) + `print-ready`, then re-reads asset boxes and re-persists dimensions. Called either:
+    - directly after `inspectAndDetectSize` when `hasSizeAdvisory === false` (current PDF behaviour, no user wait), or
+    - from the OrderFiles size-advisory resolver after the user clicks "Scale to A4" or "Keep size".
 
-**File:** `src/hooks/useDocumentUpload.ts` — `renderDocumentThumbnails` (line 88–110)
+- For **PDF uploads**: behaviour is unchanged — `inspectAndDetectSize` then `finalizeOrientationAndPrintReady` runs back-to-back, then `renderDocumentThumbnails` (or wait for advisory).
 
-The current loop sleeps **3000ms between checks for up to 60 polls**, even after the previews task has reported `completed`. Since `generate_previews` writes all files in one Ghostscript pass before the task ends, the files are usually already there when polling starts.
+- For **Office uploads**: after `convertOffice` completes, run only `inspectAndDetectSize`. If `hasSizeAdvisory` is true, stop there and let OrderFiles drive the rest. If false, run `finalizeOrientationAndPrintReady` and render normally.
 
-Changes:
-- Do an **immediate first check** right after `pollJob` returns `completed` (no initial 3s wait).
-- Adaptive cadence: 500ms → 1000ms → 2000ms (cap), instead of flat 3000ms.
-- Reduce `MAX_THUMB_POLLS` from 60 → 30 (still ~45s upper bound with the new cadence).
-- Keep the existing "stale poll" early-exit logic.
+### 2. `src/pages/dashboard/OrderFiles.tsx`
 
-For an 8pp doc this turns ~9–18s of polling into ~1–3s.
+The two existing size-advisory handlers (around lines 325–422) — "Keep size" and "Scale to A4" — currently call `renderWithProgress` directly. Update them to:
 
-## Fix 3 — Repair `demo-bootstrap` upsert
+1. (Scale path only) call `resize(assetId, targetW, targetH, "fit")` and poll, as today.
+2. **New step**: call the new `finalizeOrientationAndPrintReady(docId, assetId, fileName)` exposed from `useDocumentUpload`. This runs `normalize-orientation` + `print-ready` against the now-correctly-sized asset.
+3. Then `renderWithProgress` as today.
 
-**Root cause** (from edge logs):
-```
-demo-bootstrap: membership upsert failed
-code: "42P10"
-message: "there is no unique or exclusion constraint matching the ON CONFLICT specification"
-```
+Expose `finalizeOrientationAndPrintReady` from `useDocumentUpload`'s return value alongside `reprocessDocument`.
 
-The function does `onConflict: "profile_id,tenant_id,app_id"` but no matching unique index exists on `tenant_memberships`.
+### 3. `preflight_data` flag
 
-**File:** `supabase/functions/demo-bootstrap/index.ts`
+Add `orientation_normalized: true` to the persisted `preflight_data` once `finalizeOrientationAndPrintReady` completes successfully. This lets `reprocessDocument` and any future re-render skip a redundant rotate pass.
 
-Replace the brittle upsert with a **read-then-insert-if-missing** pattern (idempotent without needing a specific unique index):
+### 4. No VPS changes required
 
-```ts
-const { data: existing } = await admin
-  .from("tenant_memberships")
-  .select("id")
-  .eq("profile_id", user.id)
-  .eq("tenant_id", tenant.id)
-  .eq("app_id", tenant.app_id)
-  .maybeSingle();
+`normalize-orientation`, `resize`, `print-ready`, `inspect`, and `convert` endpoints all already exist on the VPS. This is purely a client-side reordering. No DB migration needed (all state lives in the existing `preflight_data` JSONB column).
 
-if (!existing) {
-  const { error: insErr } = await admin
-    .from("tenant_memberships")
-    .insert({ profile_id: user.id, tenant_id: tenant.id, app_id: tenant.app_id, role: "customer", is_active: true });
-  if (insErr) { /* return 500 */ }
-}
-```
+## What this fixes
 
-This avoids needing a DB migration and stops the 500 + console error on every Try-flow entry.
+- Office files with intentional mixed orientations (your 2-portrait + 20-landscape + portrait deck) will: be converted → sized to A4 if needed → *then* have orientation normalized only if the product family requires it. For products like flyers/posters that don't normalize at all, the original mixed layout is fully preserved.
+- The user always sees the size question against the document Word/LibreOffice produced, not against a pre-rotated derivative.
+- No regression for native PDF uploads — they still run the current sequence.
 
-## Out of scope (explicitly deferred)
+## What this does *not* address
 
-- **Server-push (SSE/WebSocket) job completion signal** — would eliminate polling entirely but is a much larger change requiring backend Celery → Redis pub/sub → FastAPI SSE wiring. Worth doing later if the pipeline still feels slow after Fixes 1 & 2.
-- **Postgres / Celery health-probe tuning** — the previous proposal you declined; not revisiting.
-- **`pdf-api` Deno proxy keep-alive / connection pooling** — Deno edge runtime cycles instances aggressively; not much we can change there from our side.
-- **Duplicate `crop_rasterize` dedup** — already resolved by the `generate_previews` switch in the previous round.
-
-## Expected outcome for an 8pp A4 upload
-
-| Phase | Before | After |
-|---|---|---|
-| Inspect job poll | ~2.5s | ~0.3–0.8s |
-| Normalize job poll | ~2.5s | ~0.3–0.8s |
-| Print-ready job poll | ~2.5s | ~0.3–0.8s |
-| `generate_previews` job poll | ~2.5s | ~0.3–0.8s |
-| Derived-files polling | ~6–9s | ~1–3s |
-| Demo bootstrap | 1s + 500 error | ~150ms, no error |
-| **Total perceived speedup** | — | **~12–18s faster** |
-
-## Files to be edited
-
-- `src/lib/documentCentreApi.ts` — adaptive `pollJob`
-- `src/hooks/useDocumentUpload.ts` — tighter `renderDocumentThumbnails` polling
-- `supabase/functions/demo-bootstrap/index.ts` — replace upsert with read-then-insert
-
-No DB migration needed. No VPS changes needed. Approve to implement.
+- Overall ~60s end-to-end time for an 8pp A4. That's mostly LibreOffice cold-start + Ghostscript render time on the VPS, not the JS pipeline. If you want to attack that next, the targets are: (a) keep a warm `soffice --headless` worker on the VPS, (b) parallelise `print-ready` and the first `generate_previews` page. Happy to scope that as a separate plan once this reorder lands.
