@@ -153,6 +153,34 @@ class PdfOps:
             media = page.MediaBox
             info["width_pt"] = float(media[2] - media[0])
             info["height_pt"] = float(media[3] - media[1])
+
+            # Per-page geometry so the client can detect mixed orientations
+            # (e.g. Word docs with landscape table sections among portrait
+            # body pages). The top-level width_pt/height_pt/boxes still
+            # reflect page 1 for backwards compatibility.
+            pages_meta = []
+            has_portrait = False
+            has_landscape = False
+            for p in pdf.pages:
+                pmb = p.MediaBox
+                pw = float(pmb[2] - pmb[0])
+                ph = float(pmb[3] - pmb[1])
+                rot = 0
+                try:
+                    rot = int(p.get("/Rotate", 0) or 0)
+                except Exception:
+                    rot = 0
+                pages_meta.append({
+                    "width_pt": pw,
+                    "height_pt": ph,
+                    "rotate": rot,
+                })
+                if pw > ph:
+                    has_landscape = True
+                elif pw < ph:
+                    has_portrait = True
+            info["pages"] = pages_meta
+            info["mixed_orientation"] = has_portrait and has_landscape
             return info
 
     def normalize_pdf(self, src: Path, out_pdf: Path, *, fast: bool = True) -> Path:
