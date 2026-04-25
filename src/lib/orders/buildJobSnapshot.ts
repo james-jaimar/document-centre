@@ -449,6 +449,10 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
     if (filesSection) groupedSections.push(filesSection);
   }
 
+  // Build merge directives for the eventual server-side PDF concatenation.
+  // Photo prints have their own merge path (PhotoPrintsAdminGallery) — skip.
+  const mergeDirectives = isPhotoPrints ? [] : buildMergeDirectives(sections, documents);
+
   return {
     configuration: {
       summary,
@@ -458,6 +462,9 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
       ...(isPhotoPrints && spec?.photo_prints
         ? { photo_prints: spec.photo_prints }
         : {}),
+      // Ordered instructions for the print-shop merge worker.
+      // See `MergeDirective` for the contract.
+      ...(mergeDirectives.length > 0 ? { merge_directives: mergeDirectives } : {}),
       // Source order_item_id — used by the admin gallery to poll for the
       // merged PDF if the background render hasn't completed yet.
       source_order_item_id: item.id,
