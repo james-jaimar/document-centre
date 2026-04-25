@@ -339,11 +339,12 @@ export default function OrderFiles() {
             advisoryDoc.fileName,
           );
         }
-        const mediaBox = await getMediaBox(advisoryDoc.backendAssetId);
+        // Render the full document (no global crop box). The page-1
+        // MediaBox would clip mixed-orientation pages.
         await renderWithProgress(
           advisoryDoc.id,
           advisoryDoc.backendAssetId,
-          mediaBox,
+          null,
           advisoryDoc.fileName,
           "Rendering pages…",
         );
