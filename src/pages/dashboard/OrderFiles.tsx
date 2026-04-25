@@ -452,13 +452,12 @@ export default function OrderFiles() {
       const { job_id } = await rotate(orientationDoc.backendAssetId, 90);
       await pollJob(job_id);
 
-      // Single render at the new (rotated) MediaBox
+      // Render the full (now-rotated) document — no global crop box.
       setUploadModalOpen(true);
-      const newBox = await getMediaBox(orientationDoc.backendAssetId);
       await renderWithProgress(
         orientationDoc.id,
         orientationDoc.backendAssetId,
-        newBox,
+        null,
         orientationDoc.fileName,
         "Rotating to landscape and rendering pages…",
       );
