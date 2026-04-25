@@ -531,7 +531,17 @@ export function useDocumentUpload(
             );
           }
 
-          inspection = await inspectExistingAsset(doc.id, asset_id, originalName);
+          // Office files: skip auto-finalise so we always inspect the
+          // pristine LibreOffice output. The size advisory (if any) drives
+          // resize → finaliseOrientationAndPrintReady from OrderFiles. If
+          // there is no size advisory we still need to finalise here before
+          // rendering — handled below after inspection returns.
+          inspection = await inspectExistingAsset(doc.id, asset_id, originalName, {
+            skipFinalize: true,
+          });
+          if (inspection && !inspection.hasAdvisory) {
+            await finalizeOrientationAndPrintReady(doc.id, inspection.asset_id, originalName);
+          }
         } else {
           inspection = await inspectDocument(doc.id, storagePath, originalName);
         }
