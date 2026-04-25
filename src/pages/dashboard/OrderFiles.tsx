@@ -332,10 +332,31 @@ export default function OrderFiles() {
     if (advisoryDoc.backendAssetId) {
       try {
         setUploadModalOpen(true);
+
+        // The user may have walked away with the modal open long enough for
+        // the VPS to garbage-collect the asset. Re-register from Supabase
+        // Storage transparently if needed.
+        let workingAssetId = advisoryDoc.backendAssetId;
+        if (existing?.file_path) {
+          const fresh = await ensureFreshAsset({
+            assetId: advisoryDoc.backendAssetId,
+            sourceStoragePath: existing.file_path,
+            originalFilename: existing.file_name ?? advisoryDoc.fileName,
+            mediaType: existing.mime_type ?? "application/pdf",
+          });
+          if (fresh.recreated) {
+            workingAssetId = fresh.assetId;
+            await supabase
+              .from("documents")
+              .update({ backend_asset_id: workingAssetId })
+              .eq("id", advisoryDoc.id);
+          }
+        }
+
         if (!preflight?.orientation_normalized) {
           await finalizeOrientationAndPrintReady(
             advisoryDoc.id,
-            advisoryDoc.backendAssetId,
+            workingAssetId,
             advisoryDoc.fileName,
           );
         }
@@ -343,7 +364,7 @@ export default function OrderFiles() {
         // MediaBox would clip mixed-orientation pages.
         await renderWithProgress(
           advisoryDoc.id,
-          advisoryDoc.backendAssetId,
+          workingAssetId,
           null,
           advisoryDoc.fileName,
           "Rendering pages…",
