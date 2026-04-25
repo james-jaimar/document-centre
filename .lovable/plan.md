@@ -1,61 +1,72 @@
-## Two related issues to fix
+## Root cause
 
-### 1. Single-page covers should be simplex (with a real blank inside)
+The browser console error is unambiguous:
 
-Today, when a customer uploads a 1-page front cover the section defaults to `is_duplex = true`, so the preview's first spread shows the cover on the left and **body page 1 on the back of the cover** — wrong from a printer's perspective. Same for a 1-page back cover.
+```
+Access to fetch at '.../functions/v1/s3-storage' from origin 'https://document-centre.com'
+has been blocked by CORS policy: Response to preflight request doesn't pass access control check:
+It does not have HTTP ok status.
+```
 
-**Rule (per your answer):** A 1-page cover is always single-sided. The reverse face is a real blank sheet — present in both the preview AND the final merged PDF that goes to the print shop. A 2-page upload is treated as a duplex cover (face A = outside, face B = inside).
+This is **not** an S3 bucket CORS issue (my earlier guess was wrong — sorry). It's a CORS misconfiguration on the **`s3-storage` Supabase edge function itself**.
 
-**Where to change it:**
+### Why it fails for some users and not others
 
-- **`src/pages/dashboard/OrderFiles.tsx` → `handleAddAs`** — when the user drops a document into the Front Cover or Back Cover slot, set `is_duplex` based on the uploaded document's `page_count`:
-  - `page_count === 1` → `is_duplex = false`
-  - `page_count >= 2` → `is_duplex = true` (existing behaviour for brochures stays)
-- **`src/components/order/SectionList.tsx` (the duplex toggle)** — for `front_cover` / `back_cover` sections backed by a 1-page document, lock the toggle to Simplex (or hide it) so the customer can't flip it back to duplex against physics. Show a small helper: *"Single-page covers are always single-sided. Upload a 2-page PDF for a printed inside cover."*
-- **`src/lib/orders/buildJobSnapshot.ts`** — when generating the job ticket / merged-PDF directive for the print shop, if a cover section is `is_duplex = false` and is followed by another section, **insert a real blank page** in the merge sequence (NOT a synthetic `blank_back` placeholder — a genuine blank PDF page). Add this rule to `mem://features/order-flow/multi-document-merge-rules` so future code respects it.
-- **Preview side** (`PreviewPanel.tsx` and `buildPreviewSnapshot.ts`) already emits a `blank_back` face for simplex sections — so once `is_duplex` is correct the spread layout self-corrects: cover on right (solo), then blank inside on the next left, then body page 1 on the right. No layout code change needed here.
+`@supabase/supabase-js@2.99.1` (the version pinned in this project) sends these extra headers on every `functions.invoke()` call:
 
-### 2. Ghost grey "Page N" faces between and at the end of documents
+- `x-supabase-client-platform`
+- `x-supabase-client-platform-version`
+- `x-supabase-client-runtime`
+- `x-supabase-client-runtime-version`
 
-The placeholders you're seeing (image 421 right page = "Page 33", image 422 = "Page 60") are body faces emitted with an empty `thumbnailUrl`. They render via the FlipBook fallback branch (`FileText` icon + grey "Page N"). Two root causes are in play:
+The browser's CORS preflight (`OPTIONS`) asks the server *"are these headers allowed?"* via `Access-Control-Request-Headers`. The current `s3-storage` function only declares:
 
-**Root cause A — `pickBestPerPage` returns a dense array.**
-In `src/lib/thumbnailUtils.ts`, `pickBestPerPage` builds `result` by iterating over the pages it actually found, not by page index. If page N's render failed/was skipped on the VPS, page N+1 silently slides into slot N, and the very last slot ends up empty. `buildPageSequence` then iterates `i < page_count` against a shorter thumbnails array → the missing tail becomes an empty-URL body face → grey ghost.
+```
+Access-Control-Allow-Headers: authorization, x-client-info, apikey, content-type
+```
 
-**Root cause B — render race / silent partial completion.**
-`renderDocumentThumbnails` polls for derived files but bails early when `stalePolls >= 8 && found >= expectedPages * 0.8` (line 102 in `useDocumentUpload.ts`). On a slow render this can persist the document with `thumbnail_urls.length < page_count`.
+Because the four `x-supabase-client-*` headers aren't in that list, **the browser rejects the preflight client-side** — the request never even reaches the edge function (which is why the function logs are empty for these failed attempts). It works intermittently when:
+- An older Supabase client is cached
+- The browser has a still-valid cached preflight from before the SDK upgrade
+- Some corporate proxies strip the headers
 
-**Fixes:**
+Fresh Chrome on Mac in the UK has none of those — so it fails 100%.
 
-- **`src/lib/thumbnailUtils.ts` → `pickBestPerPage`** — return a sparse-aware array sized to `max(page) + 1`, with empty strings in any gap so page N's image always lands at index N. Add a JSDoc note explaining the index-stable contract.
-- **`src/hooks/useDocumentUpload.ts` → `renderDocumentThumbnails`** —
-  - Pass `expectedPages` into `pickBestPerPage` so it always returns an array of length `expectedPages` (filling gaps with `""`).
-  - Drop the `expectedPages * 0.8` early-exit. Always wait for the full count or the full poll budget. If we time out with gaps, log a `console.warn` listing the missing page indices and store the sparse array (so the UI degrades to a blank sheet, not a ghost).
-  - After the upload finishes, if any thumbnail is missing, surface a small "Re-render previews" affordance on the document card (toast or inline) so the customer/operator can retry.
-- **`src/components/preview/FlipBook.tsx`** — for body faces with empty `thumbnailUrl`, render them as plain white paper (re-use the `BLANK_PAPER_ROLES` style in `PageEffects.tsx`) instead of the `FileText` "Page N" placeholder. This is the safety net you described: "should appear to the user as just plain white". The grey FileText box stays only for the loading/spinner state during initial upload, never for steady-state previews.
-- **`src/components/preview/PageEffects.tsx`** — extend `BLANK_PAPER_ROLES` (or a new branch) so body faces with no thumbnail also paint plain paper. They keep their page number in the sidebar but render visually as a clean blank sheet.
+### Confirmation
 
-### 3. Memory updates
+8 of our 20 edge functions have the same incomplete header list. The other 12 (e.g. `order-engine`, `pdf-api`, `document-access`, `manage-user`) already include the full set and have been working fine — that's why only S3 uploads fail and not the rest of the app.
 
-- Update `mem://features/order-flow/multi-document-merge-rules` to record:
-  - 1-page covers are simplex with a **real** blank inside (preview + merged PDF).
-  - The simplex `blank_back` face is preview-only **except** for cover blanks, which become real blank PDF pages in the merged output.
-- Update `mem://features/preview-system/physical-alignment-logic` to note that body faces with missing thumbnails fall back to plain-paper rendering (no grey FileText placeholder in steady state).
+## Fix
 
-## Files to touch
+Update `Access-Control-Allow-Headers` on the affected functions to include the full header set:
 
-- `src/pages/dashboard/OrderFiles.tsx` — auto-set `is_duplex` from cover page count.
-- `src/components/order/SectionList.tsx` — lock duplex toggle for 1-page covers.
-- `src/lib/orders/buildJobSnapshot.ts` — insert real blank PDF page after a simplex cover for the merged print-shop output.
-- `src/lib/thumbnailUtils.ts` — make `pickBestPerPage` index-stable / sparse-aware.
-- `src/hooks/useDocumentUpload.ts` — remove premature early-exit, always size to `expectedPages`, warn on gaps.
-- `src/components/preview/FlipBook.tsx` — empty-thumbnail body faces render as plain paper.
-- `src/components/preview/PageEffects.tsx` — extend blank-paper branch.
-- `mem://features/order-flow/multi-document-merge-rules` — update.
-- `mem://features/preview-system/physical-alignment-logic` — update.
+```ts
+"Access-Control-Allow-Headers":
+  "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version"
+```
 
-## Out of scope
+Files to update (all CORS-only, no logic changes):
 
-- Changing how brochures auto-assign panels (untouched).
-- Changing back-cover-card / inside-back-blank logic for bound docs with explicit back covers (untouched).
-- Server-side merge implementation (the actual PDF concatenation) — this plan only stages the directive in `buildJobSnapshot`; the worker that merges PDFs is a separate future task.
+1. **`supabase/functions/s3-storage/index.ts`** ← the actual upload blocker
+2. `supabase/functions/wipe-storage/index.ts`
+3. `supabase/functions/email-dispatcher/index.ts`
+4. `supabase/functions/request-password-reset/index.ts`
+5. `supabase/functions/request-signup/index.ts`
+6. `supabase/functions/scrape-branding/index.ts`
+7. `supabase/functions/email-account-manage/index.ts`
+8. `supabase/functions/cleanup-stale-drafts/index.ts`
+
+Edge functions auto-deploy on save, so the UK user just needs to retry the upload immediately after — no S3/AWS console changes, no env var changes, no client redeploy needed (although the client picks up nothing new anyway).
+
+## What this does NOT touch
+
+- S3 bucket CORS — not the issue (presigned PUT to S3 never happens because the preflight to the edge function fails first)
+- Frontend code (`src/lib/s3Storage.ts`, `usePhotoUpload.ts`, `FileUploader.tsx`)
+- The supabase-js version
+- Any business logic in any edge function
+
+## Verification after deploy
+
+1. Ask the UK user to hard-refresh (Cmd-Shift-R) and retry the upload.
+2. I'll then check `s3-storage` edge function logs — we should now see the `sign-upload` call land successfully (we currently see nothing for failed attempts because preflight blocks them).
+3. If presigning succeeds but the actual S3 PUT then fails, we'd revisit S3 bucket CORS — but I do not expect that based on the evidence (other users in SA upload fine through the same bucket).
