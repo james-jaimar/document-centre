@@ -16,6 +16,92 @@ function json(body: unknown, status = 200) {
   });
 }
 
+// ── Resilience plumbing ──────────────────────────────────────────────
+//
+// The connector gateway and S3 itself can both have transient hiccups
+// (worker recycles, throttling, momentary 5xx). Wrap every outbound fetch
+// in this helper so a single blip doesn't propagate as a hard error to the
+// browser. Customers should never see "S3" or status codes in error text.
+
+const DEFAULT_MAX_RETRIES = 4;
+
+function backoffDelay(attempt: number): number {
+  const base = Math.min(500 * 2 ** attempt, 5000);
+  const jitter = Math.floor(Math.random() * 200);
+  return base + jitter;
+}
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+function isTransientStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || (status >= 500 && status <= 599);
+}
+
+interface RetryFetchOpts {
+  /** Outbound label for log lines. */
+  label: string;
+  /** Override max attempts on top of the initial. Defaults to 4. */
+  maxRetries?: number;
+}
+
+/**
+ * fetch() with exponential-backoff retries on transient HTTP failures and
+ * network errors. The caller still inspects res.ok for permanent 4xx and
+ * decides what to surface.
+ */
+async function resilientFetch(
+  url: string,
+  init: RequestInit,
+  opts: RetryFetchOpts,
+): Promise<Response> {
+  const maxRetries = opts.maxRetries ?? DEFAULT_MAX_RETRIES;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(url, init);
+    } catch (networkErr) {
+      lastError = networkErr;
+      if (attempt < maxRetries) {
+        const delay = backoffDelay(attempt);
+        console.warn(
+          `[s3-storage] ${opts.label} network error, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries}):`,
+          networkErr instanceof Error ? networkErr.message : networkErr,
+        );
+        await sleep(delay);
+        continue;
+      }
+      throw networkErr;
+    }
+
+    if (res.ok) return res;
+
+    if (isTransientStatus(res.status) && attempt < maxRetries) {
+      const delay = backoffDelay(attempt);
+      console.warn(
+        `[s3-storage] ${opts.label} transient ${res.status}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`,
+      );
+      // Drain body so the connection can be reused.
+      try {
+        await res.text();
+      } catch (_) { /* noop */ }
+      await sleep(delay);
+      continue;
+    }
+
+    return res;
+  }
+
+  // Loop exhausted on a network-error path.
+  throw lastError ?? new Error(`${opts.label} failed`);
+}
+
+/** Sanitise upstream error text so the user never sees raw S3/gateway wording. */
+function friendlyError(action: string): string {
+  return `Storage is temporarily unavailable while ${action}. Please retry shortly.`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -36,7 +122,7 @@ Deno.serve(async (req) => {
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_ANON_KEY")!,
-    { global: { headers: { Authorization: authHeader } } }
+    { global: { headers: { Authorization: authHeader } } },
   );
 
   const { data: claimsData, error: claimsErr } = await supabase.auth.getUser();
@@ -44,30 +130,34 @@ Deno.serve(async (req) => {
     return json({ error: "Unauthorized" }, 401);
   }
 
+  const gatewayHeaders = {
+    Authorization: `Bearer ${LOVABLE_API_KEY}`,
+    "X-Connection-Api-Key": AWS_S3_API_KEY,
+    "Content-Type": "application/json",
+  };
+
   try {
     const body = await req.json();
     const { action } = body;
 
     if (action === "sign-upload") {
-      const { object_path, content_type } = body;
+      const { object_path } = body;
       if (!object_path) return json({ error: "object_path required" }, 400);
 
-      const signRes = await fetch(
+      const signRes = await resilientFetch(
         `${GATEWAY_URL}/api/v1/sign_storage_url?provider=aws_s3&mode=write`,
         {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
-            "X-Connection-Api-Key": AWS_S3_API_KEY,
-            "Content-Type": "application/json",
-          },
+          headers: gatewayHeaders,
           body: JSON.stringify({ object_path }),
-        }
+        },
+        { label: "sign-upload" },
       );
 
       if (!signRes.ok) {
-        const errText = await signRes.text();
-        throw new Error(`Gateway sign-upload failed [${signRes.status}]: ${errText}`);
+        const errText = await signRes.text().catch(() => "");
+        console.error(`[s3-storage] sign-upload failed [${signRes.status}]: ${errText}`);
+        return json({ error: friendlyError("preparing your upload") }, 503);
       }
 
       const data = await signRes.json();
@@ -83,28 +173,34 @@ Deno.serve(async (req) => {
       // Sign each path (gateway only supports one at a time)
       const results: Record<string, string> = {};
       const batchSize = 10;
+      let anyHardFailure = false;
 
       for (let i = 0; i < object_paths.length; i += batchSize) {
         const batch = object_paths.slice(i, i + batchSize);
         const promises = batch.map(async (path: string) => {
-          const signRes = await fetch(
-            `${GATEWAY_URL}/api/v1/sign_storage_url?provider=aws_s3&mode=read`,
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${LOVABLE_API_KEY}`,
-                "X-Connection-Api-Key": AWS_S3_API_KEY,
-                "Content-Type": "application/json",
+          try {
+            const signRes = await resilientFetch(
+              `${GATEWAY_URL}/api/v1/sign_storage_url?provider=aws_s3&mode=read`,
+              {
+                method: "POST",
+                headers: gatewayHeaders,
+                body: JSON.stringify({ object_path: path }),
               },
-              body: JSON.stringify({ object_path: path }),
+              { label: `sign-download(${path})` },
+            );
+            if (!signRes.ok) {
+              const txt = await signRes.text().catch(() => "");
+              console.error(`[s3-storage] sign-download ${path} [${signRes.status}]: ${txt}`);
+              anyHardFailure = true;
+              return { path, url: "" };
             }
-          );
-          if (!signRes.ok) {
-            console.error(`Failed to sign ${path}: ${signRes.status}`);
+            const data = await signRes.json();
+            return { path, url: data.url };
+          } catch (err) {
+            console.error(`[s3-storage] sign-download ${path} threw:`, err);
+            anyHardFailure = true;
             return { path, url: "" };
           }
-          const data = await signRes.json();
-          return { path, url: data.url };
         });
 
         const batchResults = await Promise.all(promises);
@@ -113,7 +209,9 @@ Deno.serve(async (req) => {
         }
       }
 
-      return json({ signed_urls: results });
+      // Always return whatever URLs we got — partial success is better than
+      // total failure. Caller can detect empty URLs and re-request.
+      return json({ signed_urls: results, partial_failure: anyHardFailure });
     }
 
     if (action === "copy") {
@@ -123,60 +221,59 @@ Deno.serve(async (req) => {
       }
 
       // Sign a read URL for the source, download the bytes, then PUT to dest.
-      // (The gateway doesn't expose S3 CopyObject directly, so we stream.)
-      const signReadRes = await fetch(
+      const signReadRes = await resilientFetch(
         `${GATEWAY_URL}/api/v1/sign_storage_url?provider=aws_s3&mode=read`,
         {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
-            "X-Connection-Api-Key": AWS_S3_API_KEY,
-            "Content-Type": "application/json",
-          },
+          headers: gatewayHeaders,
           body: JSON.stringify({ object_path: source_path }),
-        }
+        },
+        { label: "copy.sign-read" },
       );
       if (!signReadRes.ok) {
-        const errText = await signReadRes.text();
-        throw new Error(`sign-read failed [${signReadRes.status}]: ${errText}`);
+        const errText = await signReadRes.text().catch(() => "");
+        console.error(`[s3-storage] copy sign-read [${signReadRes.status}]: ${errText}`);
+        return json({ error: friendlyError("copying your file") }, 503);
       }
       const { url: readUrl } = await signReadRes.json();
 
-      const signWriteRes = await fetch(
+      const signWriteRes = await resilientFetch(
         `${GATEWAY_URL}/api/v1/sign_storage_url?provider=aws_s3&mode=write`,
         {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
-            "X-Connection-Api-Key": AWS_S3_API_KEY,
-            "Content-Type": "application/json",
-          },
+          headers: gatewayHeaders,
           body: JSON.stringify({ object_path: dest_path }),
-        }
+        },
+        { label: "copy.sign-write" },
       );
       if (!signWriteRes.ok) {
-        const errText = await signWriteRes.text();
-        throw new Error(`sign-write failed [${signWriteRes.status}]: ${errText}`);
+        const errText = await signWriteRes.text().catch(() => "");
+        console.error(`[s3-storage] copy sign-write [${signWriteRes.status}]: ${errText}`);
+        return json({ error: friendlyError("copying your file") }, 503);
       }
       const { url: writeUrl } = await signWriteRes.json();
 
-      // Stream bytes from source → dest
-      const getRes = await fetch(readUrl);
+      // Stream bytes from source → dest, with retries on each leg.
+      const getRes = await resilientFetch(readUrl, { method: "GET" }, {
+        label: "copy.fetch-source",
+      });
       if (!getRes.ok) {
-        const errText = await getRes.text();
-        throw new Error(`S3 source fetch failed [${getRes.status}]: ${errText}`);
+        const errText = await getRes.text().catch(() => "");
+        console.error(`[s3-storage] copy fetch-source [${getRes.status}]: ${errText}`);
+        return json({ error: friendlyError("copying your file") }, 503);
       }
       const bytes = await getRes.arrayBuffer();
       const contentType = getRes.headers.get("Content-Type") || "application/octet-stream";
 
-      const putRes = await fetch(writeUrl, {
-        method: "PUT",
-        headers: { "Content-Type": contentType },
-        body: bytes,
-      });
+      const putRes = await resilientFetch(
+        writeUrl,
+        { method: "PUT", headers: { "Content-Type": contentType }, body: bytes },
+        { label: "copy.put-dest" },
+      );
       if (!putRes.ok) {
-        const errText = await putRes.text();
-        throw new Error(`S3 dest PUT failed [${putRes.status}]: ${errText}`);
+        const errText = await putRes.text().catch(() => "");
+        console.error(`[s3-storage] copy put-dest [${putRes.status}]: ${errText}`);
+        return json({ error: friendlyError("copying your file") }, 503);
       }
 
       console.log(`[s3-storage] copy ok: ${source_path} -> ${dest_path} (${bytes.byteLength}b)`);
@@ -192,12 +289,12 @@ Deno.serve(async (req) => {
       // The connector gateway does not support DELETE for S3 — sign directly with SigV4.
       const result = await deleteS3Objects(object_paths);
       console.log(
-        `[s3-storage] delete: ${result.deleted} ok, ${result.failed.length} failed`
+        `[s3-storage] delete: ${result.deleted} ok, ${result.failed.length} failed`,
       );
       if (result.failed.length > 0) {
         return json(
-          { error: "Some deletes failed", details: result.failed, deleted: result.deleted },
-          207
+          { error: "Some files could not be removed", details: result.failed, deleted: result.deleted },
+          207,
         );
       }
       return json({ success: true, deleted: result.deleted });
@@ -206,7 +303,6 @@ Deno.serve(async (req) => {
     return json({ error: `Unknown action: ${action}` }, 400);
   } catch (err: unknown) {
     console.error("s3-storage error:", err);
-    const msg = err instanceof Error ? err.message : "Unknown error";
-    return json({ error: msg }, 500);
+    return json({ error: friendlyError("processing your request") }, 500);
   }
 });
