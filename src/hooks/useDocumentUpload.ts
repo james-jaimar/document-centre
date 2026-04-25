@@ -55,7 +55,7 @@ interface UploadProgress {
 export async function renderDocumentThumbnails(
   docId: string,
   assetId: string,
-  box: [number, number, number, number],
+  box: [number, number, number, number] | null,
   opts?: { onProgress?: (msg: string, pct: number) => void },
 ): Promise<string[]> {
   const onProgress = opts?.onProgress ?? (() => {});
@@ -64,7 +64,12 @@ export async function renderDocumentThumbnails(
 
   // Single Ghostscript pass — generate_previews on the VPS does both
   // preview + thumbnail (PIL downscale) in one shot.
-  const { job_id: cropJobId } = await generatePreviews(assetId, box);
+  //
+  // IMPORTANT: pass `box` only when the caller is intentionally trimming
+  // (e.g. user-accepted bleed). For full-document rendering pass `null` so
+  // the server renders each page using its own MediaBox. Passing a single
+  // page-1-derived box as a global crop guillotines mixed-orientation pages.
+  const { job_id: cropJobId } = await generatePreviews(assetId, box ?? undefined);
   await pollJob(cropJobId, (job) => {
     if (job.status === "pending") onProgress("Queued — waiting for server…", 65);
     else if (job.status === "running") onProgress("Rendering pages…", 75);
@@ -113,11 +118,20 @@ export async function renderDocumentThumbnails(
     );
   }
 
-  // Compute final dimensions from the resolved box
-  const widthPt = Math.abs(box[2] - box[0]);
-  const heightPt = Math.abs(box[3] - box[1]);
-  const pageWidthMm = (widthPt * 25.4) / 72;
-  const pageHeightMm = (heightPt * 25.4) / 72;
+  // Compute final dimensions: prefer the trim/crop box when provided
+  // (caller is intentionally trimming), otherwise fall back to the asset's
+  // own reported dimensions (which already reflect any prior resize).
+  let pageWidthMm: number;
+  let pageHeightMm: number;
+  if (box) {
+    const widthPt = Math.abs(box[2] - box[0]);
+    const heightPt = Math.abs(box[3] - box[1]);
+    pageWidthMm = (widthPt * 25.4) / 72;
+    pageHeightMm = (heightPt * 25.4) / 72;
+  } else {
+    pageWidthMm = ((asset.width_pt ?? 595) * 25.4) / 72;
+    pageHeightMm = ((asset.height_pt ?? 842) * 25.4) / 72;
+  }
 
   // Bust signed-url cache so the browser fetches the freshly rendered images
   clearSignedUrlCache(thumbnailPaths);
@@ -377,7 +391,12 @@ export function useDocumentUpload(
         return {
           asset_id: assetId,
           hasAdvisory,
-          renderBox: (finalExplicitTrim ? finalTrimBox : finalMediaBox) as [number, number, number, number],
+          // Only carry an explicit render box when the PDF declares a real
+          // TrimBox different from the MediaBox. Otherwise pass `null` so
+          // generate-previews uses each page's own MediaBox — using the
+          // page-1 MediaBox as a global crop guillotines mixed-orientation
+          // pages (Word doc with a landscape table among portrait pages).
+          renderBox: (finalExplicitTrim ? finalTrimBox : null) as [number, number, number, number] | null,
         };
       } catch (err: any) {
         console.error("[upload] inspectExistingAsset failed:", err);
@@ -635,7 +654,7 @@ export function useDocumentUpload(
     async (
       docId: string,
       assetId: string,
-      box: [number, number, number, number],
+      box: [number, number, number, number] | null,
       fileName: string,
       initialStatusText = "Trimming and rendering pages…",
     ) => {

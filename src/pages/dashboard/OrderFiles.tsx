@@ -339,11 +339,12 @@ export default function OrderFiles() {
             advisoryDoc.fileName,
           );
         }
-        const mediaBox = await getMediaBox(advisoryDoc.backendAssetId);
+        // Render the full document (no global crop box). The page-1
+        // MediaBox would clip mixed-orientation pages.
         await renderWithProgress(
           advisoryDoc.id,
           advisoryDoc.backendAssetId,
-          mediaBox,
+          null,
           advisoryDoc.fileName,
           "Rendering pages…",
         );
@@ -399,12 +400,11 @@ export default function OrderFiles() {
         await finalizeOrientationAndPrintReady(docId, assetId, fileName);
       }
 
-      // Single render at the (now finalised) MediaBox
-      const newBox = await getMediaBox(assetId);
+      // Render the full (now-resized) document — no global crop box.
       await renderWithProgress(
         docId,
         assetId,
-        newBox,
+        null,
         fileName,
         `Scaling to ${target.name} and rendering pages…`,
       );
@@ -452,13 +452,12 @@ export default function OrderFiles() {
       const { job_id } = await rotate(orientationDoc.backendAssetId, 90);
       await pollJob(job_id);
 
-      // Single render at the new (rotated) MediaBox
+      // Render the full (now-rotated) document — no global crop box.
       setUploadModalOpen(true);
-      const newBox = await getMediaBox(orientationDoc.backendAssetId);
       await renderWithProgress(
         orientationDoc.id,
         orientationDoc.backendAssetId,
-        newBox,
+        null,
         orientationDoc.fileName,
         "Rotating to landscape and rendering pages…",
       );
@@ -493,15 +492,14 @@ export default function OrderFiles() {
     if (!bleedDoc) return;
 
     if (choice === "keep") {
-      // Render once at MediaBox (full size, no trim)
+      // Render full document, no global crop box.
       if (bleedDoc.backendAssetId) {
         try {
           setUploadModalOpen(true);
-          const mediaBox = await getMediaBox(bleedDoc.backendAssetId);
           await renderWithProgress(
             bleedDoc.id,
             bleedDoc.backendAssetId,
-            mediaBox,
+            null,
             bleedDoc.fileName,
             "Rendering pages…",
           );
