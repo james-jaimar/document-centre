@@ -6,7 +6,7 @@ import { useTenantContext } from "@/hooks/useTenantContext";
 import { toast } from "@/hooks/use-toast";
 import {
   createAsset,
-  cropRasterize,
+  generatePreviews,
   getAsset,
   getDerivedFiles,
   inspectAsset,
