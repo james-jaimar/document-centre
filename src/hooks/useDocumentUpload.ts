@@ -391,7 +391,12 @@ export function useDocumentUpload(
         return {
           asset_id: assetId,
           hasAdvisory,
-          renderBox: (finalExplicitTrim ? finalTrimBox : finalMediaBox) as [number, number, number, number],
+          // Only carry an explicit render box when the PDF declares a real
+          // TrimBox different from the MediaBox. Otherwise pass `null` so
+          // generate-previews uses each page's own MediaBox — using the
+          // page-1 MediaBox as a global crop guillotines mixed-orientation
+          // pages (Word doc with a landscape table among portrait pages).
+          renderBox: (finalExplicitTrim ? finalTrimBox : null) as [number, number, number, number] | null,
         };
       } catch (err: any) {
         console.error("[upload] inspectExistingAsset failed:", err);
