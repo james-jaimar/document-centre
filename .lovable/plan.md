@@ -1,82 +1,63 @@
-# Root cause (definitive)
+# Plan: fix the remaining cropped landscape pages
 
-Every previous fix has been geometry-aware but **rotation-blind**. LibreOffice exports landscape Word/PowerPoint pages as a **portrait MediaBox (e.g. 595×842) plus `/Rotate 90`** rather than a true landscape MediaBox. So when `pdf_ops.py` reads:
+The screenshot shows the landscape content is now being rotated, but the preview render is still using a portrait-sized box somewhere after the resize/orientation work. The likely remaining workflow bugs are:
 
-```python
-page_landscape = page.mediabox.width > page.mediabox.height
-```
+1. `resize_pdf` creates a resized PDF but does not promote it to `asset.normalized_storage_path`, so later orientation/preview steps may still use the pre-resize LibreOffice output.
+2. The frontend’s `getMediaBox()` reads only the asset’s top-level `boxes.MediaBox`, which is page-1 metadata only. In a mixed-orientation file, page 1 can be portrait, so the render/crop box passed to `generate-previews` can still be portrait even after the backend has handled individual landscape pages.
+3. `normalize_orientation()` currently rewrites geometry using rotation hints rather than baking page content into a stable portrait canvas, leaving room for Ghostscript/crop rendering to apply a mismatched box.
 
-…it sees `595 > 842 == False` and concludes the page is **portrait**, even though it visually renders as landscape.
+## Implementation
 
-Consequences for this Word doc:
-1. **`inspect`** flags the file as portrait-only → `mixed_orientation = false`. The client never knows there's a landscape page.
-2. **`resize_pages` (Scale to A4)** picks the portrait A4 target (210×297) for the landscape page, scales the visually-landscape content into a portrait box → content gets letterboxed/sheared. `transfer_rotation_to_content()` then bakes the `/Rotate 90` into the content stream, but the canvas it lands on is already the wrong shape → **bottom of the table is clipped**, exactly as your screenshot shows.
-3. **`normalize_orientation`** sees `w < h` → "already portrait" → no-op.
-4. **`crop_to_box`** has the same bug — it would crop the landscape page with a portrait box if invoked.
+### 1. Promote resized PDFs as the new canonical asset
+Update `pdf-server/app/tasks/operation_tasks.py` in `resize_pdf`:
+- After `pdf_ops.resize_pages(...)`, upload the resized PDF.
+- Re-run `pdf_ops.inspect(out_pdf)`.
+- Update the asset with:
+  - `normalized_storage_path`
+  - `page_count`
+  - `width_pt`
+  - `height_pt`
+  - `boxes`
+- Return those fields in the resize job result.
 
-This is why our last patch (page-aware target swapping in `resize_pages`) didn't help: the orientation comparison itself was wrong.
+This ensures the subsequent `normalize-orientation`, `print-ready`, and `generate-previews` steps all operate on the resized A4 PDF, not the original converted PDF.
 
-# The fix
+### 2. Stop passing a page-1-only render box after scale/keep/rotate
+Update `src/pages/dashboard/OrderFiles.tsx` and `src/hooks/useDocumentUpload.ts` so preview rendering can be called without an explicit crop/render box when we want the whole current PDF:
+- Allow `renderDocumentThumbnails(..., box?)` and `renderWithProgress(..., box?)`.
+- When no box is passed, call `generatePreviews(assetId)` without `render_box`.
+- For "Scale to A4", "Keep original", and rotate-to-landscape flows, render without a crop box after the final backend PDF has been promoted.
+- Keep explicit boxes only for real trimming/bleed cases where the user intentionally chooses a trim box.
 
-Introduce a single helper and use it everywhere orientation is computed:
+This avoids a portrait page-1 MediaBox being applied as a global crop box across all pages.
 
-```python
-def _effective_dims(page) -> tuple[float, float]:
-    """Return (width, height) of the page AS IT VISUALLY RENDERS,
-    honouring /Rotate. /Rotate 90 or 270 swaps width/height."""
-    mb = page.MediaBox
-    w = float(mb[2]) - float(mb[0])
-    h = float(mb[3]) - float(mb[1])
-    rot = int(page.get("/Rotate", 0) or 0) % 360
-    if rot in (90, 270):
-        return h, w
-    return w, h
-```
+### 3. Make orientation normalization fully bake geometry instead of relying on `/Rotate`
+Update `pdf-server/app/services/pdf_ops.py`:
+- Replace the current `normalize_orientation` rotation-hint rewrite with a safer pypdf blank-page composition approach:
+  - `transfer_rotation_to_content()` first for every page.
+  - If a page needs rotating, place it onto a new blank page whose width/height are swapped.
+  - Apply a content transform that rotates/translates the page content into that new canvas.
+  - If a page does not need rotating, add it as-is after rotation has been baked.
+- This outputs pages with stable MediaBoxes and no stale `/Rotate` hints.
 
-(Equivalent helper for pypdf's `page.mediabox` + `page.get("/Rotate")`.)
+This should eliminate the remaining "content is visually landscape, but canvas/crop is portrait" failure mode.
 
-Then update **four call sites** in `pdf-server/app/services/pdf_ops.py`:
+### 4. Clean generated Python cache from the previous edit
+Remove `pdf-server/app/services/__pycache__/pdf_ops.cpython-313.pyc` from the repo changes so no binary cache file is committed.
 
-### 1. `inspect` (lines 161–183)
-- Compute per-page `width_pt` / `height_pt` from `_effective_dims` so the client sees the visual orientation.
-- Keep `rotate` field for diagnostics.
-- `mixed_orientation` now correctly fires for the Word doc.
+### 5. Update memory
+Update `mem://infrastructure/pdf-box-rendering` with two additional rules:
+- Operation outputs that are intended to affect preview/production must promote `asset.normalized_storage_path` before later steps run.
+- Do not pass a single page-1 crop box as a global preview render box for mixed-orientation documents; use no render box for full-document rendering, and explicit boxes only for intentional trim/bleed.
 
-### 2. `resize_pages` (lines 405–459) — the screenshot bug
-- Use `_effective_dims` to compute `page_landscape`.
-- For pages with `/Rotate` set: call `page.transfer_rotation_to_content()` **first** so `page.mediabox` then reflects the visual geometry, and the existing scale/translate math operates on a coherent post-rotation page. This guarantees the landscape page is scaled into the (now correctly-swapped) landscape A4 canvas without clipping.
+## Verification
 
-### 3. `normalize_orientation` (lines 251–311)
-- Use `_effective_dims` to decide `is_landscape`.
-- When rotating, also bake any pre-existing `/Rotate` into the content via pikepdf rather than just adding to the rotate hint, so the geometry rewrite (`new_box = [0, 0, h, w]`) reflects the true visual size.
+After implementation, verify the workflow against the provided Word/PDF case:
+- Upload/convert the Word document.
+- Choose Scale to A4.
+- Confirm resize job promotes the resized output.
+- Confirm orientation normalization runs after resize.
+- Confirm preview generation is called without a global portrait render box.
+- Confirm the landscape table page is not cropped after rotation.
 
-### 4. `crop_to_box` (lines 667–699)
-- Use `_effective_dims` so a landscape-but-`/Rotate 90`-portrait-MediaBox page still gets a landscape crop box.
-
-# Expected outcome
-
-For your `422101000-PM-01.docx`:
-- LibreOffice converts it (landscape table page emitted as 595×842 + `/Rotate 90`).
-- `inspect` reports the page as 842×595 visual → `mixed_orientation: true`.
-- "Scale to A4" puts the landscape page on a **landscape A4** canvas (297×210), scaling the table to fit fully — **no clipping**.
-- `normalize_orientation` ("portrait dominant") then rotates that landscape A4 page 90° CW into a portrait A4 with the table content intact, just rotated for binding.
-- The preview shows the full table, no chopped bottom row, no missing page number.
-
-# Files to edit
-
-- `pdf-server/app/services/pdf_ops.py` — add `_effective_dims` helper + update `inspect`, `resize_pages`, `normalize_orientation`, `crop_to_box`.
-
-# Deployment
-
-After the patch lands you'll need:
-
-```bash
-cd /root/document-centre && sudo git pull
-sudo systemctl restart document-centre-worker document-centre-api
-```
-
-Then re-upload the Word doc and pick **Scale to A4** to verify.
-
-# Memory update
-
-Add a short note to `mem://infrastructure/pdf-box-rendering` (or a new file) capturing: *"All server-side orientation checks must use effective dims (MediaBox + /Rotate), not raw MediaBox — LibreOffice exports landscape Office pages as portrait box + /Rotate 90."* So this trap doesn't get re-introduced.
+Deployment to the VPS will still require restarting the document centre worker/API after pulling the patch.
