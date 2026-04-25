@@ -1,63 +1,61 @@
-# Plan: fix the remaining cropped landscape pages
+## Two related issues to fix
 
-The screenshot shows the landscape content is now being rotated, but the preview render is still using a portrait-sized box somewhere after the resize/orientation work. The likely remaining workflow bugs are:
+### 1. Single-page covers should be simplex (with a real blank inside)
 
-1. `resize_pdf` creates a resized PDF but does not promote it to `asset.normalized_storage_path`, so later orientation/preview steps may still use the pre-resize LibreOffice output.
-2. The frontend’s `getMediaBox()` reads only the asset’s top-level `boxes.MediaBox`, which is page-1 metadata only. In a mixed-orientation file, page 1 can be portrait, so the render/crop box passed to `generate-previews` can still be portrait even after the backend has handled individual landscape pages.
-3. `normalize_orientation()` currently rewrites geometry using rotation hints rather than baking page content into a stable portrait canvas, leaving room for Ghostscript/crop rendering to apply a mismatched box.
+Today, when a customer uploads a 1-page front cover the section defaults to `is_duplex = true`, so the preview's first spread shows the cover on the left and **body page 1 on the back of the cover** — wrong from a printer's perspective. Same for a 1-page back cover.
 
-## Implementation
+**Rule (per your answer):** A 1-page cover is always single-sided. The reverse face is a real blank sheet — present in both the preview AND the final merged PDF that goes to the print shop. A 2-page upload is treated as a duplex cover (face A = outside, face B = inside).
 
-### 1. Promote resized PDFs as the new canonical asset
-Update `pdf-server/app/tasks/operation_tasks.py` in `resize_pdf`:
-- After `pdf_ops.resize_pages(...)`, upload the resized PDF.
-- Re-run `pdf_ops.inspect(out_pdf)`.
-- Update the asset with:
-  - `normalized_storage_path`
-  - `page_count`
-  - `width_pt`
-  - `height_pt`
-  - `boxes`
-- Return those fields in the resize job result.
+**Where to change it:**
 
-This ensures the subsequent `normalize-orientation`, `print-ready`, and `generate-previews` steps all operate on the resized A4 PDF, not the original converted PDF.
+- **`src/pages/dashboard/OrderFiles.tsx` → `handleAddAs`** — when the user drops a document into the Front Cover or Back Cover slot, set `is_duplex` based on the uploaded document's `page_count`:
+  - `page_count === 1` → `is_duplex = false`
+  - `page_count >= 2` → `is_duplex = true` (existing behaviour for brochures stays)
+- **`src/components/order/SectionList.tsx` (the duplex toggle)** — for `front_cover` / `back_cover` sections backed by a 1-page document, lock the toggle to Simplex (or hide it) so the customer can't flip it back to duplex against physics. Show a small helper: *"Single-page covers are always single-sided. Upload a 2-page PDF for a printed inside cover."*
+- **`src/lib/orders/buildJobSnapshot.ts`** — when generating the job ticket / merged-PDF directive for the print shop, if a cover section is `is_duplex = false` and is followed by another section, **insert a real blank page** in the merge sequence (NOT a synthetic `blank_back` placeholder — a genuine blank PDF page). Add this rule to `mem://features/order-flow/multi-document-merge-rules` so future code respects it.
+- **Preview side** (`PreviewPanel.tsx` and `buildPreviewSnapshot.ts`) already emits a `blank_back` face for simplex sections — so once `is_duplex` is correct the spread layout self-corrects: cover on right (solo), then blank inside on the next left, then body page 1 on the right. No layout code change needed here.
 
-### 2. Stop passing a page-1-only render box after scale/keep/rotate
-Update `src/pages/dashboard/OrderFiles.tsx` and `src/hooks/useDocumentUpload.ts` so preview rendering can be called without an explicit crop/render box when we want the whole current PDF:
-- Allow `renderDocumentThumbnails(..., box?)` and `renderWithProgress(..., box?)`.
-- When no box is passed, call `generatePreviews(assetId)` without `render_box`.
-- For "Scale to A4", "Keep original", and rotate-to-landscape flows, render without a crop box after the final backend PDF has been promoted.
-- Keep explicit boxes only for real trimming/bleed cases where the user intentionally chooses a trim box.
+### 2. Ghost grey "Page N" faces between and at the end of documents
 
-This avoids a portrait page-1 MediaBox being applied as a global crop box across all pages.
+The placeholders you're seeing (image 421 right page = "Page 33", image 422 = "Page 60") are body faces emitted with an empty `thumbnailUrl`. They render via the FlipBook fallback branch (`FileText` icon + grey "Page N"). Two root causes are in play:
 
-### 3. Make orientation normalization fully bake geometry instead of relying on `/Rotate`
-Update `pdf-server/app/services/pdf_ops.py`:
-- Replace the current `normalize_orientation` rotation-hint rewrite with a safer pypdf blank-page composition approach:
-  - `transfer_rotation_to_content()` first for every page.
-  - If a page needs rotating, place it onto a new blank page whose width/height are swapped.
-  - Apply a content transform that rotates/translates the page content into that new canvas.
-  - If a page does not need rotating, add it as-is after rotation has been baked.
-- This outputs pages with stable MediaBoxes and no stale `/Rotate` hints.
+**Root cause A — `pickBestPerPage` returns a dense array.**
+In `src/lib/thumbnailUtils.ts`, `pickBestPerPage` builds `result` by iterating over the pages it actually found, not by page index. If page N's render failed/was skipped on the VPS, page N+1 silently slides into slot N, and the very last slot ends up empty. `buildPageSequence` then iterates `i < page_count` against a shorter thumbnails array → the missing tail becomes an empty-URL body face → grey ghost.
 
-This should eliminate the remaining "content is visually landscape, but canvas/crop is portrait" failure mode.
+**Root cause B — render race / silent partial completion.**
+`renderDocumentThumbnails` polls for derived files but bails early when `stalePolls >= 8 && found >= expectedPages * 0.8` (line 102 in `useDocumentUpload.ts`). On a slow render this can persist the document with `thumbnail_urls.length < page_count`.
 
-### 4. Clean generated Python cache from the previous edit
-Remove `pdf-server/app/services/__pycache__/pdf_ops.cpython-313.pyc` from the repo changes so no binary cache file is committed.
+**Fixes:**
 
-### 5. Update memory
-Update `mem://infrastructure/pdf-box-rendering` with two additional rules:
-- Operation outputs that are intended to affect preview/production must promote `asset.normalized_storage_path` before later steps run.
-- Do not pass a single page-1 crop box as a global preview render box for mixed-orientation documents; use no render box for full-document rendering, and explicit boxes only for intentional trim/bleed.
+- **`src/lib/thumbnailUtils.ts` → `pickBestPerPage`** — return a sparse-aware array sized to `max(page) + 1`, with empty strings in any gap so page N's image always lands at index N. Add a JSDoc note explaining the index-stable contract.
+- **`src/hooks/useDocumentUpload.ts` → `renderDocumentThumbnails`** —
+  - Pass `expectedPages` into `pickBestPerPage` so it always returns an array of length `expectedPages` (filling gaps with `""`).
+  - Drop the `expectedPages * 0.8` early-exit. Always wait for the full count or the full poll budget. If we time out with gaps, log a `console.warn` listing the missing page indices and store the sparse array (so the UI degrades to a blank sheet, not a ghost).
+  - After the upload finishes, if any thumbnail is missing, surface a small "Re-render previews" affordance on the document card (toast or inline) so the customer/operator can retry.
+- **`src/components/preview/FlipBook.tsx`** — for body faces with empty `thumbnailUrl`, render them as plain white paper (re-use the `BLANK_PAPER_ROLES` style in `PageEffects.tsx`) instead of the `FileText` "Page N" placeholder. This is the safety net you described: "should appear to the user as just plain white". The grey FileText box stays only for the loading/spinner state during initial upload, never for steady-state previews.
+- **`src/components/preview/PageEffects.tsx`** — extend `BLANK_PAPER_ROLES` (or a new branch) so body faces with no thumbnail also paint plain paper. They keep their page number in the sidebar but render visually as a clean blank sheet.
 
-## Verification
+### 3. Memory updates
 
-After implementation, verify the workflow against the provided Word/PDF case:
-- Upload/convert the Word document.
-- Choose Scale to A4.
-- Confirm resize job promotes the resized output.
-- Confirm orientation normalization runs after resize.
-- Confirm preview generation is called without a global portrait render box.
-- Confirm the landscape table page is not cropped after rotation.
+- Update `mem://features/order-flow/multi-document-merge-rules` to record:
+  - 1-page covers are simplex with a **real** blank inside (preview + merged PDF).
+  - The simplex `blank_back` face is preview-only **except** for cover blanks, which become real blank PDF pages in the merged output.
+- Update `mem://features/preview-system/physical-alignment-logic` to note that body faces with missing thumbnails fall back to plain-paper rendering (no grey FileText placeholder in steady state).
 
-Deployment to the VPS will still require restarting the document centre worker/API after pulling the patch.
+## Files to touch
+
+- `src/pages/dashboard/OrderFiles.tsx` — auto-set `is_duplex` from cover page count.
+- `src/components/order/SectionList.tsx` — lock duplex toggle for 1-page covers.
+- `src/lib/orders/buildJobSnapshot.ts` — insert real blank PDF page after a simplex cover for the merged print-shop output.
+- `src/lib/thumbnailUtils.ts` — make `pickBestPerPage` index-stable / sparse-aware.
+- `src/hooks/useDocumentUpload.ts` — remove premature early-exit, always size to `expectedPages`, warn on gaps.
+- `src/components/preview/FlipBook.tsx` — empty-thumbnail body faces render as plain paper.
+- `src/components/preview/PageEffects.tsx` — extend blank-paper branch.
+- `mem://features/order-flow/multi-document-merge-rules` — update.
+- `mem://features/preview-system/physical-alignment-logic` — update.
+
+## Out of scope
+
+- Changing how brochures auto-assign panels (untouched).
+- Changing back-cover-card / inside-back-blank logic for bound docs with explicit back covers (untouched).
+- Server-side merge implementation (the actual PDF concatenation) — this plan only stages the directive in `buildJobSnapshot`; the worker that merges PDFs is a separate future task.
