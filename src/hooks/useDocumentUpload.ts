@@ -161,8 +161,92 @@ export function useDocumentUpload(
    * path (after createAsset) and the Office conversion path (after the
    * conversion job has promoted the asset to a PDF).
    */
+  /**
+   * Run normalize-orientation (when family demands it) + print-ready CMYK
+   * conversion against an asset whose dimensions are already final. Safe to
+   * call after a `resize` job. Idempotent — server-side no-ops when nothing
+   * needs to change.
+   *
+   * Returns true on success (or when nothing to do); false only on hard
+   * failure (callers continue rendering with the un-finalised PDF).
+   */
+  const finalizeOrientationAndPrintReady = useCallback(
+    async (
+      docId: string,
+      assetId: string,
+      fileName: string,
+    ): Promise<boolean> => {
+      // Normalise mixed-orientation pages for bound/ring-binder/presentation
+      // products. Server is a no-op when nothing needs rotating.
+      const familyKey = (productFamilySlug ?? "").toLowerCase();
+      const dominant: "portrait" | "landscape" | null =
+        PORTRAIT_NORMALIZE_FAMILIES.has(familyKey)
+          ? "portrait"
+          : LANDSCAPE_NORMALIZE_FAMILIES.has(familyKey)
+            ? "landscape"
+            : null;
+      if (dominant) {
+        try {
+          updateUpload(fileName, { progress: 50, statusText: "Aligning page orientation…" });
+          const { job_id: orientJobId } = await normalizeOrientation(assetId, dominant);
+          await pollJob(orientJobId);
+        } catch (orientErr: any) {
+          console.warn("[upload] normalize-orientation failed:", orientErr);
+        }
+      }
+
+      // Print-ready CMYK conversion (driven by per-product-family settings).
+      const printPlan = getPrintReadyPlan(productFamilyPrintConfig);
+      if (printPlan) {
+        try {
+          updateUpload(fileName, { progress: 55, statusText: "Optimising for print…" });
+          const { job_id: printJobId } = await printReady(assetId, {
+            intent: printPlan.intent,
+            destProfile: printPlan.destProfile,
+          });
+          await pollJob(printJobId);
+        } catch (printErr: any) {
+          console.warn("[upload] print-ready failed:", printErr);
+        }
+      }
+
+      // Mark in preflight_data so re-renders can skip a redundant pass.
+      try {
+        const { data: existing } = await supabase
+          .from("documents")
+          .select("preflight_data")
+          .eq("id", docId)
+          .maybeSingle();
+        const preflight = (existing?.preflight_data as Record<string, unknown>) ?? {};
+        await supabase
+          .from("documents")
+          .update({
+            preflight_data: { ...preflight, orientation_normalized: true } as any,
+          })
+          .eq("id", docId);
+      } catch (persistErr: any) {
+        console.warn("[upload] persist orientation_normalized flag failed:", persistErr);
+      }
+
+      return true;
+    },
+    [productFamilySlug, productFamilyPrintConfig, updateUpload],
+  );
+
+  /**
+   * Inspect an asset and detect size advisories WITHOUT running
+   * normalize-orientation or print-ready. Used as Phase A for both PDF and
+   * Office uploads. The caller decides whether to run
+   * `finalizeOrientationAndPrintReady` immediately (no advisory) or defer it
+   * until the user resolves the size advisory in OrderFiles.
+   */
   const inspectExistingAsset = useCallback(
-    async (docId: string, assetId: string, fileName: string) => {
+    async (
+      docId: string,
+      assetId: string,
+      fileName: string,
+      opts?: { skipFinalize?: boolean },
+    ) => {
       try {
         await supabase
           .from("documents")
@@ -181,44 +265,6 @@ export function useDocumentUpload(
             updateUpload(fileName, { progress: 45, statusText: "Reading page metadata…" });
           }
         });
-
-        // Normalise mixed-orientation pages for bound/ring-binder/presentation
-        // products before we record the canonical dimensions. Server is a no-op
-        // when nothing needs rotating.
-        const familyKey = (productFamilySlug ?? "").toLowerCase();
-        const dominant: "portrait" | "landscape" | null =
-          PORTRAIT_NORMALIZE_FAMILIES.has(familyKey)
-            ? "portrait"
-            : LANDSCAPE_NORMALIZE_FAMILIES.has(familyKey)
-              ? "landscape"
-              : null;
-        if (dominant) {
-          try {
-            updateUpload(fileName, { progress: 50, statusText: "Aligning page orientation…" });
-            const { job_id: orientJobId } = await normalizeOrientation(assetId, dominant);
-            await pollJob(orientJobId);
-          } catch (orientErr: any) {
-            // Non-fatal — surface a warning but continue with the original PDF.
-            console.warn("[upload] normalize-orientation failed:", orientErr);
-          }
-        }
-
-        // Print-ready CMYK conversion (driven by per-product-family settings).
-        // Skipped for RGB families (e.g. dye-sub photo prints) — see printIntent.ts.
-        const printPlan = getPrintReadyPlan(productFamilyPrintConfig);
-        if (printPlan) {
-          try {
-            updateUpload(fileName, { progress: 55, statusText: "Optimising for print…" });
-            const { job_id: printJobId } = await printReady(assetId, {
-              intent: printPlan.intent,
-              destProfile: printPlan.destProfile,
-            });
-            await pollJob(printJobId);
-          } catch (printErr: any) {
-            // Non-fatal — fall back to the un-converted PDF.
-            console.warn("[upload] print-ready failed:", printErr);
-          }
-        }
 
         // Poll the asset itself until we have boxes + page_count (metadata may
         // populate slightly after job completes for newly-created assets)
