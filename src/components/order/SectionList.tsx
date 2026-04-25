@@ -128,8 +128,13 @@ export default function SectionList({
         const doc = getDoc(section.document_id);
         const pageCount = doc?.page_count ?? 0;
         const isInsertOrTab = section.section_type === "insert" || section.section_type === "tab";
+        const isCover = section.section_type === "front_cover" || section.section_type === "back_cover";
+        // 1-page covers are physically simplex (the back is a real blank sheet).
+        // Lock the toggle so customers can't flip it back to duplex against physics.
+        const isSinglePageCover = isCover && pageCount === 1;
         const showColourToggle = !isInsertOrTab && !hideColour;
         const showDuplexToggle = !isInsertOrTab && !hideDuplex;
+        const lockDuplex = isSinglePageCover;
 
         return (
           <div
