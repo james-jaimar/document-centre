@@ -17,6 +17,50 @@ from app.core.config import settings
 ICC_DIR = Path("/opt/document-centre-api/icc")
 
 
+# ---------------------------------------------------------------------------
+# Orientation helpers
+# ---------------------------------------------------------------------------
+# CRITICAL: PDF page orientation is determined by MediaBox + /Rotate, NOT by
+# MediaBox alone. LibreOffice (and many other producers) export landscape
+# pages as a PORTRAIT MediaBox (e.g. 595×842) plus a `/Rotate 90` viewer hint.
+# Reading raw MediaBox.width vs height misclassifies them as portrait, which
+# was the root cause of repeated "landscape pages get cropped to portrait"
+# bugs across resize/normalize_orientation/crop_to_box.
+#
+# Always use `_effective_dims_*` when deciding orientation or building boxes.
+
+def _effective_dims_pikepdf(page) -> tuple[float, float]:
+    """Return the page's VISUAL (width, height) honouring /Rotate. pikepdf API."""
+    mb = page.MediaBox
+    w = float(mb[2]) - float(mb[0])
+    h = float(mb[3]) - float(mb[1])
+    rot = 0
+    try:
+        rot = int(page.get("/Rotate", 0) or 0) % 360
+    except Exception:
+        rot = 0
+    if rot in (90, 270):
+        return h, w
+    return w, h
+
+
+def _effective_dims_pypdf(page) -> tuple[float, float]:
+    """Return the page's VISUAL (width, height) honouring /Rotate. pypdf API."""
+    w = float(page.mediabox.width)
+    h = float(page.mediabox.height)
+    rot = 0
+    try:
+        # pypdf exposes /Rotate via page.rotation in some versions; use the
+        # raw dict get() for portability.
+        raw = page.get("/Rotate", 0)
+        rot = int(raw or 0) % 360
+    except Exception:
+        rot = 0
+    if rot in (90, 270):
+        return h, w
+    return w, h
+
+
 def resolve_icc_profile(icc_profile: str | None) -> str | None:
     if not icc_profile:
         return None
@@ -150,34 +194,41 @@ class PdfOps:
                 if box:
                     info["boxes"][name] = list(map(float, box))
 
-            media = page.MediaBox
-            info["width_pt"] = float(media[2] - media[0])
-            info["height_pt"] = float(media[3] - media[1])
+            # Top-level width_pt/height_pt reflect VISUAL dimensions of page 1
+            # (honouring /Rotate), so the client's "first page is portrait"
+            # heuristic matches what users actually see.
+            eff_w, eff_h = _effective_dims_pikepdf(page)
+            info["width_pt"] = eff_w
+            info["height_pt"] = eff_h
 
             # Per-page geometry so the client can detect mixed orientations
             # (e.g. Word docs with landscape table sections among portrait
-            # body pages). The top-level width_pt/height_pt/boxes still
-            # reflect page 1 for backwards compatibility.
+            # body pages). width_pt/height_pt are EFFECTIVE (post-/Rotate)
+            # so a Word landscape table page emitted as portrait MediaBox +
+            # /Rotate 90 is correctly classified as landscape.
             pages_meta = []
             has_portrait = False
             has_landscape = False
             for p in pdf.pages:
                 pmb = p.MediaBox
-                pw = float(pmb[2] - pmb[0])
-                ph = float(pmb[3] - pmb[1])
+                raw_w = float(pmb[2] - pmb[0])
+                raw_h = float(pmb[3] - pmb[1])
                 rot = 0
                 try:
                     rot = int(p.get("/Rotate", 0) or 0)
                 except Exception:
                     rot = 0
+                eff_w_p, eff_h_p = _effective_dims_pikepdf(p)
                 pages_meta.append({
-                    "width_pt": pw,
-                    "height_pt": ph,
+                    "width_pt": eff_w_p,
+                    "height_pt": eff_h_p,
+                    "raw_width_pt": raw_w,
+                    "raw_height_pt": raw_h,
                     "rotate": rot,
                 })
-                if pw > ph:
+                if eff_w_p > eff_h_p:
                     has_landscape = True
-                elif pw < ph:
+                elif eff_w_p < eff_h_p:
                     has_portrait = True
             info["pages"] = pages_meta
             info["mixed_orientation"] = has_portrait and has_landscape
@@ -262,6 +313,11 @@ class PdfOps:
         - dominant='portrait' (default): rotate landscape pages (w > h) +90 CW.
         - dominant='landscape': rotate portrait pages (w < h) +90 CW.
 
+        Orientation is computed from EFFECTIVE dimensions (MediaBox honouring
+        /Rotate). LibreOffice exports landscape Office pages as portrait
+        MediaBox + /Rotate 90; reading raw MediaBox alone misclassifies them
+        as portrait and the rotation pass becomes a no-op.
+
         We rewrite MediaBox/CropBox to swap width/height so downstream
         consumers (crop_to_box, rasterize_preview, getAsset clients) see the
         page's TRUE post-rotation dimensions instead of relying on the
@@ -278,27 +334,26 @@ class PdfOps:
         with pikepdf.open(src) as pdf:
             total = len(pdf.pages)
             for page in pdf.pages:
-                mb = page.MediaBox
-                x0 = float(mb[0]); y0 = float(mb[1])
-                x1 = float(mb[2]); y1 = float(mb[3])
-                w = x1 - x0
-                h = y1 - y0
-                is_landscape = w > h
+                # Effective (visual) dimensions — accounts for /Rotate.
+                eff_w, eff_h = _effective_dims_pikepdf(page)
+                is_landscape = eff_w > eff_h
                 needs_rotate = (
                     (dominant == "portrait" and is_landscape)
                     or (dominant == "landscape" and not is_landscape)
                 )
                 if needs_rotate:
-                    # Swap geometry: new MediaBox is the rotated dimensions.
-                    new_box = [0, 0, h, w]
+                    # Swap geometry: new MediaBox is the rotated EFFECTIVE
+                    # dimensions, anchored at origin.
+                    new_box = [0, 0, eff_w, eff_h]  # +90 /Rotate will swap visually
                     page.MediaBox = new_box
                     page.CropBox = new_box
                     # Strip stale boxes that would no longer make sense.
                     for attr in ('TrimBox', 'BleedBox', 'ArtBox'):
                         if hasattr(page, attr):
                             del page[f'/{attr}']
-                    # Apply +90 CW rotation hint (renderers will paint the
-                    # original content stream rotated into the new box).
+                    # Apply +90 CW rotation hint on top of any existing
+                    # /Rotate (renderers paint the original content stream
+                    # rotated into the new box).
                     existing_rotate = int(page.get('/Rotate', 0) or 0)
                     page.Rotate = (existing_rotate + 90) % 360
                     rotated += 1
@@ -412,17 +467,21 @@ class PdfOps:
     ) -> Path:
         """Resize each page onto a target canvas of (width_mm × height_mm).
 
-        Page-aware: if a page's existing orientation differs from the target
-        canvas's orientation, the target width/height are swapped for THAT
-        page so it lands on a same-orientation canvas (e.g. landscape pages
-        in a portrait-A4 resize go onto landscape-A4 sheets, preserving
-        aspect ratio and full content). Single-orientation documents are
-        unaffected — the conditional just picks the same dimensions every
-        iteration. Mirrors the page-aware logic in ``crop_to_box``.
+        Page-aware AND rotation-aware: orientation is computed from EFFECTIVE
+        dimensions (MediaBox honouring /Rotate). LibreOffice exports landscape
+        Office pages as portrait MediaBox + /Rotate 90 — without honouring
+        /Rotate, the orientation check misclassifies them and the landscape
+        content gets squeezed into a portrait canvas (clipped at the bottom).
+
+        For each page we:
+          1. Bake any /Rotate hint into the content stream FIRST so the
+             page's mediabox and content match what users see.
+          2. Decide target orientation based on the (now correct) mediabox.
+          3. Scale + center onto a same-orientation canvas of the target size.
 
         After this pass, ``normalize_orientation`` (when invoked) can rotate
-        landscape sheets to match the dominant orientation with full
-        geometry intact, so downstream renderers don't clip.
+        landscape sheets to match the dominant orientation with full geometry
+        intact, so downstream renderers don't clip.
         """
         reader = PdfReader(str(src))
         writer = PdfWriter()
@@ -431,12 +490,15 @@ class PdfOps:
         target_landscape = target_w_base > target_h_base
 
         for page in reader.pages:
+            # Step 1 — bake /Rotate into content. After this, page.mediabox
+            # reflects VISUAL geometry and orientation checks are reliable.
+            page.transfer_rotation_to_content()
+
             src_w = float(page.mediabox.width)
             src_h = float(page.mediabox.height)
             page_landscape = src_w > src_h
 
-            # Swap target dimensions for off-orientation pages so each
-            # page gets a same-orientation canvas of the target size.
+            # Step 2 — pick same-orientation target canvas for this page.
             if page_landscape == target_landscape:
                 tw, th = target_w_base, target_h_base
             else:
@@ -447,7 +509,6 @@ class PdfOps:
             scale = min(sx, sy) if fit_mode == "fit" else max(sx, sy)
 
             page.scale_by(scale)
-            page.transfer_rotation_to_content()
 
             new_page = writer.add_blank_page(width=tw, height=th)
             tx = (tw - float(page.mediabox.width)) / 2
@@ -667,11 +728,22 @@ class PdfOps:
     def crop_to_box(self, src: Path, out_pdf: Path, box: list[float]) -> Path:
         """Crop pages to the given box [x0, y0, x1, y1].
 
-        Page-aware: if a page's existing orientation differs from the box's
-        orientation, the box's width/height are swapped for that page so the
-        landscape pages keep their landscape canvas (and vice versa). This
-        prevents mixed-orientation documents (Word docs with landscape table
-        sections, etc.) from having content guillotined off.
+        Page-aware AND rotation-aware: orientation is computed from EFFECTIVE
+        dimensions (MediaBox honouring /Rotate). LibreOffice exports landscape
+        Office pages as portrait MediaBox + /Rotate 90; without honouring
+        /Rotate, the orientation comparison misclassifies them and the
+        landscape page gets its content guillotined off by a portrait crop.
+
+        When a page's effective orientation differs from the box's, the box's
+        width/height are swapped for that page so landscape pages keep their
+        landscape canvas (and vice versa).
+
+        IMPORTANT: pikepdf's MediaBox assignment with a swapped box on a
+        page that has /Rotate set will still be interpreted by viewers as
+        rotated content within that swapped box. We DO NOT mutate /Rotate
+        here — downstream rasterizers handle it. The orientation match is
+        about the box dimensions matching the visual page geometry so no
+        content is clipped.
 
         Writes a NEW file; source is untouched.
         """
@@ -680,10 +752,9 @@ class PdfOps:
         box_landscape = bw > bh
         with pikepdf.open(src) as pdf:
             for page in pdf.pages:
-                mb = page.MediaBox
-                pw = float(mb[2]) - float(mb[0])
-                ph = float(mb[3]) - float(mb[1])
-                page_landscape = pw > ph
+                # Effective (visual) dimensions — accounts for /Rotate.
+                eff_w, eff_h = _effective_dims_pikepdf(page)
+                page_landscape = eff_w > eff_h
                 if page_landscape == box_landscape:
                     eff = list(box)
                 else:
