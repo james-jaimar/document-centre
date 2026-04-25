@@ -492,15 +492,14 @@ export default function OrderFiles() {
     if (!bleedDoc) return;
 
     if (choice === "keep") {
-      // Render once at MediaBox (full size, no trim)
+      // Render full document, no global crop box.
       if (bleedDoc.backendAssetId) {
         try {
           setUploadModalOpen(true);
-          const mediaBox = await getMediaBox(bleedDoc.backendAssetId);
           await renderWithProgress(
             bleedDoc.id,
             bleedDoc.backendAssetId,
-            mediaBox,
+            null,
             bleedDoc.fileName,
             "Rendering pages…",
           );
