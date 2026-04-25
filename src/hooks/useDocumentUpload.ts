@@ -307,16 +307,52 @@ export function useDocumentUpload(
 
         const hasAdvisory = !!detectedSize || !!nearIsoMatch;
 
+        // If no size advisory AND caller didn't ask us to skip, finalise now
+        // (orientation normalise + print-ready). For Office uploads with a
+        // size advisory we DEFER finalisation until OrderFiles resolves the
+        // size — this preserves the author's intentional mixed orientations
+        // until after the canvas is sized.
+        const shouldFinalizeNow = !hasAdvisory && !opts?.skipFinalize;
+        let orientationNormalized = false;
+        if (shouldFinalizeNow) {
+          await finalizeOrientationAndPrintReady(docId, assetId, fileName);
+          orientationNormalized = true;
+          // Re-read asset because normalize-orientation may have mutated boxes.
+          asset = await getAsset(assetId);
+        }
+
+        // Re-derive boxes/dimensions from possibly-mutated asset.
+        const finalBoxes = asset.boxes as Record<string, number[]> | null;
+        const finalTrimBox = finalBoxes?.TrimBox;
+        const finalCropBox = finalBoxes?.CropBox;
+        const finalMediaBox =
+          finalBoxes?.MediaBox ?? [0, 0, asset.width_pt ?? 595, asset.height_pt ?? 842];
+        const finalReportingBox = finalTrimBox ?? finalCropBox ?? finalMediaBox;
+        const finalWidthPt = Math.abs(finalReportingBox[2] - finalReportingBox[0]);
+        const finalHeightPt = Math.abs(finalReportingBox[3] - finalReportingBox[1]);
+        const finalWidthMm = (finalWidthPt * 25.4) / 72;
+        const finalHeightMm = (finalHeightPt * 25.4) / 72;
+        const finalExplicitTrim =
+          finalTrimBox &&
+          finalMediaBox &&
+          finalTrimBox.length === 4 &&
+          finalMediaBox.length === 4 &&
+          (Math.abs(finalTrimBox[0] - finalMediaBox[0]) > 0.5 ||
+            Math.abs(finalTrimBox[1] - finalMediaBox[1]) > 0.5 ||
+            Math.abs(finalTrimBox[2] - finalMediaBox[2]) > 0.5 ||
+            Math.abs(finalTrimBox[3] - finalMediaBox[3]) > 0.5);
+
         // Persist preflight + provisional dimensions. NO thumbnails written yet.
         const preflight: Record<string, unknown> = {
           boxes: asset.boxes,
           width_pt: asset.width_pt,
           height_pt: asset.height_pt,
-          effective_width_mm: pageWidthMm,
-          effective_height_mm: pageHeightMm,
+          effective_width_mm: finalWidthMm,
+          effective_height_mm: finalHeightMm,
           status: asset.status,
           awaiting_review: hasAdvisory,
         };
+        if (orientationNormalized) preflight.orientation_normalized = true;
         if (detectedSize) preflight.detected_size = detectedSize;
         if (nearIsoMatch) {
           preflight.near_iso_match = nearIsoMatch.matchedSize.name;
@@ -329,8 +365,8 @@ export function useDocumentUpload(
           .from("documents")
           .update({
             page_count: asset.page_count,
-            page_width_mm: pageWidthMm,
-            page_height_mm: pageHeightMm,
+            page_width_mm: finalWidthMm,
+            page_height_mm: finalHeightMm,
             preflight_data: preflight as any,
             // 'processing' = either still rendering OR awaiting user review.
             // UI distinguishes via preflight_data.awaiting_review.
@@ -341,7 +377,7 @@ export function useDocumentUpload(
         return {
           asset_id: assetId,
           hasAdvisory,
-          renderBox: (explicitTrim ? trimBox : mediaBox) as [number, number, number, number],
+          renderBox: (finalExplicitTrim ? finalTrimBox : finalMediaBox) as [number, number, number, number],
         };
       } catch (err: any) {
         console.error("[upload] inspectExistingAsset failed:", err);
@@ -353,7 +389,7 @@ export function useDocumentUpload(
         return null;
       }
     },
-    [updateUpload, productFamilySlug, productFamilyPrintConfig],
+    [updateUpload, finalizeOrientationAndPrintReady],
   );
 
   /* ── Phase A: Inspect — register PDF asset & extract metadata, NO thumbnails yet ── */
