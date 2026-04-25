@@ -282,6 +282,11 @@ export async function merge(
   });
 }
 
+/**
+ * @deprecated Use {@link generatePreviews} instead. crop_rasterize runs
+ * Ghostscript twice (once per resolution); generate_previews runs it once
+ * and downscales thumbnails with PIL — roughly half the wall-clock time.
+ */
 export async function cropRasterize(
   assetId: string,
   box: [number, number, number, number],
@@ -291,6 +296,23 @@ export async function cropRasterize(
     asset_id: assetId,
     box,
     dpi,
+  });
+}
+
+/**
+ * Render previews + thumbnails in a single Ghostscript pass.
+ *
+ * Optional `renderBox` (PDF user-space points [x0, y0, x1, y1]) crops the
+ * source to the target print area before rasterizing — typically the
+ * asset's TrimBox after the user accepts a bleed advisory.
+ */
+export async function generatePreviews(
+  assetId: string,
+  renderBox?: [number, number, number, number]
+): Promise<{ job_id: string }> {
+  return request("v1/operations/generate-previews", "POST", {
+    asset_id: assetId,
+    ...(renderBox ? { render_box: renderBox } : {}),
   });
 }
 
