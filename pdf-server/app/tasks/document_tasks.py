@@ -223,7 +223,6 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
     the source is first cropped to that box (typically the TrimBox after a
     user accepts a bleed advisory) so all rendered pages match the final
     print area exactly. Replaces the legacy ``crop_rasterize`` task.
-    """
 
     Optimisations vs the original implementation:
       1. **Single Ghostscript pass** at preview DPI; thumbnails are
@@ -231,9 +230,9 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
          rasterization round-trip per page (~40-60% faster end-to-end).
       2. **Page-1 fast path**: render & upload page 1 first, then mark the
          asset 'ready' immediately. The remaining pages render in the
-         background — the customer sees the cover thumbnail in ~2-3s
+         background - the customer sees the cover thumbnail in ~2-3s
          instead of waiting for the entire document.
-      3. **Parallel S3 uploads**: 8-way ThreadPoolExecutor — S3 writes are
+      3. **Parallel S3 uploads**: 8-way ThreadPoolExecutor - S3 writes are
          pure network I/O and dominate runtime for >20-page documents.
       4. **Per-page job_events**: one event per page so the live progress
          UI can show "Rendered 47 of 130 pages" in real time.
