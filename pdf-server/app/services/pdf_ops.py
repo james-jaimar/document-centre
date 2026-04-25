@@ -344,7 +344,7 @@ class PdfOps:
                 if needs_rotate:
                     # Swap geometry: new MediaBox is the rotated EFFECTIVE
                     # dimensions, anchored at origin.
-                    new_box = [0, 0, eff_h, eff_w]
+                    new_box = [0, 0, eff_w, eff_h]  # +90 /Rotate will swap visually
                     page.MediaBox = new_box
                     page.CropBox = new_box
                     # Strip stale boxes that would no longer make sense.
