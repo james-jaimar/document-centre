@@ -161,8 +161,92 @@ export function useDocumentUpload(
    * path (after createAsset) and the Office conversion path (after the
    * conversion job has promoted the asset to a PDF).
    */
+  /**
+   * Run normalize-orientation (when family demands it) + print-ready CMYK
+   * conversion against an asset whose dimensions are already final. Safe to
+   * call after a `resize` job. Idempotent — server-side no-ops when nothing
+   * needs to change.
+   *
+   * Returns true on success (or when nothing to do); false only on hard
+   * failure (callers continue rendering with the un-finalised PDF).
+   */
+  const finalizeOrientationAndPrintReady = useCallback(
+    async (
+      docId: string,
+      assetId: string,
+      fileName: string,
+    ): Promise<boolean> => {
+      // Normalise mixed-orientation pages for bound/ring-binder/presentation
+      // products. Server is a no-op when nothing needs rotating.
+      const familyKey = (productFamilySlug ?? "").toLowerCase();
+      const dominant: "portrait" | "landscape" | null =
+        PORTRAIT_NORMALIZE_FAMILIES.has(familyKey)
+          ? "portrait"
+          : LANDSCAPE_NORMALIZE_FAMILIES.has(familyKey)
+            ? "landscape"
+            : null;
+      if (dominant) {
+        try {
+          updateUpload(fileName, { progress: 50, statusText: "Aligning page orientation…" });
+          const { job_id: orientJobId } = await normalizeOrientation(assetId, dominant);
+          await pollJob(orientJobId);
+        } catch (orientErr: any) {
+          console.warn("[upload] normalize-orientation failed:", orientErr);
+        }
+      }
+
+      // Print-ready CMYK conversion (driven by per-product-family settings).
+      const printPlan = getPrintReadyPlan(productFamilyPrintConfig);
+      if (printPlan) {
+        try {
+          updateUpload(fileName, { progress: 55, statusText: "Optimising for print…" });
+          const { job_id: printJobId } = await printReady(assetId, {
+            intent: printPlan.intent,
+            destProfile: printPlan.destProfile,
+          });
+          await pollJob(printJobId);
+        } catch (printErr: any) {
+          console.warn("[upload] print-ready failed:", printErr);
+        }
+      }
+
+      // Mark in preflight_data so re-renders can skip a redundant pass.
+      try {
+        const { data: existing } = await supabase
+          .from("documents")
+          .select("preflight_data")
+          .eq("id", docId)
+          .maybeSingle();
+        const preflight = (existing?.preflight_data as Record<string, unknown>) ?? {};
+        await supabase
+          .from("documents")
+          .update({
+            preflight_data: { ...preflight, orientation_normalized: true } as any,
+          })
+          .eq("id", docId);
+      } catch (persistErr: any) {
+        console.warn("[upload] persist orientation_normalized flag failed:", persistErr);
+      }
+
+      return true;
+    },
+    [productFamilySlug, productFamilyPrintConfig, updateUpload],
+  );
+
+  /**
+   * Inspect an asset and detect size advisories WITHOUT running
+   * normalize-orientation or print-ready. Used as Phase A for both PDF and
+   * Office uploads. The caller decides whether to run
+   * `finalizeOrientationAndPrintReady` immediately (no advisory) or defer it
+   * until the user resolves the size advisory in OrderFiles.
+   */
   const inspectExistingAsset = useCallback(
-    async (docId: string, assetId: string, fileName: string) => {
+    async (
+      docId: string,
+      assetId: string,
+      fileName: string,
+      opts?: { skipFinalize?: boolean },
+    ) => {
       try {
         await supabase
           .from("documents")
@@ -181,44 +265,6 @@ export function useDocumentUpload(
             updateUpload(fileName, { progress: 45, statusText: "Reading page metadata…" });
           }
         });
-
-        // Normalise mixed-orientation pages for bound/ring-binder/presentation
-        // products before we record the canonical dimensions. Server is a no-op
-        // when nothing needs rotating.
-        const familyKey = (productFamilySlug ?? "").toLowerCase();
-        const dominant: "portrait" | "landscape" | null =
-          PORTRAIT_NORMALIZE_FAMILIES.has(familyKey)
-            ? "portrait"
-            : LANDSCAPE_NORMALIZE_FAMILIES.has(familyKey)
-              ? "landscape"
-              : null;
-        if (dominant) {
-          try {
-            updateUpload(fileName, { progress: 50, statusText: "Aligning page orientation…" });
-            const { job_id: orientJobId } = await normalizeOrientation(assetId, dominant);
-            await pollJob(orientJobId);
-          } catch (orientErr: any) {
-            // Non-fatal — surface a warning but continue with the original PDF.
-            console.warn("[upload] normalize-orientation failed:", orientErr);
-          }
-        }
-
-        // Print-ready CMYK conversion (driven by per-product-family settings).
-        // Skipped for RGB families (e.g. dye-sub photo prints) — see printIntent.ts.
-        const printPlan = getPrintReadyPlan(productFamilyPrintConfig);
-        if (printPlan) {
-          try {
-            updateUpload(fileName, { progress: 55, statusText: "Optimising for print…" });
-            const { job_id: printJobId } = await printReady(assetId, {
-              intent: printPlan.intent,
-              destProfile: printPlan.destProfile,
-            });
-            await pollJob(printJobId);
-          } catch (printErr: any) {
-            // Non-fatal — fall back to the un-converted PDF.
-            console.warn("[upload] print-ready failed:", printErr);
-          }
-        }
 
         // Poll the asset itself until we have boxes + page_count (metadata may
         // populate slightly after job completes for newly-created assets)
@@ -261,16 +307,52 @@ export function useDocumentUpload(
 
         const hasAdvisory = !!detectedSize || !!nearIsoMatch;
 
+        // If no size advisory AND caller didn't ask us to skip, finalise now
+        // (orientation normalise + print-ready). For Office uploads with a
+        // size advisory we DEFER finalisation until OrderFiles resolves the
+        // size — this preserves the author's intentional mixed orientations
+        // until after the canvas is sized.
+        const shouldFinalizeNow = !hasAdvisory && !opts?.skipFinalize;
+        let orientationNormalized = false;
+        if (shouldFinalizeNow) {
+          await finalizeOrientationAndPrintReady(docId, assetId, fileName);
+          orientationNormalized = true;
+          // Re-read asset because normalize-orientation may have mutated boxes.
+          asset = await getAsset(assetId);
+        }
+
+        // Re-derive boxes/dimensions from possibly-mutated asset.
+        const finalBoxes = asset.boxes as Record<string, number[]> | null;
+        const finalTrimBox = finalBoxes?.TrimBox;
+        const finalCropBox = finalBoxes?.CropBox;
+        const finalMediaBox =
+          finalBoxes?.MediaBox ?? [0, 0, asset.width_pt ?? 595, asset.height_pt ?? 842];
+        const finalReportingBox = finalTrimBox ?? finalCropBox ?? finalMediaBox;
+        const finalWidthPt = Math.abs(finalReportingBox[2] - finalReportingBox[0]);
+        const finalHeightPt = Math.abs(finalReportingBox[3] - finalReportingBox[1]);
+        const finalWidthMm = (finalWidthPt * 25.4) / 72;
+        const finalHeightMm = (finalHeightPt * 25.4) / 72;
+        const finalExplicitTrim =
+          finalTrimBox &&
+          finalMediaBox &&
+          finalTrimBox.length === 4 &&
+          finalMediaBox.length === 4 &&
+          (Math.abs(finalTrimBox[0] - finalMediaBox[0]) > 0.5 ||
+            Math.abs(finalTrimBox[1] - finalMediaBox[1]) > 0.5 ||
+            Math.abs(finalTrimBox[2] - finalMediaBox[2]) > 0.5 ||
+            Math.abs(finalTrimBox[3] - finalMediaBox[3]) > 0.5);
+
         // Persist preflight + provisional dimensions. NO thumbnails written yet.
         const preflight: Record<string, unknown> = {
           boxes: asset.boxes,
           width_pt: asset.width_pt,
           height_pt: asset.height_pt,
-          effective_width_mm: pageWidthMm,
-          effective_height_mm: pageHeightMm,
+          effective_width_mm: finalWidthMm,
+          effective_height_mm: finalHeightMm,
           status: asset.status,
           awaiting_review: hasAdvisory,
         };
+        if (orientationNormalized) preflight.orientation_normalized = true;
         if (detectedSize) preflight.detected_size = detectedSize;
         if (nearIsoMatch) {
           preflight.near_iso_match = nearIsoMatch.matchedSize.name;
@@ -283,8 +365,8 @@ export function useDocumentUpload(
           .from("documents")
           .update({
             page_count: asset.page_count,
-            page_width_mm: pageWidthMm,
-            page_height_mm: pageHeightMm,
+            page_width_mm: finalWidthMm,
+            page_height_mm: finalHeightMm,
             preflight_data: preflight as any,
             // 'processing' = either still rendering OR awaiting user review.
             // UI distinguishes via preflight_data.awaiting_review.
@@ -295,7 +377,7 @@ export function useDocumentUpload(
         return {
           asset_id: assetId,
           hasAdvisory,
-          renderBox: (explicitTrim ? trimBox : mediaBox) as [number, number, number, number],
+          renderBox: (finalExplicitTrim ? finalTrimBox : finalMediaBox) as [number, number, number, number],
         };
       } catch (err: any) {
         console.error("[upload] inspectExistingAsset failed:", err);
@@ -307,7 +389,7 @@ export function useDocumentUpload(
         return null;
       }
     },
-    [updateUpload, productFamilySlug, productFamilyPrintConfig],
+    [updateUpload, finalizeOrientationAndPrintReady],
   );
 
   /* ── Phase A: Inspect — register PDF asset & extract metadata, NO thumbnails yet ── */
@@ -449,7 +531,17 @@ export function useDocumentUpload(
             );
           }
 
-          inspection = await inspectExistingAsset(doc.id, asset_id, originalName);
+          // Office files: skip auto-finalise so we always inspect the
+          // pristine LibreOffice output. The size advisory (if any) drives
+          // resize → finaliseOrientationAndPrintReady from OrderFiles. If
+          // there is no size advisory we still need to finalise here before
+          // rendering — handled below after inspection returns.
+          inspection = await inspectExistingAsset(doc.id, asset_id, originalName, {
+            skipFinalize: true,
+          });
+          if (inspection && !inspection.hasAdvisory) {
+            await finalizeOrientationAndPrintReady(doc.id, inspection.asset_id, originalName);
+          }
         } else {
           inspection = await inspectDocument(doc.id, storagePath, originalName);
         }
@@ -493,7 +585,7 @@ export function useDocumentUpload(
         return null;
       }
     },
-    [orderItemId, user, tenantId, updateUpload, inspectDocument, inspectExistingAsset, qc]
+    [orderItemId, user, tenantId, updateUpload, inspectDocument, inspectExistingAsset, finalizeOrientationAndPrintReady, qc]
   );
 
   /* ── Reprocess an existing document (re-runs full inspect + render) ── */
@@ -573,5 +665,5 @@ export function useDocumentUpload(
     [updateUpload, qc, orderItemId],
   );
 
-  return { uploads, uploadFile, uploadFiles, clearUploads, reprocessDocument, renderWithProgress };
+  return { uploads, uploadFile, uploadFiles, clearUploads, reprocessDocument, renderWithProgress, finalizeOrientationAndPrintReady };
 }

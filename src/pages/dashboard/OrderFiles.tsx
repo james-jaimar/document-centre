@@ -79,7 +79,7 @@ export default function OrderFiles() {
     enabled: !!productFamilyId,
   });
 
-  const { uploads, uploadFiles, reprocessDocument, clearUploads, renderWithProgress } =
+  const { uploads, uploadFiles, reprocessDocument, clearUploads, renderWithProgress, finalizeOrientationAndPrintReady } =
     useDocumentUpload(orderItem?.id, productFamily?.slug ?? null, productFamily ?? null);
   const addSection = useAddSection();
   const updateSection = useUpdateSection();
@@ -326,10 +326,19 @@ export default function OrderFiles() {
     const existing = documents.find((d) => d.id === advisoryDoc.id);
     const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
 
-    // Mark resolved + render once at MediaBox
+    // Finalise (orientation normalise + print-ready) on the original-size
+    // canvas, then render thumbnails. Office uploads deferred this; PDF
+    // uploads already finalised but the call is idempotent.
     if (advisoryDoc.backendAssetId) {
       try {
         setUploadModalOpen(true);
+        if (!preflight?.orientation_normalized) {
+          await finalizeOrientationAndPrintReady(
+            advisoryDoc.id,
+            advisoryDoc.backendAssetId,
+            advisoryDoc.fileName,
+          );
+        }
         const mediaBox = await getMediaBox(advisoryDoc.backendAssetId);
         await renderWithProgress(
           advisoryDoc.id,
@@ -353,7 +362,7 @@ export default function OrderFiles() {
     setAdvisoryDoc(null);
     refetchDocuments();
     toast.success("Keeping original size");
-  }, [advisoryDoc, documents, refetchDocuments, getMediaBox]);
+  }, [advisoryDoc, documents, refetchDocuments, getMediaBox, renderWithProgress, finalizeOrientationAndPrintReady]);
 
   const handleScaleTo = useCallback(async (target: PaperSize) => {
     if (!advisoryDoc?.backendAssetId) {
@@ -380,8 +389,17 @@ export default function OrderFiles() {
       const { job_id } = await resize(assetId, targetW, targetH, "fit");
       await pollJob(job_id);
 
-      // Single render at the new MediaBox (resize updates the asset's box)
       setUploadModalOpen(true);
+
+      // Now that the canvas is correctly sized, run orientation normalise +
+      // print-ready (deferred for Office uploads, idempotent for PDF uploads).
+      const existingForFinalize = documents.find((d) => d.id === docId);
+      const preflightForFinalize = (existingForFinalize?.preflight_data as Record<string, any>) ?? {};
+      if (!preflightForFinalize?.orientation_normalized) {
+        await finalizeOrientationAndPrintReady(docId, assetId, fileName);
+      }
+
+      // Single render at the (now finalised) MediaBox
       const newBox = await getMediaBox(assetId);
       await renderWithProgress(
         docId,
@@ -419,7 +437,7 @@ export default function OrderFiles() {
     } catch (err: any) {
       toast.error("Scaling failed", { description: err.message });
     }
-  }, [advisoryDoc, documents, refetchDocuments, getMediaBox, renderWithProgress]);
+  }, [advisoryDoc, documents, refetchDocuments, getMediaBox, renderWithProgress, finalizeOrientationAndPrintReady]);
 
   // Orientation handlers
   const handleRotateToLandscape = useCallback(async () => {
