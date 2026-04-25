@@ -97,41 +97,129 @@ async function getAuthToken(): Promise<string> {
 }
 
 /**
+ * Some failures from the Supabase Edge Runtime layer are transient and worth
+ * retrying — most commonly:
+ *   • HTTP 502 / 503 / 504 / 429 from the platform (worker recycling, cold-start
+ *     backpressure, brief upstream blips)
+ *   • Response bodies tagged with `SUPABASE_EDGE_RUNTIME_ERROR`
+ *   • Browser fetch-level network failures (TypeError) before the request
+ *     reached the function at all
+ *
+ * Real application errors (4xx other than 429, document-processing failures,
+ * auth/forbidden, validation) are NOT retried — they surface immediately.
+ */
+function isTransientStatus(status: number): boolean {
+  return status === 429 || status === 502 || status === 503 || status === 504;
+}
+
+function bodyLooksTransient(text: string | null | undefined): boolean {
+  if (!text) return false;
+  // Supabase platform error envelope
+  if (text.includes("SUPABASE_EDGE_RUNTIME_ERROR")) return true;
+  if (text.includes("Service is temporarily unavailable")) return true;
+  if (text.includes("WORKER_LIMIT")) return true;
+  return false;
+}
+
+interface RequestOptions {
+  /** Max retry attempts on top of the initial call. Defaults to 4. */
+  maxRetries?: number;
+}
+
+const DEFAULT_MAX_RETRIES = 4;
+
+/** Exponential backoff with jitter: ~750ms, 1.5s, 3s, 6s, capped at 8s. */
+function backoffDelay(attempt: number): number {
+  const base = Math.min(750 * 2 ** attempt, 8000);
+  const jitter = Math.floor(Math.random() * 250);
+  return base + jitter;
+}
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
  * All requests go through the pdf-api edge function which proxies
  * to the Document Centre API, avoiding CORS issues.
+ *
+ * Transient platform failures (Supabase edge runtime 503s, network blips)
+ * are retried with exponential backoff so a single edge-worker recycle
+ * during an upload doesn't abort the whole pipeline.
  */
 async function request<T>(
   path: string,
   method: "GET" | "POST" = "GET",
-  body?: Record<string, unknown>
+  body?: Record<string, unknown>,
+  options: RequestOptions = {}
 ): Promise<T> {
   const token = await getAuthToken();
   const edgeFnUrl = `${SUPABASE_URL}/functions/v1/pdf-api`;
+  const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
 
   console.log(`[doc-centre] ${method} ${path}`);
 
-  const res = await fetch(edgeFnUrl, {
-    method: "POST", // Edge function always receives POST
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      apikey: SUPABASE_ANON_KEY,
-    },
-    body: JSON.stringify({
-      path,
-      method,
-      ...(_tenantId ? { tenant_id: _tenantId } : {}),
-      ...(_appId ? { app_id: _appId } : {}),
-      ...(body ?? {}),
-    }),
+  const requestBody = JSON.stringify({
+    path,
+    method,
+    ...(_tenantId ? { tenant_id: _tenantId } : {}),
+    ...(_appId ? { app_id: _appId } : {}),
+    ...(body ?? {}),
   });
 
-  if (!res.ok) {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(edgeFnUrl, {
+        method: "POST", // Edge function always receives POST
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          apikey: SUPABASE_ANON_KEY,
+        },
+        body: requestBody,
+      });
+    } catch (networkErr: any) {
+      // Browser-level fetch failure (DNS, connection reset, mid-flight
+      // worker termination). Always treat as transient.
+      lastError = new Error(
+        `Network error calling pdf-api: ${networkErr?.message ?? networkErr}`
+      );
+      if (attempt < maxRetries) {
+        const delay = backoffDelay(attempt);
+        console.warn(
+          `[doc-centre] network error for ${method} ${path}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`
+        );
+        await sleep(delay);
+        continue;
+      }
+      throw lastError;
+    }
+
+    if (res.ok) {
+      return res.json();
+    }
+
+    // Non-OK response. Read body once so we can both classify and surface it.
     const text = await res.text().catch(() => "");
+    const transient = isTransientStatus(res.status) || bodyLooksTransient(text);
+
+    if (transient && attempt < maxRetries) {
+      const delay = backoffDelay(attempt);
+      console.warn(
+        `[doc-centre] transient ${res.status} for ${method} ${path}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`
+      );
+      await sleep(delay);
+      lastError = new Error(`Document Centre API error ${res.status}: ${text}`);
+      continue;
+    }
+
+    // Non-transient OR we're out of retries — surface the real error.
     throw new Error(`Document Centre API error ${res.status}: ${text}`);
   }
 
-  return res.json();
+  // Loop fell through (shouldn't happen, but be defensive).
+  throw lastError ?? new Error(`Document Centre API call failed: ${method} ${path}`);
 }
 
 // ── Asset endpoints ──────────────────────────────────────────────
@@ -173,6 +261,10 @@ const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
  * immediately) and ramps up to a 2500ms ceiling. The `intervalMs` parameter
  * is kept for backwards compatibility but is now interpreted as the *ceiling*,
  * not a flat interval.
+ *
+ * Tolerates transient `getJob` failures: if a single status check fails after
+ * its own retry budget, we log a warning and try again on the next tick. We
+ * only abort the poll if we exceed `MAX_CONSECUTIVE_GETJOB_FAILURES` in a row.
  */
 export async function pollJob(
   jobId: string,
@@ -182,9 +274,30 @@ export async function pollJob(
 ): Promise<Job> {
   let interval = 300;
   const ceiling = Math.max(500, intervalMs);
+  const MAX_CONSECUTIVE_GETJOB_FAILURES = 4;
+  let consecutiveFailures = 0;
 
   for (let i = 0; i < maxAttempts; i++) {
-    const job = await getJob(jobId);
+    let job: Job;
+    try {
+      job = await getJob(jobId);
+      consecutiveFailures = 0;
+    } catch (err: any) {
+      consecutiveFailures += 1;
+      console.warn(
+        `[doc-centre] pollJob ${jobId}: getJob failed (${consecutiveFailures}/${MAX_CONSECUTIVE_GETJOB_FAILURES})`,
+        err?.message ?? err
+      );
+      if (consecutiveFailures >= MAX_CONSECUTIVE_GETJOB_FAILURES) {
+        throw new Error(
+          `Job ${jobId} status check failed ${consecutiveFailures} times in a row: ${err?.message ?? err}`
+        );
+      }
+      await new Promise((r) => setTimeout(r, interval));
+      interval = Math.min(Math.round(interval * 1.5), ceiling);
+      continue;
+    }
+
     onUpdate?.(job);
 
     if (TERMINAL_STATUSES.has(job.status)) {
