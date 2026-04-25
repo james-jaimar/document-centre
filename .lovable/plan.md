@@ -1,30 +1,111 @@
-The upload is hanging because the new backend instrumentation writes to `job_events`, but the VPS database does not actually have a `job_events` table. The worker starts the `inspect_asset` job, then crashes at the instrumentation insert before it can read page metadata. That leaves the DB job stuck as `running`, the worker idle, and the UI polling forever at “Reading page metadata… 45%”. The ops Jobs page is also blank because it currently reads from `job_events` only.
+# Upload Pipeline Speed-Up
 
-I will fix this in three parts.
+The 8pp A4 upload was slow for **three concrete, measurable reasons** confirmed in the edge logs:
 
-1. Add the missing backend schema
-- Update `pdf-server/migrations/2026_04_24_ops_api.sql` so it creates `job_events` idempotently, not only adds columns if it already exists.
-- Include the columns used by the ORM:
-  - `id`, `job_id`, `asset_id`, `tenant_id`, `app_id`
-  - `task_name`, `queue_name`, `worker_name`, `stage`, `status`, `message`
-  - `started_at`, `finished_at`, `duration_ms`, `metadata_json`, `created_at`
-- Add indexes for job, asset, tenant, stage/status, and timestamps.
+| Cause | Wasted time per upload | Severity |
+|---|---|---|
+| `pollJob` fixed at 2.5s — short jobs (~200ms) wait the full interval before next check, across 4 sequential job polls | ~7–10s | **Highest** |
+| `getDerivedFiles` polled every 3s, up to 60×, through the Deno proxy (~550ms each) | ~3–6s on small docs | High |
+| `demo-bootstrap` 500 from a bad `ON CONFLICT` spec — fails 1s per Try-flow entry (not upload, but blocks the demo) | ~1s, plus a scary console error | Medium |
 
-2. Make the backend resilient so this cannot hang again
-- Harden `job_event_repo` so if the telemetry table is missing or temporarily broken, task processing continues instead of killing the PDF job.
-- Add safe fallbacks in `/v1/assets/{asset_id}/events` and `/v1/ops/assets/{asset_id}/pipeline` so missing telemetry returns an empty event list rather than 500.
-- Update `/v1/ops/jobs` to fall back to the core `jobs` table when `job_events` is unavailable or empty, so the ops UI still shows queued/running/failed/completed jobs.
-- Fix status filter mapping: the UI uses `queued/started/completed/failed/retry`, but job events use `running/done/failed`; I’ll normalize that so filters work.
+Edge logs confirm 30+ `pdf-api` round-trips per upload, each 230–975ms (median ~550ms), with constant Deno boot churn (`booted (time: 30-49ms)` repeated dozens of times).
 
-3. Recover the currently stuck upload/job after deployment
-- Run the migration on the VPS database.
-- Restart `document-centre-api` and `document-centre-worker`.
-- Reset the currently stuck job/asset so the user can retry cleanly:
-  - current stuck job: `0e189c86-3190-4427-8c57-371174de761d`
-  - current stuck asset: `90709b93-416c-4eca-827a-82ffc34b87c9`
-- Because the original Celery task already crashed and is gone, the cleanest recovery is either mark that job failed/cancelled and re-upload, or enqueue a fresh inspect for the asset after the migration. I’ll include exact safe VPS commands for both, and prefer re-enqueueing if the source object is still present.
+---
 
-Technical notes
-- The earlier queue fix was still necessary; the worker is subscribed and did pick up `inspect_asset` once. The new failure is different: the task dies immediately when trying to insert the first `job_events` row.
-- This also explains why `/v1/ops/workers` shows idle with `total.inspect_asset: 1`, while `/v1/jobs/{id}` remains `running` and `/v1/ops/jobs` is empty.
-- I will not reintroduce the page-1 fast-path in the customer UI. The upload modal can remain modal-only; the backend can render normally and the UI progress will be handled separately after the hard backend fix.
+## Fix 1 — Adaptive `pollJob` cadence
+
+**File:** `src/lib/documentCentreApi.ts` — `pollJob`
+
+Replace the fixed 2500ms interval with an adaptive ramp:
+- Start at **300ms** (catches sub-second jobs immediately)
+- Double each attempt up to a **2500ms** ceiling
+- Keep the same `maxAttempts` budget (still 360 polls = ~15 min total)
+
+Inspect, normalize, and print-ready jobs on small PDFs typically finish in 200–800ms, so this alone saves ~6–8s per upload with zero server impact.
+
+```ts
+// Pseudocode
+let interval = 300;
+for (let i = 0; i < maxAttempts; i++) {
+  const job = await getJob(jobId);
+  onUpdate?.(job);
+  if (TERMINAL_STATUSES.has(job.status)) return job;
+  await new Promise(r => setTimeout(r, interval));
+  interval = Math.min(interval * 1.5, 2500);
+}
+```
+
+## Fix 2 — Tighten `getDerivedFiles` polling in `renderDocumentThumbnails`
+
+**File:** `src/hooks/useDocumentUpload.ts` — `renderDocumentThumbnails` (line 88–110)
+
+The current loop sleeps **3000ms between checks for up to 60 polls**, even after the previews task has reported `completed`. Since `generate_previews` writes all files in one Ghostscript pass before the task ends, the files are usually already there when polling starts.
+
+Changes:
+- Do an **immediate first check** right after `pollJob` returns `completed` (no initial 3s wait).
+- Adaptive cadence: 500ms → 1000ms → 2000ms (cap), instead of flat 3000ms.
+- Reduce `MAX_THUMB_POLLS` from 60 → 30 (still ~45s upper bound with the new cadence).
+- Keep the existing "stale poll" early-exit logic.
+
+For an 8pp doc this turns ~9–18s of polling into ~1–3s.
+
+## Fix 3 — Repair `demo-bootstrap` upsert
+
+**Root cause** (from edge logs):
+```
+demo-bootstrap: membership upsert failed
+code: "42P10"
+message: "there is no unique or exclusion constraint matching the ON CONFLICT specification"
+```
+
+The function does `onConflict: "profile_id,tenant_id,app_id"` but no matching unique index exists on `tenant_memberships`.
+
+**File:** `supabase/functions/demo-bootstrap/index.ts`
+
+Replace the brittle upsert with a **read-then-insert-if-missing** pattern (idempotent without needing a specific unique index):
+
+```ts
+const { data: existing } = await admin
+  .from("tenant_memberships")
+  .select("id")
+  .eq("profile_id", user.id)
+  .eq("tenant_id", tenant.id)
+  .eq("app_id", tenant.app_id)
+  .maybeSingle();
+
+if (!existing) {
+  const { error: insErr } = await admin
+    .from("tenant_memberships")
+    .insert({ profile_id: user.id, tenant_id: tenant.id, app_id: tenant.app_id, role: "customer", is_active: true });
+  if (insErr) { /* return 500 */ }
+}
+```
+
+This avoids needing a DB migration and stops the 500 + console error on every Try-flow entry.
+
+## Out of scope (explicitly deferred)
+
+- **Server-push (SSE/WebSocket) job completion signal** — would eliminate polling entirely but is a much larger change requiring backend Celery → Redis pub/sub → FastAPI SSE wiring. Worth doing later if the pipeline still feels slow after Fixes 1 & 2.
+- **Postgres / Celery health-probe tuning** — the previous proposal you declined; not revisiting.
+- **`pdf-api` Deno proxy keep-alive / connection pooling** — Deno edge runtime cycles instances aggressively; not much we can change there from our side.
+- **Duplicate `crop_rasterize` dedup** — already resolved by the `generate_previews` switch in the previous round.
+
+## Expected outcome for an 8pp A4 upload
+
+| Phase | Before | After |
+|---|---|---|
+| Inspect job poll | ~2.5s | ~0.3–0.8s |
+| Normalize job poll | ~2.5s | ~0.3–0.8s |
+| Print-ready job poll | ~2.5s | ~0.3–0.8s |
+| `generate_previews` job poll | ~2.5s | ~0.3–0.8s |
+| Derived-files polling | ~6–9s | ~1–3s |
+| Demo bootstrap | 1s + 500 error | ~150ms, no error |
+| **Total perceived speedup** | — | **~12–18s faster** |
+
+## Files to be edited
+
+- `src/lib/documentCentreApi.ts` — adaptive `pollJob`
+- `src/hooks/useDocumentUpload.ts` — tighter `renderDocumentThumbnails` polling
+- `supabase/functions/demo-bootstrap/index.ts` — replace upsert with read-then-insert
+
+No DB migration needed. No VPS changes needed. Approve to implement.

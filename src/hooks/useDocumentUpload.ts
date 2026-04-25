@@ -74,6 +74,8 @@ export async function renderDocumentThumbnails(
   const asset = await getAsset(assetId);
   const expectedPages = asset.page_count ?? 1;
 
+  // Immediate first check — generate_previews writes derived files synchronously
+  // before the task ends, so they're often already present when polling starts.
   let derivedFiles = await getDerivedFiles(assetId);
   let thumbnailPaths = pickBestPerPage(
     derivedFiles,
@@ -81,7 +83,8 @@ export async function renderDocumentThumbnails(
     asset.preview_storage_path,
   );
 
-  const MAX_THUMB_POLLS = 60;
+  const MAX_THUMB_POLLS = 30;
+  let interval = 500; // adaptive: 500ms → 1000ms → 2000ms ceiling
   let lastCount = -1;
   let stalePolls = 0;
 
@@ -91,7 +94,7 @@ export async function renderDocumentThumbnails(
 
     if (found === lastCount) {
       stalePolls++;
-      if (stalePolls >= 15 && found >= expectedPages * 0.8) break;
+      if (stalePolls >= 8 && found >= expectedPages * 0.8) break;
     } else {
       stalePolls = 0;
     }
@@ -100,7 +103,8 @@ export async function renderDocumentThumbnails(
     const pct = 75 + (found / expectedPages) * 20;
     onProgress(`Rendering pages… (${found}/${expectedPages})`, Math.min(95, pct));
 
-    await new Promise((r) => setTimeout(r, 3000));
+    await new Promise((r) => setTimeout(r, interval));
+    interval = Math.min(Math.round(interval * 1.5), 2000);
     derivedFiles = await getDerivedFiles(assetId);
     thumbnailPaths = pickBestPerPage(
       derivedFiles,
