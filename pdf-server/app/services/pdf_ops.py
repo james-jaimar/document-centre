@@ -194,34 +194,41 @@ class PdfOps:
                 if box:
                     info["boxes"][name] = list(map(float, box))
 
-            media = page.MediaBox
-            info["width_pt"] = float(media[2] - media[0])
-            info["height_pt"] = float(media[3] - media[1])
+            # Top-level width_pt/height_pt reflect VISUAL dimensions of page 1
+            # (honouring /Rotate), so the client's "first page is portrait"
+            # heuristic matches what users actually see.
+            eff_w, eff_h = _effective_dims_pikepdf(page)
+            info["width_pt"] = eff_w
+            info["height_pt"] = eff_h
 
             # Per-page geometry so the client can detect mixed orientations
             # (e.g. Word docs with landscape table sections among portrait
-            # body pages). The top-level width_pt/height_pt/boxes still
-            # reflect page 1 for backwards compatibility.
+            # body pages). width_pt/height_pt are EFFECTIVE (post-/Rotate)
+            # so a Word landscape table page emitted as portrait MediaBox +
+            # /Rotate 90 is correctly classified as landscape.
             pages_meta = []
             has_portrait = False
             has_landscape = False
             for p in pdf.pages:
                 pmb = p.MediaBox
-                pw = float(pmb[2] - pmb[0])
-                ph = float(pmb[3] - pmb[1])
+                raw_w = float(pmb[2] - pmb[0])
+                raw_h = float(pmb[3] - pmb[1])
                 rot = 0
                 try:
                     rot = int(p.get("/Rotate", 0) or 0)
                 except Exception:
                     rot = 0
+                eff_w_p, eff_h_p = _effective_dims_pikepdf(p)
                 pages_meta.append({
-                    "width_pt": pw,
-                    "height_pt": ph,
+                    "width_pt": eff_w_p,
+                    "height_pt": eff_h_p,
+                    "raw_width_pt": raw_w,
+                    "raw_height_pt": raw_h,
                     "rotate": rot,
                 })
-                if pw > ph:
+                if eff_w_p > eff_h_p:
                     has_landscape = True
-                elif pw < ph:
+                elif eff_w_p < eff_h_p:
                     has_portrait = True
             info["pages"] = pages_meta
             info["mixed_orientation"] = has_portrait and has_landscape
