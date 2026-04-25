@@ -144,16 +144,90 @@ class OpsService:
             "message": e.message,
         }
 
+    # The UI status filter speaks the worker-job vocabulary
+    # (queued / started / completed / failed / retry), but JobEvent rows
+    # use a different vocabulary (running / done / failed). Translate so
+    # the dashboard's filter dropdown actually returns rows.
+    _STATUS_TO_EVENT = {
+        "queued": None,           # job_events never have a "queued" stage
+        "started": "running",
+        "completed": "done",
+        "failed": "failed",
+        "retry": None,
+    }
+    _STATUS_TO_JOB = {
+        "queued": "queued",
+        "started": "running",
+        "completed": "completed",
+        "failed": "failed",
+        "retry": "queued",
+    }
+
+    def _serialize_job_row(self, row: dict) -> dict:
+        """Serialize a row from the core `jobs` table into the same shape
+        the UI expects from JobEvent rows. Used as a fallback when no
+        telemetry events exist yet for a freshly-enqueued job."""
+        started = row.get("started_at")
+        finished = row.get("finished_at")
+        created = row.get("created_at")
+        duration_ms = None
+        if started and finished:
+            duration_ms = max(0, int((finished - started).total_seconds() * 1000))
+        return {
+            "id": str(row.get("id")),
+            "job_id": str(row.get("id")),
+            "asset_id": str(row["asset_id"]) if row.get("asset_id") else None,
+            "tenant_id": None,
+            "app_id": None,
+            "task_name": row.get("operation"),
+            "queue_name": row.get("queue"),
+            "worker_name": None,
+            "stage": row.get("operation") or "job",
+            "status": row.get("status"),
+            "started_at": started.isoformat() if started else (created.isoformat() if created else None),
+            "finished_at": finished.isoformat() if finished else None,
+            "duration_ms": duration_ms,
+            "metadata": row.get("payload") or {},
+            "message": (row.get("error") or "")[:500] if row.get("error") else None,
+        }
+
     def jobs(self, db: Session, limit: int = 100, status: str | None = None,
              tenant_id: str | None = None) -> dict:
+        # 1. Try job_events first — that's the rich per-stage telemetry.
         try:
             stmt = select(JobEvent).order_by(JobEvent.started_at.desc()).limit(limit)
             if status:
-                stmt = stmt.where(JobEvent.status == status)
+                mapped = self._STATUS_TO_EVENT.get(status, status)
+                if mapped is None:
+                    # Filter has no event-level equivalent (e.g. "queued"); skip
+                    # the events branch entirely and let the jobs-table fallback
+                    # handle it below.
+                    raise _MISSING_SCHEMA_ERRORS[0]("status not representable in job_events")
+                stmt = stmt.where(JobEvent.status == mapped)
             if tenant_id:
                 stmt = stmt.where(JobEvent.tenant_id == tenant_id)
             events = list(db.execute(stmt).scalars().all())
-            return {"jobs": [self._serialize_event(e) for e in events]}
+            if events:
+                return {"jobs": [self._serialize_event(e) for e in events]}
+        except _MISSING_SCHEMA_ERRORS:
+            db.rollback()
+
+        # 2. Fall back to the core `jobs` table so the dashboard still shows
+        #    queued/running/failed/completed jobs even when telemetry is
+        #    empty or temporarily unavailable.
+        try:
+            from sqlalchemy import text
+            sql = "select id, asset_id, operation, queue, status, payload, error, created_at, started_at, finished_at from jobs"
+            params: dict = {"limit": limit}
+            clauses: list[str] = []
+            if status:
+                clauses.append("status = :status")
+                params["status"] = self._STATUS_TO_JOB.get(status, status)
+            if clauses:
+                sql += " where " + " and ".join(clauses)
+            sql += " order by created_at desc limit :limit"
+            rows = list(db.execute(text(sql), params).mappings().all())
+            return {"jobs": [self._serialize_job_row(dict(r)) for r in rows]}
         except _MISSING_SCHEMA_ERRORS:
             db.rollback()
             return {"jobs": []}

@@ -53,23 +53,54 @@ CREATE INDEX IF NOT EXISTS ix_ops_snap_bucket   ON ops_storage_snapshots (bucket
 
 
 -- ---------------------------------------------------------------------------
--- 3. job_events — add tenant_id / app_id attribution columns (if table exists).
+-- 3. job_events — per-stage instrumentation events for asset/job pipelines.
+--    Created here (not by the ORM) because the worker writes to it on the
+--    very first task; without this table, inspect_asset crashes immediately
+--    and the upload UI hangs forever at "Reading page metadata…".
 -- ---------------------------------------------------------------------------
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.tables
-    WHERE table_schema = 'public' AND table_name = 'job_events'
-  ) THEN
-    ALTER TABLE job_events ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(64);
-    ALTER TABLE job_events ADD COLUMN IF NOT EXISTS app_id    VARCHAR(64);
-    CREATE INDEX IF NOT EXISTS ix_job_events_tenant ON job_events (tenant_id);
-    CREATE INDEX IF NOT EXISTS ix_job_events_app    ON job_events (app_id);
-    RAISE NOTICE 'job_events: attribution columns ensured';
-  ELSE
-    RAISE NOTICE 'job_events table not found — skipping attribution columns (ops API will still work)';
-  END IF;
-END $$;
+CREATE TABLE IF NOT EXISTS job_events (
+    id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id         VARCHAR(64)  NOT NULL,
+    asset_id       VARCHAR(64),
+    tenant_id      VARCHAR(64),
+    app_id         VARCHAR(64),
+    task_name      VARCHAR(128),
+    queue_name     VARCHAR(64),
+    worker_name    VARCHAR(128),
+    stage          VARCHAR(64)  NOT NULL,
+    status         VARCHAR(32)  NOT NULL,
+    message        TEXT,
+    started_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    finished_at    TIMESTAMPTZ,
+    duration_ms    INTEGER,
+    metadata_json  JSONB,
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+-- If the table existed before this migration with an older shape, make sure
+-- every column the ORM expects is present. ADD COLUMN IF NOT EXISTS is a no-op
+-- when the column already exists, so this is safe to re-run.
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS asset_id      VARCHAR(64);
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS tenant_id     VARCHAR(64);
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS app_id        VARCHAR(64);
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS task_name     VARCHAR(128);
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS queue_name    VARCHAR(64);
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS worker_name   VARCHAR(128);
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS message       TEXT;
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS finished_at   TIMESTAMPTZ;
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS duration_ms   INTEGER;
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS metadata_json JSONB;
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS created_at    TIMESTAMPTZ NOT NULL DEFAULT now();
+
+CREATE INDEX IF NOT EXISTS ix_job_events_job        ON job_events (job_id);
+CREATE INDEX IF NOT EXISTS ix_job_events_asset      ON job_events (asset_id);
+CREATE INDEX IF NOT EXISTS ix_job_events_tenant     ON job_events (tenant_id);
+CREATE INDEX IF NOT EXISTS ix_job_events_app        ON job_events (app_id);
+CREATE INDEX IF NOT EXISTS ix_job_events_task       ON job_events (task_name);
+CREATE INDEX IF NOT EXISTS ix_job_events_queue      ON job_events (queue_name);
+CREATE INDEX IF NOT EXISTS ix_job_events_stage      ON job_events (stage);
+CREATE INDEX IF NOT EXISTS ix_job_events_status     ON job_events (status);
+CREATE INDEX IF NOT EXISTS ix_job_events_started_at ON job_events (started_at DESC);
 
 
 -- ---------------------------------------------------------------------------

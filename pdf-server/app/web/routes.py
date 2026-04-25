@@ -99,29 +99,43 @@ def list_asset_events(asset_id: str, db: Session = Depends(get_db)):
       - asset.status, page_count, thumbnail_storage_path
       - per-stage progress (normalize, render) with rendered/total counts
       - the most recent stage message (e.g. "Rendered 47 of 130 pages")
+
+    Best-effort: if the job_events table is missing or temporarily
+    unavailable we still return a 200 with an empty event summary so the
+    customer upload UI can keep polling and surface backend status.
     """
     asset = asset_repo.get_asset(db, asset_id)
     if not asset:
         raise HTTPException(404, "Asset not found")
 
-    events = job_event_repo.list_for_asset(db, asset_id)
     rendered = 0
     total = asset.get('page_count') or 0
     latest_message: str | None = None
     latest_stage: str | None = None
     latest_status: str | None = None
-    for evt in events:
-        meta = evt.metadata_json or {}
-        if evt.stage in ('render', 'page_batch', 'page'):
-            r = int(meta.get('rendered') or meta.get('page') or 0)
-            t = int(meta.get('total') or 0)
-            if r > rendered:
-                rendered = r
-            if t > total:
-                total = t
-        latest_message = evt.message or latest_message
-        latest_stage = evt.stage
-        latest_status = evt.status
+    event_count = 0
+    try:
+        events = job_event_repo.list_for_asset(db, asset_id)
+        event_count = len(events)
+        for evt in events:
+            meta = evt.metadata_json or {}
+            if evt.stage in ('render', 'page_batch', 'page'):
+                r = int(meta.get('rendered') or meta.get('page') or 0)
+                t = int(meta.get('total') or 0)
+                if r > rendered:
+                    rendered = r
+                if t > total:
+                    total = t
+            latest_message = evt.message or latest_message
+            latest_stage = evt.stage
+            latest_status = evt.status
+    except Exception:
+        # Telemetry unavailable — return the asset snapshot anyway so the
+        # client can keep polling. Do NOT 500; the upload UI relies on this.
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
     # Surface preview/thumbnail public URLs so the client can prefetch them
     # without needing a second /assets/{id} round-trip.
@@ -138,7 +152,7 @@ def list_asset_events(asset_id: str, db: Session = Depends(get_db)):
         "latest_stage": latest_stage,
         "latest_status": latest_status,
         "latest_message": latest_message,
-        "event_count": len(events),
+        "event_count": event_count,
     }
 
 

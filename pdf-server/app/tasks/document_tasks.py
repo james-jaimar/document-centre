@@ -381,7 +381,8 @@ def generate_previews(self, asset_id: str, job_id: str):
                                 metadata={'rendered': completed_count, 'total': page_count},
                                 message=f'Rendered {completed_count} of {page_count} pages',
                             )
-                            job_event_repo.finish(db, page_evt.id, message='', metadata={'rendered': completed_count, 'total': page_count})
+                            if page_evt is not None:
+                                job_event_repo.finish(db, page_evt.id, message='', metadata={'rendered': completed_count, 'total': page_count})
 
             asset_repo.update_asset(db, asset_id, {
                 'thumbnail_storage_path': thumb_path,
