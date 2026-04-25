@@ -437,7 +437,7 @@ export default function OrderFiles() {
     } catch (err: any) {
       toast.error("Scaling failed", { description: err.message });
     }
-  }, [advisoryDoc, documents, refetchDocuments, getMediaBox, renderWithProgress]);
+  }, [advisoryDoc, documents, refetchDocuments, getMediaBox, renderWithProgress, finalizeOrientationAndPrintReady]);
 
   // Orientation handlers
   const handleRotateToLandscape = useCallback(async () => {
