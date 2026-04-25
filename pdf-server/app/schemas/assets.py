@@ -114,6 +114,17 @@ class CropRasterizeRequest(BaseModel):
     box: list[float] = Field(min_length=4, max_length=4)
     dpi: int = Field(default=120, ge=36, le=600)
 
+
+class GeneratePreviewsRequest(BaseModel):
+    """Trigger the optimised single-pass preview/thumbnail render.
+
+    Optional ``render_box`` (PDF user-space points [x0, y0, x1, y1]) crops
+    the source to the target print area before rasterizing — typically the
+    asset's TrimBox after a user resolves a bleed advisory.
+    """
+    asset_id: UUID
+    render_box: list[float] | None = Field(default=None, min_length=4, max_length=4)
+
 class ConvertOfficeRequest(BaseModel):
     asset_id: UUID
 

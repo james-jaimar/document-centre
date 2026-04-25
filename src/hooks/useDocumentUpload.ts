@@ -6,7 +6,7 @@ import { useTenantContext } from "@/hooks/useTenantContext";
 import { toast } from "@/hooks/use-toast";
 import {
   createAsset,
-  cropRasterize,
+  generatePreviews,
   getAsset,
   getDerivedFiles,
   inspectAsset,
@@ -62,8 +62,9 @@ export async function renderDocumentThumbnails(
 
   onProgress("Rendering pages…", 60);
 
-  // Single rasterization pass at the resolved box
-  const { job_id: cropJobId } = await cropRasterize(assetId, box, 150);
+  // Single Ghostscript pass — generate_previews on the VPS does both
+  // preview + thumbnail (PIL downscale) in one shot.
+  const { job_id: cropJobId } = await generatePreviews(assetId, box);
   await pollJob(cropJobId, (job) => {
     if (job.status === "pending") onProgress("Queued — waiting for server…", 65);
     else if (job.status === "running") onProgress("Rendering pages…", 75);

@@ -5,6 +5,7 @@ from sqlalchemy import text
 from app.db.session import get_db
 from app.schemas.assets import (
     CropRasterizeRequest,
+    GeneratePreviewsRequest,
     AssetCreate,
     AssetResponse,
     DerivedFileResponse,
@@ -27,7 +28,7 @@ from app.services.storage import StorageService
 from app.services.derived_files import derived_file_repo
 from app.services.diagnostics import get_diagnostics
 from app.services.job_event_repo import job_event_repo
-from app.tasks.document_tasks import normalize_asset, inspect_asset
+from app.tasks.document_tasks import normalize_asset, inspect_asset, generate_previews
 from app.tasks.operation_tasks import (
     crop_rasterize,
     rotate_pdf,
@@ -309,10 +310,37 @@ def op_merge(payload: MergeRequest, db: Session = Depends(get_db)):
 
 @api_router.post("/operations/crop-rasterize")
 def op_crop_rasterize(payload: CropRasterizeRequest, db: Session = Depends(get_db)):
+    """DEPRECATED: prefer /operations/generate-previews (single GS pass).
+
+    Retained for backwards-compatibility with older clients. Runs Ghostscript
+    twice (once per resolution) — the new endpoint runs it once and uses PIL
+    to downscale to the thumbnail size.
+    """
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "crop_rasterize", "thumbnails", body)
     task = crop_rasterize.delay(asset_id, job_id, payload.box, payload.dpi)
+    job_repo.set_celery_task_id(db, job_id, task.id)
+    return {"job_id": job_id}
+
+
+@api_router.post("/operations/generate-previews")
+def op_generate_previews(payload: GeneratePreviewsRequest, db: Session = Depends(get_db)):
+    """Render previews + thumbnails in a single Ghostscript pass.
+
+    Replaces ``/operations/crop-rasterize`` for the customer upload flow:
+      * 1 GS invocation (preview DPI) instead of 2
+      * Thumbnails downscaled with PIL (LANCZOS) — 20-100x faster
+      * Page-1 fast path so the cover thumbnail appears in ~2-3s
+      * Parallel S3 uploads for the remaining pages
+
+    Optional ``render_box`` (PDF user-space points) crops the source to the
+    target print area before rasterizing — used after a bleed advisory.
+    """
+    asset_id = str(payload.asset_id)
+    body = payload.model_dump(mode="json")
+    job_id = job_repo.create_job(db, asset_id, "generate_previews", "thumbnails", body)
+    task = generate_previews.delay(asset_id, job_id, payload.render_box)
     job_repo.set_celery_task_id(db, job_id, task.id)
     return {"job_id": job_id}
 
