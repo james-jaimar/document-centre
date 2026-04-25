@@ -31,6 +31,7 @@ export interface DocumentSectionRow {
   lamination: string | null;
   color: string | null;
   sort_order: number;
+  document_id?: string | null;
 }
 
 export interface DocumentRow {
