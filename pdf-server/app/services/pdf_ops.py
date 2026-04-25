@@ -410,25 +410,48 @@ class PdfOps:
         height_mm: float,
         fit_mode: str = "fit",
     ) -> Path:
+        """Resize each page onto a target canvas of (width_mm × height_mm).
+
+        Page-aware: if a page's existing orientation differs from the target
+        canvas's orientation, the target width/height are swapped for THAT
+        page so it lands on a same-orientation canvas (e.g. landscape pages
+        in a portrait-A4 resize go onto landscape-A4 sheets, preserving
+        aspect ratio and full content). Single-orientation documents are
+        unaffected — the conditional just picks the same dimensions every
+        iteration. Mirrors the page-aware logic in ``crop_to_box``.
+
+        After this pass, ``normalize_orientation`` (when invoked) can rotate
+        landscape sheets to match the dominant orientation with full
+        geometry intact, so downstream renderers don't clip.
+        """
         reader = PdfReader(str(src))
         writer = PdfWriter()
-        target_w = width_mm * mm
-        target_h = height_mm * mm
+        target_w_base = width_mm * mm
+        target_h_base = height_mm * mm
+        target_landscape = target_w_base > target_h_base
 
         for page in reader.pages:
             src_w = float(page.mediabox.width)
             src_h = float(page.mediabox.height)
+            page_landscape = src_w > src_h
 
-            sx = target_w / src_w
-            sy = target_h / src_h
+            # Swap target dimensions for off-orientation pages so each
+            # page gets a same-orientation canvas of the target size.
+            if page_landscape == target_landscape:
+                tw, th = target_w_base, target_h_base
+            else:
+                tw, th = target_h_base, target_w_base
+
+            sx = tw / src_w
+            sy = th / src_h
             scale = min(sx, sy) if fit_mode == "fit" else max(sx, sy)
 
             page.scale_by(scale)
             page.transfer_rotation_to_content()
 
-            new_page = writer.add_blank_page(width=target_w, height=target_h)
-            tx = (target_w - float(page.mediabox.width)) / 2
-            ty = (target_h - float(page.mediabox.height)) / 2
+            new_page = writer.add_blank_page(width=tw, height=th)
+            tx = (tw - float(page.mediabox.width)) / 2
+            ty = (th - float(page.mediabox.height)) / 2
             new_page.merge_transformed_page(page, Transformation().translate(tx, ty))
 
         with open(out_pdf, "wb") as f:

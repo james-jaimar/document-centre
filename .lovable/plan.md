@@ -1,53 +1,100 @@
 ## Diagnosis
 
-The "weird blank pages" appearing between documents come from the simplex parity logic in `buildPageSequence` (mirrored in two files):
+The previous fix to `crop_to_box` and `normalize_orientation` was correct, but I missed the **third operator in the chain** for Office uploads: `resize_pages`. That's where the portrait box is being smuggled back in.
 
-- `src/components/order/PreviewPanel.tsx` (lines 181–186)
-- `src/lib/orders/buildPreviewSnapshot.ts` (lines 238–242)
+### Actual sequence for the failing document
 
-For every simplex body page, the system pushes a synthetic `blank_back` face (`pageIndex: -1`, empty thumbnail). When you have multiple documents, this means the **last page of Document A** gets a `blank_back` appended **before Document B starts**. In the FlipBook viewer this renders as a grey panel with a `FileText` icon and "Page N" label (FlipBook.tsx lines 65–73 — content role with no URL), which is what the screenshots show as "Page 32" and "Page 161".
+1. **LibreOffice convert** — produces a clean PDF with portrait pages 1–2, landscape pages 3–22, portrait again at the end. ✅ Correct.
+2. **Inspect** — sees Letter (8.5 × 11"), flags the size advisory. ✅
+3. **User clicks "Scale to A4"** in the advisory. The first page is portrait, so the client calls:
+   ```
+   resize(assetId, targetW=210, targetH=297, fit)   ← portrait A4 forced for ALL pages
+   ```
+4. **`pdf_ops.resize_pages`** (`pdf-server/app/services/pdf_ops.py` line 405) loops every page and does:
+   ```python
+   target_w = 210 mm; target_h = 297 mm                    # portrait A4 — one box for everything
+   scale = min(target_w/src_w, target_h/src_h)            # for landscape src this gives ~0.75
+   page.scale_by(scale)
+   page.transfer_rotation_to_content()
+   new_page = writer.add_blank_page(width=target_w, height=target_h)   # ← portrait canvas
+   new_page.merge_transformed_page(page, ...)
+   ```
+   **Every landscape page is now baked onto a 210 × 297 portrait sheet.** The MediaBox is portrait. The interaction of `scale_by` + `transfer_rotation_to_content` + `merge_transformed_page` on a page that LibreOffice marked with `/Rotate` produces exactly what the screenshot shows: content rotated 90° and the bottom guillotined off because the visible content extends past the new portrait `MediaBox`.
+5. **`normalize_orientation`** then runs (dominant=portrait for bound docs), sees every page as portrait (we just made them portrait), and does nothing — so the damage from step 4 is what reaches the renderer.
 
-This synthetic face is a preview-only artefact — it represents the physical reverse of a one-sided sheet, but for a multi-document upload the customer has no intention of producing a printed blank page there.
+This is the same class of bug the recent `crop_to_box` fix solved, just in a different operator. Same root cause: **single static target box applied to mixed-orientation pages**.
 
-## What I'll change
+## Proposed Fix (single file)
 
-### 1. Suppress inter-document `blank_back` in simplex sequences
+### `pdf-server/app/services/pdf_ops.py` — `resize_pages`
 
-In both `buildPageSequence` implementations, when a body page is the **last page of its document** AND the **next body section belongs to a different document**, do not emit the `blank_back` reverse face. The blank reverse is still emitted:
+Make it **page-aware** so each page is resized onto a same-orientation canvas of the target paper size. Mirrors the pattern we already use in `crop_to_box`:
 
-- between pages within the same document (real physical sheet behaviour)
-- before a tab/insert anchored after that page (parity for the divider)
-- at the end of the entire body when needed for back-cover parity
+```python
+def resize_pages(self, src, out_pdf, width_mm, height_mm, fit_mode="fit"):
+    reader = PdfReader(str(src))
+    writer = PdfWriter()
+    target_w_base = width_mm * mm
+    target_h_base = height_mm * mm
+    target_landscape = target_w_base > target_h_base
 
-Effect: Document B simply begins on whichever spread slot falls naturally. If the customer wants Document B to start on a right-hand page, they can drop a white insert sheet between them — which the existing `InsertManager` already supports.
+    for page in reader.pages:
+        src_w = float(page.mediabox.width)
+        src_h = float(page.mediabox.height)
+        page_landscape = src_w > src_h
 
-Files:
-- `src/components/order/PreviewPanel.tsx` — modify `buildPageSequence` loop
-- `src/lib/orders/buildPreviewSnapshot.ts` — same change in the snapshot mirror
+        # If page orientation disagrees with the target, swap target
+        # w/h for THIS page so we keep the page's native orientation.
+        if page_landscape == target_landscape:
+            tw, th = target_w_base, target_h_base
+        else:
+            tw, th = target_h_base, target_w_base
 
-### 2. Confirm insert-sheet behaviour is unchanged
+        sx = tw / src_w
+        sy = th / src_h
+        scale = min(sx, sy) if fit_mode == "fit" else max(sx, sy)
 
-`InsertManager.tsx` already lets users add a white (or coloured) insert sheet at any position. These are real `document_sections` with `section_type = "insert"` and emit two real physical faces (`insert` + `insert_back`) — they are NOT filtered by the change above and continue to render as solid colour sheets.
+        page.scale_by(scale)
+        page.transfer_rotation_to_content()
 
-### 3. Record the merged-PDF output rule in memory
+        new_page = writer.add_blank_page(width=tw, height=th)
+        tx = (tw - float(page.mediabox.width)) / 2
+        ty = (th - float(page.mediabox.height)) / 2
+        new_page.merge_transformed_page(page, Transformation().translate(tx, ty))
 
-Save a new memory file `mem://features/order-flow/multi-document-merge-rules` capturing:
+    with open(out_pdf, "wb") as f:
+        writer.write(f)
+    return out_pdf
+```
 
-- Phantom inter-document `blank_back` faces are **not** emitted in the preview and must **not** be inserted into the final merged print-shop PDF.
-- A user-added **insert sheet** (any colour, including white) IS a real physical sheet and **must** appear as a real blank/coloured page in the final merged PDF handed to the print shop.
-- Tabs and inserts are the only mechanism for forcing a document to start on a right-hand page in a multi-document order.
+### Why this is the right shape
 
-Then add a one-line reference to this file under **Memories** in `mem://index.md`.
+- Portrait letter → portrait A4 (210 × 297). Identical behaviour to today.
+- Landscape letter → **landscape A4 (297 × 210)** — keeps the page intact and at the correct aspect ratio.
+- The downstream `normalize_orientation` (dominant=portrait) then sees the landscape A4 page, rotates it +90° CW, and rewrites both `MediaBox` and the content stream geometry (the fix we shipped previously). Result: a portrait-oriented sheet whose content is the rotated landscape layout, fully visible.
+- Single-orientation documents are unaffected — the conditional just selects the same box every time.
 
-## Out of scope (for later)
+### Why no client-side change
 
-The actual server-side PDF merge step (combining each document + insert sheets into one contiguous PDF for the print shop) is not yet implemented in `pdf-server`. This plan only fixes the preview artefact and records the rule so the eventual merge service follows it. Happy to scope that as a follow-up once we're ready to wire it up.
+`OrderFiles.handleScaleTo` already records `effective_width_mm` / `effective_height_mm` based on the dominant page orientation. The only thing it gets wrong is *assuming every page matches that orientation*, which is exactly what the server-side fix removes. Client persistence (page_width_mm / page_height_mm) still reflects the dominant orientation, which is correct for downstream pricing — the document is sold as "A4 bound", and individual landscape pages within it are handled by the same orientation normaliser the rest of the pipeline already understands.
 
-## Files touched
+## Files to change
 
-- `src/components/order/PreviewPanel.tsx`
-- `src/lib/orders/buildPreviewSnapshot.ts`
-- `mem://features/order-flow/multi-document-merge-rules` (new)
-- `mem://index.md` (add reference)
+- `pdf-server/app/services/pdf_ops.py` — `resize_pages` only
 
-No DB migrations, no VPS changes.
+## Deployment
+
+Standard VPS reload after the change is merged:
+
+```
+cd /root/document-centre && sudo git pull
+sudo systemctl restart document-centre-worker document-centre-api
+```
+
+## QA after deploy
+
+Re-upload the same `422101000-PM-01.docx`, click **Scale to A4** when the advisory appears, and confirm in the preview that:
+
+1. Pages 1–2 (originally portrait letter) render as full portrait A4 with no clipping.
+2. Pages 3–22 (originally landscape letter) render as portrait A4 with the landscape content rotated 90° and **fully visible bottom-to-top** (no chopped table rows).
+3. Final portrait pages render normally.
