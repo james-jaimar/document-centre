@@ -408,7 +408,28 @@ export default function OrderFiles() {
       const targetW = landscape ? target.heightMm : target.widthMm;
       const targetH = landscape ? target.widthMm : target.heightMm;
 
-      const { job_id } = await resize(assetId, targetW, targetH, "fit");
+      // The user may have walked away with the modal open long enough for the
+      // VPS to garbage-collect the asset. Re-register from Supabase Storage
+      // transparently if needed before kicking off the resize job.
+      let workingAssetId = assetId;
+      const docForRecovery = documents.find((d) => d.id === docId);
+      if (docForRecovery?.file_path) {
+        const fresh = await ensureFreshAsset({
+          assetId,
+          sourceStoragePath: docForRecovery.file_path,
+          originalFilename: docForRecovery.file_name ?? fileName,
+          mediaType: docForRecovery.mime_type ?? "application/pdf",
+        });
+        if (fresh.recreated) {
+          workingAssetId = fresh.assetId;
+          await supabase
+            .from("documents")
+            .update({ backend_asset_id: workingAssetId })
+            .eq("id", docId);
+        }
+      }
+
+      const { job_id } = await resize(workingAssetId, targetW, targetH, "fit");
       await pollJob(job_id);
 
       setUploadModalOpen(true);
@@ -418,13 +439,13 @@ export default function OrderFiles() {
       const existingForFinalize = documents.find((d) => d.id === docId);
       const preflightForFinalize = (existingForFinalize?.preflight_data as Record<string, any>) ?? {};
       if (!preflightForFinalize?.orientation_normalized) {
-        await finalizeOrientationAndPrintReady(docId, assetId, fileName);
+        await finalizeOrientationAndPrintReady(docId, workingAssetId, fileName);
       }
 
       // Render the full (now-resized) document — no global crop box.
       await renderWithProgress(
         docId,
-        assetId,
+        workingAssetId,
         null,
         fileName,
         `Scaling to ${target.name} and rendering pages…`,
