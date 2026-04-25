@@ -261,6 +261,10 @@ const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
  * immediately) and ramps up to a 2500ms ceiling. The `intervalMs` parameter
  * is kept for backwards compatibility but is now interpreted as the *ceiling*,
  * not a flat interval.
+ *
+ * Tolerates transient `getJob` failures: if a single status check fails after
+ * its own retry budget, we log a warning and try again on the next tick. We
+ * only abort the poll if we exceed `MAX_CONSECUTIVE_GETJOB_FAILURES` in a row.
  */
 export async function pollJob(
   jobId: string,
@@ -270,9 +274,30 @@ export async function pollJob(
 ): Promise<Job> {
   let interval = 300;
   const ceiling = Math.max(500, intervalMs);
+  const MAX_CONSECUTIVE_GETJOB_FAILURES = 4;
+  let consecutiveFailures = 0;
 
   for (let i = 0; i < maxAttempts; i++) {
-    const job = await getJob(jobId);
+    let job: Job;
+    try {
+      job = await getJob(jobId);
+      consecutiveFailures = 0;
+    } catch (err: any) {
+      consecutiveFailures += 1;
+      console.warn(
+        `[doc-centre] pollJob ${jobId}: getJob failed (${consecutiveFailures}/${MAX_CONSECUTIVE_GETJOB_FAILURES})`,
+        err?.message ?? err
+      );
+      if (consecutiveFailures >= MAX_CONSECUTIVE_GETJOB_FAILURES) {
+        throw new Error(
+          `Job ${jobId} status check failed ${consecutiveFailures} times in a row: ${err?.message ?? err}`
+        );
+      }
+      await new Promise((r) => setTimeout(r, interval));
+      interval = Math.min(Math.round(interval * 1.5), ceiling);
+      continue;
+    }
+
     onUpdate?.(job);
 
     if (TERMINAL_STATUSES.has(job.status)) {
