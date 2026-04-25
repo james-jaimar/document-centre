@@ -216,8 +216,14 @@ def inspect_asset(self, asset_id: str, job_id: str):
         db.close()
 
 @shared_task(bind=True, queue='thumbnails')
-def generate_previews(self, asset_id: str, job_id: str):
+def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] | None = None):
     """Generate previews + thumbnails for an asset.
+
+    If ``render_box`` is supplied (PDF user-space points: [x0, y0, x1, y1]),
+    the source is first cropped to that box (typically the TrimBox after a
+    user accepts a bleed advisory) so all rendered pages match the final
+    print area exactly. Replaces the legacy ``crop_rasterize`` task.
+    """
 
     Optimisations vs the original implementation:
       1. **Single Ghostscript pass** at preview DPI; thumbnails are
