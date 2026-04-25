@@ -585,7 +585,7 @@ export function useDocumentUpload(
         return null;
       }
     },
-    [orderItemId, user, tenantId, updateUpload, inspectDocument, inspectExistingAsset, qc]
+    [orderItemId, user, tenantId, updateUpload, inspectDocument, inspectExistingAsset, finalizeOrientationAndPrintReady, qc]
   );
 
   /* ── Reprocess an existing document (re-runs full inspect + render) ── */
