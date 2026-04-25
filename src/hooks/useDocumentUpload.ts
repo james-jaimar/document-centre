@@ -649,7 +649,7 @@ export function useDocumentUpload(
     async (
       docId: string,
       assetId: string,
-      box: [number, number, number, number],
+      box: [number, number, number, number] | null,
       fileName: string,
       initialStatusText = "Trimming and rendering pages…",
     ) => {
