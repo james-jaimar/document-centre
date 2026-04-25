@@ -665,5 +665,5 @@ export function useDocumentUpload(
     [updateUpload, qc, orderItemId],
   );
 
-  return { uploads, uploadFile, uploadFiles, clearUploads, reprocessDocument, renderWithProgress };
+  return { uploads, uploadFile, uploadFiles, clearUploads, reprocessDocument, renderWithProgress, finalizeOrientationAndPrintReady };
 }
