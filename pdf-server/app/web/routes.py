@@ -5,6 +5,7 @@ from sqlalchemy import text
 from app.db.session import get_db
 from app.schemas.assets import (
     CropRasterizeRequest,
+    GeneratePreviewsRequest,
     AssetCreate,
     AssetResponse,
     DerivedFileResponse,
