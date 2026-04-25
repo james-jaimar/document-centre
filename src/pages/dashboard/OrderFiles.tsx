@@ -678,6 +678,14 @@ export default function OrderFiles() {
         extraFields.is_duplex = false;
         extraFields.is_color = true;
       }
+      // Cover physics: a 1-page cover upload is ALWAYS simplex (the back of
+      // that single sheet is a real blank — see merge rules). A 2+ page upload
+      // becomes a duplex cover (face A = outside, face B = inside).
+      if (type === "front_cover" || type === "back_cover") {
+        const coverDoc = documents.find((d) => d.id === selectedDocId);
+        const coverPages = coverDoc?.page_count ?? 1;
+        extraFields.is_duplex = coverPages >= 2;
+      }
       try {
         await addSection.mutateAsync({
           order_item_id: orderItem.id,
