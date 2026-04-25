@@ -400,12 +400,11 @@ export default function OrderFiles() {
         await finalizeOrientationAndPrintReady(docId, assetId, fileName);
       }
 
-      // Single render at the (now finalised) MediaBox
-      const newBox = await getMediaBox(assetId);
+      // Render the full (now-resized) document — no global crop box.
       await renderWithProgress(
         docId,
         assetId,
-        newBox,
+        null,
         fileName,
         `Scaling to ${target.name} and rendering pages…`,
       );
