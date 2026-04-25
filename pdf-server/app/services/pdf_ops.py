@@ -728,11 +728,22 @@ class PdfOps:
     def crop_to_box(self, src: Path, out_pdf: Path, box: list[float]) -> Path:
         """Crop pages to the given box [x0, y0, x1, y1].
 
-        Page-aware: if a page's existing orientation differs from the box's
-        orientation, the box's width/height are swapped for that page so the
-        landscape pages keep their landscape canvas (and vice versa). This
-        prevents mixed-orientation documents (Word docs with landscape table
-        sections, etc.) from having content guillotined off.
+        Page-aware AND rotation-aware: orientation is computed from EFFECTIVE
+        dimensions (MediaBox honouring /Rotate). LibreOffice exports landscape
+        Office pages as portrait MediaBox + /Rotate 90; without honouring
+        /Rotate, the orientation comparison misclassifies them and the
+        landscape page gets its content guillotined off by a portrait crop.
+
+        When a page's effective orientation differs from the box's, the box's
+        width/height are swapped for that page so landscape pages keep their
+        landscape canvas (and vice versa).
+
+        IMPORTANT: pikepdf's MediaBox assignment with a swapped box on a
+        page that has /Rotate set will still be interpreted by viewers as
+        rotated content within that swapped box. We DO NOT mutate /Rotate
+        here — downstream rasterizers handle it. The orientation match is
+        about the box dimensions matching the visual page geometry so no
+        content is clipped.
 
         Writes a NEW file; source is untouched.
         """
@@ -741,10 +752,9 @@ class PdfOps:
         box_landscape = bw > bh
         with pikepdf.open(src) as pdf:
             for page in pdf.pages:
-                mb = page.MediaBox
-                pw = float(mb[2]) - float(mb[0])
-                ph = float(mb[3]) - float(mb[1])
-                page_landscape = pw > ph
+                # Effective (visual) dimensions — accounts for /Rotate.
+                eff_w, eff_h = _effective_dims_pikepdf(page)
+                page_landscape = eff_w > eff_h
                 if page_landscape == box_landscape:
                     eff = list(box)
                 else:
