@@ -86,24 +86,15 @@ export async function renderDocumentThumbnails(
     derivedFiles,
     asset.thumbnail_storage_path,
     asset.preview_storage_path,
+    expectedPages,
   );
 
   const MAX_THUMB_POLLS = 30;
   let interval = 500; // adaptive: 500ms → 1000ms → 2000ms ceiling
-  let lastCount = -1;
-  let stalePolls = 0;
 
   for (let i = 0; i < MAX_THUMB_POLLS; i++) {
-    const found = thumbnailPaths.length;
+    const found = thumbnailPaths.filter(Boolean).length;
     if (found >= expectedPages) break;
-
-    if (found === lastCount) {
-      stalePolls++;
-      if (stalePolls >= 8 && found >= expectedPages * 0.8) break;
-    } else {
-      stalePolls = 0;
-    }
-    lastCount = found;
 
     const pct = 75 + (found / expectedPages) * 20;
     onProgress(`Rendering pages… (${found}/${expectedPages})`, Math.min(95, pct));
@@ -115,6 +106,21 @@ export async function renderDocumentThumbnails(
       derivedFiles,
       asset.thumbnail_storage_path,
       asset.preview_storage_path,
+      expectedPages,
+    );
+  }
+
+  // Surface any remaining gaps so the operator can re-render. The array is
+  // index-stable (length === expectedPages) so the UI degrades to a blank
+  // sheet for missing pages instead of producing the old "ghost Page N" face.
+  const missing: number[] = [];
+  for (let i = 0; i < thumbnailPaths.length; i++) {
+    if (!thumbnailPaths[i]) missing.push(i + 1);
+  }
+  if (missing.length > 0) {
+    console.warn(
+      `[renderDocumentThumbnails] asset=${assetId} missing thumbnails for pages:`,
+      missing,
     );
   }
 
@@ -134,7 +140,7 @@ export async function renderDocumentThumbnails(
   }
 
   // Bust signed-url cache so the browser fetches the freshly rendered images
-  clearSignedUrlCache(thumbnailPaths);
+  clearSignedUrlCache(thumbnailPaths.filter(Boolean));
 
   await supabase
     .from("documents")

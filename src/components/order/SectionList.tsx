@@ -128,8 +128,13 @@ export default function SectionList({
         const doc = getDoc(section.document_id);
         const pageCount = doc?.page_count ?? 0;
         const isInsertOrTab = section.section_type === "insert" || section.section_type === "tab";
+        const isCover = section.section_type === "front_cover" || section.section_type === "back_cover";
+        // 1-page covers are physically simplex (the back is a real blank sheet).
+        // Lock the toggle so customers can't flip it back to duplex against physics.
+        const isSinglePageCover = isCover && pageCount === 1;
         const showColourToggle = !isInsertOrTab && !hideColour;
         const showDuplexToggle = !isInsertOrTab && !hideDuplex;
+        const lockDuplex = isSinglePageCover;
 
         return (
           <div
@@ -239,13 +244,21 @@ export default function SectionList({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (lockDuplex) return;
                       onToggleDuplex(section);
                     }}
+                    disabled={lockDuplex}
+                    title={
+                      lockDuplex
+                        ? "Single-page covers are always single-sided. Upload a 2-page PDF for a printed inside cover."
+                        : undefined
+                    }
                     className={cn(
                       "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all",
                       section.is_duplex
                         ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80",
+                      lockDuplex && "opacity-60 cursor-not-allowed hover:bg-muted"
                     )}
                   >
                     {section.is_duplex ? (
@@ -257,6 +270,11 @@ export default function SectionList({
                   </button>
                 )}
               </div>
+            )}
+            {lockDuplex && (
+              <p className="text-[10px] text-muted-foreground/80 mt-1.5 leading-snug">
+                Single-page cover — back is blank. Upload a 2-page PDF for a printed inside.
+              </p>
             )}
           </div>
         );
