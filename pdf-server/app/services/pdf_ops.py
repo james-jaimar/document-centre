@@ -467,17 +467,21 @@ class PdfOps:
     ) -> Path:
         """Resize each page onto a target canvas of (width_mm × height_mm).
 
-        Page-aware: if a page's existing orientation differs from the target
-        canvas's orientation, the target width/height are swapped for THAT
-        page so it lands on a same-orientation canvas (e.g. landscape pages
-        in a portrait-A4 resize go onto landscape-A4 sheets, preserving
-        aspect ratio and full content). Single-orientation documents are
-        unaffected — the conditional just picks the same dimensions every
-        iteration. Mirrors the page-aware logic in ``crop_to_box``.
+        Page-aware AND rotation-aware: orientation is computed from EFFECTIVE
+        dimensions (MediaBox honouring /Rotate). LibreOffice exports landscape
+        Office pages as portrait MediaBox + /Rotate 90 — without honouring
+        /Rotate, the orientation check misclassifies them and the landscape
+        content gets squeezed into a portrait canvas (clipped at the bottom).
+
+        For each page we:
+          1. Bake any /Rotate hint into the content stream FIRST so the
+             page's mediabox and content match what users see.
+          2. Decide target orientation based on the (now correct) mediabox.
+          3. Scale + center onto a same-orientation canvas of the target size.
 
         After this pass, ``normalize_orientation`` (when invoked) can rotate
-        landscape sheets to match the dominant orientation with full
-        geometry intact, so downstream renderers don't clip.
+        landscape sheets to match the dominant orientation with full geometry
+        intact, so downstream renderers don't clip.
         """
         reader = PdfReader(str(src))
         writer = PdfWriter()
@@ -486,12 +490,15 @@ class PdfOps:
         target_landscape = target_w_base > target_h_base
 
         for page in reader.pages:
+            # Step 1 — bake /Rotate into content. After this, page.mediabox
+            # reflects VISUAL geometry and orientation checks are reliable.
+            page.transfer_rotation_to_content()
+
             src_w = float(page.mediabox.width)
             src_h = float(page.mediabox.height)
             page_landscape = src_w > src_h
 
-            # Swap target dimensions for off-orientation pages so each
-            # page gets a same-orientation canvas of the target size.
+            # Step 2 — pick same-orientation target canvas for this page.
             if page_landscape == target_landscape:
                 tw, th = target_w_base, target_h_base
             else:
@@ -502,7 +509,6 @@ class PdfOps:
             scale = min(sx, sy) if fit_mode == "fit" else max(sx, sy)
 
             page.scale_by(scale)
-            page.transfer_rotation_to_content()
 
             new_page = writer.add_blank_page(width=tw, height=th)
             tx = (tw - float(page.mediabox.width)) / 2
