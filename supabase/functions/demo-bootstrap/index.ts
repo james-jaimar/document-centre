@@ -54,23 +54,37 @@ Deno.serve(async (req) => {
       .update({ is_demo: true, tenant_id: tenant.id })
       .eq("id", user.id);
 
-    // Idempotent membership upsert
-    const { error: memErr } = await admin
+    // Idempotent membership: read-then-insert (no specific unique index required)
+    const { data: existing, error: selErr } = await admin
       .from("tenant_memberships")
-      .upsert(
-        {
+      .select("id")
+      .eq("profile_id", user.id)
+      .eq("tenant_id", tenant.id)
+      .eq("app_id", tenant.app_id)
+      .maybeSingle();
+
+    if (selErr) {
+      console.error("demo-bootstrap: membership lookup failed", selErr);
+      return json({ error: selErr.message }, 500);
+    }
+
+    if (!existing) {
+      const { error: insErr } = await admin
+        .from("tenant_memberships")
+        .insert({
           profile_id: user.id,
           tenant_id: tenant.id,
           app_id: tenant.app_id,
           role: "customer",
           is_active: true,
-        },
-        { onConflict: "profile_id,tenant_id,app_id", ignoreDuplicates: true }
-      );
+        });
 
-    if (memErr) {
-      console.error("demo-bootstrap: membership upsert failed", memErr);
-      return json({ error: memErr.message }, 500);
+      // Tolerate races: if a parallel call (e.g. the handle_new_user trigger)
+      // already inserted the membership, treat as success.
+      if (insErr && insErr.code !== "23505") {
+        console.error("demo-bootstrap: membership insert failed", insErr);
+        return json({ error: insErr.message }, 500);
+      }
     }
 
     return json({

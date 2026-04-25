@@ -166,12 +166,23 @@ export async function getJob(jobId: string): Promise<Job> {
 
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
 
+/**
+ * Poll a job until it reaches a terminal state.
+ *
+ * Uses an adaptive backoff: starts at 300ms (catches sub-second jobs almost
+ * immediately) and ramps up to a 2500ms ceiling. The `intervalMs` parameter
+ * is kept for backwards compatibility but is now interpreted as the *ceiling*,
+ * not a flat interval.
+ */
 export async function pollJob(
   jobId: string,
   onUpdate?: (job: Job) => void,
   intervalMs = 2500,
   maxAttempts = 360
 ): Promise<Job> {
+  let interval = 300;
+  const ceiling = Math.max(500, intervalMs);
+
   for (let i = 0; i < maxAttempts; i++) {
     const job = await getJob(jobId);
     onUpdate?.(job);
@@ -180,7 +191,8 @@ export async function pollJob(
       return job;
     }
 
-    await new Promise((r) => setTimeout(r, intervalMs));
+    await new Promise((r) => setTimeout(r, interval));
+    interval = Math.min(Math.round(interval * 1.5), ceiling);
   }
 
   throw new Error(`Job ${jobId} did not complete after ${maxAttempts} polls`);
