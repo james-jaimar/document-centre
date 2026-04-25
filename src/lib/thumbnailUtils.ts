@@ -157,12 +157,22 @@ interface DerivedFileCandidate {
  * per page.  Cropped variants (`cropped_*`) are preferred when available;
  * among equal-kind files the one with the largest pixel width wins.
  *
- * Returns storage keys (not full URLs) in page order.
+ * **Index-stable contract:** the returned array is positional — page N's
+ * image always lives at index N (or N-1 if pages are 1-indexed in
+ * `derivedFiles.page`, normalised so the smallest page number maps to
+ * index 0). Missing pages are returned as empty strings, never silently
+ * collapsed. When `expectedPages` is provided, the array length is padded
+ * (or truncated) to exactly `expectedPages`.
+ *
+ * Without this contract, a single missing page would shift all subsequent
+ * page images forward, causing the wrong thumbnail to render against a
+ * given page index AND leaving a phantom empty slot at the end.
  */
 export function pickBestPerPage(
   derivedFiles: DerivedFileCandidate[],
   fallbackThumbnailPath?: string | null,
   fallbackPreviewPath?: string | null,
+  expectedPages?: number,
 ): string[] {
   // Filter to image-like files with a page number
   const candidates = derivedFiles.filter(
@@ -181,30 +191,38 @@ export function pickBestPerPage(
     byPage.get(pg)!.push(df);
   }
 
-  // For each page pick the best file:
-  //   1. Prefer cropped_ variants
-  //   2. Among same-tier, prefer largest width
-  const pages = Array.from(byPage.keys()).sort((a, b) => a - b);
-  const result: string[] = [];
+  if (byPage.size === 0) {
+    // No per-page files — fall back to the asset-level thumbnail/preview
+    if (fallbackThumbnailPath) return [toStorageKey(fallbackThumbnailPath)];
+    if (fallbackPreviewPath) return [toStorageKey(fallbackPreviewPath)];
+    return expectedPages && expectedPages > 0 ? new Array(expectedPages).fill("") : [];
+  }
 
-  for (const pg of pages) {
+  const pageNumbers = Array.from(byPage.keys()).sort((a, b) => a - b);
+  // Detect 1-indexed vs 0-indexed page numbering by smallest observed page
+  const minPage = pageNumbers[0];
+  const isOneIndexed = minPage >= 1;
+  const indexOffset = isOneIndexed ? 1 : 0;
+  const maxIndex = pageNumbers[pageNumbers.length - 1] - indexOffset;
+
+  // Determine final length: max(expectedPages, observed-max + 1)
+  const observedLength = maxIndex + 1;
+  const length = Math.max(expectedPages ?? 0, observedLength);
+
+  // Pre-fill with empty strings — every slot is index-stable.
+  const result: string[] = new Array(length).fill("");
+
+  for (const pg of pageNumbers) {
+    const idx = pg - indexOffset;
+    if (idx < 0 || idx >= length) continue;
     const group = byPage.get(pg)!;
     group.sort((a, b) => {
       const aCropped = a.kind.startsWith("cropped_") ? 0 : 1;
       const bCropped = b.kind.startsWith("cropped_") ? 0 : 1;
       if (aCropped !== bCropped) return aCropped - bCropped;
-      // Larger width wins (desc)
       return (b.width ?? 0) - (a.width ?? 0);
     });
-    result.push(toStorageKey(group[0].storage_path));
-  }
-
-  // Fallbacks when no per-page files exist
-  if (result.length === 0 && fallbackThumbnailPath) {
-    result.push(toStorageKey(fallbackThumbnailPath));
-  }
-  if (result.length === 0 && fallbackPreviewPath) {
-    result.push(toStorageKey(fallbackPreviewPath));
+    result[idx] = toStorageKey(group[0].storage_path);
   }
 
   return result;
