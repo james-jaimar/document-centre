@@ -244,13 +244,21 @@ export default function SectionList({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (lockDuplex) return;
                       onToggleDuplex(section);
                     }}
+                    disabled={lockDuplex}
+                    title={
+                      lockDuplex
+                        ? "Single-page covers are always single-sided. Upload a 2-page PDF for a printed inside cover."
+                        : undefined
+                    }
                     className={cn(
                       "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all",
                       section.is_duplex
                         ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80",
+                      lockDuplex && "opacity-60 cursor-not-allowed hover:bg-muted"
                     )}
                   >
                     {section.is_duplex ? (
@@ -262,6 +270,11 @@ export default function SectionList({
                   </button>
                 )}
               </div>
+            )}
+            {lockDuplex && (
+              <p className="text-[10px] text-muted-foreground/80 mt-1.5 leading-snug">
+                Single-page cover — back is blank. Upload a 2-page PDF for a printed inside.
+              </p>
             )}
           </div>
         );
