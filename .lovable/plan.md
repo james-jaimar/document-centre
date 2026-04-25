@@ -1,73 +1,130 @@
-## Problem
+# Fix: mixed-orientation pages getting cropped + sideways
 
-The current Office (Word/PowerPoint/ODT) pipeline runs in this order:
+## Root cause (confirmed in code)
 
-1. Upload original file
-2. **Convert** to PDF via LibreOffice on VPS
-3. **Inspect** (read boxes + page count)
-4. **Normalize orientation** — rotates "non-dominant" pages to match the family's expected orientation. For bound documents this means *every landscape page is rotated to portrait immediately*.
-5. **Print-ready** (CMYK)
-6. **Inspect dimensions** → detect non-ISO size (e.g. US Letter)
-7. **Render** thumbnails
-8. *(Later, in OrderFiles)* Show size advisory → user picks "Scale to A4" or "Keep size" → triggers `resize` and re-render
+I traced your test document end-to-end. The bug is **not** in LibreOffice — the converted PDF is perfect, with portrait pages (1‑9, 12‑13, 16‑17, 19‑21, 23‑24) and genuine landscape pages (10, 11, 14, 15, 18, 22). The damage happens on the VPS in two compounding bugs:
 
-The bug: for an Office file that legitimately mixes orientations (e.g. 2 portrait → 20 landscape → more portrait, like Word's own "Page Setup → This section" feature produces), step 4 destroys the author's intent **before** the user has even seen the size advisory. Word itself, when "Save as PDF" is used, preserves those orientations perfectly. We should mimic that.
+### Bug A — `crop_to_box` blanket-applies one box to every page
+`pdf-server/app/services/pdf_ops.py:595` writes the **same** `MediaBox`/`CropBox` to every page in the document:
+```python
+for page in pdf.pages:
+    page.MediaBox = box
+    page.CropBox = box
+```
+The box is determined from page 1 only (inspect on `pdf.pages[0]`, line 140). So a landscape page (842×595) gets its right-hand 247 pt of content guillotined by the portrait box (595×842).
 
-## Proposed Order (Office files only)
+### Bug B — `normalize_orientation` only flips the `/Rotate` flag
+`pdf-server/app/services/pdf_ops.py:251` calls `page.rotate(90)`. In pikepdf/pypdf this only writes a `/Rotate` entry into the page dictionary — it does **not** rewrite MediaBox dimensions. So after normalisation:
+- The page still has `MediaBox = [0,0,842,595]` (landscape geometry)
+- A `/Rotate 90` viewer hint
+- The renderer downstream sees stale landscape dimensions and the rotation flag, then your portrait crop chops off content **and** the rotation flag rotates the result → exactly the sideways, cropped page in your screenshot.
 
-For Office uploads, reorder to match what Word does natively:
+### Bug C (latent) — `inspect` only reads page 1
+`pdf-server/app/services/pdf_ops.py:138` only looks at `pdf.pages[0]`, so the client never learns the document has mixed orientations. There is no way for the UI to make an informed decision.
 
-1. Upload original file
-2. **Convert** to PDF via LibreOffice (untouched — preserves per-section orientations exactly as the author set them)
-3. **Inspect** boxes + page count
-4. **Detect size** (Letter / Legal / non-ISO) and surface the size advisory immediately if needed
-5. **Wait for user decision** on size:
-   - "Scale to A4" → call `resize` on the asset, then re-inspect
-   - "Keep size" → continue with original dimensions
-6. **Now** run `normalize-orientation` for bound/booklet/brochure/ring-binder families (rotate landscape → portrait so the bound spine works), or for `presentations` (rotate portrait → landscape). Mixed orientation is then a deliberate transform applied to a sized canvas, not a destructive default.
-7. **Print-ready** (CMYK)
-8. **Render** thumbnails
+## Why this didn't surface for PDF uploads
+A PDF authored in InDesign / Word's "Save as PDF" with mixed orientations has the same vulnerability, but most user PDFs the system has seen so far were single-orientation, so the bug was masked. The Word file you uploaded (with portrait → 12 landscape → portrait sequence) is the first one that exposes it cleanly.
 
-The standard PDF path is unchanged — those files arrive already sized and oriented by their author.
+---
 
-## Implementation
+## Plan
 
-### 1. `src/hooks/useDocumentUpload.ts`
+### 1. Make `crop_to_box` page-aware (`pdf-server/app/services/pdf_ops.py`)
 
-- Split `inspectExistingAsset` into two halves:
-  - **`inspectAndDetectSize`** — runs `inspectAsset` + reads boxes + computes `detectNonIsoSize` / `detectNearIsoWithBleed`. Persists `preflight_data` with `awaiting_review: true` if a size advisory is needed. **Does NOT call `normalize-orientation` or `print-ready`.** Returns `{ asset_id, hasAdvisory, renderBox, hasSizeAdvisory }`.
-  - **`finalizeOrientationAndPrintReady`** — runs `normalize-orientation` (when family demands it) + `print-ready`, then re-reads asset boxes and re-persists dimensions. Called either:
-    - directly after `inspectAndDetectSize` when `hasSizeAdvisory === false` (current PDF behaviour, no user wait), or
-    - from the OrderFiles size-advisory resolver after the user clicks "Scale to A4" or "Keep size".
+Change the signature to accept an optional reference orientation and apply the box per-page:
 
-- For **PDF uploads**: behaviour is unchanged — `inspectAndDetectSize` then `finalizeOrientationAndPrintReady` runs back-to-back, then `renderDocumentThumbnails` (or wait for advisory).
+```python
+def crop_to_box(self, src, out_pdf, box):
+    bw, bh = box[2] - box[0], box[3] - box[1]
+    box_landscape = bw > bh
+    with pikepdf.open(src) as pdf:
+        for page in pdf.pages:
+            mb = page.MediaBox
+            pw, ph = float(mb[2] - mb[0]), float(mb[3] - mb[1])
+            page_landscape = pw > ph
+            # Use the requested box as-is when orientation matches,
+            # otherwise swap so width/height align with the page.
+            if page_landscape == box_landscape:
+                eff = box
+            else:
+                eff = [box[0], box[1], box[0] + bh, box[1] + bw]
+            page.MediaBox = eff
+            page.CropBox = eff
+            for attr in ('TrimBox', 'BleedBox'):
+                if attr in page:
+                    del page[f'/{attr}']
+        pdf.save(out_pdf)
+    return out_pdf
+```
 
-- For **Office uploads**: after `convertOffice` completes, run only `inspectAndDetectSize`. If `hasSizeAdvisory` is true, stop there and let OrderFiles drive the rest. If false, run `finalizeOrientationAndPrintReady` and render normally.
+This makes every page get a box that **matches its own orientation**, so landscape pages keep their landscape canvas instead of being chopped to portrait.
 
-### 2. `src/pages/dashboard/OrderFiles.tsx`
+### 2. Make `normalize_orientation` actually rotate geometry (`pdf-server/app/services/pdf_ops.py`)
 
-The two existing size-advisory handlers (around lines 325–422) — "Keep size" and "Scale to A4" — currently call `renderWithProgress` directly. Update them to:
+Replace the `page.rotate(90)` call with a real geometry swap so downstream code sees the new dimensions:
 
-1. (Scale path only) call `resize(assetId, targetW, targetH, "fit")` and poll, as today.
-2. **New step**: call the new `finalizeOrientationAndPrintReady(docId, assetId, fileName)` exposed from `useDocumentUpload`. This runs `normalize-orientation` + `print-ready` against the now-correctly-sized asset.
-3. Then `renderWithProgress` as today.
+```python
+if needs_rotate:
+    mb = page.MediaBox
+    x0, y0, x1, y1 = float(mb[0]), float(mb[1]), float(mb[2]), float(mb[3])
+    w, h = x1 - x0, y1 - y0
+    # Swap dimensions in MediaBox + CropBox; clear /Rotate so the page
+    # is "physically" the new orientation (no viewer rotation hint).
+    new_box = [0, 0, h, w]
+    page.MediaBox = new_box
+    page.CropBox = new_box
+    for attr in ('TrimBox', 'BleedBox', 'ArtBox'):
+        if attr in page:
+            del page[f'/{attr}']
+    if '/Rotate' in page:
+        del page['/Rotate']
+    page.rotate(90)  # writes new /Rotate AFTER the geometry swap
+```
 
-Expose `finalizeOrientationAndPrintReady` from `useDocumentUpload`'s return value alongside `reprocessDocument`.
+(We keep `page.rotate(90)` at the end so PDF viewers display the content right-way-up; the key change is that MediaBox now reflects the new outer geometry.)
 
-### 3. `preflight_data` flag
+### 3. Inspect every page, not just page 1 (`pdf-server/app/services/pdf_ops.py`)
 
-Add `orientation_normalized: true` to the persisted `preflight_data` once `finalizeOrientationAndPrintReady` completes successfully. This lets `reprocessDocument` and any future re-render skip a redundant rotate pass.
+Add a `pages` array to the inspect result so the client can see mixed orientations:
 
-### 4. No VPS changes required
+```python
+info["pages"] = []
+for p in pdf.pages:
+    mb = p.MediaBox
+    info["pages"].append({
+        "width_pt": float(mb[2] - mb[0]),
+        "height_pt": float(mb[3] - mb[1]),
+        "rotate": int(p.get("/Rotate", 0) or 0),
+    })
+info["mixed_orientation"] = (
+    any(p["width_pt"] > p["height_pt"] for p in info["pages"]) and
+    any(p["width_pt"] < p["height_pt"] for p in info["pages"])
+)
+```
 
-`normalize-orientation`, `resize`, `print-ready`, `inspect`, and `convert` endpoints all already exist on the VPS. This is purely a client-side reordering. No DB migration needed (all state lives in the existing `preflight_data` JSONB column).
+The existing top-level `width_pt` / `height_pt` / `boxes` fields stay (still based on page 1) so we don't break callers.
 
-## What this fixes
+### 4. Reconfirm pipeline order is correct (no client changes needed)
+The order you asked for last turn — **Office → convert → inspect → size advisory → finalise (resize then orientation) → render** — is already wired up correctly in `useDocumentUpload.ts`. With the three VPS fixes above, that flow will produce:
 
-- Office files with intentional mixed orientations (your 2-portrait + 20-landscape + portrait deck) will: be converted → sized to A4 if needed → *then* have orientation normalized only if the product family requires it. For products like flyers/posters that don't normalize at all, the original mixed layout is fully preserved.
-- The user always sees the size question against the document Word/LibreOffice produced, not against a pre-rotated derivative.
-- No regression for native PDF uploads — they still run the current sequence.
+- LibreOffice converts → mixed-orientation PDF (correct)
+- Inspect reports per-page sizes + `mixed_orientation: true`
+- Size advisory (Letter→A4) scales each page proportionally to its own orientation (the resize op already does this — it doesn't have the same bug because Ghostscript handles per-page scaling)
+- For bound documents, `normalize-orientation` rotates landscape pages to portrait **and updates their MediaBox**
+- `crop_rasterize` applies a portrait box to portrait pages and (if any landscape remained) a swapped box to landscape pages
 
-## What this does *not* address
+Result: each page renders at full fidelity in its correct orientation, no cropping.
 
-- Overall ~60s end-to-end time for an 8pp A4. That's mostly LibreOffice cold-start + Ghostscript render time on the VPS, not the JS pipeline. If you want to attack that next, the targets are: (a) keep a warm `soffice --headless` worker on the VPS, (b) parallelise `print-ready` and the first `generate_previews` page. Happy to scope that as a separate plan once this reorder lands.
+### 5. Optional follow-up (not in this turn)
+We could later surface a "this document has mixed orientations — keep, normalise, or split into sections?" advisory using `mixed_orientation` from #3, similar to the existing portrait/landscape advisory for presentations. Out of scope for the bug fix — flag it for a follow-up.
+
+---
+
+## What needs to happen after the code change
+
+The fix is entirely in `pdf-server/app/services/pdf_ops.py` (3 functions). After approving:
+1. I'll edit the file
+2. You `git pull` on the VPS and `systemctl restart document-centre-worker document-centre-api`
+3. Re-upload the same Word file — landscape pages (10, 11, 14, 15, 18, 22) should render full-width in landscape, the rest in portrait, no cropping anywhere.
+
+No DB migration, no edge function changes, no client changes.

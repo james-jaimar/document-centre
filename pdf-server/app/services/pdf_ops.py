@@ -593,11 +593,33 @@ class PdfOps:
 
 
     def crop_to_box(self, src: Path, out_pdf: Path, box: list[float]) -> Path:
-        """Crop all pages to the given box [x0, y0, x1, y1]. Writes a NEW file; source is untouched."""
+        """Crop pages to the given box [x0, y0, x1, y1].
+
+        Page-aware: if a page's existing orientation differs from the box's
+        orientation, the box's width/height are swapped for that page so the
+        landscape pages keep their landscape canvas (and vice versa). This
+        prevents mixed-orientation documents (Word docs with landscape table
+        sections, etc.) from having content guillotined off.
+
+        Writes a NEW file; source is untouched.
+        """
+        bw = float(box[2]) - float(box[0])
+        bh = float(box[3]) - float(box[1])
+        box_landscape = bw > bh
         with pikepdf.open(src) as pdf:
             for page in pdf.pages:
-                page.MediaBox = box
-                page.CropBox = box
+                mb = page.MediaBox
+                pw = float(mb[2]) - float(mb[0])
+                ph = float(mb[3]) - float(mb[1])
+                page_landscape = pw > ph
+                if page_landscape == box_landscape:
+                    eff = list(box)
+                else:
+                    # Swap dimensions so width/height align with this page.
+                    eff = [float(box[0]), float(box[1]),
+                           float(box[0]) + bh, float(box[1]) + bw]
+                page.MediaBox = eff
+                page.CropBox = eff
                 for attr in ('TrimBox', 'BleedBox'):
                     if hasattr(page, attr):
                         del page[f'/{attr}']
