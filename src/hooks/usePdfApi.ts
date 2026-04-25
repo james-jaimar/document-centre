@@ -24,6 +24,14 @@ export function usePdfApi<T = unknown>(options: PdfApiOptions = {}) {
     async (path: string, payload: Record<string, unknown> = {}): Promise<T | null> => {
       setState({ data: null, error: null, loading: true });
 
+      // Bail out early if there's no auth session — prevents 401 spam
+      // after logout while polling components are still mounted.
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData?.session) {
+        setState({ data: null, error: "Not authenticated", loading: false });
+        return null;
+      }
+
       let lastError = "";
 
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
