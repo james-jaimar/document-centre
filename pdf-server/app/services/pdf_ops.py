@@ -313,6 +313,11 @@ class PdfOps:
         - dominant='portrait' (default): rotate landscape pages (w > h) +90 CW.
         - dominant='landscape': rotate portrait pages (w < h) +90 CW.
 
+        Orientation is computed from EFFECTIVE dimensions (MediaBox honouring
+        /Rotate). LibreOffice exports landscape Office pages as portrait
+        MediaBox + /Rotate 90; reading raw MediaBox alone misclassifies them
+        as portrait and the rotation pass becomes a no-op.
+
         We rewrite MediaBox/CropBox to swap width/height so downstream
         consumers (crop_to_box, rasterize_preview, getAsset clients) see the
         page's TRUE post-rotation dimensions instead of relying on the
@@ -329,27 +334,26 @@ class PdfOps:
         with pikepdf.open(src) as pdf:
             total = len(pdf.pages)
             for page in pdf.pages:
-                mb = page.MediaBox
-                x0 = float(mb[0]); y0 = float(mb[1])
-                x1 = float(mb[2]); y1 = float(mb[3])
-                w = x1 - x0
-                h = y1 - y0
-                is_landscape = w > h
+                # Effective (visual) dimensions — accounts for /Rotate.
+                eff_w, eff_h = _effective_dims_pikepdf(page)
+                is_landscape = eff_w > eff_h
                 needs_rotate = (
                     (dominant == "portrait" and is_landscape)
                     or (dominant == "landscape" and not is_landscape)
                 )
                 if needs_rotate:
-                    # Swap geometry: new MediaBox is the rotated dimensions.
-                    new_box = [0, 0, h, w]
+                    # Swap geometry: new MediaBox is the rotated EFFECTIVE
+                    # dimensions, anchored at origin.
+                    new_box = [0, 0, eff_h, eff_w]
                     page.MediaBox = new_box
                     page.CropBox = new_box
                     # Strip stale boxes that would no longer make sense.
                     for attr in ('TrimBox', 'BleedBox', 'ArtBox'):
                         if hasattr(page, attr):
                             del page[f'/{attr}']
-                    # Apply +90 CW rotation hint (renderers will paint the
-                    # original content stream rotated into the new box).
+                    # Apply +90 CW rotation hint on top of any existing
+                    # /Rotate (renderers paint the original content stream
+                    # rotated into the new box).
                     existing_rotate = int(page.get('/Rotate', 0) or 0)
                     page.Rotate = (existing_rotate + 90) % 360
                     rotated += 1
