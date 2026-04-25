@@ -326,10 +326,19 @@ export default function OrderFiles() {
     const existing = documents.find((d) => d.id === advisoryDoc.id);
     const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
 
-    // Mark resolved + render once at MediaBox
+    // Finalise (orientation normalise + print-ready) on the original-size
+    // canvas, then render thumbnails. Office uploads deferred this; PDF
+    // uploads already finalised but the call is idempotent.
     if (advisoryDoc.backendAssetId) {
       try {
         setUploadModalOpen(true);
+        if (!preflight?.orientation_normalized) {
+          await finalizeOrientationAndPrintReady(
+            advisoryDoc.id,
+            advisoryDoc.backendAssetId,
+            advisoryDoc.fileName,
+          );
+        }
         const mediaBox = await getMediaBox(advisoryDoc.backendAssetId);
         await renderWithProgress(
           advisoryDoc.id,
@@ -353,7 +362,7 @@ export default function OrderFiles() {
     setAdvisoryDoc(null);
     refetchDocuments();
     toast.success("Keeping original size");
-  }, [advisoryDoc, documents, refetchDocuments, getMediaBox]);
+  }, [advisoryDoc, documents, refetchDocuments, getMediaBox, renderWithProgress, finalizeOrientationAndPrintReady]);
 
   const handleScaleTo = useCallback(async (target: PaperSize) => {
     if (!advisoryDoc?.backendAssetId) {
