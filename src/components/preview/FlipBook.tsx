@@ -49,8 +49,14 @@ const FlipPage = forwardRef<
 >(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, pageRole, allowBleed, bleedInsetPx, label, color }, ref) => {
   const isContentLess = CONTENT_LESS_ROLES.has(pageRole ?? "");
 
+  // Body / cover faces with a missing thumbnail render as plain white paper
+  // (the back of a blank sheet). The grey FileText placeholder is reserved
+  // for genuinely-unknown roles only — never for body pages, where a missing
+  // thumbnail simply means "nothing to print on this side".
+  const missingThumbForRealPage = !isContentLess && !url;
+
   let content: React.ReactNode;
-  if (isContentLess) {
+  if (isContentLess || missingThumbForRealPage) {
     content = null;
   } else if (url) {
     content = (
@@ -73,6 +79,12 @@ const FlipPage = forwardRef<
     );
   }
 
+  // When the natural face is missing, treat it as a blank paper face so
+  // PageEffects skips the absolute content frame + lamination overlays
+  // and just paints a clean sheet.
+  const effectiveRole =
+    missingThumbForRealPage ? "blank_back" : pageRole;
+
   return (
     <div
       ref={ref}
@@ -87,7 +99,7 @@ const FlipPage = forwardRef<
         effects={effects}
         pageIndex={pageIndex}
         totalPages={totalPages}
-        pageRole={pageRole}
+        pageRole={effectiveRole}
         allowBleed={allowBleed}
         bleedInsetPx={bleedInsetPx}
         label={label}
