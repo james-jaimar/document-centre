@@ -824,6 +824,63 @@ export type Database = {
           },
         ]
       }
+      job_events: {
+        Row: {
+          app_id: string | null
+          asset_id: string | null
+          created_at: string
+          duration_ms: number | null
+          finished_at: string | null
+          id: string
+          job_id: string
+          message: string | null
+          metadata_json: Json | null
+          queue_name: string | null
+          stage: string
+          started_at: string
+          status: string
+          task_name: string | null
+          tenant_id: string | null
+          worker_name: string | null
+        }
+        Insert: {
+          app_id?: string | null
+          asset_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          finished_at?: string | null
+          id?: string
+          job_id: string
+          message?: string | null
+          metadata_json?: Json | null
+          queue_name?: string | null
+          stage: string
+          started_at?: string
+          status: string
+          task_name?: string | null
+          tenant_id?: string | null
+          worker_name?: string | null
+        }
+        Update: {
+          app_id?: string | null
+          asset_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          finished_at?: string | null
+          id?: string
+          job_id?: string
+          message?: string | null
+          metadata_json?: Json | null
+          queue_name?: string | null
+          stage?: string
+          started_at?: string
+          status?: string
+          task_name?: string | null
+          tenant_id?: string | null
+          worker_name?: string | null
+        }
+        Relationships: []
+      }
       job_proofs: {
         Row: {
           app_id: string

@@ -17,10 +17,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-PROFILES_DIR = Path("/opt/document-centre-api/profiles")
+PROFILES_DIR = Path("/opt/document-centre-api/icc")
 
 PROFILE_MAP: dict[str, str] = {
     "fogra39": "ISOcoated_v2_eci.icc",
+    "fogra39_300": "ISOcoated_v2_300_eci.icc",
     "fogra51": "PSOcoated_v3.icc",
     "srgb": "sRGB_v4_ICC_preference.icc",
 }
