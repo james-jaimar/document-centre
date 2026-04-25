@@ -368,6 +368,52 @@ export interface JobSnapshot {
   product_snapshot: Record<string, any>;
 }
 
+/**
+ * Merge directives drive the eventual server-side PDF concatenation.
+ * Each entry tells the worker exactly which physical sheets the print
+ * shop should produce, in order.
+ *
+ * Currently emitted:
+ *   - { kind: "section", section_id }            → include the section's PDF as-is
+ *   - { kind: "blank_page", reason: "simplex_cover" } → insert a real blank PDF page
+ *
+ * Rule: a simplex cover (1-page cover upload) ALWAYS gets a real blank page
+ * inserted after it, so the back of the cover is a physical blank sheet in
+ * the merged output. This matches the preview's blank-back face for covers.
+ *
+ * Inter-document `blank_back` faces are PREVIEW-ONLY and do NOT appear here.
+ */
+export type MergeDirective =
+  | { kind: "section"; section_id: string; section_type: string }
+  | { kind: "blank_page"; reason: "simplex_cover_back" };
+
+function buildMergeDirectives(
+  sections: DocumentSectionRow[],
+  documents: DocumentRow[],
+): MergeDirective[] {
+  const directives: MergeDirective[] = [];
+  const ordered = sortSectionsByRole(
+    sections.filter((s) => s.section_type !== "tab" && s.section_type !== "insert"),
+  );
+  // (tabs/inserts emit their own physical sheets via existing logic — kept
+  // out of v1 of merge_directives to avoid scope creep.)
+  for (const s of ordered) {
+    directives.push({ kind: "section", section_id: s.id, section_type: s.section_type });
+
+    const isCover = s.section_type === "front_cover" || s.section_type === "back_cover";
+    if (!isCover) continue;
+    const doc = s.document_id ? documents.find((d) => d.id === s.document_id) : undefined;
+    const docPages = doc?.page_count ?? 0;
+    // A 1-page cover is physically simplex — its back is a real blank sheet.
+    // (We honour the section's actual is_duplex flag in case future cover
+    // workflows mark a multi-page cover as simplex.)
+    if (docPages === 1 && !s.is_duplex) {
+      directives.push({ kind: "blank_page", reason: "simplex_cover_back" });
+    }
+  }
+  return directives;
+}
+
 // Options whose values come exclusively from per-section data (document_sections).
 // Strip them from selected_options so the snapshot doesn't render duplicate rows.
 const SECTION_CONTROLLED_KEYS = new Set(["Print Colour", "Print Sides"]);
