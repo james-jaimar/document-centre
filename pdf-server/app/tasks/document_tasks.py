@@ -263,6 +263,11 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             src = ws.path('input.pdf')
             storage.download(src_path, src)
 
+            if render_box is not None:
+                cropped = ws.path('cropped.pdf')
+                pdf_ops.crop_to_box(src, cropped, render_box)
+                src = cropped
+
             preview_dir = ws.path('preview')
             thumb_dir = ws.path('thumb')
             preview_dir.mkdir(parents=True, exist_ok=True)
