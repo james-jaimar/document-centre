@@ -313,51 +313,59 @@ class PdfOps:
         - dominant='portrait' (default): rotate landscape pages (w > h) +90 CW.
         - dominant='landscape': rotate portrait pages (w < h) +90 CW.
 
-        Orientation is computed from EFFECTIVE dimensions (MediaBox honouring
-        /Rotate). LibreOffice exports landscape Office pages as portrait
-        MediaBox + /Rotate 90; reading raw MediaBox alone misclassifies them
-        as portrait and the rotation pass becomes a no-op.
+        Implementation:
+          1. Bake any /Rotate hint into the content stream so visual geometry
+             matches the page's MediaBox. (LibreOffice exports landscape
+             Office pages as portrait MediaBox + /Rotate 90 — without baking,
+             every downstream check is wrong.)
+          2. For each page that needs rotating, COMPOSITE the content onto a
+             freshly allocated blank page whose dimensions are swapped, using
+             a content transform (rotate + translate) so the bytes on disk
+             have a stable MediaBox and NO residual /Rotate hint.
 
-        We rewrite MediaBox/CropBox to swap width/height so downstream
-        consumers (crop_to_box, rasterize_preview, getAsset clients) see the
-        page's TRUE post-rotation dimensions instead of relying on the
-        /Rotate viewer hint alone. Without this, downstream code that reads
-        page.mediabox.width/height sees the pre-rotation geometry and crops
-        the rotated content with a mismatched box.
+        This avoids the failure mode where a viewer/rasterizer respects
+        MediaBox but ignores /Rotate (or vice versa) and ends up cropping
+        the visible content with a mismatched canvas.
 
         Returns: { 'pages_rotated': int, 'total_pages': int, 'skipped': bool }.
         """
-        # Use pikepdf for proper geometry manipulation; pypdf's page.rotate()
-        # only writes /Rotate without touching MediaBox.
+        reader = PdfReader(str(src))
+        writer = PdfWriter()
         rotated = 0
         total = 0
-        with pikepdf.open(src) as pdf:
-            total = len(pdf.pages)
-            for page in pdf.pages:
-                # Effective (visual) dimensions — accounts for /Rotate.
-                eff_w, eff_h = _effective_dims_pikepdf(page)
-                is_landscape = eff_w > eff_h
-                needs_rotate = (
-                    (dominant == "portrait" and is_landscape)
-                    or (dominant == "landscape" and not is_landscape)
-                )
-                if needs_rotate:
-                    # Swap geometry: new MediaBox is the rotated EFFECTIVE
-                    # dimensions, anchored at origin.
-                    new_box = [0, 0, eff_w, eff_h]  # +90 /Rotate will swap visually
-                    page.MediaBox = new_box
-                    page.CropBox = new_box
-                    # Strip stale boxes that would no longer make sense.
-                    for attr in ('TrimBox', 'BleedBox', 'ArtBox'):
-                        if hasattr(page, attr):
-                            del page[f'/{attr}']
-                    # Apply +90 CW rotation hint on top of any existing
-                    # /Rotate (renderers paint the original content stream
-                    # rotated into the new box).
-                    existing_rotate = int(page.get('/Rotate', 0) or 0)
-                    page.Rotate = (existing_rotate + 90) % 360
-                    rotated += 1
-            pdf.save(out_pdf)
+
+        for page in reader.pages:
+            total += 1
+            # Step 1: bake /Rotate so mediabox matches visible content.
+            page.transfer_rotation_to_content()
+
+            src_w = float(page.mediabox.width)
+            src_h = float(page.mediabox.height)
+            is_landscape = src_w > src_h
+            needs_rotate = (
+                (dominant == "portrait" and is_landscape)
+                or (dominant == "landscape" and not is_landscape)
+            )
+
+            if not needs_rotate:
+                writer.add_page(page)
+                continue
+
+            # Step 2: composite onto a swapped-dimensions blank page with a
+            # +90 CW content transform (so the resulting page has a stable
+            # MediaBox of (src_h, src_w) and no /Rotate hint).
+            new_page = writer.add_blank_page(width=src_h, height=src_w)
+            # +90 CW = rotate(-90 deg) then translate up by new height (src_w).
+            transform = (
+                Transformation()
+                .rotate(-90)
+                .translate(0, src_w)
+            )
+            new_page.merge_transformed_page(page, transform)
+            rotated += 1
+
+        with open(out_pdf, "wb") as f:
+            writer.write(f)
 
         return {
             "pages_rotated": rotated,
