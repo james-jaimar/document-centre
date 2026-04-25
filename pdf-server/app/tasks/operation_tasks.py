@@ -96,6 +96,14 @@ def cmyk_pdf(self, asset_id: str, job_id: str, icc_profile: str | None = None):
 
 @shared_task(bind=True, queue='documents')
 def resize_pdf(self, asset_id: str, job_id: str, width_mm: float, height_mm: float, fit_mode: str = 'fit'):
+    """
+    Resize all pages onto the requested target canvas, then PROMOTE the
+    output to asset.normalized_storage_path so downstream operations
+    (normalize-orientation, print-ready, generate-previews) operate on the
+    resized PDF — not the pre-resize source. Without this promotion the
+    preview pipeline keeps reading the LibreOffice output and any
+    mixed-orientation pages get rendered with a stale page-1 box.
+    """
     db = _db()
     try:
         job_repo.mark_running(db, job_id)
@@ -104,7 +112,41 @@ def resize_pdf(self, asset_id: str, job_id: str, width_mm: float, height_mm: flo
             src = _download_asset_pdf(db, asset_id, ws)
             out_pdf = ws.path('resized.pdf')
             pdf_ops.resize_pages(src, out_pdf, width_mm, height_mm, fit_mode)
-            return _finalize_pdf_output(db, asset_id=asset_id, job_id=job_id, out_pdf=out_pdf, kind='resized_pdf', prefix=prefix, extra={'width_mm': width_mm, 'height_mm': height_mm, 'fit_mode': fit_mode})
+
+            storage_path = unique_name(f'{prefix}derived/resized', '.pdf')
+            storage.upload(out_pdf, storage_path, 'application/pdf')
+
+            derived_file_repo.create_file(
+                db,
+                asset_id=asset_id,
+                job_id=job_id,
+                kind='resized_pdf',
+                storage_path=storage_path,
+                media_type='application/pdf',
+                metadata={'width_mm': width_mm, 'height_mm': height_mm, 'fit_mode': fit_mode},
+            )
+
+            info = pdf_ops.inspect(out_pdf)
+            asset_repo.update_asset(db, asset_id, {
+                'normalized_storage_path': storage_path,
+                'page_count': info['page_count'],
+                'width_pt': info['width_pt'],
+                'height_pt': info['height_pt'],
+                'boxes': info['boxes'],
+            })
+
+            result = {
+                'storage_path': storage_path,
+                'normalized_storage_path': storage_path,
+                'page_count': info['page_count'],
+                'width_pt': info['width_pt'],
+                'height_pt': info['height_pt'],
+                'width_mm': width_mm,
+                'height_mm': height_mm,
+                'fit_mode': fit_mode,
+            }
+            job_repo.mark_done(db, job_id, result)
+            return result
     except Exception as exc:
         job_repo.mark_failed(db, job_id, traceback.format_exc())
         raise exc
