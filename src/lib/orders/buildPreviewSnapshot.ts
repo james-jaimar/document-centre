@@ -202,7 +202,8 @@ function buildPageSequence(
   );
 
   let bodyIdx = 0;
-  for (const section of bodySections) {
+  for (let bIdx = 0; bIdx < bodySections.length; bIdx++) {
+    const section = bodySections[bIdx];
     // Primary: match by document_id. Fallback: when a section's document_id
     // is missing or stale (e.g. after a clone-from-cart edit), pair body
     // sections positionally with the available documents so we always emit
@@ -222,6 +223,7 @@ function buildPageSequence(
       typeof t === "string" ? t : (t?.path || t?.url || ""),
     );
     const pageCount = doc.page_count ?? thumbnails.length;
+    const nextSection = bodySections[bIdx + 1];
 
     for (let i = 0; i < pageCount; i++) {
       pageNum++;
@@ -234,15 +236,37 @@ function buildPageSequence(
         section,
       });
 
-      // Simplex: push natural reverse face for ALL bound types including ring binders
-      if (!section.is_duplex && !forceDuplex) {
-        result.push({
-          thumbnailUrl: "", pageIndex: -1, isColor: section.is_color, section,
-        });
+      // Determine document boundary so we can suppress the synthetic
+      // simplex blank_back face between two different documents. See
+      // the matching comment in PreviewPanel.tsx#buildPageSequence.
+      const isLastPageOfDoc = i === pageCount - 1;
+      let nextDoc: DocLike | undefined;
+      if (nextSection) {
+        nextDoc = nextSection.document_id
+          ? documents.find((d) => d.id === nextSection.document_id)
+          : sortedDocs[bodyIdx] ?? sortedDocs[0];
       }
+      const nextIsDifferentDoc = isLastPageOfDoc && !!nextDoc && nextDoc.id !== doc.id;
+      const isFinalBodyPage = isLastPageOfDoc && !nextSection;
 
+      // Queue any dividers anchored after this page number FIRST so we
+      // know whether parity matters for an upcoming divider.
       const anchored = anchorMap.get(pageNum);
       if (anchored) pending.push(...anchored);
+
+      const hasPendingDivider = pending.length > 0;
+
+      // Simplex: push natural reverse face for ALL bound types including ring binders,
+      // EXCEPT at document boundaries / end-of-body (parity for back covers and
+      // dividers is handled separately below / by tryFlush()).
+      if (!section.is_duplex && !forceDuplex) {
+        const skipBlankBack = (nextIsDifferentDoc || isFinalBodyPage) && !hasPendingDivider;
+        if (!skipBlankBack) {
+          result.push({
+            thumbnailUrl: "", pageIndex: -1, isColor: section.is_color, section,
+          });
+        }
+      }
 
       tryFlush();
     }
