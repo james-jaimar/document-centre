@@ -389,8 +389,17 @@ export default function OrderFiles() {
       const { job_id } = await resize(assetId, targetW, targetH, "fit");
       await pollJob(job_id);
 
-      // Single render at the new MediaBox (resize updates the asset's box)
       setUploadModalOpen(true);
+
+      // Now that the canvas is correctly sized, run orientation normalise +
+      // print-ready (deferred for Office uploads, idempotent for PDF uploads).
+      const existingForFinalize = documents.find((d) => d.id === docId);
+      const preflightForFinalize = (existingForFinalize?.preflight_data as Record<string, any>) ?? {};
+      if (!preflightForFinalize?.orientation_normalized) {
+        await finalizeOrientationAndPrintReady(docId, assetId, fileName);
+      }
+
+      // Single render at the (now finalised) MediaBox
       const newBox = await getMediaBox(assetId);
       await renderWithProgress(
         docId,
