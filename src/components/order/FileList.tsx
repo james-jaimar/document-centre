@@ -106,6 +106,8 @@ export default function FileList({
           ? (preflight.thumbnail_gaps as number[])
           : [];
         const hasGaps = thumbnailGaps.length > 0;
+        const hasSizeMismatch = !!mismatchDocIds?.has(doc.id);
+
 
         return (
           <div
