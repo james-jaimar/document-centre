@@ -6,6 +6,7 @@ import { downloadInvoice, viewInvoice } from "@/lib/orders/mutations";
 import { Link } from "react-router-dom";
 import { buildAdminPath } from "@/lib/adminRouting";
 import { FileText, Download, Eye, ExternalLink, Search } from "lucide-react";
+import { formatPrice } from "@/lib/formatCurrency";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -190,7 +191,7 @@ export default function AdminDocuments() {
                     {inv.orders?.customer_name || inv.orders?.customer_email || "—"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {inv.currency} {Number(inv.total_amount).toFixed(2)}
+                    {formatPrice(Number(inv.total_amount ?? 0), inv.currency ?? "ZAR")}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {new Date(inv.issued_at).toLocaleDateString()}

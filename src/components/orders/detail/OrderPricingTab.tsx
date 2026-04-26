@@ -4,6 +4,7 @@ import { Send } from "lucide-react";
 import { useState } from "react";
 import { requestPayment } from "@/lib/orders/mutations";
 import { toast } from "sonner";
+import { formatPrice } from "@/lib/formatCurrency";
 
 interface Props {
   order: any;
@@ -12,10 +13,11 @@ interface Props {
   addresses?: any[];
 }
 
-const fmt = (amount: number, currency = "ZAR") =>
-  new Intl.NumberFormat("en-ZA", { style: "currency", currency, minimumFractionDigits: 2 }).format(amount);
-
 export function OrderPricingTab({ order, jobs, payments, addresses = [] }: Props) {
+  // Use the order's stored currency for every price render so non-ZAR
+  // orders display in their own currency / locale.
+  const currency = (order?.currency as string | undefined) ?? "ZAR";
+  const fmt = (amount: number) => formatPrice(Number(amount ?? 0), currency);
   const [requesting, setRequesting] = useState(false);
 
   const billing = addresses.find((a: any) => a.address_type === "billing");

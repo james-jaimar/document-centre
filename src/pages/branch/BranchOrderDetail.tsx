@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { PAYMENT_STATUS_CONFIG } from "@/lib/orders/status-maps";
 import { StatusBadge } from "@/components/orders/StatusBadge";
 import { Card, CardContent } from "@/components/ui/card";
+import { formatPrice } from "@/lib/formatCurrency";
 
 /**
  * Branch order detail — same engine as AdminOrderDetail but scoped:
@@ -92,7 +93,7 @@ export default function BranchOrderDetail() {
 
   const handleMarkAsPaid = async () => {
     if (!order || order.amount_due <= 0) return;
-    if (!window.confirm(`Mark order ${order.order_number} as fully paid (${order.currency} ${Number(order.amount_due).toFixed(2)})?`)) return;
+    if (!window.confirm(`Mark order ${order.order_number} as fully paid (${formatPrice(Number(order.amount_due), order.currency)})?`)) return;
     setMarkingPaid(true);
     try {
       await recordPaymentEvent({
@@ -204,7 +205,7 @@ export default function BranchOrderDetail() {
         <div>
           <div className="text-sm font-medium text-primary mb-4">Job Details</div>
           {selectedJob ? (
-            <JobDetailPanel job={selectedJob} documents={documents} />
+            <JobDetailPanel job={selectedJob} documents={documents} currency={order.currency} />
           ) : (
             <div className="rounded-lg border bg-card p-8 text-center text-muted-foreground">
               No jobs in this order

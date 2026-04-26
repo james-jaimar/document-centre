@@ -14,6 +14,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cancelOrder } from "@/lib/orders/mutations";
+import { formatPrice } from "@/lib/formatCurrency";
 
 interface CancelOrderDialogProps {
   open: boolean;
@@ -71,7 +72,7 @@ export function CancelOrderDialog({
             This will cancel the order and all in-progress jobs. The customer will be notified by email.
             {hasPayment && (
               <span className="mt-2 block rounded-md border border-destructive/40 bg-destructive/10 p-2 text-destructive">
-                ⚠ Payment of {currency} {Number(amountPaid).toFixed(2)} has been received.
+                ⚠ Payment of {formatPrice(Number(amountPaid), currency)} has been received.
                 Cancelling will leave a refund outstanding — record a refund separately once processed.
               </span>
             )}

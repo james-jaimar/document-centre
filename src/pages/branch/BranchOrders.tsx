@@ -7,6 +7,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { ClipboardList } from "lucide-react";
+import { formatPrice } from "@/lib/formatCurrency";
 
 const BranchOrders = () => {
   const { branchId, tenantId } = useTenantContext();
@@ -69,7 +70,7 @@ const BranchOrders = () => {
                       <Badge variant="outline">{o.admin_status}</Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {o.currency} {Number(o.total_amount).toFixed(2)}
+                      {formatPrice(Number(o.total_amount ?? 0), o.currency ?? "ZAR")}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {new Date(o.created_at).toLocaleDateString()}

@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { refundPayment } from "@/lib/orders/mutations";
+import { formatPrice } from "@/lib/formatCurrency";
 
 interface RefundDialogProps {
   open: boolean;
@@ -53,7 +54,7 @@ export function RefundDialog({ open, onOpenChange, orderId, amountPaid, currency
           <div className="space-y-2">
             <Label>Refund Amount ({currency})</Label>
             <Input type="number" step="0.01" max={amountPaid} value={amount} onChange={(e) => setAmount(e.target.value)} />
-            <p className="text-xs text-muted-foreground">Maximum: {currency} {amountPaid.toFixed(2)}</p>
+            <p className="text-xs text-muted-foreground">Maximum: {formatPrice(amountPaid, currency)}</p>
           </div>
           <div className="space-y-2">
             <Label>Reason (optional)</Label>

@@ -11,6 +11,7 @@ import { format, differenceInDays } from "date-fns";
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { formatPrice } from "@/lib/formatCurrency";
 
 const CUSTOMER_STATUS_LABEL: Record<string, string> = {
   awaiting_payment: "Awaiting Payment",
@@ -231,7 +232,7 @@ const CustomerOrders = () => {
             </div>
           </div>
           <div className="text-right shrink-0">
-            <p className="text-base font-semibold text-foreground">R {total.toFixed(2)}</p>
+            <p className="text-base font-semibold text-foreground">{formatPrice(total, (order.currency as string | undefined) ?? "ZAR")}</p>
             <div className="mt-2 flex items-center justify-end text-xs text-muted-foreground group-hover:text-primary">
               View order
               <ArrowRight className="ml-1 h-3 w-3" />

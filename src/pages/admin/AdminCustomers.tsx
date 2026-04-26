@@ -13,8 +13,7 @@ import { useTenantContext } from "@/hooks/useTenantContext";
 import { buildAdminPath } from "@/lib/adminRouting";
 import { AddCustomerDialog } from "@/components/admin/AddCustomerDialog";
 import { resolveDisplayName } from "@/lib/displayName";
-
-const ZAR = new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR" });
+import { formatPrice } from "@/lib/formatCurrency";
 
 export default function AdminCustomers() {
   const { data, isLoading } = useTenantCustomers();
@@ -112,7 +111,7 @@ export default function AdminCustomers() {
                     <TableCell className="text-muted-foreground">{c.email ?? "—"}</TableCell>
                     <TableCell className="text-muted-foreground">{c.phone ?? "—"}</TableCell>
                     <TableCell className="text-right">{c.order_count}</TableCell>
-                    <TableCell className="text-right font-medium">{ZAR.format(c.total_spent)}</TableCell>
+                    <TableCell className="text-right font-medium">{formatPrice(Number(c.total_spent ?? 0), (c as any).preferred_currency ?? "ZAR")}</TableCell>
                     <TableCell className="text-muted-foreground">
                       {c.last_order_at
                         ? formatDistanceToNow(new Date(c.last_order_at), { addSuffix: true })

@@ -8,16 +8,18 @@ import PreviewLightbox from "@/components/order/PreviewLightbox";
 import { inferPreviewTypeFromJob } from "@/lib/orders/inferPreviewType";
 import type { JobConfiguration, ConfigSection } from "@/lib/orders/types";
 import PhotoPrintsAdminGallery from "./PhotoPrintsAdminGallery";
+import { formatPrice } from "@/lib/formatCurrency";
 
 interface Props {
   job: any;
   documents: any[];
+  /** ISO currency for the parent order. Used to render job prices in the
+   *  customer's region (GBP/USD/EUR/AUD). Defaults to ZAR for safety. */
+  currency?: string;
 }
 
-const fmt = (amount: number, currency = "ZAR") =>
-  new Intl.NumberFormat("en-ZA", { style: "currency", currency, minimumFractionDigits: 2 }).format(amount);
-
-export function JobDetailPanel({ job, documents }: Props) {
+export function JobDetailPanel({ job, documents, currency = "ZAR" }: Props) {
+  const fmt = (amount: number) => formatPrice(Number(amount ?? 0), currency);
   const config: JobConfiguration = job.configuration || {};
   const sections: ConfigSection[] = config.sections || [];
   const summary = config.summary || {};

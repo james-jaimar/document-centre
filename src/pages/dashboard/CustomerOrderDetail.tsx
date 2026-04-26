@@ -79,12 +79,9 @@ const JOB_STATUS_LABEL: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
-const fmt = (amount: number, currency = "ZAR") =>
-  new Intl.NumberFormat("en-ZA", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-  }).format(amount);
+import { formatPrice } from "@/lib/formatCurrency";
+
+const fmt = (amount: number, currency = "ZAR") => formatPrice(Number(amount ?? 0), currency);
 
 const formatBytes = (bytes?: number | null) => {
   if (!bytes) return "";
