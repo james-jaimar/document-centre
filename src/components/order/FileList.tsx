@@ -160,6 +160,15 @@ export default function FileList({
                     {thumbnailGaps.length} page{thumbnailGaps.length === 1 ? "" : "s"} missing
                   </span>
                 )}
+                {hasSizeMismatch && (
+                  <span
+                    className="inline-flex items-center gap-1 text-[10px] font-medium text-warning bg-warning/10 px-1.5 py-0.5 rounded"
+                    title="This file's paper size differs from the rest of your print job"
+                  >
+                    <AlertCircle className="h-3 w-3" />
+                    size mismatch
+                  </span>
+                )}
               </div>
             </div>
 
