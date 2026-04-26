@@ -433,6 +433,27 @@ export default function OrderBuild() {
     return "left";
   }, [options, spec.selected_options]);
 
+  // Derive binding artwork descriptor from the selected Binding option's
+  // metadata. `binding_method` is one of "comb" | "spiral" | "twin_loop" |
+  // "ring_binder"; we only emit `bindingArt` for methods that have spine
+  // artwork (not ring binders, which have their own renderer).
+  const bindingArt: { method: "spiral" | "comb" | "twin_loop"; color: string } | undefined = useMemo(() => {
+    const bindingOption = options.find((o) => o.name.toLowerCase() === "binding");
+    if (!bindingOption || !isStructuredValues(bindingOption.values)) return undefined;
+    const key = Object.keys(spec.selected_options).find(
+      (k) => k.toLowerCase() === bindingOption.name.toLowerCase()
+    ) || bindingOption.name;
+    const slug = spec.selected_options[key];
+    if (!slug) return undefined;
+    const matched = (bindingOption.values as StructuredOptionValue[]).find((v) => v.slug === slug);
+    const method = matched?.metadata?.binding_method as string | undefined;
+    const color = matched?.metadata?.color as string | undefined;
+    if (method === "spiral" || method === "comb" || method === "twin_loop") {
+      return { method, color: color ?? "black" };
+    }
+    return undefined;
+  }, [options, spec.selected_options]);
+
   const handleOptionChange = useCallback((optionName: string, slug: string) => {
     setSpec((prev) => ({
       ...prev,
@@ -756,7 +777,7 @@ export default function OrderBuild() {
 
         {/* Right: Preview */}
         <div className="border border-border rounded-lg bg-card p-4 overflow-auto">
-          <PreviewPanel documents={documents} sections={sections} productType={productType} effects={previewEffects} bindingEdge={bindingEdge} />
+          <PreviewPanel documents={documents} sections={sections} productType={productType} effects={previewEffects} bindingEdge={bindingEdge} bindingArt={bindingArt} />
         </div>
       </div>
       {/* Tab/Insert Drawer — only mount after user clicks the button */}
