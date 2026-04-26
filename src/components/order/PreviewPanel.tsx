@@ -727,6 +727,7 @@ export default function PreviewPanel({
           tabPositions={tabPositions}
           displayPageNumbers={displayPageNumbers}
           bindingEdge={bindingEdge}
+          landscapeLongEdge={landscapeLongEdge}
           bindingArt={bindingArt}
         />
       )}
