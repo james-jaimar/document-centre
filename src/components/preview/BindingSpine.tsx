@@ -65,21 +65,22 @@ export default function BindingSpine({
     const color = normaliseBindingColor(bindingArt?.color);
 
     // Edge selection:
-    //  - bindingEdge==="top" + landscapeLongEdge → reuse portrait long-edge
-    //    artwork (rotated 90° below) to span the LONG top edge.
-    //  - bindingEdge==="top" alone → dedicated 210mm short-edge artwork.
+    //  - bindingEdge==="top" + landscapeLongEdge → dedicated horizontal
+    //    landscape ("top") artwork. The outer FlipBook container is rotated
+    //    90° in this mode, so a vertical strip drawn here visually appears
+    //    as a horizontal spine between the two stacked landscape pages.
+    //  - bindingEdge==="top" alone (short-edge landscape bind) → 210mm
+    //    short-edge artwork in a normal vertical spine (no rotation).
     //  - bindingEdge==="left" → traditional portrait long-edge spine.
-    const edge =
-      bindingEdge === "top" && !landscapeLongEdge ? "short" : "long";
+    const edge: "long" | "short" | "top" =
+      bindingEdge === "top" && landscapeLongEdge
+        ? "top"
+        : bindingEdge === "top"
+          ? "short"
+          : "long";
     const state = isOpen ? "open" : "closed";
 
     const { src: spineImage } = resolveBindingArt({ method, color, edge, state });
-
-    // For long-edge top binding we render the same vertical strip but rotate
-    // the inner image 90°. The OUTER FlipBook container is also rotated 90°,
-    // so a vertical-on-screen strip here ends up sitting horizontally between
-    // the two stacked landscape pages.
-    const rotateImage = bindingEdge === "top" && landscapeLongEdge;
 
     return (
       <div
@@ -93,13 +94,8 @@ export default function BindingSpine({
         <img
           src={spineImage}
           alt={`${method} ${color} binding`}
-          className="w-full h-full object-fill"
-          style={{
-            objectFit: "fill",
-            ...(rotateImage
-              ? { transform: "scaleY(-1)" } // flip so spine teeth orient correctly when container is rotated
-              : {}),
-          }}
+          className="w-full h-full"
+          style={{ objectFit: "fill" }}
           draggable={false}
         />
       </div>
