@@ -1231,6 +1231,7 @@ export default function OrderFiles() {
           heightMm={advisoryDoc.heightMm}
           fileName={advisoryDoc.fileName}
           documentId={advisoryDoc.id}
+          lockedSize={advisoryDoc.lockedSize ?? null}
           onKeepOriginal={handleKeepOriginal}
           onScaleTo={handleScaleTo}
         />
