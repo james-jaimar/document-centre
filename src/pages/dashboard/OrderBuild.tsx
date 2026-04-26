@@ -418,20 +418,24 @@ export default function OrderBuild() {
     return fx;
   }, [options, spec.selected_options]);
 
-  // Derive binding edge from Document Size option metadata
-  const bindingEdge: "left" | "top" = useMemo(() => {
+  // Derive document orientation + binding edge from Document Size metadata.
+  // Treats both `binding_edge: "top"` (legacy) and `binding_edge: "short"`
+  // (current landscape default) as top-bound for the FlipBook layout. Pure
+  // landscape orientation also implies top-bound when no override is set.
+  const sizeMeta = useMemo(() => {
     const sizeOpt = options.find((o) => o.name.toLowerCase() === "document size");
-    if (!sizeOpt || !isStructuredValues(sizeOpt.values)) return "left";
+    if (!sizeOpt || !isStructuredValues(sizeOpt.values)) return null;
     const key = Object.keys(spec.selected_options).find(
       (k) => k.toLowerCase() === sizeOpt.name.toLowerCase()
     ) || sizeOpt.name;
     const slug = spec.selected_options[key];
-    if (!slug) return "left";
+    if (!slug) return null;
     const val = (sizeOpt.values as StructuredOptionValue[]).find((v) => v.slug === slug);
-    const edge = (val?.metadata as Record<string, any>)?.binding_edge;
-    if (edge === "top") return "top";
-    return "left";
+    return (val?.metadata as Record<string, any>) ?? null;
   }, [options, spec.selected_options]);
+
+  const isLandscapeSize = sizeMeta?.orientation === "landscape";
+  const sizeBindingEdge = sizeMeta?.binding_edge as string | undefined;
 
   // Derive binding artwork descriptor from the selected Binding option's
   // metadata. `binding_method` is one of "comb" | "spiral" | "twin_loop" |
@@ -453,6 +457,28 @@ export default function OrderBuild() {
     }
     return undefined;
   }, [options, spec.selected_options]);
+
+  // Top-bound layout fires for top/short metadata OR any landscape size.
+  // The user can opt-in to long-edge (top) binding via the toggle, which
+  // keeps the top-bound layout but switches the spine artwork to the
+  // (rotated) portrait long-edge assets.
+  const bindingEdge: "left" | "top" = useMemo(() => {
+    if (sizeBindingEdge === "top" || sizeBindingEdge === "short") return "top";
+    if (isLandscapeSize) return "top";
+    return "left";
+  }, [sizeBindingEdge, isLandscapeSize]);
+
+  const landscapeLongEdge = isLandscapeSize && spec.binding_edge_override === "long";
+
+  // Show the long-edge toggle only when it's actually applicable.
+  const canToggleLongEdge = isLandscapeSize && !!bindingArt;
+
+  const handleToggleLongEdge = useCallback((next: boolean) => {
+    setSpec((prev) => ({
+      ...prev,
+      binding_edge_override: next ? "long" : null,
+    }));
+  }, []);
 
   const handleOptionChange = useCallback((optionName: string, slug: string) => {
     setSpec((prev) => ({
