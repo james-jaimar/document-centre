@@ -556,6 +556,8 @@ export default function FlipBook({
                         bleedInsetPx={bleedInsetPx}
                         label={pageLabels?.[i]}
                         color={pageColors?.[i]}
+                        counterRotate={isTopBound}
+                        artworkAspect={ratio}
                       />
                     ))}
                   </HTMLFlipBook>
