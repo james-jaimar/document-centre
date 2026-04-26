@@ -1,5 +1,7 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { useCart, useRemoveCartItem, useEditCartItem } from "@/hooks/useCart";
+import { useRegionalPricing } from "@/hooks/useRegionalPricing";
+import { formatPrice } from "@/lib/formatCurrency";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -18,6 +20,10 @@ export default function Cart() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { data: cart, isLoading } = useCart();
+  const { region } = useRegionalPricing();
+  // Prefer the currency stamped on the cart order itself (set at first add),
+  // falling back to the active region for empty carts.
+  const currency = (cart?.currency as string | undefined) ?? region?.currency_code ?? "ZAR";
   const removeItem = useRemoveCartItem();
   const editItem = useEditCartItem();
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
@@ -120,10 +126,10 @@ export default function Cart() {
                 </TableCell>
                 <TableCell className="text-center text-foreground">{item.quantity}</TableCell>
                 <TableCell className="text-right font-mono text-foreground">
-                  R{Number(item.unit_price).toFixed(2)}
+                  {formatPrice(Number(item.unit_price), currency)}
                 </TableCell>
                 <TableCell className="text-right font-mono font-medium text-foreground">
-                  R{(Number(item.unit_price) * item.quantity).toFixed(2)}
+                  {formatPrice(Number(item.unit_price) * item.quantity, currency)}
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-1">
@@ -163,7 +169,7 @@ export default function Cart() {
       <div className="flex flex-col items-end gap-4 border-t border-border pt-4">
         <div className="text-right space-y-1">
           <div className="text-sm text-muted-foreground">Subtotal (excl. VAT)</div>
-          <div className="text-2xl font-bold text-foreground">R{cartTotal.toFixed(2)}</div>
+          <div className="text-2xl font-bold text-foreground">{formatPrice(cartTotal, currency)}</div>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => navigate(`/t/${slug}/orders/new`)}>

@@ -74,14 +74,27 @@ function conditionsMatch(conditions: Record<string, unknown>, spec: ItemSpec): b
 export function calculateItemPrice(
   spec: ItemSpec,
   options: ProductOption[],
-  rules: PricingRule[]
+  rules: PricingRule[],
+  /**
+   * Active region currency. Rules are filtered to this currency before
+   * evaluation; if no rules match, falls back to ZAR (the source of truth)
+   * so prices never silently disappear.
+   */
+  currencyCode: string = "ZAR"
 ): PriceBreakdown {
   const lines: PriceLineItem[] = [];
+  const targetCurrency = (currencyCode || "ZAR").toUpperCase();
 
-  // Layer 1: Evaluate pricing rules
-  const sortedRules = [...rules]
-    .filter((r) => r.is_active)
-    .sort((a, b) => a.sort_order - b.sort_order);
+  // Layer 1: Evaluate pricing rules — filter to the active currency, falling
+  // back to ZAR if the target has no rules (defensive — should not happen
+  // post-seed but keeps the demo functional during partial migrations).
+  const ruleHasCurrency = (r: PricingRule, curr: string) =>
+    (((r as unknown as { currency_code?: string }).currency_code) ?? "ZAR").toUpperCase() === curr;
+  let currencyRules = rules.filter((r) => r.is_active && ruleHasCurrency(r, targetCurrency));
+  if (currencyRules.length === 0 && targetCurrency !== "ZAR") {
+    currencyRules = rules.filter((r) => r.is_active && ruleHasCurrency(r, "ZAR"));
+  }
+  const sortedRules = [...currencyRules].sort((a, b) => a.sort_order - b.sort_order);
 
   for (const rule of sortedRules) {
     const conditions = (rule.conditions || {}) as Record<string, unknown>;

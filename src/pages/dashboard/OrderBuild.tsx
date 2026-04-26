@@ -29,6 +29,8 @@ import {
 import { ArrowLeft, Settings2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
+import { useRegionalPricing } from "@/hooks/useRegionalPricing";
+import { formatPrice } from "@/lib/formatCurrency";
 
 export default function OrderBuild() {
   const { id: orderId, slug } = useParams<{ id: string; slug: string }>();
@@ -98,9 +100,13 @@ export default function OrderBuild() {
   };
 
 
-  // Fetch pricing rules for this product family
+  // Active region currency (geo-detected, with manual override support).
+  const { region } = useRegionalPricing();
+  const activeCurrency = region?.currency_code ?? "ZAR";
+
+  // Fetch pricing rules for this product family in the active currency.
   const { data: pricingRules = [] } = useQuery({
-    queryKey: ["pricing_rules", productFamilyId],
+    queryKey: ["pricing_rules", productFamilyId, activeCurrency],
     queryFn: async () => {
       if (!productFamilyId) return [];
       const { data, error } = await supabase
@@ -108,6 +114,7 @@ export default function OrderBuild() {
         .select("*")
         .eq("product_family_id", productFamilyId)
         .eq("is_active", true)
+        .eq("currency_code", activeCurrency)
         .order("sort_order", { ascending: true });
       if (error) throw error;
       return data;
@@ -466,7 +473,7 @@ export default function OrderBuild() {
       return;
     }
     try {
-      const breakdown = calculateItemPrice(spec, options, pricingRules);
+      const breakdown = calculateItemPrice(spec, options, pricingRules, activeCurrency);
       if (breakdown.lines.length === 0) {
         toast.error("No pricing rules configured", {
           description: "Please contact the administrator to set up pricing for this product.",
@@ -491,7 +498,7 @@ export default function OrderBuild() {
     }
     setIsSubmitting(true);
     try {
-      const breakdown = calculateItemPrice(spec, options, pricingRules);
+      const breakdown = calculateItemPrice(spec, options, pricingRules, activeCurrency);
       // Check if this draft was created by editing a cart item
       const replacesCartItemId = (order.metadata as any)?.replaces_cart_item_id;
       await addItemToCart.mutateAsync({
@@ -803,7 +810,7 @@ export default function OrderBuild() {
             </div>
             <div className="flex items-center justify-between rounded-md border border-border p-3 bg-muted/50">
               <span className="text-sm text-muted-foreground">Total</span>
-              <span className="text-xl font-bold text-foreground">R{cartTotal.toFixed(2)}</span>
+              <span className="text-xl font-bold text-foreground">{formatPrice(cartTotal, activeCurrency)}</span>
             </div>
           </div>
           <DialogFooter>

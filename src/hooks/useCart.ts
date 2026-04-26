@@ -98,11 +98,24 @@ export function useAddItemToCart() {
       totalPrice: number;
       spec: any;
       replacesCartItemId?: string;
+      /** Active region currency for this purchase. Stamped on the cart order. */
+      currencyCode?: string;
     }) => {
       if (!user) throw new Error("Not authenticated");
       if (!tenantId) throw new Error("No tenant context");
 
       const cartId = await getOrCreateCartId(user.id, tenantId, appId);
+
+      // Stamp the cart order with the active currency on first add. We do
+      // this idempotently so subsequent adds keep the existing currency
+      // (cart can't mix currencies).
+      if (input.currencyCode) {
+        await supabase
+          .from("orders")
+          .update({ currency: input.currencyCode })
+          .eq("id", cartId)
+          .is("submitted_at", null); // only on still-open cart
+      }
 
       // Update the order item: set it as ready and move to cart order
       const { error: itemError } = await supabase

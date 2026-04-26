@@ -8,13 +8,19 @@ export type PricingRuleUpdate = TablesUpdate<"pricing_rules">;
 
 const QUERY_KEY = ["pricing_rules"];
 
-export function usePricingRules(tenantId?: string | null) {
+/**
+ * Fetch pricing rules. By default returns ZAR rules so the admin editor stays
+ * focused on the source of truth. Pass `currencyCode` to read a derived
+ * currency variant (used by the storefront via the active region).
+ */
+export function usePricingRules(tenantId?: string | null, currencyCode: string = "ZAR") {
   return useQuery({
-    queryKey: [...QUERY_KEY, tenantId],
+    queryKey: [...QUERY_KEY, tenantId, currencyCode],
     queryFn: async () => {
       let query = supabase
         .from("pricing_rules")
         .select("*, product_families(name)")
+        .eq("currency_code", currencyCode)
         .order("sort_order", { ascending: true });
 
       if (tenantId) {

@@ -10,6 +10,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { useRegionalPricing } from "@/hooks/useRegionalPricing";
+import { formatPrice } from "@/lib/formatCurrency";
 
 type ProductOption = Tables<"product_options">;
 type PricingRule = Tables<"pricing_rules">;
@@ -33,9 +35,11 @@ export default function PriceSummary({
   disabled,
   isSubmitting,
 }: PriceSummaryProps) {
+  const { region } = useRegionalPricing();
+  const currency = region?.currency_code ?? "ZAR";
   const breakdown = useMemo(
-    () => calculateItemPrice(spec, options, rules),
-    [spec, options, rules]
+    () => calculateItemPrice(spec, options, rules, currency),
+    [spec, options, rules, currency]
   );
 
   return (
@@ -95,7 +99,7 @@ export default function PriceSummary({
                     )}
                   </span>
                   <span className="font-mono text-foreground shrink-0">
-                    R{line.total.toFixed(2)}
+                    {formatPrice(line.total, currency)}
                   </span>
                 </div>
               ))}
@@ -107,14 +111,14 @@ export default function PriceSummary({
               <div className="border-t border-border pt-1.5 mt-1.5 flex justify-between text-xs font-medium">
                 <span>Per unit</span>
                 <span className="font-mono">
-                  R{breakdown.subtotal_per_unit.toFixed(2)}
+                  {formatPrice(breakdown.subtotal_per_unit, currency)}
                 </span>
               </div>
             </div>
           </PopoverContent>
         </Popover>
         <span className="text-xl font-bold text-foreground">
-          R{breakdown.total.toFixed(2)}
+          {formatPrice(breakdown.total, currency)}
         </span>
       </div>
 
