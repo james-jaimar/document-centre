@@ -377,8 +377,10 @@ export default function FlipBook({
   }
 
   // ── CSS scale factor to fit into available container ──
-  const availableWidth = width - 80;
-  const availableHeight = height - 60;
+  // For top-bound layouts the inner book is rotated 90°, so the container's
+  // available width is what limits the rotated book's HEIGHT (and vice versa).
+  const availableWidth = (isTopBound ? height : width) - 80;
+  const availableHeight = (isTopBound ? width : height) - 60;
 
   // ── Solo-page detection ──
   const lastIdx = urls.length - 1;
@@ -391,14 +393,6 @@ export default function FlipBook({
   const isSoloPage = isShowingFirstSolo || isShowingBackCover || isShowingLastSolo;
   // Alias for tab overlay (suppress left tabs when showing front solo)
   const isShowingFrontCover = isShowingFirstSolo;
-
-  // ── CSS scale factor to fit into available container ──
-  // For top-bound layouts the inner book is rotated 90°, so the container's
-  // available width is what limits the rotated book's HEIGHT (and vice versa).
-  const availableWidth = (isTopBound ? height : width) - 80;
-  const availableHeight = (isTopBound ? width : height) - 60;
-
-  // ... (solo-page detection unchanged below)
 
   const scaleX = availableWidth / baseSpreadWidth;
   const scaleY = availableHeight / basePageHeight;
