@@ -503,7 +503,7 @@ export function useDocumentUpload(
           status: asset.status,
           awaiting_review: hasAdvisory,
         };
-        if (orientationNormalized) preflight.orientation_normalized = true;
+        if (printReadyDone) preflight.print_ready_done = true;
         if (detectedSize) preflight.detected_size = detectedSize;
         if (nearIsoMatch) {
           preflight.near_iso_match = nearIsoMatch.matchedSize.name;
