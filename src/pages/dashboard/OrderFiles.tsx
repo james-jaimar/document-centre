@@ -986,13 +986,14 @@ export default function OrderFiles() {
     } catch (err: any) {
       toast.error("Failed to auto-assign", { description: err.message });
     }
-  }, [selectedDocId, orderItem, documents, sections.length, addSection]);
+  }, [selectedDocId, orderItem, documents, sections.length, addSection, assertSizeMatchesActive]);
 
   // Auto-assign a 4+ page PDF where each page is a panel
   // Bi-fold (4 pages): Outside = pages [0, 3], Inside = pages [1, 2]
   // Tri-fold (6 pages): Outside = pages [0, 1, 2], Inside = pages [3, 4, 5]
   const handleAutoAssignPanels = useCallback(async () => {
     if (!selectedDocId || !orderItem) return;
+    if (!assertSizeMatchesActive(selectedDocId)) return;
     const doc = documents.find((d) => d.id === selectedDocId);
     const pageCount = doc?.page_count ?? 0;
     if (!doc || pageCount < 4) return;
