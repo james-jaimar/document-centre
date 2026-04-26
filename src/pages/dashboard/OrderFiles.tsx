@@ -360,7 +360,7 @@ export default function OrderFiles() {
           }
         }
 
-        if (!preflight?.orientation_normalized) {
+        if (!preflight?.print_ready_done) {
           await finalizeOrientationAndPrintReady(doc.id, workingAssetId, doc.fileName);
         }
         await renderWithProgress(
