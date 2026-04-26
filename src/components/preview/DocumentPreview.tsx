@@ -60,6 +60,7 @@ export default function DocumentPreview({
   displayPageNumbers,
   faceLabels,
   bindingEdge,
+  landscapeLongEdge,
   bindingArt,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
