@@ -11,7 +11,7 @@ import { Plus, Minus, Power, RefreshCw } from "lucide-react";
 
 export default function PlatformDocumentCentreWorkers() {
   const qc = useQueryClient();
-  const workers = useQuery({ queryKey: ["ops", "workers"], queryFn: opsApi.workers, refetchInterval: 5000 });
+  const workers = useQuery({ queryKey: ["ops", "workers"], queryFn: opsApi.workers, refetchInterval: 15000, refetchIntervalInBackground: false });
 
   const ping = useMutation({
     mutationFn: opsApi.pingWorkers,

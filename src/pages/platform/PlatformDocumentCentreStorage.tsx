@@ -14,8 +14,8 @@ function fmtBytes(n: number | null | undefined): string {
 }
 
 export default function PlatformDocumentCentreStorage() {
-  const live = useQuery({ queryKey: ["ops", "storage-live"], queryFn: opsApi.storageLive, refetchInterval: 30000 });
-  const history = useQuery({ queryKey: ["ops", "storage-history", 168], queryFn: () => opsApi.storageHistory(168), refetchInterval: 60000 });
+  const live = useQuery({ queryKey: ["ops", "storage-live"], queryFn: opsApi.storageLive, refetchInterval: 60000, refetchIntervalInBackground: false });
+  const history = useQuery({ queryKey: ["ops", "storage-history", 168], queryFn: () => opsApi.storageHistory(168), refetchInterval: 300000, refetchIntervalInBackground: false });
 
   const chart = history.data?.map((r) => ({
     t: new Date(r.captured_at).toLocaleDateString([], { month: "short", day: "numeric" }),

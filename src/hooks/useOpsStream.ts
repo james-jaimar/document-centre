@@ -35,9 +35,14 @@ export function useOpsStream(opts: { enabled?: boolean; max?: number } = {}) {
     let cancelled = false;
 
     // Polling fallback only — SSE through edge proxy is non-trivial; live
-    // updates land via this 5s poll. (Server SSE endpoint exists for direct
-    // VPS-side dashboards.)
+    // updates land via this poll. We pause polling whenever the tab is
+    // hidden so left-open admin tabs don't burn Disk IO Budget overnight,
+    // and we relaxed cadence from 5s to 15s — this is an ops dashboard,
+    // not a real-time UI.
+    const POLL_MS = 15000;
+
     const poll = async () => {
+      if (document.hidden) return;
       try {
         const jobs = await opsApi.jobs({ limit: max });
         if (cancelled) return;
@@ -50,11 +55,17 @@ export function useOpsStream(opts: { enabled?: boolean; max?: number } = {}) {
     };
 
     poll();
-    pollRef.current = window.setInterval(poll, 5000);
+    pollRef.current = window.setInterval(poll, POLL_MS);
+
+    // Refresh once when the tab becomes visible again so the dashboard
+    // doesn't show stale state on resume.
+    const onVisible = () => { if (!document.hidden) poll(); };
+    document.addEventListener("visibilitychange", onVisible);
 
     return () => {
       cancelled = true;
       if (pollRef.current) window.clearInterval(pollRef.current);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [enabled, max]);
 

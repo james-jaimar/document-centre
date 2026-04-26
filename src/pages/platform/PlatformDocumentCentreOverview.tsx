@@ -14,10 +14,13 @@ function fmtBytes(n: number | null | undefined): string {
 }
 
 export default function PlatformDocumentCentreOverview() {
-  const health = useQuery({ queryKey: ["ops", "health"], queryFn: opsApi.healthFull, refetchInterval: 10000 });
-  const system = useQuery({ queryKey: ["ops", "system"], queryFn: opsApi.system, refetchInterval: 5000 });
-  const queues = useQuery({ queryKey: ["ops", "queues"], queryFn: opsApi.queues, refetchInterval: 5000 });
-  const storage = useQuery({ queryKey: ["ops", "storage"], queryFn: opsApi.storageLive, refetchInterval: 30000 });
+  // refetchIntervalInBackground:false pauses polling when the tab is hidden
+  // so we don't burn Disk IO when no one is looking. Aggressive 5s intervals
+  // were also relaxed to 15s — these are ops dashboards, not real-time UIs.
+  const health = useQuery({ queryKey: ["ops", "health"], queryFn: opsApi.healthFull, refetchInterval: 15000, refetchIntervalInBackground: false });
+  const system = useQuery({ queryKey: ["ops", "system"], queryFn: opsApi.system, refetchInterval: 15000, refetchIntervalInBackground: false });
+  const queues = useQuery({ queryKey: ["ops", "queues"], queryFn: opsApi.queues, refetchInterval: 15000, refetchIntervalInBackground: false });
+  const storage = useQuery({ queryKey: ["ops", "storage"], queryFn: opsApi.storageLive, refetchInterval: 60000, refetchIntervalInBackground: false });
   const { recentJobs, connected } = useOpsStream();
 
   void health; void connected;

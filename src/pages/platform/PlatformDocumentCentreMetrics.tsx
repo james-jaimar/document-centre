@@ -9,9 +9,9 @@ import {
 import { opsApi } from "@/lib/opsApi";
 
 export default function PlatformDocumentCentreMetrics() {
-  const stages = useQuery({ queryKey: ["ops", "stages", 24], queryFn: () => opsApi.stageMetrics(24), refetchInterval: 30000 });
-  const throughput = useQuery({ queryKey: ["ops", "throughput", 24], queryFn: () => opsApi.throughput(24, 60), refetchInterval: 30000 });
-  const tenants = useQuery({ queryKey: ["ops", "tenants", 24], queryFn: () => opsApi.tenantUsage(24), refetchInterval: 60000 });
+  const stages = useQuery({ queryKey: ["ops", "stages", 24], queryFn: () => opsApi.stageMetrics(24), refetchInterval: 60000, refetchIntervalInBackground: false });
+  const throughput = useQuery({ queryKey: ["ops", "throughput", 24], queryFn: () => opsApi.throughput(24, 60), refetchInterval: 60000, refetchIntervalInBackground: false });
+  const tenants = useQuery({ queryKey: ["ops", "tenants", 24], queryFn: () => opsApi.tenantUsage(24), refetchInterval: 120000, refetchIntervalInBackground: false });
 
   const chartData = throughput.data?.map((b) => ({
     bucket: new Date(b.bucket).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),

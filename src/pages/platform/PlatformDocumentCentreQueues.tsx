@@ -16,7 +16,7 @@ import { Eye, Trash2, RefreshCw } from "lucide-react";
 
 export default function PlatformDocumentCentreQueues() {
   const qc = useQueryClient();
-  const queues = useQuery({ queryKey: ["ops", "queues"], queryFn: opsApi.queues, refetchInterval: 5000 });
+  const queues = useQuery({ queryKey: ["ops", "queues"], queryFn: opsApi.queues, refetchInterval: 15000, refetchIntervalInBackground: false });
   const [peekName, setPeekName] = useState<string | null>(null);
   const [purgeName, setPurgeName] = useState<string | null>(null);
 

@@ -32,7 +32,8 @@ export default function PlatformDemoActivity() {
         ordersTotal: oTotal.count ?? 0,
       };
     },
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
 
   const { data: orders, isLoading } = useQuery({
@@ -47,7 +48,8 @@ export default function PlatformDemoActivity() {
       if (error) throw error;
       return data;
     },
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 
   const { data: demoTenant } = useQuery({
