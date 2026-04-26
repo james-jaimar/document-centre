@@ -66,6 +66,7 @@ import PlatformTenants from "@/pages/platform/PlatformTenants";
 import PlatformUsers from "@/pages/platform/PlatformUsers";
 import PlatformSettings from "@/pages/platform/PlatformSettings";
 import PlatformPricingRegions from "@/pages/platform/PlatformPricingRegions";
+import PlatformDemoPrintPricing from "@/pages/platform/PlatformDemoPrintPricing";
 import DocumentCentreLayout from "@/components/platform/DocumentCentreLayout";
 import PlatformDocumentCentreOverview from "@/pages/platform/PlatformDocumentCentreOverview";
 import PlatformDocumentCentreQueues from "@/pages/platform/PlatformDocumentCentreQueues";
@@ -256,6 +257,11 @@ const App = () => (
               <Route path="/platform/pricing" element={
                 <ProtectedRoute allowedRoles={["platform_admin"]}>
                   <PlatformPricingRegions />
+                </ProtectedRoute>
+              } />
+              <Route path="/platform/demo-print-pricing" element={
+                <ProtectedRoute allowedRoles={["platform_admin"]}>
+                  <PlatformDemoPrintPricing />
                 </ProtectedRoute>
               } />
               <Route path="/platform/document-centre" element={
