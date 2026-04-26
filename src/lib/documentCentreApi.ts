@@ -302,6 +302,14 @@ export async function getJob(jobId: string): Promise<Job> {
 }
 
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
+const FAILURE_STATUSES = new Set(["failed", "cancelled"]);
+
+export interface PollJobOptions {
+  /** Throw a descriptive error when the job ends in failed/cancelled.
+   *  Defaults to true — most callers want the failure to abort their
+   *  pipeline. Background recovery paths can opt out by passing false. */
+  throwOnFailure?: boolean;
+}
 
 /**
  * Poll a job until it reaches a terminal state.
@@ -314,13 +322,19 @@ const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
  * Tolerates transient `getJob` failures: if a single status check fails after
  * its own retry budget, we log a warning and try again on the next tick. We
  * only abort the poll if we exceed `MAX_CONSECUTIVE_GETJOB_FAILURES` in a row.
+ *
+ * Throws on terminal `failed` / `cancelled` (unless `throwOnFailure: false`)
+ * so callers don't silently continue with an asset that the worker refused to
+ * mark ready.
  */
 export async function pollJob(
   jobId: string,
   onUpdate?: (job: Job) => void,
   intervalMs = 2500,
-  maxAttempts = 360
+  maxAttempts = 360,
+  options: PollJobOptions = {},
 ): Promise<Job> {
+  const throwOnFailure = options.throwOnFailure ?? true;
   let interval = 300;
   const ceiling = Math.max(500, intervalMs);
   const MAX_CONSECUTIVE_GETJOB_FAILURES = 4;
@@ -350,6 +364,16 @@ export async function pollJob(
     onUpdate?.(job);
 
     if (TERMINAL_STATUSES.has(job.status)) {
+      if (throwOnFailure && FAILURE_STATUSES.has(job.status)) {
+        // Surface the most useful diagnostic we have. The VPS puts the
+        // root-cause message in `error` (full traceback) for failures and
+        // sometimes in `result.message` for graceful cancellations.
+        const detail =
+          job.error?.split("\n").slice(-3).join(" ").trim() ||
+          (job.result as { message?: string } | undefined)?.message ||
+          job.status;
+        throw new Error(`Job ${jobId} ${job.status}: ${detail}`);
+      }
       return job;
     }
 
