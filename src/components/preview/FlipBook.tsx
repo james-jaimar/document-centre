@@ -291,9 +291,17 @@ export default function FlipBook({
   );
 
   // ── Fixed internal resolution ──
+  // For top-bound layouts the natural pageflip spread is rotated 90° so the
+  // two pages stack vertically. The library still needs the spread aspect to
+  // match the visible orientation, so when binding on the top edge we feed
+  // it the INVERSE aspect — the spread is laid out as if each "page" were
+  // portrait, but the inner artwork is then counter-rotated 90° so the
+  // landscape document remains landscape (and upright) on screen.
+  const isTopBound = bindingEdge === "top";
   const ratio = pageAspectRatio ?? 0.707;
+  const flipRatio = isTopBound ? 1 / ratio : ratio;
   const basePageWidth = BASE_PAGE_WIDTH;
-  const basePageHeight = Math.round(basePageWidth / ratio);
+  const basePageHeight = Math.round(basePageWidth / flipRatio);
   const baseSpreadWidth = basePageWidth * 2;
   const bleedInsetPx = Math.round(basePageWidth * 0.03);
 
