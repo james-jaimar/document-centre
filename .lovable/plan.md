@@ -1,95 +1,95 @@
-# VPS preview pipeline hardening
+# VPS preview pipeline hardening — SHIPPED
 
-## Why the page went missing
+The VPS now treats the page count as a hard contract. The asset is only
+flipped to ``status='ready'`` when every page from 1..page_count has both
+a ``preview_page`` and a ``thumbnail_page`` derived file recorded.
 
-In `pdf-server/app/tasks/document_tasks.py::generate_previews`:
+## What changed (server-side, `pdf-server/`)
 
-1. Pages 2..N are rendered + uploaded inside a `ThreadPoolExecutor`.
-2. If any one page hits a transient Ghostscript glitch, a worker SIGTERM mid-batch, or an S3 PUT failure, the future raises — **but `fut.result()` is called without a try/except inside the loop**.
-3. Even when results return cleanly, the code never **verifies that one preview + one thumbnail exists for every page index 1..page_count**.
-4. The job is then marked `done` with `pages_rendered = max(1, page_count)` (a pure assertion, not a measurement). The asset is flipped to `status=ready`.
-5. The frontend trusts it, so an index-stable thumbnail array ends up with a hole at index 1 → the "missing page 2" the user saw.
+### `app/services/pdf_ops.py`
+- New `RasterizationIncompleteError` exception.
+- `rasterize_preview` now does a completeness check after the bulk
+  Ghostscript run: if any expected pages are missing, it re-renders them
+  one at a time (single-page GS calls are extremely reliable) up to
+  `settings.preview_page_max_retries` attempts with exponential backoff +
+  jitter, then raises `RasterizationIncompleteError` if anything is still
+  missing.
+- Internal helper `_gs_rasterize_pages` does the raw subprocess call so
+  the verify/retry logic lives in one place.
 
-So the fix is server-side: **the VPS must never declare success unless every page has both a `preview_page` and a `thumbnail_page` derived file recorded.**
+### `app/services/derived_files.py`
+- `create_file` is now idempotent for `preview_page` / `thumbnail_page`
+  rows keyed on `(asset_id, kind, page)` — salvage and re-render passes
+  update in place instead of duplicating rows.
+- New helper `pages_present(db, asset_id, kind)` returns the set of page
+  numbers that already have a derived file of the given kind. Used by
+  the `/render-pages` endpoint to compute "missing".
+- A migration to add a unique partial index on
+  `(asset_id, kind, page) WHERE kind IN (...) AND page IS NOT NULL` is
+  noted in a comment at the top of the module.
 
-## Goals
+### `app/tasks/document_tasks.py`
+- New shared helpers `_retry_with_backoff`, `_render_one_page`, and
+  `_record_page` — each step (rasterize / downscale / upload / DB
+  record) retries independently so a transient S3 hiccup never forces a
+  full re-rasterize.
+- `generate_previews` rewritten to:
+  1. Track `expected_pages` and `completed_pages` as sets.
+  2. Page-1 fast path uses `_render_one_page` + `_record_page` (with
+     retries).
+  3. Parallel pool processes pages 2..N. Per-page failures are caught
+     and logged as `stage='page_failed'` events but do NOT crash the
+     job — they go into the salvage set.
+  4. After the pool drains, a sequential salvage pass re-tries any page
+     still missing (with a `stage='salvage'` event listing the gaps).
+  5. Final verify: if `still_missing` is non-empty, the job is marked
+     **failed** with `metadata.missing_pages=[…]` and the asset is NOT
+     promoted to `status='ready'`. The frontend can recover via the new
+     `/render-pages` endpoint.
+- New `render_specific_pages` Celery task: same per-page pipeline, but
+  for an explicit page list. Promotes the asset back to `'ready'` once
+  every page has both rows present.
+- INFO logs for `expected_pages` / `rendered/expected/missing` at the
+  start and end of every preview job.
 
-- Treat the expected page count as a **contract**: render N, upload N, persist N, or fail.
-- Make the rasteriser, the uploader, and the DB-recorder each retryable on their own.
-- Expose a cheap, surgical "re-render just these pages" endpoint so the frontend (next iteration) can self-heal without re-uploading.
-- Surface honest progress + per-page errors in `job_events` so admins can see *which* page hiccuped.
-
-## Server changes
-
-### 1. `pdf_ops.rasterize_preview` — completeness check
-- After Ghostscript exits, glob the output dir and confirm we got exactly `(last_page - first_page + 1)` files with the expected page-NNN suffixes.
-- If any are missing, **retry the missing pages individually** (one Ghostscript call per page is reliable and fast) up to 3 times with a small backoff.
-- If still missing, raise `RasterizationIncompleteError(missing_pages=[...])`.
-
-### 2. `generate_previews` task — verify-before-success
-Inside `pdf-server/app/tasks/document_tasks.py`:
-
-- Track `expected_pages = set(range(1, page_count + 1))` and `completed_pages: set[int]`.
-- Wrap each `_full_page_pipeline` call (rasterize → downscale → upload preview → upload thumbnail → record both rows) in a per-page `try/except` with up to **3 retries** and exponential backoff (250ms / 750ms / 2s + jitter).
-- Each retry re-runs only the failed step (rasterize OR upload OR DB write) using small helper subroutines, so we don't redo the whole page if only the S3 PUT blipped.
-- After the parallel pool drains:
-  - Compute `missing = expected_pages - completed_pages`.
-  - If `missing` is non-empty, run a **sequential salvage pass** for those exact page numbers (rasterise just those pages, upload, record).
-  - If anything is still missing, mark the job `failed` with `metadata.missing_pages=[…]` and a clear error message — **do not** flip the asset to `status=ready`.
-- Only when `len(completed_pages) == page_count` do we:
-  - update asset `status='ready'`,
-  - call `job_repo.mark_done` with the **measured** count (`pages_rendered=len(completed_pages)`),
-  - emit the final `job_event`.
-
-### 3. `_record_preview` — idempotent writes
-- Before inserting a new `derived_files` row, check if a row already exists for `(asset_id, kind, page)`. If yes, update it instead of inserting (so a salvage retry doesn't duplicate rows or violate uniqueness).
-- Add a unique index migration recommendation in a code comment for the next migration pass: `(asset_id, kind, page)` for `kind IN ('preview_page','thumbnail_page')`.
-
-### 4. Per-page job_events
-- Emit a `stage='page_failed'` event with `metadata={'page': N, 'attempt': K, 'error': str(exc)}` whenever a per-page retry fires, so admins can see flapping pages in the live ops feed.
-- Emit `stage='salvage'` event when the sequential salvage pass starts, listing missing pages.
-
-### 5. New endpoint: `POST /v1/assets/{asset_id}/render-pages`
-Add to `pdf-server/app/web/routes.py`:
-
-- Body: `{ "pages": [int, ...] | "missing" }` — explicit list, or sentinel `"missing"` meaning "scan derived_files and re-render anything not present".
-- Behaviour:
-  - Compute the actual missing set (from `derived_files` vs `asset.page_count`).
-  - Enqueue a new lightweight task `render_specific_pages(asset_id, job_id, pages)` (in `document_tasks.py`) that uses the same per-page pipeline with retries — but only for the given page numbers.
+### `app/web/routes.py` + `app/schemas/assets.py`
+- New `RenderPagesRequest` schema.
+- New endpoint `POST /v1/assets/{asset_id}/render-pages`. Body:
+  - `{"pages": [2, 7, 11]}` — explicit page numbers, or
+  - `{"pages": "missing"}` — auto-detect gaps from `derived_files` and
+    re-render whatever is missing.
   - Returns `{ job_id, missing_pages }`.
-- Allow it for any asset already in `status='ready'` or `status='normalized'`.
 
-This endpoint is what the frontend will call in the next iteration when it detects a gap, instead of having to re-upload the whole file.
+### `app/core/config.py`
+- New tunables: `PREVIEW_PAGE_MAX_RETRIES` (default 3),
+  `PREVIEW_PAGE_RETRY_BASE_MS` (default 250),
+  `PREVIEW_SALVAGE_ENABLED` (default true).
 
-### 6. Inspection sanity check
-- In `normalize_asset`, after `pdf_ops.inspect()`, log a single `INFO` line: `"normalize_asset: asset=… expected_pages=N source_bytes=…"`. Cheap to grep.
-- In `generate_previews` start, log: `"generate_previews: asset=… expected_pages=N dpi=…"`.
-- At the end (success or fail), log `"generate_previews: asset=… rendered=K/N missing=[…]"`.
+## What this fixes
 
-### 7. Config tunables
-Add to `app/core/config.py` (no env changes required, sensible defaults):
-- `preview_page_max_retries: int = 3`
-- `preview_page_retry_base_ms: int = 250`
-- `preview_salvage_enabled: bool = True`
+The 18-page document with a missing page-2 thumbnail: in the old code,
+if page-2 hit a transient Ghostscript glitch or a worker SIGTERM
+mid-batch, the future would raise inside `as_completed` without being
+caught, the loop would silently drop that page, and the job would still
+be marked `done` with `pages_rendered = max(1, page_count)` (a pure
+assertion, not a measurement). The asset flipped to `status='ready'`,
+the frontend trusted it, and the index-stable thumbnail array got a hole
+at index 1 — that's the "missing page 2" the user saw.
 
-## Out of scope (deferred to the next round, per user)
+After this change, that path will:
+1. Catch the per-page failure and emit a `page_failed` job event.
+2. Run the salvage pass on page-2 (single-page GS calls are reliable).
+3. If salvage also fails, mark the job FAILED with
+   `missing_pages=[2]` and leave the asset at its prior status — never
+   silently "done".
+
+## Out of scope (next iteration)
 
 - Frontend gap-detection / auto-call to `/render-pages`.
-- UI badge for partially-rendered documents.
-- Defensive "page didn't render" placeholder in `FlipBook`.
+- "Re-render" badge in the document card if gaps remain.
+- "Page didn't render" placeholder in `FlipBook` instead of a blank
+  white sheet.
 
-The user explicitly asked to **fix the server first**, then deal with the frontend. After this VPS work ships, the frontend will only need to (a) trust `pages_rendered`, and (b) call the new `render-pages` endpoint if it ever still detects a hole.
-
-## Files touched
-
-- `pdf-server/app/services/pdf_ops.py` — completeness check + per-page retry in `rasterize_preview`.
-- `pdf-server/app/tasks/document_tasks.py` — verify-before-success in `generate_previews`, idempotent `_record_preview`, new `render_specific_pages` task, structured logging.
-- `pdf-server/app/web/routes.py` — new `POST /v1/assets/{asset_id}/render-pages`.
-- `pdf-server/app/core/config.py` — three new tunables.
-
-## Acceptance
-
-- Uploading the user's `18pp_A4_Landscape.pdf` produces 18 preview rows + 18 thumbnail rows. No holes.
-- Killing one Ghostscript subprocess mid-render (simulated fault) produces a `page_failed` event, then a `salvage` event, then a clean `done`.
-- Killing all retries for one page produces a `failed` job with `missing_pages=[N]` — and the asset stays at `status='normalized'`, never `'ready'`.
-- Calling `POST /v1/assets/{id}/render-pages` with `{"pages":"missing"}` re-renders only the gaps and flips the asset back to `'ready'`.
+The user explicitly asked to fix the server first and then deal with
+the frontend. The frontend layer can now trust `pages_rendered` and use
+the new `/render-pages` endpoint when it ever still detects a hole.
