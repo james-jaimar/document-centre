@@ -175,7 +175,7 @@ export default function DocumentPreview({
   }
 
   if (BOUND_TYPES.has(productType)) {
-    return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} displayPageNumbers={displayPageNumbers} faceLabels={faceLabels} bindingEdge={bindingEdge} bindingArt={bindingArt} rawPaths={thumbnailPaths} />;
+    return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} displayPageNumbers={displayPageNumbers} faceLabels={faceLabels} bindingEdge={bindingEdge} landscapeLongEdge={landscapeLongEdge} bindingArt={bindingArt} rawPaths={thumbnailPaths} />;
   }
 
   // Business cards use the same LooseSheetsPreview renderer
