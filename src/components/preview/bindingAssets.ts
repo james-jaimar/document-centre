@@ -230,19 +230,29 @@ export function resolveBindingArt(req: BindingArtRequest): BindingArtResolved {
   const exact = lookup(method, color, edge, state);
   if (exact) return { src: exact, fellBack: false, resolved: req };
 
-  const otherEdge: BindingArtEdge = edge === "long" ? "short" : "long";
+  // Per-edge fallback chain. For "top" (horizontal landscape spine) we
+  // prefer "long" (portrait spine) next — visually closest until purpose-
+  // made landscape art is uploaded. For "short" we prefer "long" too.
+  const edgeChain: BindingArtEdge[] =
+    edge === "top"
+      ? ["long", "short"]
+      : edge === "short"
+        ? ["long"]
+        : ["short"];
 
-  // 2. Same colour, opposite edge
-  const sameColorOtherEdge = lookup(method, color, otherEdge, state);
-  if (sameColorOtherEdge) {
-    return {
-      src: sameColorOtherEdge,
-      fellBack: true,
-      resolved: { method, color, edge: otherEdge, state },
-    };
+  // 2. Same colour, walk the edge fallback chain
+  for (const fallbackEdge of edgeChain) {
+    const hit = lookup(method, color, fallbackEdge, state);
+    if (hit) {
+      return {
+        src: hit,
+        fellBack: true,
+        resolved: { method, color, edge: fallbackEdge, state },
+      };
+    }
   }
 
-  // 3. Default colour, requested edge then opposite
+  // 3. Default colour, requested edge then fallback edges
   const fallbackColor = DEFAULT_COLOR[method];
   if (fallbackColor !== color) {
     const defaultColor = lookup(method, fallbackColor, edge, state);
@@ -253,13 +263,15 @@ export function resolveBindingArt(req: BindingArtRequest): BindingArtResolved {
         resolved: { method, color: fallbackColor, edge, state },
       };
     }
-    const defaultColorOtherEdge = lookup(method, fallbackColor, otherEdge, state);
-    if (defaultColorOtherEdge) {
-      return {
-        src: defaultColorOtherEdge,
-        fellBack: true,
-        resolved: { method, color: fallbackColor, edge: otherEdge, state },
-      };
+    for (const fallbackEdge of edgeChain) {
+      const hit = lookup(method, fallbackColor, fallbackEdge, state);
+      if (hit) {
+        return {
+          src: hit,
+          fellBack: true,
+          resolved: { method, color: fallbackColor, edge: fallbackEdge, state },
+        };
+      }
     }
   }
 
