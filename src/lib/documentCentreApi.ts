@@ -501,6 +501,21 @@ export async function rasterize(
 }
 
 /**
+ * Surgically re-render specific pages of an existing asset (no full
+ * re-rasterize). Used by the frontend to self-heal after a partial preview
+ * render leaves gaps. Pass the keyword `"missing"` to let the server
+ * auto-detect any page that has no preview_page or thumbnail_page yet.
+ *
+ * Returns `{ job_id: null, missing_pages: [] }` when there is nothing to do.
+ */
+export async function renderPages(
+  assetId: string,
+  pages: number[] | "missing",
+): Promise<{ job_id: string | null; missing_pages: number[] }> {
+  return request(`v1/assets/${assetId}/render-pages`, "POST", { pages });
+}
+
+/**
  * Convert an Office asset (Word, PowerPoint, OpenDocument) to PDF using
  * LibreOffice headless on the PDF server. On completion the asset's
  * `normalized_storage_path` points at the converted PDF and standard
