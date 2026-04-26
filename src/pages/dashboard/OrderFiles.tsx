@@ -33,8 +33,9 @@ import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import type { PaperSize, NearIsoMatch } from "@/lib/paperSizes";
-import { isLandscape, ISO_SIZES } from "@/lib/paperSizes";
+import { isLandscape, ISO_SIZES, matchIsoSize, matchKnownSize, sizesMatch } from "@/lib/paperSizes";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Lock, X as XIcon } from "lucide-react";
 
 export default function OrderFiles() {
   const { id: orderId, familyId: routeFamilyId, slug } = useParams<{ id: string; familyId: string; slug: string }>();
