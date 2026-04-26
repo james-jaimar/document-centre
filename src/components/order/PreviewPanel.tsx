@@ -28,6 +28,8 @@ interface PreviewPanelProps {
   productType?: ProductPreviewType;
   effects?: PreviewEffects;
   bindingEdge?: "left" | "top";
+  /** When true and bindingEdge==="top", use rotated long-edge artwork. */
+  landscapeLongEdge?: boolean;
   /** Selected binding option's method + colour, drives spine artwork. */
   bindingArt?: { method: "spiral" | "comb" | "twin_loop"; color: string };
 }
