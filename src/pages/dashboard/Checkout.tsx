@@ -13,6 +13,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Loader2, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
+import { useRegionalPricing } from "@/hooks/useRegionalPricing";
+import { formatPrice } from "@/lib/formatCurrency";
 
 export default function Checkout() {
   const { slug } = useParams<{ slug: string }>();
@@ -20,6 +22,10 @@ export default function Checkout() {
   const { data: cart, isLoading } = useCart();
   const { tenantId } = useTenantContext();
   const placeOrder = usePlaceOrder();
+  const { region } = useRegionalPricing();
+  // Currency is locked at the cart level (set when items are added). Fall back
+  // to the active region for empty-cart edge cases.
+  const currency = ((cart as { currency?: string } | null)?.currency) ?? region?.currency_code ?? "ZAR";
 
   const [deliveryMethod, setDeliveryMethod] = useState<"collection" | "delivery">("collection");
   const [selectedBranchId, setSelectedBranchId] = useState<string>("");
