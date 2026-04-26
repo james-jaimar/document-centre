@@ -13,14 +13,8 @@ export const BINDING_STANDARD: StructuredOptionValue[] = [
     price_impact: 12.5, price_type: "per_document", is_default: true,
     metadata: { max_sheets: 450, color: "Black", binding_method: "comb" },
   }),
-  createOptionValue("Comb Binding (White)", "Standard", {
-    price_impact: 12.5, price_type: "per_document",
-    metadata: { max_sheets: 450, color: "White", binding_method: "comb" },
-  }),
-  createOptionValue("Comb Binding (Navy)", "Standard", {
-    price_impact: 12.5, price_type: "per_document",
-    metadata: { max_sheets: 450, color: "Navy", binding_method: "comb" },
-  }),
+  // NOTE: Comb Binding (White) and Comb Binding (Navy) are intentionally
+  // omitted — no artwork has been supplied yet. Re-add once art lands.
   createOptionValue("Spiral Binding (Black)", "Standard", {
     price_impact: 18.0, price_type: "per_document",
     metadata: { max_sheets: 310, color: "Black", binding_method: "spiral" },
@@ -29,10 +23,7 @@ export const BINDING_STANDARD: StructuredOptionValue[] = [
     price_impact: 18.0, price_type: "per_document",
     metadata: { max_sheets: 310, color: "White", binding_method: "spiral" },
   }),
-  createOptionValue("Spiral Binding (Blue)", "Standard", {
-    price_impact: 18.0, price_type: "per_document",
-    metadata: { max_sheets: 310, color: "Blue", binding_method: "spiral" },
-  }),
+  // NOTE: Spiral Binding (Blue) is intentionally omitted — no artwork yet.
   createOptionValue("Spiral Binding (Clear)", "Standard", {
     price_impact: 20.0, price_type: "per_document",
     metadata: { max_sheets: 310, color: "Clear", binding_method: "spiral" },
