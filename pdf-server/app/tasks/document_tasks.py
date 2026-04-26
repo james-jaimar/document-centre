@@ -124,6 +124,10 @@ def normalize_asset(self, asset_id: str, job_id: str):
             else:
                 raise ValueError(f'Unsupported file type: {ext}')
             info = pdf_ops.inspect(normalized)
+            logger.info(
+                "normalize_asset: asset=%s expected_pages=%s media_type=%s",
+                asset_id, info.get('page_count'), asset.get('media_type'),
+            )
             storage_path = unique_name(f'{prefix}normalized', '.pdf')
             storage.upload(normalized, storage_path, 'application/pdf')
             derived_file_repo.create_file(db, asset_id=asset_id, job_id=job_id, kind='normalized_pdf', storage_path=storage_path, media_type='application/pdf', metadata={'page_count': info['page_count']})
