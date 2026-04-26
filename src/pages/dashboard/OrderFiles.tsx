@@ -1193,7 +1193,36 @@ export default function OrderFiles() {
       <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_auto_1fr] gap-5 items-start">
         {/* Left: Uploaded Files */}
         <div className="glass-card p-5 space-y-4">
-          <h2 className="section-header">Uploaded Files</h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="section-header">Uploaded Files</h2>
+            {sessionSizeLock && (
+              <div
+                className="inline-flex items-center gap-1.5 text-[11px] font-medium text-primary bg-primary/10 px-2 py-1 rounded-full"
+                title={
+                  sessionSizeLock.source === "user_chose"
+                    ? "All new files in this session will be aligned to this size"
+                    : "Auto-detected from your first file. New files will be aligned to this size."
+                }
+              >
+                <Lock className="h-3 w-3" />
+                <span>Locked to {sessionSizeLock.size.name}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSessionSizeLock(null);
+                    autoAppliedDocIds.current = new Set();
+                    isoCheckedDocIds.current = new Set();
+                    toast.info("Size lock reset — next upload will set a new lock");
+                  }}
+                  className="ml-0.5 rounded-full p-0.5 hover:bg-primary/20 transition-colors"
+                  title="Reset size lock"
+                  aria-label="Reset size lock"
+                >
+                  <XIcon className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+          </div>
           <FileUploader onFiles={handleFiles} />
           <FileList
             documents={documents}
@@ -1202,6 +1231,7 @@ export default function OrderFiles() {
             onReprocess={reprocessDocument}
             onRerenderGaps={handleRerenderGaps}
             onDelete={handleDeleteDocument}
+            mismatchDocIds={mismatchDocIds}
           />
         </div>
 
