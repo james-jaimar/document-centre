@@ -37,6 +37,7 @@ export default function FileList({
   onReprocess,
   onRerenderGaps,
   onDelete,
+  mismatchDocIds,
 }: FileListProps) {
   const [reprocessingIds, setReprocessingIds] = useState<Set<string>>(new Set());
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
