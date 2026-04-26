@@ -7,7 +7,7 @@ import {
   useUpdateSection,
   useDeleteSection,
 } from "@/hooks/useOrderBuilder";
-import { useDocumentUpload } from "@/hooks/useDocumentUpload";
+import { useDocumentUpload, recoverThumbnailGaps } from "@/hooks/useDocumentUpload";
 import FileUploader from "@/components/order/FileUploader";
 import FileList from "@/components/order/FileList";
 import SectionActions from "@/components/order/SectionActions";
@@ -863,6 +863,48 @@ export default function OrderFiles() {
     [documents, selectedDocId, refetchDocuments, refetchSections]
   );
 
+  const handleRerenderGaps = useCallback(
+    async (doc: { id: string; backend_asset_id: string | null; preflight_data: unknown }) => {
+      if (!doc.backend_asset_id) {
+        toast.error("Can't re-render: this file has no backend asset reference.");
+        return;
+      }
+      const preflight = (doc.preflight_data as Record<string, unknown> | null) ?? {};
+      const gaps = Array.isArray(preflight.thumbnail_gaps)
+        ? (preflight.thumbnail_gaps as number[])
+        : [];
+      const toastId = toast.loading(
+        gaps.length > 0
+          ? `Re-rendering ${gaps.length} missing page${gaps.length === 1 ? "" : "s"}…`
+          : "Checking for missing pages…",
+      );
+      try {
+        // Surgical re-render — server returns 404 if the asset has been
+        // evicted, in which case the user should use the full Reprocess action.
+        const { remainingGaps } = await recoverThumbnailGaps(
+          doc.id,
+          doc.backend_asset_id,
+          gaps,
+        );
+
+        await refetchDocuments();
+        qc.invalidateQueries({ queryKey: ["documents", orderItem?.id] });
+
+        if (remainingGaps.length === 0) {
+          toast.success("All pages re-rendered.", { id: toastId });
+        } else {
+          toast.warning(
+            `${remainingGaps.length} page${remainingGaps.length === 1 ? "" : "s"} still failed to render. Try again or use Reprocess.`,
+            { id: toastId },
+          );
+        }
+      } catch (err: any) {
+        toast.error("Re-render failed", { id: toastId, description: err?.message });
+      }
+    },
+    [qc, orderItem?.id, refetchDocuments],
+  );
+
   const handleToggleColor = useCallback(
     async (section: (typeof sections)[0]) => {
       await updateSection.mutateAsync({
@@ -963,6 +1005,7 @@ export default function OrderFiles() {
             selectedDocId={selectedDocId}
             onSelect={setSelectedDocId}
             onReprocess={reprocessDocument}
+            onRerenderGaps={handleRerenderGaps}
             onDelete={handleDeleteDocument}
           />
         </div>

@@ -1,5 +1,5 @@
 import type { Tables } from "@/integrations/supabase/types";
-import { FileText, Loader2, AlertCircle, CheckCircle2, RefreshCw, Trash2, Eye } from "lucide-react";
+import { FileText, Loader2, AlertCircle, CheckCircle2, RefreshCw, Trash2, Eye, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
@@ -11,6 +11,11 @@ interface FileListProps {
   selectedDocId: string | null;
   onSelect: (id: string) => void;
   onReprocess?: (doc: { id: string; file_path: string; file_name: string }) => Promise<void>;
+  onRerenderGaps?: (doc: {
+    id: string;
+    backend_asset_id: string | null;
+    preflight_data: unknown;
+  }) => Promise<void>;
   onDelete?: (docId: string) => Promise<void>;
 }
 
@@ -25,10 +30,12 @@ export default function FileList({
   selectedDocId,
   onSelect,
   onReprocess,
+  onRerenderGaps,
   onDelete,
 }: FileListProps) {
   const [reprocessingIds, setReprocessingIds] = useState<Set<string>>(new Set());
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [recoveringIds, setRecoveringIds] = useState<Set<string>>(new Set());
 
   const handleDelete = async (doc: Document) => {
     if (!onDelete || deletingIds.has(doc.id)) return;
@@ -59,6 +66,24 @@ export default function FileList({
     }
   };
 
+  const handleRerenderGaps = async (doc: Document) => {
+    if (!onRerenderGaps || recoveringIds.has(doc.id)) return;
+    setRecoveringIds((prev) => new Set(prev).add(doc.id));
+    try {
+      await onRerenderGaps({
+        id: doc.id,
+        backend_asset_id: doc.backend_asset_id,
+        preflight_data: doc.preflight_data,
+      });
+    } finally {
+      setRecoveringIds((prev) => {
+        const next = new Set(prev);
+        next.delete(doc.id);
+        return next;
+      });
+    }
+  };
+
   return (
     <div className="space-y-2">
       {documents.map((doc) => {
@@ -70,6 +95,11 @@ export default function FileList({
         const thumbnails = Array.isArray(doc.thumbnail_urls) ? (doc.thumbnail_urls as string[]) : [];
         const hasThumbnails = thumbnails.length > 0;
         const isReprocessing = reprocessingIds.has(doc.id);
+        const isRecovering = recoveringIds.has(doc.id);
+        const thumbnailGaps: number[] = Array.isArray(preflight?.thumbnail_gaps)
+          ? (preflight.thumbnail_gaps as number[])
+          : [];
+        const hasGaps = thumbnailGaps.length > 0;
 
         return (
           <div
@@ -113,6 +143,15 @@ export default function FileList({
                     Review needed
                   </span>
                 )}
+                {hasGaps && (
+                  <span
+                    className="inline-flex items-center gap-1 text-[10px] font-medium text-warning bg-warning/10 px-1.5 py-0.5 rounded"
+                    title={`Missing pages: ${thumbnailGaps.join(", ")}`}
+                  >
+                    <AlertCircle className="h-3 w-3" />
+                    {thumbnailGaps.length} page{thumbnailGaps.length === 1 ? "" : "s"} missing
+                  </span>
+                )}
               </div>
             </div>
 
@@ -130,6 +169,19 @@ export default function FileList({
                   <Trash2 className={cn("h-3.5 w-3.5", deletingIds.has(doc.id) && "animate-pulse")} />
                 </button>
               )}
+              {hasGaps && onRerenderGaps && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRerenderGaps(doc);
+                  }}
+                  disabled={isRecovering}
+                  className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-warning hover:bg-warning/10 transition-colors disabled:opacity-50"
+                  title="Re-render missing pages"
+                >
+                  <Wand2 className={cn("h-3.5 w-3.5", isRecovering && "animate-pulse")} />
+                </button>
+              )}
               {isReady && !hasThumbnails && onReprocess && (
                 <button
                   onClick={(e) => {
@@ -143,7 +195,7 @@ export default function FileList({
                   <RefreshCw className={cn("h-3.5 w-3.5", isReprocessing && "animate-spin")} />
                 </button>
               )}
-              {isProcessing || isReprocessing ? (
+              {isProcessing || isReprocessing || isRecovering ? (
                 <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
               ) : isError ? (
                 <AlertCircle className="h-4 w-4 text-destructive" />
