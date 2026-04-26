@@ -750,15 +750,17 @@ export function useDocumentUpload(
         });
         // Flip the documents row out of 'processing' so the file list
         // shows an error chip instead of an indefinite spinner.
-        try {
-          await supabase
-            .from("documents")
-            .update({ document_status: "error" })
-            .eq("id", doc.id)
-            .in("document_status", ["processing", "pending"]);
-          qc.invalidateQueries({ queryKey: ["documents", effectiveId] });
-        } catch (markErr) {
-          console.warn("[upload] failed to mark document as error:", markErr);
+        if (createdDocId) {
+          try {
+            await supabase
+              .from("documents")
+              .update({ document_status: "error" })
+              .eq("id", createdDocId)
+              .in("document_status", ["processing", "pending"]);
+            qc.invalidateQueries({ queryKey: ["documents", effectiveId] });
+          } catch (markErr) {
+            console.warn("[upload] failed to mark document as error:", markErr);
+          }
         }
         return null;
       }
