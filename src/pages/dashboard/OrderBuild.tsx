@@ -29,6 +29,8 @@ import {
 import { ArrowLeft, Settings2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
+import { useRegionalPricing } from "@/hooks/useRegionalPricing";
+import { formatPrice } from "@/lib/formatCurrency";
 
 export default function OrderBuild() {
   const { id: orderId, slug } = useParams<{ id: string; slug: string }>();
