@@ -2065,11 +2065,45 @@ export type Database = {
         }
         Relationships: []
       }
+      pricing_currency_profiles: {
+        Row: {
+          buying_power_mult: number
+          currency_code: string
+          fx_from_zar: number
+          min_value: number
+          notes: string | null
+          rounding_step: number
+          symbol: string | null
+          updated_at: string
+        }
+        Insert: {
+          buying_power_mult?: number
+          currency_code: string
+          fx_from_zar: number
+          min_value?: number
+          notes?: string | null
+          rounding_step?: number
+          symbol?: string | null
+          updated_at?: string
+        }
+        Update: {
+          buying_power_mult?: number
+          currency_code?: string
+          fx_from_zar?: number
+          min_value?: number
+          notes?: string | null
+          rounding_step?: number
+          symbol?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       pricing_rules: {
         Row: {
           branch_id: string | null
           conditions: Json
           created_at: string
+          currency_code: string
           id: string
           is_active: boolean
           name: string
@@ -2083,6 +2117,7 @@ export type Database = {
           branch_id?: string | null
           conditions?: Json
           created_at?: string
+          currency_code?: string
           id?: string
           is_active?: boolean
           name: string
@@ -2096,6 +2131,7 @@ export type Database = {
           branch_id?: string | null
           conditions?: Json
           created_at?: string
+          currency_code?: string
           id?: string
           is_active?: boolean
           name?: string
@@ -2806,6 +2842,10 @@ export type Database = {
       read_email_account_secret: {
         Args: { p_secret_id: string }
         Returns: string
+      }
+      regenerate_pricing_rules_for_currency: {
+        Args: { p_currency: string }
+        Returns: number
       }
       resolve_tenant_setting: {
         Args: { p_category: string; p_key: string; p_tenant_id: string }
