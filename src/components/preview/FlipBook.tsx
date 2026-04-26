@@ -268,6 +268,7 @@ export default function FlipBook({
   displayPageNumbers,
   faceLabels,
   bindingEdge = "left",
+  landscapeLongEdge = false,
   rawPaths,
   bindingArt,
 }: FlipBookProps) {
@@ -399,6 +400,7 @@ export default function FlipBook({
               isOpen={!isSoloPage}
               position={spinePosition}
               bindingEdge={bindingEdge}
+              landscapeLongEdge={landscapeLongEdge}
               bindingArt={bindingArt}
             />
             {tabPositions && tabPositions.length > 0 && (

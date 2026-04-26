@@ -157,12 +157,13 @@ export default function OrderBuild() {
   useEffect(() => {
     if (orderItem?.spec) {
       const s = orderItem.spec as unknown as ItemSpec;
-      const newSpec = {
+      const newSpec: ItemSpec = {
         page_count: s.page_count ?? 0,
         quantity: s.quantity ?? 1,
         is_color: s.is_color ?? true,
         is_duplex: s.is_duplex ?? true,
         selected_options: s.selected_options ?? {},
+        binding_edge_override: s.binding_edge_override ?? null,
       };
       setSpec(newSpec);
       initialSpecRef.current = JSON.stringify(newSpec);
@@ -418,20 +419,24 @@ export default function OrderBuild() {
     return fx;
   }, [options, spec.selected_options]);
 
-  // Derive binding edge from Document Size option metadata
-  const bindingEdge: "left" | "top" = useMemo(() => {
+  // Derive document orientation + binding edge from Document Size metadata.
+  // Treats both `binding_edge: "top"` (legacy) and `binding_edge: "short"`
+  // (current landscape default) as top-bound for the FlipBook layout. Pure
+  // landscape orientation also implies top-bound when no override is set.
+  const sizeMeta = useMemo(() => {
     const sizeOpt = options.find((o) => o.name.toLowerCase() === "document size");
-    if (!sizeOpt || !isStructuredValues(sizeOpt.values)) return "left";
+    if (!sizeOpt || !isStructuredValues(sizeOpt.values)) return null;
     const key = Object.keys(spec.selected_options).find(
       (k) => k.toLowerCase() === sizeOpt.name.toLowerCase()
     ) || sizeOpt.name;
     const slug = spec.selected_options[key];
-    if (!slug) return "left";
+    if (!slug) return null;
     const val = (sizeOpt.values as StructuredOptionValue[]).find((v) => v.slug === slug);
-    const edge = (val?.metadata as Record<string, any>)?.binding_edge;
-    if (edge === "top") return "top";
-    return "left";
+    return (val?.metadata as Record<string, any>) ?? null;
   }, [options, spec.selected_options]);
+
+  const isLandscapeSize = sizeMeta?.orientation === "landscape";
+  const sizeBindingEdge = sizeMeta?.binding_edge as string | undefined;
 
   // Derive binding artwork descriptor from the selected Binding option's
   // metadata. `binding_method` is one of "comb" | "spiral" | "twin_loop" |
@@ -453,6 +458,28 @@ export default function OrderBuild() {
     }
     return undefined;
   }, [options, spec.selected_options]);
+
+  // Top-bound layout fires for top/short metadata OR any landscape size.
+  // The user can opt-in to long-edge (top) binding via the toggle, which
+  // keeps the top-bound layout but switches the spine artwork to the
+  // (rotated) portrait long-edge assets.
+  const bindingEdge: "left" | "top" = useMemo(() => {
+    if (sizeBindingEdge === "top" || sizeBindingEdge === "short") return "top";
+    if (isLandscapeSize) return "top";
+    return "left";
+  }, [sizeBindingEdge, isLandscapeSize]);
+
+  const landscapeLongEdge = isLandscapeSize && spec.binding_edge_override === "long";
+
+  // Show the long-edge toggle only when it's actually applicable.
+  const canToggleLongEdge = isLandscapeSize && !!bindingArt;
+
+  const handleToggleLongEdge = useCallback((next: boolean) => {
+    setSpec((prev) => ({
+      ...prev,
+      binding_edge_override: next ? "long" : null,
+    }));
+  }, []);
 
   const handleOptionChange = useCallback((optionName: string, slug: string) => {
     setSpec((prev) => ({
@@ -776,8 +803,30 @@ export default function OrderBuild() {
         </div>
 
         {/* Right: Preview */}
-        <div className="border border-border rounded-lg bg-card p-4 overflow-auto">
-          <PreviewPanel documents={documents} sections={sections} productType={productType} effects={previewEffects} bindingEdge={bindingEdge} bindingArt={bindingArt} />
+        <div className="border border-border rounded-lg bg-card p-4 overflow-auto flex flex-col gap-2">
+          {canToggleLongEdge && (
+            <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
+              <label htmlFor="bind-long-edge" className="cursor-pointer">
+                Bind on long edge (top)
+              </label>
+              <input
+                id="bind-long-edge"
+                type="checkbox"
+                className="h-4 w-4 cursor-pointer accent-primary"
+                checked={landscapeLongEdge}
+                onChange={(e) => handleToggleLongEdge(e.target.checked)}
+              />
+            </div>
+          )}
+          <PreviewPanel
+            documents={documents}
+            sections={sections}
+            productType={productType}
+            effects={previewEffects}
+            bindingEdge={bindingEdge}
+            landscapeLongEdge={landscapeLongEdge}
+            bindingArt={bindingArt}
+          />
         </div>
       </div>
       {/* Tab/Insert Drawer — only mount after user clicks the button */}
