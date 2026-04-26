@@ -845,9 +845,67 @@ export default function OrderFiles() {
 
   const familySlug = productFamily?.slug ?? null;
 
+  // ── Active print size (for mismatch guard) ─────────────────────
+  // Returns the effective dimensions of a doc, preferring post-scale values
+  // recorded in preflight_data.
+  const getDocEffectiveSize = useCallback(
+    (doc: { page_width_mm: number | null; page_height_mm: number | null; preflight_data: unknown } | undefined | null) => {
+      if (!doc) return null;
+      const pf = (doc.preflight_data as Record<string, any> | null) ?? null;
+      const w = Number(pf?.effective_width_mm ?? doc.page_width_mm ?? 0);
+      const h = Number(pf?.effective_height_mm ?? doc.page_height_mm ?? 0);
+      if (!(w > 0 && h > 0)) return null;
+      return { widthMm: w, heightMm: h };
+    },
+    [],
+  );
+
+  // The "active print size" is the dimensions of the first doc already
+  // assigned to a section (i.e. the size the print job is committed to).
+  const activePrintSize = useMemo(() => {
+    for (const s of sections) {
+      const doc = documents.find((d) => d.id === s.document_id);
+      const sz = getDocEffectiveSize(doc);
+      if (sz) return sz;
+    }
+    return null;
+  }, [sections, documents, getDocEffectiveSize]);
+
+  // Set of doc IDs whose effective size doesn't match the active print size
+  // (or the session lock if no sections exist yet). Surfaces as a passive
+  // ⚠ badge in the file list.
+  const mismatchDocIds = useMemo(() => {
+    const reference = activePrintSize ?? sessionSizeLock?.size ?? null;
+    if (!reference) return new Set<string>();
+    const out = new Set<string>();
+    for (const d of documents) {
+      const sz = getDocEffectiveSize(d);
+      if (!sz) continue;
+      if (!sizesMatch(sz.widthMm, sz.heightMm, reference.widthMm, reference.heightMm)) {
+        out.add(d.id);
+      }
+    }
+    return out;
+  }, [documents, activePrintSize, sessionSizeLock, getDocEffectiveSize]);
+
   const handleAddAs = useCallback(
     async (type: "front_cover" | "back_cover" | "body") => {
       if (!selectedDocId || !orderItem) return;
+
+      // ── Belt-and-braces mismatch guard ─────────────────────────
+      // Refuse to assign a doc whose effective size doesn't match the
+      // size the print job is already committed to.
+      const candidate = documents.find((d) => d.id === selectedDocId);
+      const candidateSize = getDocEffectiveSize(candidate);
+      if (candidateSize && activePrintSize) {
+        if (!sizesMatch(candidateSize.widthMm, candidateSize.heightMm, activePrintSize.widthMm, activePrintSize.heightMm)) {
+          toast.error("Mixed paper sizes can't be printed together", {
+            description: `Your other files are ${Math.round(activePrintSize.widthMm)}×${Math.round(activePrintSize.heightMm)}mm. Re-upload this file at that size, or remove the existing files first.`,
+          });
+          return;
+        }
+      }
+
       // Auto-set defaults per product family
       const extraFields: Record<string, boolean> = {};
       if (familySlug === "brochures") {
@@ -883,7 +941,7 @@ export default function OrderFiles() {
         toast.error("Failed to add section", { description: err.message });
       }
     },
-    [selectedDocId, orderItem, sections.length, addSection, familySlug, documents]
+    [selectedDocId, orderItem, sections.length, addSection, familySlug, documents, activePrintSize, getDocEffectiveSize]
   );
 
   // Auto-assign a 2-3 page document as Outside (page 1) + Inside (page 2) for brochures
