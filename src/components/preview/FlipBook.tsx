@@ -392,6 +392,14 @@ export default function FlipBook({
   // Alias for tab overlay (suppress left tabs when showing front solo)
   const isShowingFrontCover = isShowingFirstSolo;
 
+  // ── CSS scale factor to fit into available container ──
+  // For top-bound layouts the inner book is rotated 90°, so the container's
+  // available width is what limits the rotated book's HEIGHT (and vice versa).
+  const availableWidth = (isTopBound ? height : width) - 80;
+  const availableHeight = (isTopBound ? width : height) - 60;
+
+  // ... (solo-page detection unchanged below)
+
   const scaleX = availableWidth / baseSpreadWidth;
   const scaleY = availableHeight / basePageHeight;
   const scaleFactor = Math.min(scaleX, scaleY, 1);
@@ -403,11 +411,11 @@ export default function FlipBook({
   const spinePosition = isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center";
   const tabGutter = (tabPositions?.length ?? 0) > 0 ? 30 * scaleFactor : 0;
 
-  // For top-edge binding, rotate the entire container 90° clockwise
-  const isTopBound = bindingEdge === "top";
+  // For top-edge binding, rotate the inner container 90° clockwise so the
+  // two-page spread stacks vertically with the spine running horizontally
+  // between the pages. The page artwork inside each FlipPage is then
+  // counter-rotated 90° (see counterRotate prop) so it stays upright.
   const outerTransform = isTopBound ? "rotate(90deg)" : undefined;
-  const outerWidth = isTopBound ? height : width;
-  const outerHeight = isTopBound ? width : height;
 
   return (
     <div
