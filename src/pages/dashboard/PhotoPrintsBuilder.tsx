@@ -330,6 +330,7 @@ export default function PhotoPrintsBuilder() {
           photo_prints: finalSpec,
         } as any,
         replacesCartItemId: replacesCartItemId || undefined,
+        currencyCode: activeCurrency,
       });
 
       invalidateUserOrderCaches(qc);
