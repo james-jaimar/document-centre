@@ -157,12 +157,13 @@ export default function OrderBuild() {
   useEffect(() => {
     if (orderItem?.spec) {
       const s = orderItem.spec as unknown as ItemSpec;
-      const newSpec = {
+      const newSpec: ItemSpec = {
         page_count: s.page_count ?? 0,
         quantity: s.quantity ?? 1,
         is_color: s.is_color ?? true,
         is_duplex: s.is_duplex ?? true,
         selected_options: s.selected_options ?? {},
+        binding_edge_override: s.binding_edge_override ?? null,
       };
       setSpec(newSpec);
       initialSpecRef.current = JSON.stringify(newSpec);
