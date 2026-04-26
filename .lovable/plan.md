@@ -1,128 +1,71 @@
 ## Goal
 
-Make the **demo product/print pricing** geo-aware across the 5 regions you already support for SaaS plans (ZA, UK, EU, US, AU), so customers visiting from each region see prices that look native and reflect realistic local print buying-power — not a naive FX conversion of ZAR.
+Eliminate every remaining ZAR-locked currency render so prices honour the order's stored currency (or the active region's currency) everywhere — admin, branch, customer dashboard, order detail tabs, and dialogs.
 
-The existing IP-detection from `useRegionalPricing` is reused; nothing new on the geolocation side.
+## What's already correct (no change)
 
----
+- `src/lib/formatCurrency.ts` — `formatPrice` / `formatPriceDelta` (canonical helper, locale picked per ISO code).
+- Order Builder, Cart, Checkout, OrderConfirmation, OptionSelector, PriceSummary, AdminPricing, BranchPricing, PhotoPrintsBuilder — already migrated last turn.
 
-## Research-derived multipliers
+## The leak: ZAR-locked `Intl.NumberFormat("en-ZA", …)` helpers
 
-Applied on top of FX-converted ZAR base prices, then rounded to clean retail-friendly numbers:
+Each of these calls hard-codes the **locale** to `en-ZA`, which forces "R" symbol placement and `1 234,56` separators even when the currency arg is GBP/USD/EUR/AUD. They also default the currency arg to `"ZAR"` when the order field is missing, so historical / partially-migrated orders render as rand. Fix: replace every local `fmt`/`ZAR.format`/`formatCurrency` helper with the shared `formatPrice` from `@/lib/formatCurrency`, and always pass `order.currency` (or `region.currency_code`) — never default silently to ZAR mid-render.
 
-| Region | FX (≈Apr 2026) | Buying-power multiplier | Effective vs ZA |
-|---|---|---|---|
-| **ZA** (ZAR) | 1.00 | 1.00× | baseline (current rules) |
-| **UK** (GBP) | ÷ 22.35 | × 1.15 | UK retail print ~£0.10–0.20/page colour |
-| **EU** (EUR) | ÷ 19.00 | × 1.20 | tracks UK +5–10% |
-| **US** (USD) | ÷ 16.80 | × 1.35 | US retail print noticeably premium ($0.49–0.79/pg) |
-| **AU** (AUD) | ÷ 11.00 | × 1.20 | Officeworks-style premium retail |
+### Files to migrate
 
-**Spot-check (current ZA: R1.30/page colour, R0.50 B&W, R15 setup):**
-- UK: £0.067 → rounds to **£0.09 colour, £0.04 B&W, £0.99 setup** ✓ matches BachelorPrint band
-- US: $0.105 → multiplied → rounds to **$0.14 colour, $0.05 B&W, $1.20 setup** (intentionally lower than Doxzoo-tier so demo looks competitive but not unrealistic)
-- EU: €0.082 → **€0.10 colour, €0.04 B&W, €1.10 setup**
-- AU: $0.142 → **$0.15 colour, $0.06 B&W, $1.30 setup**
+1. **`src/components/orders/detail/OrderPricingTab.tsx`**
+   - Drop the local `fmt`; import `formatPrice`. Pass `order.currency` from the parent (already in scope via the order detail page).
+2. **`src/components/orders/detail/JobDetailPanel.tsx`**
+   - Same pattern. Currency comes from the parent order; thread it through the panel props (one new optional `currency` prop, default falls back to `formatPrice` default which is ZAR — but caller will always supply it).
+3. **`src/pages/dashboard/CustomerOrderDetail.tsx`** (line 82)
+   - Replace local `fmt` with `formatPrice`; use `order.currency` from the loaded record.
+4. **`src/pages/dashboard/CustomerOrders.tsx`** (line 234)
+   - Replace `R {total.toFixed(2)}` with `formatPrice(total, order.currency)`. The list query already selects `currency`.
+5. **`src/pages/admin/AdminOrders.tsx`** (lines 100–106)
+   - Replace local `formatCurrency` with `formatPrice` (call sites unchanged structurally).
+6. **`src/pages/admin/AdminCustomers.tsx`** (line 17, 115)
+   - Customer lifetime spend is aggregated across orders in possibly mixed currencies. Plan: keep a single `formatPrice(amount, primary_currency)` where `primary_currency` is the customer's most-used currency (already a column on customers? if not, fall back to tenant `default_currency`). Simplest correct call: `formatPrice(c.total_spent, c.preferred_currency ?? tenantDefaultCurrency ?? "ZAR")`. I'll inspect what columns are available and pick the cleanest option during implementation; if neither is present we'll fall back to the tenant default currency from `TenantContext`.
+7. **`src/pages/admin/AdminCustomerDetail.tsx`** (lines 40, 274, 282, 322)
+   - Same approach as AdminCustomers. For the per-order row at line 322, use the order's own `currency` (always available on the row).
+8. **`src/components/admin/MembersTable.tsx`** (line 42)
+   - Member-level credit limit: use tenant `default_currency` from `TenantContext` instead of hard-coded ZAR.
+9. **`src/pages/admin/AdminOrderDetail.tsx`** (line 71) and **`src/pages/branch/BranchOrderDetail.tsx`** (line 95)
+   - The `window.confirm` string concatenates `${order.currency} ${Number(order.amount_due).toFixed(2)}`. Replace with `formatPrice(Number(order.amount_due), order.currency)`.
+10. **`src/pages/admin/AdminDocuments.tsx`** (line 193) and **`src/pages/branch/BranchOrders.tsx`** (line 72)
+    - Replace `${inv.currency} {Number(inv.total_amount).toFixed(2)}` style with `formatPrice(Number(...), inv.currency || row.currency)`.
+11. **`src/components/orders/RefundDialog.tsx`** (line 56), **`src/components/orders/RecordPaymentDialog.tsx`** (lines 42, 108), **`src/components/orders/CancelOrderDialog.tsx`** (line 74)
+    - All already receive a `currency` prop; switch the manual `${currency} ${n.toFixed(2)}` strings to `formatPrice(n, currency)`. Leave the `useState<string>(amountDue.toFixed(2))` initialiser alone — it seeds a numeric input field, not a display string.
 
-All 66 active rules across all product families get the same treatment via a single transform.
+### Customer Account Settings copy
 
----
+12. **`src/components/admin/CustomerAccountSettings.tsx`** (line 54) — label `"Credit limit (ZAR)"` becomes `Credit limit ({tenantDefaultCurrency})` so it's accurate for non-ZA tenants.
 
-## Architecture decision
+### Tenant default currency wiring
 
-**Option A (chosen): Multi-currency rules table.** Extend `pricing_rules` with `currency_code` and seed converted variants per region. The pricing engine filters by the active session currency.
+For files 6, 7, 8, 12 we need the tenant's `default_currency`. `TenantContext` exposes the tenant record; I'll read `tenant.default_currency` (already shown in `GeneralTab.tsx` — same field). If `TenantContext` doesn't currently expose it, I'll add it to the provider's selected columns rather than re-fetch.
 
-Why not the alternatives:
-- *Live FX conversion at render time* — fragile for a demo, unrealistic prices ($0.0297…), no buying-power adjustment.
-- *Single rules table + multiplier lookup* — fights the "no hard-coding" memory rule and gives ugly numbers.
+## What stays in ZA-locked locale on purpose
 
-A new lightweight admin tool to regenerate the converted rules from ZA whenever ZA changes is included, so this stays admin-driven.
+- `src/pages/platform/PlatformDemoPrintPricing.tsx` — admin tooling that explicitly references "ZAR (Source)". Leave as is; this *is* ZAR by design.
+- `src/pages/platform/PlatformPricingRegions.tsx` — region config UI; the literal "ZAR" is editable data, not a currency render.
+- `src/pages/admin/settings/GeneralTab.tsx` — currency *picker* listing ISO codes. Correct as is.
+- `src/integrations/supabase/types.ts` — generated.
+- `toFixed(2)` for non-currency things (`zoom`, file size in KB/MB, CPU load, S3 GB) — not currency.
 
----
+## Out of scope
 
-## Database changes
+- Marketing `/pricing` page (`src/pages/Pricing.tsx`) — already region-aware via `useRegionalPricing` and `formatPlanPrice`; the `toFixed` there is inside its own region-aware formatter. No change needed.
+- Server-side rendering of currency (Edge Functions, emails) — not in this sweep. Flag for a follow-up if you want emails localised too.
 
-1. **Add columns to `pricing_rules`**:
-   - `currency_code text NOT NULL DEFAULT 'ZAR'`
-   - Backfill all existing rows to `'ZAR'`.
-   - New unique index per `(product_family_id, name, currency_code, conditions_hash)` — or simpler: just allow duplicates and let the engine filter by currency.
+## QA checklist after implementation
 
-2. **Add a small helper table `pricing_currency_profiles`** (admin-editable later):
-   ```
-   currency_code | fx_from_zar | buying_power_mult | rounding_step | min_value
-   ZAR | 1.00      | 1.00 | 0.05  | 0.05
-   GBP | 0.04474   | 1.15 | 0.01  | 0.01
-   EUR | 0.05263   | 1.20 | 0.01  | 0.01
-   USD | 0.05952   | 1.35 | 0.01  | 0.01
-   AUD | 0.09091   | 1.20 | 0.01  | 0.01
-   ```
-   Used by the regenerate script and (later) the platform admin UI.
+1. Switch region to GBP via the storefront switcher.
+2. Place a small order; confirm the "Order Placed" total renders `£…` (already correct), then click "View Order Details" — pricing tab and job panel should render `£…`, not `R …`.
+3. Visit My Orders — list row should render `£…`.
+4. As admin, view the same order in `/admin/orders/[id]` — currency should match the order's stored currency, not the tenant default.
+5. As admin, view the customer profile — lifetime spend uses tenant default currency (or preferred), per-order rows use the order's own currency.
+6. Repeat steps 1–5 for USD and EUR to confirm decimal/thousands separators (`$1,234.56`, `€1.234,56`).
 
-3. **Seed migration**: clone every active ZAR rule into 4 new rows (GBP/EUR/USD/AUD) with `price_value = round_to_step(zar_price × fx × multiplier, step)`. Negative volume-discount rows (e.g. `-0.05`) get the same transform; setup fees too.
+## Risk
 
-4. **(Optional, recommended) DB function `regenerate_pricing_rules_for_currency(target text)`** — re-derives non-ZAR rules from current ZAR ones. Lets admins edit ZA prices and re-sync the others without manual SQL.
-
----
-
-## Code changes
-
-### `src/lib/calculatePrice.ts`
-- Accept an optional `currencyCode` and filter `rules` to that currency before evaluating. Falls back to ZAR if no rules in target currency.
-
-### `src/hooks/useRegionalPricing.ts`
-- Already exposes `region.currency_code` and `region.currency_symbol`. No change needed beyond making sure both are read by consumers.
-
-### New `src/lib/formatCurrency.ts`
-- Single helper `formatPrice(amount, currencyCode, currencySymbol?)` using `Intl.NumberFormat` (style: 'currency'). Always 2dp. Replaces the scattered `R{x.toFixed(2)}`.
-
-### Replace hard-coded `R{...}` in:
-- `src/components/order/PriceSummary.tsx` (3 spots)
-- `src/pages/dashboard/Cart.tsx` (3 spots)
-- `src/pages/dashboard/Checkout.tsx` (4 spots)
-- `src/pages/dashboard/OrderConfirmation.tsx` (1 spot)
-- `src/pages/dashboard/OrderBuild.tsx` (any price spots)
-- `src/pages/dashboard/PhotoPrintsBuilder.tsx`
-- `src/components/order/OptionSelector.tsx` (option price impacts)
-
-Each consumer pulls the active region from `useRegionalPricing()` and calls `formatPrice(amount, region.currency_code)`.
-
-### Pricing-rule fetcher
-- Wherever the client currently does `supabase.from('pricing_rules').select('*').eq('product_family_id', …)`, add `.eq('currency_code', region.currency_code)`. Identify these via `rg "from\\(['\"]pricing_rules"`.
-
-### `useCart.ts` & order/checkout writes
-- When persisting `unit_price`, `subtotal`, `total_amount` etc. on `orders` / `order_items`, also write `currency` (already present on `orders`). Cart total maths stays in the active currency end-to-end — no mid-flight conversion.
-- An order placed in USD stays USD on the customer's order history.
-
----
-
-## Admin / platform UX (light touch)
-
-- **`/platform/pricing-regions`** already exists for SaaS plans — extend with a tab "Demo Print Pricing" that shows the `pricing_currency_profiles` table and a **"Regenerate from ZA"** button per non-ZA currency. Calls the SQL function, updates rounded prices.
-- No new region-specific manual rule editor for the demo (ZA is the source of truth; others are derived). Keeps maintenance to one place.
-
----
-
-## What this does NOT touch
-
-- Geolocation logic (already working).
-- The SaaS subscription plans on `/pricing` (already correctly priced per region).
-- Tenant-level pricing for live customers — when real tenants go live they'll set their own ZAR/GBP/etc prices in their admin. This is purely the **demo storefront** experience.
-- Cart edit / order snapshot logic — orders snapshot prices at submit time, so historical orders are unaffected.
-
----
-
-## Rollout order (single approval = full implementation)
-
-1. Migration: add `currency_code` to `pricing_rules`, create `pricing_currency_profiles`, backfill, seed 4 currency variants of every ZA rule.
-2. Add `formatCurrency.ts` helper.
-3. Update `calculatePrice.ts` to filter by currency.
-4. Replace all hard-coded `R{...}` and `from('pricing_rules')` calls (~10 files).
-5. Wire cart/checkout to persist + display in active currency.
-6. Add "Demo Print Pricing" tab on platform pricing-regions page with regenerate button.
-7. Manual QA: switch region via the existing region picker → verify configurator, cart, checkout, order confirmation all show the right symbol/values; verify ZA path unchanged.
-
----
-
-## Open question (will assume defaults if not flagged)
-
-- **VAT/tax**: today the cart hard-codes 15% VAT (ZA). Should non-ZA regions show VAT-exclusive (US-style) or VAT-inclusive at local rates (UK 20%, EU ~21%, AU 10% GST)? **Default assumption**: keep the current 15% VAT line but rename it to "Tax" outside ZA — proper per-region VAT can be a follow-up if you want it.
+Low. All changes are render-layer swaps to an existing helper; no schema or query changes. Dialogs already receive `currency` props, and order rows already select `currency` in the queries (`src/lib/orders/queries.ts` lines 21 & 71 confirmed).
