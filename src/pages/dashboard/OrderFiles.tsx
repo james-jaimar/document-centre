@@ -219,6 +219,8 @@ export default function OrderFiles() {
     widthMm: number;
     heightMm: number;
     backendAssetId: string | null;
+    /** When set, the dialog renders the "follow-the-lock" variant. */
+    lockedSize?: PaperSize | null;
   } | null>(null);
 
   // ── Session paper-size lock ────────────────────────────────────
