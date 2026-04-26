@@ -1,6 +1,8 @@
 from __future__ import annotations
 import logging
 logger = logging.getLogger(__name__)
+import random
+import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image
@@ -12,7 +14,7 @@ from app.services.jobs import job_repo
 from app.services.job_event_repo import job_event_repo
 from app.services.storage import StorageService
 from app.services.files import Workspace, unique_name
-from app.services.pdf_ops import pdf_ops
+from app.services.pdf_ops import pdf_ops, RasterizationIncompleteError
 from app.services.derived_files import derived_file_repo
 from app.core.config import settings
 
@@ -122,6 +124,10 @@ def normalize_asset(self, asset_id: str, job_id: str):
             else:
                 raise ValueError(f'Unsupported file type: {ext}')
             info = pdf_ops.inspect(normalized)
+            logger.info(
+                "normalize_asset: asset=%s expected_pages=%s media_type=%s",
+                asset_id, info.get('page_count'), asset.get('media_type'),
+            )
             storage_path = unique_name(f'{prefix}normalized', '.pdf')
             storage.upload(normalized, storage_path, 'application/pdf')
             derived_file_repo.create_file(db, asset_id=asset_id, job_id=job_id, kind='normalized_pdf', storage_path=storage_path, media_type='application/pdf', metadata={'page_count': info['page_count']})
@@ -215,27 +221,146 @@ def inspect_asset(self, asset_id: str, job_id: str):
     finally:
         db.close()
 
+# ---------------------------------------------------------------------------
+# Per-page pipeline helpers (used by generate_previews + render_specific_pages)
+# ---------------------------------------------------------------------------
+
+
+def _retry_with_backoff(fn, *, label: str, page: int):
+    """Run ``fn()`` with bounded retries and exponential backoff + jitter.
+
+    Returns the function's result on success. Raises the last exception if
+    every attempt fails.
+    """
+    max_retries = max(1, settings.preview_page_max_retries)
+    base_ms = max(50, settings.preview_page_retry_base_ms)
+    last_exc: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 — we re-raise after exhausting
+            last_exc = exc
+            logger.warning(
+                "%s: attempt %d/%d failed for page %d: %s",
+                label, attempt, max_retries, page, exc,
+            )
+            if attempt == max_retries:
+                break
+            delay = (base_ms * (2 ** (attempt - 1))) / 1000.0
+            time.sleep(delay + random.uniform(0, delay * 0.25))
+    assert last_exc is not None
+    raise last_exc
+
+
+def _render_one_page(
+    *,
+    src_pdf,
+    preview_dir,
+    thumb_dir,
+    prefix: str,
+    page: int,
+    dpi: int,
+):
+    """Rasterize → downscale → upload preview + thumbnail for one page.
+
+    Each step is retried independently so a transient S3 hiccup doesn't
+    cause a full re-rasterise of the page. Returns
+    ``(image_path, thumb_image, preview_storage, thumb_storage)``.
+    """
+    out_prefix = preview_dir / 'page'
+
+    def _do_rasterize():
+        imgs = pdf_ops.rasterize_preview(
+            src_pdf, out_prefix, dpi=dpi,
+            first_page=page, last_page=page,
+        )
+        # rasterize_preview returns the entire glob; pick the right file.
+        target = preview_dir / f"page-{page:03d}.png"
+        if not target.exists():
+            # Fall back to whichever file was just produced for this page.
+            for img in imgs:
+                if img.stem.endswith(f"-{page:03d}"):
+                    target = img
+                    break
+        if not target.exists():
+            raise RuntimeError(f"rasterize produced no file for page {page}")
+        return target
+
+    image_path = _retry_with_backoff(
+        _do_rasterize, label='rasterize_one_page', page=page,
+    )
+
+    def _do_downscale():
+        thumb_image = thumb_dir / f"page-{page:03d}.png"
+        pdf_ops.downscale_to_thumbnail(image_path, thumb_image, target_max_dim=360)
+        return thumb_image
+
+    thumb_image = _retry_with_backoff(
+        _do_downscale, label='downscale_thumbnail', page=page,
+    )
+
+    preview_storage = unique_name(f'{prefix}previews/page-{page:03d}', '.png')
+    thumb_storage = unique_name(f'{prefix}thumbnails/page-{page:03d}', '.png')
+
+    _retry_with_backoff(
+        lambda: storage.upload(image_path, preview_storage, 'image/png'),
+        label='upload_preview', page=page,
+    )
+    _retry_with_backoff(
+        lambda: storage.upload(thumb_image, thumb_storage, 'image/png'),
+        label='upload_thumbnail', page=page,
+    )
+
+    return image_path, thumb_image, preview_storage, thumb_storage
+
+
+def _record_page(
+    db,
+    *,
+    asset_id: str,
+    job_id: str,
+    page: int,
+    image_path,
+    thumb_image,
+    preview_storage: str,
+    thumb_storage: str,
+):
+    """Idempotently record both derived_files rows for a page."""
+    _retry_with_backoff(
+        lambda: _record_preview(
+            db, asset_id, job_id, 'preview_page', preview_storage,
+            image_path, page=page, size_label='preview',
+        ),
+        label='db_record_preview', page=page,
+    )
+    _retry_with_backoff(
+        lambda: _record_preview(
+            db, asset_id, job_id, 'thumbnail_page', thumb_storage,
+            thumb_image, page=page, size_label='thumbnail',
+        ),
+        label='db_record_thumbnail', page=page,
+    )
+
+
 @shared_task(bind=True, queue='thumbnails')
 def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] | None = None):
     """Generate previews + thumbnails for an asset.
 
-    If ``render_box`` is supplied (PDF user-space points: [x0, y0, x1, y1]),
-    the source is first cropped to that box (typically the TrimBox after a
-    user accepts a bleed advisory) so all rendered pages match the final
-    print area exactly. Replaces the legacy ``crop_rasterize`` task.
+    Hardened contract (this is the part that matters for "missing page"
+    bugs): the asset is only flipped to ``status='ready'`` and the job is
+    only marked ``done`` when EVERY page from 1..page_count has both a
+    ``preview_page`` and a ``thumbnail_page`` derived file recorded. Any
+    page that fails its parallel pipeline goes through:
 
-    Optimisations vs the original implementation:
-      1. **Single Ghostscript pass** at preview DPI; thumbnails are
-         downscaled with PIL (a CPU-bound resample). This drops a full
-         rasterization round-trip per page (~40-60% faster end-to-end).
-      2. **Page-1 fast path**: render & upload page 1 first, then mark the
-         asset 'ready' immediately. The remaining pages render in the
-         background - the customer sees the cover thumbnail in ~2-3s
-         instead of waiting for the entire document.
-      3. **Parallel S3 uploads**: 8-way ThreadPoolExecutor - S3 writes are
-         pure network I/O and dominate runtime for >20-page documents.
-      4. **Per-page job_events**: one event per page so the live progress
-         UI can show "Rendered 47 of 130 pages" in real time.
+      1. Per-step retries (rasterize / downscale / upload / DB write) with
+         exponential backoff.
+      2. A sequential "salvage" pass for any pages still missing after the
+         parallel pool drains.
+      3. If anything is still missing, the job is marked FAILED with
+         ``metadata.missing_pages=[…]`` and the asset stays at its prior
+         status. The frontend can then call POST
+         ``/v1/assets/{id}/render-pages`` to surgically re-render the gaps
+         without re-uploading the original.
     """
     db = _db()
     evt_overall = None
@@ -245,6 +370,11 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
         prefix = _tenant_prefix(asset.get('source_storage_path'))
         src_path = asset['normalized_storage_path'] or asset['source_storage_path']
         page_count = asset.get('page_count') or 0
+
+        logger.info(
+            "generate_previews: asset=%s expected_pages=%s dpi=%s",
+            asset_id, page_count, settings.preview_dpi,
+        )
 
         evt_overall = job_event_repo.start(
             db,
@@ -276,49 +406,39 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             preview_path: str | None = None
             thumb_path: str | None = None
 
-            def _process_page(image_path, page_index: int):
-                """Downscale to thumbnail + upload both sizes in parallel."""
-                # Build matching thumbnail by downscaling (no second GS run)
-                thumb_image = thumb_dir / f"page-{page_index:03d}.png"
-                pdf_ops.downscale_to_thumbnail(image_path, thumb_image, target_max_dim=360)
+            if not page_count:
+                # Without an expected page count we can't enforce the
+                # contract — fall through to legacy "best-effort" behaviour
+                # for the page-1 fast path only.
+                page_count = 0
 
-                preview_storage = unique_name(f'{prefix}previews/page-{page_index:03d}', '.png')
-                thumb_storage = unique_name(f'{prefix}thumbnails/page-{page_index:03d}', '.png')
-
-                # Upload both in parallel — S3 writes dominate wall time.
-                with ThreadPoolExecutor(max_workers=2) as pool:
-                    pool.submit(storage.upload, image_path, preview_storage, 'image/png')
-                    pool.submit(storage.upload, thumb_image, thumb_storage, 'image/png')
-
-                # Record both derived_files rows (single DB hit each — fine
-                # because the parent task owns the session)
-                _record_preview(db, asset_id, job_id, 'preview_page', preview_storage, image_path, page=page_index, size_label='preview')
-                _record_preview(db, asset_id, job_id, 'thumbnail_page', thumb_storage, thumb_image, page=page_index, size_label='thumbnail')
-                return preview_storage, thumb_storage
+            expected_pages: set[int] = set(range(1, page_count + 1)) if page_count else set()
+            completed_pages: set[int] = set()
+            page_storage: dict[int, tuple[str, str]] = {}
 
             # ─── Page-1 fast path ──────────────────────────────────────
-            # Render just page 1, upload it, mark the asset ready enough
-            # for the customer to see a cover thumbnail. Then continue with
-            # the rest in the same task.
-            page1_imgs = pdf_ops.rasterize_preview(
-                src, preview_dir / 'page', dpi=settings.preview_dpi,
-                first_page=1, last_page=1,
-            )
-            if page1_imgs:
-                preview_storage, thumb_storage = _process_page(page1_imgs[0], 1)
-                preview_path = preview_storage
-                thumb_path = thumb_storage
-                files_created.append({'kind': 'preview_page', 'page': 1, 'storage_path': preview_storage})
-                files_created.append({'kind': 'thumbnail_page', 'page': 1, 'storage_path': thumb_storage})
+            try:
+                image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
+                    src_pdf=src, preview_dir=preview_dir, thumb_dir=thumb_dir,
+                    prefix=prefix, page=1, dpi=settings.preview_dpi,
+                )
+                _record_page(
+                    db, asset_id=asset_id, job_id=job_id, page=1,
+                    image_path=image_path, thumb_image=thumb_image,
+                    preview_storage=prev_sp, thumb_storage=thumb_sp,
+                )
+                preview_path = prev_sp
+                thumb_path = thumb_sp
+                page_storage[1] = (prev_sp, thumb_sp)
+                completed_pages.add(1)
+                files_created.append({'kind': 'preview_page', 'page': 1, 'storage_path': prev_sp})
+                files_created.append({'kind': 'thumbnail_page', 'page': 1, 'storage_path': thumb_sp})
 
-                # Surface page-1 immediately so the UI can stop showing a
-                # spinner. Status stays 'normalized' (not yet 'ready') —
-                # 'ready' is set after the full render completes.
                 asset_repo.update_asset(db, asset_id, {
                     'thumbnail_storage_path': thumb_path,
                     'preview_storage_path': preview_path,
                 })
-                job_event_repo.start(
+                p1_evt = job_event_repo.start(
                     db,
                     job_id=job_id,
                     asset_id=asset_id,
@@ -329,56 +449,77 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                     metadata={'page': 1, 'total': page_count},
                     message=f'Page 1 of {page_count or "?"} ready',
                 )
-                # Mark this micro-event done so it doesn't sit "running"
-                # forever in the events feed.
-
-            # ─── Remaining pages ───────────────────────────────────────
-            if page_count and page_count > 1:
-                rest_imgs = pdf_ops.rasterize_preview(
-                    src, preview_dir / 'page', dpi=settings.preview_dpi,
-                    first_page=2, last_page=page_count,
+                if p1_evt is not None:
+                    job_event_repo.finish(db, p1_evt.id, message='', metadata={'page': 1})
+            except Exception as exc:
+                logger.warning("generate_previews: page-1 fast path failed: %s", exc)
+                job_event_repo.start(
+                    db,
+                    job_id=job_id,
+                    asset_id=asset_id,
+                    task_name='generate_previews',
+                    queue_name='thumbnails',
+                    worker_name=self.request.hostname if self.request else None,
+                    stage='page_failed',
+                    metadata={'page': 1, 'error': str(exc)},
+                    message=f'Page 1 failed: {exc}',
                 )
-                # Map filenames → page numbers (Ghostscript writes
-                # page-002.png, page-003.png, …)
-                # rasterize_preview returns the ENTIRE preview_dir glob, so
-                # filter to the new files only.
-                seen = {p.name for p in (page1_imgs or [])}
-                rest_imgs = [p for p in rest_imgs if p.name not in seen]
 
-                # Process remaining pages with parallel uploads. Each page
-                # = one S3 PUT for preview + one for thumbnail; do them
-                # concurrently across pages.
-                def _full_page_pipeline(image_path):
-                    # Extract page number from filename suffix "page-NNN.png"
-                    stem_parts = image_path.stem.rsplit('-', 1)
-                    page_num = int(stem_parts[-1]) if stem_parts[-1].isdigit() else 0
-                    if page_num <= 1:
-                        return None
-                    thumb_image = thumb_dir / f"page-{page_num:03d}.png"
-                    pdf_ops.downscale_to_thumbnail(image_path, thumb_image, target_max_dim=360)
-                    preview_storage = unique_name(f'{prefix}previews/page-{page_num:03d}', '.png')
-                    thumb_storage = unique_name(f'{prefix}thumbnails/page-{page_num:03d}', '.png')
-                    storage.upload(image_path, preview_storage, 'image/png')
-                    storage.upload(thumb_image, thumb_storage, 'image/png')
-                    return (page_num, image_path, thumb_image, preview_storage, thumb_storage)
+            # ─── Parallel pass for remaining pages ─────────────────────
+            if page_count and page_count > 1:
+                remaining = [p for p in range(2, page_count + 1) if p not in completed_pages]
+
+                def _pipeline(page_num: int):
+                    image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
+                        src_pdf=src, preview_dir=preview_dir, thumb_dir=thumb_dir,
+                        prefix=prefix, page=page_num, dpi=settings.preview_dpi,
+                    )
+                    return page_num, image_path, thumb_image, prev_sp, thumb_sp
 
                 with ThreadPoolExecutor(max_workers=UPLOAD_CONCURRENCY) as pool:
-                    futures = {pool.submit(_full_page_pipeline, p): p for p in rest_imgs}
-                    completed_count = 1  # page 1 already done
+                    futures = {pool.submit(_pipeline, p): p for p in remaining}
+                    completed_count = len(completed_pages)
                     for fut in as_completed(futures):
-                        result = fut.result()
-                        if not result:
+                        page_num = futures[fut]
+                        try:
+                            page_num, image_path, thumb_image, prev_sp, thumb_sp = fut.result()
+                        except Exception as exc:
+                            logger.warning(
+                                "generate_previews: page %d failed in parallel pass: %s",
+                                page_num, exc,
+                            )
+                            job_event_repo.start(
+                                db,
+                                job_id=job_id,
+                                asset_id=asset_id,
+                                task_name='generate_previews',
+                                queue_name='thumbnails',
+                                worker_name=self.request.hostname if self.request else None,
+                                stage='page_failed',
+                                metadata={'page': page_num, 'error': str(exc)},
+                                message=f'Page {page_num} failed (will salvage): {exc}',
+                            )
                             continue
-                        page_num, img_path, thumb_image, prev_sp, thumb_sp = result
-                        # DB writes happen in the main task thread
-                        _record_preview(db, asset_id, job_id, 'preview_page', prev_sp, img_path, page=page_num, size_label='preview')
-                        _record_preview(db, asset_id, job_id, 'thumbnail_page', thumb_sp, thumb_image, page=page_num, size_label='thumbnail')
+
+                        try:
+                            _record_page(
+                                db, asset_id=asset_id, job_id=job_id, page=page_num,
+                                image_path=image_path, thumb_image=thumb_image,
+                                preview_storage=prev_sp, thumb_storage=thumb_sp,
+                            )
+                        except Exception as exc:
+                            logger.warning(
+                                "generate_previews: DB record failed for page %d: %s",
+                                page_num, exc,
+                            )
+                            continue
+
+                        page_storage[page_num] = (prev_sp, thumb_sp)
+                        completed_pages.add(page_num)
+                        completed_count += 1
                         files_created.append({'kind': 'preview_page', 'page': page_num, 'storage_path': prev_sp})
                         files_created.append({'kind': 'thumbnail_page', 'page': page_num, 'storage_path': thumb_sp})
-                        completed_count += 1
 
-                        # Emit progress every 5 pages (or on the last) so we
-                        # don't flood job_events for 200-page documents.
                         if completed_count % 5 == 0 or completed_count == page_count:
                             page_evt = job_event_repo.start(
                                 db,
@@ -394,34 +535,214 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                             if page_evt is not None:
                                 job_event_repo.finish(db, page_evt.id, message='', metadata={'rendered': completed_count, 'total': page_count})
 
+            # ─── Salvage pass: sequential retry for any still-missing ──
+            missing = sorted(expected_pages - completed_pages)
+            if missing and settings.preview_salvage_enabled:
+                logger.warning(
+                    "generate_previews: salvage pass for asset=%s pages=%s",
+                    asset_id, missing,
+                )
+                salvage_evt = job_event_repo.start(
+                    db,
+                    job_id=job_id,
+                    asset_id=asset_id,
+                    task_name='generate_previews',
+                    queue_name='thumbnails',
+                    worker_name=self.request.hostname if self.request else None,
+                    stage='salvage',
+                    metadata={'missing': missing},
+                    message=f'Salvaging {len(missing)} missing page(s)…',
+                )
+                for page_num in missing:
+                    try:
+                        image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
+                            src_pdf=src, preview_dir=preview_dir, thumb_dir=thumb_dir,
+                            prefix=prefix, page=page_num, dpi=settings.preview_dpi,
+                        )
+                        _record_page(
+                            db, asset_id=asset_id, job_id=job_id, page=page_num,
+                            image_path=image_path, thumb_image=thumb_image,
+                            preview_storage=prev_sp, thumb_storage=thumb_sp,
+                        )
+                        page_storage[page_num] = (prev_sp, thumb_sp)
+                        completed_pages.add(page_num)
+                        files_created.append({'kind': 'preview_page', 'page': page_num, 'storage_path': prev_sp})
+                        files_created.append({'kind': 'thumbnail_page', 'page': page_num, 'storage_path': thumb_sp})
+                    except Exception as exc:
+                        logger.error(
+                            "generate_previews: salvage failed for page %d: %s",
+                            page_num, exc,
+                        )
+                if salvage_evt is not None:
+                    job_event_repo.finish(
+                        db, salvage_evt.id,
+                        metadata={'recovered': sorted(completed_pages & set(missing))},
+                        message='Salvage pass complete',
+                    )
+
+            # ─── Verify & finalise ─────────────────────────────────────
+            still_missing = sorted(expected_pages - completed_pages)
+
+            logger.info(
+                "generate_previews: asset=%s rendered=%d/%d missing=%s",
+                asset_id, len(completed_pages), page_count, still_missing,
+            )
+
+            if still_missing:
+                msg = (
+                    f"Incomplete render: {len(still_missing)} of {page_count} "
+                    f"page(s) missing → {still_missing}"
+                )
+                job_repo.mark_failed(db, job_id, msg)
+                if evt_overall:
+                    try:
+                        job_event_repo.fail(db, evt_overall.id, message=msg)
+                    except Exception:
+                        pass
+                    evt_overall = None
+                # Asset is intentionally NOT marked 'ready' — keep it at
+                # whatever it was before so the frontend won't surface
+                # half-rendered previews. The render-pages endpoint can
+                # recover the gaps later.
+                raise RuntimeError(msg)
+
             asset_repo.update_asset(db, asset_id, {
-                'thumbnail_storage_path': thumb_path,
-                'preview_storage_path': preview_path,
+                'thumbnail_storage_path': thumb_path or (page_storage.get(1, (None, None))[1]),
+                'preview_storage_path': preview_path or (page_storage.get(1, (None, None))[0]),
                 'status': 'ready',
             })
-            pages_rendered = max(1, page_count) if page_count else len(files_created) // 2
+            pages_rendered = len(completed_pages)
             job_repo.mark_done(db, job_id, {
                 'thumbnail_storage_path': thumb_path,
                 'preview_storage_path': preview_path,
                 'pages_rendered': pages_rendered,
+                'expected_pages': page_count,
                 'files_created': files_created[:20],
             })
             if evt_overall:
                 job_event_repo.finish(
                     db,
                     evt_overall.id,
-                    metadata={'pages_rendered': pages_rendered},
-                    message=f'Rendered {pages_rendered} page(s)',
+                    metadata={'pages_rendered': pages_rendered, 'expected': page_count},
+                    message=f'Rendered {pages_rendered} of {page_count} page(s)',
                 )
                 evt_overall = None
-            return {'pages_rendered': pages_rendered}
+            return {'pages_rendered': pages_rendered, 'expected_pages': page_count}
     except Exception as exc:
         if evt_overall:
             try:
                 job_event_repo.fail(db, evt_overall.id, message=str(exc))
             except Exception:
                 pass
-        job_repo.mark_failed(db, job_id, traceback.format_exc())
+        # mark_failed is idempotent — safe even if we already called it above.
+        try:
+            job_repo.mark_failed(db, job_id, traceback.format_exc())
+        except Exception:
+            pass
+        raise exc
+    finally:
+        db.close()
+
+
+@shared_task(bind=True, queue='thumbnails')
+def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
+    """Re-render a specific set of pages for an existing asset.
+
+    Used by the new ``POST /v1/assets/{id}/render-pages`` endpoint so the
+    frontend can self-heal gaps without re-uploading the source. The page
+    pipeline reuses the same retry-and-record helpers as
+    ``generate_previews`` and the derived_files writes are idempotent.
+    """
+    db = _db()
+    evt_overall = None
+    try:
+        job_repo.mark_running(db, job_id)
+        asset = asset_repo.get_asset(db, asset_id)
+        prefix = _tenant_prefix(asset.get('source_storage_path'))
+        src_path = asset['normalized_storage_path'] or asset['source_storage_path']
+        page_count = asset.get('page_count') or 0
+
+        # Sanitize the requested pages: positive ints in range, deduped.
+        wanted = sorted({int(p) for p in pages if 1 <= int(p) <= max(1, page_count)})
+        if not wanted:
+            job_repo.mark_done(db, job_id, {'pages_rendered': 0, 'requested': []})
+            return {'pages_rendered': 0, 'requested': []}
+
+        evt_overall = job_event_repo.start(
+            db,
+            job_id=job_id,
+            asset_id=asset_id,
+            task_name='render_specific_pages',
+            queue_name='thumbnails',
+            worker_name=self.request.hostname if self.request else None,
+            stage='render',
+            metadata={'requested': wanted, 'page_count': page_count},
+            message=f'Re-rendering {len(wanted)} page(s)…',
+        )
+
+        recovered: list[int] = []
+        failed: list[int] = []
+
+        with Workspace() as ws:
+            src = ws.path('input.pdf')
+            storage.download(src_path, src)
+
+            preview_dir = ws.path('preview')
+            thumb_dir = ws.path('thumb')
+            preview_dir.mkdir(parents=True, exist_ok=True)
+            thumb_dir.mkdir(parents=True, exist_ok=True)
+
+            for page_num in wanted:
+                try:
+                    image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
+                        src_pdf=src, preview_dir=preview_dir, thumb_dir=thumb_dir,
+                        prefix=prefix, page=page_num, dpi=settings.preview_dpi,
+                    )
+                    _record_page(
+                        db, asset_id=asset_id, job_id=job_id, page=page_num,
+                        image_path=image_path, thumb_image=thumb_image,
+                        preview_storage=prev_sp, thumb_storage=thumb_sp,
+                    )
+                    recovered.append(page_num)
+                except Exception as exc:
+                    logger.error(
+                        "render_specific_pages: page %d failed: %s",
+                        page_num, exc,
+                    )
+                    failed.append(page_num)
+
+        # If the asset now has every page, promote it back to 'ready'.
+        present_previews = derived_file_repo.pages_present(db, asset_id, 'preview_page')
+        present_thumbs = derived_file_repo.pages_present(db, asset_id, 'thumbnail_page')
+        full_set = set(range(1, page_count + 1)) if page_count else set()
+        if full_set and full_set.issubset(present_previews) and full_set.issubset(present_thumbs):
+            asset_repo.update_asset(db, asset_id, {'status': 'ready'})
+
+        result = {
+            'requested': wanted,
+            'recovered': recovered,
+            'failed': failed,
+            'pages_rendered': len(recovered),
+        }
+        job_repo.mark_done(db, job_id, result)
+        if evt_overall:
+            job_event_repo.finish(
+                db, evt_overall.id,
+                metadata=result,
+                message=f'Re-rendered {len(recovered)}/{len(wanted)} page(s)',
+            )
+            evt_overall = None
+        return result
+    except Exception as exc:
+        if evt_overall:
+            try:
+                job_event_repo.fail(db, evt_overall.id, message=str(exc))
+            except Exception:
+                pass
+        try:
+            job_repo.mark_failed(db, job_id, traceback.format_exc())
+        except Exception:
+            pass
         raise exc
     finally:
         db.close()

@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     thumbnail_dpi: int = Field(alias='THUMBNAIL_DPI', default=120)
     preview_dpi: int = Field(alias='PREVIEW_DPI', default=160)
     max_upload_mb: int = Field(alias='MAX_UPLOAD_MB', default=250)
+
+    # Preview pipeline resilience tunables. Each per-page step (rasterize +
+    # upload + DB write) is retried independently. After the parallel pool
+    # drains, any pages still missing go through a sequential salvage pass.
+    preview_page_max_retries: int = Field(alias='PREVIEW_PAGE_MAX_RETRIES', default=3)
+    preview_page_retry_base_ms: int = Field(alias='PREVIEW_PAGE_RETRY_BASE_MS', default=250)
+    preview_salvage_enabled: bool = Field(alias='PREVIEW_SALVAGE_ENABLED', default=True)
     cors_origins: str = Field(alias='CORS_ORIGINS', default='http://localhost:5173')
     admin_username: str = Field(alias='ADMIN_USERNAME', default='admin')
     admin_password: str = Field(alias='ADMIN_PASSWORD', default='admin123')
