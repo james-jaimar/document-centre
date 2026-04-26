@@ -1031,7 +1031,7 @@ export default function OrderFiles() {
     } catch (err: any) {
       toast.error("Failed to auto-assign panels", { description: err.message });
     }
-  }, [selectedDocId, orderItem, documents, sections.length, addSection]);
+  }, [selectedDocId, orderItem, documents, sections.length, addSection, assertSizeMatchesActive]);
 
   const handleRemoveSection = useCallback(async () => {
     if (!selectedSectionId || !orderItem) return;
