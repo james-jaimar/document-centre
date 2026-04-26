@@ -45,8 +45,17 @@ const FlipPage = forwardRef<
     bleedInsetPx: number;
     label?: string;
     color?: string;
+    /**
+     * When true the page artwork is counter-rotated 90° to undo the outer
+     * container rotation used for top-bound (landscape) layouts. The
+     * react-pageflip engine sees a portrait page; the user sees the
+     * artwork upright in its natural landscape orientation.
+     */
+    counterRotate?: boolean;
+    /** Aspect ratio (w/h) of the natural artwork — needed when counter-rotating. */
+    artworkAspect?: number;
   }
->(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, pageRole, allowBleed, bleedInsetPx, label, color }, ref) => {
+>(({ url, pageNum, isColor = true, effects, pageIndex, totalPages, sectionType, pageRole, allowBleed, bleedInsetPx, label, color, counterRotate = false, artworkAspect }, ref) => {
   const isContentLess = CONTENT_LESS_ROLES.has(pageRole ?? "");
 
   // Body / cover faces with a missing thumbnail render as plain white paper
@@ -55,19 +64,54 @@ const FlipPage = forwardRef<
   // thumbnail simply means "nothing to print on this side".
   const missingThumbForRealPage = !isContentLess && !url;
 
+  // When the page container is portrait-shaped but represents a landscape
+  // sheet (top-bound layout), we render the artwork into a wrapper sized
+  // to the landscape aspect and rotate it 90° so it fills the portrait box.
+  const renderImage = (src: string) => {
+    if (!counterRotate || !artworkAspect) {
+      return (
+        <img
+          src={src}
+          alt={`Page ${pageNum}`}
+          className="w-full h-full object-contain"
+          style={{ filter: isColor ? "none" : "grayscale(100%)" }}
+          loading="eager"
+        />
+      );
+    }
+    // Counter-rotate: place a landscape-shaped img inside the portrait
+    // container, sized so its longest edge equals the container's longest
+    // edge after a -90deg rotation. CSS aspect-ratio on the wrapper keeps
+    // the maths self-correcting at any container size.
+    return (
+      <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+        <img
+          src={src}
+          alt={`Page ${pageNum}`}
+          style={{
+            // Pre-rotation size: width = container height, height = container width.
+            width: "100%",
+            height: "100%",
+            // Visual rotation that turns landscape art upright relative to
+            // the parent FlipBook container (which is itself rotated 90°
+            // by the outer top-bound transform).
+            transform: `rotate(-90deg) scale(${artworkAspect})`,
+            transformOrigin: "center center",
+            objectFit: "contain",
+            filter: isColor ? "none" : "grayscale(100%)",
+          }}
+          loading="eager"
+          draggable={false}
+        />
+      </div>
+    );
+  };
+
   let content: React.ReactNode;
   if (isContentLess || missingThumbForRealPage) {
     content = null;
   } else if (url) {
-    content = (
-      <img
-        src={url}
-        alt={`Page ${pageNum}`}
-        className="w-full h-full object-contain"
-        style={{ filter: isColor ? "none" : "grayscale(100%)" }}
-        loading="eager"
-      />
-    );
+    content = renderImage(url);
   } else {
     content = (
       <div className="w-full h-full flex items-center justify-center bg-muted/30">
@@ -291,9 +335,17 @@ export default function FlipBook({
   );
 
   // ── Fixed internal resolution ──
+  // For top-bound layouts the natural pageflip spread is rotated 90° so the
+  // two pages stack vertically. The library still needs the spread aspect to
+  // match the visible orientation, so when binding on the top edge we feed
+  // it the INVERSE aspect — the spread is laid out as if each "page" were
+  // portrait, but the inner artwork is then counter-rotated 90° so the
+  // landscape document remains landscape (and upright) on screen.
+  const isTopBound = bindingEdge === "top";
   const ratio = pageAspectRatio ?? 0.707;
+  const flipRatio = isTopBound ? 1 / ratio : ratio;
   const basePageWidth = BASE_PAGE_WIDTH;
-  const basePageHeight = Math.round(basePageWidth / ratio);
+  const basePageHeight = Math.round(basePageWidth / flipRatio);
   const baseSpreadWidth = basePageWidth * 2;
   const bleedInsetPx = Math.round(basePageWidth * 0.03);
 
@@ -325,8 +377,10 @@ export default function FlipBook({
   }
 
   // ── CSS scale factor to fit into available container ──
-  const availableWidth = width - 80;
-  const availableHeight = height - 60;
+  // For top-bound layouts the inner book is rotated 90°, so the container's
+  // available width is what limits the rotated book's HEIGHT (and vice versa).
+  const availableWidth = (isTopBound ? height : width) - 80;
+  const availableHeight = (isTopBound ? width : height) - 60;
 
   // ── Solo-page detection ──
   const lastIdx = urls.length - 1;
@@ -351,11 +405,11 @@ export default function FlipBook({
   const spinePosition = isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center";
   const tabGutter = (tabPositions?.length ?? 0) > 0 ? 30 * scaleFactor : 0;
 
-  // For top-edge binding, rotate the entire container 90° clockwise
-  const isTopBound = bindingEdge === "top";
+  // For top-edge binding, rotate the inner container 90° clockwise so the
+  // two-page spread stacks vertically with the spine running horizontally
+  // between the pages. The page artwork inside each FlipPage is then
+  // counter-rotated 90° (see counterRotate prop) so it stays upright.
   const outerTransform = isTopBound ? "rotate(90deg)" : undefined;
-  const outerWidth = isTopBound ? height : width;
-  const outerHeight = isTopBound ? width : height;
 
   return (
     <div
@@ -502,6 +556,8 @@ export default function FlipBook({
                         bleedInsetPx={bleedInsetPx}
                         label={pageLabels?.[i]}
                         color={pageColors?.[i]}
+                        counterRotate={isTopBound}
+                        artworkAspect={ratio}
                       />
                     ))}
                   </HTMLFlipBook>
