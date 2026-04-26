@@ -6,6 +6,7 @@ import { downloadInvoice, viewInvoice } from "@/lib/orders/mutations";
 import { Link } from "react-router-dom";
 import { buildAdminPath } from "@/lib/adminRouting";
 import { FileText, Download, Eye, ExternalLink, Search } from "lucide-react";
+import { formatPrice } from "@/lib/formatCurrency";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
