@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
+import random
 import subprocess
+import time
 from io import BytesIO
 from pathlib import Path
 from typing import Iterable
@@ -13,6 +16,20 @@ from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+class RasterizationIncompleteError(RuntimeError):
+    """Raised when Ghostscript could not produce every requested page even
+    after per-page retries. Carries the list of missing 1-based page numbers
+    so the caller can decide whether to salvage them another way."""
+
+    def __init__(self, missing_pages: list[int]):
+        super().__init__(
+            f"Ghostscript produced an incomplete page set; missing pages: {missing_pages}"
+        )
+        self.missing_pages = missing_pages
 
 ICC_DIR = Path("/opt/document-centre-api/icc")
 
