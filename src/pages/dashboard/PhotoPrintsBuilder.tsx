@@ -42,6 +42,8 @@ import { Input } from "@/components/ui/input";
 
 import { ArrowLeft, ImagePlus, Loader2, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
+import { useRegionalPricing } from "@/hooks/useRegionalPricing";
+import { formatPrice } from "@/lib/formatCurrency";
 
 const PHOTO_FAMILY_SLUG = "photo-prints";
 
@@ -384,7 +386,7 @@ export default function PhotoPrintsBuilder() {
             <SelectContent>
               {PHOTO_PRINT_SIZES.map((s) => (
                 <SelectItem key={s.slug} value={s.slug}>
-                  {s.label} — R{s.unit_price.toFixed(2)}
+                  {s.label} — {formatPrice(s.unit_price, activeCurrency)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -503,7 +505,7 @@ export default function PhotoPrintsBuilder() {
             </div>
             <div className="flex items-center gap-4">
               <p className="text-xl font-bold text-foreground tabular-nums">
-                R{totals.totalPrice.toFixed(2)}
+                {formatPrice(totals.totalPrice, activeCurrency)}
               </p>
               <Button
                 size="lg"
@@ -552,11 +554,11 @@ export default function PhotoPrintsBuilder() {
             <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-1 text-sm">
               <div className="flex justify-between text-muted-foreground">
                 <span>{totals.totalPrints} × {totals.size.label}</span>
-                <span className="tabular-nums">R{totals.totalPrice.toFixed(2)}</span>
+                <span className="tabular-nums">{formatPrice(totals.totalPrice, activeCurrency)}</span>
               </div>
               <div className="flex justify-between font-semibold text-foreground pt-1 border-t border-border">
                 <span>Total</span>
-                <span className="tabular-nums">R{totals.totalPrice.toFixed(2)}</span>
+                <span className="tabular-nums">{formatPrice(totals.totalPrice, activeCurrency)}</span>
               </div>
             </div>
           </div>
