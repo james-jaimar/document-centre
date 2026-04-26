@@ -46,6 +46,43 @@ function matchesSize(
 }
 
 /**
+ * Check whether two dimensions describe the same paper size, ignoring
+ * orientation and allowing the standard tolerance. Used by the session
+ * size-lock to compare an upload to the active print size.
+ */
+export function sizesMatch(
+  aWidthMm: number,
+  aHeightMm: number,
+  bWidthMm: number,
+  bHeightMm: number,
+): boolean {
+  return matchesSize(aWidthMm, aHeightMm, { name: "_", widthMm: bWidthMm, heightMm: bHeightMm });
+}
+
+/**
+ * Find the matching ISO size for the given dimensions, or null if none.
+ */
+export function matchIsoSize(widthMm: number, heightMm: number): PaperSize | null {
+  for (const iso of ISO_SIZES) {
+    if (matchesSize(widthMm, heightMm, iso)) return iso;
+  }
+  return null;
+}
+
+/**
+ * Find the matching ISO or known non-ISO size for the given dimensions.
+ * Returns null if the dimensions don't match any known size.
+ */
+export function matchKnownSize(widthMm: number, heightMm: number): PaperSize | null {
+  const iso = matchIsoSize(widthMm, heightMm);
+  if (iso) return iso;
+  for (const us of NON_ISO_SIZES) {
+    if (matchesSize(widthMm, heightMm, us)) return us;
+  }
+  return null;
+}
+
+/**
  * Detect if the given dimensions match a known non-ISO paper size.
  * Returns the matched size name or null if it's ISO or unknown.
  */
