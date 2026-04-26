@@ -264,10 +264,6 @@ export default function OrderFiles() {
   } | null>(null);
   const [isApplyingBleed, setIsApplyingBleed] = useState(false);
 
-  // Session size-lock effects are declared AFTER applyKeepOriginal/applyScaleTo
-  // (see below) because they depend on those callbacks.
-
-
   // Check for near-ISO bleed documents after upload completes
   useEffect(() => {
     if (uploadModalOpen || advisoryDoc || bleedDoc || orientationDoc) return;
