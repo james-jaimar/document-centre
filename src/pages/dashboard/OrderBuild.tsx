@@ -803,8 +803,30 @@ export default function OrderBuild() {
         </div>
 
         {/* Right: Preview */}
-        <div className="border border-border rounded-lg bg-card p-4 overflow-auto">
-          <PreviewPanel documents={documents} sections={sections} productType={productType} effects={previewEffects} bindingEdge={bindingEdge} bindingArt={bindingArt} />
+        <div className="border border-border rounded-lg bg-card p-4 overflow-auto flex flex-col gap-2">
+          {canToggleLongEdge && (
+            <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
+              <label htmlFor="bind-long-edge" className="cursor-pointer">
+                Bind on long edge (top)
+              </label>
+              <input
+                id="bind-long-edge"
+                type="checkbox"
+                className="h-4 w-4 cursor-pointer accent-primary"
+                checked={landscapeLongEdge}
+                onChange={(e) => handleToggleLongEdge(e.target.checked)}
+              />
+            </div>
+          )}
+          <PreviewPanel
+            documents={documents}
+            sections={sections}
+            productType={productType}
+            effects={previewEffects}
+            bindingEdge={bindingEdge}
+            landscapeLongEdge={landscapeLongEdge}
+            bindingArt={bindingArt}
+          />
         </div>
       </div>
       {/* Tab/Insert Drawer — only mount after user clicks the button */}
