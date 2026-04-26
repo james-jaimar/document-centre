@@ -1,95 +1,117 @@
-# VPS preview pipeline hardening — SHIPPED
 
-The VPS now treats the page count as a hard contract. The asset is only
-flipped to ``status='ready'`` when every page from 1..page_count has both
-a ``preview_page`` and a ``thumbnail_page`` derived file recorded.
+# Frontend Integration: Thumbnail Gap Self-Healing
 
-## What changed (server-side, `pdf-server/`)
+Now that the VPS guarantees per-page completeness and exposes `POST /v1/assets/{id}/render-pages`, the frontend should:
 
-### `app/services/pdf_ops.py`
-- New `RasterizationIncompleteError` exception.
-- `rasterize_preview` now does a completeness check after the bulk
-  Ghostscript run: if any expected pages are missing, it re-renders them
-  one at a time (single-page GS calls are extremely reliable) up to
-  `settings.preview_page_max_retries` attempts with exponential backoff +
-  jitter, then raises `RasterizationIncompleteError` if anything is still
-  missing.
-- Internal helper `_gs_rasterize_pages` does the raw subprocess call so
-  the verify/retry logic lives in one place.
+1. Detect any gaps remaining after the initial polling loop.
+2. Automatically call the new endpoint to surgically re-render only the missing pages.
+3. If gaps still persist after auto-recovery, surface a clear UI state with a one-click manual "Re-render missing pages" button.
+4. Render a friendly placeholder (instead of a silent blank) anywhere a thumbnail is still missing.
 
-### `app/services/derived_files.py`
-- `create_file` is now idempotent for `preview_page` / `thumbnail_page`
-  rows keyed on `(asset_id, kind, page)` — salvage and re-render passes
-  update in place instead of duplicating rows.
-- New helper `pages_present(db, asset_id, kind)` returns the set of page
-  numbers that already have a derived file of the given kind. Used by
-  the `/render-pages` endpoint to compute "missing".
-- A migration to add a unique partial index on
-  `(asset_id, kind, page) WHERE kind IN (...) AND page IS NOT NULL` is
-  noted in a comment at the top of the module.
+---
 
-### `app/tasks/document_tasks.py`
-- New shared helpers `_retry_with_backoff`, `_render_one_page`, and
-  `_record_page` — each step (rasterize / downscale / upload / DB
-  record) retries independently so a transient S3 hiccup never forces a
-  full re-rasterize.
-- `generate_previews` rewritten to:
-  1. Track `expected_pages` and `completed_pages` as sets.
-  2. Page-1 fast path uses `_render_one_page` + `_record_page` (with
-     retries).
-  3. Parallel pool processes pages 2..N. Per-page failures are caught
-     and logged as `stage='page_failed'` events but do NOT crash the
-     job — they go into the salvage set.
-  4. After the pool drains, a sequential salvage pass re-tries any page
-     still missing (with a `stage='salvage'` event listing the gaps).
-  5. Final verify: if `still_missing` is non-empty, the job is marked
-     **failed** with `metadata.missing_pages=[…]` and the asset is NOT
-     promoted to `status='ready'`. The frontend can recover via the new
-     `/render-pages` endpoint.
-- New `render_specific_pages` Celery task: same per-page pipeline, but
-  for an explicit page list. Promotes the asset back to `'ready'` once
-  every page has both rows present.
-- INFO logs for `expected_pages` / `rendered/expected/missing` at the
-  start and end of every preview job.
+## 1. API client — `src/lib/documentCentreApi.ts`
 
-### `app/web/routes.py` + `app/schemas/assets.py`
-- New `RenderPagesRequest` schema.
-- New endpoint `POST /v1/assets/{asset_id}/render-pages`. Body:
-  - `{"pages": [2, 7, 11]}` — explicit page numbers, or
-  - `{"pages": "missing"}` — auto-detect gaps from `derived_files` and
-    re-render whatever is missing.
-  - Returns `{ job_id, missing_pages }`.
+Add a thin wrapper for the new endpoint:
 
-### `app/core/config.py`
-- New tunables: `PREVIEW_PAGE_MAX_RETRIES` (default 3),
-  `PREVIEW_PAGE_RETRY_BASE_MS` (default 250),
-  `PREVIEW_SALVAGE_ENABLED` (default true).
+```ts
+export async function renderPages(
+  assetId: string,
+  pages: number[] | "missing",
+): Promise<{ job_id: string | null; missing_pages: number[] }> {
+  return request(`v1/assets/${assetId}/render-pages`, "POST", { pages });
+}
+```
 
-## What this fixes
+Return shape mirrors the server (`job_id` may be `null` when nothing to render).
 
-The 18-page document with a missing page-2 thumbnail: in the old code,
-if page-2 hit a transient Ghostscript glitch or a worker SIGTERM
-mid-batch, the future would raise inside `as_completed` without being
-caught, the loop would silently drop that page, and the job would still
-be marked `done` with `pages_rendered = max(1, page_count)` (a pure
-assertion, not a measurement). The asset flipped to `status='ready'`,
-the frontend trusted it, and the index-stable thumbnail array got a hole
-at index 1 — that's the "missing page 2" the user saw.
+---
 
-After this change, that path will:
-1. Catch the per-page failure and emit a `page_failed` job event.
-2. Run the salvage pass on page-2 (single-page GS calls are reliable).
-3. If salvage also fails, mark the job FAILED with
-   `missing_pages=[2]` and leave the asset at its prior status — never
-   silently "done".
+## 2. Polling + auto-recovery — `src/hooks/useDocumentUpload.ts`
 
-## Out of scope (next iteration)
+Update `renderDocumentThumbnails` so it never silently returns gaps:
 
-- Frontend gap-detection / auto-call to `/render-pages`.
-- "Re-render" badge in the document card if gaps remain.
-- "Page didn't render" placeholder in `FlipBook` instead of a blank
-  white sheet.
+- After the existing polling loop completes, compute the `missing` indices (already tracked at line 116‑125).
+- If `missing.length > 0`, run **up to 2 recovery passes**:
+  1. Call `renderPages(assetId, missingPageNumbers)`.
+  2. `pollJob(job_id)` (skip if `job_id === null`).
+  3. Re-fetch `getDerivedFiles` and recompute `thumbnailPaths` via `pickBestPerPage`.
+  4. Re-poll for up to ~20s with the same adaptive interval, in case the salvage pass is still flushing.
+- Persist `thumbnail_urls` (index-stable, length = `expectedPages` — keeps the spread-parity contract).
+- If gaps remain after recovery, also persist a new `thumbnail_gaps: number[]` value in the `documents` row metadata (see schema note below) so the UI can show a manual recovery affordance.
+- Set `document_status`:
+  - `"ready"` when no gaps,
+  - `"ready"` (still) when partial — gaps are a soft state, not a hard failure (the rest of the file is usable). The badge in the file list communicates the issue.
 
-The user explicitly asked to fix the server first and then deal with
-the frontend. The frontend layer can now trust `pages_rendered` and use
-the new `/render-pages` endpoint when it ever still detects a hole.
+Tunables (top of file):
+```ts
+const MAX_THUMB_POLLS = 45;          // bumped from 30 → ~90s ceiling
+const RECOVERY_ATTEMPTS = 2;
+const RECOVERY_POLL_BUDGET_MS = 20_000;
+```
+
+### Schema note
+`thumbnail_gaps` can live inside the existing `preflight_data` JSONB column to avoid a migration:
+
+```ts
+preflight_data: {
+  ...(existingPreflight ?? {}),
+  thumbnail_gaps: missing.length ? missing : undefined,
+}
+```
+
+The same field is cleared (set to `undefined`) on a successful re-render so the badge disappears.
+
+---
+
+## 3. File list badge + manual re-render — `src/components/order/FileList.tsx`
+
+Add a "Re-render N pages" affordance when `preflight_data.thumbnail_gaps` is non-empty:
+
+- New small warning chip next to the existing "Review needed" / "page count" row, e.g. `⚠ 1 page missing`.
+- A new icon button (next to the existing reprocess `RefreshCw`) titled "Re-render missing pages". Clicking calls a new prop:
+
+```ts
+onRerenderGaps?: (doc: Document) => Promise<void>;
+```
+
+Internally the parent (`OrderFiles.tsx`) wires this to a thin handler that:
+1. Reads the doc's `backend_asset_id` and `preflight_data.thumbnail_gaps`.
+2. Optionally calls `ensureFreshAsset` (already added in the previous round) to handle stale VPS assets.
+3. Calls `renderPages(assetId, gaps)` → `pollJob` → re-fetches derived files → `supabase.from("documents").update({ thumbnail_urls, preflight_data })`.
+4. Toasts success/failure.
+
+The existing reprocess button (full re-rasterize) stays — gaps recovery is the lighter surgical path.
+
+---
+
+## 4. Defensive UI — placeholder for missing thumbnails
+
+Today, missing thumbnails render as a blank white sheet (preserving spread parity, per memory `mem://features/preview-system/physical-alignment-logic`). Improve perceived quality:
+
+- **`src/components/preview/FlipBook.tsx`** — when rendering a body face whose `urls[i]` is empty/null, draw a subtle placeholder: dashed border + `AlertCircle` + "Page didn't render — try Re-render". Keep the same dimensions so spread parity is untouched.
+- **`src/components/order/FileList.tsx`** — `ThumbnailImage` already falls back to a `FileText` icon when no URL; no change required there for the leftmost mini-thumb (which uses index 0 — almost always present).
+
+This makes the difference between "PDF has a blank page" and "we failed to render it" obvious to the user.
+
+---
+
+## 5. Order/cart hot paths — no changes required
+
+`useCart.ts` and `buildPreviewSnapshot.ts` already treat `thumbnail_urls` as a plain string array; an empty entry will continue to behave consistently (previewer renders the new placeholder, cart preview still works).
+
+---
+
+## Files touched
+
+- `src/lib/documentCentreApi.ts` — add `renderPages(assetId, pages)`.
+- `src/hooks/useDocumentUpload.ts` — bump poll cap, add 2-pass auto-recovery using `renderPages`, persist `thumbnail_gaps` into `preflight_data`.
+- `src/pages/dashboard/OrderFiles.tsx` — new `handleRerenderGaps` handler; pass to `<FileList />`; clear gaps on success.
+- `src/components/order/FileList.tsx` — gap badge + re-render icon button; new `onRerenderGaps` prop.
+- `src/components/preview/FlipBook.tsx` — friendly placeholder for missing-thumbnail body faces (spread-parity preserved).
+
+## Out of scope (explicitly)
+
+- No DB schema migration — `preflight_data` JSONB carries the gap list.
+- No change to the upload flow's success criteria (a doc with gaps is still `ready`; only the badge differentiates).
+- No change to brochure / fold / ring binder preview math (only the missing-face fallback visual).
