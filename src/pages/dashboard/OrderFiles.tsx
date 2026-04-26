@@ -863,7 +863,56 @@ export default function OrderFiles() {
     [documents, selectedDocId, refetchDocuments, refetchSections]
   );
 
-  const handleToggleColor = useCallback(
+  const handleRerenderGaps = useCallback(
+    async (doc: { id: string; backend_asset_id: string | null; preflight_data: unknown }) => {
+      if (!doc.backend_asset_id) {
+        toast.error("Can't re-render: this file has no backend asset reference.");
+        return;
+      }
+      const preflight = (doc.preflight_data as Record<string, unknown> | null) ?? {};
+      const gaps = Array.isArray(preflight.thumbnail_gaps)
+        ? (preflight.thumbnail_gaps as number[])
+        : [];
+      const toastId = toast.loading(
+        gaps.length > 0
+          ? `Re-rendering ${gaps.length} missing page${gaps.length === 1 ? "" : "s"}…`
+          : "Checking for missing pages…",
+      );
+      try {
+        // Make sure the VPS still has the asset (handles stale-asset edge case
+        // already covered by the upload path).
+        try {
+          await ensureFreshAsset(doc.backend_asset_id);
+        } catch (freshErr: any) {
+          // ensureFreshAsset will throw only on hard failures; tolerate so we
+          // still attempt the render — the server will surface a clean error.
+          console.warn("[handleRerenderGaps] ensureFreshAsset failed:", freshErr);
+        }
+
+        const { remainingGaps } = await recoverThumbnailGaps(
+          doc.id,
+          doc.backend_asset_id,
+          gaps,
+        );
+
+        await refetchDocuments();
+        qc.invalidateQueries({ queryKey: ["documents", orderItem?.id] });
+
+        if (remainingGaps.length === 0) {
+          toast.success("All pages re-rendered.", { id: toastId });
+        } else {
+          toast.warning(
+            `${remainingGaps.length} page${remainingGaps.length === 1 ? "" : "s"} still failed to render. Try again or use Reprocess.`,
+            { id: toastId },
+          );
+        }
+      } catch (err: any) {
+        toast.error("Re-render failed", { id: toastId, description: err?.message });
+      }
+    },
+    [qc, orderItem?.id, refetchDocuments],
+  );
+
     async (section: (typeof sections)[0]) => {
       await updateSection.mutateAsync({
         id: section.id,
