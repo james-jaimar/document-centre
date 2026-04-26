@@ -879,16 +879,8 @@ export default function OrderFiles() {
           : "Checking for missing pages…",
       );
       try {
-        // Make sure the VPS still has the asset (handles stale-asset edge case
-        // already covered by the upload path).
-        try {
-          await ensureFreshAsset(doc.backend_asset_id);
-        } catch (freshErr: any) {
-          // ensureFreshAsset will throw only on hard failures; tolerate so we
-          // still attempt the render — the server will surface a clean error.
-          console.warn("[handleRerenderGaps] ensureFreshAsset failed:", freshErr);
-        }
-
+        // Surgical re-render — server returns 404 if the asset has been
+        // evicted, in which case the user should use the full Reprocess action.
         const { remainingGaps } = await recoverThumbnailGaps(
           doc.id,
           doc.backend_asset_id,
