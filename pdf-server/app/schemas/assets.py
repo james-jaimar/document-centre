@@ -143,3 +143,14 @@ class PrintReadyRequest(BaseModel):
         "saturation",
     ] = "relative_colorimetric"
     dest_profile: str = "fogra39"
+
+
+class RenderPagesRequest(BaseModel):
+    """Request a surgical re-render of one or more pages of an existing asset.
+
+    ``pages`` accepts either an explicit list of 1-based page numbers, or
+    the literal string ``"missing"`` meaning "scan derived_files and
+    re-render anything not already present".
+    """
+    pages: list[int] | Literal["missing"] = "missing"
+
