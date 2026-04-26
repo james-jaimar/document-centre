@@ -1,92 +1,87 @@
-# Reduce Supabase Disk IO Budget burn
+## Goal
 
-## Diagnosis
+Make outbound emails fire **immediately** on insert into `email_outbox` (push), while keeping the 5-minute cron as a safety net for retries, scheduled sends, and anything the push fires-and-forgets.
 
-Supabase is warning about Disk IO. The dominant cost is the `email-dispatcher` cron firing **every minute, every day** — 1,440 runs/day, 43,000+ since project start — even though the `email_outbox` is almost always empty. Each tick:
+---
 
-- writes a row into `cron.job_run_details` (now **7 MB / 10k rows**)
-- writes a row into `net._http_response` (now **11 MB** — the **#1 largest table in the entire DB**)
-- runs a stale-lock `UPDATE` and a `SELECT` against `email_outbox`
-- spins up an edge function
+## Architecture: push + pull
 
-Both `net._http_response` and `cron.job_run_details` grow unbounded — nothing currently prunes them.
+| Path | Trigger | Purpose |
+|---|---|---|
+| **Push (happy path)** | `AFTER INSERT` trigger on `email_outbox` calls `email-dispatcher` via `pg_net.http_post` | Send brand-new emails within ~1–2s |
+| **Pull (safety net)** | Existing 5-min `pg_cron` job | Retries with backoff, scheduled sends, recovery from dropped pg_net calls, stale-lock revival |
 
-Secondary issues:
-- **Sequential scans** on `orders` (215k tuple-reads), `order_items` (596k tuple-reads), `documents` (144k tuple-reads) — likely missing filter indexes or unbounded `select()` calls.
-- **Frontend polling** on Platform → Document Centre tabs at 5s intervals (Overview/system, queues, workers, jobs). If a tab is left open, that's ~12 PostgREST hits/minute per tab.
+Both paths invoke the **same `email-dispatcher` function**, which already claims rows atomically with `locked_by` worker IDs — so concurrent push + cron is safe and dedupes naturally.
 
-## Fixes
+---
 
-### 1. Slow down the email-dispatcher cron (biggest single win)
+## 1. Database trigger (push)
 
-The outbox almost never has anything pending. Drop from **every minute → every 5 minutes** for normal traffic, and let the existing `next_attempt_at` backoff (1m → 5m → 15m → 1h → 6h) absorb retries naturally. For user-facing emails that need to feel instant (e.g. password reset), the existing `send-email` function path is already synchronous — only the queued/retry path uses the cron, so latency for those isn't affected.
+New migration:
 
-Migration:
-```sql
-SELECT cron.unschedule('email-dispatcher-tick');
-SELECT cron.schedule(
-  'email-dispatcher-tick',
-  '*/5 * * * *',  -- every 5 minutes
-  $$ SELECT net.http_post(...) $$
-);
-```
+- Helper function `public.notify_email_dispatcher()` (SECURITY DEFINER, search_path = public):
+  - Fires only when `NEW.status = 'queued'` AND `NEW.next_attempt_at <= now()` (skips scheduled-future rows — those are the cron's job)
+  - Calls `net.http_post(url := <project-url>/functions/v1/email-dispatcher, headers := {Authorization: Bearer <service-role>}, body := '{}'::jsonb)`
+  - Wrapped in `BEGIN ... EXCEPTION WHEN OTHERS THEN RETURN NEW; END;` so a pg_net hiccup never blocks the insert — cron will catch it.
+- Trigger `email_outbox_push` on `AFTER INSERT ON public.email_outbox FOR EACH ROW EXECUTE FUNCTION notify_email_dispatcher()`.
+- Service-role key stored in **Vault** as `email_dispatcher_service_role_key` (read inside the function — never inlined into migration SQL). Same pattern Lovable's own `process-email-queue` uses.
 
-Expected impact: ~80% reduction in cron-driven IO (288 runs/day vs 1,440).
+**Why a trigger, not direct SMTP from Postgres?** Postgres can't speak SMTP. `pg_net` is the standard async HTTP escape hatch and the same primitive Lovable's email queue uses.
 
-### 2. Prune the unbounded system log tables
+---
 
-Add a daily cron that trims old rows. Both Supabase and pg_net officially support this:
+## 2. Retry & timeout policy (already in place — confirming + tightening)
 
-```sql
--- Keep 24h of HTTP responses (currently growing forever)
-SELECT cron.schedule(
-  'prune-net-http-response',
-  '15 3 * * *',
-  $$ DELETE FROM net._http_response WHERE created < now() - interval '24 hours' $$
-);
+The dispatcher already has industry-standard retry semantics. I'll keep them and add one small hardening change:
 
--- Keep 7 days of cron run history
-SELECT cron.schedule(
-  'prune-cron-run-details',
-  '20 3 * * *',
-  $$ DELETE FROM cron.job_run_details WHERE end_time < now() - interval '7 days' $$
-);
-```
+| Setting | Current | Plan |
+|---|---|---|
+| Max attempts | **5** (column default on `email_outbox.max_attempts`) | Keep |
+| Backoff | **1m → 5m → 15m → 1h → 6h** then `dlq` | Keep |
+| Auth errors (535/530/invalid login) | Fail immediately, no retry | Keep — retrying bad creds is pointless |
+| Stale lock revival | Rows stuck `sending > 5m` are re-queued | Keep |
+| SMTP connect timeout | Default (denomailer ~60s) | **Add explicit 30s connect + 60s send timeout** so a hung SMTP server can't pin a worker |
+| Per-account concurrency | `max_concurrent` on `email_accounts` (default 1) | Keep |
+| Dispatcher batch | 20 rows / tick | Keep |
 
-Then a one-shot `VACUUM` on those tables to reclaim the 18 MB.
+This matches what SendGrid/Postmark/SES use for transactional retries (5 attempts over ~7 hours).
 
-### 3. Add missing indexes / fix seq scans
+---
 
-I'll inspect the worst offenders to confirm which queries are causing them, then add targeted indexes. Most likely candidates (to be confirmed by reading the actual queries):
-- `order_items(order_id)` — 596k tuple reads is an index lookup pattern
-- `orders(tenant_id, customer_status)` for the admin order lists
-- `documents(order_id)` for the document panel
+## 3. Cron schedule
 
-I'll only add an index if I can identify the specific query benefiting from it — no speculative indexing.
+Already at `*/5 * * * *` from the previous migration. **Keep at 5 minutes** — it's now purely a backstop, not the primary delivery mechanism.
 
-### 4. Gate frontend polling
+---
 
-The Document Centre platform pages refetch every 5s. Two cheap wins:
-- Add `refetchIntervalInBackground: false` so polling pauses when the tab is hidden (it doesn't by default in TanStack Query v5).
-- Bump the most aggressive ones from 5s → 15s (system, queues, workers). These are ops dashboards — 15s is plenty.
+## 4. Edge function changes
 
-### 5. Optional: tighten the dispatcher itself
+`supabase/functions/email-dispatcher/index.ts`:
+- Add explicit timeouts to the `SMTPClient` connection config (30s connect, 60s send).
+- No other logic changes — the existing claim/lock/process loop already handles concurrent push+pull invocations correctly.
 
-Two micro-optimisations inside `email-dispatcher/index.ts`:
-- Skip the stale-lock `UPDATE` if there are no `sending` rows (cheap `SELECT count(*) WHERE status='sending'` first, or use a `WHERE EXISTS` guard).
-- Early-return before claiming if the `SELECT due` returns empty (it already does this, but the stale-lock UPDATE runs unconditionally above it).
+Redeploy after the change.
 
-## Files / objects touched
+---
 
-- **DB migration**: reschedule `email-dispatcher-tick`, add `prune-net-http-response` + `prune-cron-run-details` cron jobs, run one-shot VACUUM, add any confirmed indexes.
-- `supabase/functions/email-dispatcher/index.ts` — guard stale-lock UPDATE.
-- `src/pages/platform/PlatformDocumentCentreOverview.tsx`, `PlatformDocumentCentreQueues.tsx`, `PlatformDocumentCentreWorkers.tsx`, `PlatformDocumentCentreJobs.tsx`, `PlatformDocumentCentreStorage.tsx`, `PlatformDocumentCentreMetrics.tsx`, `PlatformDocumentCentreAudit.tsx`, `PlatformDemoActivity.tsx`, `components/platform/DocumentCentreLayout.tsx` — add `refetchIntervalInBackground: false`, lengthen aggressive intervals.
+## 5. What I'm NOT doing (and why)
 
-## Expected outcome
+- **Not removing the cron.** Even with push, you need *something* to wake up retries scheduled for "now + 5 min" and scheduled sends with a future `scheduled_for`. That's inherently a timer.
+- **Not switching to Lovable's built-in email queue.** You're using a custom multi-tenant SMTP system (`email_accounts` per tenant/branch with vault-stored creds, per-account concurrency caps). Lovable's queue assumes a single sender — it would be a regression.
+- **Not adding LISTEN/NOTIFY or Realtime.** Both need a long-lived process; Edge Functions are stateless. `pg_net` from a trigger is the right primitive here.
 
-- Cron-driven writes: **−80%**
-- `net._http_response` table: **11 MB → ~500 KB** steady-state
-- `cron.job_run_details`: **7 MB → ~2 MB** steady-state
-- IO-wait on idle should drop noticeably; the project should fall well back inside its Disk IO Budget.
+---
 
-Nothing in this plan changes user-facing behaviour — emails still send, dashboards still update, just less wastefully.
+## Expected impact
+
+- **Latency**: new emails go out in ~1–2s instead of waiting up to 5 min for the next cron tick.
+- **Disk IO**: no meaningful change — push triggers are write-once-per-email; the cron's near-empty ticks (which we already made cheap) remain the main background load.
+- **Reliability**: strictly better. Push is best-effort; cron is the durable backstop. Same retry budget either way.
+
+---
+
+## Files touched
+
+- New migration: `supabase/migrations/<timestamp>_email_outbox_push_trigger.sql` (creates Vault secret, helper function, trigger)
+- `supabase/functions/email-dispatcher/index.ts` (add SMTP timeouts)
+- Redeploy `email-dispatcher`
