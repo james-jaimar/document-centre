@@ -913,6 +913,7 @@ export default function OrderFiles() {
     [qc, orderItem?.id, refetchDocuments],
   );
 
+  const handleToggleColor = useCallback(
     async (section: (typeof sections)[0]) => {
       await updateSection.mutateAsync({
         id: section.id,
