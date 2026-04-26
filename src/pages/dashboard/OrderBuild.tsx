@@ -473,7 +473,7 @@ export default function OrderBuild() {
       return;
     }
     try {
-      const breakdown = calculateItemPrice(spec, options, pricingRules);
+      const breakdown = calculateItemPrice(spec, options, pricingRules, activeCurrency);
       if (breakdown.lines.length === 0) {
         toast.error("No pricing rules configured", {
           description: "Please contact the administrator to set up pricing for this product.",
@@ -498,7 +498,7 @@ export default function OrderBuild() {
     }
     setIsSubmitting(true);
     try {
-      const breakdown = calculateItemPrice(spec, options, pricingRules);
+      const breakdown = calculateItemPrice(spec, options, pricingRules, activeCurrency);
       // Check if this draft was created by editing a cart item
       const replacesCartItemId = (order.metadata as any)?.replaces_cart_item_id;
       await addItemToCart.mutateAsync({
@@ -810,7 +810,7 @@ export default function OrderBuild() {
             </div>
             <div className="flex items-center justify-between rounded-md border border-border p-3 bg-muted/50">
               <span className="text-sm text-muted-foreground">Total</span>
-              <span className="text-xl font-bold text-foreground">R{cartTotal.toFixed(2)}</span>
+              <span className="text-xl font-bold text-foreground">{formatPrice(cartTotal, activeCurrency)}</span>
             </div>
           </div>
           <DialogFooter>
