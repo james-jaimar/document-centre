@@ -97,6 +97,14 @@ export interface FlipBookProps extends PreviewComponentProps {
   bindingEdge?: "left" | "top";
   /** Raw storage paths (pre-signing) for stable structural key */
   rawPaths?: string[];
+  /**
+   * Selected binding option's method + colour, used to pick the matching
+   * spine artwork. Optional — `BindingSpine` falls back to black if absent.
+   */
+  bindingArt?: {
+    method: "spiral" | "comb" | "twin_loop";
+    color: string;
+  };
 }
 
 /** Ring binder cover dimensions in mm (placeholder — user to confirm exact size) */
