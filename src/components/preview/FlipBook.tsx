@@ -335,15 +335,18 @@ export default function FlipBook({
   );
 
   // ── Fixed internal resolution ──
-  // For top-bound layouts the natural pageflip spread is rotated 90° so the
-  // two pages stack vertically. The library still needs the spread aspect to
-  // match the visible orientation, so when binding on the top edge we feed
-  // it the INVERSE aspect — the spread is laid out as if each "page" were
-  // portrait, but the inner artwork is then counter-rotated 90° so the
-  // landscape document remains landscape (and upright) on screen.
+  // Layout modes:
+  //  - Normal (left-bound, OR short-edge top-bound on a landscape doc):
+  //    standard side-by-side spread. The page aspect is used as-is.
+  //  - Stacked (long-edge top-bound on a landscape doc): two pages stack
+  //    vertically with a horizontal spine between them. We achieve this
+  //    by feeding pageflip the INVERSE aspect (so each "page" is portrait-
+  //    shaped to the engine) and rotating the whole book 90°; the inner
+  //    artwork is counter-rotated so the landscape document stays upright.
   const isTopBound = bindingEdge === "top";
+  const isStacked = isTopBound && landscapeLongEdge;
   const ratio = pageAspectRatio ?? 0.707;
-  const flipRatio = isTopBound ? 1 / ratio : ratio;
+  const flipRatio = isStacked ? 1 / ratio : ratio;
   const basePageWidth = BASE_PAGE_WIDTH;
   const basePageHeight = Math.round(basePageWidth / flipRatio);
   const baseSpreadWidth = basePageWidth * 2;
@@ -377,10 +380,12 @@ export default function FlipBook({
   }
 
   // ── CSS scale factor to fit into available container ──
-  // For top-bound layouts the inner book is rotated 90°, so the container's
-  // available width is what limits the rotated book's HEIGHT (and vice versa).
-  const availableWidth = (isTopBound ? height : width) - 80;
-  const availableHeight = (isTopBound ? width : height) - 60;
+  // Only the stacked layout rotates the inner book 90°, in which case the
+  // container's available width limits the rotated book's HEIGHT and vice
+  // versa. For all other layouts (including short-edge top binding) the
+  // book renders normally in its pane.
+  const availableWidth = (isStacked ? height : width) - 80;
+  const availableHeight = (isStacked ? width : height) - 60;
 
   // ── Solo-page detection ──
   const lastIdx = urls.length - 1;
@@ -405,11 +410,22 @@ export default function FlipBook({
   const spinePosition = isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center";
   const tabGutter = (tabPositions?.length ?? 0) > 0 ? 30 * scaleFactor : 0;
 
-  // For top-edge binding, rotate the inner container 90° clockwise so the
-  // two-page spread stacks vertically with the spine running horizontally
-  // between the pages. The page artwork inside each FlipPage is then
-  // counter-rotated 90° (see counterRotate prop) so it stays upright.
-  const outerTransform = isTopBound ? "rotate(90deg)" : undefined;
+  // For long-edge top binding, rotate the inner container 90° clockwise so
+  // the two-page spread stacks vertically with the spine running horizontally
+  // between the pages. Page artwork is counter-rotated 90° (counterRotate
+  // prop) to stay upright. Short-edge top binding does NOT rotate — it
+  // renders as a normal side-by-side spread using the 210mm short-edge art.
+  const outerTransform = isStacked ? "rotate(90deg)" : undefined;
+
+  // Wrapper sized to the rotated book's actual on-screen footprint.
+  // (Bug fix: previous code referenced bare `outerWidth`/`outerHeight`,
+  // which JS resolved to `window.outerWidth`/`window.outerHeight` — a
+  // wrapper several thousand pixels wide that crushed the visible book
+  // down to a tiny size on laptop viewports.)
+  const innerSpreadWidth = displayedViewportWidth + tabGutter * 2;
+  const innerSpreadHeight = displayedPageHeight;
+  const wrapperWidth = isStacked ? innerSpreadHeight : innerSpreadWidth;
+  const wrapperHeight = isStacked ? innerSpreadWidth : innerSpreadHeight;
 
   return (
     <div
@@ -418,9 +434,9 @@ export default function FlipBook({
     >
       <div
         style={{
-          ...(isTopBound ? { transform: outerTransform, transformOrigin: "center center" } : {}),
-          width: isTopBound ? outerWidth : undefined,
-          height: isTopBound ? outerHeight : undefined,
+          ...(isStacked ? { transform: outerTransform, transformOrigin: "center center" } : {}),
+          width: wrapperWidth,
+          height: wrapperHeight,
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
@@ -556,7 +572,7 @@ export default function FlipBook({
                         bleedInsetPx={bleedInsetPx}
                         label={pageLabels?.[i]}
                         color={pageColors?.[i]}
-                        counterRotate={isTopBound}
+                        counterRotate={isStacked}
                         artworkAspect={ratio}
                       />
                     ))}
