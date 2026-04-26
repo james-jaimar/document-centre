@@ -17,6 +17,11 @@ interface FileListProps {
     preflight_data: unknown;
   }) => Promise<void>;
   onDelete?: (docId: string) => Promise<void>;
+  /**
+   * Doc IDs whose effective paper size differs from the rest of the print
+   * job (or the session lock). Surfaced as an inline ⚠ warning chip.
+   */
+  mismatchDocIds?: Set<string>;
 }
 
 function ThumbnailImage({ storagePath, className }: { storagePath: string; className?: string }) {
