@@ -1,79 +1,45 @@
-## Diagnosis
+## Plan: stop landscape documents being forced into portrait
 
-**Why no landscape binding renders today**
+### What I found
+- The main culprit is the upload finalisation path in `useDocumentUpload`: it calls `normalizeOrientation()` automatically for several product families.
+- Presentations are currently marked as `landscape` dominant, which should rotate portrait pages to landscape, but the backend API comment and current behaviour strongly suggest the normaliser can still force pages the wrong way or mutate page boxes unexpectedly.
+- Bound documents, ring binders, booklets, and brochures are also being auto-normalised to portrait. That means a landscape leaflet/brochure or mixed-orientation upload can be silently changed before the preview renders.
+- Photo Prints use a separate flow and do not call the PDF orientation normaliser. Photo rotation there is user-controlled only (`rotation: 0` by default plus the editor Rotate button), but I’ll still verify the crop/preview maths remains untouched.
+- The screenshot also shows a preview-layout issue: top-bound presentation preview rotates the whole `FlipBook` container, which can make already-landscape thumbnail artwork appear portrait/sideways on screen.
 
-`OrderBuild.tsx` derives `bindingEdge` from `Document Size` metadata but only treats `binding_edge === "top"` as top-bound. Every landscape size in the seed and live DB uses `binding_edge: "short"`, so the check fails and `bindingEdge` stays `"left"`. As a result:
+### Changes to make
 
-- `FlipBook` never enters its top-bound rotation branch.
-- `BindingSpine` always asks `resolveBindingArt` for `edge: "long"` and never picks the dedicated 210mm assets.
+1. **Remove silent PDF orientation normalisation**
+   - Stop automatically calling `normalizeOrientation()` during upload/finalise for presentations, brochures/leaflets, bound documents, ring binders, and booklets.
+   - Keep CMYK/print-ready processing exactly as-is.
+   - Rename/adjust the finalisation logic so “print-ready” is not coupled to “orientation normalised”.
 
-That's the entire reason "none of the landscape binding seems to be working" — the 210mm files are imported and on disk, the resolver supports them, the metadata just never reaches them.
+2. **Keep presentation orientation as an advisory, not an automatic mutation**
+   - Presentations should still detect portrait uploads and show the existing `OrientationAdvisory`.
+   - Only rotate when the customer clicks “Rotate 90° to Landscape”.
+   - If the uploaded PDF is already landscape, it must remain landscape and proceed without rotation.
 
-**About the broken `<img>` in the screenshot**
+3. **Fix stale preflight flags**
+   - Stop writing `orientation_normalized: true` when no orientation change has actually happened.
+   - Update the advisory resolution paths in `OrderFiles.tsx` so they don’t skip needed print-ready processing because of an old/misleading `orientation_normalized` flag.
+   - Preserve useful flags such as `orientation_resolved` and `orientation_action` for the explicit rotate action.
 
-That spine `<img>` is rendering the long-edge `coil white (front).png` (because the short branch is unreachable). The broken icon is most likely a stale HMR snapshot from the previous build before the resolver was wired in. Once the data path below is fixed and the bundle rebuilds, this clears. If it persists after the fix we'll inspect the actual network 404 in a follow-up.
+4. **Correct the landscape presentation preview layout**
+   - Adjust `FlipBook.tsx` so top-bound landscape documents are laid out as two landscape pages stacked around a horizontal binding without rotating the page artwork into portrait.
+   - Keep the dedicated 210mm short-edge binding assets for default landscape presentations.
+   - Keep the new “Bind on long edge (top)” toggle, using the rotated/reused portrait binding artwork only for that opt-in mode.
 
-**Answer to your third question**
+5. **Audit affected product flows**
+   - Presentations: landscape PDF remains landscape; portrait PDF prompts user; explicit rotate works.
+   - Brochures / folded leaflets: artwork is not auto-rotated during upload; fold preview receives the author’s intended orientation.
+   - Photos: no auto-rotation introduced; user rotation remains manual only.
+   - Bound documents/ring binders/booklets: no silent page rotation; shared preview changes do not regress left-bound documents or ring binder isolation.
 
-Yes — `FlipBook` already handles "two landscape pages stacked with the binding in the middle". When `bindingEdge === "top"` it rotates the entire spread container 90°, so the natural left/right spread becomes top/bottom and the spine sits horizontally between the two pages. We just need to actually feed it `"top"` for the cases you want.
-
----
-
-## Plan
-
-### 1. Recognise the existing `binding_edge: "short"` metadata
-**File:** `src/pages/dashboard/OrderBuild.tsx`
-
-Update the `bindingEdge` `useMemo` so both `"top"` and `"short"` (legacy/landscape default) resolve to the top-bound layout. This single change makes every landscape A4/A5/A3 size immediately render with the 210mm artwork and the rotated spread — no DB migration required.
-
-### 2. Add a "Bind on long edge (top)" toggle for landscape sizes
-Per your answer: short edge stays the default, with an opt-in toggle to flip to long-edge.
-
-**Where it appears**
-
-In the configurator, inside `OrderBuild.tsx` next to the Document Size selector, render a small inline toggle (shadcn `Switch` + label "Bind on long edge"). It only mounts when:
-
-- The selected `Document Size` value's metadata has `orientation === "landscape"`.
-- The selected `Binding` is one of `spiral / comb / twin_loop` (rings/saddle/perfect/none don't need it).
-
-**State**
-
-Stored in component state (`bindingEdgeOverride: "long" | null`), persisted into `spec` alongside `selected_options` so it survives reloads. No schema change — we tuck it under `spec.binding_edge_override` (already JSONB).
-
-**Effect on `bindingEdge` derivation**
-
-```
-landscape + override="long"  → "top" with longEdgeArt = true
-landscape + no override      → "top" with longEdgeArt = false  (uses 210mm short art)
-portrait                     → "left"
-```
-
-`bindingEdge` stays `"left" | "top"` for the existing rotation logic. We thread a new sibling prop, `landscapeLongEdge: boolean`, through `PreviewPanel → DocumentPreview → FlipBook → BindingSpine` to tell the spine which artwork variant to pick.
-
-### 3. Reuse rotated portrait artwork for long-edge landscape
-**File:** `src/components/preview/BindingSpine.tsx`
-
-In the spiral branch:
-
-- If `bindingEdge === "top"` and `landscapeLongEdge === true`, request `edge: "long"` from `resolveBindingArt` (the existing portrait/long-edge PNGs), and apply a CSS `transform: rotate(-90deg)` (with a corrective `transform-origin` and width/height swap) so the vertical portrait spine becomes a horizontal top spine sized to the landscape page's long edge.
-- If `bindingEdge === "top"` and `landscapeLongEdge !== true`, keep current behaviour (request `edge: "short"` for the dedicated 210mm art — no extra rotation needed because the 210mm assets are already authored for the short edge of a landscape page).
-- If `bindingEdge === "left"`, unchanged.
-
-The container rotation that `FlipBook` already applies handles the spread layout; the spine rotation here just orients the artwork to match.
-
-### 4. Plumbing
-- `previewTypes.ts` — add `landscapeLongEdge?: boolean` to the shared preview prop bag.
-- `PreviewPanel.tsx`, `DocumentPreview.tsx`, `FlipBook.tsx`, `PreviewLightbox` — pass `landscapeLongEdge` through, default `false`.
-- `BindingSpine.tsx` — accept and use it as described in step 3.
-
-### 5. Verification (manual smoke list)
-After the change I'll click through:
-
-- Portrait A4/A5/A3 with each binding method → unchanged, vertical spine on the left.
-- Landscape A4/A5/A3 with the toggle **off** → container rotated, 210mm artwork on the (now-horizontal) short edge between two stacked landscape pages.
-- Landscape A4/A5/A3 with the toggle **on** → container rotated, portrait long-edge artwork rotated 90° and stretched along the long top edge.
-- Confirm the toggle hides itself for portrait sizes and for ring/saddle/perfect/no-binding.
-
-### Out of scope (flagging for later)
-- Adding dedicated horizontal-spine artwork for top-edge landscape (you chose to rotate existing assets for now).
-- Persisting `bindingEdgeOverride` into the saved order configuration snapshot — happy to add this once the visual side is signed off.
+### Technical notes
+- Primary files to update:
+  - `src/hooks/useDocumentUpload.ts`
+  - `src/pages/dashboard/OrderFiles.tsx`
+  - `src/components/preview/FlipBook.tsx`
+  - potentially `src/components/preview/BindingSpine.tsx` if the top-edge spine placement needs a matching tweak
+- I will avoid touching the dedicated Photo Prints crop/rotation code unless the audit reveals a concrete issue.
+- After changes, I’ll run the TypeScript check and focus on preserving the existing advisory, bleed, and size-resolution flows.

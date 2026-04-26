@@ -23,10 +23,19 @@ import { isOfficeFile, officeMimeFromFilename } from "@/lib/officeFiles";
 import { getPrintReadyPlan, type FamilyPrintConfig } from "@/lib/printIntent";
 
 /**
- * Product families whose output is bound/multi-page and where mixed-orientation
- * pages must be normalised so they all stack the same way up.
- *  - presentations: landscape-dominant (rotate portrait pages)
- *  - everything else here: portrait-dominant (rotate landscape pages)
+ * Page-orientation policy.
+ *
+ * We DO NOT auto-rotate uploaded PDF pages on the server during upload. The
+ * normaliser silently mutating page boxes was making landscape presentations,
+ * leaflets, and bound documents render the wrong way up. Orientation is
+ * either:
+ *  - left as the customer authored it, or
+ *  - changed explicitly by the customer via the OrientationAdvisory dialog
+ *    (which calls `rotate(assetId, 90)` directly).
+ *
+ * The product-family hints below are kept for backwards compatibility (some
+ * preflight code reads them) but are NO LONGER used to invoke
+ * `normalizeOrientation` automatically.
  */
 const PORTRAIT_NORMALIZE_FAMILIES = new Set([
   "bound-documents",
