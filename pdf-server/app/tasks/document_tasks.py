@@ -1,6 +1,8 @@
 from __future__ import annotations
 import logging
 logger = logging.getLogger(__name__)
+import random
+import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image
@@ -12,7 +14,7 @@ from app.services.jobs import job_repo
 from app.services.job_event_repo import job_event_repo
 from app.services.storage import StorageService
 from app.services.files import Workspace, unique_name
-from app.services.pdf_ops import pdf_ops
+from app.services.pdf_ops import pdf_ops, RasterizationIncompleteError
 from app.services.derived_files import derived_file_repo
 from app.core.config import settings
 
