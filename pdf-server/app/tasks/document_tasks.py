@@ -266,18 +266,30 @@ def _render_one_page(
     Each step is retried independently so a transient S3 hiccup doesn't
     cause a full re-rasterise of the page. Returns
     ``(image_path, thumb_image, preview_storage, thumb_storage)``.
+
+    Per-page output isolation: each call writes to its own subdirectory
+    so concurrent ThreadPoolExecutor workers can never overwrite each
+    other's intermediate files (Ghostscript's old default sequential
+    output naming caused parallel workers to clobber ``page-001.png``
+    repeatedly, producing wrong-content uploads and "incomplete render"
+    failures for every page after the first).
     """
-    out_prefix = preview_dir / 'page'
+    page_preview_dir = preview_dir / f"p{page:03d}"
+    page_thumb_dir = thumb_dir / f"p{page:03d}"
+    page_preview_dir.mkdir(parents=True, exist_ok=True)
+    page_thumb_dir.mkdir(parents=True, exist_ok=True)
+    out_prefix = page_preview_dir / 'page'
 
     def _do_rasterize():
         imgs = pdf_ops.rasterize_preview(
             src_pdf, out_prefix, dpi=dpi,
             first_page=page, last_page=page,
         )
-        # rasterize_preview returns the entire glob; pick the right file.
-        target = preview_dir / f"page-{page:03d}.png"
+        # _gs_rasterize_pages now writes directly to <prefix>-<page>.png
+        # for single-page renders, so this is the canonical target.
+        target = page_preview_dir / f"page-{page:03d}.png"
         if not target.exists():
-            # Fall back to whichever file was just produced for this page.
+            # Defensive fallback in case future changes alter the naming.
             for img in imgs:
                 if img.stem.endswith(f"-{page:03d}"):
                     target = img
@@ -291,7 +303,7 @@ def _render_one_page(
     )
 
     def _do_downscale():
-        thumb_image = thumb_dir / f"page-{page:03d}.png"
+        thumb_image = page_thumb_dir / f"page-{page:03d}.png"
         pdf_ops.downscale_to_thumbnail(image_path, thumb_image, target_max_dim=360)
         return thumb_image
 

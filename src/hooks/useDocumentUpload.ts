@@ -607,6 +607,10 @@ export function useDocumentUpload(
 
       updateUpload(originalName, { fileName: originalName, status: "uploading", progress: 0 });
 
+      // Track the created document id outside the try so the catch can flip
+      // its status to 'error' instead of leaving it stuck in 'processing'.
+      let createdDocId: string | null = null;
+
       try {
         const office = isOfficeFile(file);
 
@@ -644,6 +648,7 @@ export function useDocumentUpload(
           .single();
 
         if (docError) throw docError;
+        createdDocId = doc.id;
         updateUpload(originalName, { status: "analyzing", progress: 30 });
 
         // Phase A: inspect-only (no rasterization).
@@ -743,6 +748,20 @@ export function useDocumentUpload(
           status: "error",
           error: err.message || "Upload failed",
         });
+        // Flip the documents row out of 'processing' so the file list
+        // shows an error chip instead of an indefinite spinner.
+        if (createdDocId) {
+          try {
+            await supabase
+              .from("documents")
+              .update({ document_status: "error" })
+              .eq("id", createdDocId)
+              .in("document_status", ["processing", "pending"]);
+            qc.invalidateQueries({ queryKey: ["documents", effectiveId] });
+          } catch (markErr) {
+            console.warn("[upload] failed to mark document as error:", markErr);
+          }
+        }
         return null;
       }
     },
@@ -821,6 +840,16 @@ export function useDocumentUpload(
           status: "error",
           error: err?.message || "Render failed",
         });
+        try {
+          await supabase
+            .from("documents")
+            .update({ document_status: "error" })
+            .eq("id", docId)
+            .in("document_status", ["processing", "pending"]);
+          qc.invalidateQueries({ queryKey: ["documents", orderItemId] });
+        } catch (markErr) {
+          console.warn("[upload] failed to mark document as error:", markErr);
+        }
       }
     },
     [updateUpload, qc, orderItemId],

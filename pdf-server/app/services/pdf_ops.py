@@ -440,11 +440,52 @@ class PdfOps:
     ) -> None:
         """Run a single Ghostscript invocation. No completeness check; the
         caller (`rasterize_preview`) verifies and retries any missing pages.
+
+        IMPORTANT: Ghostscript's ``%03d`` in ``-sOutputFile`` is the
+        *sequential output index* (always starts at 1), NOT the source
+        page number. So a call with ``-dFirstPage=5 -dLastPage=5`` would
+        write ``page-001.png``, not ``page-005.png`` — which silently
+        confused both the per-page renderer and the completeness verifier
+        and was the root cause of the "17 of 18 pages missing" failures
+        seen with multi-page PDFs.
+
+        Two cases:
+          * Single-page render (first==last): write directly to a stable
+            ``<prefix>-<NNN>.<fmt>`` file, no GS placeholder at all. This
+            also makes parallel calls collision-free.
+          * Multi-page batch: keep ``%03d`` for GS, then RENAME the
+            sequentially-numbered outputs to use the source page number
+            so downstream globbing sees the right files.
         """
         out_prefix.parent.mkdir(parents=True, exist_ok=True)
-        pattern = str(out_prefix) + "-%03d." + fmt
         device = "png16m" if fmt == "png" else "jpeg"
 
+        # Single-page fast path — write directly with the source page
+        # number embedded, no GS placeholder collision possible.
+        if (
+            first_page is not None
+            and last_page is not None
+            and first_page == last_page
+        ):
+            target = Path(f"{out_prefix}-{first_page:03d}.{fmt}")
+            cmd = [
+                settings.ghostscript_bin,
+                "-dNOPAUSE",
+                "-dBATCH",
+                "-dSAFER",
+                f"-r{dpi}",
+                f"-sDEVICE={device}",
+                f"-sOutputFile={target}",
+                f"-dFirstPage={first_page}",
+                f"-dLastPage={last_page}",
+                str(src),
+            ]
+            subprocess.run(cmd, check=True)
+            return
+
+        # Multi-page batch — let GS use its sequential numbering, then
+        # rename to source page numbers.
+        pattern = str(out_prefix) + "-%03d." + fmt
         cmd = [
             settings.ghostscript_bin,
             "-dNOPAUSE",
@@ -459,8 +500,35 @@ class PdfOps:
         if last_page is not None:
             cmd.append(f"-dLastPage={last_page}")
         cmd.append(str(src))
-
         subprocess.run(cmd, check=True)
+
+        # Re-map sequential indices → source page numbers.
+        # GS produced files like <prefix>-001.png, -002.png, ... in order,
+        # corresponding to source pages first_page, first_page+1, ...
+        if first_page is not None and first_page != 1:
+            base_dir = out_prefix.parent
+            base_name = out_prefix.name
+            existing = sorted(base_dir.glob(f"{base_name}-*.{fmt}"))
+            # Identify the freshly written sequential files (those whose
+            # trailing index falls in the GS sequential range 1..N where
+            # N = (last_page or first_page) - first_page + 1).
+            count = (last_page or first_page) - first_page + 1
+            seq_to_src: list[tuple[Path, Path]] = []
+            for i in range(1, count + 1):
+                seq_path = base_dir / f"{base_name}-{i:03d}.{fmt}"
+                src_page = first_page + i - 1
+                target_path = base_dir / f"{base_name}-{src_page:03d}.{fmt}"
+                if seq_path.exists() and seq_path != target_path:
+                    seq_to_src.append((seq_path, target_path))
+            # Rename in REVERSE so we don't clobber a still-needed seq
+            # file (e.g. renaming -001 → -002 before -002 has been moved).
+            for seq_path, target_path in reversed(seq_to_src):
+                # If target already exists from a prior partial run,
+                # remove it first — the fresh GS output supersedes it.
+                if target_path.exists():
+                    target_path.unlink()
+                seq_path.rename(target_path)
+
 
     def rasterize_preview(
         self,
