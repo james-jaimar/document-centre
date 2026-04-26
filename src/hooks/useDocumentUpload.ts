@@ -648,6 +648,7 @@ export function useDocumentUpload(
           .single();
 
         if (docError) throw docError;
+        createdDocId = doc.id;
         updateUpload(originalName, { status: "analyzing", progress: 30 });
 
         // Phase A: inspect-only (no rasterization).
