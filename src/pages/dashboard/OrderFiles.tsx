@@ -7,7 +7,7 @@ import {
   useUpdateSection,
   useDeleteSection,
 } from "@/hooks/useOrderBuilder";
-import { useDocumentUpload } from "@/hooks/useDocumentUpload";
+import { useDocumentUpload, recoverThumbnailGaps } from "@/hooks/useDocumentUpload";
 import FileUploader from "@/components/order/FileUploader";
 import FileList from "@/components/order/FileList";
 import SectionActions from "@/components/order/SectionActions";
