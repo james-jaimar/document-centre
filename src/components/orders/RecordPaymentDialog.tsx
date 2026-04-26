@@ -21,6 +21,7 @@ import { recordPaymentEvent } from "@/lib/orders/mutations";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { PaymentProvider } from "@/lib/orders/types";
+import { formatPrice } from "@/lib/formatCurrency";
 
 interface Props {
   open: boolean;
@@ -105,7 +106,7 @@ export function RecordPaymentDialog({
               onChange={(e) => setAmount(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Outstanding: {currency} {amountDue.toFixed(2)}
+              Outstanding: {formatPrice(amountDue, currency)}
             </p>
           </div>
 

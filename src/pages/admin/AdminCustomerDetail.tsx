@@ -36,8 +36,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { resolveDisplayName } from "@/lib/displayName";
-
-const ZAR = new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR" });
+import { formatPrice } from "@/lib/formatCurrency";
 
 export default function AdminCustomerDetail() {
   const { id } = useParams<{ id: string }>();
@@ -271,7 +270,7 @@ export default function AdminCustomerDetail() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="p-4">
           <div className="text-xs text-muted-foreground">Lifetime value</div>
-          <div className="text-2xl font-semibold">{ZAR.format(lifetimeValue)}</div>
+          <div className="text-2xl font-semibold">{formatPrice(lifetimeValue, (data as any)?.preferred_currency ?? "ZAR")}</div>
         </Card>
         <Card className="p-4">
           <div className="text-xs text-muted-foreground">Orders</div>
@@ -279,7 +278,7 @@ export default function AdminCustomerDetail() {
         </Card>
         <Card className="p-4">
           <div className="text-xs text-muted-foreground">Avg order value</div>
-          <div className="text-2xl font-semibold">{ZAR.format(aov)}</div>
+          <div className="text-2xl font-semibold">{formatPrice(aov, (data as any)?.preferred_currency ?? "ZAR")}</div>
         </Card>
         <Card className="p-4">
           <div className="text-xs text-muted-foreground">Last order</div>
@@ -319,7 +318,7 @@ export default function AdminCustomerDetail() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="font-medium">{ZAR.format(Number(o.total_amount ?? 0))}</div>
+                      <div className="font-medium">{formatPrice(Number(o.total_amount ?? 0), (o.currency as string | undefined) ?? "ZAR")}</div>
                       <Badge variant="outline" className="mt-1 text-xs">
                         {o.payment_status}
                       </Badge>

@@ -24,6 +24,7 @@ import {
 import type { OrderAdminStatus, PaymentStatus, AdminOrderListFilters } from "@/lib/orders/types";
 import { format } from "date-fns";
 import { buildAdminPath } from "@/lib/adminRouting";
+import { formatPrice } from "@/lib/formatCurrency";
 
 const ALL_ADMIN_STATUSES: OrderAdminStatus[] = [
   "new_order", "under_review", "approved", "in_production", "qa",
@@ -97,13 +98,8 @@ export default function AdminOrders() {
     setPage(1);
   };
 
-  const formatCurrency = (amount: number, currency = "ZAR") => {
-    return new Intl.NumberFormat("en-ZA", {
-      style: "currency",
-      currency,
-      minimumFractionDigits: 2,
-    }).format(amount);
-  };
+  const formatCurrency = (amount: number, currency = "ZAR") =>
+    formatPrice(Number(amount ?? 0), currency);
 
   const formatDate = (dateStr: string) => {
     try {

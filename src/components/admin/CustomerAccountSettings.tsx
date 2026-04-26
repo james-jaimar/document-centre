@@ -10,9 +10,11 @@ import { useUpdateCustomerAccount, type CustomerAccountSettings as Settings } fr
 interface Props {
   customerProfileId: string;
   initial: Settings;
+  /** Tenant reporting currency, used to label the credit limit field. */
+  currencyCode?: string;
 }
 
-export function CustomerAccountSettings({ customerProfileId, initial }: Props) {
+export function CustomerAccountSettings({ customerProfileId, initial, currencyCode = "ZAR" }: Props) {
   const update = useUpdateCustomerAccount(customerProfileId);
   const [form, setForm] = useState<Settings>(initial);
 
@@ -51,7 +53,7 @@ export function CustomerAccountSettings({ customerProfileId, initial }: Props) {
           />
         </div>
         <div className="space-y-1">
-          <Label>Credit limit (ZAR)</Label>
+          <Label>Credit limit ({currencyCode})</Label>
           <Input
             type="number"
             min={0}

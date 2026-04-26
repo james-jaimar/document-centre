@@ -22,6 +22,7 @@ import { buildAdminPath } from "@/lib/adminRouting";
 import { ADMIN_STATUS_CONFIG, PAYMENT_STATUS_CONFIG } from "@/lib/orders/status-maps";
 import { StatusBadge } from "@/components/orders/StatusBadge";
 import { Undo2 } from "lucide-react";
+import { formatPrice } from "@/lib/formatCurrency";
 
 export default function AdminOrderDetail() {
   const { id } = useParams<{ id: string }>();
@@ -68,7 +69,7 @@ export default function AdminOrderDetail() {
 
   const handleMarkAsPaid = async () => {
     if (!order || order.amount_due <= 0) return;
-    if (!window.confirm(`Mark order ${order.order_number} as fully paid (${order.currency} ${Number(order.amount_due).toFixed(2)})?`)) return;
+    if (!window.confirm(`Mark order ${order.order_number} as fully paid (${formatPrice(Number(order.amount_due), order.currency)})?`)) return;
     setMarkingPaid(true);
     try {
       await recordPaymentEvent({
@@ -201,7 +202,7 @@ export default function AdminOrderDetail() {
         <div>
           <div className="text-sm font-medium text-primary mb-4">Job Details</div>
           {selectedJob ? (
-            <JobDetailPanel job={selectedJob} documents={documents} />
+            <JobDetailPanel job={selectedJob} documents={documents} currency={order.currency} />
           ) : (
             <div className="rounded-lg border bg-card p-8 text-center text-muted-foreground">
               No jobs in this order

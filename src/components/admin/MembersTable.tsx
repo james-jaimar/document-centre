@@ -9,6 +9,7 @@ import {
 import { Pencil, MoreVertical, Shield, KeyRound, UserX, UserCheck, Trash2, Mail } from "lucide-react";
 import type { TenantMemberRow } from "@/hooks/useTenantMembers";
 import type { UserStat } from "@/hooks/useUserOrderStats";
+import { formatPrice } from "@/lib/formatCurrency";
 
 const ROLE_LABELS: Record<string, string> = {
   owner: "Owner",
@@ -38,8 +39,10 @@ const roleBadgeVariant = (role: string) => {
 
 const formatRole = (role: string) => ROLE_LABELS[role] ?? role;
 
-const formatCurrency = (n: number) =>
-  new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", maximumFractionDigits: 0 }).format(n);
+// NOTE: Member spend is aggregated across all orders; we render in the
+// tenant's reporting currency (ZAR by default). Per-order amounts shown
+// elsewhere always honour the order's own stored currency.
+const formatCurrency = (n: number) => formatPrice(n, "ZAR").replace(/[,.]00$/, "");
 
 const displayName = (m: TenantMemberRow) => {
   const p = m.profiles;

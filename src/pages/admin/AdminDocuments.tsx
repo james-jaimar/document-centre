@@ -190,7 +190,7 @@ export default function AdminDocuments() {
                     {inv.orders?.customer_name || inv.orders?.customer_email || "—"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {inv.currency} {Number(inv.total_amount).toFixed(2)}
+                    {formatPrice(Number(inv.total_amount ?? 0), inv.currency ?? "ZAR")}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {new Date(inv.issued_at).toLocaleDateString()}
