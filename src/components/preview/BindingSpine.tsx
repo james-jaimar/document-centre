@@ -15,6 +15,13 @@ interface BindingSpineProps {
   /** Binding edge: left (default) or top (horizontal spine for presentations) */
   bindingEdge?: "left" | "top";
   /**
+   * When true and `bindingEdge==="top"`, render the portrait long-edge
+   * artwork rotated 90° to bind a landscape document on its LONG top edge.
+   * When false (default), top-edge bindings use the dedicated 210mm
+   * short-edge assets that match a landscape page's short edge exactly.
+   */
+  landscapeLongEdge?: boolean;
+  /**
    * Selected binding option's method + colour. When provided, drives the
    * spine artwork selection; otherwise we fall back to the method's default
    * (black) colour. `bindingType` still controls whether a spine renders at
@@ -37,6 +44,7 @@ export default function BindingSpine({
   isOpen = false,
   position = "center",
   bindingEdge = "left",
+  landscapeLongEdge = false,
   bindingArt,
 }: BindingSpineProps) {
   if (bindingType === "none" || bindingType === "ring") return null;
@@ -55,12 +63,23 @@ export default function BindingSpine({
     // bindingType so legacy callers still render.
     const method = (bindingArt?.method ?? bindingTypeToMethod(bindingType))!;
     const color = normaliseBindingColor(bindingArt?.color);
-    // Top-edge bound documents are landscape A4/A5/A3 — use the dedicated
-    // short-edge ("210mm") artwork.
-    const edge = bindingEdge === "top" ? "short" : "long";
+
+    // Edge selection:
+    //  - bindingEdge==="top" + landscapeLongEdge → reuse portrait long-edge
+    //    artwork (rotated 90° below) to span the LONG top edge.
+    //  - bindingEdge==="top" alone → dedicated 210mm short-edge artwork.
+    //  - bindingEdge==="left" → traditional portrait long-edge spine.
+    const edge =
+      bindingEdge === "top" && !landscapeLongEdge ? "short" : "long";
     const state = isOpen ? "open" : "closed";
 
     const { src: spineImage } = resolveBindingArt({ method, color, edge, state });
+
+    // For long-edge top binding we render the same vertical strip but rotate
+    // the inner image 90°. The OUTER FlipBook container is also rotated 90°,
+    // so a vertical-on-screen strip here ends up sitting horizontally between
+    // the two stacked landscape pages.
+    const rotateImage = bindingEdge === "top" && landscapeLongEdge;
 
     return (
       <div
@@ -75,7 +94,12 @@ export default function BindingSpine({
           src={spineImage}
           alt={`${method} ${color} binding`}
           className="w-full h-full object-fill"
-          style={{ objectFit: "fill" }}
+          style={{
+            objectFit: "fill",
+            ...(rotateImage
+              ? { transform: "scaleY(-1)" } // flip so spine teeth orient correctly when container is rotated
+              : {}),
+          }}
           draggable={false}
         />
       </div>
