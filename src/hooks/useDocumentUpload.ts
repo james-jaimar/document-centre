@@ -607,6 +607,10 @@ export function useDocumentUpload(
 
       updateUpload(originalName, { fileName: originalName, status: "uploading", progress: 0 });
 
+      // Track the created document id outside the try so the catch can flip
+      // its status to 'error' instead of leaving it stuck in 'processing'.
+      let createdDocId: string | null = null;
+
       try {
         const office = isOfficeFile(file);
 
