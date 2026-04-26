@@ -360,7 +360,7 @@ export default function OrderFiles() {
           }
         }
 
-        if (!preflight?.orientation_normalized) {
+        if (!preflight?.print_ready_done) {
           await finalizeOrientationAndPrintReady(doc.id, workingAssetId, doc.fileName);
         }
         await renderWithProgress(
@@ -434,7 +434,7 @@ export default function OrderFiles() {
 
       const existingForFinalize = documents.find((d) => d.id === doc.id);
       const preflightForFinalize = (existingForFinalize?.preflight_data as Record<string, any>) ?? {};
-      if (!preflightForFinalize?.orientation_normalized) {
+      if (!preflightForFinalize?.print_ready_done) {
         await finalizeOrientationAndPrintReady(doc.id, workingAssetId, doc.fileName);
       }
 

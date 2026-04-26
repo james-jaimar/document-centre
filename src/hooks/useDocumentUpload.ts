@@ -12,7 +12,7 @@ import {
   inspectAsset,
   pollJob,
   convertOffice,
-  normalizeOrientation,
+  // normalizeOrientation intentionally not imported — auto-rotation removed.
   printReady,
   renderPages,
 } from "@/lib/documentCentreApi";
@@ -23,10 +23,19 @@ import { isOfficeFile, officeMimeFromFilename } from "@/lib/officeFiles";
 import { getPrintReadyPlan, type FamilyPrintConfig } from "@/lib/printIntent";
 
 /**
- * Product families whose output is bound/multi-page and where mixed-orientation
- * pages must be normalised so they all stack the same way up.
- *  - presentations: landscape-dominant (rotate portrait pages)
- *  - everything else here: portrait-dominant (rotate landscape pages)
+ * Page-orientation policy.
+ *
+ * We DO NOT auto-rotate uploaded PDF pages on the server during upload. The
+ * normaliser silently mutating page boxes was making landscape presentations,
+ * leaflets, and bound documents render the wrong way up. Orientation is
+ * either:
+ *  - left as the customer authored it, or
+ *  - changed explicitly by the customer via the OrientationAdvisory dialog
+ *    (which calls `rotate(assetId, 90)` directly).
+ *
+ * The product-family hints below are kept for backwards compatibility (some
+ * preflight code reads them) but are NO LONGER used to invoke
+ * `normalizeOrientation` automatically.
  */
 const PORTRAIT_NORMALIZE_FAMILIES = new Set([
   "bound-documents",
@@ -318,10 +327,13 @@ export function useDocumentUpload(
    * conversion job has promoted the asset to a PDF).
    */
   /**
-   * Run normalize-orientation (when family demands it) + print-ready CMYK
-   * conversion against an asset whose dimensions are already final. Safe to
-   * call after a `resize` job. Idempotent — server-side no-ops when nothing
-   * needs to change.
+   * Run print-ready CMYK conversion against an asset whose dimensions are
+   * already final. Safe to call after a `resize` job. Idempotent — server-side
+   * no-ops when nothing needs to change.
+   *
+   * NOTE: orientation normalisation is intentionally NOT performed here. We
+   * preserve the customer's authored orientation; explicit rotation only
+   * happens when the user accepts the OrientationAdvisory.
    *
    * Returns true on success (or when nothing to do); false only on hard
    * failure (callers continue rendering with the un-finalised PDF).
@@ -332,25 +344,6 @@ export function useDocumentUpload(
       assetId: string,
       fileName: string,
     ): Promise<boolean> => {
-      // Normalise mixed-orientation pages for bound/ring-binder/presentation
-      // products. Server is a no-op when nothing needs rotating.
-      const familyKey = (productFamilySlug ?? "").toLowerCase();
-      const dominant: "portrait" | "landscape" | null =
-        PORTRAIT_NORMALIZE_FAMILIES.has(familyKey)
-          ? "portrait"
-          : LANDSCAPE_NORMALIZE_FAMILIES.has(familyKey)
-            ? "landscape"
-            : null;
-      if (dominant) {
-        try {
-          updateUpload(fileName, { progress: 50, statusText: "Aligning page orientation…" });
-          const { job_id: orientJobId } = await normalizeOrientation(assetId, dominant);
-          await pollJob(orientJobId);
-        } catch (orientErr: any) {
-          console.warn("[upload] normalize-orientation failed:", orientErr);
-        }
-      }
-
       // Print-ready CMYK conversion (driven by per-product-family settings).
       const printPlan = getPrintReadyPlan(productFamilyPrintConfig);
       if (printPlan) {
@@ -366,7 +359,9 @@ export function useDocumentUpload(
         }
       }
 
-      // Mark in preflight_data so re-renders can skip a redundant pass.
+      // Mark the print-ready pass as complete so subsequent re-renders can
+      // skip the redundant ICC conversion. We deliberately do NOT set
+      // `orientation_normalized` — orientation is owned by the customer.
       try {
         const { data: existing } = await supabase
           .from("documents")
@@ -377,16 +372,16 @@ export function useDocumentUpload(
         await supabase
           .from("documents")
           .update({
-            preflight_data: { ...preflight, orientation_normalized: true } as any,
+            preflight_data: { ...preflight, print_ready_done: true } as any,
           })
           .eq("id", docId);
       } catch (persistErr: any) {
-        console.warn("[upload] persist orientation_normalized flag failed:", persistErr);
+        console.warn("[upload] persist print_ready_done flag failed:", persistErr);
       }
 
       return true;
     },
-    [productFamilySlug, productFamilyPrintConfig, updateUpload],
+    [productFamilyPrintConfig, updateUpload],
   );
 
   /**
@@ -464,16 +459,16 @@ export function useDocumentUpload(
         const hasAdvisory = !!detectedSize || !!nearIsoMatch;
 
         // If no size advisory AND caller didn't ask us to skip, finalise now
-        // (orientation normalise + print-ready). For Office uploads with a
-        // size advisory we DEFER finalisation until OrderFiles resolves the
-        // size — this preserves the author's intentional mixed orientations
-        // until after the canvas is sized.
+        // (print-ready CMYK only — orientation is preserved as authored).
+        // For Office uploads with a size advisory we DEFER finalisation until
+        // OrderFiles resolves the size.
         const shouldFinalizeNow = !hasAdvisory && !opts?.skipFinalize;
-        let orientationNormalized = false;
+        let printReadyDone = false;
         if (shouldFinalizeNow) {
           await finalizeOrientationAndPrintReady(docId, assetId, fileName);
-          orientationNormalized = true;
-          // Re-read asset because normalize-orientation may have mutated boxes.
+          printReadyDone = true;
+          // print-ready may have rewritten the PDF (e.g. ICC conversion);
+          // re-read the asset so dimensions/boxes reflect the final file.
           asset = await getAsset(assetId);
         }
 
@@ -508,7 +503,7 @@ export function useDocumentUpload(
           status: asset.status,
           awaiting_review: hasAdvisory,
         };
-        if (orientationNormalized) preflight.orientation_normalized = true;
+        if (printReadyDone) preflight.print_ready_done = true;
         if (detectedSize) preflight.detected_size = detectedSize;
         if (nearIsoMatch) {
           preflight.near_iso_match = nearIsoMatch.matchedSize.name;
