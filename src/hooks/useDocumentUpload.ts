@@ -840,6 +840,16 @@ export function useDocumentUpload(
           status: "error",
           error: err?.message || "Render failed",
         });
+        try {
+          await supabase
+            .from("documents")
+            .update({ document_status: "error" })
+            .eq("id", docId)
+            .in("document_status", ["processing", "pending"]);
+          qc.invalidateQueries({ queryKey: ["documents", orderItemId] });
+        } catch (markErr) {
+          console.warn("[upload] failed to mark document as error:", markErr);
+        }
       }
     },
     [updateUpload, qc, orderItemId],
