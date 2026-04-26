@@ -14,6 +14,13 @@ export interface ItemSpec {
   paper_stock?: string;
   /** Map of option name → selected value slug */
   selected_options: Record<string, string>;
+  /**
+   * Optional opt-in to bind a landscape document on its LONG edge (top)
+   * rather than the default short edge. Only meaningful when the selected
+   * Document Size is landscape and the binding method has spine artwork
+   * (spiral/comb/twin_loop). `null` / undefined = use the size's default.
+   */
+  binding_edge_override?: "long" | null;
 }
 
 export interface PriceLineItem {
