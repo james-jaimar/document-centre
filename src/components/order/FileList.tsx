@@ -169,6 +169,19 @@ export default function FileList({
                   <Trash2 className={cn("h-3.5 w-3.5", deletingIds.has(doc.id) && "animate-pulse")} />
                 </button>
               )}
+              {hasGaps && onRerenderGaps && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRerenderGaps(doc);
+                  }}
+                  disabled={isRecovering}
+                  className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-warning hover:bg-warning/10 transition-colors disabled:opacity-50"
+                  title="Re-render missing pages"
+                >
+                  <Wand2 className={cn("h-3.5 w-3.5", isRecovering && "animate-pulse")} />
+                </button>
+              )}
               {isReady && !hasThumbnails && onReprocess && (
                 <button
                   onClick={(e) => {
@@ -182,7 +195,7 @@ export default function FileList({
                   <RefreshCw className={cn("h-3.5 w-3.5", isReprocessing && "animate-spin")} />
                 </button>
               )}
-              {isProcessing || isReprocessing ? (
+              {isProcessing || isReprocessing || isRecovering ? (
                 <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
               ) : isError ? (
                 <AlertCircle className="h-4 w-4 text-destructive" />
