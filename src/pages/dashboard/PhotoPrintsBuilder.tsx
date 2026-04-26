@@ -62,6 +62,8 @@ export default function PhotoPrintsBuilder() {
 
   const createOrder = useCreateOrder();
   const addItemToCart = useAddItemToCart();
+  const { region } = useRegionalPricing();
+  const activeCurrency = region?.currency_code ?? "ZAR";
 
   const { data: family } = useQuery<ProductFamilyRow | null>({
     queryKey: ["product_family_by_slug", PHOTO_FAMILY_SLUG],
