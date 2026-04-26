@@ -429,19 +429,17 @@ class PdfOps:
         subprocess.run(cmd, check=True)
         return out_pdf
 
-    def rasterize_preview(
+    def _gs_rasterize_pages(
         self,
         src: Path,
         out_prefix: Path,
-        dpi: int = 120,
-        fmt: str = "png",
-        first_page: int | None = None,
-        last_page: int | None = None,
-    ) -> list[Path]:
-        """
-        Rasterize PDF pages with Ghostscript. Optional first_page/last_page
-        let callers do a "page-1 fast path" or chunked parallel renders
-        without re-running on the whole document.
+        dpi: int,
+        fmt: str,
+        first_page: int | None,
+        last_page: int | None,
+    ) -> None:
+        """Run a single Ghostscript invocation. No completeness check; the
+        caller (`rasterize_preview`) verifies and retries any missing pages.
         """
         out_prefix.parent.mkdir(parents=True, exist_ok=True)
         pattern = str(out_prefix) + "-%03d." + fmt
@@ -463,6 +461,90 @@ class PdfOps:
         cmd.append(str(src))
 
         subprocess.run(cmd, check=True)
+
+    def rasterize_preview(
+        self,
+        src: Path,
+        out_prefix: Path,
+        dpi: int = 120,
+        fmt: str = "png",
+        first_page: int | None = None,
+        last_page: int | None = None,
+    ) -> list[Path]:
+        """
+        Rasterize PDF pages with Ghostscript. Optional first_page/last_page
+        let callers do a "page-1 fast path" or chunked parallel renders
+        without re-running on the whole document.
+
+        Hardened behaviour:
+          * After the bulk Ghostscript run we glob the output dir and verify
+            every requested page produced a file.
+          * Any missing pages are re-rendered ONE AT A TIME (single-page GS
+            invocations are extremely reliable) up to
+            ``settings.preview_page_max_retries`` times with backoff.
+          * If pages are still missing after all retries, raise
+            ``RasterizationIncompleteError`` so the caller can decide
+            whether to give up or try a different recovery path.
+        """
+        # Bulk run first — fast path for the common (no-failure) case.
+        self._gs_rasterize_pages(src, out_prefix, dpi, fmt, first_page, last_page)
+
+        if first_page is None and last_page is None:
+            # No range hint — we can't verify completeness deterministically
+            # without re-parsing the source. Return what we have; downstream
+            # callers always supply explicit ranges.
+            return sorted(out_prefix.parent.glob(out_prefix.name + "-*." + fmt))
+
+        fp = first_page if first_page is not None else 1
+        lp = last_page if last_page is not None else fp
+        expected = set(range(fp, lp + 1))
+
+        def _present_pages() -> set[int]:
+            present: set[int] = set()
+            for p in out_prefix.parent.glob(out_prefix.name + "-*." + fmt):
+                stem = p.stem.rsplit("-", 1)[-1]
+                if stem.isdigit():
+                    present.add(int(stem))
+            return present
+
+        present = _present_pages()
+        missing = sorted(expected - present)
+
+        if not missing:
+            return sorted(out_prefix.parent.glob(out_prefix.name + "-*." + fmt))
+
+        # Per-page retry loop. Single-page GS invocations are basically
+        # immune to the rare batch-mode glitches that cause skipped pages.
+        max_retries = max(1, settings.preview_page_max_retries)
+        base_ms = max(50, settings.preview_page_retry_base_ms)
+
+        for attempt in range(1, max_retries + 1):
+            logger.warning(
+                "rasterize_preview: missing pages on attempt %d/%d → %s",
+                attempt, max_retries, missing,
+            )
+            for page in missing:
+                try:
+                    self._gs_rasterize_pages(
+                        src, out_prefix, dpi, fmt,
+                        first_page=page, last_page=page,
+                    )
+                except subprocess.CalledProcessError as exc:
+                    logger.warning(
+                        "rasterize_preview: GS failed on page %d attempt %d: %s",
+                        page, attempt, exc,
+                    )
+            present = _present_pages()
+            missing = sorted(expected - present)
+            if not missing:
+                break
+            # Backoff before the next sweep — exponential with jitter.
+            delay = (base_ms * (2 ** (attempt - 1))) / 1000.0
+            time.sleep(delay + random.uniform(0, delay * 0.25))
+
+        if missing:
+            raise RasterizationIncompleteError(missing_pages=missing)
+
         return sorted(out_prefix.parent.glob(out_prefix.name + "-*." + fmt))
 
     def downscale_to_thumbnail(
