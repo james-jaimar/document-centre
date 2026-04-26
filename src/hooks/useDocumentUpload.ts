@@ -12,7 +12,7 @@ import {
   inspectAsset,
   pollJob,
   convertOffice,
-  normalizeOrientation,
+  // normalizeOrientation intentionally not imported — auto-rotation removed.
   printReady,
   renderPages,
 } from "@/lib/documentCentreApi";
