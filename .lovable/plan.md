@@ -1,87 +1,48 @@
-## Goal
+## Three issues, one pass
 
-Make outbound emails fire **immediately** on insert into `email_outbox` (push), while keeping the 5-minute cron as a safety net for retries, scheduled sends, and anything the push fires-and-forgets.
+### 1. Order Confirmation hard-codes "R" (ZAR) regardless of region
 
----
+**Root cause:** `src/hooks/useCart.ts` line ~689 in `usePlaceOrder` sends `pricing: { currency: "ZAR", … }` to the `order-engine` Edge Function — a literal string, not the cart's currency. So even though the cart order was correctly stamped with GBP when items were added (line ~115), the final placed order is overwritten with `ZAR`. That's why you see `R 15,72` on the confirmation card while browsing as GBP.
 
-## Architecture: push + pull
+**Fix:**
+- Read the cart's stamped currency (`cartOrder.currency`) when placing the order and pass it through to the engine.
+- Fall back to the active region (`useRegionalPricing`) only if the cart somehow has no currency, then `"ZAR"` as a last resort.
+- This is a one-line conceptual change; the cart already carries the right value.
 
-| Path | Trigger | Purpose |
-|---|---|---|
-| **Push (happy path)** | `AFTER INSERT` trigger on `email_outbox` calls `email-dispatcher` via `pg_net.http_post` | Send brand-new emails within ~1–2s |
-| **Pull (safety net)** | Existing 5-min `pg_cron` job | Retries with backoff, scheduled sends, recovery from dropped pg_net calls, stale-lock revival |
+No other downstream changes needed — `OrderConfirmation.tsx`, `CustomerOrderDetail.tsx`, and `Cart.tsx` already format using `order.currency` / `cart.currency`, so once the order is saved with `GBP` it will render `£15.72`.
 
-Both paths invoke the **same `email-dispatcher` function**, which already claims rows atomically with `locked_by` worker IDs — so concurrent push + cron is safe and dedupes naturally.
+### 2. Admin → Pricing → Edit goes blank
 
----
+**Root cause:** `src/components/admin/PricingRuleForm.tsx` line 148 has `<SelectItem value="">All families</SelectItem>`. Radix Select forbids empty-string values and throws at runtime — the dialog mounts, the Select inside it errors, the whole admin page unmounts to a blank screen. (Nothing to do with multi-currency, despite the timing.)
 
-## 1. Database trigger (push)
+**Fix:**
+- Replace the empty-string sentinel with a real value such as `"__all__"`.
+- Treat `"__all__"` as `null` when populating the form (`product_family_id: rule.product_family_id ?? "__all__"`) and when submitting (`product_family_id: values.product_family_id === "__all__" ? null : values.product_family_id`).
+- While I'm in this file, also surface a read-only **Currency** field on the form (just an info chip showing `ZAR — source of truth`), so it's obvious to admins that the editor only edits ZAR rules and that other currencies are derived via Platform → Demo Print Pricing → Regenerate. No new editable field — just clarity.
 
-New migration:
+### 3. Strip VAT/Tax from the customer-facing demo
 
-- Helper function `public.notify_email_dispatcher()` (SECURITY DEFINER, search_path = public):
-  - Fires only when `NEW.status = 'queued'` AND `NEW.next_attempt_at <= now()` (skips scheduled-future rows — those are the cron's job)
-  - Calls `net.http_post(url := <project-url>/functions/v1/email-dispatcher, headers := {Authorization: Bearer <service-role>}, body := '{}'::jsonb)`
-  - Wrapped in `BEGIN ... EXCEPTION WHEN OTHERS THEN RETURN NEW; END;` so a pg_net hiccup never blocks the insert — cron will catch it.
-- Trigger `email_outbox_push` on `AFTER INSERT ON public.email_outbox FOR EACH ROW EXECUTE FUNCTION notify_email_dispatcher()`.
-- Service-role key stored in **Vault** as `email_dispatcher_service_role_key` (read inside the function — never inlined into migration SQL). Same pattern Lovable's own `process-email-queue` uses.
+The platform will let tenants configure their own VAT rules later. For the demo, prices should be presented as a single all-in number with no VAT/Tax line.
 
-**Why a trigger, not direct SMTP from Postgres?** Postgres can't speak SMTP. `pg_net` is the standard async HTTP escape hatch and the same primitive Lovable's email queue uses.
+Files and changes:
+- **`src/pages/dashboard/Cart.tsx`** — change "Subtotal (excl. VAT)" to just "Total".
+- **`src/pages/dashboard/Checkout.tsx`** — remove the `vatRate`, `vat`, and `total = subtotal + vat` calculations; remove the "VAT (15%) / Tax (15%)" row from the Order Summary; show only Subtotal (or just "Total"); pass `subtotal` (no VAT added) as the order total.
+- **`src/hooks/useCart.ts` `usePlaceOrder`** — set `vat_amount: 0`, `total_amount: subtotal` when calling `order-engine`. (Keeps the field for future tenant VAT support; just zero for demo.)
+- **`src/pages/dashboard/CustomerOrderDetail.tsx`** — hide the "VAT" row when `order.vat_amount === 0` (so historic non-zero orders still display correctly, but the new demo orders show a clean Subtotal → Total).
+- **`src/components/orders/detail/OrderPricingTab.tsx`** (admin/staff order detail) — same treatment: hide the "VAT (15%)" row when `vat_amount === 0`. We keep the row for tenants who configure VAT later.
 
----
+What I'm **not** changing:
+- The DB schema (`vat_amount` column stays — tenants will use it).
+- Pricing rule values in the DB (those are net values today and will continue to be).
+- The admin/staff side of VAT configuration (out of scope for this fix).
 
-## 2. Retry & timeout policy (already in place — confirming + tightening)
+### Out of scope (call out for a follow-up)
+- Building tenant-configurable VAT (rate, inclusive vs exclusive, per-region) — that's a real feature, not a quick demo cleanup. Happy to plan it separately when you're ready.
 
-The dispatcher already has industry-standard retry semantics. I'll keep them and add one small hardening change:
-
-| Setting | Current | Plan |
-|---|---|---|
-| Max attempts | **5** (column default on `email_outbox.max_attempts`) | Keep |
-| Backoff | **1m → 5m → 15m → 1h → 6h** then `dlq` | Keep |
-| Auth errors (535/530/invalid login) | Fail immediately, no retry | Keep — retrying bad creds is pointless |
-| Stale lock revival | Rows stuck `sending > 5m` are re-queued | Keep |
-| SMTP connect timeout | Default (denomailer ~60s) | **Add explicit 30s connect + 60s send timeout** so a hung SMTP server can't pin a worker |
-| Per-account concurrency | `max_concurrent` on `email_accounts` (default 1) | Keep |
-| Dispatcher batch | 20 rows / tick | Keep |
-
-This matches what SendGrid/Postmark/SES use for transactional retries (5 attempts over ~7 hours).
-
----
-
-## 3. Cron schedule
-
-Already at `*/5 * * * *` from the previous migration. **Keep at 5 minutes** — it's now purely a backstop, not the primary delivery mechanism.
-
----
-
-## 4. Edge function changes
-
-`supabase/functions/email-dispatcher/index.ts`:
-- Add explicit timeouts to the `SMTPClient` connection config (30s connect, 60s send).
-- No other logic changes — the existing claim/lock/process loop already handles concurrent push+pull invocations correctly.
-
-Redeploy after the change.
-
----
-
-## 5. What I'm NOT doing (and why)
-
-- **Not removing the cron.** Even with push, you need *something* to wake up retries scheduled for "now + 5 min" and scheduled sends with a future `scheduled_for`. That's inherently a timer.
-- **Not switching to Lovable's built-in email queue.** You're using a custom multi-tenant SMTP system (`email_accounts` per tenant/branch with vault-stored creds, per-account concurrency caps). Lovable's queue assumes a single sender — it would be a regression.
-- **Not adding LISTEN/NOTIFY or Realtime.** Both need a long-lived process; Edge Functions are stateless. `pg_net` from a trigger is the right primitive here.
-
----
-
-## Expected impact
-
-- **Latency**: new emails go out in ~1–2s instead of waiting up to 5 min for the next cron tick.
-- **Disk IO**: no meaningful change — push triggers are write-once-per-email; the cron's near-empty ticks (which we already made cheap) remain the main background load.
-- **Reliability**: strictly better. Push is best-effort; cron is the durable backstop. Same retry budget either way.
-
----
-
-## Files touched
-
-- New migration: `supabase/migrations/<timestamp>_email_outbox_push_trigger.sql` (creates Vault secret, helper function, trigger)
-- `supabase/functions/email-dispatcher/index.ts` (add SMTP timeouts)
-- Redeploy `email-dispatcher`
+### Files touched
+1. `src/hooks/useCart.ts` — pass cart currency through to `order-engine`; zero out VAT for demo.
+2. `src/components/admin/PricingRuleForm.tsx` — fix `SelectItem value=""` crash; add read-only currency hint.
+3. `src/pages/dashboard/Cart.tsx` — drop "excl. VAT" wording.
+4. `src/pages/dashboard/Checkout.tsx` — remove VAT row & calc; show single total.
+5. `src/pages/dashboard/CustomerOrderDetail.tsx` — conditionally hide VAT row.
+6. `src/components/orders/detail/OrderPricingTab.tsx` — conditionally hide VAT row.
