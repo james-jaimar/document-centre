@@ -18,7 +18,7 @@ const TABS = [
 ];
 
 export default function DocumentCentreLayout() {
-  const health = useQuery({ queryKey: ["ops", "health"], queryFn: opsApi.healthFull, refetchInterval: 15000 });
+  const health = useQuery({ queryKey: ["ops", "health"], queryFn: opsApi.healthFull, refetchInterval: 30000, refetchIntervalInBackground: false });
   const { connected } = useOpsStream();
   const status = health.data?.status ?? (health.isLoading ? "…" : "down");
   const variant: "default" | "secondary" | "destructive" =

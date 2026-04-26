@@ -30,7 +30,8 @@ export default function PlatformDocumentCentreJobs() {
       status: status === "all" ? undefined : status,
       tenant_id: tenantId || undefined,
     }),
-    refetchInterval: 5000,
+    refetchInterval: 15000,
+    refetchIntervalInBackground: false,
   });
 
   const revoke = useMutation({

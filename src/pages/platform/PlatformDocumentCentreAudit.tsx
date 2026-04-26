@@ -19,7 +19,8 @@ export default function PlatformDocumentCentreAudit() {
       action: action || undefined,
       tenant_id: tenantId || undefined,
     }),
-    refetchInterval: 15000,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
   });
 
   return (

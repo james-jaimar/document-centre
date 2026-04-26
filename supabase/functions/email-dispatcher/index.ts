@@ -234,13 +234,23 @@ Deno.serve(async (req) => {
   const workerId = crypto.randomUUID();
 
   // Claim a batch of due rows. Lease is implicit via locked_at — we revive
-  // anything stuck > 5m on the next cycle.
+  // anything stuck > 5m on the next cycle. Only run the revive UPDATE if
+  // there's actually a stale 'sending' row, otherwise we'd write a no-op
+  // WAL entry every cron tick (~288/day) for nothing.
   const fiveMinAgo = new Date(Date.now() - 5 * 60_000).toISOString();
-  await admin
+  const { count: staleCount } = await admin
     .from("email_outbox")
-    .update({ status: "queued", locked_at: null, locked_by: null })
+    .select("id", { count: "exact", head: true })
     .eq("status", "sending")
     .lt("locked_at", fiveMinAgo);
+
+  if ((staleCount ?? 0) > 0) {
+    await admin
+      .from("email_outbox")
+      .update({ status: "queued", locked_at: null, locked_by: null })
+      .eq("status", "sending")
+      .lt("locked_at", fiveMinAgo);
+  }
 
   // Pick due rows
   const { data: due } = await admin
