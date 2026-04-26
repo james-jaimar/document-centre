@@ -67,9 +67,8 @@ export default function Checkout() {
     (sum, item) => sum + Number(item.unit_price) * item.quantity,
     0
   );
-  const vatRate = 0.15;
-  const vat = subtotal * vatRate;
-  const total = subtotal + vat;
+  // Demo mode: no VAT/tax line. Tenants will configure their own tax rules later.
+  const total = subtotal;
 
   const handlePlaceOrder = async () => {
     if (!cart) return;
@@ -293,17 +292,7 @@ export default function Checkout() {
             ))}
           </div>
           <div className="border-t border-border pt-3 space-y-1.5">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Subtotal</span>
-              <span className="font-mono text-foreground">{formatPrice(subtotal, currency)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">
-                {currency === "ZAR" ? "VAT (15%)" : "Tax (15%)"}
-              </span>
-              <span className="font-mono text-foreground">{formatPrice(vat, currency)}</span>
-            </div>
-            <div className="flex justify-between text-base font-bold pt-1.5 border-t border-border">
+            <div className="flex justify-between text-base font-bold">
               <span className="text-foreground">Total</span>
               <span className="font-mono text-foreground">{formatPrice(total, currency)}</span>
             </div>

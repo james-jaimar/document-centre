@@ -89,10 +89,12 @@ export function OrderPricingTab({ order, jobs, payments, addresses = [] }: Props
             <span className="text-green-600">-{fmt(order.discount_amount)}</span>
           </div>
         )}
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">VAT (15%)</span>
-          <span>{fmt(order.vat_amount)}</span>
-        </div>
+        {Number(order.vat_amount) > 0 && (
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">VAT (15%)</span>
+            <span>{fmt(order.vat_amount)}</span>
+          </div>
+        )}
       </div>
 
       <Separator />
