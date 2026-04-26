@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CheckCircle2, ClipboardList, Plus, Eye } from "lucide-react";
 import { format } from "date-fns";
+import { formatPrice } from "@/lib/formatCurrency";
 
 export default function OrderConfirmation() {
   const { id: orderId, slug } = useParams<{ id: string; slug: string }>();
@@ -77,7 +78,7 @@ export default function OrderConfirmation() {
           <div className="border-t border-border pt-2 flex justify-between">
             <span className="font-medium text-foreground">Total</span>
             <span className="font-mono font-bold text-foreground">
-              R{total.toFixed(2)}
+              {formatPrice(total, (order.currency as string | undefined) ?? "ZAR")}
             </span>
           </div>
         </div>
