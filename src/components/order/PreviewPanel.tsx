@@ -28,6 +28,8 @@ interface PreviewPanelProps {
   productType?: ProductPreviewType;
   effects?: PreviewEffects;
   bindingEdge?: "left" | "top";
+  /** Selected binding option's method + colour, drives spine artwork. */
+  bindingArt?: { method: "spiral" | "comb" | "twin_loop"; color: string };
 }
 
 interface PageInfo {
@@ -236,6 +238,7 @@ export default function PreviewPanel({
   productType = "loose_sheets",
   effects,
   bindingEdge,
+  bindingArt,
 }: PreviewPanelProps) {
   const [currentPage, setCurrentPage] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -699,6 +702,7 @@ export default function PreviewPanel({
           displayPageNumbers={displayPageNumbers}
           faceLabels={computedPageRoles.map((_, i) => faceLabel(i))}
           bindingEdge={bindingEdge}
+          bindingArt={bindingArt}
         />
       </div>
 
@@ -719,6 +723,7 @@ export default function PreviewPanel({
           tabPositions={tabPositions}
           displayPageNumbers={displayPageNumbers}
           bindingEdge={bindingEdge}
+          bindingArt={bindingArt}
         />
       )}
 

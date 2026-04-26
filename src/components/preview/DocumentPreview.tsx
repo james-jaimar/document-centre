@@ -30,6 +30,8 @@ export interface DocumentPreviewProps {
   faceLabels?: string[];
   /** Binding edge: left (default) or top (for landscape presentations) */
   bindingEdge?: "left" | "top";
+  /** Selected binding option's method + colour, drives spine artwork. */
+  bindingArt?: { method: "spiral" | "comb" | "twin_loop"; color: string };
 }
 
 const BOUND_TYPES = new Set([
@@ -56,6 +58,7 @@ export default function DocumentPreview({
   displayPageNumbers,
   faceLabels,
   bindingEdge,
+  bindingArt,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
@@ -169,7 +172,7 @@ export default function DocumentPreview({
   }
 
   if (BOUND_TYPES.has(productType)) {
-    return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} displayPageNumbers={displayPageNumbers} faceLabels={faceLabels} bindingEdge={bindingEdge} rawPaths={thumbnailPaths} />;
+    return <FlipBook {...commonProps} bindingType={getBindingType(productType)} tabPositions={tabPositions} displayPageNumbers={displayPageNumbers} faceLabels={faceLabels} bindingEdge={bindingEdge} bindingArt={bindingArt} rawPaths={thumbnailPaths} />;
   }
 
   // Business cards use the same LooseSheetsPreview renderer

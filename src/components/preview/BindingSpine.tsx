@@ -1,9 +1,9 @@
 import type { BindingType } from "./previewTypes";
-
-import coilClosedImg from "@/assets/bindings/coil_binding_black_closed.png";
-import coilOpenImg from "@/assets/bindings/coil_binding_black_open.png";
-import wireClosedImg from "@/assets/bindings/wire_binding_black_closed.png";
-import wireOpenImg from "@/assets/bindings/wire_binding_black_open.png";
+import {
+  resolveBindingArt,
+  normaliseBindingColor,
+  type BindingArtMethod,
+} from "./bindingAssets";
 
 interface BindingSpineProps {
   bindingType: BindingType;
@@ -14,9 +14,31 @@ interface BindingSpineProps {
   position?: "left" | "center" | "right";
   /** Binding edge: left (default) or top (horizontal spine for presentations) */
   bindingEdge?: "left" | "top";
+  /**
+   * Selected binding option's method + colour. When provided, drives the
+   * spine artwork selection; otherwise we fall back to the method's default
+   * (black) colour. `bindingType` still controls whether a spine renders at
+   * all (saddle/perfect/ring/none paths are unchanged).
+   */
+  bindingArt?: { method: BindingArtMethod; color: string };
 }
 
-export default function BindingSpine({ bindingType, height, isOpen = false, position = "center", bindingEdge = "left" }: BindingSpineProps) {
+/** Map FlipBook's `BindingType` to the asset registry's method key. */
+function bindingTypeToMethod(t: BindingType): BindingArtMethod | null {
+  if (t === "coil") return "spiral";
+  if (t === "wire") return "twin_loop";
+  if (t === "comb") return "comb";
+  return null;
+}
+
+export default function BindingSpine({
+  bindingType,
+  height,
+  isOpen = false,
+  position = "center",
+  bindingEdge = "left",
+  bindingArt,
+}: BindingSpineProps) {
   if (bindingType === "none" || bindingType === "ring") return null;
 
   const positionStyle: React.CSSProperties =
@@ -29,14 +51,16 @@ export default function BindingSpine({ bindingType, height, isOpen = false, posi
   const isSpiral = bindingType === "coil" || bindingType === "wire" || bindingType === "comb";
 
   if (isSpiral) {
-    // Pick the correct image based on binding type and open/closed state
-    let spineImage: string;
-    if (bindingType === "wire") {
-      spineImage = isOpen ? wireOpenImg : wireClosedImg;
-    } else {
-      // coil and comb both use coil images for now
-      spineImage = isOpen ? coilOpenImg : coilClosedImg;
-    }
+    // Prefer the explicit bindingArt method; fall back to one inferred from
+    // bindingType so legacy callers still render.
+    const method = (bindingArt?.method ?? bindingTypeToMethod(bindingType))!;
+    const color = normaliseBindingColor(bindingArt?.color);
+    // Top-edge bound documents are landscape A4/A5/A3 — use the dedicated
+    // short-edge ("210mm") artwork.
+    const edge = bindingEdge === "top" ? "short" : "long";
+    const state = isOpen ? "open" : "closed";
+
+    const { src: spineImage } = resolveBindingArt({ method, color, edge, state });
 
     return (
       <div
@@ -49,7 +73,7 @@ export default function BindingSpine({ bindingType, height, isOpen = false, posi
       >
         <img
           src={spineImage}
-          alt={`${bindingType} binding`}
+          alt={`${method} ${color} binding`}
           className="w-full h-full object-fill"
           style={{ objectFit: "fill" }}
           draggable={false}
