@@ -269,6 +269,7 @@ export default function FlipBook({
   faceLabels,
   bindingEdge = "left",
   rawPaths,
+  bindingArt,
 }: FlipBookProps) {
   const flipBookRef = useRef<any>(null);
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
@@ -398,6 +399,7 @@ export default function FlipBook({
               isOpen={!isSoloPage}
               position={spinePosition}
               bindingEdge={bindingEdge}
+              bindingArt={bindingArt}
             />
             {tabPositions && tabPositions.length > 0 && (
               <div
