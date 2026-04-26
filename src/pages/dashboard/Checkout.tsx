@@ -287,7 +287,7 @@ export default function Checkout() {
                   {item.title || "Untitled"} × {item.quantity}
                 </span>
                 <span className="font-mono text-foreground shrink-0">
-                  R{(Number(item.unit_price) * item.quantity).toFixed(2)}
+                  {formatPrice(Number(item.unit_price) * item.quantity, currency)}
                 </span>
               </div>
             ))}
@@ -295,15 +295,17 @@ export default function Checkout() {
           <div className="border-t border-border pt-3 space-y-1.5">
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Subtotal</span>
-              <span className="font-mono text-foreground">R{subtotal.toFixed(2)}</span>
+              <span className="font-mono text-foreground">{formatPrice(subtotal, currency)}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">VAT (15%)</span>
-              <span className="font-mono text-foreground">R{vat.toFixed(2)}</span>
+              <span className="text-muted-foreground">
+                {currency === "ZAR" ? "VAT (15%)" : "Tax (15%)"}
+              </span>
+              <span className="font-mono text-foreground">{formatPrice(vat, currency)}</span>
             </div>
             <div className="flex justify-between text-base font-bold pt-1.5 border-t border-border">
               <span className="text-foreground">Total</span>
-              <span className="font-mono text-foreground">R{total.toFixed(2)}</span>
+              <span className="font-mono text-foreground">{formatPrice(total, currency)}</span>
             </div>
           </div>
           <Button
