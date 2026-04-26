@@ -143,6 +143,15 @@ export default function FileList({
                     Review needed
                   </span>
                 )}
+                {hasGaps && (
+                  <span
+                    className="inline-flex items-center gap-1 text-[10px] font-medium text-warning bg-warning/10 px-1.5 py-0.5 rounded"
+                    title={`Missing pages: ${thumbnailGaps.join(", ")}`}
+                  >
+                    <AlertCircle className="h-3 w-3" />
+                    {thumbnailGaps.length} page{thumbnailGaps.length === 1 ? "" : "s"} missing
+                  </span>
+                )}
               </div>
             </div>
 
