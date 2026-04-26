@@ -80,7 +80,17 @@ export type BindingArtColor =
   | "blue"
   | "navy";
 
-export type BindingArtEdge = "long" | "short";
+/**
+ * Edge legend:
+ *   - "long"  → portrait spine (the long edge of an A4/A5/A3 portrait page)
+ *   - "short" → 210mm short-edge art (used as a vertical spine on the
+ *               LEFT of a landscape page — i.e. binding on the short edge)
+ *   - "top"   → dedicated horizontal landscape art (used as a horizontal
+ *               spine ACROSS THE TOP of a landscape page — i.e. binding
+ *               on the long edge). Falls back to "long" until landscape
+ *               artwork is added to /src/assets/bindings/.
+ */
+export type BindingArtEdge = "long" | "short" | "top";
 export type BindingArtState = "open" | "closed";
 
 export interface BindingArtRequest {
