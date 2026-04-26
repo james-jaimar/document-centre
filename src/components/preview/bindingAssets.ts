@@ -135,14 +135,12 @@ const ART: ArtTable = {
       long: { closed: coilWhiteFrontLong, open: coilWhiteOpenLong },
       short: { closed: coilWhiteFrontShort, open: coilWhiteOpenShort },
     },
-    // Spiral Blue: no dedicated artwork yet → resolver falls back to spiral black.
   },
   comb: {
     black: {
       long: { closed: combBlackFrontLong, open: combBlackOpenLong },
       short: { closed: combBlackFrontShort, open: combBlackOpenShort },
     },
-    // Comb White / Comb Navy: no artwork yet → fall back to comb black.
   },
   twin_loop: {
     black: {
