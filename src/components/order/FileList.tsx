@@ -30,10 +30,12 @@ export default function FileList({
   selectedDocId,
   onSelect,
   onReprocess,
+  onRerenderGaps,
   onDelete,
 }: FileListProps) {
   const [reprocessingIds, setReprocessingIds] = useState<Set<string>>(new Set());
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [recoveringIds, setRecoveringIds] = useState<Set<string>>(new Set());
 
   const handleDelete = async (doc: Document) => {
     if (!onDelete || deletingIds.has(doc.id)) return;
