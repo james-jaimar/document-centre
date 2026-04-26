@@ -66,6 +66,24 @@ export default function FileList({
     }
   };
 
+  const handleRerenderGaps = async (doc: Document) => {
+    if (!onRerenderGaps || recoveringIds.has(doc.id)) return;
+    setRecoveringIds((prev) => new Set(prev).add(doc.id));
+    try {
+      await onRerenderGaps({
+        id: doc.id,
+        backend_asset_id: doc.backend_asset_id,
+        preflight_data: doc.preflight_data,
+      });
+    } finally {
+      setRecoveringIds((prev) => {
+        const next = new Set(prev);
+        next.delete(doc.id);
+        return next;
+      });
+    }
+  };
+
   return (
     <div className="space-y-2">
       {documents.map((doc) => {
