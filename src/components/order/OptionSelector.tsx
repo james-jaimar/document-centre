@@ -13,6 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useRegionalPricing } from "@/hooks/useRegionalPricing";
+import { formatPriceDelta } from "@/lib/formatCurrency";
 
 type ProductOption = Tables<"product_options">;
 
@@ -27,6 +29,8 @@ export default function OptionSelector({
   value,
   onChange,
 }: OptionSelectorProps) {
+  const { region } = useRegionalPricing();
+  const currency = region?.currency_code ?? "ZAR";
   const values = option.values;
 
   if (!isStructuredValues(values)) {
@@ -53,17 +57,16 @@ export default function OptionSelector({
   const groupNames = Object.keys(groups);
   const selectedValue = values.find((v) => v.slug === value);
 
-  // Format price display
+  // Format price delta for an option value
   const formatPrice = (val: StructuredOptionValue) => {
     if (val.price_impact === 0) return "";
-    const sign = val.price_impact > 0 ? "+" : "";
     const suffix =
       val.price_type === "per_page"
         ? "/pg"
         : val.price_type === "per_document"
         ? "/doc"
         : "";
-    return ` (${sign}R${val.price_impact.toFixed(2)}${suffix})`;
+    return ` (${formatPriceDelta(val.price_impact, currency)}${suffix})`;
   };
 
   return (
