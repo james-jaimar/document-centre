@@ -400,3 +400,40 @@ def op_print_ready(payload: PrintReadyRequest, db: Session = Depends(get_db)):
     job_repo.set_celery_task_id(db, job_id, task.id)
     return {"job_id": job_id}
 
+
+@api_router.post("/assets/{asset_id}/render-pages")
+def render_pages(asset_id: str, payload: RenderPagesRequest, db: Session = Depends(get_db)):
+    """Surgically re-render one or more pages of an existing asset.
+
+    Body:
+      ``{"pages": [2, 7, 11]}``  — explicit list of 1-based page numbers
+      ``{"pages": "missing"}``    — auto-detect any page that has no
+                                    preview_page or thumbnail_page yet
+
+    Used by the frontend to self-heal after a partial render hiccup,
+    instead of re-uploading the source file.
+    """
+    asset = asset_repo.get_asset(db, asset_id)
+    if not asset:
+        raise HTTPException(404, "Asset not found")
+
+    page_count = asset.get("page_count") or 0
+    if not page_count:
+        raise HTTPException(409, "Asset has not been inspected yet")
+
+    if payload.pages == "missing":
+        present_previews = derived_file_repo.pages_present(db, asset_id, "preview_page")
+        present_thumbs = derived_file_repo.pages_present(db, asset_id, "thumbnail_page")
+        full = set(range(1, page_count + 1))
+        target_pages = sorted(full - (present_previews & present_thumbs))
+    else:
+        target_pages = sorted({int(p) for p in payload.pages if 1 <= int(p) <= page_count})
+
+    if not target_pages:
+        return {"job_id": None, "missing_pages": [], "message": "Nothing to render."}
+
+    body = {"pages": target_pages}
+    job_id = job_repo.create_job(db, asset_id, "render_specific_pages", "thumbnails", body)
+    task = render_specific_pages.delay(asset_id, job_id, target_pages)
+    job_repo.set_celery_task_id(db, job_id, task.id)
+    return {"job_id": job_id, "missing_pages": target_pages}
