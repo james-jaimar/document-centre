@@ -158,17 +158,31 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
     },
   });
 
+  // Hard ceiling so a hung SMTP server can't pin a worker indefinitely.
+  // 60s covers slow auth + STARTTLS handshakes; well below the 5-min stale-lock revival.
+  const SEND_TIMEOUT_MS = 60_000;
+  const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
+    Promise.race([
+      p,
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error(`SMTP send timed out after ${ms}ms`)), ms)
+      ),
+    ]);
+
   try {
-    const result = await client.send({
-      from: `${fromName} <${fromEmail}>`,
-      to: row.to_email,
-      cc: row.cc ?? undefined,
-      bcc: row.bcc ?? undefined,
-      replyTo,
-      subject: row.subject,
-      html: row.html ?? undefined,
-      content: row.text_body ?? "auto",
-    });
+    const result = await withTimeout(
+      client.send({
+        from: `${fromName} <${fromEmail}>`,
+        to: row.to_email,
+        cc: row.cc ?? undefined,
+        bcc: row.bcc ?? undefined,
+        replyTo,
+        subject: row.subject,
+        html: row.html ?? undefined,
+        content: row.text_body ?? "auto",
+      }),
+      SEND_TIMEOUT_MS
+    );
     await client.close();
 
     await admin
