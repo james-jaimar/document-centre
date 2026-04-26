@@ -95,6 +95,11 @@ export default function FileList({
         const thumbnails = Array.isArray(doc.thumbnail_urls) ? (doc.thumbnail_urls as string[]) : [];
         const hasThumbnails = thumbnails.length > 0;
         const isReprocessing = reprocessingIds.has(doc.id);
+        const isRecovering = recoveringIds.has(doc.id);
+        const thumbnailGaps: number[] = Array.isArray(preflight?.thumbnail_gaps)
+          ? (preflight.thumbnail_gaps as number[])
+          : [];
+        const hasGaps = thumbnailGaps.length > 0;
 
         return (
           <div
