@@ -342,27 +342,32 @@ export default function OrderFiles() {
     return [mb[0], mb[1], mb[2], mb[3]];
   }, []);
 
-  const handleKeepOriginal = useCallback(async () => {
-    if (!advisoryDoc) return;
-    const existing = documents.find((d) => d.id === advisoryDoc.id);
+  type SizeDocPayload = {
+    id: string;
+    fileName: string;
+    widthMm: number;
+    heightMm: number;
+    backendAssetId: string | null;
+  };
+
+  /** Core: keep the doc at its original size and finalise it. */
+  const applyKeepOriginal = useCallback(async (
+    doc: SizeDocPayload,
+    opts?: { silent?: boolean; lockedSize?: PaperSize | null },
+  ) => {
+    const existing = documents.find((d) => d.id === doc.id);
     const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
 
-    // Finalise (orientation normalise + print-ready) on the original-size
-    // canvas, then render thumbnails. Office uploads deferred this; PDF
-    // uploads already finalised but the call is idempotent.
-    if (advisoryDoc.backendAssetId) {
+    if (doc.backendAssetId) {
       try {
         setUploadModalOpen(true);
 
-        // The user may have walked away with the modal open long enough for
-        // the VPS to garbage-collect the asset. Re-register from Supabase
-        // Storage transparently if needed.
-        let workingAssetId = advisoryDoc.backendAssetId;
+        let workingAssetId = doc.backendAssetId;
         if (existing?.file_path) {
           const fresh = await ensureFreshAsset({
-            assetId: advisoryDoc.backendAssetId,
+            assetId: doc.backendAssetId,
             sourceStoragePath: existing.file_path,
-            originalFilename: existing.file_name ?? advisoryDoc.fileName,
+            originalFilename: existing.file_name ?? doc.fileName,
             mediaType: existing.mime_type ?? "application/pdf",
           });
           if (fresh.recreated) {
@@ -370,24 +375,18 @@ export default function OrderFiles() {
             await supabase
               .from("documents")
               .update({ backend_asset_id: workingAssetId })
-              .eq("id", advisoryDoc.id);
+              .eq("id", doc.id);
           }
         }
 
         if (!preflight?.orientation_normalized) {
-          await finalizeOrientationAndPrintReady(
-            advisoryDoc.id,
-            workingAssetId,
-            advisoryDoc.fileName,
-          );
+          await finalizeOrientationAndPrintReady(doc.id, workingAssetId, doc.fileName);
         }
-        // Render the full document (no global crop box). The page-1
-        // MediaBox would clip mixed-orientation pages.
         await renderWithProgress(
-          advisoryDoc.id,
+          doc.id,
           workingAssetId,
           null,
-          advisoryDoc.fileName,
+          doc.fileName,
           "Rendering pages…",
         );
       } catch (err: any) {
@@ -400,45 +399,42 @@ export default function OrderFiles() {
       .update({
         preflight_data: { ...preflight, awaiting_review: false, size_resolved: true, size_action: "keep" },
       })
-      .eq("id", advisoryDoc.id);
-    resolvedDocIds.current.add(advisoryDoc.id);
-    setAdvisoryDoc(null);
+      .eq("id", doc.id);
+    resolvedDocIds.current.add(doc.id);
     refetchDocuments();
-    toast.success("Keeping original size");
-  }, [advisoryDoc, documents, refetchDocuments, getMediaBox, renderWithProgress, finalizeOrientationAndPrintReady]);
 
-  const handleScaleTo = useCallback(async (target: PaperSize) => {
-    if (!advisoryDoc?.backendAssetId) {
+    if (opts?.silent && opts?.lockedSize) {
+      toast.info(`Kept ${opts.lockedSize.name} size to match other files`);
+    } else {
+      toast.success("Keeping original size");
+    }
+  }, [documents, refetchDocuments, renderWithProgress, finalizeOrientationAndPrintReady]);
+
+  /** Core: scale the doc to a target paper size and finalise it. */
+  const applyScaleTo = useCallback(async (
+    doc: SizeDocPayload,
+    target: PaperSize,
+    opts?: { silent?: boolean },
+  ) => {
+    if (!doc.backendAssetId) {
       toast.error("Cannot scale — document has no backend asset");
-      setAdvisoryDoc(null);
       return;
     }
-    // Mark resolved + close the dialog IMMEDIATELY so the detect effect can't
-    // re-open it while the resize job is in flight.
-    const docId = advisoryDoc.id;
-    const assetId = advisoryDoc.backendAssetId;
-    const fileName = advisoryDoc.fileName;
-    const originalW = advisoryDoc.widthMm;
-    const originalH = advisoryDoc.heightMm;
-    resolvedDocIds.current.add(docId);
-    setAdvisoryDoc(null);
+    resolvedDocIds.current.add(doc.id);
 
     try {
-      toast.info(`Scaling to ${target.name}…`);
-      const landscape = isLandscape(originalW, originalH);
+      if (!opts?.silent) toast.info(`Scaling to ${target.name}…`);
+      const landscape = isLandscape(doc.widthMm, doc.heightMm);
       const targetW = landscape ? target.heightMm : target.widthMm;
       const targetH = landscape ? target.widthMm : target.heightMm;
 
-      // The user may have walked away with the modal open long enough for the
-      // VPS to garbage-collect the asset. Re-register from Supabase Storage
-      // transparently if needed before kicking off the resize job.
-      let workingAssetId = assetId;
-      const docForRecovery = documents.find((d) => d.id === docId);
+      let workingAssetId = doc.backendAssetId;
+      const docForRecovery = documents.find((d) => d.id === doc.id);
       if (docForRecovery?.file_path) {
         const fresh = await ensureFreshAsset({
-          assetId,
+          assetId: doc.backendAssetId,
           sourceStoragePath: docForRecovery.file_path,
-          originalFilename: docForRecovery.file_name ?? fileName,
+          originalFilename: docForRecovery.file_name ?? doc.fileName,
           mediaType: docForRecovery.mime_type ?? "application/pdf",
         });
         if (fresh.recreated) {
@@ -446,7 +442,7 @@ export default function OrderFiles() {
           await supabase
             .from("documents")
             .update({ backend_asset_id: workingAssetId })
-            .eq("id", docId);
+            .eq("id", doc.id);
         }
       }
 
@@ -455,27 +451,22 @@ export default function OrderFiles() {
 
       setUploadModalOpen(true);
 
-      // Now that the canvas is correctly sized, run orientation normalise +
-      // print-ready (deferred for Office uploads, idempotent for PDF uploads).
-      const existingForFinalize = documents.find((d) => d.id === docId);
+      const existingForFinalize = documents.find((d) => d.id === doc.id);
       const preflightForFinalize = (existingForFinalize?.preflight_data as Record<string, any>) ?? {};
       if (!preflightForFinalize?.orientation_normalized) {
-        await finalizeOrientationAndPrintReady(docId, workingAssetId, fileName);
+        await finalizeOrientationAndPrintReady(doc.id, workingAssetId, doc.fileName);
       }
 
-      // Render the full (now-resized) document — no global crop box.
       await renderWithProgress(
-        docId,
+        doc.id,
         workingAssetId,
         null,
-        fileName,
+        doc.fileName,
         `Scaling to ${target.name} and rendering pages…`,
       );
 
-      const existing = documents.find((d) => d.id === docId);
+      const existing = documents.find((d) => d.id === doc.id);
       const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
-      // Strip detected_size so the advisory effect can't fire again, and
-      // persist the new dimensions so OrderBuild's auto-size match picks them up.
       const { detected_size, ...rest } = preflight;
       await supabase
         .from("documents")
@@ -487,20 +478,76 @@ export default function OrderFiles() {
             awaiting_review: false,
             size_resolved: true,
             size_action: `scaled_to_${target.name}`,
-            original_width_mm: originalW,
-            original_height_mm: originalH,
+            original_width_mm: doc.widthMm,
+            original_height_mm: doc.heightMm,
             effective_width_mm: targetW,
             effective_height_mm: targetH,
           },
         })
-        .eq("id", docId);
+        .eq("id", doc.id);
 
       refetchDocuments();
-      toast.success(`Scaled to ${target.name} successfully`);
+      if (opts?.silent) {
+        toast.success(`Auto-scaled "${doc.fileName}" to ${target.name} to match other files`);
+      } else {
+        toast.success(`Scaled to ${target.name} successfully`);
+      }
     } catch (err: any) {
       toast.error("Scaling failed", { description: err.message });
     }
-  }, [advisoryDoc, documents, refetchDocuments, getMediaBox, renderWithProgress, finalizeOrientationAndPrintReady]);
+  }, [documents, refetchDocuments, renderWithProgress, finalizeOrientationAndPrintReady]);
+
+  const handleKeepOriginal = useCallback(async () => {
+    if (!advisoryDoc) return;
+    const doc: SizeDocPayload = {
+      id: advisoryDoc.id,
+      fileName: advisoryDoc.fileName,
+      widthMm: advisoryDoc.widthMm,
+      heightMm: advisoryDoc.heightMm,
+      backendAssetId: advisoryDoc.backendAssetId,
+    };
+    setAdvisoryDoc(null);
+
+    // First-decision wins: if no lock yet, lock to the kept (original) size.
+    // Use the matched known size if available so subsequent comparisons work
+    // by name; otherwise synthesise a one-off PaperSize entry.
+    if (!sessionSizeLock) {
+      const matched = matchKnownSize(doc.widthMm, doc.heightMm);
+      const lockedSize: PaperSize = matched ?? {
+        name: `${Math.round(doc.widthMm)}×${Math.round(doc.heightMm)}mm`,
+        widthMm: doc.widthMm,
+        heightMm: doc.heightMm,
+      };
+      setSessionSizeLock({ size: lockedSize, source: "user_chose", action: "keep" });
+    }
+
+    await applyKeepOriginal(doc);
+  }, [advisoryDoc, sessionSizeLock, applyKeepOriginal]);
+
+  const handleScaleTo = useCallback(async (target: PaperSize) => {
+    if (!advisoryDoc) return;
+    const doc: SizeDocPayload = {
+      id: advisoryDoc.id,
+      fileName: advisoryDoc.fileName,
+      widthMm: advisoryDoc.widthMm,
+      heightMm: advisoryDoc.heightMm,
+      backendAssetId: advisoryDoc.backendAssetId,
+    };
+    setAdvisoryDoc(null);
+
+    // First-decision wins: lock the session to this target size unless the
+    // user is explicitly overriding the existing lock by picking a different
+    // size in the locked-variant modal.
+    if (!sessionSizeLock) {
+      setSessionSizeLock({ size: target, source: "user_chose", action: "scale" });
+    } else if (sessionSizeLock.size.name !== target.name) {
+      // User overrode the lock — replace it. The effects key off the new lock
+      // for any future uploads.
+      setSessionSizeLock({ size: target, source: "user_chose", action: "scale" });
+    }
+
+    await applyScaleTo(doc, target);
+  }, [advisoryDoc, sessionSizeLock, applyScaleTo]);
 
   // Orientation handlers
   const handleRotateToLandscape = useCallback(async () => {
