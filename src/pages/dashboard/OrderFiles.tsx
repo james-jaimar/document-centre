@@ -1005,6 +1005,7 @@ export default function OrderFiles() {
             selectedDocId={selectedDocId}
             onSelect={setSelectedDocId}
             onReprocess={reprocessDocument}
+            onRerenderGaps={handleRerenderGaps}
             onDelete={handleDeleteDocument}
           />
         </div>
