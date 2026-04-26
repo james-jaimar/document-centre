@@ -21,6 +21,10 @@ const RULE_TYPES = [
   { value: "setup_fee", label: "Setup Fee" },
 ];
 
+// Sentinel value for the "All families" option. Radix's <SelectItem /> forbids
+// empty-string values, so we use a non-empty token and translate at the edges.
+const ALL_FAMILIES = "__all__";
+
 interface Conditions {
   min_pages?: number;
   max_pages?: number;
@@ -140,17 +144,24 @@ export default function PricingRuleForm({ open, onOpenChange, rule, families, on
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Product Family (optional)</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
+                  <Select
+                    onValueChange={(v) => field.onChange(v === ALL_FAMILIES ? "" : v)}
+                    value={field.value ? field.value : ALL_FAMILIES}
+                  >
                     <FormControl>
                       <SelectTrigger><SelectValue placeholder="All families" /></SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="">All families</SelectItem>
+                      <SelectItem value={ALL_FAMILIES}>All families</SelectItem>
                       {families.map((f) => (
                         <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Editing the ZAR (source) rule. Other currencies are derived in
+                    Platform → Demo Print Pricing → Regenerate.
+                  </p>
                   <FormMessage />
                 </FormItem>
               )}

@@ -502,10 +502,12 @@ const CustomerOrderDetail = () => {
                     <span className="text-green-600">-{fmt(order.discount_amount)}</span>
                   </div>
                 )}
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">VAT</span>
-                  <span>{fmt(order.vat_amount)}</span>
-                </div>
+                {Number(order.vat_amount) > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">VAT</span>
+                    <span>{fmt(order.vat_amount)}</span>
+                  </div>
+                )}
                 <Separator />
                 <div className="flex justify-between font-semibold text-base">
                   <span>Total</span>

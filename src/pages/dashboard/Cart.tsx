@@ -168,7 +168,7 @@ export default function Cart() {
       {/* Cart footer */}
       <div className="flex flex-col items-end gap-4 border-t border-border pt-4">
         <div className="text-right space-y-1">
-          <div className="text-sm text-muted-foreground">Subtotal (excl. VAT)</div>
+          <div className="text-sm text-muted-foreground">Total</div>
           <div className="text-2xl font-bold text-foreground">{formatPrice(cartTotal, currency)}</div>
         </div>
         <div className="flex gap-2">

@@ -650,8 +650,13 @@ export function usePlaceOrder() {
       }
 
       const subtotal = jobs.reduce((sum: number, j: any) => sum + j.net_price, 0);
-      const vatAmount = Math.round(subtotal * 0.15 * 100) / 100;
-      const totalAmount = subtotal + vatAmount;
+      // Demo mode: prices are presented as a single all-in figure with no VAT line.
+      // Tenants will configure their own VAT rules in a future iteration.
+      const vatAmount = 0;
+      const totalAmount = subtotal;
+      // Use the currency stamped on the cart at first add. The cart can't mix
+      // currencies, so this is the source of truth for the placed order.
+      const orderCurrency = (cartOrder.currency as string | undefined) || "ZAR";
 
       // Detect demo tenant — tagged orders skip emails/invoices in the engine.
       const orderTenantId = tenantId || cartOrder.tenant_id;
@@ -686,7 +691,7 @@ export function usePlaceOrder() {
             metadata: { cart_order_id: input.cartOrderId, is_demo: isDemo },
           },
           pricing: {
-            currency: "ZAR",
+            currency: orderCurrency,
             subtotal,
             vat_amount: vatAmount,
             total_amount: totalAmount,
