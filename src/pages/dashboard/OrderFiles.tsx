@@ -945,8 +945,22 @@ export default function OrderFiles() {
   );
 
   // Auto-assign a 2-3 page document as Outside (page 1) + Inside (page 2) for brochures
+  // Shared mismatch check used by all assignment paths.
+  const assertSizeMatchesActive = useCallback((docId: string): boolean => {
+    if (!activePrintSize) return true;
+    const candidate = documents.find((d) => d.id === docId);
+    const sz = getDocEffectiveSize(candidate);
+    if (!sz) return true;
+    if (sizesMatch(sz.widthMm, sz.heightMm, activePrintSize.widthMm, activePrintSize.heightMm)) return true;
+    toast.error("Mixed paper sizes can't be printed together", {
+      description: `Your other files are ${Math.round(activePrintSize.widthMm)}×${Math.round(activePrintSize.heightMm)}mm. Re-upload this file at that size, or remove the existing files first.`,
+    });
+    return false;
+  }, [activePrintSize, documents, getDocEffectiveSize]);
+
   const handleAutoAssignBrochure = useCallback(async () => {
     if (!selectedDocId || !orderItem) return;
+    if (!assertSizeMatchesActive(selectedDocId)) return;
     const doc = documents.find((d) => d.id === selectedDocId);
     if (!doc || (doc.page_count ?? 0) < 2) return;
     try {
