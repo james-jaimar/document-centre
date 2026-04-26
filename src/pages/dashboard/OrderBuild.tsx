@@ -100,9 +100,13 @@ export default function OrderBuild() {
   };
 
 
-  // Fetch pricing rules for this product family
+  // Active region currency (geo-detected, with manual override support).
+  const { region } = useRegionalPricing();
+  const activeCurrency = region?.currency_code ?? "ZAR";
+
+  // Fetch pricing rules for this product family in the active currency.
   const { data: pricingRules = [] } = useQuery({
-    queryKey: ["pricing_rules", productFamilyId],
+    queryKey: ["pricing_rules", productFamilyId, activeCurrency],
     queryFn: async () => {
       if (!productFamilyId) return [];
       const { data, error } = await supabase
@@ -110,6 +114,7 @@ export default function OrderBuild() {
         .select("*")
         .eq("product_family_id", productFamilyId)
         .eq("is_active", true)
+        .eq("currency_code", activeCurrency)
         .order("sort_order", { ascending: true });
       if (error) throw error;
       return data;
