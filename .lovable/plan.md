@@ -1,53 +1,79 @@
-# Hide binding options without artwork
+## Diagnosis
 
-The user asked to hide **Spiral Blue, Comb White, Comb Navy** until artwork is supplied. While planning I noticed **Twin Loop Wire (White)** is in the same situation (it's seeded but has no PNG and currently falls back to wire-black art). I'll flag it but only remove it if you confirm — for now the plan removes the three you named.
+**Why no landscape binding renders today**
 
-## What "hide" means here
+`OrderBuild.tsx` derives `bindingEdge` from `Document Size` metadata but only treats `binding_edge === "top"` as top-bound. Every landscape size in the seed and live DB uses `binding_edge: "short"`, so the check fails and `bindingEdge` stays `"left"`. As a result:
 
-Binding options live in two places:
+- `FlipBook` never enters its top-bound rotation branch.
+- `BindingSpine` always asks `resolveBindingArt` for `edge: "long"` and never picks the dedicated 210mm assets.
 
-1. **Seed file** `src/lib/productOptionValues.ts` — source of truth for any future tenant/product seeding.
-2. **Live database** `product_options.values` JSONB array — what the configurator actually reads. Two rows currently carry the Binding list (one per seeded product/tenant).
+That's the entire reason "none of the landscape binding seems to be working" — the 210mm files are imported and on disk, the resolver supports them, the metadata just never reaches them.
 
-Both need updating, otherwise live products keep showing the unsupported options to customers.
+**About the broken `<img>` in the screenshot**
 
-## Changes
+That spine `<img>` is rendering the long-edge `coil white (front).png` (because the short branch is unreachable). The broken icon is most likely a stale HMR snapshot from the previous build before the resolver was wired in. Once the data path below is fixed and the bundle rebuilds, this clears. If it persists after the fix we'll inspect the actual network 404 in a follow-up.
 
-### 1. Update the seed file
-`src/lib/productOptionValues.ts` — remove these three entries from `BINDING_STANDARD`:
-- `Spiral Binding (Blue)`
-- `Comb Binding (White)`
-- `Comb Binding (Navy)`
+**Answer to your third question**
 
-### 2. DB migration to strip them from live `product_options`
-Idempotent migration that filters the three labels out of every `product_options.values` array where the option is named `Binding`:
+Yes — `FlipBook` already handles "two landscape pages stacked with the binding in the middle". When `bindingEdge === "top"` it rotates the entire spread container 90°, so the natural left/right spread becomes top/bottom and the spine sits horizontally between the two pages. We just need to actually feed it `"top"` for the cases you want.
 
-```sql
-UPDATE product_options
-SET values = (
-  SELECT jsonb_agg(v)
-  FROM jsonb_array_elements(values) v
-  WHERE v->>'label' NOT IN (
-    'Spiral Binding (Blue)',
-    'Comb Binding (White)',
-    'Comb Binding (Navy)'
-  )
-)
-WHERE name ILIKE 'Binding';
+---
+
+## Plan
+
+### 1. Recognise the existing `binding_edge: "short"` metadata
+**File:** `src/pages/dashboard/OrderBuild.tsx`
+
+Update the `bindingEdge` `useMemo` so both `"top"` and `"short"` (legacy/landscape default) resolve to the top-bound layout. This single change makes every landscape A4/A5/A3 size immediately render with the 210mm artwork and the rotated spread — no DB migration required.
+
+### 2. Add a "Bind on long edge (top)" toggle for landscape sizes
+Per your answer: short edge stays the default, with an opt-in toggle to flip to long-edge.
+
+**Where it appears**
+
+In the configurator, inside `OrderBuild.tsx` next to the Document Size selector, render a small inline toggle (shadcn `Switch` + label "Bind on long edge"). It only mounts when:
+
+- The selected `Document Size` value's metadata has `orientation === "landscape"`.
+- The selected `Binding` is one of `spiral / comb / twin_loop` (rings/saddle/perfect/none don't need it).
+
+**State**
+
+Stored in component state (`bindingEdgeOverride: "long" | null`), persisted into `spec` alongside `selected_options` so it survives reloads. No schema change — we tuck it under `spec.binding_edge_override` (already JSONB).
+
+**Effect on `bindingEdge` derivation**
+
+```
+landscape + override="long"  → "top" with longEdgeArt = true
+landscape + no override      → "top" with longEdgeArt = false  (uses 210mm short art)
+portrait                     → "left"
 ```
 
-Two rows match (verified via `supabase--read_query`). Other options are untouched.
+`bindingEdge` stays `"left" | "top"` for the existing rotation logic. We thread a new sibling prop, `landscapeLongEdge: boolean`, through `PreviewPanel → DocumentPreview → FlipBook → BindingSpine` to tell the spine which artwork variant to pick.
 
-### 3. Tidy `bindingAssets.ts` comments
-Drop the now-stale "Spiral Blue / Comb White / Comb Navy fall back to black" comments so future devs aren't told to expect art for options that no longer exist. The fallback ladder itself stays (defensive, harmless).
+### 3. Reuse rotated portrait artwork for long-edge landscape
+**File:** `src/components/preview/BindingSpine.tsx`
 
-## Not included (flagging for confirmation)
+In the spiral branch:
 
-- **Twin Loop Wire (White)** — also has no dedicated artwork; currently falls back to wire-black. If you'd like it hidden too, say the word and I'll fold it into the same migration + seed edit.
-- **Existing orders / cart items** that already chose one of the removed options aren't touched — they keep their saved selection (and render via the existing fallback art) so historical orders stay intact. Only **new** configurations are affected.
+- If `bindingEdge === "top"` and `landscapeLongEdge === true`, request `edge: "long"` from `resolveBindingArt` (the existing portrait/long-edge PNGs), and apply a CSS `transform: rotate(-90deg)` (with a corrective `transform-origin` and width/height swap) so the vertical portrait spine becomes a horizontal top spine sized to the landscape page's long edge.
+- If `bindingEdge === "top"` and `landscapeLongEdge !== true`, keep current behaviour (request `edge: "short"` for the dedicated 210mm art — no extra rotation needed because the 210mm assets are already authored for the short edge of a landscape page).
+- If `bindingEdge === "left"`, unchanged.
 
-## Verification after apply
+The container rotation that `FlipBook` already applies handles the spread layout; the spine rotation here just orients the artwork to match.
 
-- Re-query `product_options.values` to confirm the three labels are gone from both rows.
-- Open the bound-document configurator and confirm the Binding selector shows: Spiral (Black/White/Clear), Comb (Black), Twin Loop (Black/Silver/White), plus Ring Binders.
-- Smoke-test Spiral Black + landscape A4 still resolves the 210mm short-edge art (resolver untouched).
+### 4. Plumbing
+- `previewTypes.ts` — add `landscapeLongEdge?: boolean` to the shared preview prop bag.
+- `PreviewPanel.tsx`, `DocumentPreview.tsx`, `FlipBook.tsx`, `PreviewLightbox` — pass `landscapeLongEdge` through, default `false`.
+- `BindingSpine.tsx` — accept and use it as described in step 3.
+
+### 5. Verification (manual smoke list)
+After the change I'll click through:
+
+- Portrait A4/A5/A3 with each binding method → unchanged, vertical spine on the left.
+- Landscape A4/A5/A3 with the toggle **off** → container rotated, 210mm artwork on the (now-horizontal) short edge between two stacked landscape pages.
+- Landscape A4/A5/A3 with the toggle **on** → container rotated, portrait long-edge artwork rotated 90° and stretched along the long top edge.
+- Confirm the toggle hides itself for portrait sizes and for ring/saddle/perfect/no-binding.
+
+### Out of scope (flagging for later)
+- Adding dedicated horizontal-spine artwork for top-edge landscape (you chose to rotate existing assets for now).
+- Persisting `bindingEdgeOverride` into the saved order configuration snapshot — happy to add this once the visual side is signed off.
