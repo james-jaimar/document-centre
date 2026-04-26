@@ -534,6 +534,94 @@ export default function OrderFiles() {
     await applyScaleTo(doc, target);
   }, [advisoryDoc, sessionSizeLock, applyScaleTo]);
 
+  // ── Session size-lock effects ──────────────────────────────────
+  // Non-ISO advisory: silent auto-apply when locked, prompt otherwise.
+  useEffect(() => {
+    if (uploadModalOpen) return;
+    if (advisoryDoc) return;
+    const nonIsoDoc = documents.find((d) => {
+      if (resolvedDocIds.current.has(d.id)) return false;
+      if (autoAppliedDocIds.current.has(d.id)) return false;
+      const preflight = d.preflight_data as Record<string, any> | null;
+      return preflight?.detected_size && !preflight?.size_resolved;
+    });
+    if (!nonIsoDoc) return;
+    const preflight = nonIsoDoc.preflight_data as Record<string, any>;
+    const payload: SizeDocPayload = {
+      id: nonIsoDoc.id,
+      fileName: nonIsoDoc.file_name,
+      widthMm: Number(nonIsoDoc.page_width_mm),
+      heightMm: Number(nonIsoDoc.page_height_mm),
+      backendAssetId: nonIsoDoc.backend_asset_id,
+    };
+
+    if (sessionSizeLock) {
+      autoAppliedDocIds.current.add(nonIsoDoc.id);
+      if (sessionSizeLock.action === "keep") {
+        void applyKeepOriginal(payload, { silent: true, lockedSize: sessionSizeLock.size });
+      } else {
+        void applyScaleTo(payload, sessionSizeLock.size, { silent: true });
+      }
+      return;
+    }
+
+    setAdvisoryDoc({
+      id: nonIsoDoc.id,
+      fileName: nonIsoDoc.file_name,
+      detectedSize: preflight.detected_size,
+      widthMm: Number(nonIsoDoc.page_width_mm),
+      heightMm: Number(nonIsoDoc.page_height_mm),
+      backendAssetId: nonIsoDoc.backend_asset_id,
+    });
+  }, [documents, uploadModalOpen, advisoryDoc, sessionSizeLock, applyKeepOriginal, applyScaleTo]);
+
+  // ISO uploads: set lock if none exists, otherwise prompt locked-variant
+  // advisory if the doc's ISO size differs from the lock.
+  useEffect(() => {
+    if (uploadModalOpen) return;
+    if (advisoryDoc || bleedDoc || orientationDoc) return;
+
+    const candidate = documents.find((d) => {
+      if (isoCheckedDocIds.current.has(d.id)) return false;
+      if (resolvedDocIds.current.has(d.id)) return false;
+      const preflight = d.preflight_data as Record<string, any> | null;
+      if (preflight?.detected_size && !preflight?.size_resolved) return false;
+      if (preflight?.near_iso_match && !preflight?.bleed_resolved) return false;
+      if (preflight?.awaiting_review) return false;
+      const w = Number(d.page_width_mm);
+      const h = Number(d.page_height_mm);
+      if (!(w > 0 && h > 0)) return false;
+      return matchIsoSize(w, h) !== null;
+    });
+
+    if (!candidate) return;
+    const w = Number(candidate.page_width_mm);
+    const h = Number(candidate.page_height_mm);
+    const matched = matchIsoSize(w, h)!;
+
+    if (!sessionSizeLock) {
+      isoCheckedDocIds.current.add(candidate.id);
+      setSessionSizeLock({ size: matched, source: "first_iso_upload", action: "scale" });
+      return;
+    }
+
+    if (sizesMatch(w, h, sessionSizeLock.size.widthMm, sessionSizeLock.size.heightMm)) {
+      isoCheckedDocIds.current.add(candidate.id);
+      return;
+    }
+
+    isoCheckedDocIds.current.add(candidate.id);
+    setAdvisoryDoc({
+      id: candidate.id,
+      fileName: candidate.file_name,
+      detectedSize: matched.name,
+      widthMm: w,
+      heightMm: h,
+      backendAssetId: candidate.backend_asset_id,
+      lockedSize: sessionSizeLock.size,
+    });
+  }, [documents, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, sessionSizeLock]);
+
   // Orientation handlers
   const handleRotateToLandscape = useCallback(async () => {
     if (!orientationDoc?.backendAssetId) {
