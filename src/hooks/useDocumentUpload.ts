@@ -459,16 +459,16 @@ export function useDocumentUpload(
         const hasAdvisory = !!detectedSize || !!nearIsoMatch;
 
         // If no size advisory AND caller didn't ask us to skip, finalise now
-        // (orientation normalise + print-ready). For Office uploads with a
-        // size advisory we DEFER finalisation until OrderFiles resolves the
-        // size — this preserves the author's intentional mixed orientations
-        // until after the canvas is sized.
+        // (print-ready CMYK only — orientation is preserved as authored).
+        // For Office uploads with a size advisory we DEFER finalisation until
+        // OrderFiles resolves the size.
         const shouldFinalizeNow = !hasAdvisory && !opts?.skipFinalize;
-        let orientationNormalized = false;
+        let printReadyDone = false;
         if (shouldFinalizeNow) {
           await finalizeOrientationAndPrintReady(docId, assetId, fileName);
-          orientationNormalized = true;
-          // Re-read asset because normalize-orientation may have mutated boxes.
+          printReadyDone = true;
+          // print-ready may have rewritten the PDF (e.g. ICC conversion);
+          // re-read the asset so dimensions/boxes reflect the final file.
           asset = await getAsset(assetId);
         }
 
