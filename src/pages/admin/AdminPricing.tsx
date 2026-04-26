@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { formatPrice } from "@/lib/formatCurrency";
 
 const RULE_TYPE_LABELS: Record<string, string> = {
   per_page: "Per Page",
@@ -142,7 +143,7 @@ const AdminPricing = () => {
                     <Badge variant="outline">{RULE_TYPE_LABELS[r.rule_type] || r.rule_type}</Badge>
                   </TableCell>
                   <TableCell className="font-mono">
-                    R{Number(r.price_value).toFixed(2)}
+                    {formatPrice(Number(r.price_value), r.currency_code || "ZAR")}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">
                     {formatConditions(r.conditions)}

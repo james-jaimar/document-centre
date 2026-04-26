@@ -510,6 +510,7 @@ export default function OrderBuild() {
         totalPrice: breakdown.total,
         spec: spec as any,
         replacesCartItemId: replacesCartItemId || undefined,
+        currencyCode: activeCurrency,
       });
       setShowCartDialog(false);
       toast.success("Added to cart!");
