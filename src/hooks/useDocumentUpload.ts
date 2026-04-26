@@ -327,10 +327,13 @@ export function useDocumentUpload(
    * conversion job has promoted the asset to a PDF).
    */
   /**
-   * Run normalize-orientation (when family demands it) + print-ready CMYK
-   * conversion against an asset whose dimensions are already final. Safe to
-   * call after a `resize` job. Idempotent — server-side no-ops when nothing
-   * needs to change.
+   * Run print-ready CMYK conversion against an asset whose dimensions are
+   * already final. Safe to call after a `resize` job. Idempotent — server-side
+   * no-ops when nothing needs to change.
+   *
+   * NOTE: orientation normalisation is intentionally NOT performed here. We
+   * preserve the customer's authored orientation; explicit rotation only
+   * happens when the user accepts the OrientationAdvisory.
    *
    * Returns true on success (or when nothing to do); false only on hard
    * failure (callers continue rendering with the un-finalised PDF).
@@ -341,25 +344,6 @@ export function useDocumentUpload(
       assetId: string,
       fileName: string,
     ): Promise<boolean> => {
-      // Normalise mixed-orientation pages for bound/ring-binder/presentation
-      // products. Server is a no-op when nothing needs rotating.
-      const familyKey = (productFamilySlug ?? "").toLowerCase();
-      const dominant: "portrait" | "landscape" | null =
-        PORTRAIT_NORMALIZE_FAMILIES.has(familyKey)
-          ? "portrait"
-          : LANDSCAPE_NORMALIZE_FAMILIES.has(familyKey)
-            ? "landscape"
-            : null;
-      if (dominant) {
-        try {
-          updateUpload(fileName, { progress: 50, statusText: "Aligning page orientation…" });
-          const { job_id: orientJobId } = await normalizeOrientation(assetId, dominant);
-          await pollJob(orientJobId);
-        } catch (orientErr: any) {
-          console.warn("[upload] normalize-orientation failed:", orientErr);
-        }
-      }
-
       // Print-ready CMYK conversion (driven by per-product-family settings).
       const printPlan = getPrintReadyPlan(productFamilyPrintConfig);
       if (printPlan) {
@@ -375,7 +359,9 @@ export function useDocumentUpload(
         }
       }
 
-      // Mark in preflight_data so re-renders can skip a redundant pass.
+      // Mark the print-ready pass as complete so subsequent re-renders can
+      // skip the redundant ICC conversion. We deliberately do NOT set
+      // `orientation_normalized` — orientation is owned by the customer.
       try {
         const { data: existing } = await supabase
           .from("documents")
@@ -386,16 +372,16 @@ export function useDocumentUpload(
         await supabase
           .from("documents")
           .update({
-            preflight_data: { ...preflight, orientation_normalized: true } as any,
+            preflight_data: { ...preflight, print_ready_done: true } as any,
           })
           .eq("id", docId);
       } catch (persistErr: any) {
-        console.warn("[upload] persist orientation_normalized flag failed:", persistErr);
+        console.warn("[upload] persist print_ready_done flag failed:", persistErr);
       }
 
       return true;
     },
-    [productFamilySlug, productFamilyPrintConfig, updateUpload],
+    [productFamilyPrintConfig, updateUpload],
   );
 
   /**
