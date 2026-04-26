@@ -17,6 +17,11 @@ interface FileListProps {
     preflight_data: unknown;
   }) => Promise<void>;
   onDelete?: (docId: string) => Promise<void>;
+  /**
+   * Doc IDs whose effective paper size differs from the rest of the print
+   * job (or the session lock). Surfaced as an inline ⚠ warning chip.
+   */
+  mismatchDocIds?: Set<string>;
 }
 
 function ThumbnailImage({ storagePath, className }: { storagePath: string; className?: string }) {
@@ -32,6 +37,7 @@ export default function FileList({
   onReprocess,
   onRerenderGaps,
   onDelete,
+  mismatchDocIds,
 }: FileListProps) {
   const [reprocessingIds, setReprocessingIds] = useState<Set<string>>(new Set());
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
@@ -100,6 +106,8 @@ export default function FileList({
           ? (preflight.thumbnail_gaps as number[])
           : [];
         const hasGaps = thumbnailGaps.length > 0;
+        const hasSizeMismatch = !!mismatchDocIds?.has(doc.id);
+
 
         return (
           <div
@@ -150,6 +158,15 @@ export default function FileList({
                   >
                     <AlertCircle className="h-3 w-3" />
                     {thumbnailGaps.length} page{thumbnailGaps.length === 1 ? "" : "s"} missing
+                  </span>
+                )}
+                {hasSizeMismatch && (
+                  <span
+                    className="inline-flex items-center gap-1 text-[10px] font-medium text-warning bg-warning/10 px-1.5 py-0.5 rounded"
+                    title="This file's paper size differs from the rest of your print job"
+                  >
+                    <AlertCircle className="h-3 w-3" />
+                    size mismatch
                   </span>
                 )}
               </div>
