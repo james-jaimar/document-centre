@@ -1,48 +1,83 @@
-## Three issues, one pass
+## Goal
 
-### 1. Order Confirmation hard-codes "R" (ZAR) regardless of region
+Use the new artwork in `src/assets/bindings/` so that **every** binding option in the selector renders with the matching colour spine, and so that **landscape A4/A5/A3** documents render with the dedicated short-edge ("210mm") version. Today `BindingSpine` is hard-wired to two files (`coil_binding_black_*` and `wire_binding_black_*`), so a Clear Spiral or White Comb still shows a black coil — and the spine is stretched along the long edge for landscape jobs instead of using the short-edge artwork.
 
-**Root cause:** `src/hooks/useCart.ts` line ~689 in `usePlaceOrder` sends `pricing: { currency: "ZAR", … }` to the `order-engine` Edge Function — a literal string, not the cart's currency. So even though the cart order was correctly stamped with GBP when items were added (line ~115), the final placed order is overwritten with `ZAR`. That's why you see `R 15,72` on the confirmation card while browsing as GBP.
+## Asset inventory (current `src/assets/bindings/`)
 
-**Fix:**
-- Read the cart's stamped currency (`cartOrder.currency`) when placing the order and pass it through to the engine.
-- Fall back to the active region (`useRegionalPricing`) only if the cart somehow has no currency, then `"ZAR"` as a last resort.
-- This is a one-line conceptual change; the cart already carries the right value.
+Three families, three orientations × two states, with a short-edge ("210mm") variant of each. Some filenames are inconsistent (mix of dashes/spaces/parens, one typo `210mnm`) — the import map will paper over that.
 
-No other downstream changes needed — `OrderConfirmation.tsx`, `CustomerOrderDetail.tsx`, and `Cart.tsx` already format using `order.currency` / `cart.currency`, so once the order is saved with `GBP` it will render `£15.72`.
+| Method | Colours present | Long-edge files | Short-edge ("210mm") files |
+|---|---|---|---|
+| **Coil (spiral)** | Black, Clear, White | `coil <colour> front/back/open.png` | `coil <colour> (front)/(back)/open 210mm.png` (white open is `210mnm`) |
+| **Comb** | Black only* | `comb binding black front/back.png`, `comb binding open.png`, `comb binding back.png` (back-only generic) | `comb binding black front/back 210mm.png`, `comb binding open 210mm.png` |
+| **Twin-loop wire** | Black, Silver | `wire <colour> front/back.png`, `wire black - open.png`, `wire silver open.png` | `wire <colour> front/back 210mm.png`, `wire <colour> open 210mm.png` |
 
-### 2. Admin → Pricing → Edit goes blank
+*Comb White / Comb Navy are in the selector but no white/navy artwork was supplied → fall back to comb black (best available match).
+*Spiral Blue is in the selector but no blue artwork was supplied → fall back to spiral black.
 
-**Root cause:** `src/components/admin/PricingRuleForm.tsx` line 148 has `<SelectItem value="">All families</SelectItem>`. Radix Select forbids empty-string values and throws at runtime — the dialog mounts, the Select inside it errors, the whole admin page unmounts to a blank screen. (Nothing to do with multi-currency, despite the timing.)
+The legacy `coil_binding_black_*.png` and `wire_binding_black_*.png` files become redundant once the new map is in place, but I'll leave them on disk to avoid breaking any external reference.
 
-**Fix:**
-- Replace the empty-string sentinel with a real value such as `"__all__"`.
-- Treat `"__all__"` as `null` when populating the form (`product_family_id: rule.product_family_id ?? "__all__"`) and when submitting (`product_family_id: values.product_family_id === "__all__" ? null : values.product_family_id`).
-- While I'm in this file, also surface a read-only **Currency** field on the form (just an info chip showing `ZAR — source of truth`), so it's obvious to admins that the editor only edits ZAR rules and that other currencies are derived via Platform → Demo Print Pricing → Regenerate. No new editable field — just clarity.
+## Plan
 
-### 3. Strip VAT/Tax from the customer-facing demo
+### 1. Build a typed binding-asset registry
 
-The platform will let tenants configure their own VAT rules later. For the demo, prices should be presented as a single all-in number with no VAT/Tax line.
+New file `src/components/preview/bindingAssets.ts`:
 
-Files and changes:
-- **`src/pages/dashboard/Cart.tsx`** — change "Subtotal (excl. VAT)" to just "Total".
-- **`src/pages/dashboard/Checkout.tsx`** — remove the `vatRate`, `vat`, and `total = subtotal + vat` calculations; remove the "VAT (15%) / Tax (15%)" row from the Order Summary; show only Subtotal (or just "Total"); pass `subtotal` (no VAT added) as the order total.
-- **`src/hooks/useCart.ts` `usePlaceOrder`** — set `vat_amount: 0`, `total_amount: subtotal` when calling `order-engine`. (Keeps the field for future tenant VAT support; just zero for demo.)
-- **`src/pages/dashboard/CustomerOrderDetail.tsx`** — hide the "VAT" row when `order.vat_amount === 0` (so historic non-zero orders still display correctly, but the new demo orders show a clean Subtotal → Total).
-- **`src/components/orders/detail/OrderPricingTab.tsx`** (admin/staff order detail) — same treatment: hide the "VAT (15%)" row when `vat_amount === 0`. We keep the row for tenants who configure VAT later.
+- `import` every PNG by its exact (quoted) path so Vite bundles them.
+- Export a single resolver:
+  ```ts
+  resolveBindingArt({
+    method: "spiral" | "comb" | "twin_loop",
+    color: "black" | "white" | "clear" | "silver" | "blue" | "navy",
+    edge: "long" | "short",   // short = "210mm" landscape art
+    state: "open" | "closed", // closed → use front face for spine
+  }): { src: string; aspectMode: "long" | "short" }
+  ```
+- The resolver applies a **fallback ladder**:
+  1. exact `(method,color,edge,state)`
+  2. same method+colour, opposite edge (long↔short)
+  3. same method, default colour for that method (Black for spiral/comb/wire)
+  4. legacy `coil_binding_black_*` / `wire_binding_black_*` (last-resort)
+- Console-warn (dev only) when we fall back, so missing art is obvious during seeding.
 
-What I'm **not** changing:
-- The DB schema (`vat_amount` column stays — tenants will use it).
-- Pricing rule values in the DB (those are net values today and will continue to be).
-- The admin/staff side of VAT configuration (out of scope for this fix).
+### 2. Drive the registry from the binding option's metadata
 
-### Out of scope (call out for a follow-up)
-- Building tenant-configurable VAT (rate, inclusive vs exclusive, per-region) — that's a real feature, not a quick demo cleanup. Happy to plan it separately when you're ready.
+`src/lib/productOptionValues.ts` already stores `binding_method` and `color` on every binding option's metadata. To make the resolver lookup deterministic I'll:
 
-### Files touched
-1. `src/hooks/useCart.ts` — pass cart currency through to `order-engine`; zero out VAT for demo.
-2. `src/components/admin/PricingRuleForm.tsx` — fix `SelectItem value=""` crash; add read-only currency hint.
-3. `src/pages/dashboard/Cart.tsx` — drop "excl. VAT" wording.
-4. `src/pages/dashboard/Checkout.tsx` — remove VAT row & calc; show single total.
-5. `src/pages/dashboard/CustomerOrderDetail.tsx` — conditionally hide VAT row.
-6. `src/components/orders/detail/OrderPricingTab.tsx` — conditionally hide VAT row.
+- Normalise `metadata.color` to lowercase keys (`"Black" → "black"`, `"Silver" → "silver"`, etc.) inside the resolver — no DB change needed.
+- Add a typed `BindingArtKey` union so `npm run typecheck` flags any future binding option whose colour we don't have art for.
+
+### 3. Plumb selected binding metadata through to `BindingSpine`
+
+Currently `OrderBuild.tsx` only passes the derived **`productType`** (e.g. `wire_bound`) to `DocumentPreview`, then `getBindingType` collapses that to `"wire" | "coil" | "comb" | …`. The colour is lost. Changes:
+
+- **`previewTypes.ts`** — extend `FlipBookProps` and `PreviewComponentProps` (or just `FlipBookProps`) with an optional `bindingArt?: { method, color }` field; document that `bindingEdge` already conveys long vs short.
+- **`OrderBuild.tsx`** — in the same `useMemo` that derives `productType`, also pull `matchedValue.metadata.color` + `binding_method` and pass them down to `<DocumentPreview bindingArt={…} bindingEdge={…} />`.
+- **`DocumentPreview.tsx`** — forward `bindingArt` to `<FlipBook>` (and to `<RingBinderPreview>` later if/when we get coloured ring artwork — out of scope for this task).
+- **`FlipBook.tsx`** — pass `bindingArt` down to `<BindingSpine>`.
+
+### 4. Rewrite `BindingSpine.tsx` to use the registry
+
+- Replace the four static imports with a call to `resolveBindingArt({ method, color, edge, state })`.
+- `edge` comes from the new `bindingEdge` prop (already wired) — `"top"` ⇒ `"short"`, `"left"` ⇒ `"long"`.
+- `state` is `isOpen ? "open" : "closed"`.
+- Keep the existing `position`/transform logic untouched so spine placement on solo cover pages doesn't regress.
+- Keep the saddle/perfect crease branch unchanged (no artwork for those).
+- Behaviour for `bindingType === "ring"` and `"none"` stays a no-op (ring binders use `RingBinderOpenSpread`, which I am not touching here).
+
+### 5. Verification
+
+- `tsc --noEmit` to confirm typing.
+- Manual smoke-test in the configurator preview for each combo:
+  - Spiral Black / Clear / White on A4 portrait (long edge)
+  - Spiral Black / Clear / White on A4 landscape (short edge → 210mm art)
+  - Comb Black portrait + landscape; Comb White / Navy → falls back to black with dev warning
+  - Twin-Loop Black & Silver portrait + landscape
+  - Spiral Blue → falls back to spiral black with dev warning
+  - Saddle, Perfect, Ring, None — unchanged
+- Confirm A5 landscape and A3 landscape still use the short-edge art (the spine is height-fitted via CSS, so A5/A3 just rescale — exactly what you described).
+
+## Out of scope (flagged for a follow-up)
+
+- Coloured **ring binder** covers (we only have white art today).
+- Ordering new artwork for **Spiral Blue**, **Comb White**, **Comb Navy** — currently these fall back to the closest available colour and emit a dev warning. Happy to either (a) raise a checklist of missing assets so you can drop them in next, or (b) prune those options from the selector until art exists. Will ask once this PR lands.
