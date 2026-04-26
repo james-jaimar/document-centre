@@ -90,7 +90,7 @@ export async function renderDocumentThumbnails(
     expectedPages,
   );
 
-  const MAX_THUMB_POLLS = 30;
+  const MAX_THUMB_POLLS = 45; // ~90s ceiling with adaptive backoff
   let interval = 500; // adaptive: 500ms → 1000ms → 2000ms ceiling
 
   for (let i = 0; i < MAX_THUMB_POLLS; i++) {
@@ -111,16 +111,58 @@ export async function renderDocumentThumbnails(
     );
   }
 
-  // Surface any remaining gaps so the operator can re-render. The array is
-  // index-stable (length === expectedPages) so the UI degrades to a blank
-  // sheet for missing pages instead of producing the old "ghost Page N" face.
-  const missing: number[] = [];
-  for (let i = 0; i < thumbnailPaths.length; i++) {
-    if (!thumbnailPaths[i]) missing.push(i + 1);
+  // Compute gaps after the initial polling loop
+  const computeMissing = (paths: string[]): number[] => {
+    const out: number[] = [];
+    for (let i = 0; i < paths.length; i++) if (!paths[i]) out.push(i + 1);
+    return out;
+  };
+
+  let missing = computeMissing(thumbnailPaths);
+
+  // ── Auto-recovery: surgically re-render any missing pages via the
+  // /render-pages endpoint. Runs up to 2 passes; each pass triggers the
+  // server-side render, polls the job, then polls derived files for ~20s.
+  const RECOVERY_ATTEMPTS = 2;
+  const RECOVERY_POLL_BUDGET_MS = 20_000;
+  for (let attempt = 0; attempt < RECOVERY_ATTEMPTS && missing.length > 0; attempt++) {
+    onProgress(
+      `Recovering ${missing.length} missing page${missing.length === 1 ? "" : "s"}…`,
+      90,
+    );
+    try {
+      const { job_id } = await renderPages(assetId, missing);
+      if (job_id) {
+        await pollJob(job_id);
+      }
+    } catch (recoveryErr: any) {
+      console.warn(
+        `[renderDocumentThumbnails] asset=${assetId} recovery attempt ${attempt + 1} failed:`,
+        recoveryErr,
+      );
+    }
+
+    // Poll for derived files to flush after the salvage pass.
+    const deadline = Date.now() + RECOVERY_POLL_BUDGET_MS;
+    let recoveryInterval = 500;
+    while (Date.now() < deadline) {
+      derivedFiles = await getDerivedFiles(assetId);
+      thumbnailPaths = pickBestPerPage(
+        derivedFiles,
+        asset.thumbnail_storage_path,
+        asset.preview_storage_path,
+        expectedPages,
+      );
+      missing = computeMissing(thumbnailPaths);
+      if (missing.length === 0) break;
+      await new Promise((r) => setTimeout(r, recoveryInterval));
+      recoveryInterval = Math.min(Math.round(recoveryInterval * 1.5), 2000);
+    }
   }
+
   if (missing.length > 0) {
     console.warn(
-      `[renderDocumentThumbnails] asset=${assetId} missing thumbnails for pages:`,
+      `[renderDocumentThumbnails] asset=${assetId} still missing thumbnails after recovery:`,
       missing,
     );
   }
@@ -143,6 +185,22 @@ export async function renderDocumentThumbnails(
   // Bust signed-url cache so the browser fetches the freshly rendered images
   clearSignedUrlCache(thumbnailPaths.filter(Boolean));
 
+  // Stamp thumbnail_gaps into preflight_data so the file list can show a
+  // recovery affordance. Read-modify-write to preserve other preflight keys.
+  const { data: existingDoc } = await supabase
+    .from("documents")
+    .select("preflight_data")
+    .eq("id", docId)
+    .maybeSingle();
+  const existingPreflight =
+    (existingDoc?.preflight_data as Record<string, unknown> | null) ?? {};
+  const nextPreflight: Record<string, unknown> = { ...existingPreflight };
+  if (missing.length > 0) {
+    nextPreflight.thumbnail_gaps = missing;
+  } else {
+    delete nextPreflight.thumbnail_gaps;
+  }
+
   await supabase
     .from("documents")
     .update({
@@ -150,10 +208,87 @@ export async function renderDocumentThumbnails(
       page_width_mm: Math.round(pageWidthMm * 10) / 10,
       page_height_mm: Math.round(pageHeightMm * 10) / 10,
       document_status: "ready",
+      preflight_data: nextPreflight as any,
     })
     .eq("id", docId);
 
   return thumbnailPaths;
+}
+
+/**
+ * Manually re-trigger gap recovery for a document that still has missing
+ * thumbnails after the upload flow finished. Used by the FileList
+ * "Re-render missing pages" affordance.
+ */
+export async function recoverThumbnailGaps(
+  docId: string,
+  assetId: string,
+  gaps: number[],
+): Promise<{ thumbnailPaths: string[]; remainingGaps: number[] }> {
+  const target = gaps && gaps.length > 0 ? gaps : ("missing" as const);
+
+  const { job_id } = await renderPages(assetId, target);
+  if (job_id) {
+    await pollJob(job_id);
+  }
+
+  const asset = await getAsset(assetId);
+  const expectedPages = asset.page_count ?? 1;
+
+  // Poll for derived files to flush after the salvage pass.
+  const deadline = Date.now() + 20_000;
+  let interval = 500;
+  let derivedFiles = await getDerivedFiles(assetId);
+  let thumbnailPaths = pickBestPerPage(
+    derivedFiles,
+    asset.thumbnail_storage_path,
+    asset.preview_storage_path,
+    expectedPages,
+  );
+  let remainingGaps: number[] = [];
+  while (true) {
+    remainingGaps = [];
+    for (let i = 0; i < thumbnailPaths.length; i++) {
+      if (!thumbnailPaths[i]) remainingGaps.push(i + 1);
+    }
+    if (remainingGaps.length === 0 || Date.now() >= deadline) break;
+    await new Promise((r) => setTimeout(r, interval));
+    interval = Math.min(Math.round(interval * 1.5), 2000);
+    derivedFiles = await getDerivedFiles(assetId);
+    thumbnailPaths = pickBestPerPage(
+      derivedFiles,
+      asset.thumbnail_storage_path,
+      asset.preview_storage_path,
+      expectedPages,
+    );
+  }
+
+  clearSignedUrlCache(thumbnailPaths.filter(Boolean));
+
+  // Read-modify-write preflight to clear / update thumbnail_gaps
+  const { data: existingDoc } = await supabase
+    .from("documents")
+    .select("preflight_data")
+    .eq("id", docId)
+    .maybeSingle();
+  const existingPreflight =
+    (existingDoc?.preflight_data as Record<string, unknown> | null) ?? {};
+  const nextPreflight: Record<string, unknown> = { ...existingPreflight };
+  if (remainingGaps.length > 0) {
+    nextPreflight.thumbnail_gaps = remainingGaps;
+  } else {
+    delete nextPreflight.thumbnail_gaps;
+  }
+
+  await supabase
+    .from("documents")
+    .update({
+      thumbnail_urls: thumbnailPaths,
+      preflight_data: nextPreflight as any,
+    })
+    .eq("id", docId);
+
+  return { thumbnailPaths, remainingGaps };
 }
 
 export function useDocumentUpload(
