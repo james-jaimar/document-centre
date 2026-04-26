@@ -221,6 +221,26 @@ export default function OrderFiles() {
     backendAssetId: string | null;
   } | null>(null);
 
+  // ── Session paper-size lock ────────────────────────────────────
+  // Once the user picks a target size on the first non-ISO doc (or uploads a
+  // first clean ISO doc), we lock the session to that size. Subsequent uploads
+  // either auto-apply silently or, if mismatched ISO, prompt the locked-variant
+  // advisory. The lock is page-lifetime only — a reload deliberately resets it.
+  type SessionSizeLock = {
+    size: PaperSize;
+    source: "user_chose" | "first_iso_upload";
+    /** Original action so we can replay it for queued non-ISO docs */
+    action: "keep" | "scale";
+  };
+  const [sessionSizeLock, setSessionSizeLock] = useState<SessionSizeLock | null>(null);
+  // Tracks docs we've already auto-resolved against the lock so the effect
+  // doesn't re-fire while DB updates are in flight.
+  const autoAppliedDocIds = useRef<Set<string>>(new Set());
+  // Tracks docs whose ISO size has been recorded (or used to set the lock)
+  // so the ISO-detection effect runs once per doc.
+  const isoCheckedDocIds = useRef<Set<string>>(new Set());
+
+
   // Orientation advisory state for presentations
   const [orientationDoc, setOrientationDoc] = useState<{
     id: string;
