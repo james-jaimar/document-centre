@@ -371,12 +371,8 @@ export default function FlipBook({
   }
 
   // ── CSS scale factor to fit into available container ──
-  // Only the stacked layout rotates the inner book 90°, in which case the
-  // container's available width limits the rotated book's HEIGHT and vice
-  // versa. For all other layouts (including short-edge top binding) the
-  // book renders normally in its pane.
-  const availableWidth = (isStacked ? height : width) - 80;
-  const availableHeight = (isStacked ? width : height) - 60;
+  const availableWidth = width - 80;
+  const availableHeight = height - 60;
 
   // ── Solo-page detection ──
   const lastIdx = urls.length - 1;
@@ -401,22 +397,8 @@ export default function FlipBook({
   const spinePosition = isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center";
   const tabGutter = (tabPositions?.length ?? 0) > 0 ? 30 * scaleFactor : 0;
 
-  // For long-edge top binding, rotate the inner container 90° clockwise so
-  // the two-page spread stacks vertically with the spine running horizontally
-  // between the pages. Page artwork is counter-rotated 90° (counterRotate
-  // prop) to stay upright. Short-edge top binding does NOT rotate — it
-  // renders as a normal side-by-side spread using the 210mm short-edge art.
-  const outerTransform = isStacked ? "rotate(90deg)" : undefined;
-
-  // Wrapper sized to the rotated book's actual on-screen footprint.
-  // (Bug fix: previous code referenced bare `outerWidth`/`outerHeight`,
-  // which JS resolved to `window.outerWidth`/`window.outerHeight` — a
-  // wrapper several thousand pixels wide that crushed the visible book
-  // down to a tiny size on laptop viewports.)
-  const innerSpreadWidth = displayedViewportWidth + tabGutter * 2;
-  const innerSpreadHeight = displayedPageHeight;
-  const wrapperWidth = isStacked ? innerSpreadHeight : innerSpreadWidth;
-  const wrapperHeight = isStacked ? innerSpreadWidth : innerSpreadHeight;
+  const wrapperWidth = displayedViewportWidth + tabGutter * 2;
+  const wrapperHeight = displayedPageHeight;
 
   return (
     <div
