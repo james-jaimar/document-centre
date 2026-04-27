@@ -1742,6 +1742,8 @@ export default function OrderFiles() {
       <PosterImageEditor
         open={posterEditorOpen}
         file={pendingPosterFile}
+        initialState={posterEditorInitialState}
+        title={posterEditorTitle}
         onConfirm={handlePosterEditorConfirm}
         onCancel={handlePosterEditorCancel}
       />
