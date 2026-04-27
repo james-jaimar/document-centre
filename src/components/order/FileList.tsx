@@ -110,6 +110,7 @@ export default function FileList({
           : [];
         const hasGaps = thumbnailGaps.length > 0;
         const hasSizeMismatch = !!mismatchDocIds?.has(doc.id);
+        const isPosterImage = !!preflight?.poster_image?.source_storage_path;
 
 
         return (
