@@ -703,7 +703,6 @@ export default function PreviewPanel({
           displayPageNumbers={displayPageNumbers}
           faceLabels={computedPageRoles.map((_, i) => faceLabel(i))}
           bindingEdge={bindingEdge}
-          landscapeLongEdge={landscapeLongEdge}
           bindingArt={bindingArt}
         />
       </div>
@@ -725,7 +724,6 @@ export default function PreviewPanel({
           tabPositions={tabPositions}
           displayPageNumbers={displayPageNumbers}
           bindingEdge={bindingEdge}
-          landscapeLongEdge={landscapeLongEdge}
           bindingArt={bindingArt}
         />
       )}
