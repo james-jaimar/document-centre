@@ -24,12 +24,6 @@ function DemoBanner({ onUpgrade }: { onUpgrade: () => void }) {
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <button
-          onClick={onUpgrade}
-          className="rounded-md bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-800"
-        >
-          Save my work — start free trial
-        </button>
-        <button
           onClick={() => setDismissed(true)}
           className="rounded-md p-1 hover:bg-amber-200/60"
           aria-label="Dismiss"
