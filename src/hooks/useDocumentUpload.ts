@@ -583,7 +583,7 @@ export function useDocumentUpload(
         return null;
       }
     },
-    [updateUpload, finalizeOrientationAndPrintReady],
+    [updateUpload, finalizeOrientationAndPrintReady, productFamilySlug],
   );
 
   /* ── Phase A: Inspect — register PDF asset & extract metadata, NO thumbnails yet ── */
