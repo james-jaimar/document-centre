@@ -44,6 +44,16 @@ export interface PosterEditorResult {
   orientation: "portrait" | "landscape";
   croppedAreaPixels: CroppedAreaPixels;
   rotation: number;
+  zoom: number;
+  crop: { x: number; y: number };
+}
+
+export interface PosterEditorInitialState {
+  sizeSlug?: string;
+  orientation?: "portrait" | "landscape";
+  crop?: { x: number; y: number };
+  zoom?: number;
+  rotation?: number;
 }
 
 interface Props {
@@ -52,6 +62,10 @@ interface Props {
   file: File | null;
   /** Optional pre-selected size (e.g. from an already-set poster size). */
   initialSizeSlug?: string;
+  /** Optional full state to seed when re-editing an existing poster image. */
+  initialState?: PosterEditorInitialState;
+  /** Title shown in the dialog header. */
+  title?: string;
   onCancel: () => void;
   onConfirm: (result: PosterEditorResult) => void;
 }
