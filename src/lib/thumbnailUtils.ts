@@ -173,6 +173,14 @@ export function pickBestPerPage(
   fallbackThumbnailPath?: string | null,
   fallbackPreviewPath?: string | null,
   expectedPages?: number,
+  /**
+   * Optional aspect ratio hint (width/height) describing the document's
+   * CURRENT geometry. When supplied, candidates whose own pixel aspect ratio
+   * is closer to this value are preferred. This protects against stale
+   * pre-rotation thumbnails reappearing in the picker after a geometry
+   * change (rotate / resize / crop) — even if backend cleanup races.
+   */
+  targetAspect?: number | null,
 ): string[] {
   // Filter to image-like files with a page number
   const candidates = derivedFiles.filter(
@@ -199,27 +207,40 @@ export function pickBestPerPage(
   }
 
   const pageNumbers = Array.from(byPage.keys()).sort((a, b) => a - b);
-  // Detect 1-indexed vs 0-indexed page numbering by smallest observed page
   const minPage = pageNumbers[0];
   const isOneIndexed = minPage >= 1;
   const indexOffset = isOneIndexed ? 1 : 0;
   const maxIndex = pageNumbers[pageNumbers.length - 1] - indexOffset;
 
-  // Determine final length: max(expectedPages, observed-max + 1)
   const observedLength = maxIndex + 1;
   const length = Math.max(expectedPages ?? 0, observedLength);
-
-  // Pre-fill with empty strings — every slot is index-stable.
   const result: string[] = new Array(length).fill("");
+
+  const aspectDelta = (df: DerivedFileCandidate) => {
+    if (!targetAspect || !df.width || !df.height) return Number.POSITIVE_INFINITY;
+    const a = df.width / df.height;
+    return Math.abs(a - targetAspect);
+  };
 
   for (const pg of pageNumbers) {
     const idx = pg - indexOffset;
     if (idx < 0 || idx >= length) continue;
     const group = byPage.get(pg)!;
     group.sort((a, b) => {
+      // 1. cropped variants win first (intentional trim)
       const aCropped = a.kind.startsWith("cropped_") ? 0 : 1;
       const bCropped = b.kind.startsWith("cropped_") ? 0 : 1;
       if (aCropped !== bCropped) return aCropped - bCropped;
+      // 2. aspect-ratio match to current document geometry beats raw pixel
+      //    width — prevents stale pre-rotation thumbs from winning.
+      if (targetAspect && Number.isFinite(targetAspect)) {
+        const da = aspectDelta(a);
+        const db = aspectDelta(b);
+        if (Number.isFinite(da) && Number.isFinite(db) && Math.abs(da - db) > 0.05) {
+          return da - db;
+        }
+      }
+      // 3. fallback: largest pixel width.
       return (b.width ?? 0) - (a.width ?? 0);
     });
     result[idx] = toStorageKey(group[0].storage_path);
