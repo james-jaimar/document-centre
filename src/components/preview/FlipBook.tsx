@@ -407,7 +407,6 @@ export default function FlipBook({
     >
       <div
         style={{
-          ...(isStacked ? { transform: outerTransform, transformOrigin: "center center" } : {}),
           width: wrapperWidth,
           height: wrapperHeight,
           display: "flex",
@@ -443,7 +442,6 @@ export default function FlipBook({
               isOpen={!isSoloPage}
               position={spinePosition}
               bindingEdge={bindingEdge}
-              landscapeLongEdge={landscapeLongEdge}
               bindingArt={bindingArt}
             />
             {tabPositions && tabPositions.length > 0 && (
