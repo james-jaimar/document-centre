@@ -177,6 +177,18 @@ export default function FileList({
             </div>
 
             <div className="shrink-0 flex items-center gap-1">
+              {isPosterImage && onEditPosterImage && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void onEditPosterImage({ id: doc.id, preflight_data: doc.preflight_data });
+                  }}
+                  className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                  title="Re-crop image"
+                >
+                  <Crop className="h-3.5 w-3.5" />
+                </button>
+              )}
               {onDelete && (
                 <button
                   onClick={(e) => {
