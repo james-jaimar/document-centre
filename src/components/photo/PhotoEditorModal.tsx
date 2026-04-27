@@ -99,12 +99,12 @@ export default function PhotoEditorModal({
     };
   }, [open, signedUrl]);
 
-  if (!photo) return null;
-  const size = getPhotoPrintSize(photo.print_size_slug);
+  const size = photo ? getPhotoPrintSize(photo.print_size_slug) : null;
   const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === borderSlug);
   const borderMm = border?.border_mm ?? 0;
-  const longEdgeMm = Math.max(size.width_mm, size.height_mm);
-  const borderFraction = borderFractionFor(longEdgeMm, borderMm);
+  const longEdgeMm = size ? Math.max(size.width_mm, size.height_mm) : 0;
+  const borderFraction = size ? borderFractionFor(longEdgeMm, borderMm) : 0;
+  const frameAspect = size?.aspect ?? 1;
 
   // Rotation-adjusted image aspect.
   const imageAspect = useMemo(() => {
@@ -116,8 +116,8 @@ export default function PhotoEditorModal({
   }, [naturalSize, rotation]);
 
   const fitZoom = useMemo(
-    () => (imageAspect ? computeFitZoom(imageAspect, size.aspect) : 1),
-    [imageAspect, size.aspect],
+    () => (imageAspect ? computeFitZoom(imageAspect, frameAspect) : 1),
+    [imageAspect, frameAspect],
   );
   const fillZoom = 1;
   // minZoom must always be ≤ current zoom; allow going down to fitZoom.
