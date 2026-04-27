@@ -1627,6 +1627,7 @@ export default function OrderFiles() {
     setPageCountWarning(null);
   }, [pageCountWarning]);
 
+  const handleRerenderGaps = useCallback(
     async (doc: { id: string; backend_asset_id: string | null; preflight_data: unknown }) => {
       if (!doc.backend_asset_id) {
         toast.error("Can't re-render: this file has no backend asset reference.");
