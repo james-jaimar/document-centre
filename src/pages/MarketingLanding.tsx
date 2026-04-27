@@ -434,16 +434,16 @@ export default function MarketingLanding() {
               className="w-full max-w-[420px] h-auto mt-2"
             />
             <p className="mt-4 text-[1rem] dc-muted max-w-md leading-relaxed">
-              Power your print business with a fast, flexible, and beautiful ordering system your customers will love.
+              A beautiful self-service experience your customers will love — with the production muscle (auto-rotation, imposition, preflight & job tracking) doing the heavy lifting behind the scenes.
             </p>
             <ul className="mt-5 grid sm:grid-cols-2 gap-y-2 gap-x-6 text-[14px]" style={{ color: "hsl(var(--dc-navy))" }}>
               {[
                 "Online ordering & file upload",
-                "Artwork templates & variable data",
-                "Instant previews & proofing",
-                "Integrated production workflow",
-                "Quotes, pricing & approvals",
-                "Built for copy shops & small printers",
+                "Combine multiple files into one job",
+                "Auto-rotation, preflight & imposition",
+                "Live previews & instant proofing",
+                "Built-in workflow & job tracking",
+                "For copy shops, in-plants & corporate print",
               ].map((b) => (
                 <li key={b} className="flex items-start gap-2">
                   <span
@@ -488,7 +488,7 @@ export default function MarketingLanding() {
             {[
               { Icon: IconUpload, t1: "Upload &", t2: "File Management", d: "Secure uploads, format checks & auto-preflight" },
               { Icon: IconPreview, t1: "Live Preview", t2: "& Proofing", d: "Accurate previews with zoom, pages & annotations" },
-              { Icon: IconCatalogue, t1: "Product", t2: "Catalogue", d: "Customisable templates, finishes & pricing" },
+              { Icon: IconCatalogue, t1: "Product", t2: "Catalogue", d: "Configurable products, finishes, paper stocks & live pricing" },
               { Icon: IconQuotes, t1: "Quotes &", t2: "Payments", d: "Instant quotes, approvals & online payments" },
               { Icon: IconWorkflow, t1: "Production", t2: "Workflow", d: "Job tracking, statuses & automated routing" },
               { Icon: IconReports, t1: "Reports &", t2: "Analytics", d: "Track sales, customers & production insights" },
@@ -499,6 +499,38 @@ export default function MarketingLanding() {
                   {t1}<br />{t2}
                 </h3>
                 <p className="mt-2 text-[12.5px] dc-muted leading-snug">{d}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ───────── Production muscle strip ───────── */}
+      <section className="bg-[hsl(var(--dc-bg-soft))] py-12 border-y border-[hsl(var(--dc-border))]">
+        <div className="max-w-[1240px] mx-auto px-6">
+          <p className="text-center text-[13px] font-semibold tracking-widest uppercase mb-6" style={{ color: "hsl(var(--dc-blue))" }}>
+            Heavy lifting, built in
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+            {[
+              { t: "Combine & re-order multiple files", c: "hsl(var(--dc-blue))" },
+              { t: "Auto-rotation & orientation fixes", c: "hsl(var(--dc-green))" },
+              { t: "Automated preflight checks", c: "hsl(var(--dc-orange))" },
+              { t: "Imposition built in", c: "hsl(var(--dc-sky))" },
+              { t: "End-to-end job tracking & workflow", c: "hsl(var(--dc-navy))" },
+            ].map((p) => (
+              <div
+                key={p.t}
+                className="dc-card flex items-center gap-2.5 px-4 py-3 text-[13px] font-semibold"
+                style={{ color: "hsl(var(--dc-navy))" }}
+              >
+                <span
+                  className="h-7 w-7 rounded-full flex items-center justify-center shrink-0"
+                  style={{ background: `color-mix(in srgb, ${p.c} 15%, white)` }}
+                >
+                  <Check className="h-4 w-4" style={{ color: p.c }} strokeWidth={3} />
+                </span>
+                <span className="leading-tight">{p.t}</span>
               </div>
             ))}
           </div>
@@ -651,7 +683,7 @@ export default function MarketingLanding() {
               Ready to modernise your print business?
             </h2>
             <p className="mt-3 text-white/80 text-[15px]">
-              Join hundreds of copy shops &amp; printers using Document Centre to grow.
+              Loved by copy shops, small printers, in-plants &amp; corporate print departments.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link to="/try" className="dc-btn dc-btn-green" style={{ padding: "1rem 2rem", fontSize: "0.98rem" }}>
