@@ -1,81 +1,46 @@
-<final-text>
-Do I know what the issue is? Yes.
+# Restore TrimBox preview cropping & purge CSS binding fallbacks
 
-The current pipeline is still too permissive and too layered:
+Two unrelated regressions to fix together:
 
-1. The rotate button is calling a generic 90° rotate path, then the app trusts whatever metadata comes back. If that path does not produce a genuinely portrait-normalised asset in the live backend, the frontend still marks the document as resolved and renders it.
-2. Portrait products only warn; they do not hard-block landscape documents at every downstream point. So a bad landscape asset can still be selected, assigned, and opened in Configure.
-3. The Configure preview then uses the document’s actual landscape aspect ratio, while the product/binding options are portrait-oriented. That is why the preview becomes internally inconsistent.
-4. The binding preview now has a CSS fallback strip showing when artwork fails or mismatches. That fallback is masking the real problem instead of enforcing the finite one-to-one artwork mapping.
+1. Previews are rendering the full **MediaBox** (with bleed/crop marks visible) instead of cropping to the **TrimBox** the PDF declares.
+2. `BindingSpine.tsx` still contains a CSS gradient fallback that paints fake spirals/wires when an image isn't available. Every supported binding/colour/edge combo already has artwork in `bindingAssets.ts` — there must be no CSS art rendered, ever.
 
-Plan to fix this properly:
+---
 
-1. Replace the orientation action with a target-orientation flow
-   - Stop using the generic `rotate(assetId, 90)` from the customer rotation modal.
-   - Use the existing backend `normalize-orientation` operation with an explicit target:
-     - portrait products: `dominant = "portrait"`
-     - presentations: `dominant = "landscape"`
-   - After the job completes, re-fetch the asset and verify the resulting dimensions actually match the target orientation before marking the document resolved.
-   - If verification fails, keep the document in review/error state and do not render or allow assignment.
+## 1. TrimBox-aware previews (backend)
 
-2. Make portrait/landscape enforcement impossible to bypass
-   - Create one shared product-orientation policy used by upload, file assignment, and Configure.
-   - Portrait-required products: Bound Documents, Ring Binders, Booklets.
-   - Landscape-required products: Presentations.
-   - Remove the “dismiss and keep as-is” path for mandatory product mismatch. The user can rotate or switch product, but cannot proceed with a landscape file in a portrait product.
-   - Block “Add Selected File As” if the selected document orientation does not match the product.
-   - Disable/guard “Configure Options” if any assigned section has an unresolved or non-compliant orientation.
-   - Add the same guard on `OrderBuild` so direct navigation cannot open a broken preview.
+**Where it broke**: `pdf-server/app/tasks/document_tasks.py` triggers `generate_previews.delay(asset_id, preview_job_id)` after upload **without a `render_box`**. The task supports a `render_box` argument and `pdf_ops.crop_to_box`, but nothing computes one from the PDF's own TrimBox/BleedBox metadata anymore. So all uploads render the bleed area.
 
-3. Fix the render order after orientation correction
-   - Orientation normalise first.
-   - Re-fetch authoritative backend dimensions.
-   - Run print-ready conversion only after the document geometry is final.
-   - Clear old thumbnails/signed URLs.
-   - Render thumbnails from the promoted normalised PDF.
-   - Persist only the verified portrait/landscape dimensions and fresh thumbnail paths.
+**Fix**: When the inspector finds a `TrimBox` (or `BleedBox` smaller than `MediaBox`) on page 1, use it as the default `render_box` for `generate_previews`. Specifically:
 
-4. Clean up stale artifact competition
-   - Keep the backend page-render cleanup after geometry-changing operations.
-   - Also clear top-level thumbnail/preview pointers when print-ready rewrites the normalised PDF, as a defensive safety measure.
-   - Keep the geometry-aware thumbnail picker, but make it a fallback safety net rather than the main fix.
+- In `pdf-server/app/services/pdf_ops.py`, add a small helper (`derive_default_render_box(pdf_path) -> list[float] | None`) that:
+  - Opens the PDF with pikepdf.
+  - For page 1, returns `TrimBox` if present and strictly inside `MediaBox` (with a tiny tolerance, e.g. ≥1pt difference on any edge). Falls back to `BleedBox` only if `TrimBox` is absent and `BleedBox` is strictly inside `MediaBox`.
+  - Returns `None` when the boxes are equal/missing (so we don't crop a clean PDF).
+- In `pdf-server/app/tasks/document_tasks.py`, the auto-trigger after upload (around line 156–157) computes this default and passes it through:
+  ```python
+  default_box = pdf_ops.derive_default_render_box(local_pdf_path)
+  task = generate_previews.delay(asset_id, preview_job_id, default_box)
+  ```
+- The existing explicit-`render_box` POST endpoint behaviour is unchanged (user-supplied box still wins).
+- `crop_to_box` already exists and is rotation-aware, so per-page rendering then crops to the trim region and the previews/thumbnails will be edge-to-edge.
 
-5. Repair the binding artwork path
-   - Audit `src/assets/bindings` against `bindingAssets.ts` and make the mapping exact for every supported method/colour/edge/state combination.
-   - Remove the generic grey CSS strip as the normal fallback for known binding combinations; missing artwork should not silently render as fake bars.
-   - Force portrait products to use long-edge/left binding artwork. Short-edge artwork should only be used for the landscape product flow.
-   - Update the saved preview snapshot logic to treat `binding_edge: "short"` consistently, so live preview and placed-order preview match.
+**Verification**: re-uploading the user's pink-bordered PDF should produce previews where the magenta border touches the page edge instead of sitting inside a white bleed margin.
 
-6. Add regression checks around the failure case
-   - Add focused tests for the orientation policy helper:
-     - landscape file + Bound Documents = blocked until rotated
-     - rotated portrait result = allowed
-     - portrait file + Presentations = blocked until rotated
-   - Add tests for binding artwork resolution so supported combinations resolve to real imported artwork instead of CSS fallback.
+## 2. Remove CSS binding artwork (frontend)
 
-Files I expect to change:
-- `src/pages/dashboard/OrderFiles.tsx`
-- `src/hooks/useDocumentUpload.ts`
-- `src/lib/documentCentreApi.ts` if a clearer helper wrapper is needed
-- `src/pages/dashboard/OrderBuild.tsx`
-- `src/components/order/FileList.tsx` / `SectionActions.tsx` if we surface disabled states
-- `src/components/preview/BindingSpine.tsx`
-- `src/components/preview/bindingAssets.ts`
-- `src/lib/orders/buildPreviewSnapshot.ts`
-- `pdf-server/app/tasks/operation_tasks.py`
+**File**: `src/components/preview/BindingSpine.tsx`
 
-Expected result:
-- Uploading a landscape PDF to a portrait product opens the advisory.
-- Clicking Rotate produces a verified portrait document before any preview is shown.
-- If rotation fails, the app blocks progression instead of pretending it succeeded.
-- Configure cannot show a landscape document inside a portrait product.
-- Binding artwork uses the correct real asset for the selected binding option and product orientation.
+- Delete the `imageFailed` state, the `useEffect` that resets it, the `fallbackBg` gradient, and the `onError` handler.
+- Always render the resolved `<img>` from `resolveBindingArt(...)`. The resolver in `bindingAssets.ts` already has a comprehensive fallback ladder (exact → opposite edge → default colour → legacy PNG), so it is guaranteed to return a real PNG `src` — never empty.
+- The saddle-stitch / perfect-bound branch (subtle crease lines, not artwork) is unrelated and stays.
 
-<lov-actions>
-  <lov-open-history>View History</lov-open-history>
-</lov-actions>
+That's it for the binding side — the artwork registry is correct and complete; we just stop second-guessing it.
 
-<lov-actions>
-<lov-link url="https://docs.lovable.dev/tips-tricks/troubleshooting">Troubleshooting docs</lov-link>
-</lov-actions>
-</final-text>
+## Files touched
+
+- `pdf-server/app/services/pdf_ops.py` — add `derive_default_render_box`.
+- `pdf-server/app/tasks/document_tasks.py` — pass derived render_box into `generate_previews.delay`.
+- `src/components/preview/BindingSpine.tsx` — strip `fallbackBg` / `imageFailed` / `onError`; always render `<img>`.
+
+No DB migrations, no schema changes, no orientation-policy changes.
