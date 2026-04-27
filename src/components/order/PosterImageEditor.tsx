@@ -80,17 +80,24 @@ export default function PosterImageEditor({
   open,
   file,
   initialSizeSlug,
+  initialState,
+  title,
   onCancel,
   onConfirm,
 }: Props) {
-  const [sizeSlug, setSizeSlug] = useState<string>(initialSizeSlug ?? DEFAULT_POSTER_SLUG);
-  const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
-  const [crop, setCrop] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [rotation, setRotation] = useState(0);
+  const [sizeSlug, setSizeSlug] = useState<string>(
+    initialState?.sizeSlug ?? initialSizeSlug ?? DEFAULT_POSTER_SLUG,
+  );
+  const [orientation, setOrientation] = useState<"portrait" | "landscape">(
+    initialState?.orientation ?? "portrait",
+  );
+  const [crop, setCrop] = useState(initialState?.crop ?? { x: 0, y: 0 });
+  const [zoom, setZoom] = useState(initialState?.zoom ?? 1);
+  const [rotation, setRotation] = useState(initialState?.rotation ?? 0);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<CroppedAreaPixels | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageDims, setImageDims] = useState<{ w: number; h: number } | null>(null);
+  const hasInitialState = !!initialState;
 
   // Build / revoke object URL for the source file.
   useEffect(() => {
@@ -107,21 +114,22 @@ export default function PosterImageEditor({
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
-  // When the dialog (re-)opens reset to defaults and auto-orient the chosen
-  // size to the source image's aspect.
+  // When the dialog (re-)opens reset to defaults (or to provided initial state).
   useEffect(() => {
     if (!open) return;
-    setSizeSlug(initialSizeSlug ?? DEFAULT_POSTER_SLUG);
-    setCrop({ x: 0, y: 0 });
-    setZoom(1);
-    setRotation(0);
-  }, [open, initialSizeSlug]);
+    setSizeSlug(initialState?.sizeSlug ?? initialSizeSlug ?? DEFAULT_POSTER_SLUG);
+    setCrop(initialState?.crop ?? { x: 0, y: 0 });
+    setZoom(initialState?.zoom ?? 1);
+    setRotation(initialState?.rotation ?? 0);
+    if (initialState?.orientation) setOrientation(initialState.orientation);
+  }, [open, initialSizeSlug, initialState]);
 
-  // Auto-pick orientation to match the source image's natural aspect.
+  // Auto-pick orientation to match the source image's natural aspect — but
+  // only when we don't have a saved orientation to honour (re-edit case).
   useEffect(() => {
-    if (!imageDims) return;
+    if (!imageDims || hasInitialState) return;
     setOrientation(imageDims.w >= imageDims.h ? "landscape" : "portrait");
-  }, [imageDims]);
+  }, [imageDims, hasInitialState]);
 
   const sizeChoice = useMemo(
     () => POSTER_SIZE_CHOICES.find((s) => s.slug === sizeSlug) ?? POSTER_SIZE_CHOICES[2],
