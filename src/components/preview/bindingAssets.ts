@@ -14,38 +14,39 @@
  */
 
 // ── Coil (spiral) ─────────────────────────────────────────────────
-import coilBlackFrontLong from "@/assets/bindings/coil black front.png";
-import coilBlackOpenLong from "@/assets/bindings/coil black open.png";
-import coilBlackFrontShort from "@/assets/bindings/coil black front 210mm.png";
-import coilBlackOpenShort from "@/assets/bindings/coil black open 210mm.png";
+// Filenames are slug-only (no spaces / parens) so the published static host
+// serves them reliably. Do not reintroduce spaces in these names.
+import coilBlackFrontLong from "@/assets/bindings/coil-black-front.png";
+import coilBlackOpenLong from "@/assets/bindings/coil-black-open.png";
+import coilBlackFrontShort from "@/assets/bindings/coil-black-front-210mm.png";
+import coilBlackOpenShort from "@/assets/bindings/coil-black-open-210mm.png";
 
-import coilClearFrontLong from "@/assets/bindings/coil clear front.png";
-import coilClearOpenLong from "@/assets/bindings/coil clear open.png";
-import coilClearFrontShort from "@/assets/bindings/coil clear (front) 210mm.png";
-import coilClearOpenShort from "@/assets/bindings/coil clear open 210mm.png";
+import coilClearFrontLong from "@/assets/bindings/coil-clear-front.png";
+import coilClearOpenLong from "@/assets/bindings/coil-clear-open.png";
+import coilClearFrontShort from "@/assets/bindings/coil-clear-front-210mm.png";
+import coilClearOpenShort from "@/assets/bindings/coil-clear-open-210mm.png";
 
-import coilWhiteFrontLong from "@/assets/bindings/coil white (front).png";
-import coilWhiteOpenLong from "@/assets/bindings/coil white open.png";
-import coilWhiteFrontShort from "@/assets/bindings/coil white (front) 210mm.png";
-// Note: filename has a typo ("210mnm") in the uploaded asset.
-import coilWhiteOpenShort from "@/assets/bindings/coil white open 210mnm.png";
+import coilWhiteFrontLong from "@/assets/bindings/coil-white-front.png";
+import coilWhiteOpenLong from "@/assets/bindings/coil-white-open.png";
+import coilWhiteFrontShort from "@/assets/bindings/coil-white-front-210mm.png";
+import coilWhiteOpenShort from "@/assets/bindings/coil-white-open-210mm.png";
 
 // ── Comb ──────────────────────────────────────────────────────────
-import combBlackFrontLong from "@/assets/bindings/comb binding black front.png";
-import combBlackOpenLong from "@/assets/bindings/comb binding open.png";
-import combBlackFrontShort from "@/assets/bindings/comb binding black front 210mm.png";
-import combBlackOpenShort from "@/assets/bindings/comb binding open 210mm.png";
+import combBlackFrontLong from "@/assets/bindings/comb-binding-black-front.png";
+import combBlackOpenLong from "@/assets/bindings/comb-binding-open.png";
+import combBlackFrontShort from "@/assets/bindings/comb-binding-black-front-210mm.png";
+import combBlackOpenShort from "@/assets/bindings/comb-binding-open-210mm.png";
 
 // ── Twin-loop wire ────────────────────────────────────────────────
-import wireBlackFrontLong from "@/assets/bindings/wire black front.png";
-import wireBlackOpenLong from "@/assets/bindings/wire black - open.png";
-import wireBlackFrontShort from "@/assets/bindings/wire black - front 210mm.png";
-import wireBlackOpenShort from "@/assets/bindings/wire black - open 210mm.png";
+import wireBlackFrontLong from "@/assets/bindings/wire-black-front.png";
+import wireBlackOpenLong from "@/assets/bindings/wire-black-open.png";
+import wireBlackFrontShort from "@/assets/bindings/wire-black-front-210mm.png";
+import wireBlackOpenShort from "@/assets/bindings/wire-black-open-210mm.png";
 
-import wireSilverFrontLong from "@/assets/bindings/wire silver front.png";
-import wireSilverOpenLong from "@/assets/bindings/wire silver open.png";
-import wireSilverFrontShort from "@/assets/bindings/wire silver front 210mm.png";
-import wireSilverOpenShort from "@/assets/bindings/wire silver open 210mm.png";
+import wireSilverFrontLong from "@/assets/bindings/wire-silver-front.png";
+import wireSilverOpenLong from "@/assets/bindings/wire-silver-open.png";
+import wireSilverFrontShort from "@/assets/bindings/wire-silver-front-210mm.png";
+import wireSilverOpenShort from "@/assets/bindings/wire-silver-open-210mm.png";
 
 export type BindingMethod = "spiral" | "comb" | "twin_loop";
 export type BindingColor = "black" | "white" | "clear" | "silver";
