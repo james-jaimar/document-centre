@@ -47,6 +47,33 @@ const PORTRAIT_NORMALIZE_FAMILIES = new Set([
 ]);
 const LANDSCAPE_NORMALIZE_FAMILIES = new Set(["presentations"]);
 
+/**
+ * Families that REQUIRE portrait orientation. Landscape uploads here trigger
+ * the orientation advisory before any thumbnails are rendered.
+ * Kept in sync with the same set in OrderFiles.tsx.
+ */
+const PORTRAIT_REQUIRED_FAMILIES = new Set([
+  "bound-documents",
+  "ring-binders",
+  "booklets",
+]);
+
+/**
+ * Detects whether the uploaded file's orientation conflicts with the product
+ * family it's being uploaded to. Returns the rotation direction the advisory
+ * should offer, or null if there's no mismatch.
+ */
+function detectOrientationMismatch(
+  familySlug: string | null | undefined,
+  widthMm: number,
+  heightMm: number,
+): "to-landscape" | "to-portrait" | null {
+  if (!familySlug || !(widthMm > 0) || !(heightMm > 0)) return null;
+  if (familySlug === "presentations" && widthMm < heightMm) return "to-landscape";
+  if (PORTRAIT_REQUIRED_FAMILIES.has(familySlug) && widthMm > heightMm) return "to-portrait";
+  return null;
+}
+
 interface UploadProgress {
   fileName: string;
   status: "uploading" | "analyzing" | "done" | "error";
