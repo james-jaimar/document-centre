@@ -36,10 +36,8 @@ export const BINDING_STANDARD: StructuredOptionValue[] = [
     price_impact: 22.0, price_type: "per_document",
     metadata: { max_sheets: 120, color: "Silver", binding_method: "twin_loop" },
   }),
-  createOptionValue("Twin Loop Wire (White)", "Standard", {
-    price_impact: 22.0, price_type: "per_document",
-    metadata: { max_sheets: 120, color: "White", binding_method: "twin_loop" },
-  }),
+  // NOTE: Twin Loop Wire (White) intentionally omitted — no artwork supplied.
+  // Re-add when bindings/twin loop white art lands in src/assets/bindings/.
 ];
 
 export const BINDING_RING_BINDERS: StructuredOptionValue[] = [
