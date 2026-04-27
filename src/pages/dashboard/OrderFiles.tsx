@@ -1747,7 +1747,7 @@ export default function OrderFiles() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">
-              Upload &amp; Organise Files
+              {productFamily?.name ? `${productFamily.name} — ` : ""}Upload &amp; Organise Files
             </h1>
             <p className="text-muted-foreground mt-1 text-sm">
               Step 1 of 2 — Upload your PDFs and assign them to document sections

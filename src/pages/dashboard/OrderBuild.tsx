@@ -726,7 +726,7 @@ export default function OrderBuild() {
       <div className="flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-lg font-bold text-foreground leading-tight">
-            Configure Your Document
+            {productFamily?.name ? `${productFamily.name} — ` : ""}Configure Your Document
           </h1>
           <p className="text-muted-foreground text-xs">
             Step 2 of 2 — Select your options and review the preview
