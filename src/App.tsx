@@ -52,6 +52,7 @@ import AdminCustomers from "@/pages/admin/AdminCustomers";
 import AdminCustomerDetail from "@/pages/admin/AdminCustomerDetail";
 import AdminSentMail from "@/pages/admin/AdminSentMail";
 import AdminDocuments from "@/pages/admin/AdminDocuments";
+import AdminBindingArtworkAudit from "@/pages/admin/AdminBindingArtworkAudit";
 
 // Branch portal
 import BranchDashboard from "@/pages/branch/BranchDashboard";
@@ -191,6 +192,11 @@ const App = () => (
               <Route path="/admin/products" element={
                 <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
                   <AdminProducts />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/binding-artwork-audit" element={
+                <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
+                  <AdminBindingArtworkAudit />
                 </ProtectedRoute>
               } />
               <Route path="/admin/pricing" element={
