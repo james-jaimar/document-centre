@@ -272,6 +272,7 @@ export default function PhotoPrintsBuilder() {
   const [showCartDialog, setShowCartDialog] = useState(false);
   const [cartReference, setCartReference] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const handleAddToCartClick = () => {
     if (photoSpec.photos.length === 0) {
