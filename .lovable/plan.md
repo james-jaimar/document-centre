@@ -1,87 +1,46 @@
-## Terminology lock-in (so we stop confusing each other)
+## Goal
+Remove the "Bind on long edge (top)" option entirely. Users who want long-edge binding simply upload a landscape document, which is then bound on its short (left) edge — visually identical to the long-edge-bound portrait case, without any rotated layout or stacked-page logic.
 
-For a **landscape A4** page:
-- **Short edge = 210 mm** = the LEFT/RIGHT side → bound here = vertical spine on left = **side-by-side spread** (like a normal portrait book turned sideways). Existing `*210mm.png` assets are correct for this.
-- **Long edge = 297 mm** = the TOP/BOTTOM → bound here = horizontal spine across the top = **stacked spread** (page above / spine / page below). Needs the **new horizontal landscape artwork** you just uploaded.
+## Changes
 
-So:
-- `bindingEdge="left"` on a landscape doc → short-edge bind → 210mm vertical assets, side-by-side. **Default.**
-- `bindingEdge="top"` on a landscape doc → long-edge bind → new horizontal landscape assets, stacked.
+### 1. `src/pages/dashboard/OrderBuild.tsx`
+- Remove the toggle UI block (lines 807–820): the `<label>` + checkbox for "Bind on long edge (top)".
+- Remove `landscapeLongEdge` derivation (line 472) and the `canToggleLongEdge` flag (line 475).
+- Remove `handleToggleLongEdge` callback (lines 477–482).
+- Stop passing `landscapeLongEdge` to `<PreviewPanel>` (line 827).
+- Optionally: clear any persisted `binding_edge_override === "long"` from spec on mount (or leave it inert — it just won't be read anywhere).
 
-(Your earlier toggle "default short, switch to long" maps to `bindingEdge="left"` ↔ `bindingEdge="top"` for landscape docs.)
+### 2. `src/components/order/PreviewPanel.tsx`
+- Remove the `landscapeLongEdge` prop from the interface (lines 30–32) and destructure (line 243).
+- Remove it from the two pass-throughs to `DocumentPreview` (lines 708, 730).
 
----
+### 3. `src/components/preview/DocumentPreview.tsx`
+- Remove the `landscapeLongEdge` prop (lines 32–34, 63) and stop forwarding it to `<FlipBook>` (line 178).
 
-## Bug 1 — Preview is microscopic
+### 4. `src/components/preview/FlipBook.tsx`
+- Remove the `landscapeLongEdge` prop and the `isStacked` branch entirely.
+- Delete the 90° container rotation, the inverse-aspect-ratio path, the `wrapperWidth/wrapperHeight` rotated-footprint math, and the `counterRotate` / `artworkAspect` plumbing into `FlipPage`.
+- All landscape documents render as a normal side-by-side spread; `bindingEdge==="top"` (set for landscape sizes) continues to drive short-edge spine artwork selection only.
 
-`src/components/preview/FlipBook.tsx` lines 422–423 reference bare `outerWidth` / `outerHeight`. Those identifiers don't exist in the component, so JS resolves them to `window.outerWidth` / `window.outerHeight` — a wrapper several thousand pixels wide. The flipbook renders correctly inside it but everything around it gets pushed/scaled and the visible book ends up tiny.
+### 5. `src/components/preview/BindingSpine.tsx`
+- Remove the `landscapeLongEdge` prop (lines 22–28, 48).
+- Simplify edge resolution: drop the `"top"` branch — only `"long"` (portrait/left bind) and `"short"` (landscape/left bind on short edge) remain.
 
-**Fix:** compute a wrapper sized to the rotated book's actual footprint and use those.
+### 6. `src/components/preview/previewTypes.ts`
+- Remove `landscapeLongEdge?: boolean` from `FlipBookProps` and the surrounding doc comments.
 
-```ts
-// After scaleFactor is known, derive the rotated bounding box:
-const wrapperWidth  = isTopBound ? displayedPageHeight                : displayedViewportWidth + tabGutter * 2;
-const wrapperHeight = isTopBound ? displayedViewportWidth + tabGutter*2 : displayedPageHeight;
-```
-Use those in the outer wrapper instead of `outerWidth`/`outerHeight`. This restores the normal preview to its full size.
+### 7. `src/components/preview/bindingAssets.ts`
+- Remove the `top` edge entry from the registry (the horizontal landscape PNGs registered last round). The 10 imported asset files can be left in `src/assets/bindings/` (harmless) or deleted — I'll delete them to keep the bundle clean.
 
-Also fix `availableWidth/availableHeight` (lines 382–383): when top-bound, the rotated book's width consumes container HEIGHT and vice versa — the swap is right, but right now `pageAspectRatio` is also inverted via `flipRatio = 1/ratio`, which double-counts. We should pick **one** of those two inversions, not both. Plan: keep the aspect inversion (`flipRatio`), drop the `availableWidth/availableHeight` swap so the preview fills its pane normally.
-
----
-
-## Bug 2 — Use real horizontal artwork for top-bound long-edge
-
-Today, top-bound long-edge re-uses the vertical portrait spine and just CSS-rotates the whole container. That's why the teeth look weird. You've now uploaded purpose-made horizontal art.
-
-### Step A — copy uploaded art into the project
-
-Copy the 10 new files into `src/assets/bindings/`:
-- `coil_black_front_landscape.png`, `coil_black_open_landscape.png`
-- `coil_clear_front_landscape.png`, `coil_clear_open_landscape.png`
-- `coil_white_front_landscape.png`, `coil_white_open_landscape.png`
-- `wire_black_front_landscape.png`, `wire_black_-_open_landscape.png`
-- `wire_silver_front_landscape.png`, `wire_silver_open_landscape.png`
-
-(Comb landscape art wasn't uploaded — it'll fall back to the rotated 210mm asset until you provide it. I'll note this in the resolver so it degrades cleanly.)
-
-### Step B — extend the asset registry
-
-`src/components/preview/bindingAssets.ts`:
-- Add a third edge value: `BindingArtEdge = "long" | "short" | "top"`.
-  - `long` = portrait spine (existing)
-  - `short` = vertical 210mm assets (existing)
-  - `top` = NEW horizontal landscape spine (just uploaded)
-- Import the 10 new files and slot them under `ART[method][color].top.{open,closed}`.
-- Update the fallback ladder so a missing `top` entry falls back to: same colour `short` → default colour `top` → default colour `short` → legacy. (This keeps comb working until horizontal comb art arrives.)
-
-### Step C — drop the rotation hack from `BindingSpine.tsx`
-
-- When `bindingEdge === "top"` AND `landscapeLongEdge === true` → request `edge: "top"`, render as a **horizontal strip** (full width, fixed height ~36px), no CSS rotation, no `scaleY(-1)`.
-- When `bindingEdge === "top"` AND `landscapeLongEdge === false` → request `edge: "short"`, render as a vertical strip on the left (existing behaviour, side-by-side spread).
-- When `bindingEdge === "left"` → unchanged.
-
-### Step D — `FlipBook.tsx` layout for top-bound long-edge
-
-Only the **long-edge top-bound** case needs the stacked layout. Short-edge bindings stay side-by-side.
-
-- Introduce `const isStacked = bindingEdge === "top" && landscapeLongEdge;` (passed through; we already have both flags).
-- Apply the 90° outer rotation + counter-rotation only when `isStacked`. For `bindingEdge="top"` without `landscapeLongEdge` (short-edge landscape), render as a normal side-by-side spread — no rotation, no counter-rotation. This alone will fix the "absolutely tiny preview" symptom for short-edge landscape docs.
-- For `isStacked`, position the horizontal binding spine at vertical center (between the two stacked pages), full width, ~36px tall.
-
----
-
-## Files to change
-
-1. `src/assets/bindings/` — add 10 new PNGs (copied from uploads).
-2. `src/components/preview/bindingAssets.ts` — add `"top"` edge, register new assets, extend fallback ladder.
-3. `src/components/preview/BindingSpine.tsx` — render horizontal strip for `top + landscapeLongEdge`; keep vertical strip for `top + short edge` (no rotation, no flip).
-4. `src/components/preview/FlipBook.tsx`:
-   - Replace `outerWidth`/`outerHeight` with computed `wrapperWidth`/`wrapperHeight`.
-   - Gate the 90° rotation + counter-rotation behind `isStacked` (top + long-edge only).
-   - Restore normal side-by-side layout for short-edge landscape (the common default).
+### 8. `src/lib/orders/buildPreviewSnapshot.ts` and consumers (`CustomerOrderDetail.tsx`, `JobDetailPanel.tsx`)
+- These pass `bindingEdge` only (no `landscapeLongEdge`), so no changes needed beyond confirming nothing reads the override.
+- Audit `binding_edge_override` references — if only `OrderBuild.tsx` writes "long", the field becomes dead. Leave the column in place (no migration) but stop reading/writing it.
 
 ## Verification
+- Type-check (`tsc --noEmit`).
+- Manually confirm in preview:
+  - Portrait bound document → side-by-side spread with vertical long-edge spine (unchanged).
+  - Landscape bound document → side-by-side spread with vertical short-edge (210mm) spine, normal sizing — no rotation, no microscopic preview, no stacked layout.
 
-- Run `tsc --noEmit` after the changes.
-- Per the shared-preview-dependency-check memory, re-check all bound types in the preview: portrait wire/comb/coil/saddle/perfect (unchanged), landscape short-edge (side-by-side, normal size), landscape long-edge (stacked, horizontal spine with new artwork), ring binder (untouched, separate component).
-- Spot-check that the normal-size portrait preview is back to its previous size on a 1142×715 viewport (your laptop).
+## Memory updates
+- Update `mem://features/preview-system/architecture` to remove references to top-edge stacked layout and the long-edge toggle.
