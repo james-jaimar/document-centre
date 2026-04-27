@@ -407,10 +407,13 @@ export function buildPreviewSnapshot(input: {
   const pageColors = fp.map((p) => p.color ?? "");
 
   const isBusinessCards = productType === "business_cards";
+  const isPoster = productType === "poster";
   const bleedScope = effects.bleed;
   const bleedFlags = roles.map((role) => {
     // Business cards: server thumbnails are already trim-cropped — always full bleed
     if (isBusinessCards) return true;
+    // Posters: artwork is always full-bleed (user cropped to fill page in editor)
+    if (isPoster) return true;
     if (
       ["pvc_cover_front", "pvc_cover_back", "inside_back_cover_card", "back_cover_card"].includes(role)
     )
