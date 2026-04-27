@@ -325,6 +325,14 @@ export default function OrderFiles() {
 
       // Fallback: dimension-based detection (legacy docs uploaded pre-flag,
       // or in-flight docs whose preflight_data hasn't refreshed yet).
+      // Only run this fallback when the row has no preflight_data at all,
+      // OR when it has preflight_data but no orientation signal either way.
+      // This prevents the fallback from re-opening the advisory during the
+      // brief window after rotation when refetched rows may still look
+      // "wrong" by raw dimensions.
+      if (preflight && (preflight.orientation_resolved || preflight.orientation_mismatch !== undefined)) {
+        return false;
+      }
       const w = Number(d.page_width_mm);
       const h = Number(d.page_height_mm);
       if (!(w > 0 && h > 0)) return false;
@@ -669,21 +677,12 @@ export default function OrderFiles() {
       const { job_id: inspectJobId } = await inspectAsset(orientationDoc.backendAssetId);
       await pollJob(inspectJobId);
 
-      // Render the full (now-rotated) document — no global crop box.
-      setUploadModalOpen(true);
-      await renderWithProgress(
-        orientationDoc.id,
-        orientationDoc.backendAssetId,
-        null,
-        orientationDoc.fileName,
-        `Rotating to ${targetLabel} and rendering pages…`,
-      );
-
-      // Defensive fallback: explicitly write the swapped dimensions in case
-      // renderWithProgress's own dimension write hasn't propagated yet.
+      // Mark the document as orientation-resolved BEFORE running the render.
+      // renderWithProgress invalidates the documents query; if the row still
+      // contained `orientation_mismatch`, the orientation useEffect could
+      // re-open the advisory dialog the moment we clear `orientationDoc`.
       const swappedW = orientationDoc.heightMm;
       const swappedH = orientationDoc.widthMm;
-
       const existing = documents.find((d) => d.id === orientationDoc.id);
       const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
       const { orientation_mismatch: _om, ...preflightRest } = preflight;
@@ -696,6 +695,27 @@ export default function OrderFiles() {
         })
         .eq("id", orientationDoc.id);
 
+      // Render the full (now-rotated) document — no global crop box.
+      setUploadModalOpen(true);
+      await renderWithProgress(
+        orientationDoc.id,
+        orientationDoc.backendAssetId,
+        null,
+        orientationDoc.fileName,
+        `Rotating to ${targetLabel} and rendering pages…`,
+      );
+
+      // Defensive idempotent re-write — renderDocumentThumbnails strips
+      // orientation_mismatch from preflight, but re-asserting the resolved
+      // marker here keeps the row authoritative if anything in the render
+      // pipeline overwrote it.
+      await supabase
+        .from("documents")
+        .update({
+          preflight_data: { ...preflightRest, awaiting_review: false, orientation_resolved: true, orientation_action: "rotated" },
+        })
+        .eq("id", orientationDoc.id);
+
       setOrientationDoc(null);
       refetchDocuments();
       toast.success(`Rotated to ${targetLabel}`);
@@ -704,7 +724,7 @@ export default function OrderFiles() {
     } finally {
       setIsRotating(false);
     }
-  }, [orientationDoc, documents, refetchDocuments, getMediaBox]);
+  }, [orientationDoc, documents, refetchDocuments, getMediaBox, renderWithProgress]);
 
   const handleSwitchProductFamily = useCallback(() => {
     const toPortrait = orientationDoc?.mode === "to-portrait";

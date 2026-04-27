@@ -236,6 +236,11 @@ export async function renderDocumentThumbnails(
   } else {
     delete nextPreflight.thumbnail_gaps;
   }
+  // Reaching the render stage means any orientation advisory has been
+  // resolved (rotated, dismissed, or never raised). Strip the stale flag so
+  // the OrderFiles useEffect does not re-open the advisory dialog when this
+  // row write triggers a React Query refetch.
+  delete nextPreflight.orientation_mismatch;
 
   await supabase
     .from("documents")
