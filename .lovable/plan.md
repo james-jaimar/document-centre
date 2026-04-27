@@ -1,60 +1,66 @@
+# Posters: Image-aware Upload Routing
+
 ## Goal
+When a customer is configuring a **Poster** and uploads an **image** (JPG/PNG/WEBP/TIFF/HEIC), put them through the **Photo Prints editor experience** (crop, zoom, rotate, fit/fill) instead of silently fitting the raw image to a PDF page. PDFs / Word / PowerPoint uploads on posters keep working exactly as they do today (auto-PDF, scale to chosen poster size).
 
-Make the **Configure Your Document** page fit the visible viewport with no outer page scroll. The Options column and the Preview column should each scroll internally if their content overflows, but the page itself should not.
+## How it will work (user flow)
 
-## Root cause
+1. User picks **Posters** from New Order → lands on the standard Step 1 (Upload & Organise Files).
+2. They upload a file. We detect the file type at drop time:
+   - **PDF / DOCX / PPTX** → unchanged. Existing preflight + size auto-detection runs.
+   - **Image file** (`isImageFile`) → we DON'T silently convert to PDF. Instead, we open a **Photo Editor modal** (the existing `PhotoEditorModal` already used by Photo Prints) seeded with:
+     - **Print size**: the poster size the user has chosen (or the default poster size if none yet selected) — exposed as the crop aspect ratio.
+     - **Border**: none (posters have no white border).
+     - **Fit mode**: `fill` by default.
+3. After the user crops/positions and clicks Save, we **rasterise the cropped image at the target poster dimensions** (300 DPI), wrap it in a single-page PDF at the exact poster size, upload that PDF as the document, and assign it as the poster section automatically.
+4. Re-edit: the file row in the section list gets an **"Edit image"** button that re-opens the same modal (we keep the original image + crop state on the document so edits are non-destructive).
+5. Changing the **Document Size** in Step 2 re-runs the crop using the saved crop state against the new aspect ratio (or prompts the user to re-crop if the new aspect differs).
 
-In `src/pages/dashboard/OrderBuild.tsx` (line 724) the root container uses:
+## Why this is the right shape
 
-```tsx
-<div className="space-y-2 flex flex-col" style={{ minHeight: "calc(100vh - 9rem)" }}>
-```
+- The Photo Prints flow already solves cropping, zoom, rotation, fit/fill, border, and signed-URL preview. We **reuse `PhotoEditorModal` and the `react-easy-crop` based UX** — no new editor.
+- Posters stay in the normal print-job pipeline (one document, one section, one PDF). The cart, pricing, preview, and production output paths don't change.
+- PDFs/Office files are untouched, so the existing OrderBuild + auto-rotate logic continues to work.
 
-`100vh - 9rem` is a **guess** at the space taken by the header + footer + main padding. The real available height varies:
+## Technical changes
 
-- `CustomerHeader` (~64px) + `CustomerFooter` (~70px) + optional demo banner + `<main>` padding `p-6 xl:p-8` (24–32px top & bottom) = often more than 9rem (144px).
-- When the guess underestimates the chrome, the panel grows taller than the viewport and the user has to scroll — exactly what the screenshot shows (preview spills below the fold).
+### 1. `src/lib/imageToPage.ts`
+Add a helper `imageToPosterPdf(file, { widthMm, heightMm, croppedAreaPixels, rotation })` that:
+- Loads the source image.
+- Applies rotation + crop (using `croppedAreaPixels` from `react-easy-crop`, same shape as Photo Prints).
+- Renders to a canvas sized to the target poster mm at 300 DPI.
+- Wraps in a one-page PDF at exact poster size via existing `jspdf` path used by `imageFileToPdf`.
 
-The good news: `CustomerLayout` already uses `flex h-screen` with `<main className="flex-1 overflow-auto">`. So if `OrderBuild` simply fills its parent with `h-full`, it will be perfectly bounded with no math.
+### 2. `src/components/order/FileUploader.tsx` / `src/pages/dashboard/OrderFiles.tsx`
+- Before invoking `useDocumentUpload` for poster orders (`familySlug === "posters"`), intercept `isImageFile(file)` files.
+- For each such image: open `PhotoEditorModal` (a new local instance — not the Photo Prints page) with:
+  - `photo` synthesized from the dropped file (object URL, no upload yet).
+  - `borderSlug = "none"`.
+  - `aspect` derived from the currently-selected poster size (read from `activePrintSize` in OrderFiles, or default A2 if none).
+- On Save: call `imageToPosterPdf` → upload the resulting PDF through the standard `useDocumentUpload` path (so preflight, thumbnails, and section assignment keep working unchanged).
+- Persist crop state on the resulting `documents.preflight_data` as `{ kind: "poster_image", source_storage_path, crop, zoom, rotation, fit_mode, croppedAreaPixels, print_size_slug }` so we can re-edit later.
 
-## Changes
+### 3. Re-edit affordance
+- In `SectionActions` / `FileList` row for posters where `preflight_data.kind === "poster_image"`, add an **Edit image** button that re-opens `PhotoEditorModal` with the saved state and the original image's signed URL, then re-runs steps above to replace the document.
 
-### 1. `src/pages/dashboard/OrderBuild.tsx` (line 724)
+### 4. Size-change handling in `OrderBuild.tsx`
+- When the poster Document Size changes and a poster_image-backed document is present, re-rasterise the PDF using the saved crop against the new size (silent if the aspect matches; prompt "Re-crop image for new size?" toast with action if aspect changes).
 
-Replace the magic-number height with a parent-fill height, and tighten the layout:
+### 5. No DB schema changes
+- We piggy-back on the existing `documents.preflight_data` JSONB.
+- No changes to product families, options, pricing rules, or order engine.
 
-```tsx
-<div className="h-full flex flex-col space-y-2 min-h-0">
-```
+### Files to edit
+- `src/lib/imageToPage.ts` — add `imageToPosterPdf` helper.
+- `src/pages/dashboard/OrderFiles.tsx` — image-intercept on poster uploads, mount editor modal, re-edit button wiring.
+- `src/components/order/FileUploader.tsx` — pass through the file list without auto-converting images when family is posters (or do the intercept here; OrderFiles is the cleaner spot).
+- `src/components/order/FileList.tsx` (or `SectionActions.tsx`) — add "Edit image" affordance for poster_image documents.
+- `src/pages/dashboard/OrderBuild.tsx` — react to size changes for poster_image documents.
 
-- `h-full` → fill the `<main>` content area exactly (no guesswork).
-- `min-h-0` → allows the inner `flex-1` grid to shrink and trigger internal scroll instead of pushing the page.
-- Drop the inline `style` entirely.
+### Out of scope
+- Multi-image posters (we treat one image = one poster, same as today's poster flow).
+- Changing the Photo Prints builder route — Photo Prints stays its own product family and dedicated page.
+- Adding a white-border option for posters (can be a separate request).
 
-### 2. `src/components/CustomerLayout.tsx` (line 156)
-
-Tighten `<main>` padding only on the OrderBuild route so we reclaim ~32px vertical and ~32px horizontal for the preview. Two options — pick (a) for minimal blast radius:
-
-**(a)** Leave global padding alone, and inside `OrderBuild.tsx` add a negative margin / wrapper that resets padding:
-
-```tsx
-<div className="-m-6 xl:-m-8 h-[calc(100%+3rem)] xl:h-[calc(100%+4rem)] ...">
-```
-
-This keeps the change scoped to one page and avoids touching the layout used by every other customer route.
-
-### 3. (Optional polish) `src/pages/dashboard/OrderBuild.tsx` header row
-
-Header is already compact (`text-lg` + `text-xs`). No change needed unless we still need a few more pixels — in which case wrap it in `py-1` and we recoup another 8px.
-
-## Result
-
-- The configure page will now be exactly the height of `<main>`, no more, no less.
-- The Options card and Preview card will each scroll internally only if their own content overflows — the page never scrolls.
-- The expand-to-fullscreen button still works as before for users who want a maximised lightbox.
-
-## Files touched
-
-- `src/pages/dashboard/OrderBuild.tsx` — root container only (1 line + remove inline style)
-
-No changes needed in `CustomerLayout.tsx` if we use the negative-margin trick in step 2(a), keeping the diff to a single file.
+## Open question (non-blocking)
+- Should oversized images (e.g. 8000×6000 px) be downsampled before PDF wrapping to avoid huge uploads? Proposal: cap output PDF at 300 DPI for the chosen poster size, which naturally bounds size. Will apply unless you want a different DPI.
