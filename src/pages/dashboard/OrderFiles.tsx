@@ -950,6 +950,25 @@ export default function OrderFiles() {
         return;
       }
 
+      const slug = productFamily?.slug ?? null;
+
+      // ── Posters: route image uploads through the crop/size editor so the
+      // user can frame the image to the chosen poster size before we
+      // rasterise it into a print-ready PDF. PDFs / Office files keep going
+      // through the normal preflight path.
+      if (slug === "posters") {
+        const images = files.filter(isImageFile);
+        const passthrough = files.filter((f) => !isImageFile(f));
+        if (images.length > 0) {
+          pendingPosterQueueRef.current = images.slice(1);
+          pendingPosterPassthroughRef.current = passthrough;
+          setPendingPosterFile(images[0]);
+          setPosterEditorOpen(true);
+          return;
+        }
+        // No images — fall through to the normal PDF/Office path.
+      }
+
       const hasImages = files.some(isImageFile);
       if (hasImages) {
         // Stash files and show size picker
@@ -963,8 +982,51 @@ export default function OrderFiles() {
       setUploadModalOpen(true);
       await uploadFiles(files, undefined, itemId);
     },
-    [uploadFiles, ensureOrder]
+    [uploadFiles, ensureOrder, productFamily?.slug]
   );
+
+  const handlePosterEditorConfirm = useCallback(
+    async (result: PosterEditorResult) => {
+      const sourceFile = pendingPosterFile;
+      setPosterEditorOpen(false);
+      setPendingPosterFile(null);
+      if (!sourceFile) return;
+
+      try {
+        const pdf = await imageToPosterPdf(sourceFile, {
+          widthMm: result.size.widthMm,
+          heightMm: result.size.heightMm,
+          croppedAreaPixels: result.croppedAreaPixels,
+          rotation: result.rotation,
+        });
+        const itemId = ensuredItemIdRef.current ?? undefined;
+        const passthrough = pendingPosterPassthroughRef.current;
+        pendingPosterPassthroughRef.current = [];
+        const batch: File[] = [pdf, ...passthrough];
+        setUploadModalOpen(true);
+        await uploadFiles(batch, undefined, itemId);
+      } catch (err: any) {
+        toast.error("Couldn't process image", { description: err?.message });
+      }
+
+      // Continue queue — open editor for the next image, if any.
+      const queue = pendingPosterQueueRef.current;
+      if (queue.length > 0) {
+        const [next, ...rest] = queue;
+        pendingPosterQueueRef.current = rest;
+        setPendingPosterFile(next);
+        setPosterEditorOpen(true);
+      }
+    },
+    [pendingPosterFile, uploadFiles],
+  );
+
+  const handlePosterEditorCancel = useCallback(() => {
+    setPosterEditorOpen(false);
+    setPendingPosterFile(null);
+    pendingPosterQueueRef.current = [];
+    pendingPosterPassthroughRef.current = [];
+  }, []);
 
   const handleImageSizeConfirm = useCallback(
     async (selection: ImageSizeSelection) => {
