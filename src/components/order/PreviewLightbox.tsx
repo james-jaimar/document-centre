@@ -94,8 +94,8 @@ export default function PreviewLightbox({
         <DocumentPreview
           thumbnailPaths={thumbnailPaths}
           productType={productType}
-          width={Math.min(window.innerWidth * 0.85, 1200)}
-          height={window.innerHeight * 0.8}
+          width={window.innerWidth * 0.95}
+          height={window.innerHeight * 0.92}
           currentPage={page}
           onPageChange={setPage}
           {...extraProps}

@@ -721,19 +721,20 @@ export default function OrderBuild() {
   }
 
   return (
-    <div className="space-y-4 h-full flex flex-col">
+    <div className="space-y-2 flex flex-col" style={{ minHeight: "calc(100vh - 9rem)" }}>
       {/* Header */}
       <div className="flex items-center justify-between shrink-0">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">
+          <h1 className="text-lg font-bold text-foreground leading-tight">
             Configure Your Document
           </h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-muted-foreground text-xs">
             Step 2 of 2 — Select your options and review the preview
           </p>
         </div>
         <Button
           variant="ghost"
+          size="sm"
           onClick={handleBackToFiles}
         >
           <ArrowLeft className="h-4 w-4 mr-1" />
@@ -742,7 +743,7 @@ export default function OrderBuild() {
       </div>
 
       {/* Split panel */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[300px_1fr] xl:grid-cols-[340px_1fr] gap-4 xl:gap-6 min-h-0">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[380px_1fr] xl:grid-cols-[420px_1fr] 2xl:grid-cols-[460px_1fr] gap-3 xl:gap-4 min-h-0">
         {/* Left: Options */}
         <div className="flex flex-col overflow-auto border border-border rounded-lg bg-card">
           <div className="p-3 border-b border-border shrink-0 space-y-2">
@@ -795,7 +796,7 @@ export default function OrderBuild() {
         </div>
 
         {/* Right: Preview */}
-        <div className="border border-border rounded-lg bg-card p-4 overflow-auto flex flex-col gap-2">
+        <div className="border border-border rounded-lg bg-card p-2 overflow-auto flex flex-col gap-2">
           <PreviewPanel
             documents={documents}
             sections={sections}

@@ -1,83 +1,52 @@
-# Fix the binding-image 404s and add a binding artwork audit page
+## Goal
 
-## What's actually broken (proven, not guessed)
+Give the user as much screen real estate as possible for the flip-book preview on the Configure Your Document step (`/t/:slug/orders/:id/build`), without breaking other pages.
 
-Built the project and inspected the output. Vite **does** bundle every binding PNG correctly — they appear in `dist/assets/`, e.g.:
+## Changes
 
+### 1. Reclaim vertical space on the build page
+File: `src/pages/dashboard/OrderBuild.tsx`
+
+- Change the page's outer wrapper from `h-full flex flex-col` to a min-height layout that lets the footer fall *below* the viewport. The page itself will fill the viewport (`min-h-[calc(100vh-...)]`) so the preview gets the full window height; if the user wants the footer they just scroll down. No layout-level changes are needed — the footer stays where it is in `CustomerLayout`, it just sits below the fold because the build page now claims the full visible area.
+- Tighten the header section (smaller title + description) to recover ~30px.
+
+Net effect: matches what the user sees today at 67% browser zoom, but at 100%.
+
+### 2. Widen the options column
+File: `src/pages/dashboard/OrderBuild.tsx` (line 745 grid)
+
+Current:
 ```
-dist/assets/comb binding black front-C_AVYPtf.png   32.62 kB   ← exists
-```
-
-But the browser requests `comb%20binding%20black%20front-C_AVYPtf.png` and gets a **404** from the published host (`document-centre.lovable.app`). The hash suffix (`-C_AVYPtf`) confirms Vite is generating the URL — the file simply isn't being served under that name by the CDN.
-
-**Root cause: every binding PNG has spaces (and some parentheses) in its filename.** The Lovable static host doesn't reliably serve assets whose names contain spaces, even though Vite's dev server does. That is exactly why "it used to work" (dev) but breaks in the published build. This has nothing to do with the lookup table, the alias, or the registry — those are all correct.
-
-The 41 files in `src/assets/bindings/` include names like:
-- `comb binding black front.png`
-- `coil clear (front) 210mm.png`
-- `wire black - open 210mm.png`
-- `coil white open 210mnm.png` (also has a typo)
-
-All of these need safe filenames.
-
-## The plan
-
-### 1. Rename every binding PNG to a safe slug
-
-Rename all 41 files in `src/assets/bindings/` so they contain only `[a-z0-9-]` and `.png`. Examples:
-
-| Old | New |
-|---|---|
-| `comb binding black front.png` | `comb-binding-black-front.png` |
-| `comb binding black front 210mm.png` | `comb-binding-black-front-210mm.png` |
-| `coil clear (front) 210mm.png` | `coil-clear-front-210mm.png` |
-| `wire black - open 210mm.png` | `wire-black-open-210mm.png` |
-| `coil white open 210mnm.png` | `coil-white-open-210mm.png` (fix typo too) |
-
-Done with a single `git mv` script (case-sensitive, deterministic). Nothing else in the codebase references these filenames except `src/components/preview/bindingAssets.ts`.
-
-### 2. Update the imports in `bindingAssets.ts`
-
-One file, mechanical search-and-replace of the 24 import paths. The lookup table itself doesn't change — same constants, same shape. Tests in `bindingAssets.test.ts` continue to pass unchanged because they only assert that `getBindingImage(...)` returns truthy, not the specific filename.
-
-### 3. Verify with a production build
-
-Run `bunx vite build` and confirm every emitted PNG name is space-free, e.g. `dist/assets/comb-binding-black-front-<hash>.png`. That's the fix proven, not just hoped for.
-
-### 4. Add the admin audit page (the originally-requested feature)
-
-New route at `/admin/binding-artwork-audit` (linked from `AdminProducts` or `AdminSettings`). It:
-
-1. Loads every option in `BINDING_STANDARD` (the seeded binding catalog).
-2. For each option, derives `(method, color)` exactly like `selectedBindingArt` does.
-3. Calls `getBindingImage(...)` for all four required tuples: `{portrait, landscape} × {closed, open}`.
-4. Renders a table:
-
-```text
-Option label              method     color    Portrait-Closed  Portrait-Open  Landscape-Closed  Landscape-Open
-Comb Binding (Black)      comb       black    ✓ <thumb>        ✓ <thumb>      ✓ <thumb>         ✓ <thumb>
-Spiral Binding (White)    spiral     white    ✓                ✓              ✓                 ✓
-Wire Binding (Silver)     twin_loop  silver   ✓                ✓              ✓                 ✓
-Comb Binding (White)      comb       white    ✗ MISSING        ✗ MISSING      ✗ MISSING         ✗ MISSING
-Saddle Stitch             saddle     —        n/a              n/a            n/a               n/a
+lg:grid-cols-[300px_1fr] xl:grid-cols-[340px_1fr]
 ```
 
-A red "Missing" badge with the exact tuple text (e.g. `comb / white / portrait / closed`) so anyone can read off precisely which PNG needs to be added to the registry. A summary line at the top says e.g. "3 of 11 binding options have complete artwork."
+New:
+```
+lg:grid-cols-[380px_1fr] xl:grid-cols-[420px_1fr] 2xl:grid-cols-[460px_1fr]
+```
 
-This is the single source of truth for "is the artwork pipeline healthy?" — no guessing, no console-spelunking.
+A wider left column means the option labels and selected-value chips have room to breathe, and (more importantly) the right-hand preview area also grows proportionally on wide screens because the grid keeps it at `1fr`.
 
-## Files changed
+### 3. Make the inline preview fill its panel
+File: `src/components/order/PreviewPanel.tsx`
 
-- **Renamed** (41): everything in `src/assets/bindings/*.png` → safe-slug names.
-- **Edited**: `src/components/preview/bindingAssets.ts` — update the 24 import paths.
-- **Created**: `src/pages/admin/AdminBindingArtworkAudit.tsx` — the audit page.
-- **Edited**: `src/App.tsx` — register the new route.
-- **Edited**: `src/pages/admin/AdminProducts.tsx` (or sidebar) — add a link to the audit page.
+- Reduce the surrounding panel padding from `p-4` to `p-2` (in `OrderBuild.tsx` line 798) so the FlipBook itself uses more of the available pixels.
+- The preview already measures its container via `ResizeObserver`, so widening the column + trimming padding automatically scales the flip-book up.
 
-## What I am explicitly NOT doing
+### 4. True full-screen lightbox
+File: `src/components/order/PreviewLightbox.tsx`
 
-- Not touching the lookup table shape, the `selectedBindingArt` helper, `BindingSpine.tsx`, or `buildPreviewSnapshot.ts`. They are correct.
-- Not adding fallback ladders or "smart" resolution. The map stays blunt and direct, exactly as you asked.
-- Not changing Vite config or the `@/assets` alias.
+- Bump the preview size from `window.innerWidth * 0.85` / `innerHeight * 0.8` to `0.95` / `0.92`.
+- Remove the hard `1200px` cap so the flip-book uses the actual viewport on large monitors.
+- Move the close/prev/next buttons slightly inward so they don't overlap the larger canvas.
 
-After this, the published build will load every PNG (no more 404s), and the audit page will tell you instantly if any option is ever missing artwork again.
+## Out of scope
+
+- No changes to the footer component itself (still rendered, just below the fold).
+- No changes to FlipBook/preview internals — they already auto-size to their container.
+- No changes to the sidebar (already auto-collapses on this page).
+
+## Files touched
+
+- `src/pages/dashboard/OrderBuild.tsx` — outer wrapper height, header tightening, grid template, preview panel padding
+- `src/components/order/PreviewLightbox.tsx` — lightbox dimensions
