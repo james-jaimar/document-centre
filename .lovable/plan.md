@@ -1,52 +1,63 @@
-## Goal
+## Problem
 
-Give the user as much screen real estate as possible for the flip-book preview on the Configure Your Document step (`/t/:slug/orders/:id/build`), without breaking other pages.
+For a Bound Document upload that is mostly portrait but contains a landscape page (e.g. a Word doc with a landscape table mid-document), the landscape page is currently shown as a portrait sheet with the landscape content shrunk/oriented sideways inside it.
 
-## Changes
+The user is right that this used to work: landscape pages inside a portrait-required product were auto-rotated 90° clockwise so they sat upright on a portrait sheet (the canonical "landscape page in a portrait book" layout you see in printed reports).
 
-### 1. Reclaim vertical space on the build page
-File: `src/pages/dashboard/OrderBuild.tsx`
+## Root cause
 
-- Change the page's outer wrapper from `h-full flex flex-col` to a min-height layout that lets the footer fall *below* the viewport. The page itself will fill the viewport (`min-h-[calc(100vh-...)]`) so the preview gets the full window height; if the user wants the footer they just scroll down. No layout-level changes are needed — the footer stays where it is in `CustomerLayout`, it just sits below the fold because the build page now claims the full visible area.
-- Tighten the header section (smaller title + description) to recover ~30px.
+The orientation pipeline currently has two layers:
 
-Net effect: matches what the user sees today at 67% browser zoom, but at 100%.
+1. **Whole-document advisory** (`useDocumentUpload.ts` → `detectOrientationMismatch`) — fires only when *the document* (page 1 dims) violates the product's required orientation. A bound document whose page 1 is portrait passes this check, so no advisory is shown and no rotation is performed.
 
-### 2. Widen the options column
-File: `src/pages/dashboard/OrderBuild.tsx` (line 745 grid)
+2. **Per-page rotation** (`pdf_ops.normalize_orientation`) — exists in the PDF server and CAN rotate non-conforming pages to a dominant orientation. But it is only invoked from the user-facing OrientationAdvisory dialog (which never fires for our case).
 
-Current:
-```
-lg:grid-cols-[300px_1fr] xl:grid-cols-[340px_1fr]
-```
+The result: per-page normalisation is never run for mixed-orientation docs that don't trip the whole-doc advisory. Ghostscript honours `/Rotate` and renders the page landscape, but downstream the FlipBook is fixed to page-1's portrait aspect, so the landscape thumbnail is shown squashed/sideways.
 
-New:
-```
-lg:grid-cols-[380px_1fr] xl:grid-cols-[420px_1fr] 2xl:grid-cols-[460px_1fr]
-```
+This regressed when the upload pipeline was simplified to "preserve the customer's authored orientation; explicit rotation only happens when the user accepts the OrientationAdvisory" (see comment block in `useDocumentUpload.ts:30-42` and `:365-368`). That rule is correct for *whole-document* orientation but is being applied to *per-page* orientation too, which is wrong for portrait-required products with mixed pages.
 
-A wider left column means the option labels and selected-value chips have room to breathe, and (more importantly) the right-hand preview area also grows proportionally on wide screens because the grid keeps it at `1fr`.
+## Fix
 
-### 3. Make the inline preview fill its panel
-File: `src/components/order/PreviewPanel.tsx`
+Re-introduce automatic per-page normalisation (only) for products that have a required orientation, run automatically as part of the upload pipeline (no user prompt — same behaviour as before).
 
-- Reduce the surrounding panel padding from `p-4` to `p-2` (in `OrderBuild.tsx` line 798) so the FlipBook itself uses more of the available pixels.
-- The preview already measures its container via `ResizeObserver`, so widening the column + trimming padding automatically scales the flip-book up.
+### Changes
 
-### 4. True full-screen lightbox
-File: `src/components/order/PreviewLightbox.tsx`
+**Backend — `pdf-server/app/services/pdf_ops.py`**
 
-- Bump the preview size from `window.innerWidth * 0.85` / `innerHeight * 0.8` to `0.95` / `0.92`.
-- Remove the hard `1200px` cap so the flip-book uses the actual viewport on large monitors.
-- Move the close/prev/next buttons slightly inward so they don't overlap the larger canvas.
+No code changes needed. `normalize_orientation(src, out, dominant=...)` already does exactly what we need:
+- Bakes any `/Rotate` hint into content (so LibreOffice landscape pages are correctly identified)
+- Composites pages whose visual orientation differs from `dominant` onto a +90°-rotated swapped-dimensions canvas
+- Carries TrimBox/BleedBox/CropBox/ArtBox through the rotation
+- Returns `{ pages_rotated, total_pages, skipped }`
 
-## Out of scope
+**Backend — `pdf-server/app/web/routes.py` / `pdf-server/app/tasks/operation_tasks.py`**
 
-- No changes to the footer component itself (still rendered, just below the fold).
-- No changes to FlipBook/preview internals — they already auto-size to their container.
-- No changes to the sidebar (already auto-collapses on this page).
+Verify the existing `normalize-orientation` operation accepts a `target` (portrait | landscape) parameter — this endpoint is already used by `documentCentreApi.normalizeOrientation`. No change expected, but will confirm.
 
-## Files touched
+**Frontend — `src/hooks/useDocumentUpload.ts`**
 
-- `src/pages/dashboard/OrderBuild.tsx` — outer wrapper height, header tightening, grid template, preview panel padding
-- `src/components/order/PreviewLightbox.tsx` — lightbox dimensions
+In `inspectExistingAsset` (after `inspectAsset` completes, before rendering thumbnails), add a new step:
+
+1. If the product family has a `requiredOrientation` (portrait or landscape), AND the asset has more than one page, run `normalizeOrientation(assetId, requiredOrientation)` automatically. This is silent — no UI prompt.
+2. Wait for the job to complete with `pollJob`.
+3. Re-fetch the asset (`getAsset`) so subsequent dimension/box reads reflect the rotated PDF.
+4. Persist a `preflight.orientation_normalized = true` flag so we never re-run it on the same asset.
+
+This sits *between* the existing inspect step and the per-document advisory check. The whole-doc OrientationAdvisory still works exactly as today (rare case where page 1 itself violates the policy), but per-page mismatches are now silently corrected first — exactly the prior working behaviour.
+
+**Frontend — comment cleanup**
+
+Update the policy comment block at the top of `useDocumentUpload.ts` (lines 30-42) and the `finalizeOrientationAndPrintReady` doc comment (lines 365-368) so future readers understand:
+- *Whole-document* orientation is still owned by the customer and gated by the advisory.
+- *Per-page* mismatches inside a product with a required orientation are silently normalised at upload time.
+
+### Files touched
+
+- `src/hooks/useDocumentUpload.ts` — new auto-normalisation step + comment update.
+- (Verification only) `pdf-server/app/web/routes.py`, `pdf-server/app/tasks/operation_tasks.py` — confirm the `normalize-orientation` endpoint passes `target` through to `pdf_ops.normalize_orientation`.
+
+### Out of scope
+
+- No changes to the FlipBook / PreviewPanel — once the underlying PDF has uniform orientation, the existing preview renders landscape inserts correctly.
+- No changes to the OrientationAdvisory dialog — whole-document mismatch UX is unchanged.
+- Image uploads (single image → one PDF page) are unaffected; they only have one page so per-page normalisation is a no-op.
