@@ -1,54 +1,51 @@
-## Page-count Guards for Single-Sheet Products
+## What happened
 
-Add post-upload validation for products where the page count is physically constrained by the format. Catches users uploading 20-page PDFs as flyers, single-page files as brochures, etc.
+The cleanup script ran but skipped every directory because the paths it targeted don't exist on your VPS. The PDF server actually stores its working files at different locations.
 
-### Rules per product family
+## Real paths on your VPS
 
-| Family | Allowed pages per file | If too many | If too few |
-|---|---|---|---|
-| `flyers` | 1 (single-sided) or 2 (double-sided) | Prompt: trim to first 2 pages, or replace file | n/a |
-| `brochures` / folded leaflets | Exactly 2 (Outside + Inside) for the simple flow, OR exact panel count for panel-per-page (4 for bi-fold, 6 for tri/z, 8 for gate) | Prompt: trim to required, or replace | Block assignment with toast: "Brochure needs at least 2 pages" |
-| `business-cards` | 1 or 2 | Prompt: trim to first 2, or replace | n/a |
-| Others (bound, posters, presentations, photo) | unchanged | — | — |
+From `pdf-server/deploy/ubuntu/ENV_CHECKLIST.md` and `pdf-server/.env.example`:
 
-Brochures already have panel-validation in the auto-assign step (see `mem://features/order-flow/brochure-validation-logic`); this plan adds the **upload-time** guard so the user is warned before they start configuring.
+- **`LOCAL_STORAGE_PATH=/opt/document-centre-api/storage`** — main working directory (uploads, normalized PDFs, previews, thumbnails, work files). All sub-folders (uploads/, normalized/, previews/, thumbnails/, work/) live under this root.
+- **`SOFFICE_PROFILE_ROOT=/tmp/lo-profiles`** — LibreOffice scratch profiles created during DOCX/PPTX conversion.
+- **`/tmp`** generally — Celery/FastAPI workers also drop temp files into the system tmp dir (this is what the existing `ops.cleanup_tmp` Celery task already sweeps every 24h).
 
-### How the warning flows
+So the script was looking in `/var/lib/document-centre/*` and `/tmp/document-centre`, but everything is actually under `/opt/document-centre-api/storage/*` and `/tmp/lo-profiles`.
 
-A new modal `PageCountWarningDialog` (built on `Dialog`) appears immediately after upload completes (after preflight, before the user starts assigning sections) when any uploaded document exceeds the family's max page count. It lists the offending file(s) and offers:
+## Fix
 
-- **Trim to first N pages** — calls the existing `pdf-api` `crop`/page-extract operation to produce a trimmed PDF, replaces the document's `file_path` (asset id stays stable, thumbnails re-render via standard reprocess flow).
-- **Replace file** — deletes the document row and re-opens the file picker.
-- **Cancel** — leaves the document as-is (user can manually fix or delete it). For brochures with too-few pages, the cancel option is removed and they must replace.
+Update `/mnt/documents/pdf-server-cleanup.sh` to target the real paths:
 
-For brochures/leaflets specifically: if the uploaded file has `page_count < 2`, surface a hard block toast/modal (no "trim" option — there's nothing to trim) directing the user to upload a 2-page or panel-per-page PDF.
+```bash
+TARGETS=(
+  "/opt/document-centre-api/storage/uploads"
+  "/opt/document-centre-api/storage/normalized"
+  "/opt/document-centre-api/storage/previews"
+  "/opt/document-centre-api/storage/thumbnails"
+  "/opt/document-centre-api/storage/work"
+  "/tmp/lo-profiles"
+)
+```
 
-### Technical changes
+Plus a safety guard: if `LOCAL_STORAGE_PATH` is set as an env var (e.g. you sourced the API `.env`), the script should prefer that over the hard-coded `/opt/document-centre-api/storage` so it stays correct if you ever move the install.
 
-**New files**
-- `src/components/order/PageCountWarningDialog.tsx` — modal with the trim/replace/cancel actions, takes `{ files: Array<{docId, fileName, pageCount, allowedMax}>, onTrim, onReplace, onCancel }`.
-- `src/lib/pageCountRules.ts` — pure helpers: `getAllowedPageCount(familySlug)` returning `{ max: number | null, min: number, exact?: number[] }`, plus `validateDocumentPages(doc, familySlug)` returning a violation reason or `null`.
+I'll also add a "discovery mode" — when run with `--discover`, it will:
+1. List which targets exist + their current size (`du -sh`)
+2. Show how many files are older than 7 days in each
+3. Exit without deleting
 
-**Edited files**
-- `src/pages/dashboard/OrderFiles.tsx`
-  - After `uploadFiles` resolves (around line 990 / 1134 / 1255), iterate the resulting documents and run `validateDocumentPages`. If any violations exist, open `PageCountWarningDialog`.
-  - Wire the **Trim** action to a new `trimDocumentPages(docId, keepPages)` helper that calls `pdf-api`'s page-extract op (already used elsewhere via `documentCentreApi.ts`) and overwrites the same `file_path`, then triggers `reprocessDocument` to refresh thumbnails.
-  - Wire **Replace** to `deleteDocument(docId)` + `inputRef.current?.click()` on the existing uploader.
-- `src/lib/documentCentreApi.ts` — add a thin `extractPages(assetId, ranges)` wrapper if not already present; falls back to the existing `cropRasterize` flow if needed.
-- `src/components/order/SectionActions.tsx` — when the user clicks "Auto-assign Outside + Inside" for brochures and the doc only has 1 page, show inline error instead of a silent no-op.
+That way you can verify the right paths first, then run again without `--discover` to actually delete.
 
-### Out of scope (this iteration)
-- Word/PowerPoint files: validated **after** PDF conversion (the converted PDF's page count is what matters).
-- Posters: already routed through the editor — no page-count rule.
-- Bound documents, presentations, photo prints: keep current behavior.
-- Multi-file uploads where the user intends to combine sections: the warning only fires for files that **on their own** exceed the cap; for flyers/business-cards/brochures the upload pattern is one file per job.
+## Steps after I update the script
 
-### UX copy (draft)
+1. I revise `pdf-server-cleanup.sh` (versioned as `pdf-server-cleanup_v2.sh` so you keep the old one).
+2. You download `pdf-server-cleanup_v2.sh` and `scp` it onto the VPS, replacing the old one.
+3. Run `pdf-server-cleanup_v2.sh --discover` first → confirms paths and shows current sizes.
+4. Run `pdf-server-cleanup_v2.sh` (no flag) → deletes files older than 7 days.
+5. Re-check sizes with `du -sh /opt/document-centre-api/storage/*`.
 
-Title: **"Too many pages for a {Family}"**
+If discovery still shows everything missing/empty, it means the install lives at a different prefix and you'll just need to tell me the output of `ls /opt/document-centre-api/` and `find /opt -maxdepth 3 -name storage -type d 2>/dev/null` so I can pin the real root.
 
-Body: "{filename.pdf} has {N} pages, but a {flyer | business card} can only have {1 single-sided / 2 double-sided}. What would you like to do?"
+## Note on the existing Celery task
 
-Buttons: `Use first 2 pages` · `Replace file` · `Keep anyway`
-
-For brochure with <2 pages — Title: **"Brochure needs at least 2 pages"** · Body explains Outside + Inside requirement. Buttons: `Replace file` · `Cancel`.
+`ops.cleanup_tmp` in `pdf-server/app/tasks/ops_tasks.py` already sweeps the system tmp dir every 24h with a 24h cutoff. The shell script is the heavier sweep covering the persistent `LOCAL_STORAGE_PATH` tree (which Celery doesn't touch) on a 7-day window. The two are complementary — no overlap, no conflict.
