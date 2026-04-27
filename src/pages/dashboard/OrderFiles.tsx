@@ -327,6 +327,32 @@ export default function OrderFiles() {
     }
   }, [documents, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc]);
 
+  // Page-count rule check (flyers / brochures / business cards).
+  // Fires after preflight has set page_count and other advisories are clear.
+  useEffect(() => {
+    if (uploadModalOpen || advisoryDoc || bleedDoc || orientationDoc) return;
+    if (pageCountWarning) return;
+    const familySlug = productFamily?.slug;
+    const rule = getPageCountRule(familySlug);
+    if (!rule) return;
+
+    const items: import("@/components/order/PageCountWarningDialog").PageCountWarningItem[] = [];
+    for (const d of documents) {
+      if (dismissedPageCountDocIds.current.has(d.id)) continue;
+      if (d.document_status !== "ready") continue; // wait for preflight to finish
+      const violation = validateDocumentPages(
+        { id: d.id, file_name: d.file_name, page_count: d.page_count },
+        familySlug,
+      );
+      if (violation) {
+        items.push({ docId: d.id, fileName: d.file_name, violation });
+      }
+    }
+    if (items.length > 0) {
+      setPageCountWarning({ items });
+    }
+  }, [documents, productFamily?.slug, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, pageCountWarning]);
+
   // Check for orientation mismatches via the shared policy module — single
   // source of truth for which products require which orientation.
   useEffect(() => {
