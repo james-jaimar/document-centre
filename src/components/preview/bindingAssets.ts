@@ -85,12 +85,8 @@ export type BindingArtColor =
  *   - "long"  → portrait spine (the long edge of an A4/A5/A3 portrait page)
  *   - "short" → 210mm short-edge art (used as a vertical spine on the
  *               LEFT of a landscape page — i.e. binding on the short edge)
- *   - "top"   → dedicated horizontal landscape art (used as a horizontal
- *               spine ACROSS THE TOP of a landscape page — i.e. binding
- *               on the long edge). Falls back to "long" until landscape
- *               artwork is added to /src/assets/bindings/.
  */
-export type BindingArtEdge = "long" | "short" | "top";
+export type BindingArtEdge = "long" | "short";
 export type BindingArtState = "open" | "closed";
 
 export interface BindingArtRequest {
@@ -230,15 +226,9 @@ export function resolveBindingArt(req: BindingArtRequest): BindingArtResolved {
   const exact = lookup(method, color, edge, state);
   if (exact) return { src: exact, fellBack: false, resolved: req };
 
-  // Per-edge fallback chain. For "top" (horizontal landscape spine) we
-  // prefer "long" (portrait spine) next — visually closest until purpose-
-  // made landscape art is uploaded. For "short" we prefer "long" too.
+  // Per-edge fallback chain.
   const edgeChain: BindingArtEdge[] =
-    edge === "top"
-      ? ["long", "short"]
-      : edge === "short"
-        ? ["long"]
-        : ["short"];
+    edge === "short" ? ["long"] : ["short"];
 
   // 2. Same colour, walk the edge fallback chain
   for (const fallbackEdge of edgeChain) {
