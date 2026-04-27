@@ -22,8 +22,11 @@ import BleedAdvisory from "@/components/order/BleedAdvisory";
 import OrientationAdvisory from "@/components/order/OrientationAdvisory";
 import ImageSizeDialog, { type ImageSizeSelection } from "@/components/order/ImageSizeDialog";
 import PosterImageEditor, { type PosterEditorResult } from "@/components/order/PosterImageEditor";
+import PageCountWarningDialog from "@/components/order/PageCountWarningDialog";
 import { isImageFile } from "@/lib/imageToPage";
 import { imageToPosterPdf } from "@/lib/imageToPage";
+import { getPageCountRule, validateDocumentPages } from "@/lib/pageCountRules";
+import { trimDocumentToFirstPages } from "@/lib/trimPdfPages";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
@@ -287,6 +290,14 @@ export default function OrderFiles() {
   } | null>(null);
   const [isApplyingBleed, setIsApplyingBleed] = useState(false);
 
+  // Page-count rule advisory (flyers / brochures / business cards)
+  const [pageCountWarning, setPageCountWarning] = useState<{
+    items: import("@/components/order/PageCountWarningDialog").PageCountWarningItem[];
+  } | null>(null);
+  const [pageCountBusy, setPageCountBusy] = useState(false);
+  // Doc IDs the user has explicitly chosen to "keep anyway" — don't re-warn.
+  const dismissedPageCountDocIds = useRef<Set<string>>(new Set());
+
   // Check for near-ISO bleed documents after upload completes
   useEffect(() => {
     if (uploadModalOpen || advisoryDoc || bleedDoc || orientationDoc) return;
@@ -315,6 +326,32 @@ export default function OrderFiles() {
       }
     }
   }, [documents, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc]);
+
+  // Page-count rule check (flyers / brochures / business cards).
+  // Fires after preflight has set page_count and other advisories are clear.
+  useEffect(() => {
+    if (uploadModalOpen || advisoryDoc || bleedDoc || orientationDoc) return;
+    if (pageCountWarning) return;
+    const familySlug = productFamily?.slug;
+    const rule = getPageCountRule(familySlug);
+    if (!rule) return;
+
+    const items: import("@/components/order/PageCountWarningDialog").PageCountWarningItem[] = [];
+    for (const d of documents) {
+      if (dismissedPageCountDocIds.current.has(d.id)) continue;
+      if (d.document_status !== "ready") continue; // wait for preflight to finish
+      const violation = validateDocumentPages(
+        { id: d.id, file_name: d.file_name, page_count: d.page_count },
+        familySlug,
+      );
+      if (violation) {
+        items.push({ docId: d.id, fileName: d.file_name, violation });
+      }
+    }
+    if (items.length > 0) {
+      setPageCountWarning({ items });
+    }
+  }, [documents, productFamily?.slug, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, pageCountWarning]);
 
   // Check for orientation mismatches via the shared policy module — single
   // source of truth for which products require which orientation.
@@ -1527,6 +1564,69 @@ export default function OrderFiles() {
     [documents, selectedDocId, refetchDocuments, refetchSections]
   );
 
+  // ── Page-count rule handlers ──────────────────────────────────────
+  const handlePageCountTrim = useCallback(
+    async (
+      items: import("@/components/order/PageCountWarningDialog").PageCountWarningItem[],
+    ) => {
+      const rule = getPageCountRule(productFamily?.slug);
+      if (!rule || rule.max == null) return;
+      setPageCountBusy(true);
+      try {
+        for (const item of items) {
+          const doc = documents.find((d) => d.id === item.docId);
+          if (!doc) continue;
+          await trimDocumentToFirstPages(doc.id, doc.file_path, doc.file_name, rule.max);
+          await reprocessDocument({
+            id: doc.id,
+            file_path: doc.file_path,
+            file_name: doc.file_name,
+          });
+          dismissedPageCountDocIds.current.add(doc.id); // don't re-fire
+        }
+        refetchDocuments();
+        toast.success(
+          items.length === 1
+            ? `Trimmed to first ${rule.max} ${rule.max === 1 ? "page" : "pages"}`
+            : `Trimmed ${items.length} files`,
+        );
+        setPageCountWarning(null);
+      } catch (err: any) {
+        toast.error("Couldn't trim file", { description: err?.message });
+      } finally {
+        setPageCountBusy(false);
+      }
+    },
+    [productFamily?.slug, documents, reprocessDocument, refetchDocuments],
+  );
+
+  const handlePageCountReplace = useCallback(
+    async (
+      items: import("@/components/order/PageCountWarningDialog").PageCountWarningItem[],
+    ) => {
+      setPageCountBusy(true);
+      try {
+        for (const item of items) {
+          await handleDeleteDocument(item.docId);
+        }
+        setPageCountWarning(null);
+        toast.info("File removed — please upload a replacement.");
+      } finally {
+        setPageCountBusy(false);
+      }
+    },
+    [handleDeleteDocument],
+  );
+
+  const handlePageCountKeep = useCallback(() => {
+    if (pageCountWarning) {
+      for (const item of pageCountWarning.items) {
+        dismissedPageCountDocIds.current.add(item.docId);
+      }
+    }
+    setPageCountWarning(null);
+  }, [pageCountWarning]);
+
   const handleRerenderGaps = useCallback(
     async (doc: { id: string; backend_asset_id: string | null; preflight_data: unknown }) => {
       if (!doc.backend_asset_id) {
@@ -1848,6 +1948,17 @@ export default function OrderFiles() {
           onConfirm={handleBleedConfirm}
         />
       )}
+
+      {/* Page-count rule advisory (flyers / brochures / business cards) */}
+      <PageCountWarningDialog
+        open={!!pageCountWarning}
+        rule={getPageCountRule(productFamily?.slug)}
+        items={pageCountWarning?.items ?? []}
+        busy={pageCountBusy}
+        onTrim={handlePageCountTrim}
+        onReplace={handlePageCountReplace}
+        onKeep={handlePageCountKeep}
+      />
     </div>
   );
 }
