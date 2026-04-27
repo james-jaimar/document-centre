@@ -287,6 +287,10 @@ export async function recoverThumbnailGaps(
 
   const asset = await getAsset(assetId);
   const expectedPages = asset.page_count ?? 1;
+  const targetAspect =
+    asset.width_pt && asset.height_pt
+      ? Number(asset.width_pt) / Number(asset.height_pt)
+      : null;
 
   // Poll for derived files to flush after the salvage pass.
   const deadline = Date.now() + 20_000;
@@ -297,6 +301,7 @@ export async function recoverThumbnailGaps(
     asset.thumbnail_storage_path,
     asset.preview_storage_path,
     expectedPages,
+    targetAspect,
   );
   let remainingGaps: number[] = [];
   while (true) {
@@ -313,6 +318,7 @@ export async function recoverThumbnailGaps(
       asset.thumbnail_storage_path,
       asset.preview_storage_path,
       expectedPages,
+      targetAspect,
     );
   }
 
