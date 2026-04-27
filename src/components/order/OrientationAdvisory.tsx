@@ -18,6 +18,12 @@ interface OrientationAdvisoryProps {
   onRotate: () => void;
   onSwitchProduct: () => void;
   isRotating?: boolean;
+  /**
+   * Direction of the rotation prompt.
+   * - "to-landscape" (default): file is portrait, product needs landscape (Presentations).
+   * - "to-portrait": file is landscape, product needs portrait (Bound Documents).
+   */
+  mode?: "to-landscape" | "to-portrait";
 }
 
 export default function OrientationAdvisory({
@@ -29,19 +35,37 @@ export default function OrientationAdvisory({
   onRotate,
   onSwitchProduct,
   isRotating = false,
+  mode = "to-landscape",
 }: OrientationAdvisoryProps) {
+  const toPortrait = mode === "to-portrait";
+
+  const title = toPortrait ? "Landscape Document Detected" : "Portrait Document Detected";
+  const detectedOrientation = toPortrait ? "landscape" : "portrait";
+  const requirementSentence = toPortrait
+    ? "Bound Documents require portrait orientation for proper binding on the long edge."
+    : "Presentations require landscape orientation for proper binding and display.";
+
+  const rotateLabel = toPortrait ? "Rotate 90° to Portrait" : "Rotate 90° to Landscape";
+  const rotateHint = toPortrait
+    ? "Automatically rotate the document for portrait binding"
+    : "Automatically rotate the document for presentation binding";
+
+  const switchLabel = toPortrait ? "Use Presentations Instead" : "Use Bound Documents Instead";
+  const switchHint = toPortrait
+    ? "Landscape documents are ideal for Presentations (landscape binding)"
+    : "Portrait documents are ideal for Bound Documents (portrait binding)";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
             <AlertTriangle className="h-5 w-5 shrink-0" />
-            <DialogTitle className="text-base">Portrait Document Detected</DialogTitle>
+            <DialogTitle className="text-base">{title}</DialogTitle>
           </div>
           <DialogDescription className="pt-2 text-sm leading-relaxed">
-            <span className="font-medium text-foreground">{fileName}</span> is portrait
-            ({Math.round(widthMm)} × {Math.round(heightMm)}mm). Presentations require
-            landscape orientation for proper binding and display.
+            <span className="font-medium text-foreground">{fileName}</span> is {detectedOrientation}
+            {" "}({Math.round(widthMm)} × {Math.round(heightMm)}mm). {requirementSentence}
           </DialogDescription>
         </DialogHeader>
 
@@ -58,10 +82,10 @@ export default function OrientationAdvisory({
             <RotateCw className={`h-5 w-5 text-primary shrink-0 ${isRotating ? "animate-spin" : ""}`} />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-foreground">
-                {isRotating ? "Rotating…" : "Rotate 90° to Landscape"}
+                {isRotating ? "Rotating…" : rotateLabel}
               </p>
               <p className="text-xs text-muted-foreground">
-                Automatically rotate the document for presentation binding
+                {rotateHint}
               </p>
             </div>
           </button>
@@ -74,10 +98,10 @@ export default function OrientationAdvisory({
             <ArrowRight className="h-5 w-5 text-muted-foreground shrink-0" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-foreground">
-                Use Bound Documents Instead
+                {switchLabel}
               </p>
               <p className="text-xs text-muted-foreground">
-                Portrait documents are ideal for Bound Documents (portrait binding)
+                {switchHint}
               </p>
             </div>
           </button>
