@@ -243,13 +243,16 @@ export default function OrderFiles() {
   const isoCheckedDocIds = useRef<Set<string>>(new Set());
 
 
-  // Orientation advisory state for presentations
+  // Orientation advisory state.
+  // - "to-landscape": presentations product, file is portrait → offer to rotate to landscape.
+  // - "to-portrait":  bound documents product, file is landscape → offer to rotate to portrait.
   const [orientationDoc, setOrientationDoc] = useState<{
     id: string;
     fileName: string;
     widthMm: number;
     heightMm: number;
     backendAssetId: string | null;
+    mode: "to-landscape" | "to-portrait";
   } | null>(null);
   const [isRotating, setIsRotating] = useState(false);
 
