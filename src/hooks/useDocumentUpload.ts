@@ -465,6 +465,47 @@ export function useDocumentUpload(
           asset = await getAsset(assetId);
         }
 
+        // ── Per-page orientation normalisation ────────────────────────
+        // For products with a required orientation (Bound Documents,
+        // Ring Binders, Booklets, Presentations) we silently rotate any
+        // page whose visual orientation doesn't match the product. This
+        // is a print-correctness step, not a UX choice — a landscape
+        // table page in a portrait bound document MUST be rotated 90°
+        // CW so it sits upright on the printed sheet.
+        //
+        // The whole-document OrientationAdvisory below still fires when
+        // the *entire* document violates the policy (e.g. a fully
+        // landscape file uploaded against Bound Documents) — that is a
+        // genuine "wrong product / wrong file" situation that warrants
+        // a user prompt.
+        const requiredOrient = requiredOrientationFor(productFamilySlug);
+        const pageCountForNormalise = Number(asset.page_count ?? 0);
+        if (requiredOrient && pageCountForNormalise > 1) {
+          try {
+            updateUpload(fileName, {
+              progress: 50,
+              statusText: "Aligning page orientation…",
+            });
+            const { job_id: normJobId } = await normalizeOrientation(
+              assetId,
+              requiredOrient,
+            );
+            await pollJob(normJobId);
+            // Re-fetch so the box/dimension reads below reflect the
+            // rotated PDF (normalize_orientation promotes a new
+            // normalized_storage_path with rebuilt boxes).
+            asset = await getAsset(assetId);
+          } catch (normErr: any) {
+            // Non-fatal — fall back to the un-normalised PDF. The user
+            // can still resolve any whole-doc orientation issue via the
+            // advisory dialog.
+            console.warn(
+              "[upload] per-page normalize-orientation failed:",
+              normErr,
+            );
+          }
+        }
+
         const boxes = asset.boxes as Record<string, number[]> | null;
         const trimBox = boxes?.TrimBox;
         const cropBox = boxes?.CropBox;
