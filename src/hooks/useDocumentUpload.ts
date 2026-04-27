@@ -12,7 +12,7 @@ import {
   inspectAsset,
   pollJob,
   convertOffice,
-  // normalizeOrientation intentionally not imported — auto-rotation removed.
+  normalizeOrientation,
   printReady,
   renderPages,
 } from "@/lib/documentCentreApi";
@@ -24,6 +24,7 @@ import { getPrintReadyPlan, type FamilyPrintConfig } from "@/lib/printIntent";
 import {
   detectOrientationMismatch as policyDetectMismatch,
   advisoryModeFor,
+  requiredOrientationFor,
   type RequiredOrientation,
 } from "@/lib/orders/orientationPolicy";
 
