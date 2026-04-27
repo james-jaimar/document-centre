@@ -52,21 +52,27 @@ export default function BindingSpine({
 
   if (isSpiral) {
     const method = (bindingArt?.method ?? bindingTypeToMethod(bindingType))!;
-    const color = normaliseBindingColor(bindingArt?.color);
-    // Edge selection rule: only use the 210mm short-edge artwork when the
-    // book is genuinely top-bound (landscape product). Portrait products
-    // always use the long-edge artwork.
+    const requestedColor = normaliseBindingColor(bindingArt?.color);
     const edge: "long" | "short" = bindingEdge === "top" ? "short" : "long";
     const state = isOpen ? "open" : "closed";
 
-    // STRICT — resolveBindingArt throws when the (method, colour, edge,
-    // state) tuple has no PNG. We never paint a fallback CSS spiral.
-    let spineImage: string;
+    // Try the exact requested tuple first. If artwork is missing for the
+    // requested colour (e.g. a newly-seeded option without art yet), fall
+    // back to the same method in BLACK so the spine still renders, then
+    // log a clear warning instead of returning null and disappearing.
+    let spineImage: string | null = null;
     try {
-      spineImage = resolveBindingArt({ method, color, edge, state }).src;
+      spineImage = resolveBindingArt({ method, color: requestedColor, edge, state }).src;
     } catch (err) {
-      console.error(err);
-      return null;
+      console.warn(
+        `[BindingSpine] Falling back to black: ${(err as Error).message}`,
+      );
+      try {
+        spineImage = resolveBindingArt({ method, color: "black", edge, state }).src;
+      } catch (innerErr) {
+        console.error("[BindingSpine] No fallback artwork either:", innerErr);
+        return null;
+      }
     }
 
     return (

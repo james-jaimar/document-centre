@@ -1,35 +1,48 @@
-Plan to fix the missing binding artwork regression:
+You’re right: the PNGs are present under `src/assets/bindings`, and the registry already imports the correct coil/comb/wire assets. The problem is not that the assets are missing; it’s that the FlipBook path has become too brittle after the strict resolver/orientation changes. If the selected binding tuple is even slightly mismatched, or if the generated asset URL fails to load, the spine either disappears or shows the browser’s broken-image icon instead of the binding art.
 
-1. Reconcile supported Binding options against actual PNG assets
-   - Treat `src/assets/bindings/` as the source of truth for artwork.
-   - Supported standard bindings with full artwork are:
-     - Comb Binding (Black)
-     - Spiral Binding (Black, White, Clear)
-     - Twin Loop Wire (Black, Silver)
-   - Twin Loop Wire (White) is currently still present in live database product options, but there is no white wire PNG set in the repo. I will remove/disable that option from seeded and live option data rather than mapping it to the wrong artwork.
+Plan to fix it cleanly:
 
-2. Fix the binding artwork registry to be strict but complete
-   - Ensure every supported `(method, colour, edge, state)` tuple maps to a real imported PNG.
-   - Keep separate mappings for portrait/long-edge and landscape/short-edge artwork.
-   - Keep no CSS fallback and no wrong-colour substitution for supported options.
-   - Improve diagnostics so if a binding ever fails again, the console identifies the exact option tuple that is missing.
+1. Restore a reliable binding-art contract
+   - Keep using the existing local assets in `src/assets/bindings`.
+   - Make `bindingAssets.ts` the single source of truth for supported binding art.
+   - Add a small validation/export helper so every configured binding option maps to an actual imported PNG for:
+     - method: `comb`, `spiral`, `twin_loop`
+     - colour: black/white/clear/silver where supported
+     - edge: long/short
+     - state: closed/open
 
-3. Fix binding edge selection for rotated portrait previews
-   - The current screenshot shows a portrait preview still using a top/short-edge binding strip on the left, which is why the spine artwork appears as a tall broken/incorrect image area.
-   - After the PDF is rotated to portrait, the preview should use the portrait/long-edge binding artwork unless the selected product size is genuinely landscape/top-bound.
-   - I will make the preview’s binding edge derive from the effective post-rotation document/page geometry where available, instead of blindly keeping stale landscape size metadata.
+2. Stop FlipBook from rendering broken image icons
+   - Update `BindingSpine.tsx` so image load failures are handled explicitly with tuple diagnostics.
+   - Do not silently return `null` unless the product genuinely has no spine.
+   - Ensure the resolved imported asset URL is a real string before it reaches `<img src=...>`.
+   - Keep ring binder isolated in its own renderer; no ring-specific logic goes into FlipBook.
 
-4. Update live database options so unavailable choices are not selectable
-   - Use the same option list as the code registry: no Twin Loop Wire (White) until matching artwork exists.
-   - Leave ring binder options alone because they use the separate ring binder renderer.
+3. Make selected binding metadata robust
+   - Update the binding option lookup in `OrderBuild.tsx` so it matches both current slug values and any legacy label values.
+   - This prevents cases where the UI says “Spiral Binding (Black)” but the preview falls back to the wrong default because it failed to recognise the selected option.
 
-5. Verify the mapping coverage
-   - Add/run a small validation check that compares configured binding values to `bindingAssets.ts` coverage for both long/short edges and open/closed states.
-   - Verify the standard bound-document preview paths remain isolated from ring binder rendering, per the shared preview constraint.
+4. Carry binding artwork into saved previews/order details
+   - Extend `buildPreviewSnapshot.ts` to include `bindingArt` alongside `bindingEdge`.
+   - Pass that through `CustomerOrderDetail.tsx` and `JobDetailPanel.tsx` so completed/admin order previews still show the correct binding colour/method instead of defaulting.
 
-Files/areas to update after approval:
-- `src/components/preview/bindingAssets.ts`
-- `src/components/preview/BindingSpine.tsx`
-- `src/pages/dashboard/OrderBuild.tsx` and/or preview prop derivation where binding edge is chosen
-- `src/lib/productOptionValues.ts`
-- Live `product_options.values` rows for Binding, to remove unavailable white wire choices
+5. Verify all shared FlipBook users
+   - Check standard bound document previews only:
+     - wire-bound / spiral
+     - twin-loop wire
+     - comb binding
+     - saddle stitched and perfect bound remain unchanged
+   - Confirm ring binder remains on `RingBinderOpenSpread.tsx` and is not affected.
+
+Technical notes:
+
+```text
+Selected Binding option
+  -> metadata.binding_method + metadata.color
+  -> bindingArt { method, color }
+  -> BindingSpine
+  -> resolveBindingArt(method, color, edge, state)
+  -> imported PNG URL from src/assets/bindings
+  -> <img> spine artwork
+```
+
+The fix will be surgical: no PDF processing changes, no database change unless verification finds another unsupported live binding option, and no CSS fallback pretending to be a binding. The FlipBook should use the actual PNG assets again.
