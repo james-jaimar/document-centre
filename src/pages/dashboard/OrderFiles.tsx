@@ -652,35 +652,42 @@ export default function OrderFiles() {
     const targetLabel = toPortrait ? "portrait" : "landscape";
     setIsRotating(true);
     try {
+      // Use the explicit-target normalize-orientation pipeline. Unlike
+      // `rotate(90)`, this guarantees the resulting PDF matches the requested
+      // orientation: pages already in the right orientation are left alone,
+      // and rotated pages are baked onto a swapped-dimension MediaBox so the
+      // rasterizer can't disagree with the viewer.
+      const target = toPortrait ? "portrait" : "landscape";
       toast.info(`Rotating to ${targetLabel}…`);
 
-      // Clear stale thumbnail URLs from the cache up-front so the preview
-      // can't reuse the old (pre-rotation) signed URLs after the row updates.
       const existing = documents.find((d) => d.id === orientationDoc.id);
       const oldPaths = Array.isArray(existing?.thumbnail_urls)
         ? (existing!.thumbnail_urls as string[]).filter(Boolean)
         : [];
       if (oldPaths.length) clearSignedUrlCache(oldPaths);
 
-      // Rotation now PROMOTES the rotated PDF to normalized_storage_path on
-      // the VPS and refreshes width_pt / height_pt / boxes in the same job.
-      const { job_id } = await rotate(orientationDoc.backendAssetId, 90);
+      const { job_id } = await normalizeOrientation(orientationDoc.backendAssetId, target);
       await pollJob(job_id);
 
-      // Pull the refreshed asset so we can write the *real* post-rotation
-      // dimensions to the documents row instead of blindly swapping the
-      // previous values (which is wrong if the user mid-flow scaled the doc).
+      // Re-fetch authoritative dimensions from the asset (the job promotes
+      // the rotated PDF to normalized_storage_path and refreshes width/height).
       const refreshed = await getAsset(orientationDoc.backendAssetId);
       const widthPt = Number(refreshed.width_pt ?? 0);
       const heightPt = Number(refreshed.height_pt ?? 0);
       const widthMm = widthPt > 0 ? (widthPt * 25.4) / 72 : orientationDoc.heightMm;
       const heightMm = heightPt > 0 ? (heightPt * 25.4) / 72 : orientationDoc.widthMm;
 
-      // Mark the document as orientation-resolved BEFORE running the render so
-      // the orientation useEffect cannot re-open the advisory dialog when the
-      // documents query refetches mid-render. Strip any thumbnail_urls left
-      // over from the previous (wrong-orientation) render so the UI shows a
-      // clean loader instead of stale landscape thumbnails.
+      // VERIFY the result actually matches the target orientation. If the
+      // backend returned a no-op (skipped=true) or somehow produced the wrong
+      // shape, do NOT mark resolved — surface the error so the customer can
+      // try again instead of getting a broken preview downstream.
+      const resultOrientation = orientationOf(widthMm, heightMm);
+      if (resultOrientation !== target) {
+        throw new Error(
+          `Rotation did not produce a ${target} document (got ${resultOrientation ?? "unknown"} ${Math.round(widthMm)}×${Math.round(heightMm)}mm). Please try again or use a different file.`,
+        );
+      }
+
       const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
       const { orientation_mismatch: _om, ...preflightRest } = preflight;
       await supabase
@@ -693,7 +700,7 @@ export default function OrderFiles() {
         })
         .eq("id", orientationDoc.id);
 
-      // Render the full (now-rotated, promoted) document — no global crop box.
+      // Render the full (now-rotated, promoted) document.
       setUploadModalOpen(true);
       await renderWithProgress(
         orientationDoc.id,
@@ -703,10 +710,7 @@ export default function OrderFiles() {
         `Rotating to ${targetLabel} and rendering pages…`,
       );
 
-      // Defensive idempotent re-write — renderDocumentThumbnails strips
-      // orientation_mismatch from preflight, but re-asserting the resolved
-      // marker here keeps the row authoritative if anything in the render
-      // pipeline overwrote it.
+      // Defensive re-assert.
       await supabase
         .from("documents")
         .update({
