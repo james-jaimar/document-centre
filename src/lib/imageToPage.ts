@@ -16,6 +16,102 @@ export interface TargetSize {
   heightMm: number;
 }
 
+export interface PosterCropSpec {
+  /** Target poster size in millimetres. */
+  widthMm: number;
+  heightMm: number;
+  /** Pixel rectangle in source-image coordinates produced by react-easy-crop. */
+  croppedAreaPixels: { x: number; y: number; width: number; height: number };
+  /** 0 / 90 / 180 / 270 — degrees rotated clockwise inside the editor. */
+  rotation: number;
+  /** Output rasterisation DPI. Defaults to 300 (print-ready). */
+  outputDpi?: number;
+}
+
+/**
+ * Render a cropped + rotated source image into a single-page PDF that exactly
+ * matches the requested poster size. The image is rasterised on a canvas at the
+ * requested DPI (default 300) so the printer receives a properly-scaled raster.
+ *
+ * Used by the poster image upload flow: after the user crops in the editor the
+ * resulting PDF is fed through the standard preflight pipeline like any other
+ * upload.
+ */
+export async function imageToPosterPdf(
+  file: File,
+  spec: PosterCropSpec,
+): Promise<File> {
+  const dataUrl = await readAsDataUrl(file);
+  const img = await loadImage(dataUrl);
+
+  const dpi = spec.outputDpi ?? 300;
+  const MM_PER_INCH = 25.4;
+  const targetPxW = Math.max(1, Math.round((spec.widthMm / MM_PER_INCH) * dpi));
+  const targetPxH = Math.max(1, Math.round((spec.heightMm / MM_PER_INCH) * dpi));
+
+  // Step 1: rotate the source image onto an offscreen canvas if needed.
+  const rotation = ((spec.rotation % 360) + 360) % 360;
+  let srcCanvas: HTMLCanvasElement;
+  if (rotation === 0) {
+    srcCanvas = document.createElement("canvas");
+    srcCanvas.width = img.naturalWidth;
+    srcCanvas.height = img.naturalHeight;
+    srcCanvas.getContext("2d")!.drawImage(img, 0, 0);
+  } else {
+    const rotated = document.createElement("canvas");
+    const swap = rotation === 90 || rotation === 270;
+    rotated.width = swap ? img.naturalHeight : img.naturalWidth;
+    rotated.height = swap ? img.naturalWidth : img.naturalHeight;
+    const ctx = rotated.getContext("2d")!;
+    ctx.translate(rotated.width / 2, rotated.height / 2);
+    ctx.rotate((rotation * Math.PI) / 180);
+    ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+    srcCanvas = rotated;
+  }
+
+  // Step 2: crop the rotated source onto the final target-sized canvas.
+  const out = document.createElement("canvas");
+  out.width = targetPxW;
+  out.height = targetPxH;
+  const outCtx = out.getContext("2d")!;
+  outCtx.fillStyle = "#ffffff";
+  outCtx.fillRect(0, 0, targetPxW, targetPxH);
+
+  const { x, y, width, height } = spec.croppedAreaPixels;
+  outCtx.drawImage(
+    srcCanvas,
+    Math.max(0, x),
+    Math.max(0, y),
+    Math.max(1, width),
+    Math.max(1, height),
+    0,
+    0,
+    targetPxW,
+    targetPxH,
+  );
+
+  const jpegDataUrl = out.toDataURL("image/jpeg", 0.92);
+
+  const pageW = spec.widthMm;
+  const pageH = spec.heightMm;
+  const orientation = pageW > pageH ? "l" : "p";
+  const doc = new jsPDF({ orientation, unit: "mm", format: [pageW, pageH] });
+  doc.addImage(jpegDataUrl, "JPEG", 0, 0, pageW, pageH);
+
+  const pdfBlob = doc.output("blob");
+  const pdfName = file.name.replace(/\.[^.]+$/, "") + ".pdf";
+  return new File([pdfBlob], pdfName, { type: "application/pdf" });
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Failed to decode image"));
+    img.src = src;
+  });
+}
+
 /** Convert an image File to a single-page PDF File.
  *  If `targetSize` is provided the PDF page is that size and the image is
  *  scaled proportionally to fit (centred, no crop, white background).
