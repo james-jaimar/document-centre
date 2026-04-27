@@ -243,13 +243,16 @@ export default function OrderFiles() {
   const isoCheckedDocIds = useRef<Set<string>>(new Set());
 
 
-  // Orientation advisory state for presentations
+  // Orientation advisory state.
+  // - "to-landscape": presentations product, file is portrait → offer to rotate to landscape.
+  // - "to-portrait":  bound documents product, file is landscape → offer to rotate to portrait.
   const [orientationDoc, setOrientationDoc] = useState<{
     id: string;
     fileName: string;
     widthMm: number;
     heightMm: number;
     backendAssetId: string | null;
+    mode: "to-landscape" | "to-portrait";
   } | null>(null);
   const [isRotating, setIsRotating] = useState(false);
 
@@ -293,24 +296,35 @@ export default function OrderFiles() {
     }
   }, [documents, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc]);
 
-  // Check for portrait orientation on presentation uploads
+  // Check for orientation mismatches:
+  // - Presentations: portrait files should be rotated to landscape.
+  // - Bound Documents ("n"): landscape files should be rotated to portrait.
   useEffect(() => {
     if (uploadModalOpen || advisoryDoc || orientationDoc || bleedDoc) return;
-    if (productFamily?.slug !== "presentations") return;
-    const portraitDoc = documents.find((d) => {
+    const familySlug = productFamily?.slug;
+
+    let mode: "to-landscape" | "to-portrait" | null = null;
+    if (familySlug === "presentations") mode = "to-landscape";
+    else if (familySlug === "n") mode = "to-portrait";
+    if (!mode) return;
+
+    const mismatchDoc = documents.find((d) => {
       const preflight = d.preflight_data as Record<string, any> | null;
       if (preflight?.orientation_resolved) return false;
       const w = Number(d.page_width_mm);
       const h = Number(d.page_height_mm);
-      return w > 0 && h > 0 && w < h; // portrait = width < height
+      if (!(w > 0 && h > 0)) return false;
+      // to-landscape: flag portrait (w < h). to-portrait: flag landscape (w > h).
+      return mode === "to-landscape" ? w < h : w > h;
     });
-    if (portraitDoc) {
+    if (mismatchDoc) {
       setOrientationDoc({
-        id: portraitDoc.id,
-        fileName: portraitDoc.file_name,
-        widthMm: Number(portraitDoc.page_width_mm),
-        heightMm: Number(portraitDoc.page_height_mm),
-        backendAssetId: portraitDoc.backend_asset_id,
+        id: mismatchDoc.id,
+        fileName: mismatchDoc.file_name,
+        widthMm: Number(mismatchDoc.page_width_mm),
+        heightMm: Number(mismatchDoc.page_height_mm),
+        backendAssetId: mismatchDoc.backend_asset_id,
+        mode,
       });
     }
   }, [documents, uploadModalOpen, advisoryDoc, orientationDoc, bleedDoc, productFamily?.slug]);
@@ -618,16 +632,18 @@ export default function OrderFiles() {
     });
   }, [documents, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, sessionSizeLock]);
 
-  // Orientation handlers
-  const handleRotateToLandscape = useCallback(async () => {
+  // Orientation handlers — rotates 90° in the direction the advisory was opened for.
+  const handleRotateOrientation = useCallback(async () => {
     if (!orientationDoc?.backendAssetId) {
       toast.error("Cannot rotate — document has no backend asset");
       setOrientationDoc(null);
       return;
     }
+    const toPortrait = orientationDoc.mode === "to-portrait";
+    const targetLabel = toPortrait ? "portrait" : "landscape";
     setIsRotating(true);
     try {
-      toast.info("Rotating to landscape…");
+      toast.info(`Rotating to ${targetLabel}…`);
       const { job_id } = await rotate(orientationDoc.backendAssetId, 90);
       await pollJob(job_id);
 
@@ -638,7 +654,7 @@ export default function OrderFiles() {
         orientationDoc.backendAssetId,
         null,
         orientationDoc.fileName,
-        "Rotating to landscape and rendering pages…",
+        `Rotating to ${targetLabel} and rendering pages…`,
       );
 
       const existing = documents.find((d) => d.id === orientationDoc.id);
@@ -652,7 +668,7 @@ export default function OrderFiles() {
 
       setOrientationDoc(null);
       refetchDocuments();
-      toast.success("Rotated to landscape");
+      toast.success(`Rotated to ${targetLabel}`);
     } catch (err: any) {
       toast.error("Rotation failed", { description: err.message });
     } finally {
@@ -660,11 +676,16 @@ export default function OrderFiles() {
     }
   }, [orientationDoc, documents, refetchDocuments, getMediaBox]);
 
-  const handleSwitchToBoundDocs = useCallback(() => {
+  const handleSwitchProductFamily = useCallback(() => {
+    const toPortrait = orientationDoc?.mode === "to-portrait";
     setOrientationDoc(null);
     navigate(`/t/${slug}/orders/new`);
-    toast.info("Please select Bound Documents for portrait files");
-  }, [navigate, slug]);
+    toast.info(
+      toPortrait
+        ? "Please select Presentations for landscape files"
+        : "Please select Bound Documents for portrait files"
+    );
+  }, [navigate, slug, orientationDoc]);
 
   // Bleed advisory handler
   const handleBleedConfirm = useCallback(async (choice: "match" | "custom" | "keep", customBleedMm?: number) => {
@@ -1348,8 +1369,9 @@ export default function OrderFiles() {
           fileName={orientationDoc.fileName}
           widthMm={orientationDoc.widthMm}
           heightMm={orientationDoc.heightMm}
-          onRotate={handleRotateToLandscape}
-          onSwitchProduct={handleSwitchToBoundDocs}
+          onRotate={handleRotateOrientation}
+          onSwitchProduct={handleSwitchProductFamily}
+          mode={orientationDoc.mode}
           isRotating={isRotating}
         />
       )}
