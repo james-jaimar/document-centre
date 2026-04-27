@@ -792,20 +792,6 @@ export default function OrderBuild() {
 
         {/* Right: Preview */}
         <div className="border border-border rounded-lg bg-card p-4 overflow-auto flex flex-col gap-2">
-          {canToggleLongEdge && (
-            <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
-              <label htmlFor="bind-long-edge" className="cursor-pointer">
-                Bind on long edge (top)
-              </label>
-              <input
-                id="bind-long-edge"
-                type="checkbox"
-                className="h-4 w-4 cursor-pointer accent-primary"
-                checked={landscapeLongEdge}
-                onChange={(e) => handleToggleLongEdge(e.target.checked)}
-              />
-            </div>
-          )}
           <PreviewPanel
             documents={documents}
             sections={sections}
