@@ -334,20 +334,12 @@ export default function FlipBook({
   );
 
   // ── Fixed internal resolution ──
-  // Layout modes:
-  //  - Normal (left-bound, OR short-edge top-bound on a landscape doc):
-  //    standard side-by-side spread. The page aspect is used as-is.
-  //  - Stacked (long-edge top-bound on a landscape doc): two pages stack
-  //    vertically with a horizontal spine between them. We achieve this
-  //    by feeding pageflip the INVERSE aspect (so each "page" is portrait-
-  //    shaped to the engine) and rotating the whole book 90°; the inner
-  //    artwork is counter-rotated so the landscape document stays upright.
-  const isTopBound = bindingEdge === "top";
-  const isStacked = isTopBound && landscapeLongEdge;
+  // All bindings render as a normal side-by-side spread. Landscape
+  // documents bind on the short (left) edge using 210mm short-edge
+  // spine artwork; portrait documents use the long-edge artwork.
   const ratio = pageAspectRatio ?? 0.707;
-  const flipRatio = isStacked ? 1 / ratio : ratio;
   const basePageWidth = BASE_PAGE_WIDTH;
-  const basePageHeight = Math.round(basePageWidth / flipRatio);
+  const basePageHeight = Math.round(basePageWidth / ratio);
   const baseSpreadWidth = basePageWidth * 2;
   const bleedInsetPx = Math.round(basePageWidth * 0.03);
 
