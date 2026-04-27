@@ -1295,7 +1295,22 @@ export default function OrderFiles() {
     [sections, updateSection]
   );
 
-  const canContinue = sections.length > 0;
+  // Hard guard for Configure Options: every assigned doc must satisfy the
+  // product's mandatory orientation policy. We refuse to navigate downstream
+  // if any section is wired to a doc that would render the wrong way up.
+  const orientationViolations = useMemo(() => {
+    if (!requiredOrientationFor(productFamily?.slug)) return new Set<string>();
+    const out = new Set<string>();
+    for (const s of sections) {
+      const doc = documents.find((d) => d.id === s.document_id);
+      if (!doc) continue;
+      if (violatesOrientationPolicy(productFamily?.slug, doc.page_width_mm, doc.page_height_mm)) {
+        out.add(doc.id);
+      }
+    }
+    return out;
+  }, [sections, documents, productFamily?.slug]);
+  const canContinue = sections.length > 0 && orientationViolations.size === 0;
 
   if (loading && !isNewMode) {
     return (
