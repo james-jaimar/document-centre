@@ -1369,8 +1369,9 @@ export default function OrderFiles() {
           fileName={orientationDoc.fileName}
           widthMm={orientationDoc.widthMm}
           heightMm={orientationDoc.heightMm}
-          onRotate={handleRotateToLandscape}
-          onSwitchProduct={handleSwitchToBoundDocs}
+          onRotate={handleRotateOrientation}
+          onSwitchProduct={handleSwitchProductFamily}
+          mode={orientationDoc.mode}
           isRotating={isRotating}
         />
       )}
