@@ -413,9 +413,23 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             src = ws.path('input.pdf')
             storage.download(src_path, src)
 
-            if render_box is not None:
+            # If caller didn't specify a render_box, auto-derive one from
+            # the PDF's own TrimBox/BleedBox so previews show the finished
+            # page edge (no bleed margin / crop marks). This protects against
+            # callers that pass `null` after rotate/resize/print-ready.
+            effective_render_box = render_box
+            if effective_render_box is None:
+                try:
+                    effective_render_box = pdf_ops.derive_default_render_box(src)
+                except Exception as exc:
+                    logger.warning(
+                        "generate_previews: derive_default_render_box failed: %s", exc,
+                    )
+                    effective_render_box = None
+
+            if effective_render_box is not None:
                 cropped = ws.path('cropped.pdf')
-                pdf_ops.crop_to_box(src, cropped, render_box)
+                pdf_ops.crop_to_box(src, cropped, effective_render_box)
                 src = cropped
 
             preview_dir = ws.path('preview')

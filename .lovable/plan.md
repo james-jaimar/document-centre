@@ -1,46 +1,56 @@
-# Restore TrimBox preview cropping & purge CSS binding fallbacks
+I found the two regressions and they are connected to recent “cleanup” changes.
 
-Two unrelated regressions to fix together:
+What is actually going wrong:
 
-1. Previews are rendering the full **MediaBox** (with bleed/crop marks visible) instead of cropping to the **TrimBox** the PDF declares.
-2. `BindingSpine.tsx` still contains a CSS gradient fallback that paints fake spirals/wires when an image isn't available. Every supported binding/colour/edge combo already has artwork in `bindingAssets.ts` — there must be no CSS art rendered, ever.
+1. Trim works for presentations because the file is left landscape. The preview render job is receiving `render_box: [TrimBox]`, and the rendered PNG is correctly 1871×1323, matching the finished A4 landscape trim.
+2. Trim fails after rotating for bound documents because `normalize_orientation` creates a new portrait PDF with only `MediaBox`. It discards the original `TrimBox/BleedBox/ArtBox`. Then `handleRotateOrientation` calls `renderWithProgress(..., null)`, so the renderer has no trim box left and renders the whole rotated media canvas, including bleed/crop marks.
+3. The frontend then records the rotated page size from the asset `MediaBox` as about 224.8×311.8mm instead of finished A4 210×297mm. That is why the preview is searching/selecting against the wrong shape after rotation.
+4. Binding artwork is not truly using a strict one-to-one asset map. `bindingAssets.ts` still contains deep fallbacks and legacy fallback artwork. Also it maps “Twin Loop White” to `white`, but there is no white twin-loop artwork imported, so it falls back to black/legacy rather than surfacing the missing mapping clearly. This is exactly the “can’t find the image / wrong asset” class of issue.
 
----
+Plan to fix properly:
 
-## 1. TrimBox-aware previews (backend)
+1. Preserve and transform trim boxes during orientation normalization
+   - Update `pdf-server/app/services/pdf_ops.py` so `normalize_orientation` carries each page’s original `TrimBox`, `BleedBox`, `CropBox`, and `ArtBox` through rotation.
+   - When a page is rotated to portrait/landscape, transform the box geometry onto the new swapped page canvas instead of losing it.
+   - After rotation, `inspect()` should still report a real `TrimBox` smaller than `MediaBox`, with dimensions equivalent to the finished page.
 
-**Where it broke**: `pdf-server/app/tasks/document_tasks.py` triggers `generate_previews.delay(asset_id, preview_job_id)` after upload **without a `render_box`**. The task supports a `render_box` argument and `pdf_ops.crop_to_box`, but nothing computes one from the PDF's own TrimBox/BleedBox metadata anymore. So all uploads render the bleed area.
+2. Make preview rendering always re-derive the correct render box after geometry-changing operations
+   - Add a backend-side helper in the generate-preview path that, when the caller passes no `render_box`, inspects the current PDF and auto-selects `TrimBox`/`BleedBox` if present and smaller than `MediaBox`.
+   - This closes the gap where frontend callers pass `null` after rotate/resize/print-ready and accidentally render MediaBox.
+   - Keep the existing safety rule: do not use a page-1 MediaBox as a global crop. Only use an explicit real trim/bleed box.
 
-**Fix**: When the inspector finds a `TrimBox` (or `BleedBox` smaller than `MediaBox`) on page 1, use it as the default `render_box` for `generate_previews`. Specifically:
+3. Fix rotated document dimensions on the frontend
+   - In `OrderFiles.tsx`, after `normalizeOrientation`, derive `page_width_mm/page_height_mm` from the refreshed asset’s `TrimBox` first, then `CropBox`, then `MediaBox`.
+   - Pass that refreshed trim box into `renderWithProgress` after rotation, rather than `null`.
+   - Persist `preflight_data.effective_width_mm/effective_height_mm` and `trim_box_pt` so the file list, size lock, Configure guard, and preview all use the finished document size, not the media canvas.
 
-- In `pdf-server/app/services/pdf_ops.py`, add a small helper (`derive_default_render_box(pdf_path) -> list[float] | None`) that:
-  - Opens the PDF with pikepdf.
-  - For page 1, returns `TrimBox` if present and strictly inside `MediaBox` (with a tiny tolerance, e.g. ≥1pt difference on any edge). Falls back to `BleedBox` only if `TrimBox` is absent and `BleedBox` is strictly inside `MediaBox`.
-  - Returns `None` when the boxes are equal/missing (so we don't crop a clean PDF).
-- In `pdf-server/app/tasks/document_tasks.py`, the auto-trigger after upload (around line 156–157) computes this default and passes it through:
-  ```python
-  default_box = pdf_ops.derive_default_render_box(local_pdf_path)
-  task = generate_previews.delay(asset_id, preview_job_id, default_box)
-  ```
-- The existing explicit-`render_box` POST endpoint behaviour is unchanged (user-supplied box still wins).
-- `crop_to_box` already exists and is rotation-aware, so per-page rendering then crops to the trim region and the previews/thumbnails will be edge-to-edge.
+4. Purge binding fallbacks and make the asset map authoritative
+   - Refactor `src/components/preview/bindingAssets.ts` so the resolver returns only exact supported tuples: `(method, colour, edge, state) -> PNG`.
+   - Remove legacy fallback returns and opposite-edge/default-colour fallbacks. If an option has no exact asset, log a clear diagnostic and do not draw a fake/CSS binding.
+   - Keep the existing actual artwork for spiral black/clear/white, comb black, twin-loop black/silver, long/short, open/closed.
+   - For configured options that do not have artwork (notably Twin Loop White if still present in product option data), either map it deliberately to an available asset only if that is intended, or remove/flag that option as unsupported in preview. I will first inspect the seeded option values and use the product data as the source of truth.
 
-**Verification**: re-uploading the user's pink-bordered PDF should produce previews where the magenta border touches the page edge instead of sitting inside a white bleed margin.
+5. Restore binding edge logic to product reality
+   - For portrait-bound products, use long-edge artwork.
+   - For presentation/true landscape products, use the short-edge 210mm artwork.
+   - Do not infer binding edge from a stale media canvas after rotation; use the product family/orientation policy and selected document size.
 
-## 2. Remove CSS binding artwork (frontend)
+6. Add guardrails so this cannot regress silently again
+   - Add backend unit/smoke checks around a PDF with `MediaBox != TrimBox`: normalize to portrait, inspect boxes, generate previews, and verify preview aspect matches TrimBox.
+   - Add a small frontend resolver check for every seeded binding option that should render artwork, confirming the exact PNG exists.
+   - Run typecheck/tests after the changes.
 
-**File**: `src/components/preview/BindingSpine.tsx`
+Files expected to change:
+- `pdf-server/app/services/pdf_ops.py`
+- `pdf-server/app/tasks/document_tasks.py`
+- `pdf-server/app/tasks/operation_tasks.py` if result metadata needs to include transformed trim boxes
+- `src/pages/dashboard/OrderFiles.tsx`
+- `src/components/preview/bindingAssets.ts`
+- Possibly `src/components/preview/BindingSpine.tsx` only to remove assumptions left over from fallback behaviour
+- Possibly `src/lib/productOptionValues.ts` if seeded binding options include colours with no supplied artwork
 
-- Delete the `imageFailed` state, the `useEffect` that resets it, the `fallbackBg` gradient, and the `onError` handler.
-- Always render the resolved `<img>` from `resolveBindingArt(...)`. The resolver in `bindingAssets.ts` already has a comprehensive fallback ladder (exact → opposite edge → default colour → legacy PNG), so it is guaranteed to return a real PNG `src` — never empty.
-- The saddle-stitch / perfect-bound branch (subtle crease lines, not artwork) is unrelated and stays.
-
-That's it for the binding side — the artwork registry is correct and complete; we just stop second-guessing it.
-
-## Files touched
-
-- `pdf-server/app/services/pdf_ops.py` — add `derive_default_render_box`.
-- `pdf-server/app/tasks/document_tasks.py` — pass derived render_box into `generate_previews.delay`.
-- `src/components/preview/BindingSpine.tsx` — strip `fallbackBg` / `imageFailed` / `onError`; always render `<img>`.
-
-No DB migrations, no schema changes, no orientation-policy changes.
+Expected outcome:
+- Uploading the same landscape PDF to Bound Documents, rotating it to portrait, then previewing/configuring will show the finished trimmed page edge, not the media box/crop marks.
+- The document’s effective size will remain A4 finished size after rotation, not the oversized media canvas.
+- Presentations continue to render to TrimBox as they currently do.
+- Binding artwork will be a deterministic one-to-one mapping. No CSS fallback. No silent wrong-colour/wrong-edge fallback.

@@ -669,24 +669,42 @@ export default function OrderFiles() {
       const { job_id } = await normalizeOrientation(orientationDoc.backendAssetId, target);
       await pollJob(job_id);
 
-      // Re-fetch authoritative dimensions from the asset (the job promotes
-      // the rotated PDF to normalized_storage_path and refreshes width/height).
+      // Re-fetch authoritative dimensions from the asset. Prefer TrimBox →
+      // CropBox → MediaBox so a PDF with bleed reports its FINISHED size,
+      // not the oversized media canvas.
       const refreshed = await getAsset(orientationDoc.backendAssetId);
-      const widthPt = Number(refreshed.width_pt ?? 0);
-      const heightPt = Number(refreshed.height_pt ?? 0);
+      const refBoxes = (refreshed.boxes ?? null) as Record<string, number[]> | null;
+      const trimBox = refBoxes?.TrimBox;
+      const cropBox = refBoxes?.CropBox;
+      const mediaBox =
+        refBoxes?.MediaBox ?? [0, 0, refreshed.width_pt ?? 0, refreshed.height_pt ?? 0];
+      const reportingBox = (trimBox && trimBox.length === 4 ? trimBox
+        : cropBox && cropBox.length === 4 ? cropBox
+        : mediaBox) as number[];
+      const widthPt = Math.abs(reportingBox[2] - reportingBox[0]);
+      const heightPt = Math.abs(reportingBox[3] - reportingBox[1]);
       const widthMm = widthPt > 0 ? (widthPt * 25.4) / 72 : orientationDoc.heightMm;
       const heightMm = heightPt > 0 ? (heightPt * 25.4) / 72 : orientationDoc.widthMm;
 
-      // VERIFY the result actually matches the target orientation. If the
-      // backend returned a no-op (skipped=true) or somehow produced the wrong
-      // shape, do NOT mark resolved — surface the error so the customer can
-      // try again instead of getting a broken preview downstream.
+      // VERIFY the result actually matches the target orientation.
       const resultOrientation = orientationOf(widthMm, heightMm);
       if (resultOrientation !== target) {
         throw new Error(
           `Rotation did not produce a ${target} document (got ${resultOrientation ?? "unknown"} ${Math.round(widthMm)}×${Math.round(heightMm)}mm). Please try again or use a different file.`,
         );
       }
+
+      // Use TrimBox (if real) as the explicit render box for the preview
+      // pass — otherwise let the backend auto-derive (or render MediaBox).
+      const explicitTrim =
+        trimBox && trimBox.length === 4 && mediaBox && mediaBox.length === 4 &&
+        (Math.abs(trimBox[0] - mediaBox[0]) > 0.5 ||
+         Math.abs(trimBox[1] - mediaBox[1]) > 0.5 ||
+         Math.abs(trimBox[2] - mediaBox[2]) > 0.5 ||
+         Math.abs(trimBox[3] - mediaBox[3]) > 0.5);
+      const renderBoxForPreview = explicitTrim
+        ? (trimBox as [number, number, number, number])
+        : null;
 
       const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
       const { orientation_mismatch: _om, ...preflightRest } = preflight;
@@ -696,16 +714,25 @@ export default function OrderFiles() {
           page_width_mm: Math.round(widthMm * 10) / 10,
           page_height_mm: Math.round(heightMm * 10) / 10,
           thumbnail_urls: [],
-          preflight_data: { ...preflightRest, awaiting_review: false, orientation_resolved: true, orientation_action: "rotated" },
+          preflight_data: {
+            ...preflightRest,
+            awaiting_review: false,
+            orientation_resolved: true,
+            orientation_action: "rotated",
+            effective_width_mm: widthMm,
+            effective_height_mm: heightMm,
+            ...(explicitTrim ? { trim_box_pt: trimBox } : {}),
+          },
         })
         .eq("id", orientationDoc.id);
 
-      // Render the full (now-rotated, promoted) document.
+      // Render the rotated document — pass the trim box so the preview
+      // shows the finished edge (no bleed/crop marks).
       setUploadModalOpen(true);
       await renderWithProgress(
         orientationDoc.id,
         orientationDoc.backendAssetId,
-        null,
+        renderBoxForPreview,
         orientationDoc.fileName,
         `Rotating to ${targetLabel} and rendering pages…`,
       );
@@ -714,7 +741,15 @@ export default function OrderFiles() {
       await supabase
         .from("documents")
         .update({
-          preflight_data: { ...preflightRest, awaiting_review: false, orientation_resolved: true, orientation_action: "rotated" },
+          preflight_data: {
+            ...preflightRest,
+            awaiting_review: false,
+            orientation_resolved: true,
+            orientation_action: "rotated",
+            effective_width_mm: widthMm,
+            effective_height_mm: heightMm,
+            ...(explicitTrim ? { trim_box_pt: trimBox } : {}),
+          },
         })
         .eq("id", orientationDoc.id);
 
