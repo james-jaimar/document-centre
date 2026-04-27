@@ -31,6 +31,7 @@ import { toast } from "sonner";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
+import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
 
 export default function OrderBuild() {
   const { id: orderId, slug } = useParams<{ id: string; slug: string }>();
@@ -438,26 +439,12 @@ export default function OrderBuild() {
   const isLandscapeSize = sizeMeta?.orientation === "landscape";
   const sizeBindingEdge = sizeMeta?.binding_edge as string | undefined;
 
-  // Derive binding artwork descriptor from the selected Binding option's
-  // metadata. `binding_method` is one of "comb" | "spiral" | "twin_loop" |
-  // "ring_binder"; we only emit `bindingArt` for methods that have spine
-  // artwork (not ring binders, which have their own renderer).
-  const bindingArt: { method: "spiral" | "comb" | "twin_loop"; color: string } | undefined = useMemo(() => {
-    const bindingOption = options.find((o) => o.name.toLowerCase() === "binding");
-    if (!bindingOption || !isStructuredValues(bindingOption.values)) return undefined;
-    const key = Object.keys(spec.selected_options).find(
-      (k) => k.toLowerCase() === bindingOption.name.toLowerCase()
-    ) || bindingOption.name;
-    const slug = spec.selected_options[key];
-    if (!slug) return undefined;
-    const matched = (bindingOption.values as StructuredOptionValue[]).find((v) => v.slug === slug);
-    const method = matched?.metadata?.binding_method as string | undefined;
-    const color = matched?.metadata?.color as string | undefined;
-    if (method === "spiral" || method === "comb" || method === "twin_loop") {
-      return { method, color: color ?? "black" };
-    }
-    return undefined;
-  }, [options, spec.selected_options]);
+  // Single source of truth — same helper is used by buildPreviewSnapshot
+  // so live builder and saved/admin previews agree on binding artwork.
+  const bindingArt = useMemo(
+    () => selectedBindingArt(spec.selected_options, options),
+    [options, spec.selected_options],
+  );
 
   // Binding edge is determined by the actual page geometry of the uploaded
   // (and rotated, if applicable) document. The Document Size option only
