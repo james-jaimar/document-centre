@@ -161,7 +161,7 @@ export default function PosterImageEditor({
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="max-w-3xl p-0 overflow-hidden">
         <DialogHeader className="px-6 pt-6 pb-2">
-          <DialogTitle className="text-lg">Crop & position your poster</DialogTitle>
+          <DialogTitle className="text-lg">{title ?? "Crop & position your poster"}</DialogTitle>
           <DialogDescription className="text-xs">
             {file?.name ?? "Image"} — pick a size, then drag and zoom to frame the image.
           </DialogDescription>
