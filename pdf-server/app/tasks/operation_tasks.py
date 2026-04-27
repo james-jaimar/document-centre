@@ -520,7 +520,10 @@ def normalize_orientation(self, asset_id: str, job_id: str, dominant: str = "por
                 "width_pt": info["width_pt"],
                 "height_pt": info["height_pt"],
                 "boxes": info["boxes"],
+                "thumbnail_storage_path": None,
+                "preview_storage_path": None,
             })
+            removed = derived_file_repo.clear_page_renders(db, asset_id)
 
             result = {
                 **stats,
@@ -529,6 +532,7 @@ def normalize_orientation(self, asset_id: str, job_id: str, dominant: str = "por
                 "page_count": info["page_count"],
                 "width_pt": info["width_pt"],
                 "height_pt": info["height_pt"],
+                "cleared_page_renders": removed,
             }
             job_repo.mark_done(db, job_id, result)
             return result
