@@ -502,6 +502,7 @@ export function buildPreviewSnapshot(input: {
     product_type: productType,
     effects,
     bindingEdge,
+    bindingArt,
     pageAspectRatio,
     colorFlags,
     bleedFlags,
