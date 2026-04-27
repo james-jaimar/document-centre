@@ -666,36 +666,47 @@ export default function OrderFiles() {
     setIsRotating(true);
     try {
       toast.info(`Rotating to ${targetLabel}…`);
+
+      // Clear stale thumbnail URLs from the cache up-front so the preview
+      // can't reuse the old (pre-rotation) signed URLs after the row updates.
+      const existing = documents.find((d) => d.id === orientationDoc.id);
+      const oldPaths = Array.isArray(existing?.thumbnail_urls)
+        ? (existing!.thumbnail_urls as string[]).filter(Boolean)
+        : [];
+      if (oldPaths.length) clearSignedUrlCache(oldPaths);
+
+      // Rotation now PROMOTES the rotated PDF to normalized_storage_path on
+      // the VPS and refreshes width_pt / height_pt / boxes in the same job.
       const { job_id } = await rotate(orientationDoc.backendAssetId, 90);
       await pollJob(job_id);
 
-      // CRITICAL: Re-inspect the asset so the VPS refreshes its cached
-      // width_pt / height_pt / boxes from the rotated PDF. Without this,
-      // getAsset() (called inside renderWithProgress) returns the stale
-      // pre-rotation dimensions and we'd write the OLD landscape values
-      // back into the documents row — leaving the UI showing landscape.
-      const { job_id: inspectJobId } = await inspectAsset(orientationDoc.backendAssetId);
-      await pollJob(inspectJobId);
+      // Pull the refreshed asset so we can write the *real* post-rotation
+      // dimensions to the documents row instead of blindly swapping the
+      // previous values (which is wrong if the user mid-flow scaled the doc).
+      const refreshed = await getAsset(orientationDoc.backendAssetId);
+      const widthPt = Number(refreshed.width_pt ?? 0);
+      const heightPt = Number(refreshed.height_pt ?? 0);
+      const widthMm = widthPt > 0 ? (widthPt * 25.4) / 72 : orientationDoc.heightMm;
+      const heightMm = heightPt > 0 ? (heightPt * 25.4) / 72 : orientationDoc.widthMm;
 
-      // Mark the document as orientation-resolved BEFORE running the render.
-      // renderWithProgress invalidates the documents query; if the row still
-      // contained `orientation_mismatch`, the orientation useEffect could
-      // re-open the advisory dialog the moment we clear `orientationDoc`.
-      const swappedW = orientationDoc.heightMm;
-      const swappedH = orientationDoc.widthMm;
-      const existing = documents.find((d) => d.id === orientationDoc.id);
+      // Mark the document as orientation-resolved BEFORE running the render so
+      // the orientation useEffect cannot re-open the advisory dialog when the
+      // documents query refetches mid-render. Strip any thumbnail_urls left
+      // over from the previous (wrong-orientation) render so the UI shows a
+      // clean loader instead of stale landscape thumbnails.
       const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
       const { orientation_mismatch: _om, ...preflightRest } = preflight;
       await supabase
         .from("documents")
         .update({
-          page_width_mm: Math.round(swappedW * 10) / 10,
-          page_height_mm: Math.round(swappedH * 10) / 10,
+          page_width_mm: Math.round(widthMm * 10) / 10,
+          page_height_mm: Math.round(heightMm * 10) / 10,
+          thumbnail_urls: [],
           preflight_data: { ...preflightRest, awaiting_review: false, orientation_resolved: true, orientation_action: "rotated" },
         })
         .eq("id", orientationDoc.id);
 
-      // Render the full (now-rotated) document — no global crop box.
+      // Render the full (now-rotated, promoted) document — no global crop box.
       setUploadModalOpen(true);
       await renderWithProgress(
         orientationDoc.id,
@@ -724,7 +735,7 @@ export default function OrderFiles() {
     } finally {
       setIsRotating(false);
     }
-  }, [orientationDoc, documents, refetchDocuments, getMediaBox, renderWithProgress]);
+  }, [orientationDoc, documents, refetchDocuments, renderWithProgress]);
 
   const handleSwitchProductFamily = useCallback(() => {
     const toPortrait = orientationDoc?.mode === "to-portrait";

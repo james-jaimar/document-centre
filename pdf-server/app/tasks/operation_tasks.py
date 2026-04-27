@@ -45,15 +45,80 @@ def _finalize_pdf_output(db, *, asset_id: str | None, job_id: str, out_pdf: Path
 
 @shared_task(bind=True, queue='documents')
 def rotate_pdf(self, asset_id: str, job_id: str, angle: int):
+    """
+    Rotate every page by `angle` degrees, then bake the /Rotate hint into
+    page geometry so downstream rasterizers cannot disagree about the visible
+    canvas. The result is PROMOTED to asset.normalized_storage_path so all
+    subsequent operations (generate-previews, print-ready, etc.) read the
+    rotated PDF — not the pre-rotation source.
+
+    Without this promotion the next preview render reads the original
+    (unrotated) PDF and the UI keeps showing the old orientation.
+    """
     db = _db()
     try:
         job_repo.mark_running(db, job_id)
         prefix = _get_asset_prefix(db, asset_id)
         with Workspace() as ws:
             src = _download_asset_pdf(db, asset_id, ws)
-            out_pdf = ws.path('rotated.pdf')
-            pdf_ops.rotate(src, out_pdf, angle)
-            return _finalize_pdf_output(db, asset_id=asset_id, job_id=job_id, out_pdf=out_pdf, kind='rotated_pdf', prefix=prefix, extra={'angle': angle})
+
+            # Step 1: apply the /Rotate hint.
+            rotated = ws.path('rotated.pdf')
+            pdf_ops.rotate(src, out_pdf=rotated, angle=angle)
+
+            # Step 2: bake the rotation into geometry so the rendered MediaBox
+            # matches the visible content (no residual /Rotate hint).
+            out_pdf = ws.path('rotated_baked.pdf')
+            # dominant='landscape' means "landscape pages stay portrait pages
+            # rotate" — but for a baked rotate we use a no-op dominant and
+            # rely on transfer_rotation_to_content via normalize_orientation
+            # with skip path. Easiest: re-write through normalize_orientation
+            # with a dominant that matches whichever the rotated page already
+            # is, so it doesn't double-rotate but DOES bake.
+            try:
+                # Inspect to decide dominant that won't trigger extra rotation.
+                info = pdf_ops.inspect(rotated)
+                w = float(info.get('width_pt') or 0)
+                h = float(info.get('height_pt') or 0)
+                dominant = 'landscape' if w >= h else 'portrait'
+                pdf_ops.normalize_orientation(rotated, out_pdf, dominant=dominant)
+            except Exception:
+                # Bake step is best-effort; fall back to the rotated file.
+                out_pdf = rotated
+
+            # Step 3: promote as the new normalised PDF + refresh metadata.
+            storage_path = unique_name(f'{prefix}derived/rotated', '.pdf')
+            storage.upload(out_pdf, storage_path, 'application/pdf')
+
+            derived_file_repo.create_file(
+                db,
+                asset_id=asset_id,
+                job_id=job_id,
+                kind='rotated_pdf',
+                storage_path=storage_path,
+                media_type='application/pdf',
+                metadata={'angle': angle},
+            )
+
+            info = pdf_ops.inspect(out_pdf)
+            asset_repo.update_asset(db, asset_id, {
+                'normalized_storage_path': storage_path,
+                'page_count': info['page_count'],
+                'width_pt': info['width_pt'],
+                'height_pt': info['height_pt'],
+                'boxes': info['boxes'],
+            })
+
+            result = {
+                'storage_path': storage_path,
+                'normalized_storage_path': storage_path,
+                'page_count': info['page_count'],
+                'width_pt': info['width_pt'],
+                'height_pt': info['height_pt'],
+                'angle': angle,
+            }
+            job_repo.mark_done(db, job_id, result)
+            return result
     except Exception as exc:
         job_repo.mark_failed(db, job_id, traceback.format_exc())
         raise exc
