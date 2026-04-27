@@ -272,6 +272,7 @@ export default function PhotoPrintsBuilder() {
   const [showCartDialog, setShowCartDialog] = useState(false);
   const [cartReference, setCartReference] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const handleAddToCartClick = () => {
     if (photoSpec.photos.length === 0) {
@@ -438,9 +439,32 @@ export default function PhotoPrintsBuilder() {
       {photoSpec.photos.length === 0 ? (
         <PhotoUploader onFiles={handleFiles} disabled={createOrder.isPending} />
       ) : (
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-border bg-muted/20 px-4 py-3">
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+            const files = Array.from(e.dataTransfer.files).filter(
+              (f) =>
+                /^image\/(jpeg|png|webp|heic|heif)$/i.test(f.type) ||
+                /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name),
+            );
+            if (files.length > 0) handleFiles(files);
+          }}
+          className={`flex items-center justify-between gap-3 rounded-xl border-2 border-dashed px-4 py-3 transition-colors ${
+            isDragging
+              ? "border-primary bg-primary/10"
+              : "border-border bg-muted/20"
+          }`}
+        >
           <p className="text-sm text-muted-foreground">
-            {photoSpec.photos.length} photo{photoSpec.photos.length === 1 ? "" : "s"} added
+            {isDragging
+              ? "Drop photos to add them"
+              : `${photoSpec.photos.length} photo${photoSpec.photos.length === 1 ? "" : "s"} added — drag more here or click`}
           </p>
           <Button
             variant="outline"
