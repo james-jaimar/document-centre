@@ -317,6 +317,7 @@ export interface PreviewSnapshot {
   product_type: ProductPreviewType;
   effects: PreviewEffects;
   bindingEdge: "left" | "top";
+  bindingArt?: { method: "spiral" | "comb" | "twin_loop"; color: string };
   pageAspectRatio: number | null;
   colorFlags: boolean[];
   bleedFlags: boolean[];
@@ -340,10 +341,12 @@ export function buildPreviewSnapshot(input: {
   const isBound = BOUND_TYPES.has(productType);
 
   const effects = resolveEffects(selectedOptions, productOptions);
-  const bindingEdge = resolveBindingEdge(selectedOptions, productOptions);
+  const bindingEdge = resolveBindingEdge(selectedOptions, productOptions, documents);
+  const bindingArt = resolveBindingArt(selectedOptions, productOptions);
 
   const sortedSections = [...sections].sort((a, b) => a.sort_order - b.sort_order);
   const pages = buildPageSequence(sortedSections, documents, isBound, productType);
+
 
   // Apply role enrichment + physical covers (mirrors PreviewPanel)
   const fp: PageInfo[] = [...pages];
