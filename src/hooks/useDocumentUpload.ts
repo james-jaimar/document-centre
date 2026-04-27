@@ -21,57 +21,38 @@ import { detectNonIsoSize, detectNearIsoWithBleed } from "@/lib/paperSizes";
 import { isImageFile, imageFileToPdf, type TargetSize } from "@/lib/imageToPage";
 import { isOfficeFile, officeMimeFromFilename } from "@/lib/officeFiles";
 import { getPrintReadyPlan, type FamilyPrintConfig } from "@/lib/printIntent";
+import {
+  detectOrientationMismatch as policyDetectMismatch,
+  advisoryModeFor,
+  type RequiredOrientation,
+} from "@/lib/orders/orientationPolicy";
 
 /**
  * Page-orientation policy.
  *
- * We DO NOT auto-rotate uploaded PDF pages on the server during upload. The
- * normaliser silently mutating page boxes was making landscape presentations,
- * leaflets, and bound documents render the wrong way up. Orientation is
- * either:
- *  - left as the customer authored it, or
- *  - changed explicitly by the customer via the OrientationAdvisory dialog
- *    (which calls `rotate(assetId, 90)` directly).
+ * We DO NOT auto-rotate uploaded PDF pages on the server during upload —
+ * the customer must accept the OrientationAdvisory. But for products with a
+ * mandatory orientation (Bound Documents / Ring Binders / Booklets =
+ * portrait, Presentations = landscape) we BLOCK Phase B render until the
+ * advisory is resolved, and the advisory invokes `normalize-orientation`
+ * with an explicit target — not a blind 90° rotate.
  *
- * The product-family hints below are kept for backwards compatibility (some
- * preflight code reads them) but are NO LONGER used to invoke
- * `normalizeOrientation` automatically.
+ * The single source of truth for "which products require which orientation"
+ * lives in `src/lib/orders/orientationPolicy.ts`.
  */
-const PORTRAIT_NORMALIZE_FAMILIES = new Set([
-  "bound-documents",
-  "bound_documents",
-  "ring-binder",
-  "ring_binder",
-  "booklets",
-  "brochures",
-]);
-const LANDSCAPE_NORMALIZE_FAMILIES = new Set(["presentations"]);
 
 /**
- * Families that REQUIRE portrait orientation. Landscape uploads here trigger
- * the orientation advisory before any thumbnails are rendered.
- * Kept in sync with the same set in OrderFiles.tsx.
- */
-const PORTRAIT_REQUIRED_FAMILIES = new Set([
-  "bound-documents",
-  "ring-binders",
-  "booklets",
-]);
-
-/**
- * Detects whether the uploaded file's orientation conflicts with the product
- * family it's being uploaded to. Returns the rotation direction the advisory
- * should offer, or null if there's no mismatch.
+ * Local adapter so existing call sites keep using the "to-portrait" /
+ * "to-landscape" mode strings.
  */
 function detectOrientationMismatch(
   familySlug: string | null | undefined,
   widthMm: number,
   heightMm: number,
 ): "to-landscape" | "to-portrait" | null {
-  if (!familySlug || !(widthMm > 0) || !(heightMm > 0)) return null;
-  if (familySlug === "presentations" && widthMm < heightMm) return "to-landscape";
-  if (PORTRAIT_REQUIRED_FAMILIES.has(familySlug) && widthMm > heightMm) return "to-portrait";
-  return null;
+  const target = policyDetectMismatch(familySlug, widthMm, heightMm);
+  if (!target) return null;
+  return advisoryModeFor(target);
 }
 
 interface UploadProgress {
