@@ -488,7 +488,7 @@ export default function MarketingLanding() {
             {[
               { Icon: IconUpload, t1: "Upload &", t2: "File Management", d: "Secure uploads, format checks & auto-preflight" },
               { Icon: IconPreview, t1: "Live Preview", t2: "& Proofing", d: "Accurate previews with zoom, pages & annotations" },
-              { Icon: IconCatalogue, t1: "Product", t2: "Catalogue", d: "Customisable templates, finishes & pricing" },
+              { Icon: IconCatalogue, t1: "Product", t2: "Catalogue", d: "Configurable products, finishes, paper stocks & live pricing" },
               { Icon: IconQuotes, t1: "Quotes &", t2: "Payments", d: "Instant quotes, approvals & online payments" },
               { Icon: IconWorkflow, t1: "Production", t2: "Workflow", d: "Job tracking, statuses & automated routing" },
               { Icon: IconReports, t1: "Reports &", t2: "Analytics", d: "Track sales, customers & production insights" },
