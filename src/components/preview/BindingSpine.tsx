@@ -91,6 +91,11 @@ export default function BindingSpine({
           className="block w-full h-full"
           style={{ objectFit: "fill" }}
           draggable={false}
+          onError={() =>
+            console.error(
+              `[BindingSpine] Failed to load image for method="${method}" color="${requestedColor}" edge="${edge}" state="${state}" src="${spineImage}"`,
+            )
+          }
         />
       </div>
     );
