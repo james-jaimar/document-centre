@@ -31,12 +31,20 @@ import {
 /**
  * Page-orientation policy.
  *
- * We DO NOT auto-rotate uploaded PDF pages on the server during upload —
- * the customer must accept the OrientationAdvisory. But for products with a
- * mandatory orientation (Bound Documents / Ring Binders / Booklets =
- * portrait, Presentations = landscape) we BLOCK Phase B render until the
- * advisory is resolved, and the advisory invokes `normalize-orientation`
- * with an explicit target — not a blind 90° rotate.
+ * Two distinct rules — keep them straight when changing this code:
+ *
+ * 1. WHOLE-DOCUMENT orientation is owned by the customer. If the document
+ *    as a whole violates the product's required orientation (e.g. an
+ *    entirely landscape file uploaded against Bound Documents) we surface
+ *    the OrientationAdvisory dialog and let the user choose to rotate or
+ *    switch products. We do NOT silently rewrite their authored orientation.
+ *
+ * 2. PER-PAGE orientation INSIDE a product with a required orientation
+ *    (Bound Documents / Ring Binders / Booklets = portrait, Presentations
+ *    = landscape) is silently normalised at upload time. A bound document
+ *    is a physical book — a single landscape page in a portrait book MUST
+ *    be rotated 90° so it sits upright on the printed sheet. There is no
+ *    UX upside to prompting for this; it is a printing necessity.
  *
  * The single source of truth for "which products require which orientation"
  * lives in `src/lib/orders/orientationPolicy.ts`.
