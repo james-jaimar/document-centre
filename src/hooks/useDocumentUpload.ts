@@ -371,9 +371,10 @@ export function useDocumentUpload(
    * already final. Safe to call after a `resize` job. Idempotent — server-side
    * no-ops when nothing needs to change.
    *
-   * NOTE: orientation normalisation is intentionally NOT performed here. We
-   * preserve the customer's authored orientation; explicit rotation only
-   * happens when the user accepts the OrientationAdvisory.
+   * NOTE: orientation work is NOT performed here. Per-page normalisation
+   * for products with a required orientation runs earlier in
+   * `inspectExistingAsset`; whole-document orientation rewrites only
+   * happen when the user accepts the OrientationAdvisory.
    *
    * Returns true on success (or when nothing to do); false only on hard
    * failure (callers continue rendering with the un-finalised PDF).
