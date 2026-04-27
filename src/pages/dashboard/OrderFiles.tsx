@@ -1715,6 +1715,7 @@ export default function OrderFiles() {
             onReprocess={reprocessDocument}
             onRerenderGaps={handleRerenderGaps}
             onDelete={handleDeleteDocument}
+            onEditPosterImage={handleEditPosterImage}
             mismatchDocIds={mismatchDocIds}
           />
         </div>
