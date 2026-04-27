@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
 import {
   Dialog,
@@ -30,6 +30,30 @@ interface PhotoEditorModalProps {
   ) => void;
 }
 
+/**
+ * Compute the zoom value at which the entire image is visible inside the
+ * print frame (letterboxed). With react-easy-crop's `objectFit="cover"`,
+ * the base image is scaled so its shorter edge matches the frame; the
+ * longer edge overflows. To make the whole image visible, we need to
+ * shrink it by the ratio of the shorter-to-longer aspect mismatch.
+ *
+ * - imageAspect: width / height of the (rotation-adjusted) source image
+ * - frameAspect: width / height of the print frame
+ *
+ * Returns a zoom value in (0, 1]. 1 means the image already exactly fits.
+ */
+function computeFitZoom(imageAspect: number, frameAspect: number): number {
+  if (!imageAspect || !frameAspect) return 1;
+  // With objectFit="cover", scale = max(frameW/imgW, frameH/imgH) at zoom=1.
+  // To "contain" instead, we want scale = min(frameW/imgW, frameH/imgH).
+  // The ratio between contain and cover is the fit zoom.
+  const ratio =
+    imageAspect > frameAspect
+      ? frameAspect / imageAspect // image is wider than frame → shrink horizontally
+      : imageAspect / frameAspect; // image is taller than frame → shrink vertically
+  return Math.min(1, Math.max(0.1, ratio));
+}
+
 export default function PhotoEditorModal({
   open,
   photo,
@@ -43,6 +67,7 @@ export default function PhotoEditorModal({
   const [rotation, setRotation] = useState(0);
   const [fitMode, setFitMode] = useState<PhotoFitMode>("fill");
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<CroppedAreaPixels | null>(null);
+  const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
 
   useEffect(() => {
     if (!open || !photo) return;
@@ -53,20 +78,93 @@ export default function PhotoEditorModal({
     setCroppedAreaPixels(photo.croppedAreaPixels ?? null);
   }, [open, photo]);
 
+  // Load natural image dimensions so we can compute fit/fill zooms.
+  useEffect(() => {
+    if (!open || !signedUrl) {
+      setNaturalSize(null);
+      return;
+    }
+    let cancelled = false;
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      if (!cancelled) setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
+    };
+    img.onerror = () => {
+      if (!cancelled) setNaturalSize(null);
+    };
+    img.src = signedUrl;
+    return () => {
+      cancelled = true;
+    };
+  }, [open, signedUrl]);
+
+  if (!photo) return null;
+  const size = getPhotoPrintSize(photo.print_size_slug);
+  const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === borderSlug);
+  const borderMm = border?.border_mm ?? 0;
+  const longEdgeMm = Math.max(size.width_mm, size.height_mm);
+  const borderFraction = borderFractionFor(longEdgeMm, borderMm);
+
+  // Rotation-adjusted image aspect.
+  const imageAspect = useMemo(() => {
+    if (!naturalSize) return null;
+    const swapped = rotation % 180 !== 0;
+    const w = swapped ? naturalSize.h : naturalSize.w;
+    const h = swapped ? naturalSize.w : naturalSize.h;
+    return w / h;
+  }, [naturalSize, rotation]);
+
+  const fitZoom = useMemo(
+    () => (imageAspect ? computeFitZoom(imageAspect, size.aspect) : 1),
+    [imageAspect, size.aspect],
+  );
+  const fillZoom = 1;
+  // minZoom must always be ≤ current zoom; allow going down to fitZoom.
+  const minZoom = Math.min(fitZoom, 1);
+
   const onCropComplete = useCallback((_: Area, areaPixels: Area) => {
     setCroppedAreaPixels(areaPixels);
   }, []);
 
   const handleReset = () => {
     setCrop({ x: 0, y: 0 });
-    setZoom(1);
+    setZoom(fillZoom);
     setRotation(0);
     setFitMode("fill");
   };
 
   const handleRotate = () => {
     setRotation((r) => (r + 90) % 360);
+    // Re-centre and re-snap to current fit mode after rotation, since the
+    // effective aspect ratio has flipped.
+    setCrop({ x: 0, y: 0 });
+    // We can't read the new fitZoom synchronously; the effect below
+    // re-snaps zoom whenever fitZoom changes and a fit mode is active.
   };
+
+  const handleFill = () => {
+    setFitMode("fill");
+    setCrop({ x: 0, y: 0 });
+    setZoom(fillZoom);
+  };
+
+  const handleFit = () => {
+    setFitMode("fit");
+    setCrop({ x: 0, y: 0 });
+    setZoom(fitZoom);
+  };
+
+  // When image loads or rotation changes, re-snap zoom to match the active
+  // fit mode so users aren't stranded on a zoom value the new aspect can't
+  // accommodate.
+  useEffect(() => {
+    if (!imageAspect) return;
+    if (fitMode === "fit") setZoom(fitZoom);
+    else if (fitMode === "fill") setZoom(fillZoom);
+    // Only re-snap on rotation/aspect changes — not on user zoom changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageAspect, rotation]);
 
   const handleSave = () => {
     onSave({
@@ -77,13 +175,6 @@ export default function PhotoEditorModal({
       croppedAreaPixels,
     });
   };
-
-  if (!photo) return null;
-  const size = getPhotoPrintSize(photo.print_size_slug);
-  const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === borderSlug);
-  const borderMm = border?.border_mm ?? 0;
-  const longEdgeMm = Math.max(size.width_mm, size.height_mm);
-  const borderFraction = borderFractionFor(longEdgeMm, borderMm);
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -111,10 +202,10 @@ export default function PhotoEditorModal({
               onZoomChange={setZoom}
               onRotationChange={setRotation}
               onCropComplete={onCropComplete}
-              minZoom={1}
+              minZoom={minZoom}
               maxZoom={4}
               zoomSpeed={0.5}
-              restrictPosition={true}
+              restrictPosition={zoom >= 1}
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center text-white/70 text-sm">
@@ -131,10 +222,6 @@ export default function PhotoEditorModal({
               <div
                 className="relative"
                 style={{
-                  // Match cropper aspect — overlay sized via padding tricks would be hard;
-                  // instead, draw a thin white inset frame across the full container.
-                  // We render four rectangles using outline trick: a transparent inner box
-                  // with white outset. Simpler: a single inset border via box-shadow.
                   width: "70%",
                   aspectRatio: size.aspect,
                   boxShadow: `inset 0 0 0 ${Math.max(2, Math.round(borderFraction * 100))}px rgba(255,255,255,0.85)`,
@@ -156,7 +243,7 @@ export default function PhotoEditorModal({
             </div>
             <Slider
               value={[zoom]}
-              min={1}
+              min={minZoom}
               max={4}
               step={0.01}
               onValueChange={(v) => setZoom(v[0])}
@@ -172,7 +259,7 @@ export default function PhotoEditorModal({
             <Button
               variant={fitMode === "fill" ? "default" : "outline"}
               size="sm"
-              onClick={() => setFitMode("fill")}
+              onClick={handleFill}
               className="gap-1.5"
             >
               <Maximize2 className="h-3.5 w-3.5" />
@@ -181,7 +268,7 @@ export default function PhotoEditorModal({
             <Button
               variant={fitMode === "fit" ? "default" : "outline"}
               size="sm"
-              onClick={() => setFitMode("fit")}
+              onClick={handleFit}
               className="gap-1.5"
             >
               <Minimize2 className="h-3.5 w-3.5" />
