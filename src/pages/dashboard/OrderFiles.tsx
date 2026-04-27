@@ -1187,9 +1187,55 @@ export default function OrderFiles() {
   const handlePosterEditorCancel = useCallback(() => {
     setPosterEditorOpen(false);
     setPendingPosterFile(null);
+    setPosterEditorInitialState(undefined);
+    setPosterEditorTitle(undefined);
     pendingPosterQueueRef.current = [];
     pendingPosterPassthroughRef.current = [];
+    reeditDocIdRef.current = null;
+    reeditExistingMetaRef.current = null;
   }, []);
+
+  // Re-open the poster editor against an existing document so the user can
+  // re-crop / re-zoom / re-rotate the original image. We download the source
+  // image from S3, seed the editor with the saved state, and replace the
+  // existing PDF in place on save.
+  const handleEditPosterImage = useCallback(
+    async (doc: { id: string; preflight_data: unknown }) => {
+      const preflight = (doc.preflight_data as Record<string, any> | null) ?? {};
+      const meta = preflight.poster_image as Record<string, any> | undefined;
+      if (!meta?.source_storage_path) {
+        toast.error("Original image not available for this file");
+        return;
+      }
+      try {
+        const urls = await getDownloadUrls([meta.source_storage_path]);
+        const signed = urls[meta.source_storage_path];
+        if (!signed) throw new Error("Could not get download URL");
+        const res = await fetch(signed);
+        if (!res.ok) throw new Error(`Download failed (${res.status})`);
+        const blob = await res.blob();
+        const file = new File([blob], meta.source_file_name ?? "image", {
+          type: meta.source_mime || blob.type || "image/jpeg",
+        });
+
+        reeditDocIdRef.current = doc.id;
+        reeditExistingMetaRef.current = { source_storage_path: meta.source_storage_path };
+        setPosterEditorInitialState({
+          sizeSlug: meta.sizeSlug,
+          orientation: meta.orientation,
+          crop: meta.crop,
+          zoom: meta.zoom,
+          rotation: meta.rotation,
+        });
+        setPosterEditorTitle("Re-crop your poster image");
+        setPendingPosterFile(file);
+        setPosterEditorOpen(true);
+      } catch (err: any) {
+        toast.error("Couldn't load original image", { description: err?.message });
+      }
+    },
+    [],
+  );
 
   const handleImageSizeConfirm = useCallback(
     async (selection: ImageSizeSelection) => {
