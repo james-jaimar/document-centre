@@ -12,7 +12,7 @@ import {
   inspectAsset,
   pollJob,
   convertOffice,
-  // normalizeOrientation intentionally not imported — auto-rotation removed.
+  normalizeOrientation,
   printReady,
   renderPages,
 } from "@/lib/documentCentreApi";
@@ -24,18 +24,27 @@ import { getPrintReadyPlan, type FamilyPrintConfig } from "@/lib/printIntent";
 import {
   detectOrientationMismatch as policyDetectMismatch,
   advisoryModeFor,
+  requiredOrientationFor,
   type RequiredOrientation,
 } from "@/lib/orders/orientationPolicy";
 
 /**
  * Page-orientation policy.
  *
- * We DO NOT auto-rotate uploaded PDF pages on the server during upload —
- * the customer must accept the OrientationAdvisory. But for products with a
- * mandatory orientation (Bound Documents / Ring Binders / Booklets =
- * portrait, Presentations = landscape) we BLOCK Phase B render until the
- * advisory is resolved, and the advisory invokes `normalize-orientation`
- * with an explicit target — not a blind 90° rotate.
+ * Two distinct rules — keep them straight when changing this code:
+ *
+ * 1. WHOLE-DOCUMENT orientation is owned by the customer. If the document
+ *    as a whole violates the product's required orientation (e.g. an
+ *    entirely landscape file uploaded against Bound Documents) we surface
+ *    the OrientationAdvisory dialog and let the user choose to rotate or
+ *    switch products. We do NOT silently rewrite their authored orientation.
+ *
+ * 2. PER-PAGE orientation INSIDE a product with a required orientation
+ *    (Bound Documents / Ring Binders / Booklets = portrait, Presentations
+ *    = landscape) is silently normalised at upload time. A bound document
+ *    is a physical book — a single landscape page in a portrait book MUST
+ *    be rotated 90° so it sits upright on the printed sheet. There is no
+ *    UX upside to prompting for this; it is a printing necessity.
  *
  * The single source of truth for "which products require which orientation"
  * lives in `src/lib/orders/orientationPolicy.ts`.
@@ -362,9 +371,10 @@ export function useDocumentUpload(
    * already final. Safe to call after a `resize` job. Idempotent — server-side
    * no-ops when nothing needs to change.
    *
-   * NOTE: orientation normalisation is intentionally NOT performed here. We
-   * preserve the customer's authored orientation; explicit rotation only
-   * happens when the user accepts the OrientationAdvisory.
+   * NOTE: orientation work is NOT performed here. Per-page normalisation
+   * for products with a required orientation runs earlier in
+   * `inspectExistingAsset`; whole-document orientation rewrites only
+   * happen when the user accepts the OrientationAdvisory.
    *
    * Returns true on success (or when nothing to do); false only on hard
    * failure (callers continue rendering with the un-finalised PDF).
@@ -454,6 +464,47 @@ export function useDocumentUpload(
         for (let i = 0; i < 20 && (!asset.boxes || asset.page_count == null); i++) {
           await new Promise((r) => setTimeout(r, 1000));
           asset = await getAsset(assetId);
+        }
+
+        // ── Per-page orientation normalisation ────────────────────────
+        // For products with a required orientation (Bound Documents,
+        // Ring Binders, Booklets, Presentations) we silently rotate any
+        // page whose visual orientation doesn't match the product. This
+        // is a print-correctness step, not a UX choice — a landscape
+        // table page in a portrait bound document MUST be rotated 90°
+        // CW so it sits upright on the printed sheet.
+        //
+        // The whole-document OrientationAdvisory below still fires when
+        // the *entire* document violates the policy (e.g. a fully
+        // landscape file uploaded against Bound Documents) — that is a
+        // genuine "wrong product / wrong file" situation that warrants
+        // a user prompt.
+        const requiredOrient = requiredOrientationFor(productFamilySlug);
+        const pageCountForNormalise = Number(asset.page_count ?? 0);
+        if (requiredOrient && pageCountForNormalise > 1) {
+          try {
+            updateUpload(fileName, {
+              progress: 50,
+              statusText: "Aligning page orientation…",
+            });
+            const { job_id: normJobId } = await normalizeOrientation(
+              assetId,
+              requiredOrient,
+            );
+            await pollJob(normJobId);
+            // Re-fetch so the box/dimension reads below reflect the
+            // rotated PDF (normalize_orientation promotes a new
+            // normalized_storage_path with rebuilt boxes).
+            asset = await getAsset(assetId);
+          } catch (normErr: any) {
+            // Non-fatal — fall back to the un-normalised PDF. The user
+            // can still resolve any whole-doc orientation issue via the
+            // advisory dialog.
+            console.warn(
+              "[upload] per-page normalize-orientation failed:",
+              normErr,
+            );
+          }
         }
 
         const boxes = asset.boxes as Record<string, number[]> | null;
