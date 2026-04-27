@@ -1016,6 +1016,8 @@ export default function OrderFiles() {
       const sourceFile = pendingPosterFile;
       setPosterEditorOpen(false);
       setPendingPosterFile(null);
+      setPosterEditorInitialState(undefined);
+      setPosterEditorTitle(undefined);
       if (!sourceFile) return;
 
       try {
