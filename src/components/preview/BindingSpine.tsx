@@ -15,13 +15,6 @@ interface BindingSpineProps {
   /** Binding edge: left (default) or top (horizontal spine for presentations) */
   bindingEdge?: "left" | "top";
   /**
-   * When true and `bindingEdge==="top"`, render the portrait long-edge
-   * artwork rotated 90° to bind a landscape document on its LONG top edge.
-   * When false (default), top-edge bindings use the dedicated 210mm
-   * short-edge assets that match a landscape page's short edge exactly.
-   */
-  landscapeLongEdge?: boolean;
-  /**
    * Selected binding option's method + colour. When provided, drives the
    * spine artwork selection; otherwise we fall back to the method's default
    * (black) colour. `bindingType` still controls whether a spine renders at
