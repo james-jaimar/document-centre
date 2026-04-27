@@ -900,6 +900,66 @@ class PdfOps:
         return out_pdf
 
 
+    def derive_default_render_box(self, src: Path) -> list[float] | None:
+        """Return a sensible default render box from the PDF's own metadata.
+
+        Many design tools (InDesign, Illustrator, Affinity, etc.) export PDFs
+        with a MediaBox that includes bleed and crop marks, and a TrimBox that
+        marks the actual finished page edge. For previews we want to show the
+        FINISHED page edge — i.e. crop to TrimBox (or BleedBox as a fallback)
+        so users see edge-to-edge artwork instead of bleed/marks.
+
+        Rules:
+          - Look at page 1 only (the box is applied uniformly by crop_to_box,
+            which is rotation/orientation-aware).
+          - Prefer TrimBox if it is strictly inside MediaBox (≥1pt difference
+            on any edge — guards against floating-point noise from PDFs where
+            TrimBox == MediaBox).
+          - Otherwise fall back to BleedBox under the same "strictly inside"
+            rule.
+          - Return None if neither box is present or both equal MediaBox, so
+            we don't crop a clean PDF that has no bleed area.
+        """
+        try:
+            with pikepdf.open(src) as pdf:
+                if not len(pdf.pages):
+                    return None
+                page = pdf.pages[0]
+                try:
+                    mb = [float(v) for v in page.MediaBox]
+                except Exception:
+                    return None
+
+                def _strictly_inside(box: list[float]) -> bool:
+                    # ≥1pt smaller on at least one edge AND not larger than
+                    # MediaBox on any edge.
+                    if (
+                        box[0] < mb[0] - 0.5 or box[1] < mb[1] - 0.5
+                        or box[2] > mb[2] + 0.5 or box[3] > mb[3] + 0.5
+                    ):
+                        return False
+                    smaller = (
+                        (box[0] - mb[0]) > 1.0
+                        or (box[1] - mb[1]) > 1.0
+                        or (mb[2] - box[2]) > 1.0
+                        or (mb[3] - box[3]) > 1.0
+                    )
+                    return smaller
+
+                for name in ("TrimBox", "BleedBox"):
+                    raw = getattr(page, name, None)
+                    if not raw:
+                        continue
+                    try:
+                        box = [float(v) for v in raw]
+                    except Exception:
+                        continue
+                    if _strictly_inside(box):
+                        return box
+        except Exception:
+            return None
+        return None
+
     def crop_to_box(self, src: Path, out_pdf: Path, box: list[float]) -> Path:
         """Crop pages to the given box [x0, y0, x1, y1].
 
