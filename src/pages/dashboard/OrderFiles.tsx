@@ -299,21 +299,35 @@ export default function OrderFiles() {
   // Check for portrait orientation on presentation uploads
   useEffect(() => {
     if (uploadModalOpen || advisoryDoc || orientationDoc || bleedDoc) return;
-    if (productFamily?.slug !== "presentations") return;
-    const portraitDoc = documents.find((d) => {
+  // Check for orientation mismatches:
+  // - Presentations: portrait files should be rotated to landscape.
+  // - Bound Documents ("n"): landscape files should be rotated to portrait.
+  useEffect(() => {
+    if (uploadModalOpen || advisoryDoc || orientationDoc || bleedDoc) return;
+    const familySlug = productFamily?.slug;
+
+    let mode: "to-landscape" | "to-portrait" | null = null;
+    if (familySlug === "presentations") mode = "to-landscape";
+    else if (familySlug === "n") mode = "to-portrait";
+    if (!mode) return;
+
+    const mismatchDoc = documents.find((d) => {
       const preflight = d.preflight_data as Record<string, any> | null;
       if (preflight?.orientation_resolved) return false;
       const w = Number(d.page_width_mm);
       const h = Number(d.page_height_mm);
-      return w > 0 && h > 0 && w < h; // portrait = width < height
+      if (!(w > 0 && h > 0)) return false;
+      // to-landscape: flag portrait (w < h). to-portrait: flag landscape (w > h).
+      return mode === "to-landscape" ? w < h : w > h;
     });
-    if (portraitDoc) {
+    if (mismatchDoc) {
       setOrientationDoc({
-        id: portraitDoc.id,
-        fileName: portraitDoc.file_name,
-        widthMm: Number(portraitDoc.page_width_mm),
-        heightMm: Number(portraitDoc.page_height_mm),
-        backendAssetId: portraitDoc.backend_asset_id,
+        id: mismatchDoc.id,
+        fileName: mismatchDoc.file_name,
+        widthMm: Number(mismatchDoc.page_width_mm),
+        heightMm: Number(mismatchDoc.page_height_mm),
+        backendAssetId: mismatchDoc.backend_asset_id,
+        mode,
       });
     }
   }, [documents, uploadModalOpen, advisoryDoc, orientationDoc, bleedDoc, productFamily?.slug]);
