@@ -694,17 +694,14 @@ export default function OrderFiles() {
         );
       }
 
-      // Use TrimBox (if real) as the explicit render box for the preview
-      // pass — otherwise let the backend auto-derive (or render MediaBox).
-      const explicitTrim =
-        trimBox && trimBox.length === 4 && mediaBox && mediaBox.length === 4 &&
-        (Math.abs(trimBox[0] - mediaBox[0]) > 0.5 ||
-         Math.abs(trimBox[1] - mediaBox[1]) > 0.5 ||
-         Math.abs(trimBox[2] - mediaBox[2]) > 0.5 ||
-         Math.abs(trimBox[3] - mediaBox[3]) > 0.5);
-      const renderBoxForPreview = explicitTrim
-        ? (trimBox as [number, number, number, number])
-        : null;
+      // Authoritative source of truth for previews is the rotated PDF on
+      // the server. We DO NOT pass a client-derived render box — the
+      // backend auto-derives the correct box (TrimBox → BleedBox →
+      // MediaBox) from the rotated PDF it just promoted. Passing a
+      // pre-rotation box from the document row was the cause of previews
+      // rendering the full bleed/crop-mark canvas after rotation.
+      const explicitTrim = !!(trimBox && trimBox.length === 4);
+      const renderBoxForPreview: [number, number, number, number] | null = null;
 
       const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
       const { orientation_mismatch: _om, ...preflightRest } = preflight;
@@ -721,13 +718,16 @@ export default function OrderFiles() {
             orientation_action: "rotated",
             effective_width_mm: widthMm,
             effective_height_mm: heightMm,
+            // Persist the refreshed post-rotation boxes so the UI no
+            // longer carries stale pre-rotation geometry.
+            boxes: refBoxes ?? undefined,
             ...(explicitTrim ? { trim_box_pt: trimBox } : {}),
           },
         })
         .eq("id", orientationDoc.id);
 
-      // Render the rotated document — pass the trim box so the preview
-      // shows the finished edge (no bleed/crop marks).
+      // Render the rotated document — backend auto-derives the render
+      // box from the new PDF's own TrimBox.
       setUploadModalOpen(true);
       await renderWithProgress(
         orientationDoc.id,
