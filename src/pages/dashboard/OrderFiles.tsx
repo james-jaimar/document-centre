@@ -999,9 +999,35 @@ export default function OrderFiles() {
     return out;
   }, [documents, activePrintSize, sessionSizeLock, getDocEffectiveSize]);
 
+  // Hard guard: refuse to add a doc to a section if its orientation violates
+  // the product's mandatory orientation policy. The advisory dialog is the
+  // ONLY way to resolve this — silent acceptance breaks every downstream step.
+  const assertOrientationOk = useCallback((docId: string): boolean => {
+    const required = requiredOrientationFor(productFamily?.slug);
+    if (!required) return true;
+    const candidate = documents.find((d) => d.id === docId);
+    if (!candidate) return true;
+    if (violatesOrientationPolicy(productFamily?.slug, candidate.page_width_mm, candidate.page_height_mm)) {
+      toast.error(
+        required === "portrait"
+          ? "Landscape file can't be used in this product"
+          : "Portrait file can't be used in this product",
+        {
+          description: required === "portrait"
+            ? "Rotate this file to portrait first, or switch product."
+            : "Rotate this file to landscape first, or switch product.",
+        },
+      );
+      return false;
+    }
+    return true;
+  }, [productFamily?.slug, documents]);
+
   const handleAddAs = useCallback(
     async (type: "front_cover" | "back_cover" | "body") => {
       if (!selectedDocId || !orderItem) return;
+
+      if (!assertOrientationOk(selectedDocId)) return;
 
       // ── Belt-and-braces mismatch guard ─────────────────────────
       // Refuse to assign a doc whose effective size doesn't match the
