@@ -505,6 +505,38 @@ export default function MarketingLanding() {
         </div>
       </section>
 
+      {/* ───────── Production muscle strip ───────── */}
+      <section className="bg-[hsl(var(--dc-bg-soft))] py-12 border-y border-[hsl(var(--dc-border))]">
+        <div className="max-w-[1240px] mx-auto px-6">
+          <p className="text-center text-[13px] font-semibold tracking-widest uppercase mb-6" style={{ color: "hsl(var(--dc-blue))" }}>
+            Heavy lifting, built in
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+            {[
+              { t: "Combine & re-order multiple files", c: "hsl(var(--dc-blue))" },
+              { t: "Auto-rotation & orientation fixes", c: "hsl(var(--dc-green))" },
+              { t: "Automated preflight checks", c: "hsl(var(--dc-orange))" },
+              { t: "Imposition built in", c: "hsl(var(--dc-sky))" },
+              { t: "End-to-end job tracking & workflow", c: "hsl(var(--dc-navy))" },
+            ].map((p) => (
+              <div
+                key={p.t}
+                className="dc-card flex items-center gap-2.5 px-4 py-3 text-[13px] font-semibold"
+                style={{ color: "hsl(var(--dc-navy))" }}
+              >
+                <span
+                  className="h-7 w-7 rounded-full flex items-center justify-center shrink-0"
+                  style={{ background: `color-mix(in srgb, ${p.c} 15%, white)` }}
+                >
+                  <Check className="h-4 w-4" style={{ color: p.c }} strokeWidth={3} />
+                </span>
+                <span className="leading-tight">{p.t}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ───────── Why printers choose (timeline + screenshot + samples) ───────── */}
       <section id="how-it-works" className="bg-white pb-28">
         <div className="max-w-[1240px] mx-auto px-6 grid lg:grid-cols-[0.85fr_1.15fr] gap-14 items-center">
