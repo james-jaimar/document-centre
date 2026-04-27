@@ -1,5 +1,5 @@
 import type { Tables } from "@/integrations/supabase/types";
-import { FileText, Loader2, AlertCircle, CheckCircle2, RefreshCw, Trash2, Eye, Wand2 } from "lucide-react";
+import { FileText, Loader2, AlertCircle, CheckCircle2, RefreshCw, Trash2, Eye, Wand2, Crop } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
@@ -17,6 +17,8 @@ interface FileListProps {
     preflight_data: unknown;
   }) => Promise<void>;
   onDelete?: (docId: string) => Promise<void>;
+  /** Re-open the poster image crop editor for an existing image-backed doc. */
+  onEditPosterImage?: (doc: { id: string; preflight_data: unknown }) => Promise<void> | void;
   /**
    * Doc IDs whose effective paper size differs from the rest of the print
    * job (or the session lock). Surfaced as an inline ⚠ warning chip.
@@ -37,6 +39,7 @@ export default function FileList({
   onReprocess,
   onRerenderGaps,
   onDelete,
+  onEditPosterImage,
   mismatchDocIds,
 }: FileListProps) {
   const [reprocessingIds, setReprocessingIds] = useState<Set<string>>(new Set());
@@ -107,6 +110,7 @@ export default function FileList({
           : [];
         const hasGaps = thumbnailGaps.length > 0;
         const hasSizeMismatch = !!mismatchDocIds?.has(doc.id);
+        const isPosterImage = !!preflight?.poster_image?.source_storage_path;
 
 
         return (
@@ -173,6 +177,18 @@ export default function FileList({
             </div>
 
             <div className="shrink-0 flex items-center gap-1">
+              {isPosterImage && onEditPosterImage && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void onEditPosterImage({ id: doc.id, preflight_data: doc.preflight_data });
+                  }}
+                  className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                  title="Re-crop image"
+                >
+                  <Crop className="h-3.5 w-3.5" />
+                </button>
+              )}
               {onDelete && (
                 <button
                   onClick={(e) => {

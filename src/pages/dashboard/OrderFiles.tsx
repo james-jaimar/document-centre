@@ -31,7 +31,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { resize, rotate, pollJob, cropRasterize, getAsset, getDerivedFiles, ensureFreshAsset, inspectAsset, normalizeOrientation } from "@/lib/documentCentreApi";
 import { copyS3Object } from "@/lib/s3Storage";
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { useAuth } from "@/hooks/useAuth";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
+import { uploadToS3, getDownloadUrls } from "@/lib/s3Storage";
 
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import type { PaperSize, NearIsoMatch } from "@/lib/paperSizes";
@@ -52,6 +54,7 @@ export default function OrderFiles() {
   const fromDocId = searchParams.get("fromDoc");
   const createOrder = useCreateOrder();
   const { tenantId: activeTenantId } = useTenantContext();
+  const { user } = useAuth();
   const qc = useQueryClient();
 
   // Track whether we're in "new order" mode (no order created yet)
@@ -222,6 +225,10 @@ export default function OrderFiles() {
   // Poster image editor (crop / scale flow for image uploads on poster orders).
   const [posterEditorOpen, setPosterEditorOpen] = useState(false);
   const [pendingPosterFile, setPendingPosterFile] = useState<File | null>(null);
+  const [posterEditorInitialState, setPosterEditorInitialState] = useState<
+    import("@/components/order/PosterImageEditor").PosterEditorInitialState | undefined
+  >(undefined);
+  const [posterEditorTitle, setPosterEditorTitle] = useState<string | undefined>(undefined);
   const pendingPosterQueueRef = useRef<File[]>([]);
   const pendingPosterPassthroughRef = useRef<File[]>([]);
   const resolvedDocIds = useRef<Set<string>>(new Set());
@@ -985,11 +992,32 @@ export default function OrderFiles() {
     [uploadFiles, ensureOrder, productFamily?.slug]
   );
 
+  // Tracks the most-recently-uploaded poster_image source so we can stamp
+  // its metadata onto the document row that uploadFiles creates.
+  const pendingPosterMetaRef = useRef<{
+    source_storage_path: string;
+    source_file_name: string;
+    source_mime: string;
+    crop: { x: number; y: number };
+    zoom: number;
+    rotation: number;
+    sizeSlug: string;
+    orientation: "portrait" | "landscape";
+    croppedAreaPixels: { x: number; y: number; width: number; height: number };
+    print_size: { widthMm: number; heightMm: number };
+    pdfFileName: string;
+  } | null>(null);
+  // When re-editing an existing doc, capture which doc we're replacing.
+  const reeditDocIdRef = useRef<string | null>(null);
+  const reeditExistingMetaRef = useRef<{ source_storage_path: string } | null>(null);
+
   const handlePosterEditorConfirm = useCallback(
     async (result: PosterEditorResult) => {
       const sourceFile = pendingPosterFile;
       setPosterEditorOpen(false);
       setPendingPosterFile(null);
+      setPosterEditorInitialState(undefined);
+      setPosterEditorTitle(undefined);
       if (!sourceFile) return;
 
       try {
@@ -999,12 +1027,149 @@ export default function OrderFiles() {
           croppedAreaPixels: result.croppedAreaPixels,
           rotation: result.rotation,
         });
+
+        // ── Re-edit branch: replace the existing doc's PDF in place. ──
+        const reeditDocId = reeditDocIdRef.current;
+        if (reeditDocId) {
+          reeditDocIdRef.current = null;
+          const reusedSource = reeditExistingMetaRef.current?.source_storage_path ?? null;
+          reeditExistingMetaRef.current = null;
+          try {
+            const { data: existingDoc } = await supabase
+              .from("documents")
+              .select("file_path, file_name, preflight_data")
+              .eq("id", reeditDocId)
+              .single();
+            if (!existingDoc) throw new Error("Document not found");
+
+            // Overwrite the PDF at the existing storage key — keeps the
+            // backend asset id stable for downstream pipeline reuse via
+            // ensureFreshAsset.
+            await uploadToS3(existingDoc.file_path, pdf);
+
+            const prevPreflight = (existingDoc.preflight_data as Record<string, any> | null) ?? {};
+            const newPosterMeta = {
+              ...(prevPreflight.poster_image ?? {}),
+              source_storage_path: reusedSource ?? prevPreflight.poster_image?.source_storage_path,
+              crop: result.crop,
+              zoom: result.zoom,
+              rotation: result.rotation,
+              sizeSlug: (result.size as any).slug,
+              orientation: result.orientation,
+              croppedAreaPixels: result.croppedAreaPixels,
+              print_size: { widthMm: result.size.widthMm, heightMm: result.size.heightMm },
+            };
+
+            // Reset preflight flags so the standard pipeline re-inspects + re-renders.
+            await supabase
+              .from("documents")
+              .update({
+                file_size: pdf.size,
+                page_width_mm: result.size.widthMm,
+                page_height_mm: result.size.heightMm,
+                document_status: "processing",
+                preflight_data: {
+                  ...prevPreflight,
+                  awaiting_review: false,
+                  size_resolved: true,
+                  print_ready_done: false,
+                  poster_image: newPosterMeta,
+                } as any,
+              })
+              .eq("id", reeditDocId);
+
+            // Re-run inspect + render against the new PDF.
+            await reprocessDocument({
+              id: reeditDocId,
+              file_path: existingDoc.file_path,
+              file_name: existingDoc.file_name,
+            });
+            refetchDocuments();
+            toast.success("Image updated");
+          } catch (err: any) {
+            toast.error("Couldn't update image", { description: err?.message });
+          }
+          return;
+        }
+
+        // ── Fresh upload branch ──
         const itemId = ensuredItemIdRef.current ?? undefined;
+
+        // Stash the original image so re-edits can re-open the editor with it.
+        let sourceStoragePath: string | null = null;
+        try {
+          if (user && activeTenantId && itemId) {
+            const safeName = sourceFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+            sourceStoragePath = `tenants/${activeTenantId}/poster-sources/${user.id}/${itemId}/${crypto.randomUUID()}-${safeName}`;
+            await uploadToS3(sourceStoragePath, sourceFile);
+          }
+        } catch (stashErr) {
+          // Non-fatal — re-edit will simply not be available.
+          console.warn("[posters] failed to stash source image:", stashErr);
+          sourceStoragePath = null;
+        }
+
+        // Stash metadata to apply after uploadFiles creates the doc row.
         const passthrough = pendingPosterPassthroughRef.current;
         pendingPosterPassthroughRef.current = [];
         const batch: File[] = [pdf, ...passthrough];
+
+        pendingPosterMetaRef.current = sourceStoragePath
+          ? {
+              source_storage_path: sourceStoragePath,
+              source_file_name: sourceFile.name,
+              source_mime: sourceFile.type,
+              crop: result.crop,
+              zoom: result.zoom,
+              rotation: result.rotation,
+              sizeSlug: (result.size as any).slug,
+              orientation: result.orientation,
+              croppedAreaPixels: result.croppedAreaPixels,
+              print_size: { widthMm: result.size.widthMm, heightMm: result.size.heightMm },
+              pdfFileName: pdf.name,
+            }
+          : null;
+
         setUploadModalOpen(true);
-        await uploadFiles(batch, undefined, itemId);
+        const uploadResults = await uploadFiles(batch, undefined, itemId);
+
+        // Stamp poster_image metadata onto the newly-created doc.
+        const meta = pendingPosterMetaRef.current;
+        pendingPosterMetaRef.current = null;
+        if (meta && uploadResults && uploadResults[0]?.id) {
+          try {
+            const newDocId = uploadResults[0].id;
+            const { data: existing } = await supabase
+              .from("documents")
+              .select("preflight_data")
+              .eq("id", newDocId)
+              .single();
+            const prev = (existing?.preflight_data as Record<string, any> | null) ?? {};
+            await supabase
+              .from("documents")
+              .update({
+                preflight_data: {
+                  ...prev,
+                  poster_image: {
+                    source_storage_path: meta.source_storage_path,
+                    source_file_name: meta.source_file_name,
+                    source_mime: meta.source_mime,
+                    crop: meta.crop,
+                    zoom: meta.zoom,
+                    rotation: meta.rotation,
+                    sizeSlug: meta.sizeSlug,
+                    orientation: meta.orientation,
+                    croppedAreaPixels: meta.croppedAreaPixels,
+                    print_size: meta.print_size,
+                  },
+                } as any,
+              })
+              .eq("id", newDocId);
+            refetchDocuments();
+          } catch (metaErr) {
+            console.warn("[posters] failed to stamp metadata:", metaErr);
+          }
+        }
       } catch (err: any) {
         toast.error("Couldn't process image", { description: err?.message });
       }
@@ -1018,15 +1183,61 @@ export default function OrderFiles() {
         setPosterEditorOpen(true);
       }
     },
-    [pendingPosterFile, uploadFiles],
+    [pendingPosterFile, uploadFiles, user, activeTenantId, reprocessDocument, refetchDocuments],
   );
 
   const handlePosterEditorCancel = useCallback(() => {
     setPosterEditorOpen(false);
     setPendingPosterFile(null);
+    setPosterEditorInitialState(undefined);
+    setPosterEditorTitle(undefined);
     pendingPosterQueueRef.current = [];
     pendingPosterPassthroughRef.current = [];
+    reeditDocIdRef.current = null;
+    reeditExistingMetaRef.current = null;
   }, []);
+
+  // Re-open the poster editor against an existing document so the user can
+  // re-crop / re-zoom / re-rotate the original image. We download the source
+  // image from S3, seed the editor with the saved state, and replace the
+  // existing PDF in place on save.
+  const handleEditPosterImage = useCallback(
+    async (doc: { id: string; preflight_data: unknown }) => {
+      const preflight = (doc.preflight_data as Record<string, any> | null) ?? {};
+      const meta = preflight.poster_image as Record<string, any> | undefined;
+      if (!meta?.source_storage_path) {
+        toast.error("Original image not available for this file");
+        return;
+      }
+      try {
+        const urls = await getDownloadUrls([meta.source_storage_path]);
+        const signed = urls[meta.source_storage_path];
+        if (!signed) throw new Error("Could not get download URL");
+        const res = await fetch(signed);
+        if (!res.ok) throw new Error(`Download failed (${res.status})`);
+        const blob = await res.blob();
+        const file = new File([blob], meta.source_file_name ?? "image", {
+          type: meta.source_mime || blob.type || "image/jpeg",
+        });
+
+        reeditDocIdRef.current = doc.id;
+        reeditExistingMetaRef.current = { source_storage_path: meta.source_storage_path };
+        setPosterEditorInitialState({
+          sizeSlug: meta.sizeSlug,
+          orientation: meta.orientation,
+          crop: meta.crop,
+          zoom: meta.zoom,
+          rotation: meta.rotation,
+        });
+        setPosterEditorTitle("Re-crop your poster image");
+        setPendingPosterFile(file);
+        setPosterEditorOpen(true);
+      } catch (err: any) {
+        toast.error("Couldn't load original image", { description: err?.message });
+      }
+    },
+    [],
+  );
 
   const handleImageSizeConfirm = useCallback(
     async (selection: ImageSizeSelection) => {
@@ -1504,6 +1715,7 @@ export default function OrderFiles() {
             onReprocess={reprocessDocument}
             onRerenderGaps={handleRerenderGaps}
             onDelete={handleDeleteDocument}
+            onEditPosterImage={handleEditPosterImage}
             mismatchDocIds={mismatchDocIds}
           />
         </div>
@@ -1579,6 +1791,8 @@ export default function OrderFiles() {
       <PosterImageEditor
         open={posterEditorOpen}
         file={pendingPosterFile}
+        initialState={posterEditorInitialState}
+        title={posterEditorTitle}
         onConfirm={handlePosterEditorConfirm}
         onCancel={handlePosterEditorCancel}
       />

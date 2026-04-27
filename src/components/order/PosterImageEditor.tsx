@@ -44,6 +44,16 @@ export interface PosterEditorResult {
   orientation: "portrait" | "landscape";
   croppedAreaPixels: CroppedAreaPixels;
   rotation: number;
+  zoom: number;
+  crop: { x: number; y: number };
+}
+
+export interface PosterEditorInitialState {
+  sizeSlug?: string;
+  orientation?: "portrait" | "landscape";
+  crop?: { x: number; y: number };
+  zoom?: number;
+  rotation?: number;
 }
 
 interface Props {
@@ -52,6 +62,10 @@ interface Props {
   file: File | null;
   /** Optional pre-selected size (e.g. from an already-set poster size). */
   initialSizeSlug?: string;
+  /** Optional full state to seed when re-editing an existing poster image. */
+  initialState?: PosterEditorInitialState;
+  /** Title shown in the dialog header. */
+  title?: string;
   onCancel: () => void;
   onConfirm: (result: PosterEditorResult) => void;
 }
@@ -66,17 +80,24 @@ export default function PosterImageEditor({
   open,
   file,
   initialSizeSlug,
+  initialState,
+  title,
   onCancel,
   onConfirm,
 }: Props) {
-  const [sizeSlug, setSizeSlug] = useState<string>(initialSizeSlug ?? DEFAULT_POSTER_SLUG);
-  const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
-  const [crop, setCrop] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [rotation, setRotation] = useState(0);
+  const [sizeSlug, setSizeSlug] = useState<string>(
+    initialState?.sizeSlug ?? initialSizeSlug ?? DEFAULT_POSTER_SLUG,
+  );
+  const [orientation, setOrientation] = useState<"portrait" | "landscape">(
+    initialState?.orientation ?? "portrait",
+  );
+  const [crop, setCrop] = useState(initialState?.crop ?? { x: 0, y: 0 });
+  const [zoom, setZoom] = useState(initialState?.zoom ?? 1);
+  const [rotation, setRotation] = useState(initialState?.rotation ?? 0);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<CroppedAreaPixels | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageDims, setImageDims] = useState<{ w: number; h: number } | null>(null);
+  const hasInitialState = !!initialState;
 
   // Build / revoke object URL for the source file.
   useEffect(() => {
@@ -93,21 +114,22 @@ export default function PosterImageEditor({
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
-  // When the dialog (re-)opens reset to defaults and auto-orient the chosen
-  // size to the source image's aspect.
+  // When the dialog (re-)opens reset to defaults (or to provided initial state).
   useEffect(() => {
     if (!open) return;
-    setSizeSlug(initialSizeSlug ?? DEFAULT_POSTER_SLUG);
-    setCrop({ x: 0, y: 0 });
-    setZoom(1);
-    setRotation(0);
-  }, [open, initialSizeSlug]);
+    setSizeSlug(initialState?.sizeSlug ?? initialSizeSlug ?? DEFAULT_POSTER_SLUG);
+    setCrop(initialState?.crop ?? { x: 0, y: 0 });
+    setZoom(initialState?.zoom ?? 1);
+    setRotation(initialState?.rotation ?? 0);
+    if (initialState?.orientation) setOrientation(initialState.orientation);
+  }, [open, initialSizeSlug, initialState]);
 
-  // Auto-pick orientation to match the source image's natural aspect.
+  // Auto-pick orientation to match the source image's natural aspect — but
+  // only when we don't have a saved orientation to honour (re-edit case).
   useEffect(() => {
-    if (!imageDims) return;
+    if (!imageDims || hasInitialState) return;
     setOrientation(imageDims.w >= imageDims.h ? "landscape" : "portrait");
-  }, [imageDims]);
+  }, [imageDims, hasInitialState]);
 
   const sizeChoice = useMemo(
     () => POSTER_SIZE_CHOICES.find((s) => s.slug === sizeSlug) ?? POSTER_SIZE_CHOICES[2],
@@ -132,14 +154,14 @@ export default function PosterImageEditor({
       orientation === "landscape"
         ? { ...sizeChoice, widthMm: portraitH, heightMm: portraitW }
         : { ...sizeChoice, widthMm: portraitW, heightMm: portraitH };
-    onConfirm({ size: finalSize, orientation, croppedAreaPixels, rotation });
+    onConfirm({ size: finalSize, orientation, croppedAreaPixels, rotation, zoom, crop });
   };
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="max-w-3xl p-0 overflow-hidden">
         <DialogHeader className="px-6 pt-6 pb-2">
-          <DialogTitle className="text-lg">Crop & position your poster</DialogTitle>
+          <DialogTitle className="text-lg">{title ?? "Crop & position your poster"}</DialogTitle>
           <DialogDescription className="text-xs">
             {file?.name ?? "Image"} — pick a size, then drag and zoom to frame the image.
           </DialogDescription>
