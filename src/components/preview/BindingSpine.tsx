@@ -15,13 +15,6 @@ interface BindingSpineProps {
   /** Binding edge: left (default) or top (horizontal spine for presentations) */
   bindingEdge?: "left" | "top";
   /**
-   * When true and `bindingEdge==="top"`, render the portrait long-edge
-   * artwork rotated 90° to bind a landscape document on its LONG top edge.
-   * When false (default), top-edge bindings use the dedicated 210mm
-   * short-edge assets that match a landscape page's short edge exactly.
-   */
-  landscapeLongEdge?: boolean;
-  /**
    * Selected binding option's method + colour. When provided, drives the
    * spine artwork selection; otherwise we fall back to the method's default
    * (black) colour. `bindingType` still controls whether a spine renders at
@@ -44,7 +37,6 @@ export default function BindingSpine({
   isOpen = false,
   position = "center",
   bindingEdge = "left",
-  landscapeLongEdge = false,
   bindingArt,
 }: BindingSpineProps) {
   if (bindingType === "none" || bindingType === "ring") return null;
@@ -65,19 +57,10 @@ export default function BindingSpine({
     const color = normaliseBindingColor(bindingArt?.color);
 
     // Edge selection:
-    //  - bindingEdge==="top" + landscapeLongEdge → dedicated horizontal
-    //    landscape ("top") artwork. The outer FlipBook container is rotated
-    //    90° in this mode, so a vertical strip drawn here visually appears
-    //    as a horizontal spine between the two stacked landscape pages.
-    //  - bindingEdge==="top" alone (short-edge landscape bind) → 210mm
-    //    short-edge artwork in a normal vertical spine (no rotation).
+    //  - bindingEdge==="top" → 210mm short-edge artwork (landscape document
+    //    bound on its short left edge, side-by-side spread).
     //  - bindingEdge==="left" → traditional portrait long-edge spine.
-    const edge: "long" | "short" | "top" =
-      bindingEdge === "top" && landscapeLongEdge
-        ? "top"
-        : bindingEdge === "top"
-          ? "short"
-          : "long";
+    const edge: "long" | "short" = bindingEdge === "top" ? "short" : "long";
     const state = isOpen ? "open" : "closed";
 
     const { src: spineImage } = resolveBindingArt({ method, color, edge, state });

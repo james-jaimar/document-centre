@@ -95,13 +95,6 @@ export interface FlipBookProps extends PreviewComponentProps {
   faceLabels?: string[];
   /** Binding edge: left (default) or top (for landscape presentations) */
   bindingEdge?: "left" | "top";
-  /**
-   * When true, the top-bound layout uses the existing portrait/long-edge
-   * spine artwork rotated 90° (suitable for binding a landscape document
-   * on its LONG top edge). When false (default) and `bindingEdge==="top"`,
-   * the dedicated 210mm short-edge artwork is used.
-   */
-  landscapeLongEdge?: boolean;
   /** Raw storage paths (pre-signing) for stable structural key */
   rawPaths?: string[];
   /**

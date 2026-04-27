@@ -28,8 +28,6 @@ interface PreviewPanelProps {
   productType?: ProductPreviewType;
   effects?: PreviewEffects;
   bindingEdge?: "left" | "top";
-  /** When true and bindingEdge==="top", use rotated long-edge artwork. */
-  landscapeLongEdge?: boolean;
   /** Selected binding option's method + colour, drives spine artwork. */
   bindingArt?: { method: "spiral" | "comb" | "twin_loop"; color: string };
 }
@@ -240,7 +238,7 @@ export default function PreviewPanel({
   productType = "loose_sheets",
   effects,
   bindingEdge,
-  landscapeLongEdge,
+  
   bindingArt,
 }: PreviewPanelProps) {
   const [currentPage, setCurrentPage] = useState(0);
@@ -705,7 +703,6 @@ export default function PreviewPanel({
           displayPageNumbers={displayPageNumbers}
           faceLabels={computedPageRoles.map((_, i) => faceLabel(i))}
           bindingEdge={bindingEdge}
-          landscapeLongEdge={landscapeLongEdge}
           bindingArt={bindingArt}
         />
       </div>
@@ -727,7 +724,6 @@ export default function PreviewPanel({
           tabPositions={tabPositions}
           displayPageNumbers={displayPageNumbers}
           bindingEdge={bindingEdge}
-          landscapeLongEdge={landscapeLongEdge}
           bindingArt={bindingArt}
         />
       )}

@@ -460,26 +460,14 @@ export default function OrderBuild() {
   }, [options, spec.selected_options]);
 
   // Top-bound layout fires for top/short metadata OR any landscape size.
-  // The user can opt-in to long-edge (top) binding via the toggle, which
-  // keeps the top-bound layout but switches the spine artwork to the
-  // (rotated) portrait long-edge assets.
+  // Landscape documents bind on the short edge (vertical spine on the
+  // left, side-by-side spread). Users wanting long-edge binding simply
+  // upload a landscape document — there is no separate toggle.
   const bindingEdge: "left" | "top" = useMemo(() => {
     if (sizeBindingEdge === "top" || sizeBindingEdge === "short") return "top";
     if (isLandscapeSize) return "top";
     return "left";
   }, [sizeBindingEdge, isLandscapeSize]);
-
-  const landscapeLongEdge = isLandscapeSize && spec.binding_edge_override === "long";
-
-  // Show the long-edge toggle only when it's actually applicable.
-  const canToggleLongEdge = isLandscapeSize && !!bindingArt;
-
-  const handleToggleLongEdge = useCallback((next: boolean) => {
-    setSpec((prev) => ({
-      ...prev,
-      binding_edge_override: next ? "long" : null,
-    }));
-  }, []);
 
   const handleOptionChange = useCallback((optionName: string, slug: string) => {
     setSpec((prev) => ({
@@ -804,27 +792,13 @@ export default function OrderBuild() {
 
         {/* Right: Preview */}
         <div className="border border-border rounded-lg bg-card p-4 overflow-auto flex flex-col gap-2">
-          {canToggleLongEdge && (
-            <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
-              <label htmlFor="bind-long-edge" className="cursor-pointer">
-                Bind on long edge (top)
-              </label>
-              <input
-                id="bind-long-edge"
-                type="checkbox"
-                className="h-4 w-4 cursor-pointer accent-primary"
-                checked={landscapeLongEdge}
-                onChange={(e) => handleToggleLongEdge(e.target.checked)}
-              />
-            </div>
-          )}
           <PreviewPanel
             documents={documents}
             sections={sections}
             productType={productType}
             effects={previewEffects}
             bindingEdge={bindingEdge}
-            landscapeLongEdge={landscapeLongEdge}
+            
             bindingArt={bindingArt}
           />
         </div>
