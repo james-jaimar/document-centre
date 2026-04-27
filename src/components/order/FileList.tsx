@@ -17,6 +17,8 @@ interface FileListProps {
     preflight_data: unknown;
   }) => Promise<void>;
   onDelete?: (docId: string) => Promise<void>;
+  /** Re-open the poster image crop editor for an existing image-backed doc. */
+  onEditPosterImage?: (doc: { id: string; preflight_data: unknown }) => Promise<void> | void;
   /**
    * Doc IDs whose effective paper size differs from the rest of the print
    * job (or the session lock). Surfaced as an inline ⚠ warning chip.
