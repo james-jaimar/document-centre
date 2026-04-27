@@ -176,6 +176,8 @@ export default function PhotoEditorModal({
     });
   };
 
+  if (!photo || !size) return null;
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-3xl p-0 overflow-hidden">
