@@ -98,5 +98,25 @@ class DerivedFileRepository:
         ), {'asset_id': asset_id, 'kind': kind}).all()
         return {int(r[0]) for r in rows}
 
+    def clear_page_renders(self, db: Session, asset_id: str) -> int:
+        """Delete every per-page preview/thumbnail row for an asset.
+
+        Used by geometry-changing operations (rotate, normalize-orientation,
+        resize, crop) BEFORE the next ``generate-previews`` pass so the
+        thumbnail picker cannot accidentally surface a stale image from a
+        previous orientation/size of the asset.
+
+        Returns the number of rows removed.
+        """
+        result = db.execute(text(
+            """
+            delete from derived_files
+            where asset_id = :asset_id
+              and kind in ('preview_page', 'thumbnail_page')
+            """
+        ), {'asset_id': asset_id})
+        db.commit()
+        return result.rowcount or 0
+
 
 derived_file_repo = DerivedFileRepository()

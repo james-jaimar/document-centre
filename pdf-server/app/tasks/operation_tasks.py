@@ -107,7 +107,19 @@ def rotate_pdf(self, asset_id: str, job_id: str, angle: int):
                 'width_pt': info['width_pt'],
                 'height_pt': info['height_pt'],
                 'boxes': info['boxes'],
+                # Wipe top-level page-1 pointers so generate-previews has to
+                # re-populate them from the rotated PDF. Otherwise the legacy
+                # asset.thumbnail_storage_path can still point at a pre-rotation
+                # render and the frontend fallback picks it up.
+                'thumbnail_storage_path': None,
+                'preview_storage_path': None,
             })
+
+            # Drop every preview_page / thumbnail_page row for this asset.
+            # The next generate-previews pass writes fresh rows. Without this
+            # the picker can resurface a pre-rotation thumbnail of the wrong
+            # orientation.
+            removed = derived_file_repo.clear_page_renders(db, asset_id)
 
             result = {
                 'storage_path': storage_path,
@@ -116,6 +128,7 @@ def rotate_pdf(self, asset_id: str, job_id: str, angle: int):
                 'width_pt': info['width_pt'],
                 'height_pt': info['height_pt'],
                 'angle': angle,
+                'cleared_page_renders': removed,
             }
             job_repo.mark_done(db, job_id, result)
             return result
@@ -198,7 +211,10 @@ def resize_pdf(self, asset_id: str, job_id: str, width_mm: float, height_mm: flo
                 'width_pt': info['width_pt'],
                 'height_pt': info['height_pt'],
                 'boxes': info['boxes'],
+                'thumbnail_storage_path': None,
+                'preview_storage_path': None,
             })
+            removed = derived_file_repo.clear_page_renders(db, asset_id)
 
             result = {
                 'storage_path': storage_path,
@@ -209,6 +225,7 @@ def resize_pdf(self, asset_id: str, job_id: str, width_mm: float, height_mm: flo
                 'width_mm': width_mm,
                 'height_mm': height_mm,
                 'fit_mode': fit_mode,
+                'cleared_page_renders': removed,
             }
             job_repo.mark_done(db, job_id, result)
             return result
@@ -503,7 +520,10 @@ def normalize_orientation(self, asset_id: str, job_id: str, dominant: str = "por
                 "width_pt": info["width_pt"],
                 "height_pt": info["height_pt"],
                 "boxes": info["boxes"],
+                "thumbnail_storage_path": None,
+                "preview_storage_path": None,
             })
+            removed = derived_file_repo.clear_page_renders(db, asset_id)
 
             result = {
                 **stats,
@@ -512,6 +532,7 @@ def normalize_orientation(self, asset_id: str, job_id: str, dominant: str = "por
                 "page_count": info["page_count"],
                 "width_pt": info["width_pt"],
                 "height_pt": info["height_pt"],
+                "cleared_page_renders": removed,
             }
             job_repo.mark_done(db, job_id, result)
             return result

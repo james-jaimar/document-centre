@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import type { BindingType } from "./previewTypes";
 import {
   resolveBindingArt,
@@ -39,6 +40,14 @@ export default function BindingSpine({
   bindingEdge = "left",
   bindingArt,
 }: BindingSpineProps) {
+  // Reset image error when artwork target changes (so a previously-failed
+  // load doesn't permanently suppress the spine for a different combo).
+  const [imageFailed, setImageFailed] = useState(false);
+  const artKey = `${bindingType}|${bindingArt?.method ?? ""}|${bindingArt?.color ?? ""}|${bindingEdge}|${isOpen}`;
+  useEffect(() => {
+    setImageFailed(false);
+  }, [artKey]);
+
   if (bindingType === "none" || bindingType === "ring") return null;
 
   const positionStyle: React.CSSProperties =
@@ -51,22 +60,15 @@ export default function BindingSpine({
   const isSpiral = bindingType === "coil" || bindingType === "wire" || bindingType === "comb";
 
   if (isSpiral) {
-    // Prefer the explicit bindingArt method; fall back to one inferred from
-    // bindingType so legacy callers still render.
     const method = (bindingArt?.method ?? bindingTypeToMethod(bindingType))!;
     const color = normaliseBindingColor(bindingArt?.color);
-
-    // Edge selection:
-    //  - bindingEdge==="top" → 210mm short-edge artwork (landscape document
-    //    bound on its short left edge, side-by-side spread).
-    //  - bindingEdge==="left" → traditional portrait long-edge spine.
     const edge: "long" | "short" = bindingEdge === "top" ? "short" : "long";
     const state = isOpen ? "open" : "closed";
 
     const { src: spineImage } = resolveBindingArt({ method, color, edge, state });
 
     // Fallback strip styling — used when the artwork PNG fails to load so we
-    // never fall back to broken-image alt text overlapping the document.
+    // never leave a broken-image icon visible on top of the document.
     const fallbackBg =
       method === "comb"
         ? "repeating-linear-gradient(180deg, hsl(var(--foreground) / 0.55) 0 6px, transparent 6px 10px)"
@@ -79,24 +81,20 @@ export default function BindingSpine({
           ...positionStyle,
           width: 36,
           height,
+          background: imageFailed ? fallbackBg : undefined,
         }}
       >
-        <img
-          src={spineImage}
-          alt=""
-          aria-hidden="true"
-          className="block w-full h-full"
-          style={{ objectFit: "fill" }}
-          draggable={false}
-          onError={(e) => {
-            const img = e.currentTarget;
-            img.style.visibility = "hidden";
-            const parent = img.parentElement;
-            if (parent) {
-              parent.style.background = fallbackBg;
-            }
-          }}
-        />
+        {!imageFailed && (
+          <img
+            src={spineImage}
+            alt=""
+            aria-hidden="true"
+            className="block w-full h-full"
+            style={{ objectFit: "fill" }}
+            draggable={false}
+            onError={() => setImageFailed(true)}
+          />
+        )}
       </div>
     );
   }
