@@ -702,6 +702,44 @@ export default function OrderFiles() {
     );
   }, [navigate, slug, orientationDoc]);
 
+  /**
+   * User dismissed the orientation advisory — keep the file as-is. We must
+   * still trigger Phase B (thumbnail render), since it was deferred while
+   * we waited for their decision. Mirrors the bleed/size "keep" branches.
+   */
+  const handleDismissOrientation = useCallback(async () => {
+    if (!orientationDoc) return;
+    const doc = orientationDoc;
+    setOrientationDoc(null);
+
+    const existing = documents.find((d) => d.id === doc.id);
+    const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
+    const { orientation_mismatch: _om, ...preflightRest } = preflight;
+    const needsRender = !Array.isArray(existing?.thumbnail_urls) || (existing?.thumbnail_urls as unknown[]).length === 0;
+
+    try {
+      if (needsRender && doc.backendAssetId) {
+        setUploadModalOpen(true);
+        await renderWithProgress(
+          doc.id,
+          doc.backendAssetId,
+          null,
+          doc.fileName,
+          "Rendering pages…",
+        );
+      }
+      await supabase
+        .from("documents")
+        .update({
+          preflight_data: { ...preflightRest, awaiting_review: false, orientation_resolved: true, orientation_action: "kept" },
+        })
+        .eq("id", doc.id);
+      refetchDocuments();
+    } catch (err: any) {
+      toast.error("Render failed", { description: err.message });
+    }
+  }, [orientationDoc, documents, renderWithProgress, refetchDocuments]);
+
   // Bleed advisory handler
   const handleBleedConfirm = useCallback(async (choice: "match" | "custom" | "keep", customBleedMm?: number) => {
     if (!bleedDoc) return;
