@@ -503,12 +503,10 @@ class PdfOps:
                     page = out_pdf_obj.pages[page_idx]
                     for key, box in (post.get("boxes_out") or {}).items():
                         try:
-                            page[key] = pikepdf.Array([
-                                pikepdf.Object.parse(f"{box[0]:.6f}"),
-                                pikepdf.Object.parse(f"{box[1]:.6f}"),
-                                pikepdf.Object.parse(f"{box[2]:.6f}"),
-                                pikepdf.Object.parse(f"{box[3]:.6f}"),
-                            ])
+                            page[key] = pikepdf.Array(
+                                [float(box[0]), float(box[1]),
+                                 float(box[2]), float(box[3])]
+                            )
                         except Exception as exc:
                             logger.warning(
                                 "normalize_orientation: failed to stamp %s on page %d: %s",
