@@ -434,16 +434,16 @@ export default function MarketingLanding() {
               className="w-full max-w-[420px] h-auto mt-2"
             />
             <p className="mt-4 text-[1rem] dc-muted max-w-md leading-relaxed">
-              Power your print business with a fast, flexible, and beautiful ordering system your customers will love.
+              A beautiful self-service experience your customers will love — with the production muscle (auto-rotation, imposition, preflight & job tracking) doing the heavy lifting behind the scenes.
             </p>
             <ul className="mt-5 grid sm:grid-cols-2 gap-y-2 gap-x-6 text-[14px]" style={{ color: "hsl(var(--dc-navy))" }}>
               {[
                 "Online ordering & file upload",
-                "Artwork templates & variable data",
-                "Instant previews & proofing",
-                "Integrated production workflow",
-                "Quotes, pricing & approvals",
-                "Built for copy shops & small printers",
+                "Combine multiple files into one job",
+                "Auto-rotation, preflight & imposition",
+                "Live previews & instant proofing",
+                "Built-in workflow & job tracking",
+                "For copy shops, in-plants & corporate print",
               ].map((b) => (
                 <li key={b} className="flex items-start gap-2">
                   <span

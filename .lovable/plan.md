@@ -1,37 +1,58 @@
-# Fix Photo Prints editor + uploader bugs
+## Homepage messaging refresh
 
-Two bugs in the Photo Prints builder:
+Goal: reposition the landing page so it accurately reflects what Document Centre actually does today — a beautiful self-service customer experience backed by a serious production engine — and remove the two claims we don't support (artwork templates, variable data).
 
-1. **Editor doesn't size portrait/square photos properly.** Fill/Fit buttons don't actually do anything to the image, Rotate leaves it stuck, and you can't zoom out far enough to see the whole picture inside the print frame.
-2. **Drag-and-drop disappears after the first upload.** Once at least one photo exists, the big drop area is replaced by a small "Add more photos" bar with only a button — you can't drop files on it anymore.
+### What changes
 
-## What will change
+**1. Hero bullet list (`src/pages/MarketingLanding.tsx`, ~line 440)**
 
-### 1. Photo editor (`src/components/photo/PhotoEditorModal.tsx`)
+Replace the 6 hero check-bullets. Out: "Artwork templates & variable data". In: bullets that describe what we really do. Proposed set:
 
-- Compute the image's natural aspect ratio (rotation-aware) once it loads, then derive:
-  - **`fitZoom`** — the zoom value that makes the *entire* image visible inside the print frame (letterboxed). Always ≤ 1.
-  - **`fillZoom`** — the zoom value that fills the frame edge-to-edge with no gaps (always 1 when `objectFit="cover"`).
-- Lower the cropper's `minZoom` to `fitZoom` so users can actually zoom out to see the whole photo.
-- Wire **Fill** and **Fit** buttons to set `zoom` to `fillZoom` / `fitZoom` respectively (and reset `crop` to `{0,0}` so it re-centres). This is what users expect today and currently it's a no-op.
-- Recompute fit/fill zooms whenever **Rotate 90°** is pressed (since rotation flips the effective aspect ratio), and snap to the current `fitMode` so the rotated image stays sensibly framed instead of getting stuck.
-- Keep the zoom slider min in sync with `fitZoom` so the slider can reach the "see whole photo" position.
-- Reset should set `zoom = fillZoom` (current behaviour of "1") which matches the default fill mode.
+- Online ordering & file upload
+- Combine multiple files into one job
+- Auto-rotation, preflight & imposition
+- Live previews & instant proofing
+- Built-in workflow & job tracking
+- For copy shops, in-plants & corporate print
 
-### 2. Uploader (`src/pages/dashboard/PhotoPrintsBuilder.tsx`)
+**2. Hero sub-headline (~line 436)**
 
-- After the first photo is added, the "1 photo added / Add more photos" header bar will gain drag-and-drop:
-  - Add `onDragOver` / `onDragLeave` / `onDrop` handlers that call the existing `handleFiles`.
-  - Add a subtle drag-active visual state (border + background tint) so users know it's a drop target.
-  - Keep the existing "Add more photos" button + hidden file input as the click affordance.
-- No change to `PhotoUploader.tsx` — that component is unchanged and still used for the empty state.
+Tweak to lead with the "customer does the heavy lifting, you get a print-ready job" angle:
 
-## Out of scope
+> A beautiful self-service experience your customers will love — with the production muscle (auto-rotation, imposition, preflight, job tracking) doing the heavy lifting behind the scenes.
 
-- No changes to upload pipeline, storage paths, server-side rendering, or the tile preview maths.
-- No changes to print-size aspect or border logic.
+**3. Audience line in CTA (~line 654)**
 
-## Files touched
+Change "copy shops & printers" to cover the three real audiences:
 
-- `src/components/photo/PhotoEditorModal.tsx` — fit/fill/rotate zoom logic, dynamic minZoom.
-- `src/pages/dashboard/PhotoPrintsBuilder.tsx` — drag-and-drop on the "Add more photos" bar.
+> Loved by copy shops, small printers, in-plants & corporate print departments.
+
+**4. Features grid card (~line 491)**
+
+The "Product Catalogue" card currently says "Customisable templates, finishes & pricing" — drop "templates" since that implies artwork templates. New copy:
+
+- Title unchanged: "Product Catalogue"
+- Description: "Configurable products, finishes, paper stocks & live pricing"
+
+**5. Add a small "Production muscle" strip (optional, recommended)**
+
+Between the Features grid and the "Why printers choose" section, add a slim band (no new images needed) listing the heavy-lifting capabilities so the message lands clearly. Four pill-style items in one row using existing `dc-card` styling and brand colours:
+
+- Combine & re-order multiple files
+- Auto-rotation & page orientation fixes
+- Automated preflight checks
+- Imposition built in
+- End-to-end job tracking & workflow
+
+This makes the "it's got everything" point explicit without changing layout structure.
+
+### What stays the same
+
+- Visual design, ribbons, hero image, laptop/phone mockups, kanban screenshot, testimonial, CTA layout, trust icons, footer.
+- All routes, components outside `MarketingLanding.tsx`.
+
+### Files touched
+
+- `src/pages/MarketingLanding.tsx` — copy edits in hero bullets, hero paragraph, one feature-card description, CTA paragraph; small new "Production muscle" strip section.
+
+No new assets, no new dependencies, no routing changes.
