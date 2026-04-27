@@ -1,15 +1,17 @@
 /**
- * Binding artwork registry.
+ * Binding artwork registry — STRICT one-to-one mapping.
  *
- * Maps the (method, colour, edge, state) tuple selected in the configurator
- * to one of the PNGs under `src/assets/bindings/`. Falls back gracefully
- * when an exact combo isn't on disk so missing artwork degrades to a sensible
- * neighbour instead of breaking the preview.
+ * Maps the (method, colour, edge, state) tuple from the configurator to
+ * a specific PNG under `src/assets/bindings/`. There is intentionally NO
+ * fallback ladder: every supported binding option in
+ * `src/lib/productOptionValues.ts` MUST have an exact entry here. If you
+ * add a new colour/edge to the seeded option list, add the matching
+ * artwork import + table entry below in the same change.
  *
  * Edge legend:
- *   - "long"  → traditional portrait spine (the long edge of A4/A5/A3)
- *   - "short" → the dedicated short-edge ("210mm") art used for landscape
- *               documents (A4 landscape, and rescaled for A5/A3 landscape)
+ *   - "long"  → portrait spine (long edge of an A4/A5/A3 portrait page)
+ *   - "short" → 210mm short-edge art for landscape pages (vertical spine
+ *               on the LEFT — i.e. binding on the short edge)
  *
  * State legend:
  *   - "closed" → spine view of a closed book (front face artwork)
@@ -62,30 +64,12 @@ import wireSilverFrontShort from "@/assets/bindings/wire silver front 210mm.png"
 import wireSilverBackShort from "@/assets/bindings/wire silver back 210mm.png";
 import wireSilverOpenShort from "@/assets/bindings/wire silver open 210mm.png";
 
-// ── Legacy (kept as the very last fallback) ───────────────────────
-import coilLegacyClosed from "@/assets/bindings/coil_binding_black_closed.png";
-import coilLegacyOpen from "@/assets/bindings/coil_binding_black_open.png";
-import wireLegacyClosed from "@/assets/bindings/wire_binding_black_closed.png";
-import wireLegacyOpen from "@/assets/bindings/wire_binding_black_open.png";
-
 /** Binding methods we have artwork for (matches `metadata.binding_method`). */
 export type BindingArtMethod = "spiral" | "comb" | "twin_loop";
 
-/** Binding colours we have artwork for (or fall back from). */
-export type BindingArtColor =
-  | "black"
-  | "white"
-  | "clear"
-  | "silver"
-  | "blue"
-  | "navy";
+/** Binding colours we have artwork for. */
+export type BindingArtColor = "black" | "white" | "clear" | "silver";
 
-/**
- * Edge legend:
- *   - "long"  → portrait spine (the long edge of an A4/A5/A3 portrait page)
- *   - "short" → 210mm short-edge art (used as a vertical spine on the
- *               LEFT of a landscape page — i.e. binding on the short edge)
- */
 export type BindingArtEdge = "long" | "short";
 export type BindingArtState = "open" | "closed";
 
@@ -98,36 +82,24 @@ export interface BindingArtRequest {
 
 export interface BindingArtResolved {
   src: string;
-  /** True if the resolver had to fall back rather than return the exact match. */
-  fellBack: boolean;
-  /** Diagnostic — what was actually picked, post-fallback. */
-  resolved: { method: BindingArtMethod; color: BindingArtColor; edge: BindingArtEdge; state: BindingArtState };
+  resolved: BindingArtRequest;
 }
 
-/** Per-method default colour to fall back to when an exact colour is missing. */
-const DEFAULT_COLOR: Record<BindingArtMethod, BindingArtColor> = {
-  spiral: "black",
-  comb: "black",
-  twin_loop: "black",
-};
-
 /**
- * Three-deep nested map: ART[method][color][edge][state] → src
- * Missing slots are intentionally left undefined so the resolver can fall back.
+ * Strict map: ART[method][color][edge][state] → src.
+ * Every entry that exists in `productOptionValues.ts` for binding_method
+ * MUST be present here. There is no fallback — missing combinations
+ * throw at resolve time so the regression is loud, not silent.
  */
-type ArtTable = Partial<
-  Record<
-    BindingArtMethod,
-    Partial<
-      Record<
-        BindingArtColor,
-        Partial<Record<BindingArtEdge, Partial<Record<BindingArtState, string>>>>
-      >
+const ART: Record<
+  BindingArtMethod,
+  Partial<
+    Record<
+      BindingArtColor,
+      Record<BindingArtEdge, Record<BindingArtState, string>>
     >
   >
->;
-
-const ART: ArtTable = {
+> = {
   spiral: {
     black: {
       long: { closed: coilBlackFrontLong, open: coilBlackOpenLong },
@@ -160,9 +132,7 @@ const ART: ArtTable = {
   },
 };
 
-// Currently-unused back-face artwork is kept imported (re-exported below) so
-// Vite still bundles it and a future renderer can use it without re-wiring
-// every import.
+/** Back-face artwork kept exported so future renderers can use it. */
 export const BINDING_ART_BACK_FACES = {
   spiral: {
     black: { long: coilBlackBackLong, short: coilBlackBackShort },
@@ -178,108 +148,40 @@ export const BINDING_ART_BACK_FACES = {
   },
 };
 
-/** Last-resort fallback when an entire method has no usable colour entry. */
-const LEGACY_FALLBACK: Partial<Record<BindingArtMethod, Record<BindingArtState, string>>> = {
-  spiral: { closed: coilLegacyClosed, open: coilLegacyOpen },
-  comb: { closed: coilLegacyClosed, open: coilLegacyOpen },
-  twin_loop: { closed: wireLegacyClosed, open: wireLegacyOpen },
-};
-
-function lookup(
-  method: BindingArtMethod,
-  color: BindingArtColor,
-  edge: BindingArtEdge,
-  state: BindingArtState,
-): string | undefined {
-  return ART[method]?.[color]?.[edge]?.[state];
-}
-
 /**
- * Normalise a binding-option `metadata.color` value (e.g. "Black", "Silver",
- * "Twin Loop White") to one of the registry's known colour keys.
+ * Normalise a binding-option `metadata.color` value (e.g. "Black",
+ * "Silver") to one of the registry's supported colour keys. Returns the
+ * raw lowercased value when it doesn't match a known colour so the
+ * resolver can throw a precise "no art for X" error instead of silently
+ * substituting black.
  */
-export function normaliseBindingColor(raw: string | null | undefined): BindingArtColor {
-  if (!raw) return "black";
-  const k = raw.toLowerCase().trim();
+export function normaliseBindingColor(
+  raw: string | null | undefined,
+): BindingArtColor {
+  const k = (raw ?? "black").toLowerCase().trim();
   if (k.includes("black")) return "black";
   if (k.includes("clear")) return "clear";
   if (k.includes("white")) return "white";
   if (k.includes("silver")) return "silver";
-  if (k.includes("navy")) return "navy";
-  if (k.includes("blue")) return "blue";
-  return "black";
+  // Unknown colour — return as-is so the resolver throws a clear error.
+  return k as BindingArtColor;
 }
 
 /**
- * Resolve a binding artwork request to an actual asset URL with graceful
- * fallback. The fallback ladder:
+ * Resolve a binding artwork request to an actual asset URL — STRICT.
  *
- *   1. Exact (method, colour, edge, state)
- *   2. Same method + colour, opposite edge (e.g. short→long)
- *   3. Same method, default colour (Black) — same edge then opposite edge
- *   4. Legacy single-colour artwork
+ * The (method, colour, edge, state) tuple MUST exist in `ART`. Anything
+ * else throws so the bug is visible, not papered over with a CSS
+ * gradient or a wrong-colour PNG.
  */
 export function resolveBindingArt(req: BindingArtRequest): BindingArtResolved {
   const { method, color, edge, state } = req;
-
-  // 1. Exact match
-  const exact = lookup(method, color, edge, state);
-  if (exact) return { src: exact, fellBack: false, resolved: req };
-
-  // Per-edge fallback chain.
-  const edgeChain: BindingArtEdge[] =
-    edge === "short" ? ["long"] : ["short"];
-
-  // 2. Same colour, walk the edge fallback chain
-  for (const fallbackEdge of edgeChain) {
-    const hit = lookup(method, color, fallbackEdge, state);
-    if (hit) {
-      return {
-        src: hit,
-        fellBack: true,
-        resolved: { method, color, edge: fallbackEdge, state },
-      };
-    }
+  const src = ART[method]?.[color]?.[edge]?.[state];
+  if (!src) {
+    throw new Error(
+      `[bindingAssets] No artwork for method="${method}" color="${color}" edge="${edge}" state="${state}". ` +
+        `Either add the PNG to src/assets/bindings/ and register it here, or remove the corresponding option from productOptionValues.ts.`,
+    );
   }
-
-  // 3. Default colour, requested edge then fallback edges
-  const fallbackColor = DEFAULT_COLOR[method];
-  if (fallbackColor !== color) {
-    const defaultColor = lookup(method, fallbackColor, edge, state);
-    if (defaultColor) {
-      return {
-        src: defaultColor,
-        fellBack: true,
-        resolved: { method, color: fallbackColor, edge, state },
-      };
-    }
-    for (const fallbackEdge of edgeChain) {
-      const hit = lookup(method, fallbackColor, fallbackEdge, state);
-      if (hit) {
-        return {
-          src: hit,
-          fellBack: true,
-          resolved: { method, color: fallbackColor, edge: fallbackEdge, state },
-        };
-      }
-    }
-  }
-
-  // 4. Legacy
-  const legacy = LEGACY_FALLBACK[method]?.[state];
-  if (legacy) {
-    return {
-      src: legacy,
-      fellBack: true,
-      resolved: { method, color: "black", edge, state },
-    };
-  }
-
-  // Truly nothing — return the legacy coil as a last-ditch sentinel so the
-  // preview never crashes.
-  return {
-    src: coilLegacyClosed,
-    fellBack: true,
-    resolved: { method: "spiral", color: "black", edge: "long", state: "closed" },
-  };
+  return { src, resolved: req };
 }
