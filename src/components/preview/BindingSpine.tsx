@@ -59,11 +59,15 @@ export default function BindingSpine({
     const edge: "long" | "short" = bindingEdge === "top" ? "short" : "long";
     const state = isOpen ? "open" : "closed";
 
-    // The asset registry ALWAYS resolves to a real PNG (it has a deep
-    // fallback ladder ending in legacy artwork). There must NEVER be a
-    // CSS-painted spiral/wire — if you find yourself reaching for one,
-    // add the missing PNG to bindingAssets.ts instead.
-    const { src: spineImage } = resolveBindingArt({ method, color, edge, state });
+    // STRICT — resolveBindingArt throws when the (method, colour, edge,
+    // state) tuple has no PNG. We never paint a fallback CSS spiral.
+    let spineImage: string;
+    try {
+      spineImage = resolveBindingArt({ method, color, edge, state }).src;
+    } catch (err) {
+      console.error(err);
+      return null;
+    }
 
     return (
       <div
