@@ -632,16 +632,18 @@ export default function OrderFiles() {
     });
   }, [documents, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, sessionSizeLock]);
 
-  // Orientation handlers
-  const handleRotateToLandscape = useCallback(async () => {
+  // Orientation handlers — rotates 90° in the direction the advisory was opened for.
+  const handleRotateOrientation = useCallback(async () => {
     if (!orientationDoc?.backendAssetId) {
       toast.error("Cannot rotate — document has no backend asset");
       setOrientationDoc(null);
       return;
     }
+    const toPortrait = orientationDoc.mode === "to-portrait";
+    const targetLabel = toPortrait ? "portrait" : "landscape";
     setIsRotating(true);
     try {
-      toast.info("Rotating to landscape…");
+      toast.info(`Rotating to ${targetLabel}…`);
       const { job_id } = await rotate(orientationDoc.backendAssetId, 90);
       await pollJob(job_id);
 
@@ -652,7 +654,7 @@ export default function OrderFiles() {
         orientationDoc.backendAssetId,
         null,
         orientationDoc.fileName,
-        "Rotating to landscape and rendering pages…",
+        `Rotating to ${targetLabel} and rendering pages…`,
       );
 
       const existing = documents.find((d) => d.id === orientationDoc.id);
@@ -666,7 +668,7 @@ export default function OrderFiles() {
 
       setOrientationDoc(null);
       refetchDocuments();
-      toast.success("Rotated to landscape");
+      toast.success(`Rotated to ${targetLabel}`);
     } catch (err: any) {
       toast.error("Rotation failed", { description: err.message });
     } finally {
@@ -674,11 +676,16 @@ export default function OrderFiles() {
     }
   }, [orientationDoc, documents, refetchDocuments, getMediaBox]);
 
-  const handleSwitchToBoundDocs = useCallback(() => {
+  const handleSwitchProductFamily = useCallback(() => {
+    const toPortrait = orientationDoc?.mode === "to-portrait";
     setOrientationDoc(null);
     navigate(`/t/${slug}/orders/new`);
-    toast.info("Please select Bound Documents for portrait files");
-  }, [navigate, slug]);
+    toast.info(
+      toPortrait
+        ? "Please select Presentations for landscape files"
+        : "Please select Bound Documents for portrait files"
+    );
+  }, [navigate, slug, orientationDoc]);
 
   // Bleed advisory handler
   const handleBleedConfirm = useCallback(async (choice: "match" | "custom" | "keep", customBleedMm?: number) => {
