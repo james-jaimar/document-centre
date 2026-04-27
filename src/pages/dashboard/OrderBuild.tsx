@@ -459,15 +459,32 @@ export default function OrderBuild() {
     return undefined;
   }, [options, spec.selected_options]);
 
-  // Top-bound layout fires for top/short metadata OR any landscape size.
-  // Landscape documents bind on the short edge (vertical spine on the
-  // left, side-by-side spread). Users wanting long-edge binding simply
-  // upload a landscape document — there is no separate toggle.
+  // Binding edge is determined by the actual page geometry of the uploaded
+  // (and rotated, if applicable) document. The Document Size option only
+  // acts as a fallback when no document is yet uploaded — once we have
+  // authoritative width/height the document IS the source of truth.
+  //
+  // Why: a "Presentations" product is locked landscape, but if the user
+  // uploads a portrait PDF (or we rotate a landscape one to portrait), the
+  // physical book is portrait — its spine is on the LONG (left) edge.
+  // Reading the size option after rotation would still say "landscape" and
+  // we would request short-edge spine artwork that no longer matches the
+  // page shape.
+  const docPageOrientation: "portrait" | "landscape" | null = useMemo(() => {
+    const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
+    if (!doc || !doc.page_width_mm || !doc.page_height_mm) return null;
+    return Number(doc.page_width_mm) > Number(doc.page_height_mm) ? "landscape" : "portrait";
+  }, [documents]);
+
   const bindingEdge: "left" | "top" = useMemo(() => {
+    // 1. If we know the actual page orientation, that wins.
+    if (docPageOrientation === "landscape") return "top";
+    if (docPageOrientation === "portrait") return "left";
+    // 2. Otherwise fall back to the selected Document Size metadata.
     if (sizeBindingEdge === "top" || sizeBindingEdge === "short") return "top";
     if (isLandscapeSize) return "top";
     return "left";
-  }, [sizeBindingEdge, isLandscapeSize]);
+  }, [docPageOrientation, sizeBindingEdge, isLandscapeSize]);
 
   const handleOptionChange = useCallback((optionName: string, slug: string) => {
     setSpec((prev) => ({
