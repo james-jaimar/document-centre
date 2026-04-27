@@ -1,66 +1,54 @@
-# Posters: Image-aware Upload Routing
+## Page-count Guards for Single-Sheet Products
 
-## Goal
-When a customer is configuring a **Poster** and uploads an **image** (JPG/PNG/WEBP/TIFF/HEIC), put them through the **Photo Prints editor experience** (crop, zoom, rotate, fit/fill) instead of silently fitting the raw image to a PDF page. PDFs / Word / PowerPoint uploads on posters keep working exactly as they do today (auto-PDF, scale to chosen poster size).
+Add post-upload validation for products where the page count is physically constrained by the format. Catches users uploading 20-page PDFs as flyers, single-page files as brochures, etc.
 
-## How it will work (user flow)
+### Rules per product family
 
-1. User picks **Posters** from New Order → lands on the standard Step 1 (Upload & Organise Files).
-2. They upload a file. We detect the file type at drop time:
-   - **PDF / DOCX / PPTX** → unchanged. Existing preflight + size auto-detection runs.
-   - **Image file** (`isImageFile`) → we DON'T silently convert to PDF. Instead, we open a **Photo Editor modal** (the existing `PhotoEditorModal` already used by Photo Prints) seeded with:
-     - **Print size**: the poster size the user has chosen (or the default poster size if none yet selected) — exposed as the crop aspect ratio.
-     - **Border**: none (posters have no white border).
-     - **Fit mode**: `fill` by default.
-3. After the user crops/positions and clicks Save, we **rasterise the cropped image at the target poster dimensions** (300 DPI), wrap it in a single-page PDF at the exact poster size, upload that PDF as the document, and assign it as the poster section automatically.
-4. Re-edit: the file row in the section list gets an **"Edit image"** button that re-opens the same modal (we keep the original image + crop state on the document so edits are non-destructive).
-5. Changing the **Document Size** in Step 2 re-runs the crop using the saved crop state against the new aspect ratio (or prompts the user to re-crop if the new aspect differs).
+| Family | Allowed pages per file | If too many | If too few |
+|---|---|---|---|
+| `flyers` | 1 (single-sided) or 2 (double-sided) | Prompt: trim to first 2 pages, or replace file | n/a |
+| `brochures` / folded leaflets | Exactly 2 (Outside + Inside) for the simple flow, OR exact panel count for panel-per-page (4 for bi-fold, 6 for tri/z, 8 for gate) | Prompt: trim to required, or replace | Block assignment with toast: "Brochure needs at least 2 pages" |
+| `business-cards` | 1 or 2 | Prompt: trim to first 2, or replace | n/a |
+| Others (bound, posters, presentations, photo) | unchanged | — | — |
 
-## Why this is the right shape
+Brochures already have panel-validation in the auto-assign step (see `mem://features/order-flow/brochure-validation-logic`); this plan adds the **upload-time** guard so the user is warned before they start configuring.
 
-- The Photo Prints flow already solves cropping, zoom, rotation, fit/fill, border, and signed-URL preview. We **reuse `PhotoEditorModal` and the `react-easy-crop` based UX** — no new editor.
-- Posters stay in the normal print-job pipeline (one document, one section, one PDF). The cart, pricing, preview, and production output paths don't change.
-- PDFs/Office files are untouched, so the existing OrderBuild + auto-rotate logic continues to work.
+### How the warning flows
 
-## Technical changes
+A new modal `PageCountWarningDialog` (built on `Dialog`) appears immediately after upload completes (after preflight, before the user starts assigning sections) when any uploaded document exceeds the family's max page count. It lists the offending file(s) and offers:
 
-### 1. `src/lib/imageToPage.ts`
-Add a helper `imageToPosterPdf(file, { widthMm, heightMm, croppedAreaPixels, rotation })` that:
-- Loads the source image.
-- Applies rotation + crop (using `croppedAreaPixels` from `react-easy-crop`, same shape as Photo Prints).
-- Renders to a canvas sized to the target poster mm at 300 DPI.
-- Wraps in a one-page PDF at exact poster size via existing `jspdf` path used by `imageFileToPdf`.
+- **Trim to first N pages** — calls the existing `pdf-api` `crop`/page-extract operation to produce a trimmed PDF, replaces the document's `file_path` (asset id stays stable, thumbnails re-render via standard reprocess flow).
+- **Replace file** — deletes the document row and re-opens the file picker.
+- **Cancel** — leaves the document as-is (user can manually fix or delete it). For brochures with too-few pages, the cancel option is removed and they must replace.
 
-### 2. `src/components/order/FileUploader.tsx` / `src/pages/dashboard/OrderFiles.tsx`
-- Before invoking `useDocumentUpload` for poster orders (`familySlug === "posters"`), intercept `isImageFile(file)` files.
-- For each such image: open `PhotoEditorModal` (a new local instance — not the Photo Prints page) with:
-  - `photo` synthesized from the dropped file (object URL, no upload yet).
-  - `borderSlug = "none"`.
-  - `aspect` derived from the currently-selected poster size (read from `activePrintSize` in OrderFiles, or default A2 if none).
-- On Save: call `imageToPosterPdf` → upload the resulting PDF through the standard `useDocumentUpload` path (so preflight, thumbnails, and section assignment keep working unchanged).
-- Persist crop state on the resulting `documents.preflight_data` as `{ kind: "poster_image", source_storage_path, crop, zoom, rotation, fit_mode, croppedAreaPixels, print_size_slug }` so we can re-edit later.
+For brochures/leaflets specifically: if the uploaded file has `page_count < 2`, surface a hard block toast/modal (no "trim" option — there's nothing to trim) directing the user to upload a 2-page or panel-per-page PDF.
 
-### 3. Re-edit affordance
-- In `SectionActions` / `FileList` row for posters where `preflight_data.kind === "poster_image"`, add an **Edit image** button that re-opens `PhotoEditorModal` with the saved state and the original image's signed URL, then re-runs steps above to replace the document.
+### Technical changes
 
-### 4. Size-change handling in `OrderBuild.tsx`
-- When the poster Document Size changes and a poster_image-backed document is present, re-rasterise the PDF using the saved crop against the new size (silent if the aspect matches; prompt "Re-crop image for new size?" toast with action if aspect changes).
+**New files**
+- `src/components/order/PageCountWarningDialog.tsx` — modal with the trim/replace/cancel actions, takes `{ files: Array<{docId, fileName, pageCount, allowedMax}>, onTrim, onReplace, onCancel }`.
+- `src/lib/pageCountRules.ts` — pure helpers: `getAllowedPageCount(familySlug)` returning `{ max: number | null, min: number, exact?: number[] }`, plus `validateDocumentPages(doc, familySlug)` returning a violation reason or `null`.
 
-### 5. No DB schema changes
-- We piggy-back on the existing `documents.preflight_data` JSONB.
-- No changes to product families, options, pricing rules, or order engine.
+**Edited files**
+- `src/pages/dashboard/OrderFiles.tsx`
+  - After `uploadFiles` resolves (around line 990 / 1134 / 1255), iterate the resulting documents and run `validateDocumentPages`. If any violations exist, open `PageCountWarningDialog`.
+  - Wire the **Trim** action to a new `trimDocumentPages(docId, keepPages)` helper that calls `pdf-api`'s page-extract op (already used elsewhere via `documentCentreApi.ts`) and overwrites the same `file_path`, then triggers `reprocessDocument` to refresh thumbnails.
+  - Wire **Replace** to `deleteDocument(docId)` + `inputRef.current?.click()` on the existing uploader.
+- `src/lib/documentCentreApi.ts` — add a thin `extractPages(assetId, ranges)` wrapper if not already present; falls back to the existing `cropRasterize` flow if needed.
+- `src/components/order/SectionActions.tsx` — when the user clicks "Auto-assign Outside + Inside" for brochures and the doc only has 1 page, show inline error instead of a silent no-op.
 
-### Files to edit
-- `src/lib/imageToPage.ts` — add `imageToPosterPdf` helper.
-- `src/pages/dashboard/OrderFiles.tsx` — image-intercept on poster uploads, mount editor modal, re-edit button wiring.
-- `src/components/order/FileUploader.tsx` — pass through the file list without auto-converting images when family is posters (or do the intercept here; OrderFiles is the cleaner spot).
-- `src/components/order/FileList.tsx` (or `SectionActions.tsx`) — add "Edit image" affordance for poster_image documents.
-- `src/pages/dashboard/OrderBuild.tsx` — react to size changes for poster_image documents.
+### Out of scope (this iteration)
+- Word/PowerPoint files: validated **after** PDF conversion (the converted PDF's page count is what matters).
+- Posters: already routed through the editor — no page-count rule.
+- Bound documents, presentations, photo prints: keep current behavior.
+- Multi-file uploads where the user intends to combine sections: the warning only fires for files that **on their own** exceed the cap; for flyers/business-cards/brochures the upload pattern is one file per job.
 
-### Out of scope
-- Multi-image posters (we treat one image = one poster, same as today's poster flow).
-- Changing the Photo Prints builder route — Photo Prints stays its own product family and dedicated page.
-- Adding a white-border option for posters (can be a separate request).
+### UX copy (draft)
 
-## Open question (non-blocking)
-- Should oversized images (e.g. 8000×6000 px) be downsampled before PDF wrapping to avoid huge uploads? Proposal: cap output PDF at 300 DPI for the chosen poster size, which naturally bounds size. Will apply unless you want a different DPI.
+Title: **"Too many pages for a {Family}"**
+
+Body: "{filename.pdf} has {N} pages, but a {flyer | business card} can only have {1 single-sided / 2 double-sided}. What would you like to do?"
+
+Buttons: `Use first 2 pages` · `Replace file` · `Keep anyway`
+
+For brochure with <2 pages — Title: **"Brochure needs at least 2 pages"** · Body explains Outside + Inside requirement. Buttons: `Replace file` · `Cancel`.
