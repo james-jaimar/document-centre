@@ -238,7 +238,7 @@ export default function PreviewPanel({
   productType = "loose_sheets",
   effects,
   bindingEdge,
-  landscapeLongEdge,
+  
   bindingArt,
 }: PreviewPanelProps) {
   const [currentPage, setCurrentPage] = useState(0);
