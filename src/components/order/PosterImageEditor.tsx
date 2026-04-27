@@ -154,7 +154,7 @@ export default function PosterImageEditor({
       orientation === "landscape"
         ? { ...sizeChoice, widthMm: portraitH, heightMm: portraitW }
         : { ...sizeChoice, widthMm: portraitW, heightMm: portraitH };
-    onConfirm({ size: finalSize, orientation, croppedAreaPixels, rotation });
+    onConfirm({ size: finalSize, orientation, croppedAreaPixels, rotation, zoom, crop });
   };
 
   return (
