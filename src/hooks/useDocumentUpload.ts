@@ -47,6 +47,33 @@ const PORTRAIT_NORMALIZE_FAMILIES = new Set([
 ]);
 const LANDSCAPE_NORMALIZE_FAMILIES = new Set(["presentations"]);
 
+/**
+ * Families that REQUIRE portrait orientation. Landscape uploads here trigger
+ * the orientation advisory before any thumbnails are rendered.
+ * Kept in sync with the same set in OrderFiles.tsx.
+ */
+const PORTRAIT_REQUIRED_FAMILIES = new Set([
+  "bound-documents",
+  "ring-binders",
+  "booklets",
+]);
+
+/**
+ * Detects whether the uploaded file's orientation conflicts with the product
+ * family it's being uploaded to. Returns the rotation direction the advisory
+ * should offer, or null if there's no mismatch.
+ */
+function detectOrientationMismatch(
+  familySlug: string | null | undefined,
+  widthMm: number,
+  heightMm: number,
+): "to-landscape" | "to-portrait" | null {
+  if (!familySlug || !(widthMm > 0) || !(heightMm > 0)) return null;
+  if (familySlug === "presentations" && widthMm < heightMm) return "to-landscape";
+  if (PORTRAIT_REQUIRED_FAMILIES.has(familySlug) && widthMm > heightMm) return "to-portrait";
+  return null;
+}
+
 interface UploadProgress {
   fileName: string;
   status: "uploading" | "analyzing" | "done" | "error";
@@ -456,7 +483,15 @@ export function useDocumentUpload(
             Math.abs(trimBox[2] - mediaBox[2]) > 0.5 ||
             Math.abs(trimBox[3] - mediaBox[3]) > 0.5);
 
-        const hasAdvisory = !!detectedSize || !!nearIsoMatch;
+        // Orientation mismatch — gates Phase B render so the advisory fires
+        // BEFORE we waste time rasterising the wrong-orientation document.
+        const orientationMismatch = detectOrientationMismatch(
+          productFamilySlug,
+          pageWidthMm,
+          pageHeightMm,
+        );
+
+        const hasAdvisory = !!detectedSize || !!nearIsoMatch || !!orientationMismatch;
 
         // If no size advisory AND caller didn't ask us to skip, finalise now
         // (print-ready CMYK only — orientation is preserved as authored).
@@ -511,6 +546,9 @@ export function useDocumentUpload(
           preflight.estimated_bleed_h = nearIsoMatch.bleedH;
           preflight.near_iso_landscape = nearIsoMatch.landscape;
         }
+        if (orientationMismatch) {
+          preflight.orientation_mismatch = orientationMismatch;
+        }
 
         await supabase
           .from("documents")
@@ -545,7 +583,7 @@ export function useDocumentUpload(
         return null;
       }
     },
-    [updateUpload, finalizeOrientationAndPrintReady],
+    [updateUpload, finalizeOrientationAndPrintReady, productFamilySlug],
   );
 
   /* ── Phase A: Inspect — register PDF asset & extract metadata, NO thumbnails yet ── */

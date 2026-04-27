@@ -319,6 +319,12 @@ export default function OrderFiles() {
     const mismatchDoc = documents.find((d) => {
       const preflight = d.preflight_data as Record<string, any> | null;
       if (preflight?.orientation_resolved) return false;
+
+      // Preferred: persisted flag from Phase A — fires before thumbnails render.
+      if (preflight?.orientation_mismatch === mode) return true;
+
+      // Fallback: dimension-based detection (legacy docs uploaded pre-flag,
+      // or in-flight docs whose preflight_data hasn't refreshed yet).
       const w = Number(d.page_width_mm);
       const h = Number(d.page_height_mm);
       if (!(w > 0 && h > 0)) return false;
@@ -667,10 +673,11 @@ export default function OrderFiles() {
 
       const existing = documents.find((d) => d.id === orientationDoc.id);
       const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
+      const { orientation_mismatch: _om, ...preflightRest } = preflight;
       await supabase
         .from("documents")
         .update({
-          preflight_data: { ...preflight, awaiting_review: false, orientation_resolved: true, orientation_action: "rotated" },
+          preflight_data: { ...preflightRest, awaiting_review: false, orientation_resolved: true, orientation_action: "rotated" },
         })
         .eq("id", orientationDoc.id);
 
@@ -694,6 +701,44 @@ export default function OrderFiles() {
         : "Please select Bound Documents for portrait files"
     );
   }, [navigate, slug, orientationDoc]);
+
+  /**
+   * User dismissed the orientation advisory — keep the file as-is. We must
+   * still trigger Phase B (thumbnail render), since it was deferred while
+   * we waited for their decision. Mirrors the bleed/size "keep" branches.
+   */
+  const handleDismissOrientation = useCallback(async () => {
+    if (!orientationDoc) return;
+    const doc = orientationDoc;
+    setOrientationDoc(null);
+
+    const existing = documents.find((d) => d.id === doc.id);
+    const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
+    const { orientation_mismatch: _om, ...preflightRest } = preflight;
+    const needsRender = !Array.isArray(existing?.thumbnail_urls) || (existing?.thumbnail_urls as unknown[]).length === 0;
+
+    try {
+      if (needsRender && doc.backendAssetId) {
+        setUploadModalOpen(true);
+        await renderWithProgress(
+          doc.id,
+          doc.backendAssetId,
+          null,
+          doc.fileName,
+          "Rendering pages…",
+        );
+      }
+      await supabase
+        .from("documents")
+        .update({
+          preflight_data: { ...preflightRest, awaiting_review: false, orientation_resolved: true, orientation_action: "kept" },
+        })
+        .eq("id", doc.id);
+      refetchDocuments();
+    } catch (err: any) {
+      toast.error("Render failed", { description: err.message });
+    }
+  }, [orientationDoc, documents, renderWithProgress, refetchDocuments]);
 
   // Bleed advisory handler
   const handleBleedConfirm = useCallback(async (choice: "match" | "custom" | "keep", customBleedMm?: number) => {
@@ -1373,7 +1418,7 @@ export default function OrderFiles() {
       {orientationDoc && (
         <OrientationAdvisory
           open={!!orientationDoc}
-          onOpenChange={(open) => { if (!open) setOrientationDoc(null); }}
+          onOpenChange={(open) => { if (!open) handleDismissOrientation(); }}
           fileName={orientationDoc.fileName}
           widthMm={orientationDoc.widthMm}
           heightMm={orientationDoc.heightMm}
