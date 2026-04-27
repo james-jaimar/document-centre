@@ -344,108 +344,181 @@ class PdfOps:
 
         Returns: { 'pages_rotated': int, 'total_pages': int, 'skipped': bool }.
         """
-        # We rebuild the writer from the source via pikepdf so that copying
-        # un-rotated pages preserves their original boxes verbatim, then
-        # use pypdf for the rotate-and-composite path because it has a
-        # convenient transform API.
+        # We use pypdf for the rotate-and-composite (it has a clean
+        # transform API), then re-open with pikepdf afterwards to STAMP
+        # every declared box (TrimBox/BleedBox/CropBox/ArtBox) onto the
+        # output pages. Setting boxes via pypdf attribute assignment was
+        # unreliable in practice — the rotated file ended up with only a
+        # MediaBox, which broke `derive_default_render_box` and forced
+        # previews to render the bleed/crop-mark canvas.
+
+        BOX_KEYS = ("/TrimBox", "/BleedBox", "/CropBox", "/ArtBox")
+
+        # ── Snapshot original per-page geometry from pikepdf BEFORE we
+        # mutate anything — this is the authoritative box data we'll
+        # transform and write back onto the output. ──
+        per_page_pre: list[dict] = []
+        with pikepdf.open(src) as src_pdf:
+            for page in src_pdf.pages:
+                mb = page.MediaBox
+                raw_w = float(mb[2]) - float(mb[0])
+                raw_h = float(mb[3]) - float(mb[1])
+                try:
+                    rot = int(page.get("/Rotate", 0) or 0) % 360
+                except Exception:
+                    rot = 0
+                # Effective (visual) dimensions accounting for /Rotate.
+                if rot in (90, 270):
+                    eff_w, eff_h = raw_h, raw_w
+                else:
+                    eff_w, eff_h = raw_w, raw_h
+                boxes: dict[str, list[float]] = {}
+                for key in BOX_KEYS:
+                    raw = page.get(key)
+                    if not raw:
+                        continue
+                    try:
+                        boxes[key] = [
+                            float(raw[0]), float(raw[1]),
+                            float(raw[2]), float(raw[3]),
+                        ]
+                    except Exception:
+                        continue
+                per_page_pre.append({
+                    "raw_w": raw_w,
+                    "raw_h": raw_h,
+                    "rot": rot,
+                    "eff_w": eff_w,
+                    "eff_h": eff_h,
+                    "boxes": boxes,
+                })
+
         reader = PdfReader(str(src))
         writer = PdfWriter()
         rotated = 0
         total = 0
 
-        BOX_NAMES = ("trimbox", "bleedbox", "cropbox", "artbox")
+        # Track per-output-page which transformation was applied so we can
+        # stamp the correct boxes after writing. Each entry:
+        #   { "rotated": bool, "src_w_visual": float, "src_h_visual": float,
+        #     "boxes_visual": { "/TrimBox": [...], ... } }
+        per_page_post: list[dict] = []
 
-        def _box_attrs(page) -> dict[str, list[float]]:
-            """Snapshot every defined box as a 4-float list."""
+        def _bake_rotate_boxes(boxes: dict[str, list[float]],
+                               raw_w: float, raw_h: float, rot: int
+                               ) -> tuple[dict[str, list[float]], float, float]:
+            """Map boxes declared in pre-/Rotate space into VISUAL space
+            (i.e. as if /Rotate had been baked into content). Returns
+            (visual_boxes, visual_w, visual_h)."""
+            if rot == 0 or not boxes:
+                return boxes, raw_w, raw_h
             out: dict[str, list[float]] = {}
-            for name in BOX_NAMES:
-                box = getattr(page, name, None)
-                if box is None:
-                    continue
-                try:
-                    out[name] = [
-                        float(box[0]), float(box[1]),
-                        float(box[2]), float(box[3]),
-                    ]
-                except Exception:
-                    continue
-            return out
+            for k, b in boxes.items():
+                x0, y0, x1, y1 = b
+                if rot == 90:
+                    # Visual (x', y') = (raw_h - y, x)  for 90° CCW bake of /Rotate=90
+                    nx0, ny0 = raw_h - y1, x0
+                    nx1, ny1 = raw_h - y0, x1
+                elif rot == 180:
+                    nx0, ny0 = raw_w - x1, raw_h - y1
+                    nx1, ny1 = raw_w - x0, raw_h - y0
+                elif rot == 270:
+                    nx0, ny0 = y0, raw_w - x1
+                    nx1, ny1 = y1, raw_w - x0
+                else:
+                    nx0, ny0, nx1, ny1 = x0, y0, x1, y1
+                out[k] = [min(nx0, nx1), min(ny0, ny1),
+                          max(nx0, nx1), max(ny0, ny1)]
+            if rot in (90, 270):
+                return out, raw_h, raw_w
+            return out, raw_w, raw_h
 
-        def _rotate_box_cw(box: list[float], src_w: float) -> list[float]:
-            """Map a box from the pre-rotation page (size src_w × src_h)
-            onto the post-+90-CW page (size src_h × src_w).
-
-            Content transform used in compositing is rotate(-90) then
-            translate(0, src_w). For any source point (x, y) the new
-            position is (y, src_w - x).
-            """
+        def _rotate_cw_box(box: list[float], src_w: float) -> list[float]:
+            """Rotate a box by +90 CW (matches the content transform we
+            apply). For any source point (x, y) on a page of width src_w,
+            the new position is (y, src_w - x)."""
             x0, y0, x1, y1 = box
-            new_x0 = y0
-            new_y0 = src_w - x1
-            new_x1 = y1
-            new_y1 = src_w - x0
-            return [
-                min(new_x0, new_x1), min(new_y0, new_y1),
-                max(new_x0, new_x1), max(new_y0, new_y1),
-            ]
+            nx0, ny0 = y0, src_w - x1
+            nx1, ny1 = y1, src_w - x0
+            return [min(nx0, nx1), min(ny0, ny1),
+                    max(nx0, nx1), max(ny0, ny1)]
 
-        for page in reader.pages:
+        for page_idx, page in enumerate(reader.pages):
             total += 1
-            # Step 1: bake /Rotate so mediabox matches visible content.
-            page.transfer_rotation_to_content()
+            pre = per_page_pre[page_idx]
 
-            src_w = float(page.mediabox.width)
-            src_h = float(page.mediabox.height)
-            is_landscape = src_w > src_h
+            # Step 1: bake /Rotate so mediabox matches visible content,
+            # AND map declared boxes through the same bake so they live in
+            # the visual coordinate frame.
+            page.transfer_rotation_to_content()
+            visual_boxes, vw, vh = _bake_rotate_boxes(
+                pre["boxes"], pre["raw_w"], pre["raw_h"], pre["rot"],
+            )
+
+            is_landscape = vw > vh
             needs_rotate = (
                 (dominant == "portrait" and is_landscape)
                 or (dominant == "landscape" and not is_landscape)
             )
 
-            original_boxes = _box_attrs(page)
-
             if not needs_rotate:
                 writer.add_page(page)
-                # Re-stamp boxes on the just-added page (pypdf preserves them
-                # but we re-assert defensively after transfer_rotation_to_content).
-                added = writer.pages[-1]
-                for name, box in original_boxes.items():
-                    try:
-                        from pypdf.generic import RectangleObject
-                        setattr(added, name, RectangleObject(box))
-                    except Exception:
-                        pass
+                per_page_post.append({
+                    "rotated": False,
+                    "boxes_out": visual_boxes,
+                })
                 continue
 
             # Step 2: composite onto a swapped-dimensions blank page with a
-            # +90 CW content transform (so the resulting page has a stable
-            # MediaBox of (src_h, src_w) and no /Rotate hint).
-            new_page = writer.add_blank_page(width=src_h, height=src_w)
+            # +90 CW content transform.
+            new_page = writer.add_blank_page(width=vh, height=vw)
             transform = (
                 Transformation()
                 .rotate(-90)
-                .translate(0, src_w)
+                .translate(0, vw)
             )
             new_page.merge_transformed_page(page, transform)
 
-            # Step 3: carry boxes through the rotation. MediaBox already
-            # matches the new canvas; transform any other declared box.
-            try:
-                from pypdf.generic import RectangleObject
-                for name, box in original_boxes.items():
-                    if name == "mediabox":
-                        continue
-                    rotated_box = _rotate_box_cw(box, src_w)
-                    setattr(new_page, name, RectangleObject(rotated_box))
-            except Exception as exc:
-                logger.warning(
-                    "normalize_orientation: failed to carry boxes %s through rotation: %s",
-                    list(original_boxes.keys()), exc,
-                )
+            # Step 3: rotate the visual boxes by the same +90 CW transform.
+            rotated_boxes: dict[str, list[float]] = {}
+            for k, b in visual_boxes.items():
+                rotated_boxes[k] = _rotate_cw_box(b, vw)
+            per_page_post.append({
+                "rotated": True,
+                "boxes_out": rotated_boxes,
+            })
             rotated += 1
 
         with open(out_pdf, "wb") as f:
             writer.write(f)
+
+        # ── Post-pass: stamp boxes onto the output pages with pikepdf so
+        # the saved file genuinely carries /TrimBox /BleedBox /CropBox
+        # /ArtBox where they existed on the input. ──
+        try:
+            with pikepdf.open(out_pdf, allow_overwriting_input=True) as out_pdf_obj:
+                for page_idx, post in enumerate(per_page_post):
+                    if page_idx >= len(out_pdf_obj.pages):
+                        break
+                    page = out_pdf_obj.pages[page_idx]
+                    for key, box in (post.get("boxes_out") or {}).items():
+                        try:
+                            page[key] = pikepdf.Array([
+                                pikepdf.Object.parse(f"{box[0]:.6f}"),
+                                pikepdf.Object.parse(f"{box[1]:.6f}"),
+                                pikepdf.Object.parse(f"{box[2]:.6f}"),
+                                pikepdf.Object.parse(f"{box[3]:.6f}"),
+                            ])
+                        except Exception as exc:
+                            logger.warning(
+                                "normalize_orientation: failed to stamp %s on page %d: %s",
+                                key, page_idx + 1, exc,
+                            )
+                out_pdf_obj.save(out_pdf)
+        except Exception as exc:
+            logger.warning(
+                "normalize_orientation: pikepdf box stamp pass failed: %s", exc,
+            )
 
         return {
             "pages_rotated": rotated,
