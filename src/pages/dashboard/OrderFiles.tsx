@@ -298,14 +298,22 @@ export default function OrderFiles() {
 
   // Check for orientation mismatches:
   // - Presentations: portrait files should be rotated to landscape.
-  // - Bound Documents ("n"): landscape files should be rotated to portrait.
+  // - Portrait-enforced families (Bound Documents, Ring Binders, Booklets):
+  //   landscape files should be rotated to portrait.
   useEffect(() => {
     if (uploadModalOpen || advisoryDoc || orientationDoc || bleedDoc) return;
     const familySlug = productFamily?.slug;
+    if (!familySlug) return;
+
+    const PORTRAIT_FAMILIES = new Set([
+      "bound-documents",
+      "ring-binders",
+      "booklets",
+    ]);
 
     let mode: "to-landscape" | "to-portrait" | null = null;
     if (familySlug === "presentations") mode = "to-landscape";
-    else if (familySlug === "n") mode = "to-portrait";
+    else if (PORTRAIT_FAMILIES.has(familySlug)) mode = "to-portrait";
     if (!mode) return;
 
     const mismatchDoc = documents.find((d) => {
