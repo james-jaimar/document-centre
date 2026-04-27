@@ -1575,6 +1575,14 @@ export default function OrderFiles() {
         onCancel={handleImageSizeCancel}
       />
 
+      {/* Poster Image Crop Editor (image uploads on poster orders) */}
+      <PosterImageEditor
+        open={posterEditorOpen}
+        file={pendingPosterFile}
+        onConfirm={handlePosterEditorConfirm}
+        onCancel={handlePosterEditorCancel}
+      />
+
       {/* Upload Progress Modal */}
       <UploadProgressModal
         open={uploadModalOpen}
