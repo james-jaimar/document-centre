@@ -1,5 +1,5 @@
 import type { Tables } from "@/integrations/supabase/types";
-import { FileText, Loader2, AlertCircle, CheckCircle2, RefreshCw, Trash2, Eye, Wand2 } from "lucide-react";
+import { FileText, Loader2, AlertCircle, CheckCircle2, RefreshCw, Trash2, Eye, Wand2, Crop } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { useSignedThumbnailUrl } from "@/lib/thumbnailUtils";
