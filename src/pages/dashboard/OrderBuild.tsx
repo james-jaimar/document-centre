@@ -721,7 +721,7 @@ export default function OrderBuild() {
   }
 
   return (
-    <div className="space-y-2 flex flex-col" style={{ minHeight: "calc(100vh - 9rem)" }}>
+    <div className="-m-6 xl:-m-8 p-3 xl:p-4 h-[calc(100%+3rem)] xl:h-[calc(100%+4rem)] flex flex-col space-y-2 min-h-0">
       {/* Header */}
       <div className="flex items-center justify-between shrink-0">
         <div>
