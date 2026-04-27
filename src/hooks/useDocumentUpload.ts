@@ -546,6 +546,9 @@ export function useDocumentUpload(
           preflight.estimated_bleed_h = nearIsoMatch.bleedH;
           preflight.near_iso_landscape = nearIsoMatch.landscape;
         }
+        if (orientationMismatch) {
+          preflight.orientation_mismatch = orientationMismatch;
+        }
 
         await supabase
           .from("documents")
