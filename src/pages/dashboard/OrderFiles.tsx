@@ -1418,7 +1418,7 @@ export default function OrderFiles() {
       {orientationDoc && (
         <OrientationAdvisory
           open={!!orientationDoc}
-          onOpenChange={(open) => { if (!open) setOrientationDoc(null); }}
+          onOpenChange={(open) => { if (!open) handleDismissOrientation(); }}
           fileName={orientationDoc.fileName}
           widthMm={orientationDoc.widthMm}
           heightMm={orientationDoc.heightMm}
