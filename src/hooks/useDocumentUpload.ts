@@ -483,7 +483,15 @@ export function useDocumentUpload(
             Math.abs(trimBox[2] - mediaBox[2]) > 0.5 ||
             Math.abs(trimBox[3] - mediaBox[3]) > 0.5);
 
-        const hasAdvisory = !!detectedSize || !!nearIsoMatch;
+        // Orientation mismatch — gates Phase B render so the advisory fires
+        // BEFORE we waste time rasterising the wrong-orientation document.
+        const orientationMismatch = detectOrientationMismatch(
+          productFamilySlug,
+          pageWidthMm,
+          pageHeightMm,
+        );
+
+        const hasAdvisory = !!detectedSize || !!nearIsoMatch || !!orientationMismatch;
 
         // If no size advisory AND caller didn't ask us to skip, finalise now
         // (print-ready CMYK only — orientation is preserved as authored).
