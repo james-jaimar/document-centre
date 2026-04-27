@@ -54,6 +54,7 @@ export default function OrderFiles() {
   const fromDocId = searchParams.get("fromDoc");
   const createOrder = useCreateOrder();
   const { tenantId: activeTenantId } = useTenantContext();
+  const { user } = useAuth();
   const qc = useQueryClient();
 
   // Track whether we're in "new order" mode (no order created yet)
