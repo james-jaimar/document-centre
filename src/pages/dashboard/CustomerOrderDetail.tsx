@@ -644,6 +644,7 @@ const CustomerOrderDetail = () => {
             displayPageNumbers={snap.displayPageNumbers}
             faceLabels={snap.faceLabels}
             bindingEdge={snap.bindingEdge}
+            bindingArt={snap.bindingArt}
             pageAspectRatio={snap.pageAspectRatio ?? undefined}
             onClose={() => setPreviewJob(null)}
           />
