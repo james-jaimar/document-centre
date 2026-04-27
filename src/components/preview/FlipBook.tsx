@@ -543,8 +543,6 @@ export default function FlipBook({
                         bleedInsetPx={bleedInsetPx}
                         label={pageLabels?.[i]}
                         color={pageColors?.[i]}
-                        counterRotate={isStacked}
-                        artworkAspect={ratio}
                       />
                     ))}
                   </HTMLFlipBook>
