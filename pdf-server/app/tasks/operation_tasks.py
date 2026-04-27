@@ -211,7 +211,10 @@ def resize_pdf(self, asset_id: str, job_id: str, width_mm: float, height_mm: flo
                 'width_pt': info['width_pt'],
                 'height_pt': info['height_pt'],
                 'boxes': info['boxes'],
+                'thumbnail_storage_path': None,
+                'preview_storage_path': None,
             })
+            removed = derived_file_repo.clear_page_renders(db, asset_id)
 
             result = {
                 'storage_path': storage_path,
@@ -222,6 +225,7 @@ def resize_pdf(self, asset_id: str, job_id: str, width_mm: float, height_mm: flo
                 'width_mm': width_mm,
                 'height_mm': height_mm,
                 'fit_mode': fit_mode,
+                'cleared_page_renders': removed,
             }
             job_repo.mark_done(db, job_id, result)
             return result
