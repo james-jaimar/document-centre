@@ -85,11 +85,11 @@ export default function OrderFiles() {
       if (!productFamilyId) return null;
       const { data, error } = await supabase
         .from("product_families")
-        .select("slug, color_output, cmyk_profile, render_intent")
+        .select("name, slug, color_output, cmyk_profile, render_intent")
         .eq("id", productFamilyId)
         .single();
       if (error) throw error;
-      return data as { slug: string; color_output: string; cmyk_profile: string; render_intent: string };
+      return data as { name: string; slug: string; color_output: string; cmyk_profile: string; render_intent: string };
     },
     enabled: !!productFamilyId,
   });
