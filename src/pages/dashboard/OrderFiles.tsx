@@ -225,6 +225,10 @@ export default function OrderFiles() {
   // Poster image editor (crop / scale flow for image uploads on poster orders).
   const [posterEditorOpen, setPosterEditorOpen] = useState(false);
   const [pendingPosterFile, setPendingPosterFile] = useState<File | null>(null);
+  const [posterEditorInitialState, setPosterEditorInitialState] = useState<
+    import("@/components/order/PosterImageEditor").PosterEditorInitialState | undefined
+  >(undefined);
+  const [posterEditorTitle, setPosterEditorTitle] = useState<string | undefined>(undefined);
   const pendingPosterQueueRef = useRef<File[]>([]);
   const pendingPosterPassthroughRef = useRef<File[]>([]);
   const resolvedDocIds = useRef<Set<string>>(new Set());
