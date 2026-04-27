@@ -312,7 +312,6 @@ export default function FlipBook({
   displayPageNumbers,
   faceLabels,
   bindingEdge = "left",
-  landscapeLongEdge = false,
   rawPaths,
   bindingArt,
 }: FlipBookProps) {
