@@ -23,7 +23,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Plus, Pencil, Trash2, ChevronDown, Sparkles } from "lucide-react";
+import { Plus, Pencil, Trash2, ChevronDown, Sparkles, ImageIcon } from "lucide-react";
+import { Link } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { seedBoundDocument } from "@/lib/seedBoundDocument";
 import { seedAllProducts } from "@/lib/seedAllProducts";
@@ -123,6 +124,12 @@ const AdminProducts = () => {
           <p className="text-sm text-muted-foreground">Manage product types and their configurable options.</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <Link to="/admin/binding-artwork-audit">
+              <ImageIcon className="h-4 w-4 mr-2" />
+              Binding Artwork Audit
+            </Link>
+          </Button>
           <Button variant="outline" onClick={handleSeedAllProducts} disabled={seedingAll || seeding}>
             <Sparkles className="h-4 w-4 mr-2" />
             {seedingAll ? "Seeding All…" : "Seed All Products"}
