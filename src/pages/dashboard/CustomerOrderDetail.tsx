@@ -205,6 +205,15 @@ const CustomerOrderDetail = () => {
           <p className="text-sm text-muted-foreground">
             Placed {format(new Date(order.submitted_at || order.created_at), "dd MMM yyyy 'at' HH:mm")}
           </p>
+          {order.submitted_at && (() => {
+            const purgeDate = new Date(order.submitted_at);
+            purgeDate.setMonth(purgeDate.getMonth() + 12);
+            return (
+              <p className="text-xs text-muted-foreground/80 mt-0.5">
+                Source files retained until {format(purgeDate, "dd MMM yyyy")}
+              </p>
+            );
+          })()}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <span
