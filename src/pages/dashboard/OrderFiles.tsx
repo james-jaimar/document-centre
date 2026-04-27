@@ -673,10 +673,11 @@ export default function OrderFiles() {
 
       const existing = documents.find((d) => d.id === orientationDoc.id);
       const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
+      const { orientation_mismatch: _om, ...preflightRest } = preflight;
       await supabase
         .from("documents")
         .update({
-          preflight_data: { ...preflight, awaiting_review: false, orientation_resolved: true, orientation_action: "rotated" },
+          preflight_data: { ...preflightRest, awaiting_review: false, orientation_resolved: true, orientation_action: "rotated" },
         })
         .eq("id", orientationDoc.id);
 
