@@ -12,13 +12,12 @@ interface BindingSpineProps {
   isOpen?: boolean;
   /** Horizontal placement: left edge, center (spread), or right edge */
   position?: "left" | "center" | "right";
-  /** Binding edge: left (default) or top (horizontal spine for presentations) */
+  /** Binding edge: left (default — portrait long edge) or top (landscape short edge) */
   bindingEdge?: "left" | "top";
   /**
-   * Selected binding option's method + colour. When provided, drives the
-   * spine artwork selection; otherwise we fall back to the method's default
-   * (black) colour. `bindingType` still controls whether a spine renders at
-   * all (saddle/perfect/ring/none paths are unchanged).
+   * Selected binding option's method + colour. Drives the spine artwork
+   * selection. `bindingType` still controls whether a spine renders at all
+   * (saddle/perfect/ring/none paths are unchanged).
    */
   bindingArt?: { method: BindingArtMethod; color: string };
 }
@@ -48,7 +47,8 @@ export default function BindingSpine({
         ? { right: 0, transform: "translateX(50%)" }
         : { left: "50%", transform: "translateX(-50%)" };
 
-  const isSpiral = bindingType === "coil" || bindingType === "wire" || bindingType === "comb";
+  const isSpiral =
+    bindingType === "coil" || bindingType === "wire" || bindingType === "comb";
 
   if (isSpiral) {
     const method = (bindingArt?.method ?? bindingTypeToMethod(bindingType))!;
@@ -56,41 +56,30 @@ export default function BindingSpine({
     const edge: "long" | "short" = bindingEdge === "top" ? "short" : "long";
     const state = isOpen ? "open" : "closed";
 
-    // Resolver owns the fallback ladder: exact → same colour other edge →
-    // default colour → legacy. Always returns a usable src; never null.
-    const { src: spineImage, resolved, fellBack } = resolveBindingArt({
-      method,
-      color,
-      edge,
-      state,
-    });
-    if (fellBack) {
-      console.warn(
-        `[BindingSpine] Fell back: requested method="${method}" color="${color}" edge="${edge}" state="${state}" → using method="${resolved.method}" color="${resolved.color}" edge="${resolved.edge}"`,
-      );
+    // Strict resolver — throws if the (method, colour, edge, state) tuple
+    // doesn't have a registered PNG. We surface the failure as a rendered
+    // placeholder + console.error so it is visible without crashing the
+    // whole preview tree.
+    let spineImage: string;
+    try {
+      spineImage = resolveBindingArt({ method, color, edge, state }).src;
+    } catch (err) {
+      console.error("[BindingSpine]", (err as Error).message);
+      return null;
     }
 
     return (
       <div
         className="absolute top-0 z-30 pointer-events-none overflow-hidden"
-        style={{
-          ...positionStyle,
-          width: 36,
-          height,
-        }}
+        style={{ ...positionStyle, width: 36, height }}
       >
         <img
           src={spineImage}
-          alt=""
+          alt={`${method} ${color} binding`}
           aria-hidden="true"
           className="block w-full h-full"
           style={{ objectFit: "fill" }}
           draggable={false}
-          onError={() =>
-            console.error(
-              `[BindingSpine] Failed to load image src="${spineImage}" for method="${method}" color="${color}" edge="${edge}" state="${state}"`,
-            )
-          }
         />
       </div>
     );
@@ -100,14 +89,10 @@ export default function BindingSpine({
   const spineWidth = bindingType === "perfect" ? 10 : 6;
 
   return (
-      <div
-        className="absolute top-0 z-20 pointer-events-none"
-        style={{
-          ...positionStyle,
-          width: spineWidth,
-          height,
-        }}
-      >
+    <div
+      className="absolute top-0 z-20 pointer-events-none"
+      style={{ ...positionStyle, width: spineWidth, height }}
+    >
       <div
         className="absolute inset-0"
         style={{
