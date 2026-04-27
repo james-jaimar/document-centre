@@ -651,7 +651,7 @@ export default function MarketingLanding() {
               Ready to modernise your print business?
             </h2>
             <p className="mt-3 text-white/80 text-[15px]">
-              Join hundreds of copy shops &amp; printers using Document Centre to grow.
+              Loved by copy shops, small printers, in-plants &amp; corporate print departments.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link to="/try" className="dc-btn dc-btn-green" style={{ padding: "1rem 2rem", fontSize: "0.98rem" }}>
