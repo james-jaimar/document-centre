@@ -287,6 +287,14 @@ export default function OrderFiles() {
   } | null>(null);
   const [isApplyingBleed, setIsApplyingBleed] = useState(false);
 
+  // Page-count rule advisory (flyers / brochures / business cards)
+  const [pageCountWarning, setPageCountWarning] = useState<{
+    items: import("@/components/order/PageCountWarningDialog").PageCountWarningItem[];
+  } | null>(null);
+  const [pageCountBusy, setPageCountBusy] = useState(false);
+  // Doc IDs the user has explicitly chosen to "keep anyway" — don't re-warn.
+  const dismissedPageCountDocIds = useRef<Set<string>>(new Set());
+
   // Check for near-ISO bleed documents after upload completes
   useEffect(() => {
     if (uploadModalOpen || advisoryDoc || bleedDoc || orientationDoc) return;
