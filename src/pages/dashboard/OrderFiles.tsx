@@ -1948,6 +1948,17 @@ export default function OrderFiles() {
           onConfirm={handleBleedConfirm}
         />
       )}
+
+      {/* Page-count rule advisory (flyers / brochures / business cards) */}
+      <PageCountWarningDialog
+        open={!!pageCountWarning}
+        rule={getPageCountRule(productFamily?.slug)}
+        items={pageCountWarning?.items ?? []}
+        busy={pageCountBusy}
+        onTrim={handlePageCountTrim}
+        onReplace={handlePageCountReplace}
+        onKeep={handlePageCountKeep}
+      />
     </div>
   );
 }
