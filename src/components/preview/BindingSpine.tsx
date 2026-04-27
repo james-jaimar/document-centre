@@ -62,13 +62,18 @@ export default function BindingSpine({
   if (isSpiral) {
     const method = (bindingArt?.method ?? bindingTypeToMethod(bindingType))!;
     const color = normaliseBindingColor(bindingArt?.color);
+    // Edge selection rule: only use the 210mm short-edge artwork when the
+    // book is genuinely top-bound (landscape product). Portrait products
+    // always use the long-edge artwork — no silent fallback to a CSS strip.
     const edge: "long" | "short" = bindingEdge === "top" ? "short" : "long";
     const state = isOpen ? "open" : "closed";
 
     const { src: spineImage } = resolveBindingArt({ method, color, edge, state });
 
-    // Fallback strip styling — used when the artwork PNG fails to load so we
-    // never leave a broken-image icon visible on top of the document.
+    // CSS fallback strip is a last-resort safety net only — it must NEVER be
+    // the visible result for a supported combo. If you're seeing it, the
+    // resolver returned an empty src, which means the asset registry is
+    // missing an import — fix the registry, don't widen this fallback.
     const fallbackBg =
       method === "comb"
         ? "repeating-linear-gradient(180deg, hsl(var(--foreground) / 0.55) 0 6px, transparent 6px 10px)"
@@ -81,10 +86,10 @@ export default function BindingSpine({
           ...positionStyle,
           width: 36,
           height,
-          background: imageFailed ? fallbackBg : undefined,
+          background: imageFailed || !spineImage ? fallbackBg : undefined,
         }}
       >
-        {!imageFailed && (
+        {!imageFailed && spineImage && (
           <img
             src={spineImage}
             alt=""

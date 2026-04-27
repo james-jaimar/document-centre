@@ -26,7 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { resize, rotate, pollJob, cropRasterize, getAsset, getDerivedFiles, ensureFreshAsset, inspectAsset } from "@/lib/documentCentreApi";
+import { resize, rotate, pollJob, cropRasterize, getAsset, getDerivedFiles, ensureFreshAsset, inspectAsset, normalizeOrientation } from "@/lib/documentCentreApi";
 import { copyS3Object } from "@/lib/s3Storage";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
@@ -36,6 +36,12 @@ import type { PaperSize, NearIsoMatch } from "@/lib/paperSizes";
 import { isLandscape, ISO_SIZES, matchIsoSize, matchKnownSize, sizesMatch } from "@/lib/paperSizes";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Lock, X as XIcon } from "lucide-react";
+import {
+  requiredOrientationFor,
+  orientationOf,
+  violatesOrientationPolicy,
+  advisoryModeFor,
+} from "@/lib/orders/orientationPolicy";
 
 export default function OrderFiles() {
   const { id: orderId, familyId: routeFamilyId, slug } = useParams<{ id: string; familyId: string; slug: string }>();
@@ -296,25 +302,14 @@ export default function OrderFiles() {
     }
   }, [documents, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc]);
 
-  // Check for orientation mismatches:
-  // - Presentations: portrait files should be rotated to landscape.
-  // - Portrait-enforced families (Bound Documents, Ring Binders, Booklets):
-  //   landscape files should be rotated to portrait.
+  // Check for orientation mismatches via the shared policy module — single
+  // source of truth for which products require which orientation.
   useEffect(() => {
     if (uploadModalOpen || advisoryDoc || orientationDoc || bleedDoc) return;
     const familySlug = productFamily?.slug;
-    if (!familySlug) return;
-
-    const PORTRAIT_FAMILIES = new Set([
-      "bound-documents",
-      "ring-binders",
-      "booklets",
-    ]);
-
-    let mode: "to-landscape" | "to-portrait" | null = null;
-    if (familySlug === "presentations") mode = "to-landscape";
-    else if (PORTRAIT_FAMILIES.has(familySlug)) mode = "to-portrait";
-    if (!mode) return;
+    const required = requiredOrientationFor(familySlug);
+    if (!required) return;
+    const mode = advisoryModeFor(required);
 
     const mismatchDoc = documents.find((d) => {
       const preflight = d.preflight_data as Record<string, any> | null;
@@ -323,21 +318,13 @@ export default function OrderFiles() {
       // Preferred: persisted flag from Phase A — fires before thumbnails render.
       if (preflight?.orientation_mismatch === mode) return true;
 
-      // Fallback: dimension-based detection (legacy docs uploaded pre-flag,
-      // or in-flight docs whose preflight_data hasn't refreshed yet).
-      // Only run this fallback when the row has no preflight_data at all,
-      // OR when it has preflight_data but no orientation signal either way.
-      // This prevents the fallback from re-opening the advisory during the
-      // brief window after rotation when refetched rows may still look
-      // "wrong" by raw dimensions.
+      // Fallback: dimension-based detection. Only when the row has no
+      // orientation signal either way (so we don't re-open the dialog while
+      // a rotation is in flight).
       if (preflight && (preflight.orientation_resolved || preflight.orientation_mismatch !== undefined)) {
         return false;
       }
-      const w = Number(d.page_width_mm);
-      const h = Number(d.page_height_mm);
-      if (!(w > 0 && h > 0)) return false;
-      // to-landscape: flag portrait (w < h). to-portrait: flag landscape (w > h).
-      return mode === "to-landscape" ? w < h : w > h;
+      return violatesOrientationPolicy(familySlug, d.page_width_mm, d.page_height_mm);
     });
     if (mismatchDoc) {
       setOrientationDoc({
@@ -665,35 +652,42 @@ export default function OrderFiles() {
     const targetLabel = toPortrait ? "portrait" : "landscape";
     setIsRotating(true);
     try {
+      // Use the explicit-target normalize-orientation pipeline. Unlike
+      // `rotate(90)`, this guarantees the resulting PDF matches the requested
+      // orientation: pages already in the right orientation are left alone,
+      // and rotated pages are baked onto a swapped-dimension MediaBox so the
+      // rasterizer can't disagree with the viewer.
+      const target = toPortrait ? "portrait" : "landscape";
       toast.info(`Rotating to ${targetLabel}…`);
 
-      // Clear stale thumbnail URLs from the cache up-front so the preview
-      // can't reuse the old (pre-rotation) signed URLs after the row updates.
       const existing = documents.find((d) => d.id === orientationDoc.id);
       const oldPaths = Array.isArray(existing?.thumbnail_urls)
         ? (existing!.thumbnail_urls as string[]).filter(Boolean)
         : [];
       if (oldPaths.length) clearSignedUrlCache(oldPaths);
 
-      // Rotation now PROMOTES the rotated PDF to normalized_storage_path on
-      // the VPS and refreshes width_pt / height_pt / boxes in the same job.
-      const { job_id } = await rotate(orientationDoc.backendAssetId, 90);
+      const { job_id } = await normalizeOrientation(orientationDoc.backendAssetId, target);
       await pollJob(job_id);
 
-      // Pull the refreshed asset so we can write the *real* post-rotation
-      // dimensions to the documents row instead of blindly swapping the
-      // previous values (which is wrong if the user mid-flow scaled the doc).
+      // Re-fetch authoritative dimensions from the asset (the job promotes
+      // the rotated PDF to normalized_storage_path and refreshes width/height).
       const refreshed = await getAsset(orientationDoc.backendAssetId);
       const widthPt = Number(refreshed.width_pt ?? 0);
       const heightPt = Number(refreshed.height_pt ?? 0);
       const widthMm = widthPt > 0 ? (widthPt * 25.4) / 72 : orientationDoc.heightMm;
       const heightMm = heightPt > 0 ? (heightPt * 25.4) / 72 : orientationDoc.widthMm;
 
-      // Mark the document as orientation-resolved BEFORE running the render so
-      // the orientation useEffect cannot re-open the advisory dialog when the
-      // documents query refetches mid-render. Strip any thumbnail_urls left
-      // over from the previous (wrong-orientation) render so the UI shows a
-      // clean loader instead of stale landscape thumbnails.
+      // VERIFY the result actually matches the target orientation. If the
+      // backend returned a no-op (skipped=true) or somehow produced the wrong
+      // shape, do NOT mark resolved — surface the error so the customer can
+      // try again instead of getting a broken preview downstream.
+      const resultOrientation = orientationOf(widthMm, heightMm);
+      if (resultOrientation !== target) {
+        throw new Error(
+          `Rotation did not produce a ${target} document (got ${resultOrientation ?? "unknown"} ${Math.round(widthMm)}×${Math.round(heightMm)}mm). Please try again or use a different file.`,
+        );
+      }
+
       const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
       const { orientation_mismatch: _om, ...preflightRest } = preflight;
       await supabase
@@ -706,7 +700,7 @@ export default function OrderFiles() {
         })
         .eq("id", orientationDoc.id);
 
-      // Render the full (now-rotated, promoted) document — no global crop box.
+      // Render the full (now-rotated, promoted) document.
       setUploadModalOpen(true);
       await renderWithProgress(
         orientationDoc.id,
@@ -716,10 +710,7 @@ export default function OrderFiles() {
         `Rotating to ${targetLabel} and rendering pages…`,
       );
 
-      // Defensive idempotent re-write — renderDocumentThumbnails strips
-      // orientation_mismatch from preflight, but re-asserting the resolved
-      // marker here keeps the row authoritative if anything in the render
-      // pipeline overwrote it.
+      // Defensive re-assert.
       await supabase
         .from("documents")
         .update({
@@ -1008,9 +999,35 @@ export default function OrderFiles() {
     return out;
   }, [documents, activePrintSize, sessionSizeLock, getDocEffectiveSize]);
 
+  // Hard guard: refuse to add a doc to a section if its orientation violates
+  // the product's mandatory orientation policy. The advisory dialog is the
+  // ONLY way to resolve this — silent acceptance breaks every downstream step.
+  const assertOrientationOk = useCallback((docId: string): boolean => {
+    const required = requiredOrientationFor(productFamily?.slug);
+    if (!required) return true;
+    const candidate = documents.find((d) => d.id === docId);
+    if (!candidate) return true;
+    if (violatesOrientationPolicy(productFamily?.slug, candidate.page_width_mm, candidate.page_height_mm)) {
+      toast.error(
+        required === "portrait"
+          ? "Landscape file can't be used in this product"
+          : "Portrait file can't be used in this product",
+        {
+          description: required === "portrait"
+            ? "Rotate this file to portrait first, or switch product."
+            : "Rotate this file to landscape first, or switch product.",
+        },
+      );
+      return false;
+    }
+    return true;
+  }, [productFamily?.slug, documents]);
+
   const handleAddAs = useCallback(
     async (type: "front_cover" | "back_cover" | "body") => {
       if (!selectedDocId || !orderItem) return;
+
+      if (!assertOrientationOk(selectedDocId)) return;
 
       // ── Belt-and-braces mismatch guard ─────────────────────────
       // Refuse to assign a doc whose effective size doesn't match the
@@ -1061,7 +1078,7 @@ export default function OrderFiles() {
         toast.error("Failed to add section", { description: err.message });
       }
     },
-    [selectedDocId, orderItem, sections.length, addSection, familySlug, documents, activePrintSize, getDocEffectiveSize]
+    [selectedDocId, orderItem, sections.length, addSection, familySlug, documents, activePrintSize, getDocEffectiveSize, assertOrientationOk]
   );
 
   // Auto-assign a 2-3 page document as Outside (page 1) + Inside (page 2) for brochures
@@ -1080,6 +1097,7 @@ export default function OrderFiles() {
 
   const handleAutoAssignBrochure = useCallback(async () => {
     if (!selectedDocId || !orderItem) return;
+    if (!assertOrientationOk(selectedDocId)) return;
     if (!assertSizeMatchesActive(selectedDocId)) return;
     const doc = documents.find((d) => d.id === selectedDocId);
     if (!doc || (doc.page_count ?? 0) < 2) return;
@@ -1106,13 +1124,14 @@ export default function OrderFiles() {
     } catch (err: any) {
       toast.error("Failed to auto-assign", { description: err.message });
     }
-  }, [selectedDocId, orderItem, documents, sections.length, addSection, assertSizeMatchesActive]);
+  }, [selectedDocId, orderItem, documents, sections.length, addSection, assertSizeMatchesActive, assertOrientationOk]);
 
   // Auto-assign a 4+ page PDF where each page is a panel
   // Bi-fold (4 pages): Outside = pages [0, 3], Inside = pages [1, 2]
   // Tri-fold (6 pages): Outside = pages [0, 1, 2], Inside = pages [3, 4, 5]
   const handleAutoAssignPanels = useCallback(async () => {
     if (!selectedDocId || !orderItem) return;
+    if (!assertOrientationOk(selectedDocId)) return;
     if (!assertSizeMatchesActive(selectedDocId)) return;
     const doc = documents.find((d) => d.id === selectedDocId);
     const pageCount = doc?.page_count ?? 0;
@@ -1151,7 +1170,7 @@ export default function OrderFiles() {
     } catch (err: any) {
       toast.error("Failed to auto-assign panels", { description: err.message });
     }
-  }, [selectedDocId, orderItem, documents, sections.length, addSection, assertSizeMatchesActive]);
+  }, [selectedDocId, orderItem, documents, sections.length, addSection, assertSizeMatchesActive, assertOrientationOk]);
 
   const handleRemoveSection = useCallback(async () => {
     if (!selectedSectionId || !orderItem) return;
@@ -1276,7 +1295,22 @@ export default function OrderFiles() {
     [sections, updateSection]
   );
 
-  const canContinue = sections.length > 0;
+  // Hard guard for Configure Options: every assigned doc must satisfy the
+  // product's mandatory orientation policy. We refuse to navigate downstream
+  // if any section is wired to a doc that would render the wrong way up.
+  const orientationViolations = useMemo(() => {
+    if (!requiredOrientationFor(productFamily?.slug)) return new Set<string>();
+    const out = new Set<string>();
+    for (const s of sections) {
+      const doc = documents.find((d) => d.id === s.document_id);
+      if (!doc) continue;
+      if (violatesOrientationPolicy(productFamily?.slug, doc.page_width_mm, doc.page_height_mm)) {
+        out.add(doc.id);
+      }
+    }
+    return out;
+  }, [sections, documents, productFamily?.slug]);
+  const canContinue = sections.length > 0 && orientationViolations.size === 0;
 
   if (loading && !isNewMode) {
     return (
