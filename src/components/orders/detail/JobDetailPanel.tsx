@@ -208,6 +208,7 @@ export function JobDetailPanel({ job, documents, currency = "ZAR" }: Props) {
           displayPageNumbers={previewSnap.displayPageNumbers}
           faceLabels={previewSnap.faceLabels}
           bindingEdge={previewSnap.bindingEdge}
+          bindingArt={previewSnap.bindingArt}
           pageAspectRatio={previewSnap.pageAspectRatio ?? undefined}
           onClose={() => setPreviewOpen(false)}
         />

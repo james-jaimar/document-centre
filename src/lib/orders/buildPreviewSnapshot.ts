@@ -119,7 +119,16 @@ function resolveEffects(
 function resolveBindingEdge(
   selectedOptions: Record<string, string>,
   productOptions: OptionLike[],
+  documents: DocLike[],
 ): "left" | "top" {
+  // 1. Document geometry wins when known.
+  const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
+  if (doc?.page_width_mm && doc?.page_height_mm) {
+    return Number(doc.page_width_mm) > Number(doc.page_height_mm)
+      ? "top"
+      : "left";
+  }
+  // 2. Fallback to Document Size metadata.
   const sizeOpt = productOptions.find(
     (o) => o.name.toLowerCase() === "document size",
   );
@@ -133,10 +142,37 @@ function resolveBindingEdge(
   const val = (sizeOpt.values as StructuredOptionValue[]).find(
     (v) => v.slug === slug,
   );
-  return (val?.metadata as Record<string, any>)?.binding_edge === "top"
-    ? "top"
-    : "left";
+  const meta = (val?.metadata as Record<string, any>) ?? {};
+  if (meta.binding_edge === "top" || meta.binding_edge === "short") return "top";
+  if (meta.orientation === "landscape") return "top";
+  return "left";
 }
+
+function resolveBindingArt(
+  selectedOptions: Record<string, string>,
+  productOptions: OptionLike[],
+): { method: "spiral" | "comb" | "twin_loop"; color: string } | undefined {
+  const bindingOpt = productOptions.find(
+    (o) => o.name.toLowerCase() === "binding",
+  );
+  if (!bindingOpt || !isStructuredValues(bindingOpt.values)) return undefined;
+  const key =
+    Object.keys(selectedOptions).find(
+      (k) => k.toLowerCase() === bindingOpt.name.toLowerCase(),
+    ) || bindingOpt.name;
+  const slug = selectedOptions[key];
+  if (!slug) return undefined;
+  const matched = (bindingOpt.values as StructuredOptionValue[]).find(
+    (v) => v.slug === slug,
+  );
+  const method = matched?.metadata?.binding_method as string | undefined;
+  const color = (matched?.metadata?.color as string | undefined) ?? "black";
+  if (method === "spiral" || method === "comb" || method === "twin_loop") {
+    return { method, color };
+  }
+  return undefined;
+}
+
 
 /** Mirrors PreviewPanel.buildPageSequence */
 function buildPageSequence(
@@ -281,6 +317,7 @@ export interface PreviewSnapshot {
   product_type: ProductPreviewType;
   effects: PreviewEffects;
   bindingEdge: "left" | "top";
+  bindingArt?: { method: "spiral" | "comb" | "twin_loop"; color: string };
   pageAspectRatio: number | null;
   colorFlags: boolean[];
   bleedFlags: boolean[];
@@ -304,10 +341,12 @@ export function buildPreviewSnapshot(input: {
   const isBound = BOUND_TYPES.has(productType);
 
   const effects = resolveEffects(selectedOptions, productOptions);
-  const bindingEdge = resolveBindingEdge(selectedOptions, productOptions);
+  const bindingEdge = resolveBindingEdge(selectedOptions, productOptions, documents);
+  const bindingArt = resolveBindingArt(selectedOptions, productOptions);
 
   const sortedSections = [...sections].sort((a, b) => a.sort_order - b.sort_order);
   const pages = buildPageSequence(sortedSections, documents, isBound, productType);
+
 
   // Apply role enrichment + physical covers (mirrors PreviewPanel)
   const fp: PageInfo[] = [...pages];
@@ -463,6 +502,7 @@ export function buildPreviewSnapshot(input: {
     product_type: productType,
     effects,
     bindingEdge,
+    bindingArt,
     pageAspectRatio,
     colorFlags,
     bleedFlags,
