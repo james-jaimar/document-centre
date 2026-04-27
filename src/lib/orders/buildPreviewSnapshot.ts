@@ -19,6 +19,7 @@ import {
   isStructuredValues,
   type StructuredOptionValue,
 } from "@/lib/productOptionTypes";
+import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
 
 interface DocLike {
   id: string;
@@ -148,30 +149,8 @@ function resolveBindingEdge(
   return "left";
 }
 
-function resolveBindingArt(
-  selectedOptions: Record<string, string>,
-  productOptions: OptionLike[],
-): { method: "spiral" | "comb" | "twin_loop"; color: string } | undefined {
-  const bindingOpt = productOptions.find(
-    (o) => o.name.toLowerCase() === "binding",
-  );
-  if (!bindingOpt || !isStructuredValues(bindingOpt.values)) return undefined;
-  const key =
-    Object.keys(selectedOptions).find(
-      (k) => k.toLowerCase() === bindingOpt.name.toLowerCase(),
-    ) || bindingOpt.name;
-  const slug = selectedOptions[key];
-  if (!slug) return undefined;
-  const matched = (bindingOpt.values as StructuredOptionValue[]).find(
-    (v) => v.slug === slug,
-  );
-  const method = matched?.metadata?.binding_method as string | undefined;
-  const color = (matched?.metadata?.color as string | undefined) ?? "black";
-  if (method === "spiral" || method === "comb" || method === "twin_loop") {
-    return { method, color };
-  }
-  return undefined;
-}
+// Binding art derivation moved to `selectedBindingArt` so the live builder
+// (OrderBuild) and the saved/admin snapshot here always agree.
 
 
 /** Mirrors PreviewPanel.buildPageSequence */
@@ -342,7 +321,7 @@ export function buildPreviewSnapshot(input: {
 
   const effects = resolveEffects(selectedOptions, productOptions);
   const bindingEdge = resolveBindingEdge(selectedOptions, productOptions, documents);
-  const bindingArt = resolveBindingArt(selectedOptions, productOptions);
+  const bindingArt = selectedBindingArt(selectedOptions, productOptions);
 
   const sortedSections = [...sections].sort((a, b) => a.sort_order - b.sort_order);
   const pages = buildPageSequence(sortedSections, documents, isBound, productType);
