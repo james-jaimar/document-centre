@@ -302,25 +302,14 @@ export default function OrderFiles() {
     }
   }, [documents, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc]);
 
-  // Check for orientation mismatches:
-  // - Presentations: portrait files should be rotated to landscape.
-  // - Portrait-enforced families (Bound Documents, Ring Binders, Booklets):
-  //   landscape files should be rotated to portrait.
+  // Check for orientation mismatches via the shared policy module — single
+  // source of truth for which products require which orientation.
   useEffect(() => {
     if (uploadModalOpen || advisoryDoc || orientationDoc || bleedDoc) return;
     const familySlug = productFamily?.slug;
-    if (!familySlug) return;
-
-    const PORTRAIT_FAMILIES = new Set([
-      "bound-documents",
-      "ring-binders",
-      "booklets",
-    ]);
-
-    let mode: "to-landscape" | "to-portrait" | null = null;
-    if (familySlug === "presentations") mode = "to-landscape";
-    else if (PORTRAIT_FAMILIES.has(familySlug)) mode = "to-portrait";
-    if (!mode) return;
+    const required = requiredOrientationFor(familySlug);
+    if (!required) return;
+    const mode = advisoryModeFor(required);
 
     const mismatchDoc = documents.find((d) => {
       const preflight = d.preflight_data as Record<string, any> | null;
@@ -329,21 +318,13 @@ export default function OrderFiles() {
       // Preferred: persisted flag from Phase A — fires before thumbnails render.
       if (preflight?.orientation_mismatch === mode) return true;
 
-      // Fallback: dimension-based detection (legacy docs uploaded pre-flag,
-      // or in-flight docs whose preflight_data hasn't refreshed yet).
-      // Only run this fallback when the row has no preflight_data at all,
-      // OR when it has preflight_data but no orientation signal either way.
-      // This prevents the fallback from re-opening the advisory during the
-      // brief window after rotation when refetched rows may still look
-      // "wrong" by raw dimensions.
+      // Fallback: dimension-based detection. Only when the row has no
+      // orientation signal either way (so we don't re-open the dialog while
+      // a rotation is in flight).
       if (preflight && (preflight.orientation_resolved || preflight.orientation_mismatch !== undefined)) {
         return false;
       }
-      const w = Number(d.page_width_mm);
-      const h = Number(d.page_height_mm);
-      if (!(w > 0 && h > 0)) return false;
-      // to-landscape: flag portrait (w < h). to-portrait: flag landscape (w > h).
-      return mode === "to-landscape" ? w < h : w > h;
+      return violatesOrientationPolicy(familySlug, d.page_width_mm, d.page_height_mm);
     });
     if (mismatchDoc) {
       setOrientationDoc({
