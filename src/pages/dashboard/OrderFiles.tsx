@@ -325,6 +325,14 @@ export default function OrderFiles() {
 
       // Fallback: dimension-based detection (legacy docs uploaded pre-flag,
       // or in-flight docs whose preflight_data hasn't refreshed yet).
+      // Only run this fallback when the row has no preflight_data at all,
+      // OR when it has preflight_data but no orientation signal either way.
+      // This prevents the fallback from re-opening the advisory during the
+      // brief window after rotation when refetched rows may still look
+      // "wrong" by raw dimensions.
+      if (preflight && (preflight.orientation_resolved || preflight.orientation_mismatch !== undefined)) {
+        return false;
+      }
       const w = Number(d.page_width_mm);
       const h = Number(d.page_height_mm);
       if (!(w > 0 && h > 0)) return false;
