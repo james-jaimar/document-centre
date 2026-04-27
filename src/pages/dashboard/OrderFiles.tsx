@@ -85,11 +85,11 @@ export default function OrderFiles() {
       if (!productFamilyId) return null;
       const { data, error } = await supabase
         .from("product_families")
-        .select("slug, color_output, cmyk_profile, render_intent")
+        .select("name, slug, color_output, cmyk_profile, render_intent")
         .eq("id", productFamilyId)
         .single();
       if (error) throw error;
-      return data as { slug: string; color_output: string; cmyk_profile: string; render_intent: string };
+      return data as { name: string; slug: string; color_output: string; cmyk_profile: string; render_intent: string };
     },
     enabled: !!productFamilyId,
   });
@@ -1747,7 +1747,7 @@ export default function OrderFiles() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">
-              Upload &amp; Organise Files
+              {productFamily?.name ? `${productFamily.name} — ` : ""}Upload &amp; Organise Files
             </h1>
             <p className="text-muted-foreground mt-1 text-sm">
               Step 1 of 2 — Upload your PDFs and assign them to document sections
