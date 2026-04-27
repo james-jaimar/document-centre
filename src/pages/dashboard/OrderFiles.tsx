@@ -319,6 +319,12 @@ export default function OrderFiles() {
     const mismatchDoc = documents.find((d) => {
       const preflight = d.preflight_data as Record<string, any> | null;
       if (preflight?.orientation_resolved) return false;
+
+      // Preferred: persisted flag from Phase A — fires before thumbnails render.
+      if (preflight?.orientation_mismatch === mode) return true;
+
+      // Fallback: dimension-based detection (legacy docs uploaded pre-flag,
+      // or in-flight docs whose preflight_data hasn't refreshed yet).
       const w = Number(d.page_width_mm);
       const h = Number(d.page_height_mm);
       if (!(w > 0 && h > 0)) return false;
