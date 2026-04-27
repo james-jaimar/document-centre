@@ -296,9 +296,6 @@ export default function OrderFiles() {
     }
   }, [documents, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc]);
 
-  // Check for portrait orientation on presentation uploads
-  useEffect(() => {
-    if (uploadModalOpen || advisoryDoc || orientationDoc || bleedDoc) return;
   // Check for orientation mismatches:
   // - Presentations: portrait files should be rotated to landscape.
   // - Bound Documents ("n"): landscape files should be rotated to portrait.
