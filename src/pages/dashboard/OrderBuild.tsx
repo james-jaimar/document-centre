@@ -798,7 +798,7 @@ export default function OrderBuild() {
             productType={productType}
             effects={previewEffects}
             bindingEdge={bindingEdge}
-            landscapeLongEdge={landscapeLongEdge}
+            
             bindingArt={bindingArt}
           />
         </div>
