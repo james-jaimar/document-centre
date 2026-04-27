@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react";
 import type { BindingType } from "./previewTypes";
 import {
   resolveBindingArt,
@@ -40,14 +39,6 @@ export default function BindingSpine({
   bindingEdge = "left",
   bindingArt,
 }: BindingSpineProps) {
-  // Reset image error when artwork target changes (so a previously-failed
-  // load doesn't permanently suppress the spine for a different combo).
-  const [imageFailed, setImageFailed] = useState(false);
-  const artKey = `${bindingType}|${bindingArt?.method ?? ""}|${bindingArt?.color ?? ""}|${bindingEdge}|${isOpen}`;
-  useEffect(() => {
-    setImageFailed(false);
-  }, [artKey]);
-
   if (bindingType === "none" || bindingType === "ring") return null;
 
   const positionStyle: React.CSSProperties =
@@ -64,20 +55,15 @@ export default function BindingSpine({
     const color = normaliseBindingColor(bindingArt?.color);
     // Edge selection rule: only use the 210mm short-edge artwork when the
     // book is genuinely top-bound (landscape product). Portrait products
-    // always use the long-edge artwork — no silent fallback to a CSS strip.
+    // always use the long-edge artwork.
     const edge: "long" | "short" = bindingEdge === "top" ? "short" : "long";
     const state = isOpen ? "open" : "closed";
 
+    // The asset registry ALWAYS resolves to a real PNG (it has a deep
+    // fallback ladder ending in legacy artwork). There must NEVER be a
+    // CSS-painted spiral/wire — if you find yourself reaching for one,
+    // add the missing PNG to bindingAssets.ts instead.
     const { src: spineImage } = resolveBindingArt({ method, color, edge, state });
-
-    // CSS fallback strip is a last-resort safety net only — it must NEVER be
-    // the visible result for a supported combo. If you're seeing it, the
-    // resolver returned an empty src, which means the asset registry is
-    // missing an import — fix the registry, don't widen this fallback.
-    const fallbackBg =
-      method === "comb"
-        ? "repeating-linear-gradient(180deg, hsl(var(--foreground) / 0.55) 0 6px, transparent 6px 10px)"
-        : "repeating-linear-gradient(180deg, hsl(var(--foreground) / 0.4) 0 2px, transparent 2px 5px)";
 
     return (
       <div
@@ -86,20 +72,16 @@ export default function BindingSpine({
           ...positionStyle,
           width: 36,
           height,
-          background: imageFailed || !spineImage ? fallbackBg : undefined,
         }}
       >
-        {!imageFailed && spineImage && (
-          <img
-            src={spineImage}
-            alt=""
-            aria-hidden="true"
-            className="block w-full h-full"
-            style={{ objectFit: "fill" }}
-            draggable={false}
-            onError={() => setImageFailed(true)}
-          />
-        )}
+        <img
+          src={spineImage}
+          alt=""
+          aria-hidden="true"
+          className="block w-full h-full"
+          style={{ objectFit: "fill" }}
+          draggable={false}
+        />
       </div>
     );
   }
