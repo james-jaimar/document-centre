@@ -199,6 +199,7 @@ export async function renderDocumentThumbnails(
         asset.thumbnail_storage_path,
         asset.preview_storage_path,
         expectedPages,
+        targetAspect,
       );
       missing = computeMissing(thumbnailPaths);
       if (missing.length === 0) break;
