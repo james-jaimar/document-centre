@@ -116,6 +116,15 @@ export async function renderDocumentThumbnails(
   const asset = await getAsset(assetId);
   const expectedPages = asset.page_count ?? 1;
 
+  // Aspect ratio hint for the thumbnail picker — derived from the asset's
+  // CURRENT (post-rotation/resize) dimensions. This prevents stale
+  // pre-rotation thumbnails from being selected if any happened to survive
+  // backend cleanup.
+  const targetAspect =
+    asset.width_pt && asset.height_pt
+      ? Number(asset.width_pt) / Number(asset.height_pt)
+      : null;
+
   // Immediate first check — generate_previews writes derived files synchronously
   // before the task ends, so they're often already present when polling starts.
   let derivedFiles = await getDerivedFiles(assetId);
@@ -124,6 +133,7 @@ export async function renderDocumentThumbnails(
     asset.thumbnail_storage_path,
     asset.preview_storage_path,
     expectedPages,
+    targetAspect,
   );
 
   const MAX_THUMB_POLLS = 45; // ~90s ceiling with adaptive backoff
@@ -144,6 +154,7 @@ export async function renderDocumentThumbnails(
       asset.thumbnail_storage_path,
       asset.preview_storage_path,
       expectedPages,
+      targetAspect,
     );
   }
 
