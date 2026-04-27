@@ -39,7 +39,7 @@ export async function trimDocumentToFirstPages(
   const outBytes = await out.save();
 
   // 3. Overwrite the same S3 key.
-  const blob = new Blob([outBytes], { type: "application/pdf" });
+  const blob = new Blob([outBytes as BlobPart], { type: "application/pdf" });
   await uploadToS3(filePath, blob);
 
   // 4. Reset the document row so the standard pipeline re-inspects + re-renders.
