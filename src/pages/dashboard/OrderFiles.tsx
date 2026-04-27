@@ -26,7 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { resize, rotate, pollJob, cropRasterize, getAsset, getDerivedFiles, ensureFreshAsset } from "@/lib/documentCentreApi";
+import { resize, rotate, pollJob, cropRasterize, getAsset, getDerivedFiles, ensureFreshAsset, inspectAsset } from "@/lib/documentCentreApi";
 import { copyS3Object } from "@/lib/s3Storage";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
@@ -661,6 +661,14 @@ export default function OrderFiles() {
       const { job_id } = await rotate(orientationDoc.backendAssetId, 90);
       await pollJob(job_id);
 
+      // CRITICAL: Re-inspect the asset so the VPS refreshes its cached
+      // width_pt / height_pt / boxes from the rotated PDF. Without this,
+      // getAsset() (called inside renderWithProgress) returns the stale
+      // pre-rotation dimensions and we'd write the OLD landscape values
+      // back into the documents row — leaving the UI showing landscape.
+      const { job_id: inspectJobId } = await inspectAsset(orientationDoc.backendAssetId);
+      await pollJob(inspectJobId);
+
       // Render the full (now-rotated) document — no global crop box.
       setUploadModalOpen(true);
       await renderWithProgress(
@@ -671,12 +679,19 @@ export default function OrderFiles() {
         `Rotating to ${targetLabel} and rendering pages…`,
       );
 
+      // Defensive fallback: explicitly write the swapped dimensions in case
+      // renderWithProgress's own dimension write hasn't propagated yet.
+      const swappedW = orientationDoc.heightMm;
+      const swappedH = orientationDoc.widthMm;
+
       const existing = documents.find((d) => d.id === orientationDoc.id);
       const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
       const { orientation_mismatch: _om, ...preflightRest } = preflight;
       await supabase
         .from("documents")
         .update({
+          page_width_mm: Math.round(swappedW * 10) / 10,
+          page_height_mm: Math.round(swappedH * 10) / 10,
           preflight_data: { ...preflightRest, awaiting_review: false, orientation_resolved: true, orientation_action: "rotated" },
         })
         .eq("id", orientationDoc.id);
