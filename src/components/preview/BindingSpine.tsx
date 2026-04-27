@@ -52,27 +52,22 @@ export default function BindingSpine({
 
   if (isSpiral) {
     const method = (bindingArt?.method ?? bindingTypeToMethod(bindingType))!;
-    const requestedColor = normaliseBindingColor(bindingArt?.color);
+    const color = normaliseBindingColor(bindingArt?.color);
     const edge: "long" | "short" = bindingEdge === "top" ? "short" : "long";
     const state = isOpen ? "open" : "closed";
 
-    // Try the exact requested tuple first. If artwork is missing for the
-    // requested colour (e.g. a newly-seeded option without art yet), fall
-    // back to the same method in BLACK so the spine still renders, then
-    // log a clear warning instead of returning null and disappearing.
-    let spineImage: string | null = null;
-    try {
-      spineImage = resolveBindingArt({ method, color: requestedColor, edge, state }).src;
-    } catch (err) {
+    // Resolver owns the fallback ladder: exact → same colour other edge →
+    // default colour → legacy. Always returns a usable src; never null.
+    const { src: spineImage, resolved, fellBack } = resolveBindingArt({
+      method,
+      color,
+      edge,
+      state,
+    });
+    if (fellBack) {
       console.warn(
-        `[BindingSpine] Falling back to black: ${(err as Error).message}`,
+        `[BindingSpine] Fell back: requested method="${method}" color="${color}" edge="${edge}" state="${state}" → using method="${resolved.method}" color="${resolved.color}" edge="${resolved.edge}"`,
       );
-      try {
-        spineImage = resolveBindingArt({ method, color: "black", edge, state }).src;
-      } catch (innerErr) {
-        console.error("[BindingSpine] No fallback artwork either:", innerErr);
-        return null;
-      }
     }
 
     return (
@@ -93,7 +88,7 @@ export default function BindingSpine({
           draggable={false}
           onError={() =>
             console.error(
-              `[BindingSpine] Failed to load image for method="${method}" color="${requestedColor}" edge="${edge}" state="${state}" src="${spineImage}"`,
+              `[BindingSpine] Failed to load image src="${spineImage}" for method="${method}" color="${color}" edge="${edge}" state="${state}"`,
             )
           }
         />
