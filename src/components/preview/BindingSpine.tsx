@@ -65,9 +65,16 @@ export default function BindingSpine({
 
     const { src: spineImage } = resolveBindingArt({ method, color, edge, state });
 
+    // Fallback strip styling — used when the artwork PNG fails to load so we
+    // never fall back to broken-image alt text overlapping the document.
+    const fallbackBg =
+      method === "comb"
+        ? "repeating-linear-gradient(180deg, hsl(var(--foreground) / 0.55) 0 6px, transparent 6px 10px)"
+        : "repeating-linear-gradient(180deg, hsl(var(--foreground) / 0.4) 0 2px, transparent 2px 5px)";
+
     return (
       <div
-        className="absolute top-0 z-30 pointer-events-none"
+        className="absolute top-0 z-30 pointer-events-none overflow-hidden"
         style={{
           ...positionStyle,
           width: 36,
@@ -76,10 +83,19 @@ export default function BindingSpine({
       >
         <img
           src={spineImage}
-          alt={`${method} ${color} binding`}
-          className="w-full h-full"
+          alt=""
+          aria-hidden="true"
+          className="block w-full h-full"
           style={{ objectFit: "fill" }}
           draggable={false}
+          onError={(e) => {
+            const img = e.currentTarget;
+            img.style.visibility = "hidden";
+            const parent = img.parentElement;
+            if (parent) {
+              parent.style.background = fallbackBg;
+            }
+          }}
         />
       </div>
     );
