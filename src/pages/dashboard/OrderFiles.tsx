@@ -1564,7 +1564,69 @@ export default function OrderFiles() {
     [documents, selectedDocId, refetchDocuments, refetchSections]
   );
 
-  const handleRerenderGaps = useCallback(
+  // ── Page-count rule handlers ──────────────────────────────────────
+  const handlePageCountTrim = useCallback(
+    async (
+      items: import("@/components/order/PageCountWarningDialog").PageCountWarningItem[],
+    ) => {
+      const rule = getPageCountRule(productFamily?.slug);
+      if (!rule || rule.max == null) return;
+      setPageCountBusy(true);
+      try {
+        for (const item of items) {
+          const doc = documents.find((d) => d.id === item.docId);
+          if (!doc) continue;
+          await trimDocumentToFirstPages(doc.id, doc.file_path, doc.file_name, rule.max);
+          await reprocessDocument({
+            id: doc.id,
+            file_path: doc.file_path,
+            file_name: doc.file_name,
+          });
+          dismissedPageCountDocIds.current.add(doc.id); // don't re-fire
+        }
+        refetchDocuments();
+        toast.success(
+          items.length === 1
+            ? `Trimmed to first ${rule.max} ${rule.max === 1 ? "page" : "pages"}`
+            : `Trimmed ${items.length} files`,
+        );
+        setPageCountWarning(null);
+      } catch (err: any) {
+        toast.error("Couldn't trim file", { description: err?.message });
+      } finally {
+        setPageCountBusy(false);
+      }
+    },
+    [productFamily?.slug, documents, reprocessDocument, refetchDocuments],
+  );
+
+  const handlePageCountReplace = useCallback(
+    async (
+      items: import("@/components/order/PageCountWarningDialog").PageCountWarningItem[],
+    ) => {
+      setPageCountBusy(true);
+      try {
+        for (const item of items) {
+          await handleDeleteDocument(item.docId);
+        }
+        setPageCountWarning(null);
+        toast.info("File removed — please upload a replacement.");
+      } finally {
+        setPageCountBusy(false);
+      }
+    },
+    [handleDeleteDocument],
+  );
+
+  const handlePageCountKeep = useCallback(() => {
+    if (pageCountWarning) {
+      for (const item of pageCountWarning.items) {
+        dismissedPageCountDocIds.current.add(item.docId);
+      }
+    }
+    setPageCountWarning(null);
+  }, [pageCountWarning]);
+
     async (doc: { id: string; backend_asset_id: string | null; preflight_data: unknown }) => {
       if (!doc.backend_asset_id) {
         toast.error("Can't re-render: this file has no backend asset reference.");
