@@ -31,7 +31,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { resize, rotate, pollJob, cropRasterize, getAsset, getDerivedFiles, ensureFreshAsset, inspectAsset, normalizeOrientation } from "@/lib/documentCentreApi";
 import { copyS3Object } from "@/lib/s3Storage";
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { useAuth } from "@/hooks/useAuth";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
+import { uploadToS3, getDownloadUrls } from "@/lib/s3Storage";
 
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import type { PaperSize, NearIsoMatch } from "@/lib/paperSizes";
