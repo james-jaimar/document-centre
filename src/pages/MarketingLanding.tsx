@@ -739,7 +739,7 @@ export default function MarketingLanding() {
         </div>
         <div className="max-w-[1240px] mx-auto px-6 mt-8 pt-5 border-t border-[hsl(var(--dc-border))] flex flex-wrap gap-3 justify-between text-xs dc-muted">
           <span>© {new Date().getFullYear()} Document Centre. All rights reserved.</span>
-          <span>Web-to-Print software for copy shops &amp; small printers · <a href="#" className="hover:text-[hsl(var(--dc-blue))]">Privacy</a> · <a href="#" className="hover:text-[hsl(var(--dc-blue))]">Terms</a></span>
+          <span>Web-to-Print software for copy shops &amp; small printers · <Link to="/privacy" className="hover:text-[hsl(var(--dc-blue))]">Privacy</Link> · <Link to="/terms" className="hover:text-[hsl(var(--dc-blue))]">Terms</Link></span>
         </div>
       </footer>
     </div>
