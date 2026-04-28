@@ -1,76 +1,94 @@
 ## Goal
 
-Fix the M365 SMTP "invalid cmd" failure by replacing `denomailer` with **`nodemailer@6.9.10`** in `email-dispatcher` — the same library you're already running successfully in `talkingdog-mckaynine-admin` and that Supabase uses in their official `send-email-smtp` example.
+Switch the `hello@document-centre.com` mailbox from SMTP (which is silently hanging on the M365 handshake) to **Microsoft Graph API with OAuth2 client credentials**. This is what Microsoft actually wants in 2026 and bypasses every SMTP AUTH / tenant-policy issue we've hit.
 
-## Why
+## Approach
 
-Current `email-dispatcher` uses `denomailer@1.6.0`, which crashes against `smtp.office365.com:587` with `event loop error: Error: invalid cmd` — a known denomailer bug with M365's STARTTLS command sequencing.
-
-Your `talkingdog` `send-with-smtp` and `process-email-queue` functions both use `nodemailer@6.9.10` and just work. Same library, same secrets, no M365 changes needed.
+Treat "Graph API" as a new **transport type** on `email_accounts`, sitting alongside SMTP. The dispatcher picks the transport per account and sends accordingly. This keeps the Postnet `mail.jaimar.dev` SMTP path working and gives every tenant the option of M365 Graph going forward.
 
 ## Changes
 
-### `supabase/functions/email-dispatcher/index.ts`
+### 1. Schema — extend `email_accounts` (migration)
 
-Drop-in client swap. Everything else (queue claiming, vault creds resolution, per-account concurrency, error classification, retry/backoff, stale-lock revival) stays untouched.
+Add columns (all nullable so existing SMTP rows are untouched):
 
-1. **Imports**
-   - Remove: `import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts"`
-   - Add: `import nodemailer from "npm:nodemailer@6.9.10"`
+- `transport text not null default 'smtp'` — `'smtp'` or `'graph'`
+- `graph_tenant_id text` — Azure tenant (directory) ID
+- `graph_client_id text` — App registration client ID
+- `graph_client_secret_id uuid` — Vault secret ID for the client secret (same pattern as `smtp_password_secret_id`)
+- `graph_sender_address text` — mailbox to send as (e.g. `hello@document-centre.com`)
 
-2. **In `processOne()`** — replace the `new SMTPClient({...})` block + `client.send({...})` + `client.close()` with the nodemailer pattern from your talkingdog app:
+Make `smtp_*` columns nullable when `transport = 'graph'` (validation trigger, not CHECK constraint per project rules).
 
-   ```ts
-   const useSecure = creds.port === 465; // 465 = implicit TLS, 587 = STARTTLS
-   const transport = nodemailer.createTransport({
-     host: creds.host,
-     port: creds.port,
-     secure: useSecure,
-     auth: { user: creds.username, pass: creds.password },
-     tls: { rejectUnauthorized: false },
-     connectionTimeout: 30000,
-     greetingTimeout: 30000,
-     socketTimeout: 60000,
-   });
+### 2. `email-account-manage` edge function
 
-   const info = await withTimeout(
-     transport.sendMail({
-       from: `${fromName} <${fromEmail}>`,
-       to: row.to_email,
-       cc: row.cc ?? undefined,
-       bcc: row.bcc ?? undefined,
-       replyTo,
-       subject: row.subject,
-       html: row.html ?? undefined,
-       text: row.text_body ?? undefined,
-     }),
-     SEND_TIMEOUT_MS
-   );
-   transport.close();
+Extend the upsert action to accept Graph fields. When `transport = 'graph'`:
+- Store `graph_client_secret` in Vault via existing `create_email_account_secret` RPC, persist returned `graph_client_secret_id`.
+- Skip SMTP validation; instead `test_send` does a real Graph OAuth + sendMail round-trip.
+
+### 3. `email-dispatcher` edge function
+
+In `resolveCreds`, return a discriminated union: `{ kind: 'smtp', ... }` or `{ kind: 'graph', tenantId, clientId, clientSecret, sender, fromName, replyTo }`.
+
+In `processOne`, branch on `kind`:
+
+**SMTP branch:** unchanged (current nodemailer code).
+
+**Graph branch:**
+1. POST to `https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/token` with `client_credentials` grant + `scope=https://graph.microsoft.com/.default` to get an access token. Cache in-memory per worker invocation (token is valid ~1h, but worker is short-lived — simple per-call fetch is fine).
+2. POST to `https://graph.microsoft.com/v1.0/users/{sender}/sendMail` with the standard Graph message envelope:
+   ```json
+   {
+     "message": {
+       "subject": "...",
+       "body": { "contentType": "HTML", "content": "..." },
+       "toRecipients": [{ "emailAddress": { "address": "..." } }],
+       "ccRecipients": [...],
+       "bccRecipients": [...],
+       "replyTo": [{ "emailAddress": { "address": "..." } }],
+       "from": { "emailAddress": { "address": "hello@document-centre.com" } }
+     },
+     "saveToSentItems": true
+   }
    ```
+3. On 202 success: mark `sent`, store `messageId` from response headers (`x-ms-request-id`) since Graph's `sendMail` doesn't return a message-id directly. Update `last_verified_at`.
+4. On 401/403 (auth/permission): mark `failed` immediately (terminal — same as SMTP auth errors).
+5. On 429: respect `Retry-After` header for `next_attempt_at`.
+6. On 5xx / network: backoff queue retry as today.
+7. Wrap in same 60s timeout guard.
 
-3. **Message-ID write-back** — change `(result as any)?.messageId` to `info.messageId` (nodemailer's actual field name).
+### 4. Seed/configure the M365 account
 
-4. **Keep**:
-   - 60s `withTimeout` wrapper
-   - All error classification: auth → `failed`, exhausted → `dlq`, transient → `queued` with `nextAttemptAt(...)`
-   - `creds.send_delay_ms` pacing
-   - `email_accounts` `last_verified_at` / `last_error` updates
+After deploy, run a one-off SQL/migration **insert or update** to create an `email_accounts` row for `document-centre`:
+- `transport = 'graph'`
+- `graph_tenant_id = '57593206-dca7-4402-84ac-a17dee9ec009'`
+- `graph_client_id = '3e82c1f8-a79a-40c8-beb3-1929840d890f'`
+- `graph_client_secret_id` → from Vault (created via `create_email_account_secret('document-centre-m365-graph', '<secret>')`)
+- `graph_sender_address = 'hello@document-centre.com'`
+- `from_email = 'hello@document-centre.com'`, `from_name = 'Document Centre'`
+- `is_default = true` for whichever tenant should use it
 
-### Verify
+### 5. Re-test the stuck test email
 
-1. Deploy `email-dispatcher`.
-2. Reset the stuck test row from `sending` → `queued` (one-line UPDATE migration) so it gets re-picked.
-3. Watch `email-dispatcher` logs and the `email_outbox` row for `james@jaimar.dev` flip to `sent` with a real `info.messageId`.
+Update the existing pending `email_outbox` test row to point at this new account (or reset and resend from the UI), then watch `email-dispatcher` logs for the Graph round-trip.
 
-## What stays unchanged
+### 6. Admin UI — defer
 
-- `send-test-email` (already deployed with shared-secret auth)
-- All SMTP secrets — same `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS`
-- `email_outbox` schema, RLS, push trigger, cron schedule
-- `resolveCreds()`, vault loading, tenant fallback rules
-- Per-account concurrency bucketing
+The Email Accounts settings UI currently only knows about SMTP fields. I'll leave it alone in this pass — the Graph account can be created via the seed step. We can add a "Transport: SMTP / Microsoft Graph" toggle to the form in a follow-up once we've confirmed the dispatcher works end-to-end.
 
-## Risk
+## Required permissions on the Azure app registration
 
-Very low. Same library you're already running in two other production apps. If M365 still rejects (e.g. SMTP AUTH disabled at the tenant), nodemailer will surface a clean SMTP response code (e.g. `535 5.7.139 SmtpClientAuthentication is disabled`) instead of the parser-level crash — giving us something actionable.
+Just to flag — the app registration must have **Application permission** `Mail.Send` granted with **admin consent**. If that wasn't done, the first send will return `403 ErrorAccessDenied` and we'll see it in the logs immediately. You can confirm in Entra → App registrations → API permissions.
+
+## What I will NOT change
+
+- The Postnet `mail.jaimar.dev` SMTP account stays exactly as-is.
+- The cron job, push trigger, `notify_email_dispatcher`, backoff math, and queue semantics are unchanged.
+- Auth emails (Supabase native) are unrelated to this path.
+
+## Verification
+
+1. Deploy migration + edge functions.
+2. Vault-store the client secret, insert the Graph account row.
+3. Send a test email from the admin UI → row hits dispatcher → Graph token fetched → `sendMail` returns 202 → row marked `sent` within seconds → email lands in inbox.
+4. If the app registration is missing `Mail.Send` admin consent, logs will show a clear `403 ErrorAccessDenied` and I'll tell you exactly what to grant.
