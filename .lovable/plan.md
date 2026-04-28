@@ -1,46 +1,76 @@
 ## Goal
-Replace the stale `SMTP_*` platform secrets with the new Microsoft 365 mailbox credentials for `hello@document-centre.com`, then send a test email end-to-end and confirm it lands.
 
-## Steps
+Fix the M365 SMTP "invalid cmd" failure by replacing `denomailer` with **`nodemailer@6.9.10`** in `email-dispatcher` — the same library you're already running successfully in `talkingdog-mckaynine-admin` and that Supabase uses in their official `send-email-smtp` example.
 
-### 1. Update the four platform SMTP secrets
-Overwrite the existing values:
-- `SMTP_HOST` = `smtp.office365.com`
-- `SMTP_PORT` = `587`
-- `SMTP_USER` = `hello@document-centre.com`
-- `SMTP_PASS` = `Hawkeye@12209!`
+## Why
 
-No code changes — `email-dispatcher` already reads these and auto-selects STARTTLS on port 587.
+Current `email-dispatcher` uses `denomailer@1.6.0`, which crashes against `smtp.office365.com:587` with `event loop error: Error: invalid cmd` — a known denomailer bug with M365's STARTTLS command sequencing.
 
-### 2. Set sensible default From identity
-Update the existing platform default in `tenant_settings` (or insert if missing) so any future enqueue without an explicit `from_*` falls back to a branded sender:
-- `from_name` = `Document Centre`
-- `from_email` = `hello@document-centre.com`
+Your `talkingdog` `send-with-smtp` and `process-email-queue` functions both use `nodemailer@6.9.10` and just work. Same library, same secrets, no M365 changes needed.
 
-### 3. Build a tiny `send-test-email` Edge Function (platform-admin only)
-- Verifies caller is `platform_admin` via `supabase.auth.getUser()` + `has_role`
-- Accepts `{ to: string, subject?: string }`
-- Uses the new `_shared/branded-shell.ts` to render a styled "SMTP test" email
-- Enqueues into `email_outbox` with `from_name = "Document Centre"`, `from_email = "hello@document-centre.com"`
-- Returns the `outbox_id` so we can watch it flip status
+## Changes
 
-### 4. Fire a real test
-Invoke `send-test-email` with `to = jaimar@…` (whatever inbox you want to receive at). Watch `email_outbox` for that row's `status`:
-- `queued → sending → sent` = SMTP works, M365 accepts plain auth, we're done
-- `failed` with `535/auth/credentials` in `error_message` = M365 has SMTP AUTH disabled or needs an App Password
-- `failed` with timeout / TLS error = network or port issue
+### `supabase/functions/email-dispatcher/index.ts`
 
-### 5. Branch on the result
-- **If sent successfully**: confirm to you, then move on to (a) re-skinning the contact-form auto-reply through `branded-shell.ts` end-to-end, and (b) optionally piping the auth/order email fallback through it for tenants without their own SMTP.
-- **If M365 rejects auth**: I'll give you the exact 3-click steps to either:
-  - Enable SMTP AUTH on the mailbox in the M365 admin centre + generate an App Password, OR
-  - Pivot to the Microsoft Graph API path (refactor `email-dispatcher` to send via Graph using a registered Azure AD app — more setup but future-proof)
+Drop-in client swap. Everything else (queue claiming, vault creds resolution, per-account concurrency, error classification, retry/backoff, stale-lock revival) stays untouched.
 
-## Technical details
-- Secrets are updated via the secrets tool, not committed to code
-- New edge function: `supabase/functions/send-test-email/index.ts` (verify_jwt enabled — platform-admin only)
-- Reuses `_shared/branded-shell.ts` from the contact-form work
-- No DB migration needed unless step 2 reveals the platform-default `tenant_settings` row is missing (then a 1-row insert)
+1. **Imports**
+   - Remove: `import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts"`
+   - Add: `import nodemailer from "npm:nodemailer@6.9.10"`
 
-## What I need from you
-Nothing right now — once you approve, I'll set the secrets, build the test function, fire it at an address of your choice (or `hello@document-centre.com` itself), and report back with either "delivered" or the exact M365 error so we know our next move.
+2. **In `processOne()`** — replace the `new SMTPClient({...})` block + `client.send({...})` + `client.close()` with the nodemailer pattern from your talkingdog app:
+
+   ```ts
+   const useSecure = creds.port === 465; // 465 = implicit TLS, 587 = STARTTLS
+   const transport = nodemailer.createTransport({
+     host: creds.host,
+     port: creds.port,
+     secure: useSecure,
+     auth: { user: creds.username, pass: creds.password },
+     tls: { rejectUnauthorized: false },
+     connectionTimeout: 30000,
+     greetingTimeout: 30000,
+     socketTimeout: 60000,
+   });
+
+   const info = await withTimeout(
+     transport.sendMail({
+       from: `${fromName} <${fromEmail}>`,
+       to: row.to_email,
+       cc: row.cc ?? undefined,
+       bcc: row.bcc ?? undefined,
+       replyTo,
+       subject: row.subject,
+       html: row.html ?? undefined,
+       text: row.text_body ?? undefined,
+     }),
+     SEND_TIMEOUT_MS
+   );
+   transport.close();
+   ```
+
+3. **Message-ID write-back** — change `(result as any)?.messageId` to `info.messageId` (nodemailer's actual field name).
+
+4. **Keep**:
+   - 60s `withTimeout` wrapper
+   - All error classification: auth → `failed`, exhausted → `dlq`, transient → `queued` with `nextAttemptAt(...)`
+   - `creds.send_delay_ms` pacing
+   - `email_accounts` `last_verified_at` / `last_error` updates
+
+### Verify
+
+1. Deploy `email-dispatcher`.
+2. Reset the stuck test row from `sending` → `queued` (one-line UPDATE migration) so it gets re-picked.
+3. Watch `email-dispatcher` logs and the `email_outbox` row for `james@jaimar.dev` flip to `sent` with a real `info.messageId`.
+
+## What stays unchanged
+
+- `send-test-email` (already deployed with shared-secret auth)
+- All SMTP secrets — same `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS`
+- `email_outbox` schema, RLS, push trigger, cron schedule
+- `resolveCreds()`, vault loading, tenant fallback rules
+- Per-account concurrency bucketing
+
+## Risk
+
+Very low. Same library you're already running in two other production apps. If M365 still rejects (e.g. SMTP AUTH disabled at the tenant), nodemailer will surface a clean SMTP response code (e.g. `535 5.7.139 SmtpClientAuthentication is disabled`) instead of the parser-level crash — giving us something actionable.
