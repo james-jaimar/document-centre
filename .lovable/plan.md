@@ -1,122 +1,117 @@
-## Current state (why nothing is using the upgrade)
+# Wire up hello@document-centre.com, contact page & branded emails
 
-- **API (`uvicorn`)**: started with no `--workers` flag → exactly **1 process, 1 thread**. Cannot use more than 1 vCPU regardless of host size. Both `start-api.sh` and the systemd unit `document-centre-api.service` are affected.
-- **Celery worker**: started with no `--concurrency` and no `-P` flag → defaults to `prefork` with concurrency = CPU count, BUT only one worker node, all heavy queues (`documents`, `thumbnails`, `imposition`, `pdf`) competing in the same prefork pool. A single LibreOffice / Ghostscript job can starve the small thumbnail jobs.
-- **No memory or task limits set** → nothing caps RAM per child, no `--max-tasks-per-child` (LibreOffice/Ghostscript leak), no `--max-memory-per-child`.
-- **Beat / API / Worker** all run as `root` on one box with no resource hints.
+This work uses your **existing** SMTP-based pipeline (`send-email` Edge Function → `email_outbox` → `email-dispatcher` → your SMTP server). No Lovable Email domain or external connector is involved.
 
-Net effect on a 4 vCPU / 16GB box: API caps at ~1 core; Celery uses cores but with no isolation between fast and slow queues, and no memory recycling.
+## Scope
 
-## Plan
+1. Set `hello@document-centre.com` as the public/support contact email everywhere it shows on the marketing site, footers, legal pages, and as the default `from`/`reply_to` on outgoing platform emails.
+2. Build a **Contact page** at `/contact` (linked from the marketing footer + header) with a beautiful, brand-matched form. Submitting it:
+   - Stores the enquiry in a new `contact_submissions` table.
+   - Sends a notification email to `hello@document-centre.com` via the existing `send-email` Edge Function.
+   - Sends an **auto-reply** to the visitor ("Thanks, we'll be in touch") using a branded HTML template.
+3. Re-skin all **6 auth-flow emails** (signup confirmation, password reset, magic link, member invite, platform-admin invite, email change) with a shared Document Centre branded HTML wrapper, sent through the same SMTP pipeline.
+4. Re-skin the existing **transactional/order emails** (order confirmation, status updates, invoice email) with the same branded wrapper.
+5. Add `hello@document-centre.com` to the Document Centre `email_accounts` row (or create one) as the platform-default sender so every queued email defaults to that From address.
 
-### 1. API: run multi-worker uvicorn
+## What you'll see when it's done
 
-Update both `pdf-server/scripts/start-api.sh` and `pdf-server/deploy/systemd/document-centre-api.service` to:
+- A new "Contact" link in the marketing header & footer → opens a polished contact page with hero, form (Name / Email / Company / Message), trust strip, and contact details.
+- Every auth/system email you receive arrives in a Document Centre branded shell (logo, navy hero, brand button, footer with legal links and `hello@document-centre.com`).
+- The marketing footer's "Privacy / Terms / Email" all point to the right places, and the email icon mailto's `hello@document-centre.com`.
 
-```
-uvicorn app.main:app --host 0.0.0.0 --port 8000 \
-  --workers 3 --proxy-headers --forwarded-allow-ips="*" \
-  --timeout-keep-alive 30
-```
+## File layout
 
-Rationale: 3 API workers leaves 1 vCPU headroom for Celery bursts + nginx + redis. Each uvicorn worker is single-threaded async, so 3 is the right number for 4 vCPU when Celery shares the host.
-
-(Leave dev script alone — `--reload` requires single worker.)
-
-### 2. Celery: split into two specialised worker units
-
-Replace the single `document-centre-worker.service` with two systemd units sharing the same code, so heavy PDF/Office jobs can't block fast thumbnail/default jobs.
-
-**`document-centre-worker-heavy.service`** — CPU-bound PDF/Office work
-```
-ExecStart=/opt/document-centre-api/.venv/bin/celery -A app.worker.celery_app worker \
-  -l info -Q documents,imposition,pdf -n heavy@%H \
-  --concurrency=2 -P prefork \
-  --max-tasks-per-child=25 \
-  --max-memory-per-child=1500000   # 1.5 GB RSS then recycle
-```
-
-**`document-centre-worker-light.service`** — fast/IO jobs
-```
-ExecStart=/opt/document-centre-api/.venv/bin/celery -A app.worker.celery_app worker \
-  -l info -Q default,thumbnails -n light@%H \
-  --concurrency=4 -P prefork \
-  --max-tasks-per-child=200 \
-  --max-memory-per-child=600000    # 600 MB RSS then recycle
-```
-
-Total: 2 heavy + 4 light prefork children = 6 child processes. With API's 3 workers, peak active processes ≈ 9, which is healthy on 4 vCPU (CPU-bound heavy jobs dominate; light jobs are mostly IO/wait).
-
-Memory budget on 16 GB:
-- API workers: 3 × ~400 MB ≈ 1.2 GB
-- Heavy children: 2 × up to 1.5 GB ≈ 3 GB
-- Light children: 4 × up to 600 MB ≈ 2.4 GB
-- LibreOffice transient peaks: ~1.5 GB
-- Redis + OS + buffer: ~2 GB
-- Headroom: ~6 GB
-
-### 3. Celery global tuning in `app/worker.py`
-
-Add to `celery_app.conf.update(...)`:
-```
-worker_prefetch_multiplier=1,        # don't hoard tasks on heavy worker
-task_acks_late=True,                 # re-queue if a child crashes mid-job
-task_reject_on_worker_lost=True,
-worker_send_task_events=True,        # so PlatformDocumentCentreWorkers UI sees them
-task_send_sent_event=True,
-broker_pool_limit=20,
-result_expires=3600,
+```text
+src/
+  pages/
+    Contact.tsx                          ← new public page
+  components/
+    marketing/
+      MarketingHeader.tsx                ← extracted header w/ Contact link (optional refactor)
+  pages/legal/LegalLayout.tsx            ← add Contact link to sub-nav
+  pages/MarketingLanding.tsx             ← footer: real Contact link, mailto = hello@
+supabase/
+  functions/
+    _shared/
+      email-templates/
+        branded-shell.ts                 ← shared HTML wrapper (header/footer, brand colours)
+        contact-notification.ts          ← internal notification template
+        contact-autoreply.ts             ← visitor auto-reply
+        auth-signup.ts                   ← branded signup confirmation
+        auth-password-reset.ts
+        auth-magic-link.ts
+        auth-invite-member.ts
+        auth-invite-platform-admin.ts
+        auth-email-change.ts
+        order-confirmation.ts
+        order-status-update.ts
+        order-invoice.ts
+    submit-contact/index.ts              ← new public Edge Function (verify_jwt = false)
+  migrations/                            ← via migration tool
+    contact_submissions table + RLS
+    email_accounts seed for hello@document-centre.com (platform default)
 ```
 
-This is the safety net that makes mid-job LibreOffice/Ghostscript crashes recoverable instead of silently dropping the job.
+## Technical details
 
-### 4. Update Docker compose (dev parity)
+### 1. `contact_submissions` table
 
-`pdf-server/docker-compose.yml` — change worker command to `start-worker.sh` plus add a second `worker-light` service mirroring the split, so local behaves like prod. (Optional but recommended.)
+Columns: `id uuid pk default gen_random_uuid()`, `name text not null`, `email text not null`, `company text`, `message text not null`, `source text default 'marketing_site'`, `user_agent text`, `ip text`, `status text default 'new'`, `created_at timestamptz default now()`.
 
-### 5. Update env checklists
+RLS: enable; **no public select**. Insert policy via the Edge Function only (function uses service role). Admins (`platform_admin`) can `select` and `update status`.
 
-Add a "Sizing" section to:
-- `pdf-server/coolify/WORKER_ENV_CHECKLIST.md`
-- `pdf-server/deploy/ubuntu/ENV_CHECKLIST.md`
+### 2. `submit-contact` Edge Function (public, `verify_jwt = false`)
 
-Documenting: 4 vCPU / 16 GB host, API workers=3, heavy concurrency=2, light concurrency=4, and the memory ceilings.
+- CORS headers (matching project pattern).
+- Zod-validate body: `name 1..100`, `email valid + ≤255`, `company ≤120`, `message 10..2000`.
+- Light rate limit: refuse if 5+ rows from the same `email` in the last 10 minutes.
+- Insert row into `contact_submissions` (service role).
+- Call `send-email` (or directly enqueue via shared `enqueueEmail`) twice:
+  - **Notification** → `to: hello@document-centre.com`, `reply_to: <visitor email>`, template = `contact-notification.ts`.
+  - **Auto-reply** → `to: <visitor email>`, `from: hello@document-centre.com`, `from_name: 'Document Centre'`, template = `contact-autoreply.ts`.
+- Return `{ ok: true }` (never echo back submitter data).
 
-### 6. Install script
+### 3. `branded-shell.ts` (shared HTML wrapper)
 
-Update `pdf-server/scripts/install-ops-api.sh` (or wherever the existing worker unit is installed) to install both new worker units and remove/disable the old single one. Existing `document-centre-worker.service` file kept but marked deprecated in a comment header so an in-place upgrade can `systemctl disable --now document-centre-worker` then enable the two new units.
+A single `renderBranded({ title, preheader, bodyHtml, ctaLabel?, ctaUrl? })` helper that produces a table-based HTML email matching the marketing site:
 
-### 7. Verify in the Workers UI
+- White background (`#ffffff`).
+- Navy header band with the Document Centre logo.
+- Inter / system-ui font stack.
+- Brand button (navy, `--dc-blue` hover) for CTAs.
+- Footer with `© Document Centre`, mailto `hello@document-centre.com`, and links to `/privacy` and `/terms`.
 
-After deploy, open `/platform/document-centre/workers` (already implemented in `PlatformDocumentCentreWorkers.tsx`) and confirm:
-- Two worker rows appear: `heavy@<host>` and `light@<host>`
-- Pool size shows 2 and 4 respectively
-- Queue badges match the split
+All 11 templates above import this shell, pass title + body fragment + optional CTA. Plain-text fallback is generated by stripping HTML.
 
-No frontend changes needed — the UI already lists whatever Celery reports.
+### 4. Wiring existing senders to branded templates
 
-## Files to change
+- `request-signup` → use `auth-signup` template.
+- `request-password-reset` → `auth-password-reset`.
+- `invite-member` → `auth-invite-member`.
+- `invite-platform-admin` → `auth-invite-platform-admin`.
+- `manage-user` (email-change path) → `auth-email-change`.
+- `send-order-email` (order create / status / invoice) → `order-*` templates.
 
-- `pdf-server/scripts/start-api.sh`
-- `pdf-server/deploy/systemd/document-centre-api.service`
-- `pdf-server/deploy/systemd/document-centre-worker.service` (deprecate / remove)
-- `pdf-server/deploy/systemd/document-centre-worker-heavy.service` (new)
-- `pdf-server/deploy/systemd/document-centre-worker-light.service` (new)
-- `pdf-server/scripts/start-worker.sh` (split into `start-worker-heavy.sh` + `start-worker-light.sh`)
-- `pdf-server/app/worker.py` (global Celery tuning)
-- `pdf-server/docker-compose.yml`
-- `pdf-server/scripts/install-ops-api.sh` (install new units, disable old)
-- `pdf-server/coolify/WORKER_ENV_CHECKLIST.md`
-- `pdf-server/deploy/ubuntu/ENV_CHECKLIST.md`
+Each call passes `from_email: 'hello@document-centre.com'`, `from_name: 'Document Centre'`, `reply_to: 'hello@document-centre.com'` (unless tenant has overridden via `email_accounts`).
 
-## Manual step you'll need to run on the VPS after I push
+### 5. Platform default sender
 
-```
-sudo systemctl daemon-reload
-sudo systemctl disable --now document-centre-worker
-sudo systemctl enable --now document-centre-worker-heavy
-sudo systemctl enable --now document-centre-worker-light
-sudo systemctl restart document-centre-api
-```
+Migration seeds (or upserts) one row in `email_accounts` with `tenant_id = null`, `branch_id = null`, `is_default = true`, `from_email = 'hello@document-centre.com'`, `from_name = 'Document Centre'`, using the existing platform SMTP secrets (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `SMTP_PORT`). This makes `hello@` the implicit From for any queued email that doesn't explicitly set one — including future tenants until they configure their own SMTP.
 
-I'll include this in the post-deploy notes.
+### 6. UI updates
+
+- `MarketingLanding.tsx` footer: Mail icon `mailto:hello@document-centre.com`, real `<Link to="/contact">Contact</Link>`, and Privacy/Terms links (already done).
+- Marketing header (top of `MarketingLanding`): add `Contact` nav item.
+- `legal/LegalLayout.tsx` sub-nav: add Contact tab alongside Privacy & Terms.
+- `Contact.tsx`: hero in navy with "Get in touch" headline + supporting copy; two-column layout on desktop (form left, contact info right with mailto, response-time note, and a small "looking for support on an existing storefront?" hint pointing customers back to their tenant portal); single column on mobile. Validation via Zod + react-hook-form, success state in-place ("Thanks — we've got it. Watch your inbox for a confirmation."), submit button disabled while pending, toast on error.
+
+### 7. App routing
+
+Add `<Route path="/contact" element={<Contact />} />` in `App.tsx` next to `/privacy` and `/terms`.
+
+## Out of scope (intentionally)
+
+- No Lovable Email domain setup, no Resend/SendGrid, no DNS changes — you're staying on your own SMTP.
+- No marketing/newsletter capability.
+- Per-tenant SMTP override UI is unchanged (already exists via `email-account-manage`).
+- Contact-submissions admin viewer page: noted as a follow-up; data is captured and queryable from `/platform` directly via Supabase if you need it before then.
