@@ -214,7 +214,9 @@ async function sendViaGraph(
   fromEmail: string,
   replyTo: string | undefined
 ): Promise<{ messageId: string | null }> {
+  console.log(`[graph] fetching token for tenant ${creds.tenant_id}`);
   const token = await getGraphAccessToken(creds);
+  console.log(`[graph] got token (len=${token.length}); sending as ${creds.sender} -> ${row.to_email}`);
   const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(creds.sender)}/sendMail`;
 
   const message: Record<string, unknown> = {
