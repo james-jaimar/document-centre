@@ -235,7 +235,7 @@ export default function Contact() {
             <InfoCard
               icon={<MapPin className="h-5 w-5" />}
               title="Built for global print"
-              body={<span className="dc-muted">Designed in South Africa for copy shops, in-plants and small printers worldwide.</span>}
+              body={<span className="dc-muted">Designed for copy shops, in-plants and small printers worldwide.</span>}
             />
             <div className="dc-card p-6" style={{ borderRadius: 16, background: "linear-gradient(135deg, hsl(var(--dc-blue) / 0.06), hsl(var(--dc-sky) / 0.08))" }}>
               <div className="text-[13px] font-bold mb-1" style={{ color: "hsl(var(--dc-navy))" }}>Prefer to just try it?</div>
