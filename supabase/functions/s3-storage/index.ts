@@ -164,7 +164,7 @@ Deno.serve(async (req) => {
 
       if (!signRes.ok) {
         const errText = await signRes.text().catch(() => "");
-        console.error(`[s3-storage] sign-upload failed [${signRes.status}]: ${errText}`);
+        console.error(`[s3-storage] (ref: ${ref}) sign-upload failed [${signRes.status}]: ${errText}`);
         return json({ error: friendlyError("preparing your upload", ref) }, 503);
       }
 
@@ -240,7 +240,7 @@ Deno.serve(async (req) => {
       );
       if (!signReadRes.ok) {
         const errText = await signReadRes.text().catch(() => "");
-        console.error(`[s3-storage] copy sign-read [${signReadRes.status}]: ${errText}`);
+        console.error(`[s3-storage] (ref: ${ref}) copy sign-read [${signReadRes.status}]: ${errText}`);
         return json({ error: friendlyError("copying your file", ref) }, 503);
       }
       const { url: readUrl } = await signReadRes.json();
@@ -256,7 +256,7 @@ Deno.serve(async (req) => {
       );
       if (!signWriteRes.ok) {
         const errText = await signWriteRes.text().catch(() => "");
-        console.error(`[s3-storage] copy sign-write [${signWriteRes.status}]: ${errText}`);
+        console.error(`[s3-storage] (ref: ${ref}) copy sign-write [${signWriteRes.status}]: ${errText}`);
         return json({ error: friendlyError("copying your file", ref) }, 503);
       }
       const { url: writeUrl } = await signWriteRes.json();
@@ -267,7 +267,7 @@ Deno.serve(async (req) => {
       });
       if (!getRes.ok) {
         const errText = await getRes.text().catch(() => "");
-        console.error(`[s3-storage] copy fetch-source [${getRes.status}]: ${errText}`);
+        console.error(`[s3-storage] (ref: ${ref}) copy fetch-source [${getRes.status}]: ${errText}`);
         return json({ error: friendlyError("copying your file", ref) }, 503);
       }
       const bytes = await getRes.arrayBuffer();
@@ -280,7 +280,7 @@ Deno.serve(async (req) => {
       );
       if (!putRes.ok) {
         const errText = await putRes.text().catch(() => "");
-        console.error(`[s3-storage] copy put-dest [${putRes.status}]: ${errText}`);
+        console.error(`[s3-storage] (ref: ${ref}) copy put-dest [${putRes.status}]: ${errText}`);
         return json({ error: friendlyError("copying your file", ref) }, 503);
       }
 
