@@ -79,9 +79,20 @@ psql "$PG_URL" -v ON_ERROR_STOP=1 -f "$MIGRATION"
 # ------------------------------------------------------------------
 # 3. systemd: Celery Beat unit
 # ------------------------------------------------------------------
-echo "==> [3/6] Installing systemd unit for Celery Beat"
+echo "==> [3/6] Installing systemd units (api, beat, split workers)"
 mkdir -p "$APP/tmp"
+chmod +x "$APP/scripts/"*.sh || true
+cp "$APP/deploy/systemd/document-centre-api.service" /etc/systemd/system/
 cp "$APP/deploy/systemd/document-centre-beat.service" /etc/systemd/system/
+cp "$APP/deploy/systemd/document-centre-worker-heavy.service" /etc/systemd/system/
+cp "$APP/deploy/systemd/document-centre-worker-light.service" /etc/systemd/system/
+
+# Retire the old single-pool worker unit if it's still around.
+if systemctl list-unit-files | grep -q '^document-centre-worker\.service'; then
+  echo "    disabling deprecated document-centre-worker.service"
+  systemctl disable --now document-centre-worker.service 2>/dev/null || true
+  rm -f /etc/systemd/system/document-centre-worker.service
+fi
 
 # ------------------------------------------------------------------
 # 4. Nginx: updated site config (SSE-friendly)
@@ -114,7 +125,10 @@ systemctl reload nginx
 echo "==> [5/6] Reloading systemd and restarting services"
 systemctl daemon-reload
 systemctl restart document-centre-api
-systemctl restart document-centre-worker
+systemctl enable --now document-centre-worker-heavy
+systemctl enable --now document-centre-worker-light
+systemctl restart document-centre-worker-heavy
+systemctl restart document-centre-worker-light
 systemctl enable --now document-centre-beat
 systemctl restart document-centre-beat
 
@@ -152,7 +166,10 @@ cat <<MSG
     • Verify the Overview, Queues, Workers, Storage tabs all populate
     • Watch beat logs:        journalctl -u document-centre-beat -f
     • Watch api logs:         journalctl -u document-centre-api -f
-    • Watch worker logs:      journalctl -u document-centre-worker -f
+    • Watch heavy worker:     journalctl -u document-centre-worker-heavy -f
+    • Watch light worker:     journalctl -u document-centre-worker-light -f
+    • Workers UI:             /platform/document-centre/workers
+                              (should show heavy@<host> + light@<host>)
 
   If SSE looks frozen in the UI, double-check that nginx -t reported OK
   and that /etc/nginx/sites-enabled/document-centre-api.conf is the
