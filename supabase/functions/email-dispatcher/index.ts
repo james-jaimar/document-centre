@@ -40,18 +40,32 @@ interface OutboxRow {
   metadata: Record<string, unknown>;
 }
 
-interface AccountCreds {
+interface BaseCreds {
   id: string | null;
-  host: string;
-  port: number;
-  secure: "tls" | "starttls" | "none";
-  username: string;
-  password: string;
   from_name: string;
   from_email: string;
   reply_to: string | null;
   send_delay_ms: number;
 }
+
+interface SmtpCreds extends BaseCreds {
+  kind: "smtp";
+  host: string;
+  port: number;
+  secure: "tls" | "starttls" | "none";
+  username: string;
+  password: string;
+}
+
+interface GraphCreds extends BaseCreds {
+  kind: "graph";
+  tenant_id: string;
+  client_id: string;
+  client_secret: string;
+  sender: string;
+}
+
+type AccountCreds = SmtpCreds | GraphCreds;
 
 async function loadVaultSecret(admin: any, secret_id: string | null): Promise<string | null> {
   if (!secret_id) return null;

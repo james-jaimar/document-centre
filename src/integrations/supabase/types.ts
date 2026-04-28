@@ -679,6 +679,10 @@ export type Database = {
           created_at: string
           from_email: string
           from_name: string
+          graph_client_id: string | null
+          graph_client_secret_id: string | null
+          graph_sender_address: string | null
+          graph_tenant_id: string | null
           id: string
           is_active: boolean
           is_default: boolean
@@ -688,12 +692,13 @@ export type Database = {
           max_concurrent: number
           reply_to: string | null
           send_delay_ms: number
-          smtp_host: string
+          smtp_host: string | null
           smtp_password_secret_id: string | null
-          smtp_port: number
-          smtp_secure: string
-          smtp_username: string
+          smtp_port: number | null
+          smtp_secure: string | null
+          smtp_username: string | null
           tenant_id: string
+          transport: string
           updated_at: string
         }
         Insert: {
@@ -701,6 +706,10 @@ export type Database = {
           created_at?: string
           from_email: string
           from_name: string
+          graph_client_id?: string | null
+          graph_client_secret_id?: string | null
+          graph_sender_address?: string | null
+          graph_tenant_id?: string | null
           id?: string
           is_active?: boolean
           is_default?: boolean
@@ -710,12 +719,13 @@ export type Database = {
           max_concurrent?: number
           reply_to?: string | null
           send_delay_ms?: number
-          smtp_host: string
+          smtp_host?: string | null
           smtp_password_secret_id?: string | null
-          smtp_port?: number
-          smtp_secure?: string
-          smtp_username: string
+          smtp_port?: number | null
+          smtp_secure?: string | null
+          smtp_username?: string | null
           tenant_id: string
+          transport?: string
           updated_at?: string
         }
         Update: {
@@ -723,6 +733,10 @@ export type Database = {
           created_at?: string
           from_email?: string
           from_name?: string
+          graph_client_id?: string | null
+          graph_client_secret_id?: string | null
+          graph_sender_address?: string | null
+          graph_tenant_id?: string | null
           id?: string
           is_active?: boolean
           is_default?: boolean
@@ -732,12 +746,13 @@ export type Database = {
           max_concurrent?: number
           reply_to?: string | null
           send_delay_ms?: number
-          smtp_host?: string
+          smtp_host?: string | null
           smtp_password_secret_id?: string | null
-          smtp_port?: number
-          smtp_secure?: string
-          smtp_username?: string
+          smtp_port?: number | null
+          smtp_secure?: string | null
+          smtp_username?: string | null
           tenant_id?: string
+          transport?: string
           updated_at?: string
         }
         Relationships: [
