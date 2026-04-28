@@ -366,7 +366,8 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
         status,
         attempts: newAttempts,
         error_message: msg.slice(0, 1000),
-        next_attempt_at: status === "queued" ? nextAttemptAt(newAttempts) : null,
+        // next_attempt_at is NOT NULL — leave it in the past for terminal statuses so it's no longer due.
+        next_attempt_at: status === "queued" ? nextAttemptAt(newAttempts) : new Date().toISOString(),
         locked_at: null,
         locked_by: null,
       })
