@@ -118,7 +118,7 @@ export default function Contact() {
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/15 text-[12px] font-semibold mb-5">
             <Sparkles className="h-3.5 w-3.5" /> We'd love to hear from you
           </div>
-          <h1 className="font-extrabold tracking-tight" style={{ fontSize: "clamp(2rem, 4vw, 3rem)", lineHeight: 1.1 }}>
+          <h1 className="font-extrabold tracking-tight text-white" style={{ fontSize: "clamp(2rem, 4vw, 3rem)", lineHeight: 1.1 }}>
             Let's talk about your print business
           </h1>
           <p className="mt-4 text-white/80 text-[16px] max-w-[640px] leading-relaxed">
