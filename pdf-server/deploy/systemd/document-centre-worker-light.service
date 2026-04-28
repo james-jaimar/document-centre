@@ -1,0 +1,23 @@
+[Unit]
+Description=Document Centre Worker (light: default, thumbnails)
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/document-centre-api
+EnvironmentFile=/opt/document-centre-api/.env
+Environment=PYTHONUNBUFFERED=1
+# 4 prefork children for fast / IO-bound jobs so heavy PDF work cannot
+# starve thumbnail and ops queues.
+ExecStart=/opt/document-centre-api/.venv/bin/celery -A app.worker.celery_app worker -l info -Q default,thumbnails -n light@%H -P prefork --concurrency=4 --max-tasks-per-child=200 --max-memory-per-child=600000
+Restart=always
+RestartSec=5
+TimeoutStartSec=60
+KillSignal=SIGTERM
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

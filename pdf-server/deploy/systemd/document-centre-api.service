@@ -10,7 +10,9 @@ Group=root
 WorkingDirectory=/opt/document-centre-api
 EnvironmentFile=/opt/document-centre-api/.env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/document-centre-api/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+# 3 uvicorn workers tuned for a 4 vCPU / 16 GB host.
+# Override by setting UVICORN_WORKERS in /opt/document-centre-api/.env
+ExecStart=/opt/document-centre-api/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 3 --proxy-headers --forwarded-allow-ips=* --timeout-keep-alive 30
 Restart=always
 RestartSec=5
 TimeoutStartSec=60

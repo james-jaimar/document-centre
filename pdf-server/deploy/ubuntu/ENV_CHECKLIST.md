@@ -28,3 +28,25 @@ Usually keep these defaults:
 - `THUMBNAIL_DPI=120`
 - `PREVIEW_DPI=160`
 - `MAX_UPLOAD_MB=250`
+
+## Sizing (4 vCPU / 16 GB host)
+
+Three systemd units share the host:
+
+| Unit | Process | Workers / Concurrency |
+|------|---------|------------------------|
+| `document-centre-api` | uvicorn | 3 workers |
+| `document-centre-worker-heavy` | celery (documents, imposition, pdf) | 2 prefork children, recycle at 25 tasks or 1.5 GB RSS |
+| `document-centre-worker-light` | celery (default, thumbnails) | 4 prefork children, recycle at 200 tasks or 600 MB RSS |
+| `document-centre-beat` | celery beat | scheduler only |
+
+Override the API worker count without touching the unit file:
+```
+echo 'UVICORN_WORKERS=3' >> /opt/document-centre-api/.env
+```
+(only takes effect if you also point the unit at `start-api.sh` instead
+of the inline `ExecStart`).
+
+To resize the worker pools, edit `--concurrency` in
+`scripts/start-worker-heavy.sh` / `start-worker-light.sh` and restart
+the matching systemd unit.

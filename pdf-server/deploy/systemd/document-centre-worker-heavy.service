@@ -1,0 +1,25 @@
+[Unit]
+Description=Document Centre Worker (heavy: documents, imposition, pdf)
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/document-centre-api
+EnvironmentFile=/opt/document-centre-api/.env
+Environment=PYTHONUNBUFFERED=1
+# 2 prefork children, recycle every 25 tasks or at ~1.5 GB RSS.
+# Tuned for a 4 vCPU / 16 GB host running alongside the light worker
+# and a 3-worker uvicorn API.
+ExecStart=/opt/document-centre-api/.venv/bin/celery -A app.worker.celery_app worker -l info -Q documents,imposition,pdf -n heavy@%H -P prefork --concurrency=2 --max-tasks-per-child=25 --max-memory-per-child=1500000
+Restart=always
+RestartSec=5
+TimeoutStartSec=60
+KillSignal=SIGTERM
+# Give children time to finish a LibreOffice / Ghostscript run before SIGKILL.
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target
