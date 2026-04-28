@@ -23,7 +23,7 @@ function json(body: unknown, status = 200) {
 // in this helper so a single blip doesn't propagate as a hard error to the
 // browser. Customers should never see "S3" or status codes in error text.
 
-const DEFAULT_MAX_RETRIES = 4;
+const DEFAULT_MAX_RETRIES = 6;
 
 function backoffDelay(attempt: number): number {
   const base = Math.min(500 * 2 ** attempt, 5000);
