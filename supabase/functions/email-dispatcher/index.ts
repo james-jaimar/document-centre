@@ -129,39 +129,40 @@ async function resolveCreds(
     }
   }
 
-  // 2. Platform fallback (only if tenant has opted in OR there's no tenant)
-  let allowFallback = true;
-  if (row.tenant_id) {
-    const { data: setting } = await admin
-      .from("tenant_settings")
-      .select("setting_value")
-      .eq("tenant_id", row.tenant_id)
-      .eq("category", "email")
-      .eq("setting_key", "enable_platform_smtp_fallback")
-      .maybeSingle();
-    if (setting && (setting as any).setting_value === false) allowFallback = false;
+  // 2. Fallback: pick the first active Graph account (prefer default, then tenant match).
+  let query = admin
+    .from("email_accounts")
+    .select("*")
+    .eq("is_active", true)
+    .eq("transport", "graph")
+    .order("is_default", { ascending: false })
+    .order("created_at", { ascending: true });
+
+  const { data: graphAccounts } = await query;
+  const accounts = (graphAccounts as any[]) ?? [];
+  // Prefer one matching the row's tenant if present, else first available.
+  const preferred =
+    (row.tenant_id && accounts.find((a) => a.tenant_id === row.tenant_id)) ||
+    accounts[0];
+
+  if (!preferred) return null;
+
+  const clientSecret = await loadVaultSecret(admin, preferred.graph_client_secret_id);
+  if (!clientSecret || !preferred.graph_tenant_id || !preferred.graph_client_id || !preferred.graph_sender_address) {
+    return null;
   }
 
-  if (!allowFallback) return null;
-
-  const host = Deno.env.get("SMTP_HOST");
-  const port = Number(Deno.env.get("SMTP_PORT") ?? "587");
-  const username = Deno.env.get("SMTP_USER");
-  const password = Deno.env.get("SMTP_PASS");
-  if (!host || !username || !password) return null;
-
   return {
-    kind: "smtp",
-    id: null,
-    host,
-    port,
-    secure: port === 465 ? "tls" : "starttls",
-    username,
-    password,
-    from_name: row.from_name ?? "Notifications",
-    from_email: row.from_email ?? username,
-    reply_to: row.reply_to,
-    send_delay_ms: 500,
+    kind: "graph",
+    id: preferred.id,
+    tenant_id: preferred.graph_tenant_id,
+    client_id: preferred.graph_client_id,
+    client_secret: clientSecret,
+    sender: preferred.graph_sender_address,
+    from_name: preferred.from_name,
+    from_email: preferred.from_email,
+    reply_to: preferred.reply_to,
+    send_delay_ms: preferred.send_delay_ms ?? 1500,
   };
 }
 
