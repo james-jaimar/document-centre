@@ -288,7 +288,9 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
     let messageId: string | null = null;
 
     if (creds.kind === "graph") {
+      console.log(`[dispatch] entering sendViaGraph for row=${row.id}`);
       const result = await sendViaGraph(creds, row, fromName, fromEmail, replyTo);
+      console.log(`[dispatch] sendViaGraph returned messageId=${result.messageId}`);
       messageId = result.messageId;
     } else {
       // SMTP via nodemailer (port 465 = implicit TLS; 587 = STARTTLS upgrade)
@@ -324,7 +326,8 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
       }
     }
 
-    await admin
+    console.log(`[dispatch] marking sent row=${row.id}`);
+    const { error: updErr } = await admin
       .from("email_outbox")
       .update({
         status: "sent",
@@ -336,6 +339,7 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
         locked_by: null,
       })
       .eq("id", row.id);
+    if (updErr) console.error(`[dispatch] sent-update failed row=${row.id}: ${updErr.message}`);
 
     if (creds.id) {
       await admin
@@ -349,13 +353,14 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
     }
   } catch (e) {
     const msg = (e as Error).message ?? String(e);
+    console.error(`[dispatch] send failed row=${row.id}: ${msg}`);
     const newAttempts = row.attempts + 1;
     const isAuthError =
       /^graph_auth|auth|535|530|invalid login|credentials/i.test(msg);
     const exhausted = newAttempts >= row.max_attempts;
     const status = isAuthError ? "failed" : exhausted ? "dlq" : "queued";
 
-    await admin
+    const { error: updErr } = await admin
       .from("email_outbox")
       .update({
         status,
@@ -366,6 +371,7 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
         locked_by: null,
       })
       .eq("id", row.id);
+    if (updErr) console.error(`[dispatch] failed-update failed row=${row.id}: ${updErr.message}`);
 
     if (creds.id) {
       await admin
