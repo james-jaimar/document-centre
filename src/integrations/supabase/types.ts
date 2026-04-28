@@ -229,6 +229,74 @@ export type Database = {
           },
         ]
       }
+      contact_submissions: {
+        Row: {
+          company: string | null
+          created_at: string
+          email: string
+          handled_at: string | null
+          handled_by_profile_id: string | null
+          id: string
+          ip_address: string | null
+          message: string
+          metadata: Json
+          name: string
+          notes: string | null
+          phone: string | null
+          source: string | null
+          status: string
+          subject: string | null
+          updated_at: string
+          user_agent: string | null
+        }
+        Insert: {
+          company?: string | null
+          created_at?: string
+          email: string
+          handled_at?: string | null
+          handled_by_profile_id?: string | null
+          id?: string
+          ip_address?: string | null
+          message: string
+          metadata?: Json
+          name: string
+          notes?: string | null
+          phone?: string | null
+          source?: string | null
+          status?: string
+          subject?: string | null
+          updated_at?: string
+          user_agent?: string | null
+        }
+        Update: {
+          company?: string | null
+          created_at?: string
+          email?: string
+          handled_at?: string | null
+          handled_by_profile_id?: string | null
+          id?: string
+          ip_address?: string | null
+          message?: string
+          metadata?: Json
+          name?: string
+          notes?: string | null
+          phone?: string | null
+          source?: string | null
+          status?: string
+          subject?: string | null
+          updated_at?: string
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_submissions_handled_by_profile_id_fkey"
+            columns: ["handled_by_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customer_addresses: {
         Row: {
           address_type: string
