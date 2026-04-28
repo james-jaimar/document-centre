@@ -214,7 +214,9 @@ async function sendViaGraph(
   fromEmail: string,
   replyTo: string | undefined
 ): Promise<{ messageId: string | null }> {
+  console.log(`[graph] fetching token for tenant ${creds.tenant_id}`);
   const token = await getGraphAccessToken(creds);
+  console.log(`[graph] got token (len=${token.length}); sending as ${creds.sender} -> ${row.to_email}`);
   const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(creds.sender)}/sendMail`;
 
   const message: Record<string, unknown> = {
@@ -261,7 +263,9 @@ async function sendViaGraph(
 
 // ---- Main per-row processor ----------------------------------------------
 async function processOne(admin: any, row: OutboxRow): Promise<void> {
+  console.log(`[dispatch] processOne start row=${row.id} to=${row.to_email} acct=${row.email_account_id}`);
   const creds = await resolveCreds(admin, row);
+  console.log(`[dispatch] creds resolved kind=${creds?.kind ?? 'none'}`);
   if (!creds) {
     await admin
       .from("email_outbox")
