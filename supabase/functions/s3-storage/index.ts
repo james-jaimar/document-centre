@@ -98,14 +98,21 @@ async function resilientFetch(
 }
 
 /** Sanitise upstream error text so the user never sees raw S3/gateway wording. */
-function friendlyError(action: string): string {
-  return `Storage is temporarily unavailable while ${action}. Please retry shortly.`;
+function friendlyError(action: string, ref: string): string {
+  return `Storage is temporarily unavailable while ${action}. Please retry shortly. (ref: ${ref})`;
+}
+
+/** Short opaque ref id (8 chars) included in log lines and error responses. */
+function newRefId(): string {
+  return Math.random().toString(36).slice(2, 10);
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
+
+  const ref = newRefId();
 
   const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
   if (!LOVABLE_API_KEY) return json({ error: "LOVABLE_API_KEY not configured" }, 500);
