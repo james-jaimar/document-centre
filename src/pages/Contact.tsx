@@ -234,7 +234,7 @@ export default function Contact() {
             />
             <InfoCard
               icon={<MapPin className="h-5 w-5" />}
-              title="Built for SA & global print"
+              title="Built for global print"
               body={<span className="dc-muted">Designed in South Africa for copy shops, in-plants and small printers worldwide.</span>}
             />
             <div className="dc-card p-6" style={{ borderRadius: 16, background: "linear-gradient(135deg, hsl(var(--dc-blue) / 0.06), hsl(var(--dc-sky) / 0.08))" }}>
