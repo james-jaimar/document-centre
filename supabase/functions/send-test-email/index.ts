@@ -13,40 +13,45 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Missing authorization" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     const supaUrl = Deno.env.get("SUPABASE_URL")!;
     const anon = Deno.env.get("SUPABASE_ANON_KEY")!;
     const svc = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-    // Validate caller via JWT
-    const userClient = createClient(supaUrl, anon, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: userData, error: userErr } = await userClient.auth.getUser();
-    if (userErr || !userData?.user) {
-      return new Response(JSON.stringify({ error: "Invalid session" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Confirm platform_admin
     const admin = createClient(supaUrl, svc);
-    const { data: roleRow } = await admin
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userData.user.id)
-      .eq("role", "platform_admin")
-      .maybeSingle();
-    if (!roleRow) {
-      return new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+
+    // Auth: either platform_admin JWT, or shared X-Test-Secret matching TEST_USER_PASSWORD
+    let callerId: string | null = null;
+    const testSecret = req.headers.get("X-Test-Secret");
+    const expectedSecret = Deno.env.get("TEST_USER_PASSWORD");
+    const secretOk = !!(testSecret && expectedSecret && testSecret === expectedSecret);
+
+    if (!secretOk) {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: "Missing authorization" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const userClient = createClient(supaUrl, anon, {
+        global: { headers: { Authorization: authHeader } },
       });
+      const { data: userData, error: userErr } = await userClient.auth.getUser();
+      if (userErr || !userData?.user) {
+        return new Response(JSON.stringify({ error: "Invalid session" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: roleRow } = await admin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userData.user.id)
+        .eq("role", "platform_admin")
+        .maybeSingle();
+      if (!roleRow) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      callerId = userData.user.id;
     }
 
     const body = await req.json().catch(() => ({}));
@@ -89,8 +94,8 @@ Deno.serve(async (req) => {
         html,
         text_body: text,
         category: "transactional",
-        created_by_profile_id: userData.user.id,
-        metadata: { source: "send-test-email" },
+        created_by_profile_id: callerId,
+        metadata: { source: "send-test-email", auth: secretOk ? "shared-secret" : "platform-admin" },
       })
       .select("id")
       .single();
