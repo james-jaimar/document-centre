@@ -13,9 +13,20 @@ services:
     depends_on:
       - redis
 
-  worker:
+  worker-heavy:
     build: .
-    command: /app/scripts/start-worker.sh
+    command: /app/scripts/start-worker-heavy.sh
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+      - ./storage:/app/storage
+    depends_on:
+      - redis
+
+  worker-light:
+    build: .
+    command: /app/scripts/start-worker-light.sh
     env_file:
       - .env
     volumes:

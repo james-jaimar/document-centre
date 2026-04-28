@@ -1,5 +1,9 @@
 [Unit]
-Description=Document Centre Worker
+# DEPRECATED — replaced by document-centre-worker-heavy.service and
+# document-centre-worker-light.service. The installer disables this unit
+# automatically when the new units are installed. Kept here so existing
+# deploys can be cleanly removed.
+Description=Document Centre Worker (deprecated single-pool)
 After=network.target redis-server.service
 Wants=redis-server.service
 
