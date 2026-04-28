@@ -8,14 +8,17 @@
  *   • The actual S3 PUT in uploadToS3 is also retried on 429/5xx/network errors
  *     — pre-signed URLs stay valid for ~15 minutes so re-using the same URL
  *     across a few retries is safe.
+ *   • If the PUT keeps failing on the same signed URL, we re-sign once and try
+ *     a fresh URL before giving up — guards against the rare case of a bad URL.
  *   • Errors surfaced to the UI are deliberately generic ("Upload temporarily
- *     unavailable…") so customers never see raw S3/edge wording.
+ *     unavailable…") so customers never see raw S3/edge wording. Each error
+ *     carries a short ref id so we can grep server logs if a user reports it.
  */
 import { supabase } from "@/integrations/supabase/client";
 
 // ── Retry plumbing ──────────────────────────────────────────────────
 
-const DEFAULT_MAX_RETRIES = 4;
+const DEFAULT_MAX_RETRIES = 6;
 
 /** ~600ms, 1.2s, 2.4s, 4.8s, capped at 6s, plus 0–250ms jitter. */
 function backoffDelay(attempt: number): number {
@@ -51,6 +54,11 @@ function isTransientError(err: unknown): boolean {
   return false;
 }
 
+/** Short opaque ref id (8 chars) included in user-facing errors for log lookup. */
+function newRefId(): string {
+  return Math.random().toString(36).slice(2, 10);
+}
+
 interface RetryOpts {
   /** Max retries on top of the initial attempt. */
   maxRetries?: number;
@@ -82,20 +90,19 @@ async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts = {}): Promise
   throw lastError ?? new Error(`${label} failed`);
 }
 
-/** Convert internal error wording into customer-friendly text. */
-function userFacingError(action: string, err: unknown): Error {
+/** Convert internal error wording into customer-friendly text, with a ref tag. */
+function userFacingError(action: string, err: unknown, ref: string): Error {
   const inner = err instanceof Error ? err.message : String(err);
-  // Don't leak "S3"/"edge function"/status codes to end users.
   const isTransient = isTransientError(err);
   if (isTransient) {
     return new Error(
-      `Storage is temporarily unavailable while ${action}. Please try again in a moment.`,
+      `Storage is temporarily unavailable while ${action}. Please try again in a moment. (ref: ${ref})`,
     );
   }
   // Permanent errors — keep diagnostic detail in console, surface a clean
   // sentence to the UI.
-  console.error(`[s3-storage] ${action} failed:`, inner);
-  return new Error(`Couldn't ${action}. Please try again.`);
+  console.error(`[s3-storage] ${action} failed (ref: ${ref}):`, inner);
+  return new Error(`Couldn't ${action}. Please try again. (ref: ${ref})`);
 }
 
 // ── Edge-function plumbing ──────────────────────────────────────────
@@ -126,6 +133,7 @@ async function callS3Function(body: Record<string, unknown>) {
  * Get a presigned PUT URL for uploading a file to S3.
  */
 export async function getUploadUrl(objectPath: string): Promise<{ url: string; method: string }> {
+  const ref = newRefId();
   try {
     const data = await callS3Function({
       action: "sign-upload",
@@ -133,35 +141,31 @@ export async function getUploadUrl(objectPath: string): Promise<{ url: string; m
     });
     return { url: data.url, method: data.method };
   } catch (err) {
-    throw userFacingError("preparing the upload", err);
+    throw userFacingError("preparing the upload", err, ref);
   }
 }
 
 /**
  * Upload a file to S3 using a presigned URL.
  *
- * Both halves of the round-trip are individually retried:
- *   1. Acquiring the presigned URL via the edge function.
- *   2. The actual PUT to S3 (re-using the URL for up to a few retries —
- *      presigned URLs are valid for ~15 minutes).
+ * Resilience pattern:
+ *   1. Acquire presigned URL via the edge function (callS3Function already retries).
+ *   2. PUT to S3, retried on 429/5xx/network errors using the same URL
+ *      (presigned URLs are valid for ~15 minutes).
+ *   3. If the PUT round still fails AND the failure is transient, re-sign
+ *      a fresh URL and try one more PUT round. Guards against malformed-URL
+ *      edge cases where every retry against the same URL is doomed.
  */
 export async function uploadToS3(objectPath: string, file: File | Blob): Promise<void> {
-  let signed: { url: string; method: string };
-  try {
-    signed = await getUploadUrl(objectPath);
-  } catch (err) {
-    // Already user-facing.
-    throw err;
-  }
+  const ref = newRefId();
 
-  try {
-    await withRetry(
+  const doPut = async (signedUrl: string) =>
+    withRetry(
       async () => {
         let res: Response;
         try {
-          res = await fetch(signed.url, { method: "PUT", body: file });
+          res = await fetch(signedUrl, { method: "PUT", body: file });
         } catch (networkErr: any) {
-          // Always treat browser-level fetch failures as transient.
           throw new Error(`network error: ${networkErr?.message ?? networkErr}`);
         }
         if (!res.ok) {
@@ -171,8 +175,34 @@ export async function uploadToS3(objectPath: string, file: File | Blob): Promise
       },
       { label: "PUT upload" },
     );
+
+  let signed: { url: string; method: string };
+  try {
+    signed = await getUploadUrl(objectPath);
   } catch (err) {
-    throw userFacingError("uploading the file", err);
+    // Already user-facing.
+    throw err;
+  }
+
+  try {
+    await doPut(signed.url);
+    return;
+  } catch (firstErr) {
+    if (!isTransientError(firstErr)) {
+      throw userFacingError("uploading the file", firstErr, ref);
+    }
+    // Last-ditch attempt with a fresh signed URL.
+    console.warn(
+      `[s3-storage] PUT exhausted retries (ref: ${ref}), re-signing and retrying once:`,
+      firstErr instanceof Error ? firstErr.message : firstErr,
+    );
+    try {
+      const fresh = await getUploadUrl(objectPath);
+      await doPut(fresh.url);
+      return;
+    } catch (secondErr) {
+      throw userFacingError("uploading the file", secondErr, ref);
+    }
   }
 }
 
@@ -182,6 +212,7 @@ export async function uploadToS3(objectPath: string, file: File | Blob): Promise
  */
 export async function getDownloadUrls(objectPaths: string[]): Promise<Record<string, string>> {
   if (objectPaths.length === 0) return {};
+  const ref = newRefId();
   try {
     const data = await callS3Function({
       action: "sign-download",
@@ -189,7 +220,7 @@ export async function getDownloadUrls(objectPaths: string[]): Promise<Record<str
     });
     return data.signed_urls ?? {};
   } catch (err) {
-    throw userFacingError("loading previews", err);
+    throw userFacingError("loading previews", err, ref);
   }
 }
 
@@ -198,13 +229,14 @@ export async function getDownloadUrls(objectPaths: string[]): Promise<Record<str
  */
 export async function deleteFromS3(objectPaths: string[]): Promise<void> {
   if (objectPaths.length === 0) return;
+  const ref = newRefId();
   try {
     await callS3Function({
       action: "delete",
       object_paths: objectPaths,
     });
   } catch (err) {
-    throw userFacingError("removing files", err);
+    throw userFacingError("removing files", err, ref);
   }
 }
 
@@ -213,6 +245,7 @@ export async function deleteFromS3(objectPaths: string[]): Promise<void> {
  * Returns the new object path.
  */
 export async function copyS3Object(sourcePath: string, destPath: string): Promise<string> {
+  const ref = newRefId();
   try {
     await callS3Function({
       action: "copy",
@@ -221,6 +254,6 @@ export async function copyS3Object(sourcePath: string, destPath: string): Promis
     });
     return destPath;
   } catch (err) {
-    throw userFacingError("copying the file", err);
+    throw userFacingError("copying the file", err, ref);
   }
 }

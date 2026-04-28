@@ -23,7 +23,7 @@ function json(body: unknown, status = 200) {
 // in this helper so a single blip doesn't propagate as a hard error to the
 // browser. Customers should never see "S3" or status codes in error text.
 
-const DEFAULT_MAX_RETRIES = 4;
+const DEFAULT_MAX_RETRIES = 6;
 
 function backoffDelay(attempt: number): number {
   const base = Math.min(500 * 2 ** attempt, 5000);
@@ -98,14 +98,21 @@ async function resilientFetch(
 }
 
 /** Sanitise upstream error text so the user never sees raw S3/gateway wording. */
-function friendlyError(action: string): string {
-  return `Storage is temporarily unavailable while ${action}. Please retry shortly.`;
+function friendlyError(action: string, ref: string): string {
+  return `Storage is temporarily unavailable while ${action}. Please retry shortly. (ref: ${ref})`;
+}
+
+/** Short opaque ref id (8 chars) included in log lines and error responses. */
+function newRefId(): string {
+  return Math.random().toString(36).slice(2, 10);
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
+
+  const ref = newRefId();
 
   const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
   if (!LOVABLE_API_KEY) return json({ error: "LOVABLE_API_KEY not configured" }, 500);
@@ -139,6 +146,7 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
     const { action } = body;
+    console.log(`[s3-storage] (ref: ${ref}) action=${action}`);
 
     if (action === "sign-upload") {
       const { object_path } = body;
@@ -156,8 +164,8 @@ Deno.serve(async (req) => {
 
       if (!signRes.ok) {
         const errText = await signRes.text().catch(() => "");
-        console.error(`[s3-storage] sign-upload failed [${signRes.status}]: ${errText}`);
-        return json({ error: friendlyError("preparing your upload") }, 503);
+        console.error(`[s3-storage] (ref: ${ref}) sign-upload failed [${signRes.status}]: ${errText}`);
+        return json({ error: friendlyError("preparing your upload", ref) }, 503);
       }
 
       const data = await signRes.json();
@@ -232,8 +240,8 @@ Deno.serve(async (req) => {
       );
       if (!signReadRes.ok) {
         const errText = await signReadRes.text().catch(() => "");
-        console.error(`[s3-storage] copy sign-read [${signReadRes.status}]: ${errText}`);
-        return json({ error: friendlyError("copying your file") }, 503);
+        console.error(`[s3-storage] (ref: ${ref}) copy sign-read [${signReadRes.status}]: ${errText}`);
+        return json({ error: friendlyError("copying your file", ref) }, 503);
       }
       const { url: readUrl } = await signReadRes.json();
 
@@ -248,8 +256,8 @@ Deno.serve(async (req) => {
       );
       if (!signWriteRes.ok) {
         const errText = await signWriteRes.text().catch(() => "");
-        console.error(`[s3-storage] copy sign-write [${signWriteRes.status}]: ${errText}`);
-        return json({ error: friendlyError("copying your file") }, 503);
+        console.error(`[s3-storage] (ref: ${ref}) copy sign-write [${signWriteRes.status}]: ${errText}`);
+        return json({ error: friendlyError("copying your file", ref) }, 503);
       }
       const { url: writeUrl } = await signWriteRes.json();
 
@@ -259,8 +267,8 @@ Deno.serve(async (req) => {
       });
       if (!getRes.ok) {
         const errText = await getRes.text().catch(() => "");
-        console.error(`[s3-storage] copy fetch-source [${getRes.status}]: ${errText}`);
-        return json({ error: friendlyError("copying your file") }, 503);
+        console.error(`[s3-storage] (ref: ${ref}) copy fetch-source [${getRes.status}]: ${errText}`);
+        return json({ error: friendlyError("copying your file", ref) }, 503);
       }
       const bytes = await getRes.arrayBuffer();
       const contentType = getRes.headers.get("Content-Type") || "application/octet-stream";
@@ -272,8 +280,8 @@ Deno.serve(async (req) => {
       );
       if (!putRes.ok) {
         const errText = await putRes.text().catch(() => "");
-        console.error(`[s3-storage] copy put-dest [${putRes.status}]: ${errText}`);
-        return json({ error: friendlyError("copying your file") }, 503);
+        console.error(`[s3-storage] (ref: ${ref}) copy put-dest [${putRes.status}]: ${errText}`);
+        return json({ error: friendlyError("copying your file", ref) }, 503);
       }
 
       console.log(`[s3-storage] copy ok: ${source_path} -> ${dest_path} (${bytes.byteLength}b)`);
@@ -302,7 +310,7 @@ Deno.serve(async (req) => {
 
     return json({ error: `Unknown action: ${action}` }, 400);
   } catch (err: unknown) {
-    console.error("s3-storage error:", err);
-    return json({ error: friendlyError("processing your request") }, 500);
+    console.error(`[s3-storage] (ref: ${ref}) unhandled error:`, err);
+    return json({ error: friendlyError("processing your request", ref) }, 500);
   }
 });
