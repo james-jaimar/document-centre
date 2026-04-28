@@ -21,6 +21,8 @@ import StorefrontLanding from "@/pages/storefront/StorefrontLanding";
 import MarketingLanding from "@/pages/MarketingLanding";
 import Try from "@/pages/Try";
 import Pricing from "@/pages/Pricing";
+import PrivacyPolicy from "@/pages/legal/PrivacyPolicy";
+import TermsOfService from "@/pages/legal/TermsOfService";
 import PlatformDemoActivity from "@/pages/platform/PlatformDemoActivity";
 
 // Customer
@@ -114,6 +116,10 @@ const App = () => (
             <Route path="/t/:slug/auth/callback" element={<AuthCallback />} />
             <Route path="/auth/verify" element={<AuthVerify />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+
+            {/* Public legal pages */}
+            <Route path="/privacy" element={<PrivacyPolicy />} />
+            <Route path="/terms" element={<TermsOfService />} />
 
             {/* Public storefront landing */}
             <Route path="/t/:slug" element={<StorefrontLanding />} />
