@@ -21,6 +21,7 @@ import StorefrontLanding from "@/pages/storefront/StorefrontLanding";
 import MarketingLanding from "@/pages/MarketingLanding";
 import Try from "@/pages/Try";
 import Pricing from "@/pages/Pricing";
+import Contact from "@/pages/Contact";
 import PrivacyPolicy from "@/pages/legal/PrivacyPolicy";
 import TermsOfService from "@/pages/legal/TermsOfService";
 import PlatformDemoActivity from "@/pages/platform/PlatformDemoActivity";
@@ -120,6 +121,7 @@ const App = () => (
             {/* Public legal pages */}
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/terms" element={<TermsOfService />} />
+            <Route path="/contact" element={<Contact />} />
 
             {/* Public storefront landing */}
             <Route path="/t/:slug" element={<StorefrontLanding />} />

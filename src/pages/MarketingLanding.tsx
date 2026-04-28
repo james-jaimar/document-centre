@@ -720,15 +720,22 @@ export default function MarketingLanding() {
             <Link to="/#features" className="hover:text-[hsl(var(--dc-blue))]">Features</Link>
             <Link to="/#how-it-works" className="hover:text-[hsl(var(--dc-blue))]">How It Works</Link>
             <Link to="/pricing" className="hover:text-[hsl(var(--dc-blue))]">Pricing</Link>
-            {["Resources", "Support", "Contact"].map((l) => (
-              <a key={l} href="#" className="hover:text-[hsl(var(--dc-blue))]">{l}</a>
-            ))}
+            <Link to="/contact" className="hover:text-[hsl(var(--dc-blue))]">Contact</Link>
           </nav>
           <div className="flex gap-2.5">
-            {[Linkedin, Youtube, Mail].map((Icon, i) => (
+            <a
+              href="mailto:hello@document-centre.com"
+              aria-label="Email Document Centre"
+              className="h-9 w-9 rounded-full flex items-center justify-center border border-[hsl(var(--dc-border))] hover:border-[hsl(var(--dc-blue))]"
+              style={{ color: "hsl(var(--dc-blue))" }}
+            >
+              <Mail className="h-4 w-4" />
+            </a>
+            {[Linkedin, Youtube].map((Icon, i) => (
               <a
                 key={i}
                 href="#"
+                aria-label={Icon === Linkedin ? "LinkedIn" : "YouTube"}
                 className="h-9 w-9 rounded-full flex items-center justify-center border border-[hsl(var(--dc-border))] hover:border-[hsl(var(--dc-blue))]"
                 style={{ color: "hsl(var(--dc-blue))" }}
               >
