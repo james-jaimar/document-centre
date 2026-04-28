@@ -146,6 +146,7 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
     const { action } = body;
+    console.log(`[s3-storage] (ref: ${ref}) action=${action}`);
 
     if (action === "sign-upload") {
       const { object_path } = body;
