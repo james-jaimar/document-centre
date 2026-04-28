@@ -94,6 +94,20 @@ export async function resolveEmailAccount(
     if (any?.id) return any.id;
   }
 
+  // Final fallback: first active Graph account anywhere on the platform.
+  // Keeps platform-level mail (e.g. contact form) working when no tenant
+  // or branch context is available.
+  const { data: graphFallback } = await admin
+    .from("email_accounts")
+    .select("id")
+    .eq("is_active", true)
+    .eq("transport", "graph")
+    .order("is_default", { ascending: false })
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (graphFallback?.id) return graphFallback.id;
+
   return null;
 }
 
