@@ -310,7 +310,7 @@ Deno.serve(async (req) => {
 
     return json({ error: `Unknown action: ${action}` }, 400);
   } catch (err: unknown) {
-    console.error("s3-storage error:", err);
+    console.error(`[s3-storage] (ref: ${ref}) unhandled error:`, err);
     return json({ error: friendlyError("processing your request", ref) }, 500);
   }
 });
