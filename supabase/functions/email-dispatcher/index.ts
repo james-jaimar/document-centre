@@ -6,7 +6,7 @@
 // - Sends via denomailer SMTP and writes back status/attempts/Message-ID.
 //
 // Backoff: 1m, 5m, 15m, 1h, 6h → dlq.
-import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
+import nodemailer from "npm:nodemailer@6.9.10";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 const corsHeaders = {
@@ -149,13 +149,17 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
   const fromEmail = row.from_email ?? creds.from_email;
   const replyTo = row.reply_to ?? creds.reply_to ?? undefined;
 
-  const client = new SMTPClient({
-    connection: {
-      hostname: creds.host,
-      port: creds.port,
-      tls: creds.secure === "tls",
-      auth: { username: creds.username, password: creds.password },
-    },
+  // Port 465 = implicit TLS; 587 / others = STARTTLS upgrade (nodemailer handles it).
+  const useSecure = creds.port === 465;
+  const transport = nodemailer.createTransport({
+    host: creds.host,
+    port: creds.port,
+    secure: useSecure,
+    auth: { user: creds.username, pass: creds.password },
+    tls: { rejectUnauthorized: false },
+    connectionTimeout: 30_000,
+    greetingTimeout: 30_000,
+    socketTimeout: 60_000,
   });
 
   // Hard ceiling so a hung SMTP server can't pin a worker indefinitely.
@@ -170,8 +174,8 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
     ]);
 
   try {
-    const result = await withTimeout(
-      client.send({
+    const info = await withTimeout(
+      transport.sendMail({
         from: `${fromName} <${fromEmail}>`,
         to: row.to_email,
         cc: row.cc ?? undefined,
@@ -179,11 +183,11 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
         replyTo,
         subject: row.subject,
         html: row.html ?? undefined,
-        content: row.text_body ?? "auto",
+        text: row.text_body ?? undefined,
       }),
       SEND_TIMEOUT_MS
     );
-    await client.close();
+    try { transport.close(); } catch (_) { /* ignore */ }
 
     await admin
       .from("email_outbox")
@@ -191,7 +195,7 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
         status: "sent",
         sent_at: new Date().toISOString(),
         attempts: row.attempts + 1,
-        message_id: (result as any)?.messageId ?? null,
+        message_id: (info as any)?.messageId ?? null,
         error_message: null,
         locked_at: null,
         locked_by: null,
@@ -209,7 +213,7 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
       await new Promise((r) => setTimeout(r, creds.send_delay_ms));
     }
   } catch (e) {
-    try { await client.close(); } catch (_) { /* ignore */ }
+    try { transport.close(); } catch (_) { /* ignore */ }
     const msg = (e as Error).message ?? String(e);
     const newAttempts = row.attempts + 1;
     const isAuthError = /auth|535|530|invalid login|credentials/i.test(msg);
