@@ -90,20 +90,41 @@ async function resolveCreds(
       .maybeSingle();
     const a = acct as any;
     if (a && a.is_active) {
-      const password = await loadVaultSecret(admin, a.smtp_password_secret_id);
-      if (password) {
-        return {
-          id: a.id,
-          host: a.smtp_host,
-          port: a.smtp_port,
-          secure: a.smtp_secure,
-          username: a.smtp_username,
-          password,
-          from_name: a.from_name,
-          from_email: a.from_email,
-          reply_to: a.reply_to,
-          send_delay_ms: a.send_delay_ms ?? 1500,
-        };
+      const transport = a.transport ?? "smtp";
+
+      if (transport === "graph") {
+        const clientSecret = await loadVaultSecret(admin, a.graph_client_secret_id);
+        if (clientSecret && a.graph_tenant_id && a.graph_client_id && a.graph_sender_address) {
+          return {
+            kind: "graph",
+            id: a.id,
+            tenant_id: a.graph_tenant_id,
+            client_id: a.graph_client_id,
+            client_secret: clientSecret,
+            sender: a.graph_sender_address,
+            from_name: a.from_name,
+            from_email: a.from_email,
+            reply_to: a.reply_to,
+            send_delay_ms: a.send_delay_ms ?? 1500,
+          };
+        }
+      } else {
+        const password = await loadVaultSecret(admin, a.smtp_password_secret_id);
+        if (password) {
+          return {
+            kind: "smtp",
+            id: a.id,
+            host: a.smtp_host,
+            port: a.smtp_port,
+            secure: a.smtp_secure,
+            username: a.smtp_username,
+            password,
+            from_name: a.from_name,
+            from_email: a.from_email,
+            reply_to: a.reply_to,
+            send_delay_ms: a.send_delay_ms ?? 1500,
+          };
+        }
       }
     }
   }
@@ -130,6 +151,7 @@ async function resolveCreds(
   if (!host || !username || !password) return null;
 
   return {
+    kind: "smtp",
     id: null,
     host,
     port,
@@ -143,6 +165,101 @@ async function resolveCreds(
   };
 }
 
+const SEND_TIMEOUT_MS = 60_000;
+const withTimeout = <T>(p: Promise<T>, ms: number, label: string): Promise<T> =>
+  Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+
+// ---- Microsoft Graph sender ----------------------------------------------
+async function getGraphAccessToken(creds: GraphCreds): Promise<string> {
+  const tokenUrl = `https://login.microsoftonline.com/${creds.tenant_id}/oauth2/v2.0/token`;
+  const body = new URLSearchParams({
+    grant_type: "client_credentials",
+    client_id: creds.client_id,
+    client_secret: creds.client_secret,
+    scope: "https://graph.microsoft.com/.default",
+  });
+  const res = await withTimeout(
+    fetch(tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    }),
+    20_000,
+    "Graph token fetch"
+  );
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Graph token request failed: ${res.status} ${txt.slice(0, 400)}`);
+  }
+  const json = await res.json();
+  if (!json.access_token) throw new Error("Graph token response missing access_token");
+  return json.access_token as string;
+}
+
+function toGraphRecipients(addrs: string[] | string | null | undefined) {
+  if (!addrs) return undefined;
+  const list = Array.isArray(addrs) ? addrs : [addrs];
+  return list.filter(Boolean).map((address) => ({ emailAddress: { address } }));
+}
+
+async function sendViaGraph(
+  creds: GraphCreds,
+  row: OutboxRow,
+  fromName: string,
+  fromEmail: string,
+  replyTo: string | undefined
+): Promise<{ messageId: string | null }> {
+  const token = await getGraphAccessToken(creds);
+  const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(creds.sender)}/sendMail`;
+
+  const message: Record<string, unknown> = {
+    subject: row.subject,
+    body: {
+      contentType: row.html ? "HTML" : "Text",
+      content: row.html ?? row.text_body ?? "",
+    },
+    toRecipients: toGraphRecipients(row.to_email),
+    ccRecipients: toGraphRecipients(row.cc),
+    bccRecipients: toGraphRecipients(row.bcc),
+    from: { emailAddress: { address: fromEmail, name: fromName } },
+  };
+  if (replyTo) message.replyTo = toGraphRecipients(replyTo);
+
+  const res = await withTimeout(
+    fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ message, saveToSentItems: true }),
+    }),
+    SEND_TIMEOUT_MS,
+    "Graph sendMail"
+  );
+
+  if (res.status === 202) {
+    return { messageId: res.headers.get("x-ms-request-id") };
+  }
+
+  const text = await res.text();
+  // Tag auth/permission errors so the caller can mark them terminal.
+  if (res.status === 401 || res.status === 403) {
+    throw new Error(`graph_auth ${res.status}: ${text.slice(0, 600)}`);
+  }
+  if (res.status === 429) {
+    const retry = res.headers.get("Retry-After");
+    throw new Error(`graph_rate_limited retry-after=${retry ?? "?"}: ${text.slice(0, 300)}`);
+  }
+  throw new Error(`Graph sendMail failed: ${res.status} ${text.slice(0, 600)}`);
+}
+
+// ---- Main per-row processor ----------------------------------------------
 async function processOne(admin: any, row: OutboxRow): Promise<void> {
   const creds = await resolveCreds(admin, row);
   if (!creds) {
@@ -151,7 +268,7 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
       .update({
         status: "failed",
         attempts: row.attempts + 1,
-        error_message: "No SMTP account available (and platform fallback disabled)",
+        error_message: "No email account available (and platform fallback disabled)",
         locked_at: null,
         locked_by: null,
       })
@@ -163,45 +280,45 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
   const fromEmail = row.from_email ?? creds.from_email;
   const replyTo = row.reply_to ?? creds.reply_to ?? undefined;
 
-  // Port 465 = implicit TLS; 587 / others = STARTTLS upgrade (nodemailer handles it).
-  const useSecure = creds.port === 465;
-  const transport = nodemailer.createTransport({
-    host: creds.host,
-    port: creds.port,
-    secure: useSecure,
-    auth: { user: creds.username, pass: creds.password },
-    tls: { rejectUnauthorized: false },
-    connectionTimeout: 30_000,
-    greetingTimeout: 30_000,
-    socketTimeout: 60_000,
-  });
-
-  // Hard ceiling so a hung SMTP server can't pin a worker indefinitely.
-  // 60s covers slow auth + STARTTLS handshakes; well below the 5-min stale-lock revival.
-  const SEND_TIMEOUT_MS = 60_000;
-  const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
-    Promise.race([
-      p,
-      new Promise<T>((_, reject) =>
-        setTimeout(() => reject(new Error(`SMTP send timed out after ${ms}ms`)), ms)
-      ),
-    ]);
-
   try {
-    const info = await withTimeout(
-      transport.sendMail({
-        from: `${fromName} <${fromEmail}>`,
-        to: row.to_email,
-        cc: row.cc ?? undefined,
-        bcc: row.bcc ?? undefined,
-        replyTo,
-        subject: row.subject,
-        html: row.html ?? undefined,
-        text: row.text_body ?? undefined,
-      }),
-      SEND_TIMEOUT_MS
-    );
-    try { transport.close(); } catch (_) { /* ignore */ }
+    let messageId: string | null = null;
+
+    if (creds.kind === "graph") {
+      const result = await sendViaGraph(creds, row, fromName, fromEmail, replyTo);
+      messageId = result.messageId;
+    } else {
+      // SMTP via nodemailer (port 465 = implicit TLS; 587 = STARTTLS upgrade)
+      const useSecure = creds.port === 465;
+      const transport = nodemailer.createTransport({
+        host: creds.host,
+        port: creds.port,
+        secure: useSecure,
+        auth: { user: creds.username, pass: creds.password },
+        tls: { rejectUnauthorized: false },
+        connectionTimeout: 30_000,
+        greetingTimeout: 30_000,
+        socketTimeout: 60_000,
+      });
+      try {
+        const info = await withTimeout(
+          transport.sendMail({
+            from: `${fromName} <${fromEmail}>`,
+            to: row.to_email,
+            cc: row.cc ?? undefined,
+            bcc: row.bcc ?? undefined,
+            replyTo,
+            subject: row.subject,
+            html: row.html ?? undefined,
+            text: row.text_body ?? undefined,
+          }),
+          SEND_TIMEOUT_MS,
+          "SMTP send"
+        );
+        messageId = (info as any)?.messageId ?? null;
+      } finally {
+        try { transport.close(); } catch (_) { /* ignore */ }
+      }
+    }
 
     await admin
       .from("email_outbox")
@@ -209,7 +326,7 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
         status: "sent",
         sent_at: new Date().toISOString(),
         attempts: row.attempts + 1,
-        message_id: (info as any)?.messageId ?? null,
+        message_id: messageId,
         error_message: null,
         locked_at: null,
         locked_by: null,
@@ -227,10 +344,10 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
       await new Promise((r) => setTimeout(r, creds.send_delay_ms));
     }
   } catch (e) {
-    try { transport.close(); } catch (_) { /* ignore */ }
     const msg = (e as Error).message ?? String(e);
     const newAttempts = row.attempts + 1;
-    const isAuthError = /auth|535|530|invalid login|credentials/i.test(msg);
+    const isAuthError =
+      /^graph_auth|auth|535|530|invalid login|credentials/i.test(msg);
     const exhausted = newAttempts >= row.max_attempts;
     const status = isAuthError ? "failed" : exhausted ? "dlq" : "queued";
 
