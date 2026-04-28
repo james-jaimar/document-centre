@@ -213,7 +213,7 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
       await new Promise((r) => setTimeout(r, creds.send_delay_ms));
     }
   } catch (e) {
-    try { await client.close(); } catch (_) { /* ignore */ }
+    try { transport.close(); } catch (_) { /* ignore */ }
     const msg = (e as Error).message ?? String(e);
     const newAttempts = row.attempts + 1;
     const isAuthError = /auth|535|530|invalid login|credentials/i.test(msg);
