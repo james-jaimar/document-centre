@@ -94,8 +94,8 @@ Deno.serve(async (req) => {
         html,
         text_body: text,
         category: "transactional",
-        created_by_profile_id: userData.user.id,
-        metadata: { source: "send-test-email" },
+        created_by_profile_id: callerId,
+        metadata: { source: "send-test-email", auth: secretOk ? "shared-secret" : "platform-admin" },
       })
       .select("id")
       .single();
