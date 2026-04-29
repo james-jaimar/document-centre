@@ -570,14 +570,22 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             message=f'Rendering {page_count or "?"} page(s)…',
         )
 
+        timings: dict[str, int] = {}
+
+        def _stamp(label: str, t_start: float) -> None:
+            timings[label] = int((time.monotonic() - t_start) * 1000)
+
         with Workspace() as ws:
             src = ws.path('input.pdf')
+            t_dl = time.monotonic()
             storage.download(src_path, src)
+            _stamp('download_pdf', t_dl)
 
             # If caller didn't specify a render_box, auto-derive one from
             # the PDF's own TrimBox/BleedBox so previews show the finished
             # page edge (no bleed margin / crop marks). This protects against
             # callers that pass `null` after rotate/resize/print-ready.
+            t_box = time.monotonic()
             effective_render_box = render_box
             if effective_render_box is None:
                 try:
@@ -592,6 +600,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                 cropped = ws.path('cropped.pdf')
                 pdf_ops.crop_to_box(src, cropped, effective_render_box)
                 src = cropped
+            _stamp('prepare_render_box', t_box)
 
             preview_dir = ws.path('preview')
             thumb_dir = ws.path('thumb')
