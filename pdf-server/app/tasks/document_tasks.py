@@ -691,7 +691,10 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                     )
 
             # ─── Page-1 fast path (skipped if batch already covered it) ─
-            try:
+            if 1 in completed_pages:
+                pass
+            else:
+                try:
                 image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
                     src_pdf=src, preview_dir=preview_dir, thumb_dir=thumb_dir,
                     prefix=prefix, page=1, dpi=settings.preview_dpi,
