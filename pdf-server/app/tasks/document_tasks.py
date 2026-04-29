@@ -474,6 +474,57 @@ def _record_page(
 
 
 @shared_task(bind=True, queue='thumbnails')
+def render_one_page(
+    self,
+    *,
+    asset_id: str,
+    job_id: str,
+    page: int,
+    prepared_storage_path: str,
+    prefix: str,
+    dpi: int,
+):
+    """Render a single page of a prepared (already-cropped) PDF.
+
+    This is the per-page fan-out unit used by ``generate_previews`` so a
+    single upload occupies ALL light-queue worker children instead of one.
+    Each invocation downloads ``prepared_storage_path`` into its own
+    workspace, rasterises page ``page``, uploads preview + thumbnail, and
+    records both ``derived_files`` rows. The parent task watches
+    ``derived_files`` to determine completion (no chord/ result-backend
+    coupling needed).
+    """
+    db = _db()
+    try:
+        with Workspace() as ws:
+            src = ws.path('input.pdf')
+            storage.download(prepared_storage_path, src)
+
+            preview_dir = ws.path('preview')
+            thumb_dir = ws.path('thumb')
+            preview_dir.mkdir(parents=True, exist_ok=True)
+            thumb_dir.mkdir(parents=True, exist_ok=True)
+
+            image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
+                src_pdf=src, preview_dir=preview_dir, thumb_dir=thumb_dir,
+                prefix=prefix, page=page, dpi=dpi,
+            )
+            _record_page(
+                db, asset_id=asset_id, job_id=job_id, page=page,
+                image_path=image_path, thumb_image=thumb_image,
+                preview_storage=prev_sp, thumb_storage=thumb_sp,
+            )
+            return {'page': page, 'preview_storage_path': prev_sp, 'thumbnail_storage_path': thumb_sp}
+    except Exception as exc:
+        logger.warning("render_one_page: page %d failed: %s", page, exc)
+        # Don't mark the parent job failed — the parent watches the
+        # derived_files table and will salvage missing pages itself.
+        raise
+    finally:
+        db.close()
+
+
+@shared_task(bind=True, queue='thumbnails')
 def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] | None = None):
     """Generate previews + thumbnails for an asset.
 
