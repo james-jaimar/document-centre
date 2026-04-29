@@ -202,16 +202,17 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
               <FormField
                 control={form.control}
                 name="color_output"
+                rules={{ required: "Colour space is required" }}
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Colour Space</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectTrigger><SelectValue placeholder="Select colour space" /></SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="cmyk">CMYK (laser / inkjet)</SelectItem>
-                        <SelectItem value="rgb">RGB (dye-sub photo)</SelectItem>
+                        <SelectItem value="cmyk">CMYK (laser / inkjet — default)</SelectItem>
+                        <SelectItem value="rgb">RGB (dye-sub photo printers only)</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />

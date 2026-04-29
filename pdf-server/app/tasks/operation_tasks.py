@@ -585,25 +585,18 @@ def print_ready(
         with Workspace() as ws:
             src = _download_asset_pdf(db, asset_id, ws)
             out_pdf = ws.path("print-ready.pdf")
-            try:
-                stats = pdf_ops.to_print_ready_cmyk(
-                    src, out_pdf,
-                    dest_profile=dest_profile,
-                    intent=intent,
-                    preserve_black=True,
-                )
-            except (FileNotFoundError, ValueError) as profile_err:
-                # Missing/unknown ICC profile → degrade gracefully to RGB
-                # rather than failing the whole document pipeline.
-                result = {
-                    "skipped": True,
-                    "reason": "icc_profile_unavailable",
-                    "dest_profile": dest_profile,
-                    "intent": intent,
-                    "error": str(profile_err),
-                }
-                job_repo.mark_done(db, job_id, result)
-                return result
+            # Note: we deliberately do NOT catch FileNotFoundError /
+            # ValueError from to_print_ready_cmyk here. A missing ICC
+            # profile is a server misconfiguration — silently skipping
+            # used to mask the issue for weeks. Let it bubble so the job
+            # is marked failed and the platform Workers UI surfaces it.
+            # Fix: install profiles via scripts/install-icc-profiles.sh.
+            stats = pdf_ops.to_print_ready_cmyk(
+                src, out_pdf,
+                dest_profile=dest_profile,
+                intent=intent,
+                preserve_black=True,
+            )
 
 
             storage_path = unique_name(f"{prefix}derived/print-ready", ".pdf")

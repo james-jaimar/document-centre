@@ -1,76 +1,80 @@
-# PDF server performance — diagnosis & plan
+# PDF server — what just shipped (CMYK + per-page Celery fan-out)
 
-Good news first: the code we wrote is correct. The bad news: **on the live box it isn't running**. That's why you see no difference.
+## 1. ICC / CMYK conversion now actually works
 
-## What the data says (last 7 days of `job_events`)
+**Root cause that hid for weeks:** `sRGB_v4_ICC_preference.icc` was missing on the VPS, and `print_ready` silently caught the `FileNotFoundError` and returned `{skipped: true, reason: "icc_profile_unavailable"}`. Every "CMYK conversion" job since launch was a no-op.
 
-| Stage | Queue | n | p50 | p95 | max |
-|---|---|---|---|---|---|
-| `render` (full preview job) | thumbnails | 93 | 15.0 s | **62.0 s** | 335.8 s |
-| `inspect` (PDF metadata) | documents | 98 | 2.4 s | 5.2 s | 8.5 s |
-| `page_batch` (5 pages uploaded) | thumbnails | 407 | 0.25 s | 0.26 s | 0.49 s |
-| `salvage` (re-render missing) | thumbnails | 1 | 247 s | — | — |
+Changes:
+- **VPS:** sRGB profile installed at `/opt/document-centre-api/icc/sRGB_v4_ICC_preference.icc` (~5 KB, public-domain ICC v4 from color.org).
+- **`pdf-server/app/tasks/operation_tasks.py`** — removed the silent skip. Missing ICC = job marked failed with the underlying error. Misconfiguration is now visible in the platform Workers UI.
+- **New `pdf-server/scripts/install-icc-profiles.sh`** — idempotent installer that downloads + symlinks all four expected profiles (sRGB, Fogra39, Fogra39_300, Fogra51). Verifies and exits non-zero if anything is missing.
+- **`pdf-server/scripts/install-ubuntu.sh`** + **`install-ops-api.sh`** — now call the ICC installer so reinstalls and new boxes are self-healing.
+- **`src/components/admin/ProductFamilyForm.tsx`** — `color_output` Select is now required (`rules: required`) so future families can't ship ambiguous.
 
-**Worker name in every single event over the past 24 hours:** `celery@srv1516161`.
+**DB audit confirmed:** every product family already has correct `color_output` — Photo Prints = `rgb`, every other family = `cmyk` with `fogra39` and `relative_colorimetric`. No backfill migration needed.
 
-That is the **old single-pool worker** (`document-centre-worker.service`, queues `default,documents,thumbnails,imposition,pdf`, concurrency 4). The new units we wrote — `heavy@<host>` (concurrency 2) and `light@<host>` (concurrency 4) — have produced **zero** events. They aren't installed/started, or they're masked, or the old unit is still active and beat them to the queues.
+## 2. Per-page Celery fan-out for single-job render speed
 
-So the 4 vCPU / 16 GB upgrade is being consumed by **one** Celery worker with 4 children competing on the same pool, plus uvicorn. That's why "more CPU/RAM" didn't move the needle.
+The 8-page generate-previews was taking ~14 s because in-process threads run inside **one** Celery child — adding more workers helped concurrency for multiple users but did nothing for a single upload.
 
-## Three real bottlenecks (in priority order)
+New design (default ON, env-tunable):
+1. Page-1 fast path stays unchanged — user sees first thumbnail immediately.
+2. Source PDF (already cropped to TrimBox) is uploaded once to a temp S3 path: `{tenant}tmp/render-prepared/<uuid>.pdf`.
+3. For each remaining page, dispatch a `render_one_page` Celery subtask onto the `thumbnails` queue.
+4. With 4 light-worker children, an 8-page job uses **all 4 in parallel** — wall time drops from ~14 s to ~4-5 s (≈ 2 page-renders worth instead of 8).
+5. Parent task polls `derived_files` every 200 ms (configurable) until all pages land or the timeout (default 300 s) trips. No Celery chord / result-backend coupling — avoids the well-known prefork chord deadlock.
+6. Existing salvage pass (sequential two-pool) stays as the safety net for any pages still missing.
+7. Temp prepared PDF is best-effort deleted via the new `StorageService.delete()`.
 
-### 1. The new worker split is not active on the box
-This is the headline fix. Until `heavy@` and `light@` show up in `job_events.worker_name`, none of our sizing work matters.
+Touched:
+- **`pdf-server/app/core/config.py`** — `render_fanout_enabled` (default `True`), `render_fanout_poll_interval_ms` (200), `render_fanout_timeout_seconds` (300).
+- **`pdf-server/app/tasks/document_tasks.py`** — new `render_one_page` Celery task; `generate_previews` now branches between fan-out (default) and the original in-process two-pool design.
+- **`pdf-server/app/services/storage.py`** — new `delete()` method (S3 + supabase + local) for temp render artefacts.
+- `derived_files.create_file()` is already idempotent for `preview_page` / `thumbnail_page` — safe under fan-out + salvage.
 
-Need to, on the Ubuntu host:
-- `systemctl disable --now document-centre-worker.service` (deprecated single-pool)
-- `systemctl daemon-reload`
-- `systemctl enable --now document-centre-worker-heavy.service`
-- `systemctl enable --now document-centre-worker-light.service`
-- Verify: `celery -A app.worker.celery_app inspect active_queues` should list **two** nodes (heavy + light).
+## What to do on the VPS to pick up the new code
 
-I'll add an idempotent `scripts/migrate-to-split-workers.sh` that does exactly this and is safe to re-run, plus update `install-ubuntu.sh` so a fresh deploy never lands on the old unit again.
+```
+cd ~/document-centre && git pull
+sudo rsync -av --delete \
+  --exclude='.venv' --exclude='.env' --exclude='storage/' \
+  --exclude='tmp/' --exclude='__pycache__' --exclude='.git' \
+  ~/document-centre/pdf-server/ /opt/document-centre-api/
 
-### 2. In-process page rendering is single-threaded per job
-`generate_previews` does the **page-1 fast path serially**, then the rest in a `ThreadPoolExecutor(max_workers=UPLOAD_CONCURRENCY=8)`. But inside `_render_one_page`, **Ghostscript runs single-threaded** (`pdf_ops.rasterize_preview` shells out one `gs` invocation per page).
+sudo bash /opt/document-centre-api/scripts/install-icc-profiles.sh
+sudo systemctl restart document-centre-worker-heavy document-centre-worker-light document-centre-api
+```
 
-A 50-page PDF therefore gets at best 8-way parallelism on rasterize+upload. With 4 vCPU available and Ghostscript being CPU-bound, the right shape is:
+## How to verify both fixes
 
-- Cap render parallelism at **`min(UPLOAD_CONCURRENCY, cpu_count)`** so we don't context-switch 8 GS processes onto 4 cores.
-- Split into two thread pools: a **CPU pool** sized to `cpu_count - 1` for rasterize+downscale, and an **I/O pool** of 8 for S3 upload + DB write. That lets uploads overlap the next page's rasterization instead of blocking a CPU slot.
-- Make both sizes env-tunable: `RENDER_CPU_CONCURRENCY` (default 3 on a 4 vCPU box) and `RENDER_IO_CONCURRENCY` (default 8).
+After deploy, upload your 8-page A4 again, grab the asset id, then:
 
-Expected impact on a 50-page job: render p50 from ~15 s down to ~6-8 s once heavy/light split is also live.
+```sql
+-- CMYK conversion now real
+select kind, status, result
+  from jobs
+ where asset_id = '<id>' and operation = 'print_ready'
+ order by created_at desc limit 1;
+-- Expect: status='completed', result has dest_profile='fogra39',
+-- before_size, after_size, gs_stderr — and no "skipped":true.
 
-### 3. `inspect` p95 of 5 s is too slow for what it does
-`inspect` is just pikepdf metadata read. 5 s p95 means we're re-downloading the normalised PDF from S3 every call. The `normalize_asset` task already produced `info` in-process, but then the redundant `inspect_asset` path (still wired for explicit calls) downloads the file again.
+-- Fan-out parallelism
+select stage, worker_name, started_at, finished_at
+  from job_events
+ where job_id = (
+   select id from jobs where asset_id='<id>'
+     and operation='generate_previews'
+   order by created_at desc limit 1
+ )
+ order by started_at;
+-- Expect: render_one_page entries spread across multiple workers
+-- (light@srv1516161 children) with overlapping started_at timestamps.
+```
 
-Two cheap wins:
-- Cache `(page_count, width_pt, height_pt, boxes)` we already computed in `normalize_asset` — currently we save them on the asset row, so the explicit `/inspect` endpoint should short-circuit when those columns are populated and the file mtime hasn't changed.
-- For `crop-rasterize` / `print-ready` follow-ups, pass the local workspace path through instead of re-downloading.
+End-to-end: 8-page A4 should drop from ~14 s to ~4-5 s for the previews stage, and `print_ready` will produce a real Fogra-39 CMYK PDF stored under `tenants/<id>/derived/print-ready/`.
 
-### Bonus: the `salvage` stage took 247 s on the one job that used it
-That's because salvage runs **fully sequential** (loop, no pool). When it triggers we lose all the parallelism we just added. Apply the same CPU+IO pool to the salvage loop with `max_workers=2` (small, since salvage is by definition the unhappy path).
+## Out of scope (next pass if needed)
 
-## Technical changes (build mode)
-
-1. `pdf-server/scripts/migrate-to-split-workers.sh` — new, idempotent: stop+disable old unit, install the two new unit files if missing, daemon-reload, enable+start both, print `systemctl status` for each.
-2. `pdf-server/scripts/install-ubuntu.sh` — call the migration helper at the end so any reinstall is self-healing.
-3. `pdf-server/app/core/config.py` — add `render_cpu_concurrency` (default `max(1, os.cpu_count()-1)`) and `render_io_concurrency` (default 8).
-4. `pdf-server/app/tasks/document_tasks.py`:
-   - Replace the single `ThreadPoolExecutor(UPLOAD_CONCURRENCY)` block with a **two-pool** design (CPU pool wraps `pdf_ops.rasterize_preview` + `downscale_to_thumbnail`; IO pool wraps `storage.upload` + `_record_preview`). Pages stream from CPU → IO so the next page can start rasterising while the previous uploads.
-   - Apply the same shape (smaller pools) to the salvage loop.
-   - Keep the per-page subdir isolation that prevents Ghostscript output collisions.
-5. `pdf-server/app/tasks/document_tasks.py::inspect_asset` — short-circuit when `asset.page_count` and `asset.boxes` are already populated; only re-download if `force=True` (add to the route).
-6. `pdf-server/app/web/routes.py` — accept `?force=true` on the explicit `/inspect` endpoint.
-7. `pdf-server/COOLIFY_DEPLOYMENT.md` + `deploy/ubuntu/SETUP_STEPS.md` — note the migration step and how to verify with `celery inspect active_queues`.
-
-## How we'll prove it worked
-
-After deploy I'll re-query `job_events` for the next 24 h and compare:
-- `worker_name` should show **both** `heavy@…` and `light@…`.
-- `render` p50 should drop from 15 s → ≤ 8 s on similar-size jobs.
-- `inspect` p95 should drop from 5 s → < 1 s for cached calls.
-- No `inspect` events at all for the standard upload path (already removed in current code, will confirm).
-
-Want me to go ahead with all of this in build mode?
+- Per-tenant custom ICC profile uploads (Fogra 47, GRACoL, etc.) — easy when a customer asks.
+- Tuning `render_fanout_poll_interval_ms` if 200 ms feels too chatty under load.
+- Adding the `ops.cleanup_tmp` daily task to also prune `tmp/render-prepared/*` from S3 if the inline `delete()` ever leaks (currently not a concern — bounded by job count).

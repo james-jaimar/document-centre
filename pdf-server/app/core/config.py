@@ -59,6 +59,14 @@ class Settings(BaseSettings):
     render_cpu_concurrency: int = Field(alias='RENDER_CPU_CONCURRENCY', default_factory=_default_render_cpu)
     render_io_concurrency: int = Field(alias='RENDER_IO_CONCURRENCY', default=8)
 
+    # Per-page Celery fan-out: dispatch each page as its own task on the
+    # thumbnails queue so a single upload uses ALL light-worker children
+    # (default 4) in parallel instead of one in-process thread pool.
+    # Falls back to the in-process two-pool design when disabled.
+    render_fanout_enabled: bool = Field(alias='RENDER_FANOUT_ENABLED', default=True)
+    render_fanout_poll_interval_ms: int = Field(alias='RENDER_FANOUT_POLL_INTERVAL_MS', default=200)
+    render_fanout_timeout_seconds: int = Field(alias='RENDER_FANOUT_TIMEOUT_SECONDS', default=300)
+
     cors_origins: str = Field(alias='CORS_ORIGINS', default='http://localhost:5173')
     admin_username: str = Field(alias='ADMIN_USERNAME', default='admin')
     admin_password: str = Field(alias='ADMIN_PASSWORD', default='admin123')

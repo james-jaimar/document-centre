@@ -129,6 +129,35 @@ class StorageService:
         return storage_path
 
     # ------------------------------------------------------------------ #
+    # Delete (best-effort, used for short-lived temp render artefacts)
+    # ------------------------------------------------------------------ #
+
+    def delete(self, storage_path: str) -> None:
+        if self._absolute_local_source(storage_path) is not None:
+            return
+
+        if self.mode == 'local':
+            try:
+                (self.local_root / storage_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+            return
+
+        if self.mode == 's3':
+            assert self._s3 is not None
+            try:
+                self._s3.delete_object(Bucket=settings.aws_s3_bucket, Key=storage_path)
+            except Exception:
+                pass
+            return
+
+        if self._client is not None:
+            try:
+                self._client.storage.from_(settings.supabase_storage_bucket).remove([storage_path])
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------ #
     # Public URL
     # ------------------------------------------------------------------ #
 
