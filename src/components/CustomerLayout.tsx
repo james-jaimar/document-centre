@@ -157,7 +157,6 @@ function CustomerLayoutInner() {
         </div>
       </div>
       <ChatWidget />
-      </div>
     </div>
   );
 }
