@@ -101,3 +101,64 @@ Audit, Config) should populate with live data.
 - **Re-running the installer**
   Safe — every step is idempotent. Use it any time you `git pull`
   changes that touch ops API code, deps, or systemd units.
+
+---
+
+## Upgrading to split heavy/light workers (2026-04-29)
+
+Replaces the legacy single-pool `document-centre-worker.service` (queues
+`default,documents,thumbnails,imposition,pdf`, concurrency 4) with two
+specialised units:
+
+| Unit | Queues | Concurrency |
+|------|--------|-------------|
+| `document-centre-worker-heavy` | documents, imposition, pdf | 2 |
+| `document-centre-worker-light` | default, thumbnails | 4 |
+
+Run on the box:
+
+```bash
+ssh you@vps
+cd /opt/document-centre-api && git pull
+sudo bash scripts/migrate-to-split-workers.sh
+```
+
+The script is idempotent: it disables the legacy unit, installs both new
+unit files from `deploy/systemd/`, reloads systemd, and starts them.
+
+### Verify both workers are alive
+
+```bash
+sudo systemctl status document-centre-worker-heavy document-centre-worker-light
+.venv/bin/celery -A app.worker.celery_app inspect active_queues
+```
+
+The `inspect` output must list **two** nodes — `heavy@<host>` and
+`light@<host>`. If only one shows up, check the journal:
+
+```bash
+sudo journalctl -u document-centre-worker-heavy -n 100
+sudo journalctl -u document-centre-worker-light  -n 100
+```
+
+You can also confirm via the database — every new `job_events.worker_name`
+should be either `heavy@…` or `light@…`, never `celery@…`:
+
+```sql
+SELECT worker_name, COUNT(*) FROM job_events
+WHERE started_at > now() - interval '1 hour'
+GROUP BY worker_name;
+```
+
+### Optional: tune in-process render parallelism
+
+`generate_previews` now runs a **CPU pool** (rasterize + downscale) and an
+**IO pool** (S3 upload) in parallel. Defaults are auto-sized for the box
+but can be overridden in `/opt/document-centre-api/.env`:
+
+```
+RENDER_CPU_CONCURRENCY=3   # default: max(1, cpu_count - 1)
+RENDER_IO_CONCURRENCY=8    # default: 8
+```
+
+After changing, restart both worker units.
