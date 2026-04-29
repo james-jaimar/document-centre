@@ -1015,6 +1015,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                 'pages_rendered': pages_rendered,
                 'expected_pages': page_count,
                 'files_created': files_created[:20],
+                'timings_ms': timings,
             })
             if evt_overall:
                 job_event_repo.finish(
