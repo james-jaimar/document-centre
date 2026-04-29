@@ -82,6 +82,12 @@ psql "$PG_URL" -v ON_ERROR_STOP=1 -f "$MIGRATION"
 echo "==> [3/6] Installing systemd units (api, beat, split workers)"
 mkdir -p "$APP/tmp"
 chmod +x "$APP/scripts/"*.sh || true
+
+# Ensure ICC profiles are installed (required by print-ready CMYK task).
+if [[ -x "$APP/scripts/install-icc-profiles.sh" ]]; then
+  bash "$APP/scripts/install-icc-profiles.sh" || echo "    WARNING: ICC install reported issues"
+fi
+
 cp "$APP/deploy/systemd/document-centre-api.service" /etc/systemd/system/
 cp "$APP/deploy/systemd/document-centre-beat.service" /etc/systemd/system/
 cp "$APP/deploy/systemd/document-centre-worker-heavy.service" /etc/systemd/system/
