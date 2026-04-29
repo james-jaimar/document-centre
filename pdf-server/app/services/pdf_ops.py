@@ -1360,6 +1360,7 @@ class PdfOps:
 
         name, proc = chosen
         is_real_cmyk = name in ("rich_icc", "core_icc", "builtin_cmyk")
+        timings["ghostscript_total"] = int((time.monotonic() - t0) * 1000)
         return {
             "dest_profile": dest_profile,
             "intent": intent,
@@ -1370,6 +1371,7 @@ class PdfOps:
             "icc_converted": is_real_cmyk,
             "fallback_used": name != "rich_icc",
             "diagnostics": diagnostics,
+            "timings_ms": timings,
         }
 
 
