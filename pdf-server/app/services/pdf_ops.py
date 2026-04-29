@@ -1148,28 +1148,12 @@ class PdfOps:
         preserve_black: bool = True,
     ) -> dict:
         """
-        Convert a PDF to print-ready CMYK using Ghostscript.
-
-        Key Ghostscript flags:
-          - sColorConversionStrategy=CMYK + sProcessColorModel=DeviceCMYK:
-              force the output to CMYK device space.
-          - dOverrideICC=true + sOutputICCProfile=<dest>:
-              tag the output with the chosen destination profile (Fogra 39 etc).
-          - sDefaultRGBProfile=<sRGB>:
-              treat untagged RGB content as sRGB during conversion.
-          - dRenderIntent=<n>:
-              0=Perceptual, 1=Relative Colorimetric, 2=Saturation, 3=Absolute.
-          - dBlackPtComp=true:
-              black point compensation — preserves shadow detail.
-          - dKPreserve=2 (when preserve_black):
-              "K-only stays K-only" — black text stays single-channel K
-              (critical for crisp laser/inkjet text).
-          - dPreserveOverprintSettings=true:
-              keep overprint instructions (important for spot colours).
-          - dPDFSETTINGS=/prepress:
-              prepress-quality presets (high-resolution images, embed fonts).
-
-        Returns a dict suitable for storing as the job result.
+        Convert a PDF to print-ready CMYK using a staged Ghostscript fallback
+        ladder. If a richer attempt fails (exit 255 with empty stderr is
+        common on packaged GS builds), we drop the most fragile flags and try
+        again. The last fallback is a plain `pdfwrite` normalize so uploads
+        are never blocked outright — the result is flagged so the caller can
+        warn the operator that no real CMYK conversion happened.
         """
         from app.services.icc_profiles import resolve_profile, resolve_intent
 
@@ -1177,19 +1161,26 @@ class PdfOps:
         rgb_path = resolve_profile("srgb")
         intent_value = resolve_intent(intent)
 
-        # NOTE: For pdfwrite, drive the conversion with -sDefaultCMYKProfile
-        # (the *destination* profile for the produced CMYK PDF) plus
-        # -sColorConversionStrategy=CMYK. Do NOT use -sOutputICCProfile here:
-        # it is intended for rendering devices, and pdfwrite rejects it on
-        # several Ghostscript builds with `unknownerror in .putdeviceprops`
-        # (exit 255) — which is the failure we were seeing in production.
-        cmd = [
-            settings.ghostscript_bin,
+        icc_dir = str(ICC_DIR)
+        src_dir = str(src.parent)
+        out_dir = str(out_pdf.parent)
+
+        common_safer = [
             "-dSAFER",
+            f"--permit-file-read={icc_dir}",
+            f"--permit-file-read={src_dir}",
+            f"--permit-file-write={out_dir}",
+        ]
+
+        attempts: list[tuple[str, list[str]]] = []
+
+        # Attempt 1: full ICC conversion with K-preserve / overprint flags.
+        rich_cmd = [
+            settings.ghostscript_bin,
+            *common_safer,
             "-dBATCH",
             "-dNOPAUSE",
             "-sDEVICE=pdfwrite",
-            "-dPDFSETTINGS=/prepress",
             "-dCompatibilityLevel=1.7",
             "-sColorConversionStrategy=CMYK",
             "-dProcessColorModel=/DeviceCMYK",
@@ -1201,33 +1192,102 @@ class PdfOps:
             "-dPreserveOverprintSettings=true",
         ]
         if preserve_black:
-            cmd.append("-dKPreserve=2")
+            rich_cmd.append("-dKPreserve=2")
+        rich_cmd.extend(["-o", str(out_pdf), str(src)])
+        attempts.append(("rich_icc", rich_cmd))
 
-        cmd.extend(["-o", str(out_pdf), str(src)])
+        # Attempt 2: core ICC conversion only (drop the flags most often
+        # rejected by older GS builds with exit 255 / empty stderr).
+        core_cmd = [
+            settings.ghostscript_bin,
+            *common_safer,
+            "-dBATCH",
+            "-dNOPAUSE",
+            "-sDEVICE=pdfwrite",
+            "-sColorConversionStrategy=CMYK",
+            "-dProcessColorModel=/DeviceCMYK",
+            "-dOverrideICC=true",
+            f"-sDefaultRGBProfile={rgb_path}",
+            f"-sDefaultCMYKProfile={dest_path}",
+            "-o", str(out_pdf), str(src),
+        ]
+        attempts.append(("core_icc", core_cmd))
 
-        try:
-            proc = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        except subprocess.CalledProcessError as exc:
-            stderr_tail = (exc.stderr or "")[-4000:]
-            stdout_tail = (exc.stdout or "")[-2000:]
-            logger.error(
-                "to_print_ready_cmyk: ghostscript failed (rc=%s)\n"
-                "  cmd: %s\n  stderr: %s\n  stdout: %s",
-                exc.returncode, " ".join(cmd), stderr_tail, stdout_tail,
+        # Attempt 3: CMYK conversion using GS built-in defaults (no
+        # external profiles). Some GS packages can't load arbitrary ICCs.
+        builtin_cmd = [
+            settings.ghostscript_bin,
+            "-dSAFER", "-dBATCH", "-dNOPAUSE",
+            "-sDEVICE=pdfwrite",
+            "-sColorConversionStrategy=CMYK",
+            "-dProcessColorModel=/DeviceCMYK",
+            "-o", str(out_pdf), str(src),
+        ]
+        attempts.append(("builtin_cmyk", builtin_cmd))
+
+        # Attempt 4: plain pdfwrite passthrough (last-resort, NOT real CMYK).
+        passthrough_cmd = [
+            settings.ghostscript_bin,
+            "-dSAFER", "-dBATCH", "-dNOPAUSE",
+            "-sDEVICE=pdfwrite",
+            "-o", str(out_pdf), str(src),
+        ]
+        attempts.append(("passthrough", passthrough_cmd))
+
+        diagnostics: list[dict] = []
+        chosen: tuple[str, subprocess.CompletedProcess] | None = None
+        for name, cmd in attempts:
+            # Fresh output file each attempt.
+            try:
+                if out_pdf.exists():
+                    out_pdf.unlink()
+            except Exception:
+                pass
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            except subprocess.TimeoutExpired as exc:
+                diagnostics.append({
+                    "attempt": name, "rc": "timeout",
+                    "stderr_tail": (exc.stderr or b"").decode(errors="replace")[-2000:] if exc.stderr else "",
+                    "stdout_tail": (exc.stdout or b"").decode(errors="replace")[-2000:] if exc.stdout else "",
+                })
+                continue
+            ok = proc.returncode == 0 and out_pdf.exists() and out_pdf.stat().st_size > 0
+            diagnostics.append({
+                "attempt": name,
+                "rc": proc.returncode,
+                "out_exists": out_pdf.exists(),
+                "out_size": out_pdf.stat().st_size if out_pdf.exists() else 0,
+                "stderr_tail": (proc.stderr or "")[-2000:],
+                "stdout_tail": (proc.stdout or "")[-2000:],
+            })
+            if ok:
+                chosen = (name, proc)
+                break
+            logger.warning(
+                "to_print_ready_cmyk: attempt %s failed rc=%s stderr=%r stdout=%r",
+                name, proc.returncode,
+                (proc.stderr or "")[-500:], (proc.stdout or "")[-500:],
             )
-            raise RuntimeError(
-                "Ghostscript print-ready conversion failed "
-                f"(rc={exc.returncode}). "
-                f"stderr: {stderr_tail.strip() or '(empty)'}"
-            ) from exc
 
+        if chosen is None:
+            raise RuntimeError(
+                "Ghostscript print-ready conversion failed after all fallbacks. "
+                f"Diagnostics: {diagnostics}"
+            )
+
+        name, proc = chosen
+        is_real_cmyk = name in ("rich_icc", "core_icc", "builtin_cmyk")
         return {
             "dest_profile": dest_profile,
             "intent": intent,
             "preserve_black": preserve_black,
             "before_size": src.stat().st_size,
             "after_size": out_pdf.stat().st_size,
-            "gs_stderr": proc.stderr[-2000:] if proc.stderr else None,
+            "attempt": name,
+            "icc_converted": is_real_cmyk,
+            "fallback_used": name != "rich_icc",
+            "diagnostics": diagnostics,
         }
 
 
