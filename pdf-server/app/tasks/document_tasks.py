@@ -26,6 +26,13 @@ storage = StorageService()
 # big win on a multi-vCPU box.
 UPLOAD_CONCURRENCY = settings.render_io_concurrency  # backwards-compat alias
 
+# When True, generate_previews fans the per-page work out to other Celery
+# workers instead of using an in-process thread pool. This lets a single
+# upload soak up ALL light-queue children (default 4) instead of being
+# pinned to one. See render_one_page subtask + the fan-out section in
+# generate_previews. Set RENDER_FANOUT_ENABLED=false in .env to revert.
+FANOUT_ENABLED = settings.render_fanout_enabled
+
 
 
 def _db() -> Session:
