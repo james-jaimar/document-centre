@@ -30,11 +30,15 @@ cd "$ICC_DIR"
 # 'acsp' at byte offset 36 — we use that to reject HTML error pages served as
 # 200 OK and re-try the next mirror.
 SRGB_FILE="sRGB_v4_ICC_preference.icc"
+# Prefer the OFFICIAL ICC sRGB v4 profile (≈60 KB) over the 480-byte
+# saucecontrol "compact" variant. The compact one is technically valid
+# (passes 'acsp' magic) but is a minimised embedding profile and not the
+# best choice as Ghostscript's production default RGB profile.
 SRGB_URLS=(
-  "https://raw.githubusercontent.com/saucecontrol/Compact-ICC-Profiles/master/profiles/sRGB-v4.icc"
-  "https://github.com/saucecontrol/Compact-ICC-Profiles/raw/master/profiles/sRGB-v4.icc"
   "https://sourceforge.net/projects/openicc/files/OpenICC-Profiles/sRGB_v4_ICC_preference.icc/download"
   "https://www.color.org/profiles/sRGB_v4_ICC_preference.icc"
+  "https://raw.githubusercontent.com/saucecontrol/Compact-ICC-Profiles/master/profiles/sRGB-v4.icc"
+  "https://github.com/saucecontrol/Compact-ICC-Profiles/raw/master/profiles/sRGB-v4.icc"
 )
 
 is_valid_icc() {
@@ -45,7 +49,7 @@ is_valid_icc() {
 }
 
 if [[ -s "$SRGB_FILE" ]] && is_valid_icc "$SRGB_FILE"; then
-  echo "==> $SRGB_FILE already present and valid, skipping"
+  echo "==> $SRGB_FILE already present and valid ($(stat -c%s "$SRGB_FILE") bytes), skipping"
 else
   rm -f "$SRGB_FILE"
   echo "==> Downloading $SRGB_FILE"
@@ -53,6 +57,7 @@ else
   for U in "${SRGB_URLS[@]}"; do
     echo "    trying $U"
     if curl -fsSL -A "Mozilla/5.0" -o "$SRGB_FILE" "$U" && is_valid_icc "$SRGB_FILE"; then
+      echo "      -> ok ($(stat -c%s "$SRGB_FILE") bytes from $U)"
       OK=1; break
     fi
     echo "      -> not a valid ICC profile, discarding"
