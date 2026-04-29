@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     qpdf_bin: str = Field(alias='QPDF_BIN', default='qpdf')
 
     thumbnail_dpi: int = Field(alias='THUMBNAIL_DPI', default=120)
-    preview_dpi: int = Field(alias='PREVIEW_DPI', default=160)
+    preview_dpi: int = Field(alias='PREVIEW_DPI', default=130)
     max_upload_mb: int = Field(alias='MAX_UPLOAD_MB', default=250)
 
     # Preview pipeline resilience tunables. Each per-page step (rasterize +

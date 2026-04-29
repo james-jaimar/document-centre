@@ -570,14 +570,22 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             message=f'Rendering {page_count or "?"} page(s)…',
         )
 
+        timings: dict[str, int] = {}
+
+        def _stamp(label: str, t_start: float) -> None:
+            timings[label] = int((time.monotonic() - t_start) * 1000)
+
         with Workspace() as ws:
             src = ws.path('input.pdf')
+            t_dl = time.monotonic()
             storage.download(src_path, src)
+            _stamp('download_pdf', t_dl)
 
             # If caller didn't specify a render_box, auto-derive one from
             # the PDF's own TrimBox/BleedBox so previews show the finished
             # page edge (no bleed margin / crop marks). This protects against
             # callers that pass `null` after rotate/resize/print-ready.
+            t_box = time.monotonic()
             effective_render_box = render_box
             if effective_render_box is None:
                 try:
@@ -592,6 +600,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                 cropped = ws.path('cropped.pdf')
                 pdf_ops.crop_to_box(src, cropped, effective_render_box)
                 src = cropped
+            _stamp('prepare_render_box', t_box)
 
             preview_dir = ws.path('preview')
             thumb_dir = ws.path('thumb')
@@ -624,11 +633,14 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                 and page_count >= 1
             )
             if batch_eligible:
+                t_batch = time.monotonic()
                 try:
+                    t_gs = time.monotonic()
                     pdf_ops.rasterize_preview(
                         src, preview_dir / 'page', dpi=settings.preview_dpi,
                         first_page=1, last_page=page_count,
                     )
+                    _stamp('ghostscript_batch', t_gs)
                     cpu_workers = max(1, settings.render_cpu_concurrency)
                     io_workers = max(1, settings.render_io_concurrency)
                     with ThreadPoolExecutor(max_workers=cpu_workers) as cpu_pool, \
@@ -681,9 +693,10 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                                     'thumbnail_storage_path': thumb_path,
                                     'preview_storage_path': preview_path,
                                 })
+                    _stamp('batch_total', t_batch)
                     logger.info(
-                        "generate_previews: batch path rendered %d/%d pages",
-                        len(completed_pages), page_count,
+                        "generate_previews: batch path rendered %d/%d pages in %sms",
+                        len(completed_pages), page_count, timings.get('batch_total'),
                     )
                 except Exception as exc:
                     logger.warning(
@@ -1002,6 +1015,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                 'pages_rendered': pages_rendered,
                 'expected_pages': page_count,
                 'files_created': files_created[:20],
+                'timings_ms': timings,
             })
             if evt_overall:
                 job_event_repo.finish(

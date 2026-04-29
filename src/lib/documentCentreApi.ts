@@ -230,8 +230,29 @@ export async function createAsset(
   return request<CreateAssetResponse>("v1/assets", "POST", payload as unknown as Record<string, unknown>);
 }
 
+/**
+ * In-flight request coalescing for high-frequency reads (getAsset / getJob /
+ * getDerivedFiles). Multiple React effects often poll the same id at the
+ * same moment; without this, each one would fire its own edge-function
+ * round-trip. The cache is keyed on URL path only and clears as soon as
+ * the underlying promise settles, so freshness is unaffected.
+ */
+const inflightReads = new Map<string, Promise<unknown>>();
+
+function coalesce<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const existing = inflightReads.get(key) as Promise<T> | undefined;
+  if (existing) return existing;
+  const p = fn().finally(() => {
+    if (inflightReads.get(key) === p) inflightReads.delete(key);
+  });
+  inflightReads.set(key, p);
+  return p;
+}
+
 export async function getAsset(assetId: string): Promise<Asset> {
-  return request<Asset>(`v1/assets/${assetId}`, "GET");
+  return coalesce(`asset:${assetId}`, () =>
+    request<Asset>(`v1/assets/${assetId}`, "GET"),
+  );
 }
 
 /**
@@ -286,7 +307,9 @@ export async function ensureFreshAsset(params: {
 export async function getDerivedFiles(
   assetId: string
 ): Promise<DerivedFile[]> {
-  return request<DerivedFile[]>(`v1/assets/${assetId}/derived-files`, "GET");
+  return coalesce(`derived:${assetId}`, () =>
+    request<DerivedFile[]>(`v1/assets/${assetId}/derived-files`, "GET"),
+  );
 }
 
 export async function inspectAsset(
@@ -298,7 +321,9 @@ export async function inspectAsset(
 // ── Job endpoints ────────────────────────────────────────────────
 
 export async function getJob(jobId: string): Promise<Job> {
-  return request<Job>(`v1/jobs/${jobId}`, "GET");
+  return coalesce(`job:${jobId}`, () =>
+    request<Job>(`v1/jobs/${jobId}`, "GET"),
+  );
 }
 
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
@@ -335,7 +360,7 @@ export async function pollJob(
   options: PollJobOptions = {},
 ): Promise<Job> {
   const throwOnFailure = options.throwOnFailure ?? true;
-  let interval = 300;
+  let interval = 200;
   const ceiling = Math.max(500, intervalMs);
   const MAX_CONSECUTIVE_GETJOB_FAILURES = 4;
   let consecutiveFailures = 0;

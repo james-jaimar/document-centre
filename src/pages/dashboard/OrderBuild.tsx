@@ -312,14 +312,14 @@ export default function OrderBuild() {
       : "Binding";
     const selectedBindingSlug = spec.selected_options[optionKey];
 
-    console.log("[PreviewType] options count:", options.length, "bindingOption:", bindingOption?.name, "selectedSlug:", selectedBindingSlug);
+    if (import.meta.env.DEV) console.log("[PreviewType] options count:", options.length, "bindingOption:", bindingOption?.name, "selectedSlug:", selectedBindingSlug);
 
     if (bindingOption && selectedBindingSlug && isStructuredValues(bindingOption.values)) {
       const matchedValue = (bindingOption.values as StructuredOptionValue[]).find(
         (v) => v.slug === selectedBindingSlug
       );
       const bindingMethod = matchedValue?.metadata?.binding_method as string | undefined;
-      console.log("[PreviewType] matchedValue:", matchedValue?.label, "bindingMethod:", bindingMethod);
+      if (import.meta.env.DEV) console.log("[PreviewType] matchedValue:", matchedValue?.label, "bindingMethod:", bindingMethod);
       if (bindingMethod && BINDING_METHOD_TO_PREVIEW[bindingMethod]) {
         return BINDING_METHOD_TO_PREVIEW[bindingMethod];
       }
@@ -338,7 +338,7 @@ export default function OrderBuild() {
         // 1. metadata.fold_type (canonical)
         const metaFoldType = matchedFold?.metadata?.fold_type as string | undefined;
         if (metaFoldType && SLUG_TO_PREVIEW[metaFoldType]) {
-          console.log("[PreviewType] fold from metadata.fold_type:", metaFoldType);
+          if (import.meta.env.DEV) console.log("[PreviewType] fold from metadata.fold_type:", metaFoldType);
           return SLUG_TO_PREVIEW[metaFoldType];
         }
 
@@ -347,7 +347,7 @@ export default function OrderBuild() {
         if (foldStyle) {
           const styleMap: Record<string, ProductPreviewType> = { z: "z_fold", gate: "gate_fold", c: "tri_fold", tri: "tri_fold", bi: "bi_fold", half: "bi_fold" };
           if (styleMap[foldStyle]) {
-            console.log("[PreviewType] fold from metadata.fold_style:", foldStyle, "→", styleMap[foldStyle]);
+            if (import.meta.env.DEV) console.log("[PreviewType] fold from metadata.fold_style:", foldStyle, "→", styleMap[foldStyle]);
             return styleMap[foldStyle];
           }
         }
@@ -363,14 +363,14 @@ export default function OrderBuild() {
         };
         const inferred = inferFold(textToSearch);
         if (inferred) {
-          console.log("[PreviewType] fold inferred from text:", textToSearch, "→", inferred);
+          if (import.meta.env.DEV) console.log("[PreviewType] fold inferred from text:", textToSearch, "→", inferred);
           return inferred;
         }
       }
     }
 
     const slugResult = (productFamily?.slug && SLUG_TO_PREVIEW[productFamily.slug]) || "loose_sheets";
-    console.log("[PreviewType] falling back to slug:", productFamily?.slug, "→", slugResult);
+    if (import.meta.env.DEV) console.log("[PreviewType] falling back to slug:", productFamily?.slug, "→", slugResult);
     return slugResult;
   }, [options, spec.selected_options, productFamily?.slug]);
 

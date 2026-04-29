@@ -127,7 +127,7 @@ export async function renderDocumentThumbnails(
   );
 
   const MAX_THUMB_POLLS = 45; // ~90s ceiling with adaptive backoff
-  let interval = 500; // adaptive: 500ms → 1000ms → 2000ms ceiling
+  let interval = 250; // adaptive: 250ms → 1500ms ceiling — short docs land fast
 
   for (let i = 0; i < MAX_THUMB_POLLS; i++) {
     const found = thumbnailPaths.filter(Boolean).length;
@@ -137,7 +137,7 @@ export async function renderDocumentThumbnails(
     onProgress(`Rendering pages… (${found}/${expectedPages})`, Math.min(95, pct));
 
     await new Promise((r) => setTimeout(r, interval));
-    interval = Math.min(Math.round(interval * 1.5), 2000);
+    interval = Math.min(Math.round(interval * 1.5), 1500);
     derivedFiles = await getDerivedFiles(assetId);
     thumbnailPaths = pickBestPerPage(
       derivedFiles,
@@ -473,12 +473,17 @@ export function useDocumentUpload(
           }
         });
 
-        // Poll the asset itself until we have boxes + page_count (metadata may
-        // populate slightly after job completes for newly-created assets)
+        // inspect_asset writes page_count + boxes synchronously before
+        // marking the job complete, so the first read after pollJob is
+        // already authoritative. Only fall back to a short retry if the
+        // first read came back without metadata (e.g. eventual-consistency
+        // hiccup on a fresh asset row).
         let asset = await getAsset(assetId);
-        for (let i = 0; i < 20 && (!asset.boxes || asset.page_count == null); i++) {
-          await new Promise((r) => setTimeout(r, 1000));
-          asset = await getAsset(assetId);
+        if (!asset.boxes || asset.page_count == null) {
+          for (let i = 0; i < 5 && (!asset.boxes || asset.page_count == null); i++) {
+            await new Promise((r) => setTimeout(r, 400));
+            asset = await getAsset(assetId);
+          }
         }
 
         // ── Per-page orientation normalisation ────────────────────────

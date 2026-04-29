@@ -1,66 +1,98 @@
-The current failure is now more specific: the ICC files verify as present, but Ghostscript still exits 255 during `print-ready`, and even with improved capture the job reports `stderr: (empty)`. That points away from “missing ICC file” and toward an incompatible/fragile Ghostscript command or environment. Also, the browser “Tracking Prevention blocked access to storage” messages are unrelated CDN/emoji warnings; the real failure is the `POST v1/operations/print-ready` job.
+Keep the existing pipeline order so customers see real CMYK previews:
 
-Plan:
+```text
+upload → inspect → normalize-orientation → print-ready (CMYK) → generate previews → show
+```
 
-1. Make print-ready safe-by-default instead of blocking uploads
-   - Change the frontend upload flow so `print-ready` remains non-fatal and does not pretend it succeeded when it failed.
-   - If `print-ready` fails, continue directly to `generate-previews` using the normalized/original PDF, but persist a `print_ready_error` marker instead of `print_ready_done: true`.
-   - This keeps customer uploads usable while the CMYK pass is being fixed.
+Optimisations target each stage individually, plus the network round-trips between them.
 
-2. Replace the Ghostscript print-ready command with a staged fallback ladder
-   - In `pdf-server/app/services/pdf_ops.py`, keep the high-quality ICC conversion as attempt 1, but remove flags most likely to trip old/packaged Ghostscript builds:
-     - first remove `-dKPreserve=2`, `-dBlackPtComp=true`, and `-dPreserveOverprintSettings=true` from the baseline attempt;
-     - keep only the core conversion flags: `pdfwrite`, `ColorConversionStrategy=CMYK`, `ProcessColorModel=/DeviceCMYK`, `DefaultRGBProfile`, `DefaultCMYKProfile`, output file, input file.
-   - Add fallback attempts if Ghostscript returns non-zero:
-     1. core ICC conversion with explicit source/destination profiles;
-     2. core conversion using Ghostscript’s built-in RGB/CMYK defaults, no external profiles;
-     3. plain `pdfwrite` normalize-only as a last resort, clearly flagged as not ICC-converted.
-   - Only promote the output as `print_ready_pdf` if conversion succeeds or a configured fallback allows it; otherwise return a structured failure that the frontend can handle without breaking preview generation.
+## 1. Skip redundant work after print-ready
 
-3. Capture useful diagnostics even when stderr is empty
-   - Add a small command runner helper that records:
-     - return code;
-     - exact command;
-     - stdout tail;
-     - stderr tail;
-     - whether output PDF exists and its byte size;
-     - selected attempt name.
-   - In the failure message, include stdout as well as stderr. Ghostscript often writes errors to stdout or exits after producing only `GPL Ghostscript ... Unrecoverable error`.
-   - Add `--permit-file-read` paths for the input workspace and `/opt/document-centre-api/icc` when using `-dSAFER`, because newer Ghostscript file-access controls can block profile/input reads unexpectedly.
+- After `print-ready` rewrites the PDF, `generate_previews` currently:
+  - downloads it again from S3
+  - calls `pdf_ops.derive_default_render_box` (re-parse)
+  - calls `pdf_ops.crop_to_box` (full pdfwrite pass) when no explicit `render_box` was given
+- Plan:
+  - Skip `crop_to_box` when the derived box equals the page MediaBox (very common after print-ready).
+  - Pass the already-known TrimBox/MediaBox from the asset row to `generate_previews` so it doesn't re-open the PDF just to compute the box.
+  - For the typical "no real trim" case this removes a full Ghostscript `pdfwrite` pass before rendering.
 
-4. Stop using the compact 480-byte sRGB fallback as the preferred production source profile
-   - The current installer prefers `saucecontrol/Compact-ICC-Profiles` first. That profile validates as an ICC (`acsp`) but is a tiny embedded-profile variant, not ideal as Ghostscript’s production default RGB profile.
-   - Update `install-icc-profiles.sh` to prefer the official ICC `sRGB_v4_ICC_preference.icc` when already present, and otherwise download a fuller standard profile from reliable mirrors before falling back to compact ICC.
-   - Enhance validation to print file size and profile source. This helps spot “valid but suspiciously tiny” profiles.
+## 2. Make print-ready faster on the happy path
 
-5. Add a VPS smoke-test script for print-ready conversion
-   - Add `pdf-server/scripts/smoke-test-print-ready.sh` that accepts an input PDF and runs the same fallback ladder locally on the server.
-   - It should print which Ghostscript attempt succeeded/failed and where the output landed, without requiring the web app or Celery.
-   - This gives a fast answer on the VPS before re-testing through the upload UI.
+- The current command always runs `-dCompatibilityLevel=1.7` + `-dPreserveOverprintSettings=true` + `-dKPreserve=2` etc. These add real CPU time even when the file is already mostly CMYK.
+- Plan:
+  - Quick pikepdf inspect first: if every page's content is already DeviceCMYK / Gray and there are no RGB images, treat as already-CMYK and just promote the source PDF (no Ghostscript pass at all).
+  - Otherwise run the existing "core ICC" attempt directly as attempt 1, with the heavy K-preserve/overprint variant moved to a config-gated optional step. Most uploads don't need it and customers won't see the difference in preview.
 
-6. Improve 8-page preview speed separately from print-ready
-   - Your Windows “save PDF to JPG in 3 seconds” comparison is about rasterization, not CMYK print-ready conversion.
-   - The current `generate_previews` path still renders page 1 first, then dispatches pages 2-8 as one Celery task per page. That helps once all workers are ready, but it still pays per-page Ghostscript startup cost.
-   - Add a faster batch-render path for small/medium PDFs:
-     - run one Ghostscript process to render all preview pages in one pass;
-     - downscale thumbnails in parallel with Pillow;
-     - upload/record pages concurrently;
-     - keep the current per-page fan-out as a fallback for failures or very large files.
-   - This should get 8-page PDFs much closer to desktop-style timing, because Ghostscript starts once instead of 8 times.
+## 3. Drop client-side polling overhead
 
-7. Deployment/check steps after implementation
-   - Rsync updated `pdf-server/` to `/opt/document-centre-api/` excluding `.venv`, `.env`, storage, tmp, pycache, and git.
-   - Re-run the ICC installer and smoke-test script.
-   - Restart:
-     - `document-centre-api`
-     - `document-centre-worker-heavy`
-     - `document-centre-worker-light`
-   - Re-upload the same 8-page PDF and compare:
-     - print-ready job result/fallback diagnostics;
-     - total preview render time;
-     - derived files present for all 8 pages.
+- Current upload spends a lot of wall time polling between phases:
+  - `inspect` job poll
+  - asset poll loop ("up to 20 × 1s") waiting for boxes/page_count
+  - `normalize-orientation` poll
+  - `print-ready` poll
+  - `generate-previews` poll
+  - `derived-files` poll loop with adaptive backoff starting at 500ms
+- Plan:
+  - Use the existing `/v1/assets/{id}/events` summary endpoint as a single combined poll once `generate-previews` is dispatched, instead of separate `getAsset` + `getDerivedFiles` round-trips.
+  - Reduce initial poll interval from 500ms to 250ms for the first 2 seconds (most short jobs finish here), then back off.
+  - Remove the redundant 20-iteration asset metadata poll after `inspect` — `inspect_asset` already writes page_count/boxes synchronously before marking the job complete, so the first read after the job is already authoritative.
 
-Expected result:
-- Uploads should no longer be derailed by a print-ready Ghostscript 255 failure.
-- If CMYK conversion still fails on the VPS Ghostscript build, we will see which exact command attempt failed and why.
-- Preview generation for an 8-page PDF should become substantially faster by avoiding per-page Ghostscript startup overhead.
+## 4. Cut Edge Function round-trip overhead
+
+- Every Document Centre call goes browser → `pdf-api` Edge Function → VPS, and signed URLs go browser → `s3-storage` Edge Function → connector gateway → S3. That's two Supabase cold-start opportunities per call.
+- Plan:
+  - Batch the post-render reads: have the VPS return the full derived-files list in `generate_previews`'s job result so the client doesn't need a separate `GET /derived-files` call afterwards.
+  - In `documentCentreApi.ts`, coalesce simultaneous identical `getJob`/`getAsset` polls (single in-flight Promise per id) so React effect re-renders don't fan out to duplicate fetches.
+
+## 5. Pre-sign thumbnail URLs in bulk at completion
+
+- Current flow renders 8 pages, then the browser separately calls `s3-storage` to sign 8 download URLs.
+- Plan:
+  - Have the backend return signed download URLs (or relative S3 keys + a single bulk-signing call) in the same response as `getDerivedFiles`, so the lightbox can render immediately without an extra round-trip per file.
+
+## 6. Lower preview DPI without changing the source PDF
+
+- Source PDF (production) is untouched.
+- `PREVIEW_DPI` is currently 160. Visual preview at 130 DPI is indistinguishable on screen and is ~40% less raster work + ~40% smaller PNGs to upload and download.
+- Plan: drop `PREVIEW_DPI` default to 130. Thumbnail dimension stays 360px max.
+
+## 7. Avoid re-uploading the prepared PDF for fan-out on small jobs
+
+- `generate_previews` currently uploads `tmp/render-prepared.pdf` to S3 before fanning out per-page Celery tasks.
+- For ≤ `RENDER_BATCH_THRESHOLD` (default 32) pages we already use the in-process batch path and skip this. Confirm fan-out is only used above that threshold and raise the default threshold if helpful so 8-page jobs definitely take the batch path.
+
+## 8. Quiet noisy console logging
+
+- `[PreviewType] options count: …` runs on every options-render and clutters the console.
+- Wrap those `console.log` calls in `if (import.meta.env.DEV)`.
+
+## 9. Add backend timing diagnostics
+
+- Add `result.timings_ms` to `print_ready` and `generate_previews` jobs:
+  - download / inspect / GS run / upload / record
+- Surface in the Platform → Document Centre → Jobs view.
+- This will tell us, after deployment, exactly which stage to attack next.
+
+## Expected wins (typical clean 8-page PDF, customer perceived)
+
+- Step 1: ~1 redundant Ghostscript pass removed (~1–2 s).
+- Step 2: print-ready short-circuit when already CMYK (~3–6 s on common files).
+- Step 3 + 4: ~2–4 polling/round-trip seconds removed.
+- Step 5: faster first-paint of thumbnails after job complete.
+- Step 6: smaller raster + transfer (~30–40% smaller PNGs).
+
+Pipeline ordering and CMYK fidelity unchanged.
+
+## Deployment after implementation
+
+```bash
+rsync -avz --delete \
+  --exclude '.venv' --exclude '__pycache__' \
+  --exclude '.env' --exclude 'storage' --exclude 'tmp' --exclude '.git' \
+  pdf-server/ root@srv1516161:/opt/document-centre-api/
+
+ssh root@srv1516161 'sudo systemctl restart document-centre-api document-centre-worker-heavy document-centre-worker-light'
+```
+
+Then re-upload the same 8-page PDF and compare timings via the new `result.timings_ms` field in the platform Jobs view.
