@@ -26,32 +26,44 @@ cd "$ICC_DIR"
 
 # ---- 1. sRGB v4 (input working space — only ~5 KB, public-domain) -----------
 # color.org started returning 403 to non-browser User-Agents in 2025, so we try
-# a few mirrors and fall back gracefully. If the file is already on disk we
-# leave it alone.
+# a few mirrors and fall back gracefully. Real ICC files have the ASCII tag
+# 'acsp' at byte offset 36 — we use that to reject HTML error pages served as
+# 200 OK and re-try the next mirror.
 SRGB_FILE="sRGB_v4_ICC_preference.icc"
 SRGB_URLS=(
-  "https://www.color.org/profiles/sRGB_v4_ICC_preference.icc"
+  "https://raw.githubusercontent.com/saucecontrol/Compact-ICC-Profiles/master/profiles/sRGB-v4.icc"
   "https://github.com/saucecontrol/Compact-ICC-Profiles/raw/master/profiles/sRGB-v4.icc"
   "https://sourceforge.net/projects/openicc/files/OpenICC-Profiles/sRGB_v4_ICC_preference.icc/download"
+  "https://www.color.org/profiles/sRGB_v4_ICC_preference.icc"
 )
-if [[ ! -s "$SRGB_FILE" ]]; then
+
+is_valid_icc() {
+  [[ -s "$1" ]] || return 1
+  local magic
+  magic=$(dd if="$1" bs=1 skip=36 count=4 2>/dev/null || true)
+  [[ "$magic" == "acsp" ]]
+}
+
+if [[ -s "$SRGB_FILE" ]] && is_valid_icc "$SRGB_FILE"; then
+  echo "==> $SRGB_FILE already present and valid, skipping"
+else
+  rm -f "$SRGB_FILE"
   echo "==> Downloading $SRGB_FILE"
   OK=0
   for U in "${SRGB_URLS[@]}"; do
     echo "    trying $U"
-    if curl -fsSL -A "Mozilla/5.0" -o "$SRGB_FILE" "$U"; then
+    if curl -fsSL -A "Mozilla/5.0" -o "$SRGB_FILE" "$U" && is_valid_icc "$SRGB_FILE"; then
       OK=1; break
     fi
+    echo "      -> not a valid ICC profile, discarding"
     rm -f "$SRGB_FILE"
   done
   if [[ "$OK" -ne 1 ]]; then
-    echo "    ERROR: could not download sRGB profile from any mirror."
+    echo "    ERROR: could not download a valid sRGB profile from any mirror."
     echo "    Manual fix: place the file at $ICC_DIR/$SRGB_FILE then re-run."
     exit 1
   fi
   chmod 644 "$SRGB_FILE"
-else
-  echo "==> $SRGB_FILE already present, skipping"
 fi
 
 # ---- 2. ECI Offset 2009 bundle (Fogra 39) -----------------------------------
