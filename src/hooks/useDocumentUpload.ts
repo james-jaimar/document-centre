@@ -137,7 +137,7 @@ export async function renderDocumentThumbnails(
     onProgress(`Rendering pages… (${found}/${expectedPages})`, Math.min(95, pct));
 
     await new Promise((r) => setTimeout(r, interval));
-    interval = Math.min(Math.round(interval * 1.5), 2000);
+    interval = Math.min(Math.round(interval * 1.5), 1500);
     derivedFiles = await getDerivedFiles(assetId);
     thumbnailPaths = pickBestPerPage(
       derivedFiles,
