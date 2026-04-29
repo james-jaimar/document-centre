@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     render_fanout_poll_interval_ms: int = Field(alias='RENDER_FANOUT_POLL_INTERVAL_MS', default=200)
     render_fanout_timeout_seconds: int = Field(alias='RENDER_FANOUT_TIMEOUT_SECONDS', default=300)
 
+    # Single-process batch render: when page_count <= this threshold, run
+    # ONE Ghostscript invocation for the whole document (avoiding N×
+    # per-page GS startup cost) and then upload/downscale concurrently.
+    render_batch_threshold: int = Field(alias='RENDER_BATCH_THRESHOLD', default=32)
+
     cors_origins: str = Field(alias='CORS_ORIGINS', default='http://localhost:5173')
     admin_username: str = Field(alias='ADMIN_USERNAME', default='admin')
     admin_password: str = Field(alias='ADMIN_PASSWORD', default='admin123')
