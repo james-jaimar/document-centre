@@ -6,6 +6,7 @@ import sarahPhoto from "@/assets/testimonial-sarah.jpg";
 import printSamples from "@/assets/print-samples.png";
 import docCentreLogo from "@/assets/doc-centre-logo.svg";
 import webToPrintHeadline from "@/assets/web-to-print-made-easy.svg";
+import ChatWidget from "@/components/ChatWidget";
 
 /* ───────────────────────── Logo ───────────────────────── */
 const Logo = ({ className = "", height = 88 }: { className?: string; height?: number }) => (
@@ -383,6 +384,7 @@ const TrustIcon = ({ kind }: { kind: "trial" | "feature" | "fees" | "cancel" }) 
 export default function MarketingLanding() {
   return (
     <div className="dc-marketing">
+      <ChatWidget />
       {/* ───────── Header ───────── */}
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-[hsl(var(--dc-border))]">
         <div className="max-w-[1240px] mx-auto px-6 h-[112px] flex items-center justify-between">

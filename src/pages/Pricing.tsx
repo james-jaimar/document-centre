@@ -3,6 +3,7 @@ import { Check, ArrowRight, Linkedin, Youtube, Mail } from "lucide-react";
 import docCentreLogo from "@/assets/doc-centre-logo.svg";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { Skeleton } from "@/components/ui/skeleton";
+import ChatWidget from "@/components/ChatWidget";
 
 const Logo = ({ height = 88 }: { height?: number }) => (
   <img src={docCentreLogo} alt="Document Centre" style={{ height }} className="w-auto" />
@@ -131,6 +132,7 @@ export default function Pricing() {
 
   return (
     <div className="dc-marketing">
+      <ChatWidget />
       {/* ───────── Header ───────── */}
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-[hsl(var(--dc-border))]">
         <div className="max-w-[1240px] mx-auto px-6 h-[112px] flex items-center justify-between">
