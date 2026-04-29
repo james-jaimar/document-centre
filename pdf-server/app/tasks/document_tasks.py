@@ -693,9 +693,10 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                                     'thumbnail_storage_path': thumb_path,
                                     'preview_storage_path': preview_path,
                                 })
+                    _stamp('batch_total', t_batch)
                     logger.info(
-                        "generate_previews: batch path rendered %d/%d pages",
-                        len(completed_pages), page_count,
+                        "generate_previews: batch path rendered %d/%d pages in %sms",
+                        len(completed_pages), page_count, timings.get('batch_total'),
                     )
                 except Exception as exc:
                     logger.warning(
