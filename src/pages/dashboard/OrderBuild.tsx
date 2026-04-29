@@ -363,7 +363,7 @@ export default function OrderBuild() {
         };
         const inferred = inferFold(textToSearch);
         if (inferred) {
-          console.log("[PreviewType] fold inferred from text:", textToSearch, "→", inferred);
+          if (import.meta.env.DEV) console.log("[PreviewType] fold inferred from text:", textToSearch, "→", inferred);
           return inferred;
         }
       }
