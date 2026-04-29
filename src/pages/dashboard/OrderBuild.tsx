@@ -312,7 +312,7 @@ export default function OrderBuild() {
       : "Binding";
     const selectedBindingSlug = spec.selected_options[optionKey];
 
-    console.log("[PreviewType] options count:", options.length, "bindingOption:", bindingOption?.name, "selectedSlug:", selectedBindingSlug);
+    if (import.meta.env.DEV) console.log("[PreviewType] options count:", options.length, "bindingOption:", bindingOption?.name, "selectedSlug:", selectedBindingSlug);
 
     if (bindingOption && selectedBindingSlug && isStructuredValues(bindingOption.values)) {
       const matchedValue = (bindingOption.values as StructuredOptionValue[]).find(
