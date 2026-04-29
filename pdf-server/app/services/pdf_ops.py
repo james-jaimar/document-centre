@@ -1138,6 +1138,56 @@ class PdfOps:
             pdf.save(out_pdf)
         return out_pdf
 
+    def _is_already_cmyk(self, src: Path) -> bool:
+        """Best-effort check: True when every page's content uses only
+        DeviceCMYK / DeviceGray / DeviceN ink space and there are no RGB
+        ICC-based colour spaces or RGB-tagged images.
+
+        Conservative — any uncertainty returns False so we still run the
+        full Ghostscript CMYK pass. Cheap (no rendering): just walks the
+        Resources/ColorSpace dictionary on each page.
+        """
+        try:
+            with pikepdf.open(src) as pdf:
+                for page in pdf.pages:
+                    res = page.get("/Resources")
+                    if res is None:
+                        continue
+                    # ColorSpace entries
+                    cs = res.get("/ColorSpace") if hasattr(res, "get") else None
+                    if cs is not None:
+                        try:
+                            for _name, value in cs.items():
+                                s = repr(value)
+                                # Any RGB-ish marker disqualifies the file.
+                                if "DeviceRGB" in s or "/CalRGB" in s:
+                                    return False
+                                if "ICCBased" in s and "/N 3" in s:
+                                    return False
+                        except Exception:
+                            return False
+                    # Image XObjects
+                    xo = res.get("/XObject") if hasattr(res, "get") else None
+                    if xo is not None:
+                        try:
+                            for _n, obj in xo.items():
+                                subtype = obj.get("/Subtype")
+                                if str(subtype) != "/Image":
+                                    continue
+                                cs2 = obj.get("/ColorSpace")
+                                if cs2 is None:
+                                    continue
+                                s = repr(cs2)
+                                if "DeviceRGB" in s or "/CalRGB" in s:
+                                    return False
+                                if "ICCBased" in s and "/N 3" in s:
+                                    return False
+                        except Exception:
+                            return False
+            return True
+        except Exception:
+            return False
+
     def to_print_ready_cmyk(
         self,
         src: Path,
@@ -1154,8 +1204,40 @@ class PdfOps:
         again. The last fallback is a plain `pdfwrite` normalize so uploads
         are never blocked outright — the result is flagged so the caller can
         warn the operator that no real CMYK conversion happened.
+
+        Fast path: if the input is already CMYK/Gray throughout (very common
+        for files exported from print-design tools like InDesign), we just
+        copy the source to the output and skip Ghostscript entirely. This
+        preserves CMYK fidelity for the customer preview without paying for
+        the full pdfwrite rewrite.
         """
         from app.services.icc_profiles import resolve_profile, resolve_intent
+
+        timings: dict[str, int] = {}
+        t0 = time.monotonic()
+
+        # ── Already-CMYK fast path ───────────────────────────────────
+        if self._is_already_cmyk(src):
+            try:
+                out_pdf.write_bytes(src.read_bytes())
+                timings["already_cmyk_copy"] = int((time.monotonic() - t0) * 1000)
+                return {
+                    "dest_profile": dest_profile,
+                    "intent": intent,
+                    "preserve_black": preserve_black,
+                    "before_size": src.stat().st_size,
+                    "after_size": out_pdf.stat().st_size,
+                    "attempt": "already_cmyk",
+                    "icc_converted": True,
+                    "fallback_used": False,
+                    "diagnostics": [],
+                    "timings_ms": timings,
+                }
+            except Exception as exc:
+                logger.warning(
+                    "to_print_ready_cmyk: already-CMYK fast path copy failed (%s) — falling through to GS",
+                    exc,
+                )
 
         dest_path = resolve_profile(dest_profile)
         rgb_path = resolve_profile("srgb")
