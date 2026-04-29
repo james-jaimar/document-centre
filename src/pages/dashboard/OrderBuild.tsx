@@ -370,7 +370,7 @@ export default function OrderBuild() {
     }
 
     const slugResult = (productFamily?.slug && SLUG_TO_PREVIEW[productFamily.slug]) || "loose_sheets";
-    console.log("[PreviewType] falling back to slug:", productFamily?.slug, "→", slugResult);
+    if (import.meta.env.DEV) console.log("[PreviewType] falling back to slug:", productFamily?.slug, "→", slugResult);
     return slugResult;
   }, [options, spec.selected_options, productFamily?.slug]);
 
