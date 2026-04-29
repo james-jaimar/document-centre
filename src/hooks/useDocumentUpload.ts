@@ -127,7 +127,7 @@ export async function renderDocumentThumbnails(
   );
 
   const MAX_THUMB_POLLS = 45; // ~90s ceiling with adaptive backoff
-  let interval = 500; // adaptive: 500ms → 1000ms → 2000ms ceiling
+  let interval = 250; // adaptive: 250ms → 1500ms ceiling — short docs land fast
 
   for (let i = 0; i < MAX_THUMB_POLLS; i++) {
     const found = thumbnailPaths.filter(Boolean).length;
