@@ -180,18 +180,26 @@ def normalize_asset(self, asset_id: str, job_id: str):
         db.close()
 
 @shared_task(bind=True, queue='documents')
-def inspect_asset(self, asset_id: str, job_id: str):
+def inspect_asset(self, asset_id: str, job_id: str, force: bool = False):
     """Re-inspect an already-normalised PDF on demand.
 
-    Kept for explicit /v1/assets/{id}/inspect calls (e.g. after the client
-    uploads via signed URL and just wants the metadata back). The standard
-    pipeline no longer enqueues this automatically — normalize_asset
-    already populates page_count / boxes / dimensions.
+    Fast path: if the asset row already has page_count + boxes from
+    normalize_asset, return them without re-downloading the PDF. Pass
+    force=True (or POST /inspect?force=true) to bypass the cache.
     """
     db = _db()
     evt = None
     try:
         job_repo.mark_running(db, job_id)
+        asset = asset_repo.get_asset(db, asset_id)
+        cached_ok = (
+            not force
+            and asset.get('page_count')
+            and asset.get('boxes')
+            and asset.get('width_pt')
+            and asset.get('height_pt')
+        )
+
         evt = job_event_repo.start(
             db,
             job_id=job_id,
@@ -200,10 +208,23 @@ def inspect_asset(self, asset_id: str, job_id: str):
             queue_name='documents',
             worker_name=self.request.hostname if self.request else None,
             stage='inspect',
-            metadata={},
-            message='Inspecting PDF…',
+            metadata={'cached': bool(cached_ok)},
+            message='Returning cached metadata' if cached_ok else 'Inspecting PDF…',
         )
-        asset = asset_repo.get_asset(db, asset_id)
+
+        if cached_ok:
+            info = {
+                'page_count': asset['page_count'],
+                'width_pt': asset['width_pt'],
+                'height_pt': asset['height_pt'],
+                'boxes': asset['boxes'],
+            }
+            job_repo.mark_done(db, job_id, info)
+            if evt:
+                job_event_repo.finish(db, evt.id, metadata=info, message=f"{info['page_count']} page(s) (cached)")
+                evt = None
+            return info
+
         src_path = asset['normalized_storage_path'] or asset['source_storage_path']
         with Workspace() as ws:
             src = ws.path('inspect.pdf')
