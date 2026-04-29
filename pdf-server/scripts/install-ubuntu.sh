@@ -28,6 +28,12 @@ if [[ -x /opt/document-centre-api/scripts/migrate-to-split-workers.sh ]]; then
   bash /opt/document-centre-api/scripts/migrate-to-split-workers.sh || true
 fi
 
+# Install ICC profiles required by the print-ready CMYK conversion.
+if [[ -x /opt/document-centre-api/scripts/install-icc-profiles.sh ]]; then
+  echo ">> Installing ICC profiles (idempotent)…"
+  bash /opt/document-centre-api/scripts/install-icc-profiles.sh || true
+fi
+
 cat <<MSG
 
 Ubuntu packages installed.
