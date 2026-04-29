@@ -612,7 +612,85 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             completed_pages: set[int] = set()
             page_storage: dict[int, tuple[str, str]] = {}
 
-            # ─── Page-1 fast path ──────────────────────────────────────
+            # ─── Batch fast path ──────────────────────────────────────
+            # When the page count is small/medium, run ONE Ghostscript
+            # invocation for the whole PDF (no per-page GS startup cost),
+            # then downscale + upload + record concurrently. This is the
+            # single biggest win for typical 1–32 page jobs.
+            batch_threshold = max(1, settings.render_batch_threshold)
+            batch_eligible = (
+                page_count
+                and page_count <= batch_threshold
+                and page_count >= 1
+            )
+            if batch_eligible:
+                try:
+                    pdf_ops.rasterize_preview(
+                        src, preview_dir / 'page', dpi=settings.preview_dpi,
+                        first_page=1, last_page=page_count,
+                    )
+                    cpu_workers = max(1, settings.render_cpu_concurrency)
+                    io_workers = max(1, settings.render_io_concurrency)
+                    with ThreadPoolExecutor(max_workers=cpu_workers) as cpu_pool, \
+                         ThreadPoolExecutor(max_workers=io_workers) as io_pool:
+                        thumb_futures = {}
+                        for p in range(1, page_count + 1):
+                            image_path = preview_dir / f"page-{p:03d}.png"
+                            if not image_path.exists():
+                                continue
+                            thumb_image = thumb_dir / f"page-{p:03d}.png"
+                            thumb_futures[cpu_pool.submit(
+                                pdf_ops.downscale_to_thumbnail,
+                                image_path, thumb_image, 360,
+                            )] = (p, image_path, thumb_image)
+
+                        upload_futures = {}
+                        for fut in as_completed(thumb_futures):
+                            p, image_path, thumb_image = thumb_futures[fut]
+                            try:
+                                fut.result()
+                            except Exception as exc:
+                                logger.warning("batch downscale page %d failed: %s", p, exc)
+                                continue
+                            upload_futures[io_pool.submit(
+                                _upload_page_io,
+                                prefix=prefix, page=p,
+                                image_path=image_path, thumb_image=thumb_image,
+                            )] = (p, image_path, thumb_image)
+
+                        for fut in as_completed(upload_futures):
+                            p, image_path, thumb_image = upload_futures[fut]
+                            try:
+                                prev_sp, thumb_sp = fut.result()
+                                _record_page(
+                                    db, asset_id=asset_id, job_id=job_id, page=p,
+                                    image_path=image_path, thumb_image=thumb_image,
+                                    preview_storage=prev_sp, thumb_storage=thumb_sp,
+                                )
+                            except Exception as exc:
+                                logger.warning("batch IO/record page %d failed: %s", p, exc)
+                                continue
+                            page_storage[p] = (prev_sp, thumb_sp)
+                            completed_pages.add(p)
+                            files_created.append({'kind': 'preview_page', 'page': p, 'storage_path': prev_sp})
+                            files_created.append({'kind': 'thumbnail_page', 'page': p, 'storage_path': thumb_sp})
+                            if p == 1:
+                                preview_path = prev_sp
+                                thumb_path = thumb_sp
+                                asset_repo.update_asset(db, asset_id, {
+                                    'thumbnail_storage_path': thumb_path,
+                                    'preview_storage_path': preview_path,
+                                })
+                    logger.info(
+                        "generate_previews: batch path rendered %d/%d pages",
+                        len(completed_pages), page_count,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "generate_previews: batch path failed (will fall back): %s", exc,
+                    )
+
+            # ─── Page-1 fast path (skipped if batch already covered it) ─
             try:
                 image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
                     src_pdf=src, preview_dir=preview_dir, thumb_dir=thumb_dir,
