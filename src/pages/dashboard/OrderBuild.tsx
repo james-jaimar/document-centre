@@ -319,7 +319,7 @@ export default function OrderBuild() {
         (v) => v.slug === selectedBindingSlug
       );
       const bindingMethod = matchedValue?.metadata?.binding_method as string | undefined;
-      console.log("[PreviewType] matchedValue:", matchedValue?.label, "bindingMethod:", bindingMethod);
+      if (import.meta.env.DEV) console.log("[PreviewType] matchedValue:", matchedValue?.label, "bindingMethod:", bindingMethod);
       if (bindingMethod && BINDING_METHOD_TO_PREVIEW[bindingMethod]) {
         return BINDING_METHOD_TO_PREVIEW[bindingMethod];
       }
