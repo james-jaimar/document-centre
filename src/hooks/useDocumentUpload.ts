@@ -386,7 +386,11 @@ export function useDocumentUpload(
       fileName: string,
     ): Promise<boolean> => {
       // Print-ready CMYK conversion (driven by per-product-family settings).
+      // Non-fatal: a failure must NOT block the upload — we still want
+      // previews and ordering to work even if the CMYK pass struggles.
       const printPlan = getPrintReadyPlan(productFamilyPrintConfig);
+      let printReadyOk = false;
+      let printReadyError: string | null = null;
       if (printPlan) {
         try {
           updateUpload(fileName, { progress: 55, statusText: "Optimising for print…" });
@@ -395,14 +399,17 @@ export function useDocumentUpload(
             destProfile: printPlan.destProfile,
           });
           await pollJob(printJobId);
+          printReadyOk = true;
         } catch (printErr: any) {
-          console.warn("[upload] print-ready failed:", printErr);
+          printReadyError = printErr?.message ?? String(printErr);
+          console.warn("[upload] print-ready failed (non-fatal):", printReadyError);
         }
+      } else {
+        printReadyOk = true; // nothing to do = success
       }
 
-      // Mark the print-ready pass as complete so subsequent re-renders can
-      // skip the redundant ICC conversion. We deliberately do NOT set
-      // `orientation_normalized` — orientation is owned by the customer.
+      // Persist what actually happened so the UI / admin can see when
+      // the CMYK pass was skipped or failed for an asset.
       try {
         const { data: existing } = await supabase
           .from("documents")
@@ -410,16 +417,24 @@ export function useDocumentUpload(
           .eq("id", docId)
           .maybeSingle();
         const preflight = (existing?.preflight_data as Record<string, unknown>) ?? {};
+        const next: Record<string, unknown> = { ...preflight };
+        if (printReadyOk) {
+          next.print_ready_done = true;
+          delete (next as any).print_ready_error;
+        } else {
+          next.print_ready_done = false;
+          next.print_ready_error = printReadyError ?? "unknown";
+        }
         await supabase
           .from("documents")
-          .update({
-            preflight_data: { ...preflight, print_ready_done: true } as any,
-          })
+          .update({ preflight_data: next as any })
           .eq("id", docId);
       } catch (persistErr: any) {
-        console.warn("[upload] persist print_ready_done flag failed:", persistErr);
+        console.warn("[upload] persist print_ready flag failed:", persistErr);
       }
 
+      // Always return true — print-ready is non-fatal so the rest of
+      // the upload pipeline (generate-previews, etc.) keeps running.
       return true;
     },
     [productFamilyPrintConfig, updateUpload],
