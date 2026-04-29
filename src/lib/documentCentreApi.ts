@@ -230,8 +230,29 @@ export async function createAsset(
   return request<CreateAssetResponse>("v1/assets", "POST", payload as unknown as Record<string, unknown>);
 }
 
+/**
+ * In-flight request coalescing for high-frequency reads (getAsset / getJob /
+ * getDerivedFiles). Multiple React effects often poll the same id at the
+ * same moment; without this, each one would fire its own edge-function
+ * round-trip. The cache is keyed on URL path only and clears as soon as
+ * the underlying promise settles, so freshness is unaffected.
+ */
+const inflightReads = new Map<string, Promise<unknown>>();
+
+function coalesce<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const existing = inflightReads.get(key) as Promise<T> | undefined;
+  if (existing) return existing;
+  const p = fn().finally(() => {
+    if (inflightReads.get(key) === p) inflightReads.delete(key);
+  });
+  inflightReads.set(key, p);
+  return p;
+}
+
 export async function getAsset(assetId: string): Promise<Asset> {
-  return request<Asset>(`v1/assets/${assetId}`, "GET");
+  return coalesce(`asset:${assetId}`, () =>
+    request<Asset>(`v1/assets/${assetId}`, "GET"),
+  );
 }
 
 /**
