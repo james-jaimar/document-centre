@@ -473,12 +473,17 @@ export function useDocumentUpload(
           }
         });
 
-        // Poll the asset itself until we have boxes + page_count (metadata may
-        // populate slightly after job completes for newly-created assets)
+        // inspect_asset writes page_count + boxes synchronously before
+        // marking the job complete, so the first read after pollJob is
+        // already authoritative. Only fall back to a short retry if the
+        // first read came back without metadata (e.g. eventual-consistency
+        // hiccup on a fresh asset row).
         let asset = await getAsset(assetId);
-        for (let i = 0; i < 20 && (!asset.boxes || asset.page_count == null); i++) {
-          await new Promise((r) => setTimeout(r, 1000));
-          asset = await getAsset(assetId);
+        if (!asset.boxes || asset.page_count == null) {
+          for (let i = 0; i < 5 && (!asset.boxes || asset.page_count == null); i++) {
+            await new Promise((r) => setTimeout(r, 400));
+            asset = await getAsset(assetId);
+          }
         }
 
         // ── Per-page orientation normalisation ────────────────────────
