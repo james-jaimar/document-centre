@@ -360,7 +360,7 @@ export async function pollJob(
   options: PollJobOptions = {},
 ): Promise<Job> {
   const throwOnFailure = options.throwOnFailure ?? true;
-  let interval = 300;
+  let interval = 200;
   const ceiling = Math.max(500, intervalMs);
   const MAX_CONSECUTIVE_GETJOB_FAILURES = 4;
   let consecutiveFailures = 0;
