@@ -164,15 +164,22 @@ def list_asset_events(asset_id: str, db: Session = Depends(get_db)):
 
 
 @api_router.post("/assets/{asset_id}/inspect")
-def queue_asset_inspection(asset_id: str, db: Session = Depends(get_db)):
+def queue_asset_inspection(
+    asset_id: str,
+    force: bool = False,
+    db: Session = Depends(get_db),
+):
+    """Queue an inspect job. By default returns cached metadata from the
+    asset row when present (page_count + boxes + dimensions). Pass
+    ?force=true to re-download and re-parse the PDF."""
     asset = asset_repo.get_asset(db, asset_id)
     if not asset:
         raise HTTPException(404, "Asset not found")
 
-    job_id = job_repo.create_job(db, asset_id, "inspect_asset", "documents", {})
-    task = inspect_asset.delay(asset_id, job_id)
+    job_id = job_repo.create_job(db, asset_id, "inspect_asset", "documents", {"force": force})
+    task = inspect_asset.delay(asset_id, job_id, force)
     job_repo.set_celery_task_id(db, job_id, task.id)
-    return {"job_id": job_id}
+    return {"job_id": job_id, "force": force}
 
 
 @api_router.get("/jobs/{job_id}", response_model=JobResponse)

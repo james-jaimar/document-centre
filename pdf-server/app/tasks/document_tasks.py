@@ -20,10 +20,12 @@ from app.core.config import settings
 
 storage = StorageService()
 
-# Tunables — number of parallel S3 uploads. S3 writes are I/O-bound, so a
-# pool of 8 threads consistently beats serial uploads by 4-6x for documents
-# with 50+ pages.
-UPLOAD_CONCURRENCY = 8
+# Tunables — see app.core.config. CPU pool runs Ghostscript + Pillow
+# downscale; IO pool runs S3 upload + DB write. Streaming CPU → IO lets
+# the next page rasterise while the previous page uploads, which is the
+# big win on a multi-vCPU box.
+UPLOAD_CONCURRENCY = settings.render_io_concurrency  # backwards-compat alias
+
 
 
 def _db() -> Session:
@@ -178,18 +180,26 @@ def normalize_asset(self, asset_id: str, job_id: str):
         db.close()
 
 @shared_task(bind=True, queue='documents')
-def inspect_asset(self, asset_id: str, job_id: str):
+def inspect_asset(self, asset_id: str, job_id: str, force: bool = False):
     """Re-inspect an already-normalised PDF on demand.
 
-    Kept for explicit /v1/assets/{id}/inspect calls (e.g. after the client
-    uploads via signed URL and just wants the metadata back). The standard
-    pipeline no longer enqueues this automatically — normalize_asset
-    already populates page_count / boxes / dimensions.
+    Fast path: if the asset row already has page_count + boxes from
+    normalize_asset, return them without re-downloading the PDF. Pass
+    force=True (or POST /inspect?force=true) to bypass the cache.
     """
     db = _db()
     evt = None
     try:
         job_repo.mark_running(db, job_id)
+        asset = asset_repo.get_asset(db, asset_id)
+        cached_ok = (
+            not force
+            and asset.get('page_count')
+            and asset.get('boxes')
+            and asset.get('width_pt')
+            and asset.get('height_pt')
+        )
+
         evt = job_event_repo.start(
             db,
             job_id=job_id,
@@ -198,10 +208,23 @@ def inspect_asset(self, asset_id: str, job_id: str):
             queue_name='documents',
             worker_name=self.request.hostname if self.request else None,
             stage='inspect',
-            metadata={},
-            message='Inspecting PDF…',
+            metadata={'cached': bool(cached_ok)},
+            message='Returning cached metadata' if cached_ok else 'Inspecting PDF…',
         )
-        asset = asset_repo.get_asset(db, asset_id)
+
+        if cached_ok:
+            info = {
+                'page_count': asset['page_count'],
+                'width_pt': asset['width_pt'],
+                'height_pt': asset['height_pt'],
+                'boxes': asset['boxes'],
+            }
+            job_repo.mark_done(db, job_id, info)
+            if evt:
+                job_event_repo.finish(db, evt.id, metadata=info, message=f"{info['page_count']} page(s) (cached)")
+                evt = None
+            return info
+
         src_path = asset['normalized_storage_path'] or asset['source_storage_path']
         with Workspace() as ws:
             src = ws.path('inspect.pdf')
@@ -333,6 +356,86 @@ def _render_one_page(
     )
 
     return image_path, thumb_image, preview_storage, thumb_storage
+
+
+# ---------------------------------------------------------------------------
+# Two-pool variants: CPU phase (rasterize + downscale) and IO phase
+# (upload + DB write). Used by generate_previews + the salvage loop so the
+# CPU pool stays small (cpu_count-1) while the IO pool can fan out wider.
+# ---------------------------------------------------------------------------
+
+
+def _render_page_cpu(
+    *,
+    src_pdf,
+    preview_dir,
+    thumb_dir,
+    page: int,
+    dpi: int,
+):
+    """CPU-bound phase: rasterize PDF page + downscale to thumbnail.
+
+    Returns (image_path, thumb_image). Each call writes into its own
+    per-page subdir so concurrent workers can never overwrite each
+    other's intermediate files.
+    """
+    page_preview_dir = preview_dir / f"p{page:03d}"
+    page_thumb_dir = thumb_dir / f"p{page:03d}"
+    page_preview_dir.mkdir(parents=True, exist_ok=True)
+    page_thumb_dir.mkdir(parents=True, exist_ok=True)
+    out_prefix = page_preview_dir / 'page'
+
+    def _do_rasterize():
+        pdf_ops.rasterize_preview(
+            src_pdf, out_prefix, dpi=dpi,
+            first_page=page, last_page=page,
+        )
+        target = page_preview_dir / f"page-{page:03d}.png"
+        if not target.exists():
+            raise RuntimeError(f"rasterize produced no file for page {page}")
+        return target
+
+    image_path = _retry_with_backoff(
+        _do_rasterize, label='rasterize_one_page', page=page,
+    )
+
+    def _do_downscale():
+        thumb_image = page_thumb_dir / f"page-{page:03d}.png"
+        pdf_ops.downscale_to_thumbnail(image_path, thumb_image, target_max_dim=360)
+        return thumb_image
+
+    thumb_image = _retry_with_backoff(
+        _do_downscale, label='downscale_thumbnail', page=page,
+    )
+    return image_path, thumb_image
+
+
+def _upload_page_io(
+    *,
+    prefix: str,
+    page: int,
+    image_path,
+    thumb_image,
+):
+    """IO-bound phase: upload preview + thumbnail to S3.
+
+    Returns (preview_storage, thumb_storage). DB writes happen in the
+    main thread after this returns so we don't fight SQLAlchemy session
+    threadsafety rules.
+    """
+    preview_storage = unique_name(f'{prefix}previews/page-{page:03d}', '.png')
+    thumb_storage = unique_name(f'{prefix}thumbnails/page-{page:03d}', '.png')
+
+    _retry_with_backoff(
+        lambda: storage.upload(image_path, preview_storage, 'image/png'),
+        label='upload_preview', page=page,
+    )
+    _retry_with_backoff(
+        lambda: storage.upload(thumb_image, thumb_storage, 'image/png'),
+        label='upload_thumbnail', page=page,
+    )
+    return preview_storage, thumb_storage
+
 
 
 def _record_page(
@@ -500,39 +603,79 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                     message=f'Page 1 failed: {exc}',
                 )
 
-            # ─── Parallel pass for remaining pages ─────────────────────
+            # ─── Two-pool parallel pass for remaining pages ────────────
+            # CPU pool (small, ≈ cpu_count-1) runs Ghostscript + downscale.
+            # IO pool (wider, default 8) runs S3 uploads. Pages stream from
+            # CPU → IO so the next page rasterises while the previous one
+            # uploads; DB writes are serialised on the main thread to keep
+            # SQLAlchemy sessions safe.
             if page_count and page_count > 1:
                 remaining = [p for p in range(2, page_count + 1) if p not in completed_pages]
 
-                def _pipeline(page_num: int):
-                    image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
-                        src_pdf=src, preview_dir=preview_dir, thumb_dir=thumb_dir,
-                        prefix=prefix, page=page_num, dpi=settings.preview_dpi,
-                    )
-                    return page_num, image_path, thumb_image, prev_sp, thumb_sp
+                cpu_workers = max(1, settings.render_cpu_concurrency)
+                io_workers = max(1, settings.render_io_concurrency)
+                logger.info(
+                    "generate_previews: parallel pass pages=%d cpu_pool=%d io_pool=%d",
+                    len(remaining), cpu_workers, io_workers,
+                )
 
-                with ThreadPoolExecutor(max_workers=UPLOAD_CONCURRENCY) as pool:
-                    futures = {pool.submit(_pipeline, p): p for p in remaining}
-                    completed_count = len(completed_pages)
-                    for fut in as_completed(futures):
-                        page_num = futures[fut]
+                completed_count = len(completed_pages)
+                with ThreadPoolExecutor(max_workers=cpu_workers) as cpu_pool, \
+                     ThreadPoolExecutor(max_workers=io_workers) as io_pool:
+
+                    cpu_futures = {
+                        cpu_pool.submit(
+                            _render_page_cpu,
+                            src_pdf=src, preview_dir=preview_dir,
+                            thumb_dir=thumb_dir, page=p, dpi=settings.preview_dpi,
+                        ): p
+                        for p in remaining
+                    }
+
+                    # Hand each finished CPU job to the IO pool immediately.
+                    io_futures: dict = {}
+                    for cpu_fut in as_completed(cpu_futures):
+                        page_num = cpu_futures[cpu_fut]
                         try:
-                            page_num, image_path, thumb_image, prev_sp, thumb_sp = fut.result()
+                            image_path, thumb_image = cpu_fut.result()
                         except Exception as exc:
                             logger.warning(
-                                "generate_previews: page %d failed in parallel pass: %s",
+                                "generate_previews: CPU phase page %d failed: %s",
                                 page_num, exc,
                             )
                             job_event_repo.start(
-                                db,
-                                job_id=job_id,
-                                asset_id=asset_id,
-                                task_name='generate_previews',
-                                queue_name='thumbnails',
+                                db, job_id=job_id, asset_id=asset_id,
+                                task_name='generate_previews', queue_name='thumbnails',
                                 worker_name=self.request.hostname if self.request else None,
                                 stage='page_failed',
-                                metadata={'page': page_num, 'error': str(exc)},
-                                message=f'Page {page_num} failed (will salvage): {exc}',
+                                metadata={'page': page_num, 'phase': 'cpu', 'error': str(exc)},
+                                message=f'Page {page_num} render failed (will salvage): {exc}',
+                            )
+                            continue
+
+                        io_fut = io_pool.submit(
+                            _upload_page_io,
+                            prefix=prefix, page=page_num,
+                            image_path=image_path, thumb_image=thumb_image,
+                        )
+                        io_futures[io_fut] = (page_num, image_path, thumb_image)
+
+                    for io_fut in as_completed(io_futures):
+                        page_num, image_path, thumb_image = io_futures[io_fut]
+                        try:
+                            prev_sp, thumb_sp = io_fut.result()
+                        except Exception as exc:
+                            logger.warning(
+                                "generate_previews: IO phase page %d failed: %s",
+                                page_num, exc,
+                            )
+                            job_event_repo.start(
+                                db, job_id=job_id, asset_id=asset_id,
+                                task_name='generate_previews', queue_name='thumbnails',
+                                worker_name=self.request.hostname if self.request else None,
+                                stage='page_failed',
+                                metadata={'page': page_num, 'phase': 'io', 'error': str(exc)},
+                                message=f'Page {page_num} upload failed (will salvage): {exc}',
                             )
                             continue
 
@@ -557,11 +700,8 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
 
                         if completed_count % 5 == 0 or completed_count == page_count:
                             page_evt = job_event_repo.start(
-                                db,
-                                job_id=job_id,
-                                asset_id=asset_id,
-                                task_name='generate_previews',
-                                queue_name='thumbnails',
+                                db, job_id=job_id, asset_id=asset_id,
+                                task_name='generate_previews', queue_name='thumbnails',
                                 worker_name=self.request.hostname if self.request else None,
                                 stage='page_batch',
                                 metadata={'rendered': completed_count, 'total': page_count},
@@ -570,7 +710,10 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                             if page_evt is not None:
                                 job_event_repo.finish(db, page_evt.id, message='', metadata={'rendered': completed_count, 'total': page_count})
 
-            # ─── Salvage pass: sequential retry for any still-missing ──
+            # ─── Salvage pass: small two-pool retry for any still-missing
+            # Salvage runs with tiny pools (cpu=2, io=2) — by definition the
+            # unhappy path, but still wildly faster than the old fully
+            # sequential loop (we saw a 247 s salvage in production).
             missing = sorted(expected_pages - completed_pages)
             if missing and settings.preview_salvage_enabled:
                 logger.warning(
@@ -578,42 +721,66 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                     asset_id, missing,
                 )
                 salvage_evt = job_event_repo.start(
-                    db,
-                    job_id=job_id,
-                    asset_id=asset_id,
-                    task_name='generate_previews',
-                    queue_name='thumbnails',
+                    db, job_id=job_id, asset_id=asset_id,
+                    task_name='generate_previews', queue_name='thumbnails',
                     worker_name=self.request.hostname if self.request else None,
                     stage='salvage',
                     metadata={'missing': missing},
                     message=f'Salvaging {len(missing)} missing page(s)…',
                 )
-                for page_num in missing:
-                    try:
-                        image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
-                            src_pdf=src, preview_dir=preview_dir, thumb_dir=thumb_dir,
-                            prefix=prefix, page=page_num, dpi=settings.preview_dpi,
-                        )
-                        _record_page(
-                            db, asset_id=asset_id, job_id=job_id, page=page_num,
+
+                salvage_cpu = max(1, min(2, settings.render_cpu_concurrency))
+                salvage_io = max(1, min(2, settings.render_io_concurrency))
+                with ThreadPoolExecutor(max_workers=salvage_cpu) as cpu_pool, \
+                     ThreadPoolExecutor(max_workers=salvage_io) as io_pool:
+
+                    cpu_futures = {
+                        cpu_pool.submit(
+                            _render_page_cpu,
+                            src_pdf=src, preview_dir=preview_dir,
+                            thumb_dir=thumb_dir, page=p, dpi=settings.preview_dpi,
+                        ): p
+                        for p in missing
+                    }
+                    io_futures = {}
+                    for cpu_fut in as_completed(cpu_futures):
+                        page_num = cpu_futures[cpu_fut]
+                        try:
+                            image_path, thumb_image = cpu_fut.result()
+                        except Exception as exc:
+                            logger.error("salvage CPU page %d failed: %s", page_num, exc)
+                            continue
+                        io_futures[io_pool.submit(
+                            _upload_page_io,
+                            prefix=prefix, page=page_num,
                             image_path=image_path, thumb_image=thumb_image,
-                            preview_storage=prev_sp, thumb_storage=thumb_sp,
-                        )
+                        )] = (page_num, image_path, thumb_image)
+
+                    for io_fut in as_completed(io_futures):
+                        page_num, image_path, thumb_image = io_futures[io_fut]
+                        try:
+                            prev_sp, thumb_sp = io_fut.result()
+                            _record_page(
+                                db, asset_id=asset_id, job_id=job_id, page=page_num,
+                                image_path=image_path, thumb_image=thumb_image,
+                                preview_storage=prev_sp, thumb_storage=thumb_sp,
+                            )
+                        except Exception as exc:
+                            logger.error("salvage IO/record page %d failed: %s", page_num, exc)
+                            continue
+
                         page_storage[page_num] = (prev_sp, thumb_sp)
                         completed_pages.add(page_num)
                         files_created.append({'kind': 'preview_page', 'page': page_num, 'storage_path': prev_sp})
                         files_created.append({'kind': 'thumbnail_page', 'page': page_num, 'storage_path': thumb_sp})
-                    except Exception as exc:
-                        logger.error(
-                            "generate_previews: salvage failed for page %d: %s",
-                            page_num, exc,
-                        )
+
                 if salvage_evt is not None:
                     job_event_repo.finish(
                         db, salvage_evt.id,
                         metadata={'recovered': sorted(completed_pages & set(missing))},
                         message='Salvage pass complete',
                     )
+
 
             # ─── Verify & finalise ─────────────────────────────────────
             still_missing = sorted(expected_pages - completed_pages)
