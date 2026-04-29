@@ -1177,6 +1177,12 @@ class PdfOps:
         rgb_path = resolve_profile("srgb")
         intent_value = resolve_intent(intent)
 
+        # NOTE: For pdfwrite, drive the conversion with -sDefaultCMYKProfile
+        # (the *destination* profile for the produced CMYK PDF) plus
+        # -sColorConversionStrategy=CMYK. Do NOT use -sOutputICCProfile here:
+        # it is intended for rendering devices, and pdfwrite rejects it on
+        # several Ghostscript builds with `unknownerror in .putdeviceprops`
+        # (exit 255) — which is the failure we were seeing in production.
         cmd = [
             settings.ghostscript_bin,
             "-dSAFER",
@@ -1189,7 +1195,7 @@ class PdfOps:
             "-dProcessColorModel=/DeviceCMYK",
             "-dOverrideICC=true",
             f"-sDefaultRGBProfile={rgb_path}",
-            f"-sOutputICCProfile={dest_path}",
+            f"-sDefaultCMYKProfile={dest_path}",
             f"-dRenderIntent={intent_value}",
             "-dBlackPtComp=true",
             "-dPreserveOverprintSettings=true",
@@ -1199,7 +1205,21 @@ class PdfOps:
 
         cmd.extend(["-o", str(out_pdf), str(src)])
 
-        proc = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        try:
+            proc = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as exc:
+            stderr_tail = (exc.stderr or "")[-4000:]
+            stdout_tail = (exc.stdout or "")[-2000:]
+            logger.error(
+                "to_print_ready_cmyk: ghostscript failed (rc=%s)\n"
+                "  cmd: %s\n  stderr: %s\n  stdout: %s",
+                exc.returncode, " ".join(cmd), stderr_tail, stdout_tail,
+            )
+            raise RuntimeError(
+                "Ghostscript print-ready conversion failed "
+                f"(rc={exc.returncode}). "
+                f"stderr: {stderr_tail.strip() or '(empty)'}"
+            ) from exc
 
         return {
             "dest_profile": dest_profile,
