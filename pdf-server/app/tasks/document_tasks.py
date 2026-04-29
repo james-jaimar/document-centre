@@ -20,10 +20,12 @@ from app.core.config import settings
 
 storage = StorageService()
 
-# Tunables — number of parallel S3 uploads. S3 writes are I/O-bound, so a
-# pool of 8 threads consistently beats serial uploads by 4-6x for documents
-# with 50+ pages.
-UPLOAD_CONCURRENCY = 8
+# Tunables — see app.core.config. CPU pool runs Ghostscript + Pillow
+# downscale; IO pool runs S3 upload + DB write. Streaming CPU → IO lets
+# the next page rasterise while the previous page uploads, which is the
+# big win on a multi-vCPU box.
+UPLOAD_CONCURRENCY = settings.render_io_concurrency  # backwards-compat alias
+
 
 
 def _db() -> Session:
