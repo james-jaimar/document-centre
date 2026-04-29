@@ -695,52 +695,52 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                 pass
             else:
                 try:
-                image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
-                    src_pdf=src, preview_dir=preview_dir, thumb_dir=thumb_dir,
-                    prefix=prefix, page=1, dpi=settings.preview_dpi,
-                )
-                _record_page(
-                    db, asset_id=asset_id, job_id=job_id, page=1,
-                    image_path=image_path, thumb_image=thumb_image,
-                    preview_storage=prev_sp, thumb_storage=thumb_sp,
-                )
-                preview_path = prev_sp
-                thumb_path = thumb_sp
-                page_storage[1] = (prev_sp, thumb_sp)
-                completed_pages.add(1)
-                files_created.append({'kind': 'preview_page', 'page': 1, 'storage_path': prev_sp})
-                files_created.append({'kind': 'thumbnail_page', 'page': 1, 'storage_path': thumb_sp})
+                    image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
+                        src_pdf=src, preview_dir=preview_dir, thumb_dir=thumb_dir,
+                        prefix=prefix, page=1, dpi=settings.preview_dpi,
+                    )
+                    _record_page(
+                        db, asset_id=asset_id, job_id=job_id, page=1,
+                        image_path=image_path, thumb_image=thumb_image,
+                        preview_storage=prev_sp, thumb_storage=thumb_sp,
+                    )
+                    preview_path = prev_sp
+                    thumb_path = thumb_sp
+                    page_storage[1] = (prev_sp, thumb_sp)
+                    completed_pages.add(1)
+                    files_created.append({'kind': 'preview_page', 'page': 1, 'storage_path': prev_sp})
+                    files_created.append({'kind': 'thumbnail_page', 'page': 1, 'storage_path': thumb_sp})
 
-                asset_repo.update_asset(db, asset_id, {
-                    'thumbnail_storage_path': thumb_path,
-                    'preview_storage_path': preview_path,
-                })
-                p1_evt = job_event_repo.start(
-                    db,
-                    job_id=job_id,
-                    asset_id=asset_id,
-                    task_name='generate_previews',
-                    queue_name='thumbnails',
-                    worker_name=self.request.hostname if self.request else None,
-                    stage='page',
-                    metadata={'page': 1, 'total': page_count},
-                    message=f'Page 1 of {page_count or "?"} ready',
-                )
-                if p1_evt is not None:
-                    job_event_repo.finish(db, p1_evt.id, message='', metadata={'page': 1})
-            except Exception as exc:
-                logger.warning("generate_previews: page-1 fast path failed: %s", exc)
-                job_event_repo.start(
-                    db,
-                    job_id=job_id,
-                    asset_id=asset_id,
-                    task_name='generate_previews',
-                    queue_name='thumbnails',
-                    worker_name=self.request.hostname if self.request else None,
-                    stage='page_failed',
-                    metadata={'page': 1, 'error': str(exc)},
-                    message=f'Page 1 failed: {exc}',
-                )
+                    asset_repo.update_asset(db, asset_id, {
+                        'thumbnail_storage_path': thumb_path,
+                        'preview_storage_path': preview_path,
+                    })
+                    p1_evt = job_event_repo.start(
+                        db,
+                        job_id=job_id,
+                        asset_id=asset_id,
+                        task_name='generate_previews',
+                        queue_name='thumbnails',
+                        worker_name=self.request.hostname if self.request else None,
+                        stage='page',
+                        metadata={'page': 1, 'total': page_count},
+                        message=f'Page 1 of {page_count or "?"} ready',
+                    )
+                    if p1_evt is not None:
+                        job_event_repo.finish(db, p1_evt.id, message='', metadata={'page': 1})
+                except Exception as exc:
+                    logger.warning("generate_previews: page-1 fast path failed: %s", exc)
+                    job_event_repo.start(
+                        db,
+                        job_id=job_id,
+                        asset_id=asset_id,
+                        task_name='generate_previews',
+                        queue_name='thumbnails',
+                        worker_name=self.request.hostname if self.request else None,
+                        stage='page_failed',
+                        metadata={'page': 1, 'error': str(exc)},
+                        message=f'Page 1 failed: {exc}',
+                    )
 
             # ─── Per-page parallel pass for remaining pages ────────────
             # Two strategies:
