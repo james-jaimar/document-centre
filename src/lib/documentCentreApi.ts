@@ -307,7 +307,9 @@ export async function ensureFreshAsset(params: {
 export async function getDerivedFiles(
   assetId: string
 ): Promise<DerivedFile[]> {
-  return request<DerivedFile[]>(`v1/assets/${assetId}/derived-files`, "GET");
+  return coalesce(`derived:${assetId}`, () =>
+    request<DerivedFile[]>(`v1/assets/${assetId}/derived-files`, "GET"),
+  );
 }
 
 export async function inspectAsset(
@@ -319,7 +321,9 @@ export async function inspectAsset(
 // ── Job endpoints ────────────────────────────────────────────────
 
 export async function getJob(jobId: string): Promise<Job> {
-  return request<Job>(`v1/jobs/${jobId}`, "GET");
+  return coalesce(`job:${jobId}`, () =>
+    request<Job>(`v1/jobs/${jobId}`, "GET"),
+  );
 }
 
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
