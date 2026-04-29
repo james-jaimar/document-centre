@@ -347,7 +347,7 @@ export default function OrderBuild() {
         if (foldStyle) {
           const styleMap: Record<string, ProductPreviewType> = { z: "z_fold", gate: "gate_fold", c: "tri_fold", tri: "tri_fold", bi: "bi_fold", half: "bi_fold" };
           if (styleMap[foldStyle]) {
-            console.log("[PreviewType] fold from metadata.fold_style:", foldStyle, "→", styleMap[foldStyle]);
+            if (import.meta.env.DEV) console.log("[PreviewType] fold from metadata.fold_style:", foldStyle, "→", styleMap[foldStyle]);
             return styleMap[foldStyle];
           }
         }
