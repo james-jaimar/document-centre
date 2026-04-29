@@ -337,6 +337,86 @@ def _render_one_page(
     return image_path, thumb_image, preview_storage, thumb_storage
 
 
+# ---------------------------------------------------------------------------
+# Two-pool variants: CPU phase (rasterize + downscale) and IO phase
+# (upload + DB write). Used by generate_previews + the salvage loop so the
+# CPU pool stays small (cpu_count-1) while the IO pool can fan out wider.
+# ---------------------------------------------------------------------------
+
+
+def _render_page_cpu(
+    *,
+    src_pdf,
+    preview_dir,
+    thumb_dir,
+    page: int,
+    dpi: int,
+):
+    """CPU-bound phase: rasterize PDF page + downscale to thumbnail.
+
+    Returns (image_path, thumb_image). Each call writes into its own
+    per-page subdir so concurrent workers can never overwrite each
+    other's intermediate files.
+    """
+    page_preview_dir = preview_dir / f"p{page:03d}"
+    page_thumb_dir = thumb_dir / f"p{page:03d}"
+    page_preview_dir.mkdir(parents=True, exist_ok=True)
+    page_thumb_dir.mkdir(parents=True, exist_ok=True)
+    out_prefix = page_preview_dir / 'page'
+
+    def _do_rasterize():
+        pdf_ops.rasterize_preview(
+            src_pdf, out_prefix, dpi=dpi,
+            first_page=page, last_page=page,
+        )
+        target = page_preview_dir / f"page-{page:03d}.png"
+        if not target.exists():
+            raise RuntimeError(f"rasterize produced no file for page {page}")
+        return target
+
+    image_path = _retry_with_backoff(
+        _do_rasterize, label='rasterize_one_page', page=page,
+    )
+
+    def _do_downscale():
+        thumb_image = page_thumb_dir / f"page-{page:03d}.png"
+        pdf_ops.downscale_to_thumbnail(image_path, thumb_image, target_max_dim=360)
+        return thumb_image
+
+    thumb_image = _retry_with_backoff(
+        _do_downscale, label='downscale_thumbnail', page=page,
+    )
+    return image_path, thumb_image
+
+
+def _upload_page_io(
+    *,
+    prefix: str,
+    page: int,
+    image_path,
+    thumb_image,
+):
+    """IO-bound phase: upload preview + thumbnail to S3.
+
+    Returns (preview_storage, thumb_storage). DB writes happen in the
+    main thread after this returns so we don't fight SQLAlchemy session
+    threadsafety rules.
+    """
+    preview_storage = unique_name(f'{prefix}previews/page-{page:03d}', '.png')
+    thumb_storage = unique_name(f'{prefix}thumbnails/page-{page:03d}', '.png')
+
+    _retry_with_backoff(
+        lambda: storage.upload(image_path, preview_storage, 'image/png'),
+        label='upload_preview', page=page,
+    )
+    _retry_with_backoff(
+        lambda: storage.upload(thumb_image, thumb_storage, 'image/png'),
+        label='upload_thumbnail', page=page,
+    )
+    return preview_storage, thumb_storage
+
+
+
 def _record_page(
     db,
     *,
