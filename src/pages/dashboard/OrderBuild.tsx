@@ -338,7 +338,7 @@ export default function OrderBuild() {
         // 1. metadata.fold_type (canonical)
         const metaFoldType = matchedFold?.metadata?.fold_type as string | undefined;
         if (metaFoldType && SLUG_TO_PREVIEW[metaFoldType]) {
-          console.log("[PreviewType] fold from metadata.fold_type:", metaFoldType);
+          if (import.meta.env.DEV) console.log("[PreviewType] fold from metadata.fold_type:", metaFoldType);
           return SLUG_TO_PREVIEW[metaFoldType];
         }
 
