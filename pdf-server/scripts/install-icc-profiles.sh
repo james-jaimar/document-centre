@@ -25,11 +25,30 @@ mkdir -p "$ICC_DIR"
 cd "$ICC_DIR"
 
 # ---- 1. sRGB v4 (input working space — only ~5 KB, public-domain) -----------
+# color.org started returning 403 to non-browser User-Agents in 2025, so we try
+# a few mirrors and fall back gracefully. If the file is already on disk we
+# leave it alone.
 SRGB_FILE="sRGB_v4_ICC_preference.icc"
-SRGB_URL="https://www.color.org/profiles/sRGB_v4_ICC_preference.icc"
+SRGB_URLS=(
+  "https://www.color.org/profiles/sRGB_v4_ICC_preference.icc"
+  "https://github.com/saucecontrol/Compact-ICC-Profiles/raw/master/profiles/sRGB-v4.icc"
+  "https://sourceforge.net/projects/openicc/files/OpenICC-Profiles/sRGB_v4_ICC_preference.icc/download"
+)
 if [[ ! -s "$SRGB_FILE" ]]; then
   echo "==> Downloading $SRGB_FILE"
-  curl -fsSL -o "$SRGB_FILE" "$SRGB_URL"
+  OK=0
+  for U in "${SRGB_URLS[@]}"; do
+    echo "    trying $U"
+    if curl -fsSL -A "Mozilla/5.0" -o "$SRGB_FILE" "$U"; then
+      OK=1; break
+    fi
+    rm -f "$SRGB_FILE"
+  done
+  if [[ "$OK" -ne 1 ]]; then
+    echo "    ERROR: could not download sRGB profile from any mirror."
+    echo "    Manual fix: place the file at $ICC_DIR/$SRGB_FILE then re-run."
+    exit 1
+  fi
   chmod 644 "$SRGB_FILE"
 else
   echo "==> $SRGB_FILE already present, skipping"
