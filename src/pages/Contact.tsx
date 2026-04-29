@@ -4,6 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Mail, Phone, MapPin, ArrowRight, Linkedin, Youtube, MessageSquare, Sparkles } from "lucide-react";
 import docCentreLogo from "@/assets/doc-centre-logo.svg";
+import ChatWidget from "@/components/ChatWidget";
 
 const Logo = ({ height = 56 }: { height?: number }) => (
   <img src={docCentreLogo} alt="Document Centre" style={{ height }} className="w-auto" />
@@ -65,6 +66,7 @@ export default function Contact() {
 
   return (
     <div className="dc-marketing min-h-screen bg-white" style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
+      <ChatWidget />
       {/* Header */}
       <header className="border-b border-[hsl(var(--dc-border))] bg-white/80 backdrop-blur sticky top-0 z-30">
         <div className="max-w-[1240px] mx-auto px-6 py-4 flex items-center justify-between">

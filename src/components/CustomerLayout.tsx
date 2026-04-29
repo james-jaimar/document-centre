@@ -10,6 +10,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
+import ChatWidget from "@/components/ChatWidget";
 
 function DemoBanner({ onUpgrade }: { onUpgrade: () => void }) {
   const [dismissed, setDismissed] = useState(false);
@@ -155,6 +156,7 @@ function CustomerLayoutInner() {
           <CustomerFooter />
         </div>
       </div>
+      <ChatWidget />
     </div>
   );
 }
