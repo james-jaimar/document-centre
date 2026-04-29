@@ -1,5 +1,13 @@
+import os
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _default_render_cpu() -> int:
+    """Leave one core free for uvicorn / redis on a small box."""
+    return max(1, (os.cpu_count() or 2) - 1)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
@@ -42,8 +50,19 @@ class Settings(BaseSettings):
     preview_page_max_retries: int = Field(alias='PREVIEW_PAGE_MAX_RETRIES', default=3)
     preview_page_retry_base_ms: int = Field(alias='PREVIEW_PAGE_RETRY_BASE_MS', default=250)
     preview_salvage_enabled: bool = Field(alias='PREVIEW_SALVAGE_ENABLED', default=True)
+
+    # In-process render parallelism. CPU pool runs Ghostscript + Pillow
+    # downscale (CPU-bound — capping at cpu_count-1 prevents thrashing).
+    # IO pool runs S3 upload + DB write (network/disk-bound — happy with 8).
+    # Pages stream from CPU → IO so the next page rasterises while the
+    # previous one uploads.
+    render_cpu_concurrency: int = Field(alias='RENDER_CPU_CONCURRENCY', default_factory=_default_render_cpu)
+    render_io_concurrency: int = Field(alias='RENDER_IO_CONCURRENCY', default=8)
+
     cors_origins: str = Field(alias='CORS_ORIGINS', default='http://localhost:5173')
     admin_username: str = Field(alias='ADMIN_USERNAME', default='admin')
     admin_password: str = Field(alias='ADMIN_PASSWORD', default='admin123')
+
+settings = Settings()
 
 settings = Settings()
