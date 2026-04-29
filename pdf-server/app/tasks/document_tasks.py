@@ -633,11 +633,14 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                 and page_count >= 1
             )
             if batch_eligible:
+                t_batch = time.monotonic()
                 try:
+                    t_gs = time.monotonic()
                     pdf_ops.rasterize_preview(
                         src, preview_dir / 'page', dpi=settings.preview_dpi,
                         first_page=1, last_page=page_count,
                     )
+                    _stamp('ghostscript_batch', t_gs)
                     cpu_workers = max(1, settings.render_cpu_concurrency)
                     io_workers = max(1, settings.render_io_concurrency)
                     with ThreadPoolExecutor(max_workers=cpu_workers) as cpu_pool, \
