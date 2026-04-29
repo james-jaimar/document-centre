@@ -114,11 +114,15 @@ echo ""
 echo "==> Verifying installed profiles"
 MISSING=0
 for f in sRGB_v4_ICC_preference.icc ISOcoated_v2_eci.icc ISOcoated_v2_300_eci.icc PSOcoated_v3.icc; do
-  if [[ -e "$ICC_DIR/$f" ]]; then
-    printf "    [ ok ]  %s\n" "$f"
-  else
+  target="$ICC_DIR/$f"
+  if [[ ! -e "$target" ]]; then
     printf "    [MISS]  %s\n" "$f"
     MISSING=1
+  elif ! is_valid_icc "$target"; then
+    printf "    [BAD ]  %s  (not a valid ICC profile — magic 'acsp' missing at offset 36)\n" "$f"
+    MISSING=1
+  else
+    printf "    [ ok ]  %s\n" "$f"
   fi
 done
 
