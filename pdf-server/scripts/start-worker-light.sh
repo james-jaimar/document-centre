@@ -7,6 +7,6 @@ exec celery -A app.worker.celery_app worker \
   -Q default,thumbnails \
   -n "light@%h" \
   -P prefork \
-  --concurrency=4 \
+  --concurrency=6 \
   --max-tasks-per-child=200 \
   --max-memory-per-child=600000
