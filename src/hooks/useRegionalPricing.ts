@@ -38,14 +38,11 @@ async function detectCountry(): Promise<string | null> {
   if (cached) return cached;
 
   try {
-    const res = await fetch("https://ipapi.co/json/", {
-      signal: AbortSignal.timeout(3000),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const code = data.country_code as string;
+    const { data, error } = await supabase.functions.invoke("detect-region");
+    if (error) return null;
+    const code = (data?.country_code as string | null) ?? null;
     if (code) sessionStorage.setItem(SESSION_COUNTRY_KEY, code);
-    return code || null;
+    return code;
   } catch {
     return null;
   }
@@ -89,17 +86,23 @@ export function useRegionalPricing(): RegionalPricingResult {
         }
       }
 
-      // Detect from IP
+      // Detect from IP (server-side via edge function)
       const countryCode = await detectCountry();
       if (cancelled) return;
 
-      if (countryCode) {
-        const matched = matchRegion(countryCode, regionsData as PricingRegion[]);
-        setRegionState(matched || (defaultRegion as PricingRegion));
+      const matched = countryCode
+        ? matchRegion(countryCode, regionsData as PricingRegion[])
+        : null;
+
+      if (matched) {
+        // Genuine, successful detection that mapped to a known region.
+        setRegionState(matched);
         setDetected(true);
       } else {
+        // Either detection failed, or the country isn't in our region list.
+        // Fall back to the default region but DO NOT claim it was detected.
         setRegionState(defaultRegion as PricingRegion);
-        setDetected(true);
+        setDetected(false);
       }
       setLoading(false);
     }

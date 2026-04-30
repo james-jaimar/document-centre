@@ -1,89 +1,61 @@
-# Phishing Flag Remediation Plan (Amplify-hosted)
+## The problem
 
-## Context
+You're in South Africa but the pricing page shows **"GBP (detected)"**. Two compounding bugs:
 
-- Production site: `document-centre.com` (GitHub → AWS Amplify)
-- Lovable preview: `document-centre.lovable.app` (shared subdomain — almost certainly the source of the Google Safe Browsing flag)
-- Custom domain on Lovable: `document-centre.jaimar.dev`
+1. **CSP blocks the IP lookup.** `useRegionalPricing.ts` calls `https://ipapi.co/json/` to detect country. Our hardened CSP (`connect-src`) only whitelists Supabase and Tawk.to — so the fetch fails silently.
+2. **The fallback lies.** When detection fails, the code still sets `detected = true` and shows the default region (GBP) with a "(detected)" badge. So it confidently displays the wrong country instead of an honest "we couldn't detect — pick yours".
 
-The phishing warning is most likely triggered by the shared `*.lovable.app` host plus a third-party chat widget loading on the login page. The fixes below clean up signals on both surfaces and add proper security headers on Amplify.
+This affects the Pricing page hero (your screenshot) and any other surface using `useRegionalPricing`.
 
-## What I'll change in code
+## Fix — server-side detection via an Edge Function
 
-### 1. Move Tawk.to chat off the login surface
+Calling `ipapi.co` from the browser has three problems even if we whitelist it: (a) it expands attack surface in CSP, (b) free tier is rate-limited per visitor IP, (c) third-party JS hitting an IP-geo service is itself a mild reputation signal. Better to do it server-side where we can use Supabase's edge runtime headers.
 
-- Remove the inline Tawk.to snippet from `index.html`.
-- Add a new `src/components/ChatWidget.tsx` that injects the Tawk.to script only when mounted.
-- Mount it from `src/components/CustomerLayout.tsx` and `src/pages/MarketingLanding.tsx` (and `Pricing`, `Contact`).
-- Do NOT mount it on: `/auth`, `/auth/callback`, `/auth/verify`, `/reset-password`, `/try`, `/platform/*`, `/admin/*`, `/branch/*`.
+### 1. New edge function: `detect-region`
 
-Why: a third-party chat widget loaded on a login page is a classic phishing heuristic.
+`supabase/functions/detect-region/index.ts`
 
-### 2. Remove sketchy CDN script from `Try.tsx`
+- Reads the visitor's country from request headers in this priority order:
+  1. `cf-ipcountry` (Cloudflare, if ever proxied)
+  2. `x-vercel-ip-country` / `x-nf-geo` (other CDN headers, harmless if absent)
+  3. Deno's built-in `request.headers.get("x-forwarded-for")` → fall back to a server-side call to `https://ipapi.co/json/` from the edge (server IPs aren't rate-limited the same way, and it's not in the browser CSP)
+- Returns `{ country_code: "ZA", source: "ipapi" | "header" | "default" }`
+- Public function (no auth required) — read-only, no side effects
+- Caches per-IP in-memory for the function instance lifetime to be polite to ipapi
 
-- Audit `src/pages/Try.tsx` and remove any `cdn.jsdelivr.net/emojione` script tag (legacy, flagged on reputation lists). Replace with native emoji or a lucide icon if needed.
+### 2. Update `useRegionalPricing.ts`
 
-### 3. Add Amplify security headers via `customHttp.yml`
+- Replace `detectCountry()` to call `supabase.functions.invoke("detect-region")` instead of fetching ipapi directly from the browser
+- **Critical bug fix**: only set `detected = true` when we actually got a country code AND it matched a region. If the country is unknown or unmatched, set `detected = false` so the UI doesn't claim a false detection.
+- Keep the manual override (`localStorage.dc_region_override`) as-is — that flow is fine.
 
-Create `customHttp.yml` at the repo root (Amplify reads this automatically on next build):
+### 3. UI honesty in `Pricing.tsx`
 
-```yaml
-customHeaders:
-  - pattern: '**'
-    headers:
-      - key: 'Strict-Transport-Security'
-        value: 'max-age=63072000; includeSubDomains; preload'
-      - key: 'X-Content-Type-Options'
-        value: 'nosniff'
-      - key: 'X-Frame-Options'
-        value: 'SAMEORIGIN'
-      - key: 'Referrer-Policy'
-        value: 'strict-origin-when-cross-origin'
-      - key: 'Permissions-Policy'
-        value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()'
-      - key: 'Content-Security-Policy'
-        value: "default-src 'self'; script-src 'self' 'unsafe-inline' https://embed.tawk.to https://*.tawk.to; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://embed.tawk.to; font-src 'self' data: https://fonts.gstatic.com https://embed.tawk.to; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.tawk.to wss://*.tawk.to https://document-centre.jaimar.dev https://srv1516161.hstgr.cloud; frame-src https://*.tawk.to; object-src 'none'; base-uri 'self'; form-action 'self'"
-```
+- When `detected === false`, don't show the "(detected)" badge on any pill.
+- Optionally show a small "Choose your region" hint above the pills if no detection succeeded.
 
-Stronger than `<meta>` CSP because it covers non-HTML responses too. CSP includes Tawk.to, Supabase, and your VPS API origin — I'll verify the exact VPS hostname from `documentCentreApi.ts` before finalising.
+### 4. CSP — leave it alone
 
-### 4. Tighten `index.html` meta
+No CSP changes needed. The browser only talks to Supabase (already whitelisted), and the edge function is the one talking to ipapi server-side.
 
-- Add `<meta name="referrer" content="strict-origin-when-cross-origin">` as a belt-and-braces fallback for the lovable.app preview (which doesn't get the Amplify headers).
+### 5. About the `Permissions-Policy: geolocation=()` header
 
-## What you need to do (manual checklist)
-
-These are infra/console clicks I can't do from the codebase:
-
-1. **Make the lovable.app URL non-public**
-   - Lovable → Project Settings → Publish → set visibility to **Private**, OR unpublish entirely.
-   - Reason: kills the shared-subdomain reputation signal at the source. Your Amplify production stays untouched.
-
-2. **Supabase Auth URLs** (Supabase dashboard → Authentication → URL Configuration)
-   - Site URL: `https://document-centre.com`
-   - Redirect URLs: keep only `https://document-centre.com/**` and (optionally) `https://document-centre.jaimar.dev/**`
-   - Remove any `*.lovable.app` entries.
-
-3. **Google Search Console**
-   - Add `document-centre.com` as a property (if not already).
-   - Security Issues → Request Review, noting that the chat widget has been removed from auth pages and CSP is now enforced.
-   - If the flag is on `document-centre.lovable.app`, you'd need to verify that property too — but if you've unpublished it (step 1) the warning becomes moot.
-
-4. **Amplify build**
-   - After I commit `customHttp.yml`, the next Amplify build picks it up automatically. Verify headers via `curl -I https://document-centre.com` after deploy.
-
-## Out of scope (not changing)
-
-- Pipeline / preview / PDF performance work — already deployed last round.
-- Auth flow logic — `AuthCallback.tsx` and `Try.tsx` business logic stays as-is; we're only cleaning third-party scripts.
+For clarity: this header is **not related** to the bug. It only blocks `navigator.geolocation.getCurrentPosition()` (the GPS popup), which the pricing page does not use. IP-based region detection is unaffected by it. I'm leaving `geolocation=()` as-is unless you tell me you have a "use my location" feature planned.
 
 ## Files I'll touch
 
-- `index.html` — remove Tawk.to inline, add referrer meta
-- `src/components/ChatWidget.tsx` — new
-- `src/components/CustomerLayout.tsx` — mount ChatWidget
-- `src/pages/MarketingLanding.tsx`, `src/pages/Pricing.tsx`, `src/pages/Contact.tsx` — mount ChatWidget
-- `src/pages/Try.tsx` — strip emojione CDN script if present
-- `customHttp.yml` — new (Amplify headers)
+- `supabase/functions/detect-region/index.ts` — new edge function
+- `supabase/config.toml` — register the function as `verify_jwt = false` (public)
+- `src/hooks/useRegionalPricing.ts` — switch to edge function, fix false `detected` flag
+- `src/pages/Pricing.tsx` — only show "(detected)" badge when truly detected
 
-After approval I'll implement, then give you the curl command to confirm headers landed on `document-centre.com` post-deploy.
+## Verification after deploy
+
+1. Hard-reload pricing page from a SA IP → should show **ZAR (detected)** instead of GBP.
+2. Manually click GBP pill → "(detected)" badge disappears, GBP becomes selected, override persists across reloads.
+3. Click "Reset" (or clear `localStorage.dc_region_override`) → back to ZAR detection.
+4. From a UK VPN → GBP (detected). From US → USD (detected). From India (no matching region) → default region shown but **without** the (detected) badge.
+
+## Out of scope
+
+- Changing the default region in `platform_pricing_regions` (still GBP for now — that just affects users we can't detect). If you'd rather it default to ZAR, say the word and I'll flip it via migration.

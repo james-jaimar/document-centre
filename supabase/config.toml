@@ -31,3 +31,5 @@ project_id = "lcvdhtaqoumyokjqaqfw"
     verify_jwt = false
   [functions.submit-contact]
     verify_jwt = false
+  [functions.detect-region]
+    verify_jwt = false
