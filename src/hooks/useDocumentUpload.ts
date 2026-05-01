@@ -83,7 +83,13 @@ export async function renderDocumentThumbnails(
   docId: string,
   assetId: string,
   box: [number, number, number, number] | null,
-  opts?: { onProgress?: (msg: string, pct: number) => void },
+  opts?: {
+    onProgress?: (msg: string, pct: number) => void;
+    /** When provided, skip enqueueing generate_previews and poll this
+     *  pre-allocated job id instead. Used by the D-chaining path where
+     *  print-ready already enqueued generate_previews server-side. */
+    prechainedJobId?: string | null;
+  },
 ): Promise<string[]> {
   const onProgress = opts?.onProgress ?? (() => {});
 
@@ -96,7 +102,16 @@ export async function renderDocumentThumbnails(
   // (e.g. user-accepted bleed). For full-document rendering pass `null` so
   // the server renders each page using its own MediaBox. Passing a single
   // page-1-derived box as a global crop guillotines mixed-orientation pages.
-  const { job_id: cropJobId } = await generatePreviews(assetId, box ?? undefined);
+  let cropJobId: string;
+  if (opts?.prechainedJobId) {
+    // D-chaining: print-ready server-side already enqueued generate_previews
+    // immediately after CMYK conversion finished. Skip the extra round-trip
+    // and just poll the pre-allocated job id.
+    cropJobId = opts.prechainedJobId;
+  } else {
+    const enq = await generatePreviews(assetId, box ?? undefined);
+    cropJobId = enq.job_id;
+  }
   await pollJob(cropJobId, (job) => {
     if (job.status === "pending") onProgress("Queued — waiting for server…", 65);
     else if (job.status === "running") onProgress("Rendering pages…", 75);
