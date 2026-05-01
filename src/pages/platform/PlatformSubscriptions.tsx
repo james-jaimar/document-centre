@@ -339,21 +339,19 @@ export default function PlatformSubscriptions() {
                               <ArrowUpCircle className="h-4 w-4 mr-1" />
                               Assign
                             </Button>
-                            {stripePlans.length > 0 && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setCheckoutTenant(tenant);
-                                  setCheckoutRegionId(null);
-                                  setSelectedPriceId(null);
-                                }}
-                                title="Trigger Stripe checkout"
-                              >
-                                <Zap className="h-4 w-4 mr-1" />
-                                Checkout
-                              </Button>
-                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setCheckoutTenant(tenant);
+                                setCheckoutRegionId(null);
+                                setSelectedPriceId(null);
+                              }}
+                              title="Trigger Stripe checkout"
+                            >
+                              <Zap className="h-4 w-4 mr-1" />
+                              Checkout
+                            </Button>
                             {sub && sub.status === "active" && (
                               <Button
                                 variant="ghost"
