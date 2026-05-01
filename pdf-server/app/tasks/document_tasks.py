@@ -186,7 +186,7 @@ def normalize_asset(self, asset_id: str, job_id: str):
     finally:
         db.close()
 
-@shared_task(bind=True, queue='documents')
+@shared_task(bind=True, queue='default')
 def inspect_asset(self, asset_id: str, job_id: str, force: bool = False):
     """Re-inspect an already-normalised PDF on demand.
 

@@ -484,7 +484,7 @@ def convert_office(self, asset_id: str, job_id: str):
 #   3. If at least one page rotated, upload the new PDF and promote it to
 #      asset.normalized_storage_path, recomputing inspect metadata.
 #      If nothing rotated, skip the upload — job result reports skipped=true.
-@shared_task(bind=True, queue="documents")
+@shared_task(bind=True, queue="default")
 def normalize_orientation(self, asset_id: str, job_id: str, dominant: str = "portrait"):
     db = _db()
     try:
