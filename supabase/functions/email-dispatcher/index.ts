@@ -65,7 +65,15 @@ interface GraphCreds extends BaseCreds {
   sender: string;
 }
 
-type AccountCreds = SmtpCreds | GraphCreds;
+interface GmailCreds extends BaseCreds {
+  kind: "gmail_oauth";
+  refresh_token: string;
+  client_id: string;
+  client_secret: string;
+  oauth_email: string;
+}
+
+type AccountCreds = SmtpCreds | GraphCreds | GmailCreds;
 
 async function loadVaultSecret(admin: any, secret_id: string | null): Promise<string | null> {
   if (!secret_id) return null;
@@ -102,6 +110,24 @@ async function resolveCreds(
             client_id: a.graph_client_id,
             client_secret: clientSecret,
             sender: a.graph_sender_address,
+            from_name: a.from_name,
+            from_email: a.from_email,
+            reply_to: a.reply_to,
+            send_delay_ms: a.send_delay_ms ?? 1500,
+          };
+        }
+      } else if (transport === "gmail_oauth") {
+        const refreshToken = await loadVaultSecret(admin, a.oauth_refresh_token_secret_id);
+        const gmailClientId = Deno.env.get("GMAIL_OAUTH_CLIENT_ID");
+        const gmailClientSecret = Deno.env.get("GMAIL_OAUTH_CLIENT_SECRET");
+        if (refreshToken && gmailClientId && gmailClientSecret && a.oauth_email) {
+          return {
+            kind: "gmail_oauth",
+            id: a.id,
+            refresh_token: refreshToken,
+            client_id: gmailClientId,
+            client_secret: gmailClientSecret,
+            oauth_email: a.oauth_email,
             from_name: a.from_name,
             from_email: a.from_email,
             reply_to: a.reply_to,
