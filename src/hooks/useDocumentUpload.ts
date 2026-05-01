@@ -126,8 +126,8 @@ export async function renderDocumentThumbnails(
     targetAspect,
   );
 
-  const MAX_THUMB_POLLS = 45; // ~90s ceiling with adaptive backoff
-  let interval = 250; // adaptive: 250ms → 1500ms ceiling — short docs land fast
+  const MAX_THUMB_POLLS = 45; // ~60s ceiling with adaptive backoff
+  let interval = 150; // adaptive: 150ms → 1000ms ceiling — short docs land in 1-2 polls
 
   for (let i = 0; i < MAX_THUMB_POLLS; i++) {
     const found = thumbnailPaths.filter(Boolean).length;
@@ -137,7 +137,7 @@ export async function renderDocumentThumbnails(
     onProgress(`Rendering pages… (${found}/${expectedPages})`, Math.min(95, pct));
 
     await new Promise((r) => setTimeout(r, interval));
-    interval = Math.min(Math.round(interval * 1.5), 1500);
+    interval = Math.min(Math.round(interval * 1.3), 1000);
     derivedFiles = await getDerivedFiles(assetId);
     thumbnailPaths = pickBestPerPage(
       derivedFiles,
