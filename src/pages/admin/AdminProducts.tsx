@@ -206,7 +206,18 @@ const AdminProducts = () => {
                       <CollapsibleContent asChild>
                         <tr>
                           <td colSpan={7} className="bg-muted/30 p-4">
-                            <ProductOptionsEditor productFamilyId={f.id} />
+                            <Tabs defaultValue="options" className="w-full">
+                              <TabsList className="mb-3">
+                                <TabsTrigger value="options">Options</TabsTrigger>
+                                <TabsTrigger value="pricing">Pricing</TabsTrigger>
+                              </TabsList>
+                              <TabsContent value="options">
+                                <ProductOptionsEditor productFamilyId={f.id} />
+                              </TabsContent>
+                              <TabsContent value="pricing">
+                                <ProductPricingTab productFamilyId={f.id} productFamilyName={f.name} />
+                              </TabsContent>
+                            </Tabs>
                           </td>
                         </tr>
                       </CollapsibleContent>
