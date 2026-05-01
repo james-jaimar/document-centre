@@ -274,6 +274,11 @@ const App = () => (
                   <PlatformPricingRegions />
                 </ProtectedRoute>
               } />
+              <Route path="/platform/subscriptions" element={
+                <ProtectedRoute allowedRoles={["platform_admin"]}>
+                  <PlatformSubscriptions />
+                </ProtectedRoute>
+              } />
               <Route path="/platform/demo-print-pricing" element={
                 <ProtectedRoute allowedRoles={["platform_admin"]}>
                   <PlatformDemoPrintPricing />
