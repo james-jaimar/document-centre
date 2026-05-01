@@ -1306,6 +1306,7 @@ class PdfOps:
         builtin_cmd = [
             settings.ghostscript_bin,
             "-dSAFER", "-dBATCH", "-dNOPAUSE",
+            "-dNumRenderingThreads=4",
             "-sDEVICE=pdfwrite",
             "-sColorConversionStrategy=CMYK",
             "-dProcessColorModel=/DeviceCMYK",
