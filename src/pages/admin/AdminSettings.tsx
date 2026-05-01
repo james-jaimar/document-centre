@@ -60,6 +60,7 @@ const AdminSettings = () => {
         <TabsContent value="email"><EmailAccountsTab /></TabsContent>
         <TabsContent value="documents"><DocumentsTab /></TabsContent>
         <TabsContent value="delivery"><DeliveryTab /></TabsContent>
+        {isOwnerOrAdmin && <TabsContent value="billing"><BillingTab /></TabsContent>}
       </Tabs>
     </div>
   );
