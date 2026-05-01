@@ -143,6 +143,13 @@ class PrintReadyRequest(BaseModel):
         "saturation",
     ] = "relative_colorimetric"
     dest_profile: str = "fogra39"
+    # Server-side chaining: when True, after print_ready completes the
+    # worker enqueues generate_previews against ``chain_render_box``
+    # automatically. The response then includes ``preview_job_id`` so the
+    # client can skip the print_ready poll entirely and only watch the
+    # downstream preview job.
+    chain_generate_previews: bool = False
+    chain_render_box: list[float] | None = Field(default=None, min_length=4, max_length=4)
 
 
 class RenderPagesRequest(BaseModel):
