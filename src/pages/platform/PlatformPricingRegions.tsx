@@ -69,6 +69,23 @@ export default function PlatformPricingRegions() {
     });
   }
 
+  function getPlanStripePriceId(regionId: string, slug: string): string {
+    const p = plans.find((pl) => pl.region_id === regionId && pl.plan_slug === slug);
+    return p?.stripe_price_id || "";
+  }
+
+  function setPlanStripePriceId(regionId: string, slug: string, value: string) {
+    setPlans((prev) => {
+      const idx = prev.findIndex((p) => p.region_id === regionId && p.plan_slug === slug);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = { ...updated[idx], stripe_price_id: value || null };
+        return updated;
+      }
+      return prev;
+    });
+  }
+
   function updateRegionField(id: string, field: keyof Region, value: any) {
     setRegions((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
   }
