@@ -339,10 +339,10 @@ export interface PollJobOptions {
 /**
  * Poll a job until it reaches a terminal state.
  *
- * Uses an adaptive backoff: starts at 300ms (catches sub-second jobs almost
- * immediately) and ramps up to a 2500ms ceiling. The `intervalMs` parameter
- * is kept for backwards compatibility but is now interpreted as the *ceiling*,
- * not a flat interval.
+ * Adaptive backoff: starts at 150ms (catches sub-second jobs in the very
+ * first poll cycle), ramps by ×1.3, and caps at 1000ms. The `intervalMs`
+ * parameter is kept for backwards compatibility but is now interpreted as
+ * the *ceiling*, not a flat interval.
  *
  * Tolerates transient `getJob` failures: if a single status check fails after
  * its own retry budget, we log a warning and try again on the next tick. We
@@ -355,13 +355,13 @@ export interface PollJobOptions {
 export async function pollJob(
   jobId: string,
   onUpdate?: (job: Job) => void,
-  intervalMs = 2500,
-  maxAttempts = 360,
+  intervalMs = 1000,
+  maxAttempts = 600,
   options: PollJobOptions = {},
 ): Promise<Job> {
   const throwOnFailure = options.throwOnFailure ?? true;
-  let interval = 200;
-  const ceiling = Math.max(500, intervalMs);
+  let interval = 150;
+  const ceiling = Math.max(300, intervalMs);
   const MAX_CONSECUTIVE_GETJOB_FAILURES = 4;
   let consecutiveFailures = 0;
 
@@ -382,7 +382,7 @@ export async function pollJob(
         );
       }
       await new Promise((r) => setTimeout(r, interval));
-      interval = Math.min(Math.round(interval * 1.5), ceiling);
+      interval = Math.min(Math.round(interval * 1.3), ceiling);
       continue;
     }
 
@@ -403,7 +403,7 @@ export async function pollJob(
     }
 
     await new Promise((r) => setTimeout(r, interval));
-    interval = Math.min(Math.round(interval * 1.5), ceiling);
+    interval = Math.min(Math.round(interval * 1.3), ceiling);
   }
 
   throw new Error(`Job ${jobId} did not complete after ${maxAttempts} polls`);
