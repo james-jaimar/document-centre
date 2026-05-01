@@ -119,7 +119,7 @@ export default function ProductPricingTab({
       .filter((o) => isStructuredValues(o.values))
       .map((o) => ({
         name: o.name,
-        values: (o.values as StructuredOptionValue[]).map((v) => ({
+        values: (o.values as unknown as StructuredOptionValue[]).map((v) => ({
           slug: v.slug,
           label: v.label,
         })),
