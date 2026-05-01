@@ -59,6 +59,25 @@ export async function resolveEmailAccount(
     if (data?.is_active) return data.id;
   }
 
+  // Check the tenant's preferred send method.
+  // "platform" (default) → return null so the dispatcher falls back to the platform account.
+  // "own_smtp" → continue resolving through tenant/branch accounts.
+  if (tenant_id) {
+    const { data: methodRow } = await admin
+      .from("tenant_settings")
+      .select("setting_value")
+      .eq("tenant_id", tenant_id)
+      .eq("category", "email")
+      .eq("setting_key", "email_send_method")
+      .maybeSingle();
+
+    const sendMethod = (methodRow?.setting_value as string) ?? "platform";
+    if (sendMethod === "platform") {
+      // Skip tenant SMTP — let dispatcher use platform fallback
+      return null;
+    }
+  }
+
   if (branch_id) {
     const { data } = await admin
       .from("email_accounts")
@@ -95,8 +114,6 @@ export async function resolveEmailAccount(
   }
 
   // Final fallback: first active Graph account anywhere on the platform.
-  // Keeps platform-level mail (e.g. contact form) working when no tenant
-  // or branch context is available.
   const { data: graphFallback } = await admin
     .from("email_accounts")
     .select("id")
