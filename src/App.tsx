@@ -70,6 +70,7 @@ import PlatformTenants from "@/pages/platform/PlatformTenants";
 import PlatformUsers from "@/pages/platform/PlatformUsers";
 import PlatformSettings from "@/pages/platform/PlatformSettings";
 import PlatformPricingRegions from "@/pages/platform/PlatformPricingRegions";
+import PlatformSubscriptions from "@/pages/platform/PlatformSubscriptions";
 import PlatformDemoPrintPricing from "@/pages/platform/PlatformDemoPrintPricing";
 import DocumentCentreLayout from "@/components/platform/DocumentCentreLayout";
 import PlatformDocumentCentreOverview from "@/pages/platform/PlatformDocumentCentreOverview";
