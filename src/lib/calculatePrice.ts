@@ -89,8 +89,36 @@ export function calculateItemPrice(
    * evaluation; if no rules match, falls back to ZAR (the source of truth)
    * so prices never silently disappear.
    */
-  currencyCode: string = "ZAR"
+  currencyCode: string = "ZAR",
+  /**
+   * Optional Layer 3: tenant-specific price overrides. When a matching
+   * override exists for the selected option combination + quantity, it
+   * replaces the calculated price entirely.
+   */
+  overrides: ProductPriceOverride[] = []
 ): PriceBreakdown {
+  // Layer 3: Check for an exact-match price override first
+  const override = findMatchingOverride(
+    overrides,
+    spec.selected_options,
+    spec.quantity
+  );
+  if (override) {
+    return {
+      lines: [
+        {
+          label: "Fixed Price (override)",
+          type: "fixed",
+          unit_amount: override.sell_price,
+          multiplier: 1,
+          total: override.sell_price,
+        },
+      ],
+      subtotal_per_unit: override.sell_price,
+      quantity: spec.quantity,
+      total: override.sell_price * spec.quantity,
+    };
+  }
   const lines: PriceLineItem[] = [];
   const targetCurrency = (currencyCode || "ZAR").toUpperCase();
 
