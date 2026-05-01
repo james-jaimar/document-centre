@@ -33,3 +33,7 @@ project_id = "lcvdhtaqoumyokjqaqfw"
     verify_jwt = false
   [functions.detect-region]
     verify_jwt = false
+  [functions.stripe-webhook]
+    verify_jwt = false
+  [functions.create-checkout]
+    verify_jwt = false
