@@ -37,8 +37,9 @@ interface UpsertBody {
 
 interface DeleteBody { action: "delete"; id: string; }
 interface TestBody { action: "test_send"; id: string; recipient: string; }
+interface DisconnectGmailBody { action: "disconnect_gmail"; id: string; }
 
-type Body = UpsertBody | DeleteBody | TestBody;
+type Body = UpsertBody | DeleteBody | TestBody | DisconnectGmailBody;
 
 async function assertTenantAdmin(admin: any, callerId: string, tenant_id: string) {
   const { data } = await admin
