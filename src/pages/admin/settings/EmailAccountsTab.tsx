@@ -8,9 +8,11 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Plus, Trash2, Send, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Plus, Trash2, Send, AlertCircle, CheckCircle2, Mail, Shield } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { useTenantSettingsMap, useUpsertTenantSetting } from "@/hooks/useTenantSettings";
 
 interface EmailAccount {
   id: string;
@@ -46,13 +48,33 @@ const blank = (tenant_id: string): Partial<EmailAccount> & { smtp_password?: str
   branch_id: null,
 });
 
+type SendMethod = "platform" | "own_smtp";
+
 export function EmailAccountsTab() {
   const { tenantId } = useTenantContext();
+  const { settingsMap, isLoading: settingsLoading } = useTenantSettingsMap("email");
+  const upsertSetting = useUpsertTenantSetting();
+
+  const sendMethod = ((settingsMap.email_send_method as string) || "platform") as SendMethod;
+  const systemName = (settingsMap.email_system_name as string) || "";
+  const emailNote = (settingsMap.email_note as string) || "";
+
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<any | null>(null);
   const [testRecipient, setTestRecipient] = useState("");
   const [testingId, setTestingId] = useState<string | null>(null);
+
+  const [localSystemName, setLocalSystemName] = useState("");
+  const [localNote, setLocalNote] = useState("");
+
+  // Sync local state when settings load
+  useEffect(() => {
+    if (!settingsLoading) {
+      setLocalSystemName(systemName);
+      setLocalNote(emailNote);
+    }
+  }, [settingsLoading, systemName, emailNote]);
 
   const load = async () => {
     if (!tenantId) return;
@@ -68,6 +90,26 @@ export function EmailAccountsTab() {
   };
 
   useEffect(() => { load(); }, [tenantId]);
+
+  const setSendMethod = (method: SendMethod) => {
+    upsertSetting.mutate({
+      category: "email",
+      setting_key: "email_send_method",
+      setting_value: method,
+    });
+  };
+
+  const saveSystemFields = () => {
+    const updates: Parameters<typeof upsertSetting.mutate>[0][] = [];
+    if (localSystemName !== systemName) {
+      updates.push({ category: "email", setting_key: "email_system_name", setting_value: localSystemName });
+    }
+    if (localNote !== emailNote) {
+      updates.push({ category: "email", setting_key: "email_note", setting_value: localNote });
+    }
+    updates.forEach((u) => upsertSetting.mutate(u));
+    if (updates.length) toast.success("Email settings saved");
+  };
 
   const save = async () => {
     if (!editing || !tenantId) return;
@@ -121,74 +163,199 @@ export function EmailAccountsTab() {
   };
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader className="flex-row items-start justify-between gap-4">
-          <div>
-            <CardTitle>SMTP Email Accounts</CardTitle>
-            <CardDescription>
-              Configure outgoing email mailboxes for your organisation. The default account is used for all auth, order, and notification emails. Add a branch-scoped account to send from a specific branch's mailbox.
-            </CardDescription>
-          </div>
-          <Button onClick={() => setEditing(blank(tenantId!))}>
-            <Plus className="h-4 w-4 mr-1" /> Add account
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Label className="text-xs whitespace-nowrap">Test recipient:</Label>
-            <Input
-              type="email"
-              placeholder="you@example.com"
-              value={testRecipient}
-              onChange={(e) => setTestRecipient(e.target.value)}
-              className="max-w-xs"
-            />
-          </div>
-
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : accounts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No email accounts yet. Add one to start sending from your own mailbox.</p>
-          ) : (
-            <div className="grid gap-3">
-              {accounts.map((a) => (
-                <div key={a.id} className="rounded-lg border p-4 flex flex-col gap-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium">{a.label}</span>
-                        {a.is_default && <Badge variant="default">Default</Badge>}
-                        {a.branch_id && <Badge variant="secondary">Branch</Badge>}
-                        {!a.is_active && <Badge variant="outline">Disabled</Badge>}
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {a.from_name} &lt;{a.from_email}&gt; · {a.smtp_host}:{a.smtp_port} ({a.smtp_secure})
-                      </p>
-                      {a.last_error ? (
-                        <p className="text-xs text-destructive mt-1 flex items-center gap-1">
-                          <AlertCircle className="h-3 w-3" /> {a.last_error}
-                        </p>
-                      ) : a.last_verified_at ? (
-                        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                          <CheckCircle2 className="h-3 w-3 text-green-600" /> Verified {new Date(a.last_verified_at).toLocaleString()}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="flex gap-1">
-                      <Button size="sm" variant="outline" onClick={() => test(a.id)} disabled={testingId === a.id}>
-                        <Send className="h-3 w-3 mr-1" /> {testingId === a.id ? "Sending…" : "Test"}
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => setEditing({ ...a, smtp_password: "" })}>Edit</Button>
-                      <Button size="sm" variant="ghost" onClick={() => remove(a.id)}><Trash2 className="h-4 w-4" /></Button>
-                    </div>
-                  </div>
+    <div className="space-y-6">
+      {/* ── Send Method Selector ── */}
+      <div>
+        <h3 className="text-lg font-semibold mb-3">System Emails</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Platform option */}
+          <button
+            type="button"
+            onClick={() => setSendMethod("platform")}
+            className={`relative rounded-lg border-2 p-5 text-left transition-colors ${
+              sendMethod === "platform"
+                ? "border-primary bg-primary/5"
+                : "border-border hover:border-muted-foreground/30"
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center ${
+                sendMethod === "platform" ? "border-primary" : "border-muted-foreground/40"
+              }`}>
+                {sendMethod === "platform" && (
+                  <div className="h-2 w-2 rounded-full bg-primary" />
+                )}
+              </div>
+              <div className="flex-1">
+                <p className="font-medium">Send via Document Centre</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Guaranteed delivery using dedicated, safeguarded IP address. No configuration required.
+                </p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  noreply@document-centre.jaimar.dev
+                </p>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 gap-1">
+                    <CheckCircle2 className="h-3 w-3" /> SPF
+                  </Badge>
+                  <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 gap-1">
+                    <CheckCircle2 className="h-3 w-3" /> DKIM
+                  </Badge>
+                  <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 gap-1">
+                    <CheckCircle2 className="h-3 w-3" /> DMARC
+                  </Badge>
                 </div>
-              ))}
+              </div>
             </div>
-          )}
+          </button>
+
+          {/* Own SMTP option */}
+          <button
+            type="button"
+            onClick={() => setSendMethod("own_smtp")}
+            className={`relative rounded-lg border-2 p-5 text-left transition-colors ${
+              sendMethod === "own_smtp"
+                ? "border-primary bg-primary/5"
+                : "border-border hover:border-muted-foreground/30"
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center ${
+                sendMethod === "own_smtp" ? "border-primary" : "border-muted-foreground/40"
+              }`}>
+                {sendMethod === "own_smtp" && (
+                  <div className="h-2 w-2 rounded-full bg-primary" />
+                )}
+              </div>
+              <div className="flex-1">
+                <p className="font-medium">Send via your own domain</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Use your own SMTP mailbox. Emails are sent from your domain using your credentials.
+                </p>
+                {accounts.length > 0 && sendMethod === "own_smtp" && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {accounts[0].from_name} &lt;{accounts[0].from_email}&gt;
+                  </p>
+                )}
+              </div>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* ── System Name & Note ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Email Identity</CardTitle>
+          <CardDescription>
+            The system name appears in email headers and subjects. The note is appended to order notification emails.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-1.5">
+            <Label>System name</Label>
+            <Input
+              value={localSystemName}
+              onChange={(e) => setLocalSystemName(e.target.value)}
+              placeholder="Your company name"
+              className="max-w-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              Defaults to your organisation's trading name if left blank.
+            </p>
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Note</Label>
+            <Textarea
+              value={localNote}
+              onChange={(e) => setLocalNote(e.target.value)}
+              placeholder="e.g. PLEASE UPLOAD PROOF OF PAYMENT TO THE MESSAGE AREA OF YOUR ORDER"
+              rows={3}
+            />
+            <p className="text-xs text-muted-foreground">
+              This message is included in order-related emails sent to customers.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            onClick={saveSystemFields}
+            disabled={localSystemName === systemName && localNote === emailNote}
+          >
+            Save
+          </Button>
         </CardContent>
       </Card>
+
+      {/* ── SMTP Accounts (only when own_smtp) ── */}
+      {sendMethod === "own_smtp" && (
+        <Card>
+          <CardHeader className="flex-row items-start justify-between gap-4">
+            <div>
+              <CardTitle>SMTP Email Accounts</CardTitle>
+              <CardDescription>
+                Configure outgoing email mailboxes for your organisation. The default account is used for all auth, order, and notification emails. Add a branch-scoped account to send from a specific branch's mailbox.
+              </CardDescription>
+            </div>
+            <Button onClick={() => setEditing(blank(tenantId!))}>
+              <Plus className="h-4 w-4 mr-1" /> Add account
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Label className="text-xs whitespace-nowrap">Test recipient:</Label>
+              <Input
+                type="email"
+                placeholder="you@example.com"
+                value={testRecipient}
+                onChange={(e) => setTestRecipient(e.target.value)}
+                className="max-w-xs"
+              />
+            </div>
+
+            {loading ? (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : accounts.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No email accounts yet. Add one to start sending from your own mailbox.</p>
+            ) : (
+              <div className="grid gap-3">
+                {accounts.map((a) => (
+                  <div key={a.id} className="rounded-lg border p-4 flex flex-col gap-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium">{a.label}</span>
+                          {a.is_default && <Badge variant="default">Default</Badge>}
+                          {a.branch_id && <Badge variant="secondary">Branch</Badge>}
+                          {!a.is_active && <Badge variant="outline">Disabled</Badge>}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {a.from_name} &lt;{a.from_email}&gt; · {a.smtp_host}:{a.smtp_port} ({a.smtp_secure})
+                        </p>
+                        {a.last_error ? (
+                          <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                            <AlertCircle className="h-3 w-3" /> {a.last_error}
+                          </p>
+                        ) : a.last_verified_at ? (
+                          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                            <CheckCircle2 className="h-3 w-3 text-green-600" /> Verified {new Date(a.last_verified_at).toLocaleString()}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="flex gap-1">
+                        <Button size="sm" variant="outline" onClick={() => test(a.id)} disabled={testingId === a.id}>
+                          <Send className="h-3 w-3 mr-1" /> {testingId === a.id ? "Sending…" : "Test"}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setEditing({ ...a, smtp_password: "" })}>Edit</Button>
+                        <Button size="sm" variant="ghost" onClick={() => remove(a.id)}><Trash2 className="h-4 w-4" /></Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent className="max-w-lg">
