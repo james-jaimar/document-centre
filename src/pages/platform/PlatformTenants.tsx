@@ -171,6 +171,15 @@ const PlatformTenants = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {subTenant && (
+        <TenantSubscriptionDialog
+          open={!!subTenant}
+          onOpenChange={(open) => !open && setSubTenant(null)}
+          tenant={subTenant}
+          subscription={subByTenant[subTenant.id]}
+        />
+      )}
     </div>
   );
 };
