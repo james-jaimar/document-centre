@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useTenants } from "@/hooks/useTenants";
 import {
   useTenantSubscriptions,
@@ -36,8 +37,32 @@ import {
 } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { formatPrice } from "@/lib/formatCurrency";
 import { CreditCard, Loader2, Building2, ArrowUpCircle, XCircle, Zap } from "lucide-react";
 import type { Tenant } from "@/hooks/useTenants";
+
+interface CheckoutRegion {
+  id: string;
+  region_code: string;
+  region_label: string;
+  currency_code: string;
+  currency_symbol: string;
+  is_default: boolean;
+  sort_order: number;
+}
+
+interface CheckoutPlan {
+  id: string;
+  plan_slug: string;
+  plan_name: string;
+  price: number;
+  stripe_price_id: string | null;
+  sort_order: number;
+}
+
+const FLAG_MAP: Record<string, string> = {
+  US: "🇺🇸", UK: "🇬🇧", EU: "🇪🇺", AU: "🇦🇺", ZA: "🇿🇦",
+};
 
 const STATUS_COLORS: Record<string, string> = {
   active: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
@@ -60,8 +85,54 @@ export default function PlatformSubscriptions() {
   const [assignDialog, setAssignDialog] = useState<Tenant | null>(null);
   const [selectedPlan, setSelectedPlan] = useState("starter");
   const [checkoutTenant, setCheckoutTenant] = useState<Tenant | null>(null);
+  const [checkoutRegionId, setCheckoutRegionId] = useState<string | null>(null);
   const [selectedPriceId, setSelectedPriceId] = useState<string | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
+
+  // Fetch regions for checkout dialog
+  const { data: checkoutRegions } = useQuery({
+    queryKey: ["platform_pricing_regions"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("platform_pricing_regions")
+        .select("*")
+        .order("sort_order");
+      if (error) throw error;
+      return data as CheckoutRegion[];
+    },
+    enabled: !!checkoutTenant,
+  });
+
+  // Fetch plans for selected checkout region
+  const { data: checkoutPlans, isLoading: checkoutPlansLoading } = useQuery({
+    queryKey: ["platform_pricing_plans", "checkout_dialog", checkoutRegionId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("platform_pricing_plans")
+        .select("*")
+        .eq("region_id", checkoutRegionId!)
+        .not("stripe_price_id", "is", null)
+        .order("sort_order");
+      if (error) throw error;
+      return data as CheckoutPlan[];
+    },
+    enabled: !!checkoutRegionId,
+  });
+
+  // Auto-select default region when checkout dialog opens
+  useEffect(() => {
+    if (checkoutTenant && checkoutRegions && !checkoutRegionId) {
+      const def = checkoutRegions.find((r) => r.is_default) || checkoutRegions[0];
+      if (def) setCheckoutRegionId(def.id);
+    }
+  }, [checkoutTenant, checkoutRegions, checkoutRegionId]);
+
+  // Reset plan when region changes
+  useEffect(() => {
+    setSelectedPriceId(null);
+  }, [checkoutRegionId]);
+
+  const selectedCheckoutRegion = checkoutRegions?.find((r) => r.id === checkoutRegionId);
 
   const subByTenant = (subscriptions ?? []).reduce<Record<string, TenantSubscription>>(
     (acc, s) => {
@@ -71,7 +142,7 @@ export default function PlatformSubscriptions() {
     {}
   );
 
-  const stripePlans = (plans ?? []).filter((p) => p.stripe_price_id);
+  
 
   const handleAssignPlan = async () => {
     if (!assignDialog) return;
@@ -268,20 +339,19 @@ export default function PlatformSubscriptions() {
                               <ArrowUpCircle className="h-4 w-4 mr-1" />
                               Assign
                             </Button>
-                            {stripePlans.length > 0 && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setCheckoutTenant(tenant);
-                                  setSelectedPriceId(null);
-                                }}
-                                title="Trigger Stripe checkout"
-                              >
-                                <Zap className="h-4 w-4 mr-1" />
-                                Checkout
-                              </Button>
-                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setCheckoutTenant(tenant);
+                                setCheckoutRegionId(null);
+                                setSelectedPriceId(null);
+                              }}
+                              title="Trigger Stripe checkout"
+                            >
+                              <Zap className="h-4 w-4 mr-1" />
+                              Checkout
+                            </Button>
                             {sub && sub.status === "active" && (
                               <Button
                                 variant="ghost"
@@ -368,51 +438,69 @@ export default function PlatformSubscriptions() {
           <DialogHeader>
             <DialogTitle>Stripe Checkout — {checkoutTenant?.name}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Select a Stripe-linked plan to start a checkout session.
+              Select a region and plan to start a checkout session.
             </p>
-            {stripePlans.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4">
-                No plans have Stripe Price IDs configured. Go to{" "}
-                <strong>Pricing Regions</strong> to add them.
-              </p>
-            ) : (
-              <div className="grid gap-2">
-                {stripePlans.map((plan) => {
-                  const isSelected = selectedPriceId === plan.stripe_price_id;
-                  return (
-                    <Card
-                      key={plan.id}
-                      className={`cursor-pointer transition-colors ${
-                        isSelected ? "border-primary ring-1 ring-primary" : "hover:border-primary/50"
-                      }`}
-                      onClick={() => setSelectedPriceId(plan.stripe_price_id)}
-                    >
-                      <CardContent className="flex items-center justify-between p-3">
-                        <div>
-                          <p className="font-medium capitalize">{plan.plan_name}</p>
-                          <p className="text-xs text-muted-foreground font-mono">
-                            {plan.stripe_price_id}
-                          </p>
-                        </div>
-                        <p className="text-sm font-semibold">
-                          R{plan.price.toFixed(0)}/mo
-                        </p>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
+
+            {/* Region dropdown */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Region</label>
+              <Select
+                value={checkoutRegionId || ""}
+                onValueChange={setCheckoutRegionId}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select region" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(checkoutRegions ?? []).map((r) => (
+                    <SelectItem key={r.id} value={r.id}>
+                      {FLAG_MAP[r.region_code] || ""} {r.region_label} ({r.currency_code})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Plan dropdown */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Plan</label>
+              {checkoutPlansLoading ? (
+                <div className="flex items-center gap-2 text-muted-foreground text-sm py-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading plans…
+                </div>
+              ) : !checkoutPlans?.length ? (
+                <p className="text-sm text-muted-foreground py-2">
+                  No Stripe-linked plans for this region.
+                </p>
+              ) : (
+                <Select
+                  value={selectedPriceId || ""}
+                  onValueChange={setSelectedPriceId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a plan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {checkoutPlans.map((plan) => (
+                      <SelectItem key={plan.id} value={plan.stripe_price_id!}>
+                        {plan.plan_name} — {formatPrice(plan.price, selectedCheckoutRegion?.currency_code || "USD")}/mo
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCheckoutTenant(null)}>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setCheckoutTenant(null)} className="w-full sm:w-auto">
               Cancel
             </Button>
             <Button
               onClick={handleCheckout}
               disabled={!selectedPriceId || checkingOut}
+              className="w-full sm:w-auto"
             >
               {checkingOut && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Start Checkout
