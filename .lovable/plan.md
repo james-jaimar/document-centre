@@ -1,76 +1,119 @@
-## What broke
 
-After cutting `document-centre.com` over to AWS Amplify, the `customHttp.yml` CSP header is now actually being enforced in production. The CSP's `connect-src` directive does not include the S3 host, so every browser → S3 presigned-URL `PUT` is blocked before it leaves the page:
+# Stripe Integration Plan
 
-> Refused to connect because it violates the document's Content Security Policy.
+You've clarified two separate payment layers:
 
-`s3Storage.ts` then sees this as a "Failed to fetch" network error and burns through all 6 retries + a re-sign + 1 more retry, all of which are doomed — CSP kills each attempt identically.
+1. **Platform layer** -- Tenants pay YOU a monthly subscription (Starter / Core / Multi-Branch) via Stripe.
+2. **Tenant layer** -- Each tenant configures their OWN payment gateway (Stripe, PayFast, etc.) so their customers can pay for print orders online.
 
-A second class of CSP noise is also showing up because the Tawk widget pulls scripts/sockets from `cdn.jsdelivr.net` and a couple of non-`*.tawk.to` hosts.
+These are independent systems. Here's the plan for both.
 
-## Fix
+---
 
-Edit **`customHttp.yml`** — the only file that needs to change. After Amplify redeploys (auto on git push), the new CSP header is served and uploads work again.
+## Layer 1: Platform SaaS Billing (Stripe Subscriptions)
 
-### 1. `connect-src` — add S3
+This is where your Stripe account bills tenants monthly for their Document Centre plan.
 
-Append the S3 host so the browser allows fetch/XHR to presigned URLs. Use a wildcard so future region or bucket-style changes don't break things again:
+### Database changes
 
-```
-https://*.s3.af-south-1.amazonaws.com https://s3.af-south-1.amazonaws.com
-```
+- **`tenant_subscriptions`** table:
+  - `id`, `tenant_id`, `stripe_customer_id`, `stripe_subscription_id`
+  - `plan_slug` (starter / core / multi_branch)
+  - `status` (trialing / active / past_due / cancelled / paused)
+  - `current_period_start`, `current_period_end`
+  - `trial_ends_at`, `cancelled_at`
+  - `metadata` JSONB
+  - RLS: platform admins full access, tenant owner/admin SELECT on own row
 
-(Both forms are needed because presigned URLs use the path-style `s3.<region>.amazonaws.com/<bucket>/<key>` host, and some SDKs/clients shift to virtual-hosted-style `<bucket>.s3.<region>.amazonaws.com/<key>`. Belt and braces.)
+- Add `plan_slug` column to `tenants` table (default `'starter'`) for quick feature-gating lookups.
 
-### 2. `script-src` — add jsdelivr for Tawk emoji
+### Stripe product setup (manual, in your Stripe dashboard)
 
-```
-https://cdn.jsdelivr.net
-```
+- Create 3 Products: Starter, Core, Multi-Branch
+- Each product gets monthly Price objects per region (ZAR, USD, GBP, etc.) matching your `platform_pricing_plans` table
+- Record the Stripe Price IDs in `platform_pricing_plans` as a new `stripe_price_id` column
 
-### 3. `connect-src` — add the rest of Tawk's hosts
+### Edge Functions
 
-The masked `<URL>` entries in the log are Tawk's analytics/realtime endpoints. The safest minimal addition is to allow Tawk's CDN and the WSS upgrade host:
+1. **`stripe-checkout`** -- Creates a Stripe Checkout Session for a tenant to subscribe or change plan. Accepts `plan_slug` and `region`, looks up the `stripe_price_id`, creates or retrieves the Stripe Customer, and returns the session URL.
 
-```
-https://*.jsdelivr.net wss://*.tawk.to
-```
+2. **`stripe-billing-portal`** -- Creates a Stripe Billing Portal session so tenant owners can manage their subscription (update card, cancel, view invoices).
 
-(`wss://*.tawk.to` is already there — keep. Add jsdelivr because Tawk also pulls runtime chunks from it.)
+3. **`stripe-webhook`** -- Handles Stripe webhook events:
+   - `checkout.session.completed` -- activate subscription, update `tenant_subscriptions`
+   - `customer.subscription.updated` -- plan changes, renewals
+   - `customer.subscription.deleted` -- cancellation
+   - `invoice.payment_failed` -- set status to `past_due`
+   - Verifies webhook signature using `STRIPE_WEBHOOK_SECRET`
 
-### Final `customHttp.yml` CSP (single line, unchanged structure)
+### Secrets needed
 
-```
-default-src 'self';
-script-src 'self' 'unsafe-inline' 'unsafe-eval' https://embed.tawk.to https://*.tawk.to https://cdn.jsdelivr.net;
-style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://embed.tawk.to https://*.tawk.to;
-font-src 'self' data: https://fonts.gstatic.com https://embed.tawk.to https://*.tawk.to;
-img-src 'self' data: blob: https:;
-media-src 'self' blob: https:;
-worker-src 'self' blob:;
-connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.tawk.to wss://*.tawk.to https://cdn.jsdelivr.net https://*.s3.af-south-1.amazonaws.com https://s3.af-south-1.amazonaws.com;
-frame-src https://*.tawk.to;
-object-src 'none';
-base-uri 'self';
-form-action 'self'
-```
+- `STRIPE_SECRET_KEY` -- your platform Stripe secret key
+- `STRIPE_WEBHOOK_SECRET` -- webhook signing secret
 
-Everything else (HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy) stays exactly as-is.
+### Frontend (Platform + Tenant Admin)
 
-## Why no code/edge-function changes
+- **Platform `/platform/tenants`** -- Show subscription status badge per tenant (active, trial, past_due, cancelled). Allow platform admins to see billing details.
+- **Tenant Admin Settings** -- New "Billing" or "Subscription" tab:
+  - Shows current plan, status, renewal date
+  - "Change Plan" button -> Stripe Checkout with `mode: 'subscription'`
+  - "Manage Billing" button -> Stripe Billing Portal (card updates, invoices, cancel)
+- **Marketing `/pricing`** -- CTA buttons trigger Stripe Checkout after auth (or redirect to register first)
+- **Feature gating** -- A `useTenantPlan()` hook reads `tenants.plan_slug` to conditionally show/hide features (e.g. multi-branch, branding, imposed output)
 
-- `s3Storage.ts` retry logic is doing its job — it correctly classifies "Failed to fetch" as transient. The bug isn't there; we just shouldn't be giving it CSP-blocked requests to retry.
-- The presigned URL itself is valid (correct signature, 15-min TTL, right region/bucket). You can confirm by `curl`ing the URL from the terminal — it'll succeed. Only the *browser* enforces CSP.
-- No Supabase / edge function changes needed.
+---
 
-## How to verify after deploy
+## Layer 2: Tenant-Level Payment Gateway (for order checkout)
 
-1. Hard refresh `document-centre.com` (CSP is cached aggressively — Cmd+Shift+R or open in private window).
-2. Try uploading `8pp_A4.pdf` again on a customer order.
-3. Console should show the single `[s3-storage] (ref: …) action=sign-upload` line and **no** "Refused to connect" entries.
-4. The Tawk emoji picker should also stop complaining.
+Each tenant configures their own gateway so their customers can pay for print jobs.
 
-## Out of scope (flagged for later, not doing now)
+### Database changes
 
-- **Unpublish `document-centre.lovable.app`** — old Lovable Published URL still listed. Harmless but should be retired so the only production surface is Amplify on `document-centre.com`.
-- **Tighten `script-src 'unsafe-inline' 'unsafe-eval'`** — currently needed by Tawk and Vite runtime; can be replaced with nonces in a later pass if you want a stricter CSP grade.
+- **`tenant_payment_gateways`** table:
+  - `id`, `tenant_id`, `app_id`, `provider` (stripe / payfast / eft)
+  - `is_active`, `is_live` (test vs live mode)
+  - `config` JSONB (non-secret settings like merchant ID)
+  - `secret_ids` JSONB (vault secret IDs for API keys)
+  - `created_at`, `updated_at`
+  - RLS: tenant owner/admin only
+
+### Admin UI (Tenant Settings > Payments tab)
+
+Expand the existing `PaymentsTab.tsx`:
+- Keep the current EFT/banking details section
+- Add a "Card Payments" section with provider selector (Stripe / PayFast)
+- For Stripe: fields for publishable key and secret key (stored in Vault via a helper edge function)
+- For PayFast: merchant ID, merchant key, passphrase
+- Toggle for test/live mode
+- Test connection button
+
+### Checkout integration
+
+- Update `Checkout.tsx` to show available payment methods based on tenant config
+- If Stripe is configured: redirect to Stripe Checkout (using the tenant's own keys)
+- If PayFast is configured: redirect to PayFast payment page
+- If EFT only: show banking details (current behaviour)
+- On payment completion, call `recordPaymentEvent` via the order-engine
+
+### Edge Functions
+
+- **`tenant-payment-session`** -- Creates a payment session using the tenant's own gateway credentials (retrieved from Vault). Returns a redirect URL. This keeps tenant API keys server-side only.
+- **`tenant-payment-webhook`** -- Receives payment confirmations from Stripe/PayFast, verifies signatures, calls `recordPaymentEvent`.
+
+---
+
+## Implementation order
+
+1. **Layer 1 first** (platform billing) -- this is the revenue foundation
+2. **Layer 2 second** (tenant gateways) -- can be phased in once the subscription system is stable
+
+### Technical notes
+
+- All Stripe calls happen in Edge Functions (server-side only, keys never reach the browser)
+- Webhook endpoints use signature verification, not JWT auth
+- Tenant gateway secrets are stored in Supabase Vault (via `create_secret` / `read_secret` DB functions you already have)
+- The existing `payments` table continues to track order-level payments; `tenant_subscriptions` is a new, separate concern
+
+---
+
+Shall I proceed with Layer 1 (platform SaaS billing) first?
