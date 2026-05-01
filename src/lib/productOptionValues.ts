@@ -630,6 +630,26 @@ export const FINISHING: StructuredOptionValue[] = [
     price_impact: 3.0, price_type: "per_document",
     metadata: { method: "shrink_wrap" },
   }),
+  createOptionValue("Acetate Front Cover", "Covers & Backs", {
+    price_impact: 4.0, price_type: "per_document",
+    metadata: { method: "acetate_cover", position: "front", material: "acetate", thickness_micron: 200 },
+  }),
+  createOptionValue("Black Card Back Cover", "Covers & Backs", {
+    price_impact: 2.5, price_type: "per_document",
+    metadata: { method: "card_back", position: "back", color: "black", weight_gsm: 250 },
+  }),
+  createOptionValue("White Card Back Cover", "Covers & Backs", {
+    price_impact: 2.5, price_type: "per_document",
+    metadata: { method: "card_back", position: "back", color: "white", weight_gsm: 250 },
+  }),
+  createOptionValue("Navy Card Back Cover", "Covers & Backs", {
+    price_impact: 3.0, price_type: "per_document",
+    metadata: { method: "card_back", position: "back", color: "navy", weight_gsm: 250 },
+  }),
+  createOptionValue("Trimming / Guillotine", "Cutting", {
+    price_impact: 2.0, price_type: "per_document",
+    metadata: { method: "trimming" },
+  }),
 ];
 
 export const FINISHING_STAPLED: StructuredOptionValue[] = [

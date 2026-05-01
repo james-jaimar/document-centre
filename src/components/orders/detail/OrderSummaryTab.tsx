@@ -65,6 +65,15 @@ export function OrderSummaryTab({ order, jobs, selectedJobId, onSelectJob }: Pro
             <span className="text-muted-foreground">Turnaround</span>
             <span>{order.turnaround_time_text || "—"}</span>
           </div>
+          {(() => {
+            const totalWeight = jobs.reduce((sum: number, j: any) => sum + (Number(j.weight_kg) || 0), 0);
+            return totalWeight > 0 ? (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Est. Weight</span>
+                <span className="font-medium">{totalWeight.toFixed(2)} kg</span>
+              </div>
+            ) : null;
+          })()}
         </div>
       </div>
 
