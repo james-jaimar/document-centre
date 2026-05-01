@@ -1290,6 +1290,7 @@ class PdfOps:
             *common_safer,
             "-dBATCH",
             "-dNOPAUSE",
+            "-dNumRenderingThreads=4",
             "-sDEVICE=pdfwrite",
             "-sColorConversionStrategy=CMYK",
             "-dProcessColorModel=/DeviceCMYK",
