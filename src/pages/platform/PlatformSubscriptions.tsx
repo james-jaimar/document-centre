@@ -440,51 +440,69 @@ export default function PlatformSubscriptions() {
           <DialogHeader>
             <DialogTitle>Stripe Checkout — {checkoutTenant?.name}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Select a Stripe-linked plan to start a checkout session.
+              Select a region and plan to start a checkout session.
             </p>
-            {stripePlans.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4">
-                No plans have Stripe Price IDs configured. Go to{" "}
-                <strong>Pricing Regions</strong> to add them.
-              </p>
-            ) : (
-              <div className="grid gap-2">
-                {stripePlans.map((plan) => {
-                  const isSelected = selectedPriceId === plan.stripe_price_id;
-                  return (
-                    <Card
-                      key={plan.id}
-                      className={`cursor-pointer transition-colors ${
-                        isSelected ? "border-primary ring-1 ring-primary" : "hover:border-primary/50"
-                      }`}
-                      onClick={() => setSelectedPriceId(plan.stripe_price_id)}
-                    >
-                      <CardContent className="flex items-center justify-between p-3">
-                        <div>
-                          <p className="font-medium capitalize">{plan.plan_name}</p>
-                          <p className="text-xs text-muted-foreground font-mono">
-                            {plan.stripe_price_id}
-                          </p>
-                        </div>
-                        <p className="text-sm font-semibold">
-                          R{plan.price.toFixed(0)}/mo
-                        </p>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
+
+            {/* Region dropdown */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Region</label>
+              <Select
+                value={checkoutRegionId || ""}
+                onValueChange={setCheckoutRegionId}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select region" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(checkoutRegions ?? []).map((r) => (
+                    <SelectItem key={r.id} value={r.id}>
+                      {FLAG_MAP[r.region_code] || ""} {r.region_label} ({r.currency_code})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Plan dropdown */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Plan</label>
+              {checkoutPlansLoading ? (
+                <div className="flex items-center gap-2 text-muted-foreground text-sm py-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading plans…
+                </div>
+              ) : !checkoutPlans?.length ? (
+                <p className="text-sm text-muted-foreground py-2">
+                  No Stripe-linked plans for this region.
+                </p>
+              ) : (
+                <Select
+                  value={selectedPriceId || ""}
+                  onValueChange={setSelectedPriceId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a plan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {checkoutPlans.map((plan) => (
+                      <SelectItem key={plan.id} value={plan.stripe_price_id!}>
+                        {plan.plan_name} — {formatPrice(plan.price, selectedCheckoutRegion?.currency_code || "USD")}/mo
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCheckoutTenant(null)}>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setCheckoutTenant(null)} className="w-full sm:w-auto">
               Cancel
             </Button>
             <Button
               onClick={handleCheckout}
               disabled={!selectedPriceId || checkingOut}
+              className="w-full sm:w-auto"
             >
               {checkingOut && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Start Checkout
