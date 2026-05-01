@@ -1,25 +1,48 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTenants, useUpdateTenant } from "@/hooks/useTenants";
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { useTenantSubscriptions } from "@/hooks/useTenantSubscriptions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { TenantSubscriptionDialog } from "@/components/platform/TenantSubscriptionDialog";
 import { toast } from "sonner";
-import { Building2, Pencil, ArrowRight, ExternalLink } from "lucide-react";
+import { Building2, Pencil, ArrowRight, ExternalLink, CreditCard } from "lucide-react";
 import type { Tenant } from "@/hooks/useTenants";
 import { buildAdminPath } from "@/lib/adminRouting";
 
 const PlatformTenants = () => {
   const { data: tenants, isLoading } = useTenants();
+  const { data: subscriptions } = useTenantSubscriptions();
   const updateTenant = useUpdateTenant();
   const { setOverrideTenantId } = useTenantContext();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [editing, setEditing] = useState<Tenant | null>(null);
+  const [subTenant, setSubTenant] = useState<Tenant | null>(null);
   const [form, setForm] = useState({ name: "", slug: "", logo_url: "" });
+
+  // Subscription lookup by tenant_id
+  const subByTenant = (subscriptions ?? []).reduce<Record<string, typeof subscriptions extends (infer T)[] ? T : never>>((acc, s) => {
+    acc[s.tenant_id] = s;
+    return acc;
+  }, {});
+
+  // Handle checkout return toasts
+  useEffect(() => {
+    const checkout = searchParams.get("checkout");
+    if (checkout === "success") {
+      toast.success("Checkout completed — subscription will activate shortly");
+      setSearchParams({}, { replace: true });
+    } else if (checkout === "cancelled") {
+      toast.info("Checkout was cancelled");
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const openEdit = (t: Tenant) => {
     setEditing(t);
@@ -79,9 +102,14 @@ const PlatformTenants = () => {
                       <p className="text-xs text-muted-foreground">{t.slug}</p>
                     </div>
                   </div>
-                  <Badge variant={t.is_active ? "default" : "secondary"}>
-                    {t.is_active ? "Active" : "Inactive"}
-                  </Badge>
+                  <div className="flex items-center gap-1.5">
+                    <Badge variant={t.is_active ? "default" : "secondary"}>
+                      {t.is_active ? "Active" : "Inactive"}
+                    </Badge>
+                    <Badge variant="outline" className="capitalize text-xs">
+                      {subByTenant[t.id]?.plan_slug || t.plan_slug || "starter"}
+                    </Badge>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 space-y-2">
@@ -99,6 +127,9 @@ const PlatformTenants = () => {
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>Created {new Date(t.created_at).toLocaleDateString()}</span>
                   <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => setSubTenant(t)}>
+                      <CreditCard size={14} className="mr-1" /> Subscription
+                    </Button>
                     <Button variant="ghost" size="sm" onClick={() => openEdit(t)}>
                       <Pencil size={14} className="mr-1" /> Edit
                     </Button>
@@ -140,6 +171,15 @@ const PlatformTenants = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {subTenant && (
+        <TenantSubscriptionDialog
+          open={!!subTenant}
+          onOpenChange={(open) => !open && setSubTenant(null)}
+          tenant={subTenant}
+          subscription={subByTenant[subTenant.id]}
+        />
+      )}
     </div>
   );
 };
