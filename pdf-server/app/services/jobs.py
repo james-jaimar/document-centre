@@ -34,7 +34,7 @@ class JobRepository:
         db.commit()
 
     def mark_done(self, db: Session, job_id: str, result: dict):
-        db.execute(text("update jobs set status='completed', result=cast(:result as jsonb), finished_at=now(), updated_at=now() where id=:id"), {'id': job_id, 'result': json.dumps(result)})
+        db.execute(text("update jobs set status='completed', result=cast(:result as jsonb), finished_at=now(), updated_at=now() where id=:id"), {'id': job_id, 'result': json.dumps(result, default=_json_default)})
         db.commit()
 
     def mark_failed(self, db: Session, job_id: str, error: str):
