@@ -558,6 +558,35 @@ def normalize_orientation(self, asset_id: str, job_id: str, dominant: str = "por
 #   4. Upload the result and promote it to asset.normalized_storage_path,
 #      recording { print_ready_profile, print_ready_intent } in metadata.
 #   5. Re-inspect to refresh page count / dimensions.
+def _maybe_chain_generate_previews(
+    db,
+    asset_id: str,
+    chain: bool,
+    render_box: list[float] | None,
+    pre_allocated_job_id: str | None,
+):
+    """Server-side handoff from print_ready → generate_previews.
+
+    The pre-allocated job_id is supplied by the API route so the client
+    already knows which job to poll. We just enqueue the celery task
+    against it. If anything fails here, mark that job as failed so the
+    client doesn't poll forever.
+    """
+    if not chain or not pre_allocated_job_id:
+        return
+    # Local import to avoid circular module load — both tasks live in the
+    # same package and Celery imports them lazily.
+    from app.tasks.document_tasks import generate_previews
+    try:
+        task = generate_previews.delay(asset_id, pre_allocated_job_id, render_box)
+        job_repo.set_celery_task_id(db, pre_allocated_job_id, task.id)
+    except Exception as exc:
+        try:
+            job_repo.mark_failed(db, pre_allocated_job_id, f"chain enqueue failed: {exc}")
+        except Exception:
+            pass
+
+
 @shared_task(bind=True, queue="documents")
 def print_ready(
     self,
