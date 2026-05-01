@@ -9,6 +9,7 @@ import {
 import type { ProductFamily } from "@/hooks/useProductFamilies";
 import ProductFamilyForm from "@/components/admin/ProductFamilyForm";
 import ProductOptionsEditor from "@/components/admin/ProductOptionsEditor";
+import ProductPricingTab from "@/components/admin/ProductPricingTab";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -23,6 +24,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Pencil, Trash2, ChevronDown, Sparkles, ImageIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
