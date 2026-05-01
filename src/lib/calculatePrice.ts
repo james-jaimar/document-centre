@@ -1,6 +1,8 @@
 import type { StructuredOptionValue } from "./productOptionTypes";
 import { isStructuredValues } from "./productOptionTypes";
 import type { Tables } from "@/integrations/supabase/types";
+import type { ProductPriceOverride } from "@/hooks/useProductPriceOverrides";
+import { findMatchingOverride } from "@/hooks/useProductPriceOverrides";
 
 type PricingRule = Tables<"pricing_rules">;
 type ProductOption = Tables<"product_options">;
