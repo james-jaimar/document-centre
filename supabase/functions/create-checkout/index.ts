@@ -37,7 +37,15 @@ Deno.serve(async (req) => {
   }
 
   // Parse body
-  let body: { tenant_id: string; price_id: string; success_url: string; cancel_url: string };
+  let body: {
+    tenant_id: string;
+    price_id: string;
+    success_url: string;
+    cancel_url: string;
+    discount_type?: string | null;
+    discount_value?: number;
+    trial_days?: number;
+  };
   try {
     body = await req.json();
   } catch {
@@ -54,7 +62,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Verify caller is tenant owner/admin
+  // Verify caller is tenant owner/admin or platform admin
   const supabaseAdmin = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -69,7 +77,6 @@ Deno.serve(async (req) => {
     .in("role", ["owner", "admin"])
     .maybeSingle();
 
-  // Also allow platform admins
   const { data: platformRole } = await supabaseAdmin
     .from("user_roles")
     .select("role")
@@ -108,7 +115,7 @@ Deno.serve(async (req) => {
     });
     customerId = customer.id;
 
-    // Pre-create subscription record so webhook can upsert
+    // Pre-create/update subscription record
     await supabaseAdmin.from("tenant_subscriptions").upsert({
       tenant_id: body.tenant_id,
       stripe_customer_id: customerId,
@@ -124,8 +131,8 @@ Deno.serve(async (req) => {
     .eq("stripe_price_id", body.price_id)
     .maybeSingle();
 
-  // Create Checkout Session
-  const session = await stripe.checkout.sessions.create({
+  // Build checkout session params
+  const sessionParams: Stripe.Checkout.SessionCreateParams = {
     customer: customerId,
     mode: "subscription",
     line_items: [{ price: body.price_id, quantity: 1 }],
@@ -138,7 +145,54 @@ Deno.serve(async (req) => {
       },
     },
     metadata: { tenant_id: body.tenant_id },
-  });
+  };
+
+  // Add trial period if specified
+  if (body.trial_days && body.trial_days > 0) {
+    sessionParams.subscription_data!.trial_period_days = body.trial_days;
+  }
+
+  // Create Stripe coupon for discounts
+  if (body.discount_type && body.discount_value && body.discount_value > 0) {
+    try {
+      let couponParams: Stripe.CouponCreateParams;
+
+      if (body.discount_type === "percentage") {
+        couponParams = {
+          percent_off: body.discount_value,
+          duration: "forever",
+          name: `${body.discount_value}% off - ${tenant?.name || body.tenant_id}`,
+        };
+      } else if (body.discount_type === "fixed_amount") {
+        // Look up the price to get the currency
+        const price = await stripe.prices.retrieve(body.price_id);
+        couponParams = {
+          amount_off: Math.round(body.discount_value * 100), // Stripe expects cents
+          currency: price.currency,
+          duration: "forever",
+          name: `${body.discount_value} off - ${tenant?.name || body.tenant_id}`,
+        };
+      } else if (body.discount_type === "free_months") {
+        couponParams = {
+          percent_off: 100,
+          duration: "repeating",
+          duration_in_months: body.discount_value,
+          name: `${body.discount_value} free months - ${tenant?.name || body.tenant_id}`,
+        };
+      } else {
+        couponParams = { percent_off: 0, duration: "once" };
+      }
+
+      const coupon = await stripe.coupons.create(couponParams);
+      sessionParams.discounts = [{ coupon: coupon.id }];
+    } catch (couponErr) {
+      console.error("Failed to create Stripe coupon:", couponErr);
+      // Continue without discount rather than failing the whole checkout
+    }
+  }
+
+  // Create Checkout Session
+  const session = await stripe.checkout.sessions.create(sessionParams);
 
   return new Response(JSON.stringify({ url: session.url }), {
     status: 200,
