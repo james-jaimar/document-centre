@@ -835,15 +835,13 @@ export function useDocumentUpload(
 
           // Office files: skip auto-finalise so we always inspect the
           // pristine LibreOffice output. The size advisory (if any) drives
-          // resize → finaliseOrientationAndPrintReady from OrderFiles. If
-          // there is no size advisory we still need to finalise here before
-          // rendering — handled below after inspection returns.
+          // resize → finaliseOrientationAndPrintReady from OrderFiles.
+          // Finalisation for the no-advisory case is now handled below
+          // (shared with the PDF branch) so we can chain print-ready →
+          // generate_previews in a single server-side hop.
           inspection = await inspectExistingAsset(doc.id, asset_id, originalName, {
             skipFinalize: true,
           });
-          if (inspection && !inspection.hasAdvisory) {
-            await finalizeOrientationAndPrintReady(doc.id, inspection.asset_id, originalName);
-          }
         } else {
           inspection = await inspectDocument(doc.id, storagePath, originalName);
         }
@@ -862,9 +860,24 @@ export function useDocumentUpload(
         // Phase B: only render now if no advisory. Otherwise defer until the
         // user resolves the advisory dialog (bleed / non-ISO / orientation).
         if (!inspection.hasAdvisory) {
+          // D-chaining: ask print-ready to enqueue generate_previews as its
+          // final server-side step. Returns a pre-allocated `previewJobId`
+          // we can poll directly — eliminating one client↔server round trip
+          // while preserving the mandatory CMYK-first → RGB-thumbnail order.
+          const { previewJobId } = await finalizeOrientationAndPrintReady(
+            doc.id,
+            inspection.asset_id,
+            originalName,
+            {
+              chainGeneratePreviews: true,
+              chainRenderBox: inspection.renderBox,
+            },
+          );
+
           updateUpload(originalName, { progress: 60, statusText: "Rendering pages…" });
           await renderDocumentThumbnails(doc.id, inspection.asset_id, inspection.renderBox, {
             onProgress: (msg, pct) => updateUpload(originalName, { statusText: msg, progress: pct }),
+            prechainedJobId: previewJobId,
           });
         } else {
           // Leave document_status as 'processing' with awaiting_review=true so the
