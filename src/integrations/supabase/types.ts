@@ -95,6 +95,48 @@ export type Database = {
         }
         Relationships: []
       }
+      binding_specifications: {
+        Row: {
+          binding_method: string
+          created_at: string
+          id: string
+          is_active: boolean
+          max_sheets_80gsm: number
+          min_sheets: number
+          notes: string | null
+          pitch: string | null
+          size_mm: number
+          updated_at: string
+          weight_grams: number | null
+        }
+        Insert: {
+          binding_method: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          max_sheets_80gsm: number
+          min_sheets?: number
+          notes?: string | null
+          pitch?: string | null
+          size_mm: number
+          updated_at?: string
+          weight_grams?: number | null
+        }
+        Update: {
+          binding_method?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          max_sheets_80gsm?: number
+          min_sheets?: number
+          notes?: string | null
+          pitch?: string | null
+          size_mm?: number
+          updated_at?: string
+          weight_grams?: number | null
+        }
+        Relationships: []
+      }
       branch_capabilities: {
         Row: {
           branch_id: string
@@ -1568,6 +1610,7 @@ export type Database = {
           title: string | null
           unit_price: number
           updated_at: string
+          weight_grams: number | null
         }
         Insert: {
           build_status?: Database["public"]["Enums"]["build_status"]
@@ -1580,6 +1623,7 @@ export type Database = {
           title?: string | null
           unit_price?: number
           updated_at?: string
+          weight_grams?: number | null
         }
         Update: {
           build_status?: Database["public"]["Enums"]["build_status"]
@@ -1592,6 +1636,7 @@ export type Database = {
           title?: string | null
           unit_price?: number
           updated_at?: string
+          weight_grams?: number | null
         }
         Relationships: [
           {
@@ -2398,6 +2443,54 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      product_price_overrides: {
+        Row: {
+          conditions: Json
+          cost_price: number | null
+          created_at: string
+          currency_code: string
+          id: string
+          is_active: boolean
+          product_family_id: string
+          quantity_max: number | null
+          quantity_min: number | null
+          sell_price: number
+          tenant_id: string
+          updated_at: string
+          weight_grams: number | null
+        }
+        Insert: {
+          conditions?: Json
+          cost_price?: number | null
+          created_at?: string
+          currency_code?: string
+          id?: string
+          is_active?: boolean
+          product_family_id: string
+          quantity_max?: number | null
+          quantity_min?: number | null
+          sell_price: number
+          tenant_id: string
+          updated_at?: string
+          weight_grams?: number | null
+        }
+        Update: {
+          conditions?: Json
+          cost_price?: number | null
+          created_at?: string
+          currency_code?: string
+          id?: string
+          is_active?: boolean
+          product_family_id?: string
+          quantity_max?: number | null
+          quantity_min?: number | null
+          sell_price?: number
+          tenant_id?: string
+          updated_at?: string
+          weight_grams?: number | null
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
