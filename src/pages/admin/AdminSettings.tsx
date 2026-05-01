@@ -39,6 +39,7 @@ const AdminSettings = () => {
             { value: "email", label: "Email Accounts", icon: Mail },
             { value: "documents", label: "Documents", icon: FileText },
             { value: "delivery", label: "Delivery", icon: Truck },
+            { value: "domains", label: "Domains", icon: Globe },
             ...(isOwnerOrAdmin ? [{ value: "billing", label: "Billing", icon: CreditCard }] : []),
           ].map(({ value, label, icon: Icon }) => (
             <TabsTrigger
@@ -61,6 +62,7 @@ const AdminSettings = () => {
         <TabsContent value="email"><EmailAccountsTab /></TabsContent>
         <TabsContent value="documents"><DocumentsTab /></TabsContent>
         <TabsContent value="delivery"><DeliveryTab /></TabsContent>
+        <TabsContent value="domains"><DomainsTab /></TabsContent>
         {isOwnerOrAdmin && <TabsContent value="billing"><BillingTab /></TabsContent>}
       </Tabs>
     </div>
