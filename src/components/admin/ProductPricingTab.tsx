@@ -98,7 +98,7 @@ export default function ProductPricingTab({
     for (const opt of options) {
       const vals = opt.values;
       if (!isStructuredValues(vals)) continue;
-      for (const v of vals as StructuredOptionValue[]) {
+      for (const v of vals as unknown as StructuredOptionValue[]) {
         if (v.price_impact !== 0) {
           items.push({
             optionName: opt.name,
