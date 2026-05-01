@@ -176,7 +176,7 @@ def queue_asset_inspection(
     if not asset:
         raise HTTPException(404, "Asset not found")
 
-    job_id = job_repo.create_job(db, asset_id, "inspect_asset", "documents", {"force": force})
+    job_id = job_repo.create_job(db, asset_id, "inspect_asset", "default", {"force": force})
     task = inspect_asset.delay(asset_id, job_id, force)
     job_repo.set_celery_task_id(db, job_id, task.id)
     return {"job_id": job_id, "force": force}
@@ -384,7 +384,7 @@ def op_normalize_orientation(payload: NormalizeOrientationRequest, db: Session =
     """
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
-    job_id = job_repo.create_job(db, asset_id, "normalize_orientation", "documents", body)
+    job_id = job_repo.create_job(db, asset_id, "normalize_orientation", "default", body)
     task = normalize_orientation.delay(asset_id, job_id, payload.dominant)
     job_repo.set_celery_task_id(db, job_id, task.id)
     return {"job_id": job_id}
