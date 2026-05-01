@@ -126,8 +126,8 @@ export async function renderDocumentThumbnails(
     targetAspect,
   );
 
-  const MAX_THUMB_POLLS = 45; // ~90s ceiling with adaptive backoff
-  let interval = 250; // adaptive: 250ms → 1500ms ceiling — short docs land fast
+  const MAX_THUMB_POLLS = 45; // ~60s ceiling with adaptive backoff
+  let interval = 150; // adaptive: 150ms → 1000ms ceiling — short docs land in 1-2 polls
 
   for (let i = 0; i < MAX_THUMB_POLLS; i++) {
     const found = thumbnailPaths.filter(Boolean).length;
@@ -137,7 +137,7 @@ export async function renderDocumentThumbnails(
     onProgress(`Rendering pages… (${found}/${expectedPages})`, Math.min(95, pct));
 
     await new Promise((r) => setTimeout(r, interval));
-    interval = Math.min(Math.round(interval * 1.5), 1500);
+    interval = Math.min(Math.round(interval * 1.3), 1000);
     derivedFiles = await getDerivedFiles(assetId);
     thumbnailPaths = pickBestPerPage(
       derivedFiles,
@@ -475,16 +475,10 @@ export function useDocumentUpload(
 
         // inspect_asset writes page_count + boxes synchronously before
         // marking the job complete, so the first read after pollJob is
-        // already authoritative. Only fall back to a short retry if the
-        // first read came back without metadata (e.g. eventual-consistency
-        // hiccup on a fresh asset row).
+        // already authoritative. inspect_asset writes page_count + boxes
+        // synchronously before marking the job complete, so the first read
+        // after pollJob is final — no retry loop needed.
         let asset = await getAsset(assetId);
-        if (!asset.boxes || asset.page_count == null) {
-          for (let i = 0; i < 5 && (!asset.boxes || asset.page_count == null); i++) {
-            await new Promise((r) => setTimeout(r, 400));
-            asset = await getAsset(assetId);
-          }
-        }
 
         // ── Per-page orientation normalisation ────────────────────────
         // For products with a required orientation (Bound Documents,

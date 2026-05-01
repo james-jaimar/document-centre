@@ -10,9 +10,10 @@ Group=root
 WorkingDirectory=/opt/document-centre-api
 EnvironmentFile=/opt/document-centre-api/.env
 Environment=PYTHONUNBUFFERED=1
-# 6 prefork children for fast / IO-bound jobs so heavy PDF work cannot
-# starve thumbnail and ops queues.
-ExecStart=/opt/document-centre-api/.venv/bin/celery -A app.worker.celery_app worker -l info -Q default,thumbnails -n light@%H -P prefork --concurrency=6 --max-tasks-per-child=200 --max-memory-per-child=600000
+# 8 prefork children for fast / IO-bound jobs so heavy PDF work cannot
+# starve thumbnail and ops queues. inspect_asset + normalize_orientation
+# also live on `default` now.
+ExecStart=/opt/document-centre-api/.venv/bin/celery -A app.worker.celery_app worker -l info -Q default,thumbnails -n light@%H -P prefork --concurrency=8 --max-tasks-per-child=200 --max-memory-per-child=600000
 Restart=always
 RestartSec=5
 TimeoutStartSec=60

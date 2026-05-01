@@ -484,7 +484,7 @@ def convert_office(self, asset_id: str, job_id: str):
 #   3. If at least one page rotated, upload the new PDF and promote it to
 #      asset.normalized_storage_path, recomputing inspect metadata.
 #      If nothing rotated, skip the upload — job result reports skipped=true.
-@shared_task(bind=True, queue="documents")
+@shared_task(bind=True, queue="default")
 def normalize_orientation(self, asset_id: str, job_id: str, dominant: str = "portrait"):
     db = _db()
     try:
@@ -558,6 +558,35 @@ def normalize_orientation(self, asset_id: str, job_id: str, dominant: str = "por
 #   4. Upload the result and promote it to asset.normalized_storage_path,
 #      recording { print_ready_profile, print_ready_intent } in metadata.
 #   5. Re-inspect to refresh page count / dimensions.
+def _maybe_chain_generate_previews(
+    db,
+    asset_id: str,
+    chain: bool,
+    render_box: list[float] | None,
+    pre_allocated_job_id: str | None,
+):
+    """Server-side handoff from print_ready → generate_previews.
+
+    The pre-allocated job_id is supplied by the API route so the client
+    already knows which job to poll. We just enqueue the celery task
+    against it. If anything fails here, mark that job as failed so the
+    client doesn't poll forever.
+    """
+    if not chain or not pre_allocated_job_id:
+        return
+    # Local import to avoid circular module load — both tasks live in the
+    # same package and Celery imports them lazily.
+    from app.tasks.document_tasks import generate_previews
+    try:
+        task = generate_previews.delay(asset_id, pre_allocated_job_id, render_box)
+        job_repo.set_celery_task_id(db, pre_allocated_job_id, task.id)
+    except Exception as exc:
+        try:
+            job_repo.mark_failed(db, pre_allocated_job_id, f"chain enqueue failed: {exc}")
+        except Exception:
+            pass
+
+
 @shared_task(bind=True, queue="documents")
 def print_ready(
     self,
@@ -565,6 +594,9 @@ def print_ready(
     job_id: str,
     intent: str = "relative_colorimetric",
     dest_profile: str = "fogra39",
+    chain_generate_previews: bool = False,
+    chain_render_box: list[float] | None = None,
+    chain_job_id: str | None = None,
 ):
     db = _db()
     try:
@@ -579,6 +611,9 @@ def print_ready(
             result = {"skipped": True, "reason": "already_print_ready",
                       "dest_profile": dest_profile, "intent": intent}
             job_repo.mark_done(db, job_id, result)
+            _maybe_chain_generate_previews(
+                db, asset_id, chain_generate_previews, chain_render_box, chain_job_id,
+            )
             return result
 
         prefix = _tenant_prefix(asset.get("source_storage_path"))
@@ -634,6 +669,9 @@ def print_ready(
                 "page_count": info["page_count"],
             }
             job_repo.mark_done(db, job_id, result)
+            _maybe_chain_generate_previews(
+                db, asset_id, chain_generate_previews, chain_render_box, chain_job_id,
+            )
             return result
 
     except Exception as exc:
