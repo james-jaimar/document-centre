@@ -1,45 +1,36 @@
 
-## Goal
+## Problem
 
-Add a subscription management panel to the Platform Tenants page so a platform admin can:
-1. See each tenant's current plan and subscription status
-2. Select a new plan and trigger Stripe Checkout for a tenant
+There are two gaps:
+1. **Tenant owners** have no way to see their subscription status or trigger checkout from within their own admin portal (`/admin/settings`).
+2. The **Platform Admin** subscription dialog exists on `PlatformTenants.tsx` but may not be obvious to find.
 
----
+The screenshot confirms the user is on the Tenant Settings page (Workflow tab visible). There is no Billing/Subscription tab.
 
-## Changes
+## Plan
 
-### 1. Hook: `useTenantSubscriptions`
+### 1. New "Billing" tab on Tenant Settings
 
-New file `src/hooks/useTenantSubscriptions.ts`:
-- `useTenantSubscriptions()` — fetches all `tenant_subscriptions` rows (platform admin has RLS access)
-- `usePlatformPricingPlans()` — fetches all `platform_pricing_plans` with `stripe_price_id IS NOT NULL`, ordered by `sort_order`
+Add a `BillingTab` component at `src/pages/admin/settings/BillingTab.tsx` and wire it into `AdminSettings.tsx` as a new tab (with `CreditCard` icon).
 
-### 2. Component: `TenantSubscriptionDialog`
+The tab will show:
+- **Current plan** badge and status (active, trialing, past_due, etc.)
+- **Current period end** date
+- **Available plans** from `platform_pricing_plans` (ones with `stripe_price_id`)
+- A **"Change Plan"** / **"Subscribe"** button that invokes the `create-checkout` Edge Function and redirects to Stripe Checkout
+- Success/cancel toast handling via URL params on return
 
-New file `src/components/platform/TenantSubscriptionDialog.tsx`:
-- A dialog that opens when the admin clicks "Subscription" on a tenant card
-- Shows current plan slug and status (if a subscription exists) with a badge
-- Lists available plans from `platform_pricing_plans` as selectable cards
-- "Start Checkout" button that calls `create-checkout` Edge Function via `supabase.functions.invoke("create-checkout", { body: { tenant_id, price_id, success_url, cancel_url } })`
-- On success, redirects the admin to the Stripe Checkout URL
-- `success_url` points back to `/platform?checkout=success`
-- `cancel_url` points back to `/platform?checkout=cancelled`
+This reuses `useTenantSubscriptions` and `usePlatformPricingPlans` hooks. The tab is only visible to `owner` and `admin` membership roles.
 
-### 3. Update `PlatformTenants` page
+### 2. Update `AdminSettings.tsx`
 
-- Import and render the new dialog, triggered by a new "Subscription" button on each tenant card (next to the existing Edit / Manage buttons)
-- Show a small plan badge on each tenant card using `tenant_subscriptions` data (e.g. "Starter", "Pro") and status indicator
-- Show a toast on page load if `?checkout=success` or `?checkout=cancelled` query param is present
+- Import `BillingTab` and `CreditCard` icon
+- Add `{ value: "billing", label: "Billing", icon: CreditCard }` to the tabs array
+- Add `<TabsContent value="billing"><BillingTab /></TabsContent>`
 
-### 4. No database changes needed
+### Technical details
 
-All tables and RLS policies already exist from the previous migration.
-
----
-
-## Technical Notes
-
-- The `create-checkout` Edge Function is already deployed and handles auth, tenant ownership verification, and Stripe session creation
-- Plans without a `stripe_price_id` are filtered out (not purchasable via Stripe)
-- The webhook already syncs subscription status back to `tenant_subscriptions` and `tenants.plan_slug`
+- `BillingTab` fetches the current tenant's subscription via `useTenantSubscriptions()` filtered by `tenantId` from `useTenantContext()`
+- Checkout calls `create-checkout` with `success_url` and `cancel_url` pointing back to `/admin/settings?tab=billing&checkout=success|cancelled`
+- The tab reads `useSearchParams` to show toasts on return from Stripe
+- Plan cards show name, price, and current/selected state (similar to the existing `TenantSubscriptionDialog` layout but inline)
