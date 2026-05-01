@@ -1,66 +1,78 @@
 
-# Tenant Email Sending Mode
+# Plan: Document Memory + Gmail OAuth + Custom Domains
 
-## What we're building
+## Step 0 — Save Production Domain to Memory (immediate)
 
-Give each tenant two email sending options (matching the PrintJob reference):
+Create `mem://infrastructure/hosting-and-domains` documenting:
+- **Production URL**: `https://document-centre.com`
+- **Hosting**: AWS Amplify, deployed from the GitHub repo Lovable commits to
+- Lovable domains (`document-centre.lovable.app`, `document-centre.jaimar.dev`) are dev/preview only
+- All user-facing references (emails, branding, platform sender addresses) should reference `document-centre.com`
+- Future wildcard subdomain infrastructure targets AWS Amplify, not Lovable hosting
 
-1. **Send via Document Centre domain** -- emails go out as `noreply@document-centre.jaimar.dev` (or a configurable platform address) using the platform's own Graph/SMTP account. Zero config for the tenant.
-2. **Send via own mailbox** -- tenant configures their own SMTP credentials (already working via `EmailAccountsTab` and `email-account-manage`).
+Update `mem://index.md` to include this reference.
 
-The tenant admin picks their mode in Settings. The dispatcher already has fallback logic to Graph accounts; we just need to formalise the choice and surface it in the UI.
+Also update `mem://infrastructure/email-system` to note that the production platform sender will be under `document-centre.com`, not `jaimar.dev`.
 
-## Technical plan
+---
 
-### 1. Add `email_send_method` tenant setting
+## Step 1 — Gmail OAuth Email Sending
 
-Store in the existing `tenant_settings` JSONB cascade as `email_send_method`:
-- `"platform"` (default) -- use the platform Graph/SMTP account
-- `"own_smtp"` -- use the tenant's configured `email_accounts`
+### Database
+- Add columns to `email_accounts`: `transport` (text, default `'smtp'`, check `IN ('smtp','gmail_oauth','graph')`), `oauth_refresh_token_secret_id` (uuid), `oauth_email` (text)
+- Make SMTP-specific columns (`smtp_host`, `smtp_username`) nullable (only required when `transport = 'smtp'`)
 
-No schema migration needed -- this goes into the existing JSONB settings column via `resolve_tenant_setting`.
+### Edge Function: `gmail-oauth-connect`
+- Handles OAuth authorize redirect + callback using platform-level Google OAuth credentials (stored in Vault)
+- Scope: `https://www.googleapis.com/auth/gmail.send` (send-only)
+- On callback: stores refresh token in Vault, upserts `email_accounts` row with `transport = 'gmail_oauth'`
 
-### 2. Update EmailAccountsTab UI
+### Dispatcher update
+- Add `sendViaGmail` path in `email-dispatcher` alongside existing SMTP and Graph paths
+- Uses refresh token to get access token, then calls Gmail API `messages/send`
 
-Restructure the top of the Email settings page:
-- Add a radio/card selector at the top: "Send via Document Centre" vs "Send via your own mailbox"
-- When "Platform" is selected, show the platform sender identity (read-only) and hide the SMTP account management
-- When "Own SMTP" is selected, show the existing SMTP account management UI
-- Persist the choice via `useTenantSettings` hook
+### UI (`EmailAccountsTab.tsx`)
+- Third send-method card: "Connect Gmail" with Google branding
+- "Connect with Google" button opens OAuth popup
+- After connection: shows connected email, verified badge, disconnect action
 
-### 3. Update email-queue.ts resolver
+---
 
-In `resolveEmailAccount()`:
-- Read the tenant's `email_send_method` setting
-- If `"platform"` or not set, return `null` (dispatcher falls back to platform Graph account -- already works)
-- If `"own_smtp"`, resolve through the existing tenant/branch account chain
-- This is a small change to the shared helper
+## Step 2 — Tenant Custom Domain Architecture
 
-### 4. Platform email identity display
+### Phase 1 — Host-based tenant resolution (code)
+- `useTenantFromHost` hook: checks `window.location.hostname` against `{slug}.document-centre.com` pattern and `tenants.custom_domain` column
+- `StorefrontHostRouter` component at app root for host-based routing
+- Falls through to existing `/t/:slug` path routing if no host match
 
-Add a read-only card showing the platform sender when "Document Centre" mode is selected:
-- From name and address pulled from the platform's default email account
-- Verification status badges (Email, SPF, DKIM, DMARC) -- cosmetic for now, real verification is on the platform account
+### Phase 2 — Admin domain management UI
+- "Domains" section in tenant settings
+- Shows default platform subdomain (`{slug}.document-centre.com`, read-only)
+- Custom domain input with CNAME instructions
+- DNS verification button via Edge Function
 
-### 5. System name and notes fields
+### Phase 3 — Infrastructure (ops, outside Lovable)
+- Wildcard DNS `*.document-centre.com` on AWS Amplify
+- Wildcard or on-demand SSL
+- Code from Phases 1-2 will be ready; this phase enables it in production
 
-Following the PrintJob reference, add two fields to tenant settings:
-- **System name** -- the display name used in email subjects/headers (defaults to tenant trading name)
-- **Note** -- a configurable message appended to order emails (e.g. "PLEASE UPLOAD PROOF OF PAYMENT...")
+---
 
-These are stored in `tenant_settings` JSONB as `email_system_name` and `email_note`.
+## Files to create/modify
 
-## Files affected
-
-| File | Change |
+| File | Action |
 |------|--------|
-| `src/pages/admin/settings/EmailAccountsTab.tsx` | Add mode selector, platform identity card, system name/note fields |
-| `supabase/functions/_shared/email-queue.ts` | Read `email_send_method` setting in resolver |
-| `supabase/functions/email-dispatcher/index.ts` | Redeploy after queue change |
-| `mem://infrastructure/email-system` | Update with dual-mode documentation |
-
-## Not in scope (future)
-
-- Gmail/Microsoft OAuth connector for tenants (you mentioned covering it if it comes up)
-- Subdomain-per-tenant CNAME setup (noted for future architecture)
-- SPF/DKIM/DMARC verification UI for tenant-owned domains
+| `mem://infrastructure/hosting-and-domains` | Create — production domain reference |
+| `mem://index.md` | Update — add hosting reference |
+| `mem://infrastructure/email-system` | Update — note production domain |
+| `supabase/migrations/xxx.sql` | Add transport, OAuth cols to email_accounts |
+| `supabase/functions/gmail-oauth-connect/index.ts` | Create — OAuth flow |
+| `supabase/functions/email-dispatcher/index.ts` | Edit — Gmail send path |
+| `supabase/functions/email-account-manage/index.ts` | Edit — handle transport |
+| `src/pages/admin/settings/EmailAccountsTab.tsx` | Edit — Gmail card |
+| `src/hooks/useTenantFromHost.ts` | Create — host-based resolution |
+| `src/components/StorefrontHostRouter.tsx` | Create — host routing |
+| `src/App.tsx` | Edit — add host routing |
+| `src/pages/admin/settings/DomainsTab.tsx` | Create — domain management |
+| `supabase/functions/verify-domain/index.ts` | Create — DNS check |
+| `mem://saas/storefront-url-strategy` | Update — subdomain strategy |
