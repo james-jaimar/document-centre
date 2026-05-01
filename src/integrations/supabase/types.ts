@@ -2074,6 +2074,7 @@ export type Database = {
           price: number
           region_id: string
           sort_order: number
+          stripe_price_id: string | null
           updated_at: string
         }
         Insert: {
@@ -2084,6 +2085,7 @@ export type Database = {
           price?: number
           region_id: string
           sort_order?: number
+          stripe_price_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -2094,6 +2096,7 @@ export type Database = {
           price?: number
           region_id?: string
           sort_order?: number
+          stripe_price_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -2613,6 +2616,62 @@ export type Database = {
           },
         ]
       }
+      tenant_subscriptions: {
+        Row: {
+          cancelled_at: string | null
+          created_at: string
+          current_period_end: string | null
+          current_period_start: string | null
+          id: string
+          metadata: Json
+          plan_slug: string
+          status: string
+          stripe_customer_id: string
+          stripe_subscription_id: string | null
+          tenant_id: string
+          trial_ends_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          cancelled_at?: string | null
+          created_at?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
+          id?: string
+          metadata?: Json
+          plan_slug?: string
+          status?: string
+          stripe_customer_id: string
+          stripe_subscription_id?: string | null
+          tenant_id: string
+          trial_ends_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          cancelled_at?: string | null
+          created_at?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
+          id?: string
+          metadata?: Json
+          plan_slug?: string
+          status?: string
+          stripe_customer_id?: string
+          stripe_subscription_id?: string | null
+          tenant_id?: string
+          trial_ends_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_subscriptions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenants: {
         Row: {
           app_id: string | null
@@ -2631,6 +2690,7 @@ export type Database = {
           name: string
           onboarding_status: string
           payment_mode: string
+          plan_slug: string
           proof_mode: string
           registration_number: string | null
           settings: Json
@@ -2661,6 +2721,7 @@ export type Database = {
           name: string
           onboarding_status?: string
           payment_mode?: string
+          plan_slug?: string
           proof_mode?: string
           registration_number?: string | null
           settings?: Json
@@ -2691,6 +2752,7 @@ export type Database = {
           name?: string
           onboarding_status?: string
           payment_mode?: string
+          plan_slug?: string
           proof_mode?: string
           registration_number?: string | null
           settings?: Json
