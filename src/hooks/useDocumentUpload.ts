@@ -702,7 +702,9 @@ export function useDocumentUpload(
           auto_queue: false,
         });
 
-        return await inspectExistingAsset(docId, asset_id, fileName);
+        // Defer finalize so the outer uploadFile flow can chain print-ready
+        // → generate_previews server-side (single round-trip).
+        return await inspectExistingAsset(docId, asset_id, fileName, { skipFinalize: true });
       } catch (err: any) {
         console.error("[upload] inspectDocument failed:", err);
         toast({
