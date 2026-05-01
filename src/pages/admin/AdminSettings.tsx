@@ -1,4 +1,5 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useSearchParams } from "react-router-dom";
 import { GeneralTab } from "./settings/GeneralTab";
 import { BrandingTab } from "./settings/BrandingTab";
 import { WorkflowTab } from "./settings/WorkflowTab";
@@ -8,9 +9,16 @@ import { NotificationsTab } from "./settings/NotificationsTab";
 import { DocumentsTab } from "./settings/DocumentsTab";
 import { DeliveryTab } from "./settings/DeliveryTab";
 import { EmailAccountsTab } from "./settings/EmailAccountsTab";
-import { Building2, Palette, Workflow, Receipt, Upload, Bell, FileText, Truck, Mail } from "lucide-react";
+import { BillingTab } from "./settings/BillingTab";
+import { useTenantContext } from "@/hooks/useTenantContext";
+import { Building2, Palette, Workflow, Receipt, Upload, Bell, FileText, Truck, Mail, CreditCard } from "lucide-react";
 
 const AdminSettings = () => {
+  const [searchParams] = useSearchParams();
+  const { membershipRole } = useTenantContext();
+  const defaultTab = searchParams.get("tab") || "general";
+  const isOwnerOrAdmin = membershipRole === "owner" || membershipRole === "admin";
+
   return (
     <div className="space-y-6">
       <div>
@@ -18,7 +26,7 @@ const AdminSettings = () => {
         <p className="text-muted-foreground">Configure your tenant's identity, branding, workflows, and integrations</p>
       </div>
 
-      <Tabs defaultValue="general" className="w-full">
+      <Tabs defaultValue={defaultTab} className="w-full">
         <TabsList className="flex flex-wrap h-auto gap-1 bg-transparent p-0 mb-6">
           {[
             { value: "general", label: "General", icon: Building2 },
@@ -30,6 +38,7 @@ const AdminSettings = () => {
             { value: "email", label: "Email Accounts", icon: Mail },
             { value: "documents", label: "Documents", icon: FileText },
             { value: "delivery", label: "Delivery", icon: Truck },
+            ...(isOwnerOrAdmin ? [{ value: "billing", label: "Billing", icon: CreditCard }] : []),
           ].map(({ value, label, icon: Icon }) => (
             <TabsTrigger
               key={value}
@@ -51,6 +60,7 @@ const AdminSettings = () => {
         <TabsContent value="email"><EmailAccountsTab /></TabsContent>
         <TabsContent value="documents"><DocumentsTab /></TabsContent>
         <TabsContent value="delivery"><DeliveryTab /></TabsContent>
+        {isOwnerOrAdmin && <TabsContent value="billing"><BillingTab /></TabsContent>}
       </Tabs>
     </div>
   );
