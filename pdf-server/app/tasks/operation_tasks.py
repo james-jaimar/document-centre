@@ -565,6 +565,9 @@ def print_ready(
     job_id: str,
     intent: str = "relative_colorimetric",
     dest_profile: str = "fogra39",
+    chain_generate_previews: bool = False,
+    chain_render_box: list[float] | None = None,
+    chain_job_id: str | None = None,
 ):
     db = _db()
     try:
