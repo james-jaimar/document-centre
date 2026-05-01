@@ -111,6 +111,7 @@ export default function PlatformPricingRegions() {
         await supabase.from("platform_pricing_plans").update({
           price: p.price,
           plan_name: p.plan_name,
+          stripe_price_id: p.stripe_price_id,
         }).eq("id", p.id);
       }
 
