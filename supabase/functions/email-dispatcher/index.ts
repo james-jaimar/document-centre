@@ -482,7 +482,7 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
     console.error(`[dispatch] send failed row=${row.id}: ${msg}`);
     const newAttempts = row.attempts + 1;
     const isAuthError =
-      /^graph_auth|auth|535|530|invalid login|credentials/i.test(msg);
+      /^graph_auth|^gmail_auth|auth|535|530|invalid login|credentials/i.test(msg);
     const exhausted = newAttempts >= row.max_attempts;
     const status = isAuthError ? "failed" : exhausted ? "dlq" : "queued";
 
