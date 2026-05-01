@@ -1,15 +1,17 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTenants, useUpdateTenant } from "@/hooks/useTenants";
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { useTenantSubscriptions } from "@/hooks/useTenantSubscriptions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { TenantSubscriptionDialog } from "@/components/platform/TenantSubscriptionDialog";
 import { toast } from "sonner";
-import { Building2, Pencil, ArrowRight, ExternalLink } from "lucide-react";
+import { Building2, Pencil, ArrowRight, ExternalLink, CreditCard } from "lucide-react";
 import type { Tenant } from "@/hooks/useTenants";
 import { buildAdminPath } from "@/lib/adminRouting";
 
