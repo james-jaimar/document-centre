@@ -85,8 +85,54 @@ export default function PlatformSubscriptions() {
   const [assignDialog, setAssignDialog] = useState<Tenant | null>(null);
   const [selectedPlan, setSelectedPlan] = useState("starter");
   const [checkoutTenant, setCheckoutTenant] = useState<Tenant | null>(null);
+  const [checkoutRegionId, setCheckoutRegionId] = useState<string | null>(null);
   const [selectedPriceId, setSelectedPriceId] = useState<string | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
+
+  // Fetch regions for checkout dialog
+  const { data: checkoutRegions } = useQuery({
+    queryKey: ["platform_pricing_regions"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("platform_pricing_regions")
+        .select("*")
+        .order("sort_order");
+      if (error) throw error;
+      return data as CheckoutRegion[];
+    },
+    enabled: !!checkoutTenant,
+  });
+
+  // Fetch plans for selected checkout region
+  const { data: checkoutPlans, isLoading: checkoutPlansLoading } = useQuery({
+    queryKey: ["platform_pricing_plans", "checkout_dialog", checkoutRegionId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("platform_pricing_plans")
+        .select("*")
+        .eq("region_id", checkoutRegionId!)
+        .not("stripe_price_id", "is", null)
+        .order("sort_order");
+      if (error) throw error;
+      return data as CheckoutPlan[];
+    },
+    enabled: !!checkoutRegionId,
+  });
+
+  // Auto-select default region when checkout dialog opens
+  useEffect(() => {
+    if (checkoutTenant && checkoutRegions && !checkoutRegionId) {
+      const def = checkoutRegions.find((r) => r.is_default) || checkoutRegions[0];
+      if (def) setCheckoutRegionId(def.id);
+    }
+  }, [checkoutTenant, checkoutRegions, checkoutRegionId]);
+
+  // Reset plan when region changes
+  useEffect(() => {
+    setSelectedPriceId(null);
+  }, [checkoutRegionId]);
+
+  const selectedCheckoutRegion = checkoutRegions?.find((r) => r.id === checkoutRegionId);
 
   const subByTenant = (subscriptions ?? []).reduce<Record<string, TenantSubscription>>(
     (acc, s) => {
