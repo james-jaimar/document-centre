@@ -14,6 +14,11 @@ import { useTenantContext } from "@/hooks/useTenantContext";
 import { Building2, Palette, Workflow, Receipt, Upload, Bell, FileText, Truck, Mail, CreditCard } from "lucide-react";
 
 const AdminSettings = () => {
+  const [searchParams] = useSearchParams();
+  const { membershipRole } = useTenantContext();
+  const defaultTab = searchParams.get("tab") || "general";
+  const isOwnerOrAdmin = membershipRole === "owner" || membershipRole === "admin";
+
   return (
     <div className="space-y-6">
       <div>
@@ -21,7 +26,7 @@ const AdminSettings = () => {
         <p className="text-muted-foreground">Configure your tenant's identity, branding, workflows, and integrations</p>
       </div>
 
-      <Tabs defaultValue="general" className="w-full">
+      <Tabs defaultValue={defaultTab} className="w-full">
         <TabsList className="flex flex-wrap h-auto gap-1 bg-transparent p-0 mb-6">
           {[
             { value: "general", label: "General", icon: Building2 },
