@@ -1,9 +1,18 @@
 from __future__ import annotations
+import decimal
 import json
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+
+def _json_default(obj):
+    """Handle types that stdlib json cannot serialise (e.g. pikepdf Decimals)."""
+    if isinstance(obj, decimal.Decimal):
+        return float(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
 
 class JobRepository:
     def create_job(self, db: Session, asset_id: str | None, operation: str, queue: str, payload: dict) -> str:
@@ -12,7 +21,7 @@ class JobRepository:
         db.execute(text("""
             insert into jobs (id, asset_id, operation, queue, status, payload, result, retries, created_at, updated_at)
             values (:id, :asset_id, :operation, :queue, 'queued', cast(:payload as jsonb), '{}'::jsonb, 0, :now, :now)
-        """), {'id': job_id, 'asset_id': asset_id, 'operation': operation, 'queue': queue, 'payload': json.dumps(payload), 'now': now})
+        """), {'id': job_id, 'asset_id': asset_id, 'operation': operation, 'queue': queue, 'payload': json.dumps(payload, default=_json_default), 'now': now})
         db.commit()
         return job_id
 
@@ -25,7 +34,7 @@ class JobRepository:
         db.commit()
 
     def mark_done(self, db: Session, job_id: str, result: dict):
-        db.execute(text("update jobs set status='completed', result=cast(:result as jsonb), finished_at=now(), updated_at=now() where id=:id"), {'id': job_id, 'result': json.dumps(result)})
+        db.execute(text("update jobs set status='completed', result=cast(:result as jsonb), finished_at=now(), updated_at=now() where id=:id"), {'id': job_id, 'result': json.dumps(result, default=_json_default)})
         db.commit()
 
     def mark_failed(self, db: Session, job_id: str, error: str):
