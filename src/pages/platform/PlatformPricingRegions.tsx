@@ -256,6 +256,45 @@ export default function PlatformPricingRegions() {
           </table>
         </div>
       </div>
+
+      {/* Stripe Price IDs */}
+      <div>
+        <h2 className="text-lg font-semibold mb-1">Stripe Price IDs</h2>
+        <p className="text-sm text-muted-foreground mb-3">
+          Paste the Stripe Price ID (e.g. <code className="text-xs bg-muted px-1 py-0.5 rounded">price_1Abc...</code>) for each plan/region from your Stripe dashboard
+        </p>
+        <div className="rounded-lg border bg-card overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/50">
+                <th className="px-4 py-3 text-left font-semibold">Region</th>
+                <th className="px-4 py-3 text-left font-semibold">Starter</th>
+                <th className="px-4 py-3 text-left font-semibold">Core</th>
+                <th className="px-4 py-3 text-left font-semibold">Multi-Branch</th>
+              </tr>
+            </thead>
+            <tbody>
+              {regions.map((r) => (
+                <tr key={r.id} className="border-b last:border-0">
+                  <td className="px-4 py-2 font-medium">
+                    {FLAG_MAP[r.region_code] || ""} {r.region_code}
+                  </td>
+                  {planSlugs.map((slug) => (
+                    <td key={slug} className="px-4 py-2">
+                      <Input
+                        value={getPlanStripePriceId(r.id, slug)}
+                        onChange={(e) => setPlanStripePriceId(r.id, slug, e.target.value)}
+                        className="h-8 w-48 font-mono text-xs"
+                        placeholder="price_..."
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
