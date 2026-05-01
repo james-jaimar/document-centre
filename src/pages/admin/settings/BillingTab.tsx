@@ -1,13 +1,31 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, CreditCard, Check } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Loader2, CreditCard, Check, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useTenantContext } from "@/hooks/useTenantContext";
-import { useTenantSubscriptions, usePlatformPricingPlans } from "@/hooks/useTenantSubscriptions";
+import { useTenantSubscriptions } from "@/hooks/useTenantSubscriptions";
+import type { PlatformPricingPlan } from "@/hooks/useTenantSubscriptions";
+
+interface PricingRegion {
+  id: string;
+  region_code: string;
+  region_label: string;
+  currency_code: string;
+  currency_symbol: string;
+  is_default: boolean;
+}
 
 const statusColors: Record<string, string> = {
   active: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
@@ -21,12 +39,49 @@ const statusColors: Record<string, string> = {
 export function BillingTab() {
   const { tenantId } = useTenantContext();
   const { data: allSubscriptions, isLoading: subsLoading } = useTenantSubscriptions();
-  const { data: plans, isLoading: plansLoading } = usePlatformPricingPlans();
   const [selectedPriceId, setSelectedPriceId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
 
   const subscription = allSubscriptions?.find((s) => s.tenant_id === tenantId);
+
+  // Fetch regions
+  const { data: regions } = useQuery({
+    queryKey: ["platform_pricing_regions"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("platform_pricing_regions")
+        .select("*")
+        .order("sort_order");
+      if (error) throw error;
+      return data as PricingRegion[];
+    },
+  });
+
+  // Fetch ALL plans for the selected region
+  const { data: plans, isLoading: plansLoading } = useQuery({
+    queryKey: ["platform_pricing_plans", "billing", selectedRegionId],
+    queryFn: async () => {
+      let query = supabase
+        .from("platform_pricing_plans")
+        .select("*")
+        .order("sort_order");
+      if (selectedRegionId) query = query.eq("region_id", selectedRegionId);
+      const { data, error } = await query;
+      if (error) throw error;
+      return data as PlatformPricingPlan[];
+    },
+    enabled: !!selectedRegionId,
+  });
+
+  // Auto-select default region
+  useEffect(() => {
+    if (regions && !selectedRegionId) {
+      const defaultRegion = regions.find((r) => r.is_default) || regions[0];
+      if (defaultRegion) setSelectedRegionId(defaultRegion.id);
+    }
+  }, [regions, selectedRegionId]);
 
   // Handle checkout return toasts
   useEffect(() => {
@@ -39,6 +94,8 @@ export function BillingTab() {
       setSearchParams({}, { replace: true });
     }
   }, [searchParams, setSearchParams]);
+
+  const selectedRegion = regions?.find((r) => r.id === selectedRegionId);
 
   const handleCheckout = async () => {
     if (!selectedPriceId || !tenantId) return;
@@ -79,15 +136,15 @@ export function BillingTab() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {subsLoading ? (
             <div className="flex items-center gap-2 text-muted-foreground text-sm py-4">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading subscription details…
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex items-center gap-3">
                 <span className="text-lg font-semibold capitalize">
-                  {subscription?.plan_slug || "starter"}
+                  {(subscription?.plan_slug || "starter").replace("_", "-")}
                 </span>
                 {subscription ? (
                   <Badge variant="outline" className={statusColors[subscription.status] || ""}>
@@ -105,6 +162,18 @@ export function BillingTab() {
                   {new Date(subscription.current_period_end).toLocaleDateString()}
                 </p>
               )}
+              {subscription?.current_period_start && (
+                <p className="text-sm text-muted-foreground">
+                  Started{" "}
+                  {new Date(subscription.current_period_start).toLocaleDateString()}
+                </p>
+              )}
+              {subscription?.cancelled_at && (
+                <p className="text-sm text-destructive">
+                  Cancelled on{" "}
+                  {new Date(subscription.cancelled_at).toLocaleDateString()}
+                </p>
+              )}
             </div>
           )}
         </CardContent>
@@ -113,10 +182,31 @@ export function BillingTab() {
       {/* Available Plans */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Available Plans</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Select a plan to subscribe or change your current plan
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-lg">Available Plans</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Select a plan to subscribe or upgrade
+              </p>
+            </div>
+            {regions && regions.length > 1 && (
+              <Select
+                value={selectedRegionId || ""}
+                onValueChange={setSelectedRegionId}
+              >
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Select region" />
+                </SelectTrigger>
+                <SelectContent>
+                  {regions.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>
+                      {r.region_label} ({r.currency_code})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -125,7 +215,7 @@ export function BillingTab() {
             </div>
           ) : !plans?.length ? (
             <p className="text-sm text-muted-foreground py-4">
-              No plans are currently available. Please contact your platform administrator.
+              No plans are currently available for this region.
             </p>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -134,19 +224,30 @@ export function BillingTab() {
                   subscription?.plan_slug === plan.plan_slug &&
                   subscription?.status === "active";
                 const isSelected = selectedPriceId === plan.stripe_price_id;
+                const hasStripe = !!plan.stripe_price_id;
                 return (
                   <Card
                     key={plan.id}
-                    className={`cursor-pointer transition-all ${
+                    className={`transition-all ${
+                      hasStripe ? "cursor-pointer" : "cursor-default"
+                    } ${
                       isSelected
                         ? "border-primary ring-2 ring-primary"
-                        : "hover:border-primary/50"
+                        : hasStripe
+                        ? "hover:border-primary/50"
+                        : ""
                     } ${isCurrentPlan ? "opacity-60 cursor-default" : ""}`}
-                    onClick={() => !isCurrentPlan && setSelectedPriceId(plan.stripe_price_id)}
+                    onClick={() => {
+                      if (!isCurrentPlan && hasStripe) {
+                        setSelectedPriceId(plan.stripe_price_id);
+                      }
+                    }}
                   >
                     <CardContent className="p-4 space-y-2">
                       <div className="flex items-center justify-between">
-                        <p className="font-semibold capitalize text-base">{plan.plan_name}</p>
+                        <p className="font-semibold capitalize text-base">
+                          {plan.plan_name}
+                        </p>
                         {isCurrentPlan && (
                           <Badge variant="secondary" className="gap-1">
                             <Check className="h-3 w-3" /> Current
@@ -157,9 +258,16 @@ export function BillingTab() {
                         )}
                       </div>
                       <p className="text-2xl font-bold">
-                        R{plan.price.toFixed(0)}
+                        {selectedRegion?.currency_symbol || ""}
+                        {plan.price.toFixed(0)}
                         <span className="text-sm font-normal text-muted-foreground">/mo</span>
                       </p>
+                      {!hasStripe && (
+                        <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                          <AlertCircle className="h-3 w-3" />
+                          Contact admin to subscribe
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 );
@@ -167,7 +275,7 @@ export function BillingTab() {
             </div>
           )}
 
-          {plans && plans.length > 0 && (
+          {plans && plans.some((p) => p.stripe_price_id) && (
             <div className="flex justify-end pt-4">
               <Button
                 onClick={handleCheckout}
