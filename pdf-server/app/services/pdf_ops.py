@@ -628,6 +628,7 @@ class PdfOps:
             "-dNOPAUSE",
             "-dBATCH",
             "-dSAFER",
+            "-dNumRenderingThreads=4",
             f"-r{dpi}",
             f"-sDEVICE={device}",
             f"-sOutputFile={pattern}",
