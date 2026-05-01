@@ -9,9 +9,10 @@ import { NotificationsTab } from "./settings/NotificationsTab";
 import { DocumentsTab } from "./settings/DocumentsTab";
 import { DeliveryTab } from "./settings/DeliveryTab";
 import { EmailAccountsTab } from "./settings/EmailAccountsTab";
+import { DomainsTab } from "./settings/DomainsTab";
 import { BillingTab } from "./settings/BillingTab";
 import { useTenantContext } from "@/hooks/useTenantContext";
-import { Building2, Palette, Workflow, Receipt, Upload, Bell, FileText, Truck, Mail, CreditCard } from "lucide-react";
+import { Building2, Palette, Workflow, Receipt, Upload, Bell, FileText, Truck, Mail, CreditCard, Globe } from "lucide-react";
 
 const AdminSettings = () => {
   const [searchParams] = useSearchParams();
