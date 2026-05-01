@@ -17,11 +17,32 @@ import { buildAdminPath } from "@/lib/adminRouting";
 
 const PlatformTenants = () => {
   const { data: tenants, isLoading } = useTenants();
+  const { data: subscriptions } = useTenantSubscriptions();
   const updateTenant = useUpdateTenant();
   const { setOverrideTenantId } = useTenantContext();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [editing, setEditing] = useState<Tenant | null>(null);
+  const [subTenant, setSubTenant] = useState<Tenant | null>(null);
   const [form, setForm] = useState({ name: "", slug: "", logo_url: "" });
+
+  // Subscription lookup by tenant_id
+  const subByTenant = (subscriptions ?? []).reduce<Record<string, typeof subscriptions extends (infer T)[] ? T : never>>((acc, s) => {
+    acc[s.tenant_id] = s;
+    return acc;
+  }, {});
+
+  // Handle checkout return toasts
+  useEffect(() => {
+    const checkout = searchParams.get("checkout");
+    if (checkout === "success") {
+      toast.success("Checkout completed — subscription will activate shortly");
+      setSearchParams({}, { replace: true });
+    } else if (checkout === "cancelled") {
+      toast.info("Checkout was cancelled");
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const openEdit = (t: Tenant) => {
     setEditing(t);
