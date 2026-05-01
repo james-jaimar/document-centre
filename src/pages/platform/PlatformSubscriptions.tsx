@@ -142,7 +142,7 @@ export default function PlatformSubscriptions() {
     {}
   );
 
-  const stripePlans = (plans ?? []).filter((p) => p.stripe_price_id);
+  
 
   const handleAssignPlan = async () => {
     if (!assignDialog) return;
