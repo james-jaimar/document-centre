@@ -83,7 +83,13 @@ export async function renderDocumentThumbnails(
   docId: string,
   assetId: string,
   box: [number, number, number, number] | null,
-  opts?: { onProgress?: (msg: string, pct: number) => void },
+  opts?: {
+    onProgress?: (msg: string, pct: number) => void;
+    /** When provided, skip enqueueing generate_previews and poll this
+     *  pre-allocated job id instead. Used by the D-chaining path where
+     *  print-ready already enqueued generate_previews server-side. */
+    prechainedJobId?: string | null;
+  },
 ): Promise<string[]> {
   const onProgress = opts?.onProgress ?? (() => {});
 
@@ -96,7 +102,16 @@ export async function renderDocumentThumbnails(
   // (e.g. user-accepted bleed). For full-document rendering pass `null` so
   // the server renders each page using its own MediaBox. Passing a single
   // page-1-derived box as a global crop guillotines mixed-orientation pages.
-  const { job_id: cropJobId } = await generatePreviews(assetId, box ?? undefined);
+  let cropJobId: string;
+  if (opts?.prechainedJobId) {
+    // D-chaining: print-ready server-side already enqueued generate_previews
+    // immediately after CMYK conversion finished. Skip the extra round-trip
+    // and just poll the pre-allocated job id.
+    cropJobId = opts.prechainedJobId;
+  } else {
+    const enq = await generatePreviews(assetId, box ?? undefined);
+    cropJobId = enq.job_id;
+  }
   await pollJob(cropJobId, (job) => {
     if (job.status === "pending") onProgress("Queued — waiting for server…", 65);
     else if (job.status === "running") onProgress("Rendering pages…", 75);
@@ -384,21 +399,35 @@ export function useDocumentUpload(
       docId: string,
       assetId: string,
       fileName: string,
-    ): Promise<boolean> => {
+      chainOpts?: {
+        /** When true, server enqueues generate_previews as the last step of
+         *  print-ready and returns a `preview_job_id`. The caller is then
+         *  responsible for polling that id (typically via
+         *  renderDocumentThumbnails({ prechainedJobId })). Preserves the
+         *  CMYK-first → RGB-thumbnail order required for WYSIWYG.
+         *  Falls back to null if print-ready is skipped or fails. */
+        chainGeneratePreviews?: boolean;
+        chainRenderBox?: [number, number, number, number] | null;
+      },
+    ): Promise<{ ok: boolean; previewJobId: string | null }> => {
       // Print-ready CMYK conversion (driven by per-product-family settings).
       // Non-fatal: a failure must NOT block the upload — we still want
       // previews and ordering to work even if the CMYK pass struggles.
       const printPlan = getPrintReadyPlan(productFamilyPrintConfig);
       let printReadyOk = false;
       let printReadyError: string | null = null;
+      let previewJobId: string | null = null;
       if (printPlan) {
         try {
           updateUpload(fileName, { progress: 55, statusText: "Optimising for print…" });
-          const { job_id: printJobId } = await printReady(assetId, {
+          const { job_id: printJobId, preview_job_id } = await printReady(assetId, {
             intent: printPlan.intent,
             destProfile: printPlan.destProfile,
+            chainGeneratePreviews: chainOpts?.chainGeneratePreviews ?? false,
+            chainRenderBox: chainOpts?.chainRenderBox ?? null,
           });
           await pollJob(printJobId);
+          previewJobId = preview_job_id ?? null;
           printReadyOk = true;
         } catch (printErr: any) {
           printReadyError = printErr?.message ?? String(printErr);
@@ -433,9 +462,12 @@ export function useDocumentUpload(
         console.warn("[upload] persist print_ready flag failed:", persistErr);
       }
 
-      // Always return true — print-ready is non-fatal so the rest of
+      // Always return ok=true — print-ready is non-fatal so the rest of
       // the upload pipeline (generate-previews, etc.) keeps running.
-      return true;
+      // previewJobId may be null when chaining was not requested or when
+      // print-ready was skipped/failed — caller falls back to enqueueing
+      // generate_previews itself in that case.
+      return { ok: true, previewJobId };
     },
     [productFamilyPrintConfig, updateUpload],
   );
@@ -670,7 +702,9 @@ export function useDocumentUpload(
           auto_queue: false,
         });
 
-        return await inspectExistingAsset(docId, asset_id, fileName);
+        // Defer finalize so the outer uploadFile flow can chain print-ready
+        // → generate_previews server-side (single round-trip).
+        return await inspectExistingAsset(docId, asset_id, fileName, { skipFinalize: true });
       } catch (err: any) {
         console.error("[upload] inspectDocument failed:", err);
         toast({
@@ -801,15 +835,13 @@ export function useDocumentUpload(
 
           // Office files: skip auto-finalise so we always inspect the
           // pristine LibreOffice output. The size advisory (if any) drives
-          // resize → finaliseOrientationAndPrintReady from OrderFiles. If
-          // there is no size advisory we still need to finalise here before
-          // rendering — handled below after inspection returns.
+          // resize → finaliseOrientationAndPrintReady from OrderFiles.
+          // Finalisation for the no-advisory case is now handled below
+          // (shared with the PDF branch) so we can chain print-ready →
+          // generate_previews in a single server-side hop.
           inspection = await inspectExistingAsset(doc.id, asset_id, originalName, {
             skipFinalize: true,
           });
-          if (inspection && !inspection.hasAdvisory) {
-            await finalizeOrientationAndPrintReady(doc.id, inspection.asset_id, originalName);
-          }
         } else {
           inspection = await inspectDocument(doc.id, storagePath, originalName);
         }
@@ -828,9 +860,24 @@ export function useDocumentUpload(
         // Phase B: only render now if no advisory. Otherwise defer until the
         // user resolves the advisory dialog (bleed / non-ISO / orientation).
         if (!inspection.hasAdvisory) {
+          // D-chaining: ask print-ready to enqueue generate_previews as its
+          // final server-side step. Returns a pre-allocated `previewJobId`
+          // we can poll directly — eliminating one client↔server round trip
+          // while preserving the mandatory CMYK-first → RGB-thumbnail order.
+          const { previewJobId } = await finalizeOrientationAndPrintReady(
+            doc.id,
+            inspection.asset_id,
+            originalName,
+            {
+              chainGeneratePreviews: true,
+              chainRenderBox: inspection.renderBox,
+            },
+          );
+
           updateUpload(originalName, { progress: 60, statusText: "Rendering pages…" });
           await renderDocumentThumbnails(doc.id, inspection.asset_id, inspection.renderBox, {
             onProgress: (msg, pct) => updateUpload(originalName, { statusText: msg, progress: pct }),
+            prechainedJobId: previewJobId,
           });
         } else {
           // Leave document_status as 'processing' with awaiting_review=true so the
