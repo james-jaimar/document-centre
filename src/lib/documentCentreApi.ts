@@ -614,12 +614,19 @@ export async function printReady(
       | "absolute_colorimetric"
       | "saturation";
     destProfile?: string;
+    /** When true, server enqueues generate_previews as the final step of
+     *  print-ready. Response includes `preview_job_id` so the client polls
+     *  only the downstream job. Preserves CMYK-first → RGB-thumbnail order. */
+    chainGeneratePreviews?: boolean;
+    chainRenderBox?: [number, number, number, number] | null;
   } = {},
-): Promise<{ job_id: string }> {
+): Promise<{ job_id: string; preview_job_id: string | null }> {
   return request("v1/operations/print-ready", "POST", {
     asset_id: assetId,
     intent: options.intent ?? "relative_colorimetric",
     dest_profile: options.destProfile ?? "fogra39",
+    chain_generate_previews: options.chainGeneratePreviews ?? false,
+    ...(options.chainRenderBox ? { chain_render_box: options.chainRenderBox } : {}),
   });
 }
 
