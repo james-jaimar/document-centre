@@ -345,6 +345,7 @@ export default function PlatformSubscriptions() {
                                 size="sm"
                                 onClick={() => {
                                   setCheckoutTenant(tenant);
+                                  setCheckoutRegionId(null);
                                   setSelectedPriceId(null);
                                 }}
                                 title="Trigger Stripe checkout"
