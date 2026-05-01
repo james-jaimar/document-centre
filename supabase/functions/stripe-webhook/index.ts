@@ -131,12 +131,15 @@ async function upsertSubscription(
   const planSlug = sub.metadata?.plan_slug || "starter";
   const item = sub.items.data[0];
 
+  const billingStatus = sub.status === "active" || sub.status === "trialing" ? "paid" : "pending_payment";
+
   const record = {
     tenant_id: tenantId,
     stripe_customer_id: stripeCustomerId,
     stripe_subscription_id: sub.id,
     plan_slug: planSlug,
     status: sub.status,
+    billing_status: billingStatus,
     current_period_start: new Date(sub.current_period_start * 1000).toISOString(),
     current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
     trial_ends_at: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
