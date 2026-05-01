@@ -640,6 +640,9 @@ def print_ready(
                 "page_count": info["page_count"],
             }
             job_repo.mark_done(db, job_id, result)
+            _maybe_chain_generate_previews(
+                db, asset_id, chain_generate_previews, chain_render_box, chain_job_id,
+            )
             return result
 
     except Exception as exc:
