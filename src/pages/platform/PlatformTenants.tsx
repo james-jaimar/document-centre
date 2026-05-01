@@ -102,9 +102,14 @@ const PlatformTenants = () => {
                       <p className="text-xs text-muted-foreground">{t.slug}</p>
                     </div>
                   </div>
-                  <Badge variant={t.is_active ? "default" : "secondary"}>
-                    {t.is_active ? "Active" : "Inactive"}
-                  </Badge>
+                  <div className="flex items-center gap-1.5">
+                    <Badge variant={t.is_active ? "default" : "secondary"}>
+                      {t.is_active ? "Active" : "Inactive"}
+                    </Badge>
+                    <Badge variant="outline" className="capitalize text-xs">
+                      {subByTenant[t.id]?.plan_slug || t.plan_slug || "starter"}
+                    </Badge>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 space-y-2">
