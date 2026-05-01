@@ -204,6 +204,19 @@ Deno.serve(async (req) => {
       }
     }
 
+    if (body.action === "disconnect_gmail") {
+      const { data: acct } = await admin.from("email_accounts").select("*").eq("id", body.id).maybeSingle();
+      if (!acct) return json({ error: "Not found" }, 404);
+      if (!(await assertTenantAdmin(admin, caller.id, acct.tenant_id))) return json({ error: "Forbidden" }, 403);
+      if (acct.transport !== "gmail_oauth") return json({ error: "Account is not Gmail OAuth" }, 400);
+      if (acct.oauth_refresh_token_secret_id) {
+        await admin.rpc("delete_email_account_secret", { p_secret_id: acct.oauth_refresh_token_secret_id });
+      }
+      const { error } = await admin.from("email_accounts").delete().eq("id", body.id);
+      if (error) return json({ error: error.message }, 500);
+      return json({ success: true });
+    }
+
     return json({ error: "Unknown action" }, 400);
   } catch (e) {
     console.error("email-account-manage error:", e);
