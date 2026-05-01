@@ -398,14 +398,46 @@ def op_print_ready(payload: PrintReadyRequest, db: Session = Depends(get_db)):
     normalized_storage_path and records the conversion in asset.metadata
     so subsequent calls with the same profile/intent are no-ops.
 
+    When ``chain_generate_previews`` is true, the worker enqueues a
+    follow-up generate_previews job as the final step of print_ready
+    (preserving the CMYK-first → RGB-thumbnail order strictly). The
+    response then includes ``preview_job_id`` so the client polls only
+    that downstream job, removing one client↔server round trip from the
+    critical path.
+
     Contract: docs/document-centre-api-contract.md (in the Lovable client repo).
     """
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "print_ready", "documents", body)
-    task = print_ready.delay(asset_id, job_id, payload.intent, payload.dest_profile)
+
+    preview_job_id: str | None = None
+    if payload.chain_generate_previews:
+        # Pre-allocate the downstream preview job row so the response can
+        # return its id immediately. The print_ready worker enqueues the
+        # actual celery task against this id once the CMYK pass is done.
+        preview_job_id = job_repo.create_job(
+            db,
+            asset_id,
+            "generate_previews",
+            "thumbnails",
+            {
+                "render_box": payload.chain_render_box,
+                "chained_from_print_ready": str(job_id),
+            },
+        )
+
+    task = print_ready.delay(
+        asset_id,
+        job_id,
+        payload.intent,
+        payload.dest_profile,
+        payload.chain_generate_previews,
+        payload.chain_render_box,
+        preview_job_id,
+    )
     job_repo.set_celery_task_id(db, job_id, task.id)
-    return {"job_id": job_id}
+    return {"job_id": job_id, "preview_job_id": preview_job_id}
 
 
 @api_router.post("/assets/{asset_id}/render-pages")
