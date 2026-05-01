@@ -732,6 +732,8 @@ export type Database = {
           last_error: string | null
           last_verified_at: string | null
           max_concurrent: number
+          oauth_email: string | null
+          oauth_refresh_token_secret_id: string | null
           reply_to: string | null
           send_delay_ms: number
           smtp_host: string | null
@@ -759,6 +761,8 @@ export type Database = {
           last_error?: string | null
           last_verified_at?: string | null
           max_concurrent?: number
+          oauth_email?: string | null
+          oauth_refresh_token_secret_id?: string | null
           reply_to?: string | null
           send_delay_ms?: number
           smtp_host?: string | null
@@ -786,6 +790,8 @@ export type Database = {
           last_error?: string | null
           last_verified_at?: string | null
           max_concurrent?: number
+          oauth_email?: string | null
+          oauth_refresh_token_secret_id?: string | null
           reply_to?: string | null
           send_delay_ms?: number
           smtp_host?: string | null
