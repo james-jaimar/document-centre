@@ -21,7 +21,7 @@ class JobRepository:
         db.execute(text("""
             insert into jobs (id, asset_id, operation, queue, status, payload, result, retries, created_at, updated_at)
             values (:id, :asset_id, :operation, :queue, 'queued', cast(:payload as jsonb), '{}'::jsonb, 0, :now, :now)
-        """), {'id': job_id, 'asset_id': asset_id, 'operation': operation, 'queue': queue, 'payload': json.dumps(payload), 'now': now})
+        """), {'id': job_id, 'asset_id': asset_id, 'operation': operation, 'queue': queue, 'payload': json.dumps(payload, default=_json_default), 'now': now})
         db.commit()
         return job_id
 
