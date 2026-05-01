@@ -9,9 +9,10 @@ import { NotificationsTab } from "./settings/NotificationsTab";
 import { DocumentsTab } from "./settings/DocumentsTab";
 import { DeliveryTab } from "./settings/DeliveryTab";
 import { EmailAccountsTab } from "./settings/EmailAccountsTab";
+import { DomainsTab } from "./settings/DomainsTab";
 import { BillingTab } from "./settings/BillingTab";
 import { useTenantContext } from "@/hooks/useTenantContext";
-import { Building2, Palette, Workflow, Receipt, Upload, Bell, FileText, Truck, Mail, CreditCard } from "lucide-react";
+import { Building2, Palette, Workflow, Receipt, Upload, Bell, FileText, Truck, Mail, CreditCard, Globe } from "lucide-react";
 
 const AdminSettings = () => {
   const [searchParams] = useSearchParams();
@@ -38,6 +39,7 @@ const AdminSettings = () => {
             { value: "email", label: "Email Accounts", icon: Mail },
             { value: "documents", label: "Documents", icon: FileText },
             { value: "delivery", label: "Delivery", icon: Truck },
+            { value: "domains", label: "Domains", icon: Globe },
             ...(isOwnerOrAdmin ? [{ value: "billing", label: "Billing", icon: CreditCard }] : []),
           ].map(({ value, label, icon: Icon }) => (
             <TabsTrigger
@@ -60,6 +62,7 @@ const AdminSettings = () => {
         <TabsContent value="email"><EmailAccountsTab /></TabsContent>
         <TabsContent value="documents"><DocumentsTab /></TabsContent>
         <TabsContent value="delivery"><DeliveryTab /></TabsContent>
+        <TabsContent value="domains"><DomainsTab /></TabsContent>
         {isOwnerOrAdmin && <TabsContent value="billing"><BillingTab /></TabsContent>}
       </Tabs>
     </div>

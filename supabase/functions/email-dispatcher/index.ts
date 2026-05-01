@@ -65,7 +65,15 @@ interface GraphCreds extends BaseCreds {
   sender: string;
 }
 
-type AccountCreds = SmtpCreds | GraphCreds;
+interface GmailCreds extends BaseCreds {
+  kind: "gmail_oauth";
+  refresh_token: string;
+  client_id: string;
+  client_secret: string;
+  oauth_email: string;
+}
+
+type AccountCreds = SmtpCreds | GraphCreds | GmailCreds;
 
 async function loadVaultSecret(admin: any, secret_id: string | null): Promise<string | null> {
   if (!secret_id) return null;
@@ -102,6 +110,24 @@ async function resolveCreds(
             client_id: a.graph_client_id,
             client_secret: clientSecret,
             sender: a.graph_sender_address,
+            from_name: a.from_name,
+            from_email: a.from_email,
+            reply_to: a.reply_to,
+            send_delay_ms: a.send_delay_ms ?? 1500,
+          };
+        }
+      } else if (transport === "gmail_oauth") {
+        const refreshToken = await loadVaultSecret(admin, a.oauth_refresh_token_secret_id);
+        const gmailClientId = Deno.env.get("GMAIL_OAUTH_CLIENT_ID");
+        const gmailClientSecret = Deno.env.get("GMAIL_OAUTH_CLIENT_SECRET");
+        if (refreshToken && gmailClientId && gmailClientSecret && a.oauth_email) {
+          return {
+            kind: "gmail_oauth",
+            id: a.id,
+            refresh_token: refreshToken,
+            client_id: gmailClientId,
+            client_secret: gmailClientSecret,
+            oauth_email: a.oauth_email,
             from_name: a.from_name,
             from_email: a.from_email,
             reply_to: a.reply_to,
@@ -262,6 +288,100 @@ async function sendViaGraph(
   throw new Error(`Graph sendMail failed: ${res.status} ${text.slice(0, 600)}`);
 }
 
+// ---- Gmail API sender ----------------------------------------------
+async function getGmailAccessToken(creds: GmailCreds): Promise<string> {
+  const res = await withTimeout(
+    fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: creds.refresh_token,
+        client_id: creds.client_id,
+        client_secret: creds.client_secret,
+      }),
+    }),
+    20_000,
+    "Gmail token refresh"
+  );
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`gmail_auth token refresh failed: ${res.status} ${txt.slice(0, 400)}`);
+  }
+  const json = await res.json();
+  if (!json.access_token) throw new Error("Gmail token response missing access_token");
+  return json.access_token as string;
+}
+
+function buildRfc2822(
+  fromName: string,
+  fromEmail: string,
+  row: OutboxRow,
+  replyTo?: string
+): string {
+  const lines: string[] = [];
+  lines.push(`From: ${fromName} <${fromEmail}>`);
+  lines.push(`To: ${row.to_email}`);
+  if (row.cc?.length) lines.push(`Cc: ${row.cc.join(", ")}`);
+  if (row.bcc?.length) lines.push(`Bcc: ${row.bcc.join(", ")}`);
+  if (replyTo) lines.push(`Reply-To: ${replyTo}`);
+  lines.push(`Subject: ${row.subject}`);
+  lines.push("MIME-Version: 1.0");
+  lines.push('Content-Type: text/html; charset="UTF-8"');
+  lines.push("");
+  lines.push(row.html ?? row.text_body ?? "");
+  return lines.join("\r\n");
+}
+
+function base64UrlEncode(str: string): string {
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(str);
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function sendViaGmail(
+  creds: GmailCreds,
+  row: OutboxRow,
+  fromName: string,
+  fromEmail: string,
+  replyTo: string | undefined
+): Promise<{ messageId: string | null }> {
+  console.log(`[gmail] refreshing token for ${creds.oauth_email}`);
+  const token = await getGmailAccessToken(creds);
+  console.log(`[gmail] got token; sending as ${fromEmail} -> ${row.to_email}`);
+
+  const raw = base64UrlEncode(buildRfc2822(fromName, fromEmail, row, replyTo));
+
+  const res = await withTimeout(
+    fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ raw }),
+    }),
+    SEND_TIMEOUT_MS,
+    "Gmail send"
+  );
+
+  if (res.ok) {
+    const data = await res.json();
+    return { messageId: data.id ?? null };
+  }
+
+  const text = await res.text();
+  if (res.status === 401 || res.status === 403) {
+    throw new Error(`gmail_auth ${res.status}: ${text.slice(0, 600)}`);
+  }
+  if (res.status === 429) {
+    throw new Error(`gmail_rate_limited: ${text.slice(0, 300)}`);
+  }
+  throw new Error(`Gmail send failed: ${res.status} ${text.slice(0, 600)}`);
+}
+
 // ---- Main per-row processor ----------------------------------------------
 async function processOne(admin: any, row: OutboxRow): Promise<void> {
   console.log(`[dispatch] processOne start row=${row.id} to=${row.to_email} acct=${row.email_account_id}`);
@@ -292,6 +412,11 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
       console.log(`[dispatch] entering sendViaGraph for row=${row.id}`);
       const result = await sendViaGraph(creds, row, fromName, fromEmail, replyTo);
       console.log(`[dispatch] sendViaGraph returned messageId=${result.messageId}`);
+      messageId = result.messageId;
+    } else if (creds.kind === "gmail_oauth") {
+      console.log(`[dispatch] entering sendViaGmail for row=${row.id}`);
+      const result = await sendViaGmail(creds, row, fromName, fromEmail, replyTo);
+      console.log(`[dispatch] sendViaGmail returned messageId=${result.messageId}`);
       messageId = result.messageId;
     } else {
       // SMTP via nodemailer (port 465 = implicit TLS; 587 = STARTTLS upgrade)
@@ -357,7 +482,7 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
     console.error(`[dispatch] send failed row=${row.id}: ${msg}`);
     const newAttempts = row.attempts + 1;
     const isAuthError =
-      /^graph_auth|auth|535|530|invalid login|credentials/i.test(msg);
+      /^graph_auth|^gmail_auth|auth|535|530|invalid login|credentials/i.test(msg);
     const exhausted = newAttempts >= row.max_attempts;
     const status = isAuthError ? "failed" : exhausted ? "dlq" : "queued";
 

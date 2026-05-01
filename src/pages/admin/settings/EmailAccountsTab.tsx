@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Plus, Trash2, Send, AlertCircle, CheckCircle2, Mail, Shield } from "lucide-react";
+import { Plus, Trash2, Send, AlertCircle, CheckCircle2, Mail, Shield, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useTenantSettingsMap, useUpsertTenantSetting } from "@/hooks/useTenantSettings";
 
@@ -22,14 +22,16 @@ interface EmailAccount {
   from_name: string;
   from_email: string;
   reply_to: string | null;
-  smtp_host: string;
-  smtp_port: number;
-  smtp_secure: "tls" | "starttls" | "none";
-  smtp_username: string;
+  smtp_host: string | null;
+  smtp_port: number | null;
+  smtp_secure: "tls" | "starttls" | "none" | null;
+  smtp_username: string | null;
   is_default: boolean;
   is_active: boolean;
   last_verified_at: string | null;
   last_error: string | null;
+  transport: "smtp" | "gmail_oauth" | "graph";
+  oauth_email: string | null;
 }
 
 const blank = (tenant_id: string): Partial<EmailAccount> & { smtp_password?: string } => ({
@@ -46,6 +48,7 @@ const blank = (tenant_id: string): Partial<EmailAccount> & { smtp_password?: str
   is_default: false,
   is_active: true,
   branch_id: null,
+  transport: "smtp",
 });
 
 type SendMethod = "platform" | "own_smtp";
@@ -64,11 +67,11 @@ export function EmailAccountsTab() {
   const [editing, setEditing] = useState<any | null>(null);
   const [testRecipient, setTestRecipient] = useState("");
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [connectingGmail, setConnectingGmail] = useState(false);
 
   const [localSystemName, setLocalSystemName] = useState("");
   const [localNote, setLocalNote] = useState("");
 
-  // Sync local state when settings load
   useEffect(() => {
     if (!settingsLoading) {
       setLocalSystemName(systemName);
@@ -162,12 +165,77 @@ export function EmailAccountsTab() {
     load();
   };
 
+  // Gmail OAuth flow
+  const gmailAccount = accounts.find((a) => a.transport === "gmail_oauth");
+  const smtpAccounts = accounts.filter((a) => a.transport === "smtp");
+
+  const connectGmail = async () => {
+    if (!tenantId) return;
+    setConnectingGmail(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("gmail-oauth-connect", {
+        body: { action: "authorize", tenant_id: tenantId },
+      });
+      if (error || data?.error) {
+        toast.error(error?.message || data?.error);
+        setConnectingGmail(false);
+        return;
+      }
+      // Open Google consent in a popup
+      const popup = window.open(data.authorize_url, "gmail-oauth", "width=600,height=700,scrollbars=yes");
+      // Poll for the popup closing and check for the callback
+      const pollInterval = setInterval(async () => {
+        if (popup?.closed) {
+          clearInterval(pollInterval);
+          setConnectingGmail(false);
+          // Reload accounts to check if connection succeeded
+          await load();
+        }
+      }, 1000);
+
+      // Also listen for message from the popup (for callback handling)
+      const handleMessage = async (event: MessageEvent) => {
+        if (event.data?.type === "gmail-oauth-callback") {
+          clearInterval(pollInterval);
+          popup?.close();
+          window.removeEventListener("message", handleMessage);
+          setConnectingGmail(false);
+
+          if (event.data.success) {
+            toast.success(`Gmail connected: ${event.data.email}`);
+          } else {
+            toast.error(event.data.error || "Gmail connection failed");
+          }
+          await load();
+        }
+      };
+      window.addEventListener("message", handleMessage);
+    } catch (e) {
+      toast.error((e as Error).message);
+      setConnectingGmail(false);
+    }
+  };
+
+  const disconnectGmail = async () => {
+    if (!gmailAccount) return;
+    if (!confirm("Disconnect Gmail? Emails will no longer be sent via this account.")) return;
+    const { data, error } = await supabase.functions.invoke("gmail-oauth-connect", {
+      body: { action: "disconnect", account_id: gmailAccount.id },
+    });
+    if (error || (data as any)?.error) {
+      toast.error(error?.message || (data as any)?.error);
+      return;
+    }
+    toast.success("Gmail disconnected");
+    load();
+  };
+
   return (
     <div className="space-y-6">
       {/* ── Send Method Selector ── */}
       <div>
         <h3 className="text-lg font-semibold mb-3">System Emails</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Platform option */}
           <button
             type="button"
@@ -192,7 +260,7 @@ export function EmailAccountsTab() {
                   Guaranteed delivery using dedicated, safeguarded IP address. No configuration required.
                 </p>
                 <p className="text-xs text-muted-foreground mt-2">
-                  noreply@document-centre.jaimar.dev
+                  noreply@document-centre.com
                 </p>
                 <div className="flex flex-wrap gap-2 mt-3">
                   <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 gap-1">
@@ -230,11 +298,16 @@ export function EmailAccountsTab() {
               <div className="flex-1">
                 <p className="font-medium">Send via your own domain</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Use your own SMTP mailbox. Emails are sent from your domain using your credentials.
+                  Use your own SMTP mailbox or connect your Gmail account. Emails are sent from your domain.
                 </p>
-                {accounts.length > 0 && sendMethod === "own_smtp" && (
+                {smtpAccounts.length > 0 && sendMethod === "own_smtp" && (
                   <p className="text-xs text-muted-foreground mt-2">
-                    {accounts[0].from_name} &lt;{accounts[0].from_email}&gt;
+                    {smtpAccounts[0].from_name} &lt;{smtpAccounts[0].from_email}&gt;
+                  </p>
+                )}
+                {gmailAccount && sendMethod === "own_smtp" && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Gmail: {gmailAccount.oauth_email}
                   </p>
                 )}
               </div>
@@ -286,6 +359,79 @@ export function EmailAccountsTab() {
         </CardContent>
       </Card>
 
+      {/* ── Gmail OAuth Connection ── */}
+      {sendMethod === "own_smtp" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Mail className="h-4 w-4" />
+              Connect Gmail
+            </CardTitle>
+            <CardDescription>
+              Send emails directly from your Gmail or Google Workspace account. No SMTP configuration needed — just sign in with Google.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {gmailAccount ? (
+              <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-red-50 flex items-center justify-center">
+                    <Mail className="h-5 w-5 text-red-600" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{gmailAccount.oauth_email}</span>
+                      <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 gap-1">
+                        <CheckCircle2 className="h-3 w-3" /> Connected
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Emails will be sent from this Gmail account.
+                    </p>
+                    {gmailAccount.last_error && (
+                      <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3" /> {gmailAccount.last_error}
+                      </p>
+                    )}
+                    {gmailAccount.last_verified_at && !gmailAccount.last_error && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Last sent: {new Date(gmailAccount.last_verified_at).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <Button variant="outline" size="sm" onClick={disconnectGmail}>
+                  Disconnect
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-start gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Click below to authorize Document Centre to send emails from your Gmail account. We only request send permission — we never read your inbox.
+                </p>
+                <Button
+                  onClick={connectGmail}
+                  disabled={connectingGmail}
+                  className="gap-2"
+                >
+                  {connectingGmail ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                    </svg>
+                  )}
+                  Connect with Google
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* ── SMTP Accounts (only when own_smtp) ── */}
       {sendMethod === "own_smtp" && (
         <Card>
@@ -314,11 +460,11 @@ export function EmailAccountsTab() {
 
             {loading ? (
               <p className="text-sm text-muted-foreground">Loading…</p>
-            ) : accounts.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No email accounts yet. Add one to start sending from your own mailbox.</p>
+            ) : smtpAccounts.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No SMTP accounts yet. Add one to start sending from your own mailbox, or connect Gmail above.</p>
             ) : (
               <div className="grid gap-3">
-                {accounts.map((a) => (
+                {smtpAccounts.map((a) => (
                   <div key={a.id} className="rounded-lg border p-4 flex flex-col gap-2">
                     <div className="flex items-start justify-between gap-2">
                       <div>
