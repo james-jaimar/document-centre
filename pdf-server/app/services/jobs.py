@@ -1,4 +1,5 @@
 from __future__ import annotations
+import decimal
 import json
 import uuid
 from datetime import datetime, timezone

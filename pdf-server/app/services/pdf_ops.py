@@ -202,7 +202,7 @@ class PdfOps:
             info = {
                 "encrypted": pdf.is_encrypted,
                 "page_count": len(pdf.pages),
-                "pdf_version": pdf.pdf_version,
+                "pdf_version": str(pdf.pdf_version),
                 "boxes": {},
             }
 
