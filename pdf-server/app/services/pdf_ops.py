@@ -607,6 +607,9 @@ class PdfOps:
                 "-dNOPAUSE",
                 "-dBATCH",
                 "-dSAFER",
+                # Multi-thread the rasteriser. On a 4 vCPU host this gives
+                # ~30-50% faster wall-clock for multi-page renders.
+                "-dNumRenderingThreads=4",
                 f"-r{dpi}",
                 f"-sDEVICE={device}",
                 f"-sOutputFile={target}",
