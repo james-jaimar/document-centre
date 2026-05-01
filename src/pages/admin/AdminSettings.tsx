@@ -1,4 +1,5 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useSearchParams } from "react-router-dom";
 import { GeneralTab } from "./settings/GeneralTab";
 import { BrandingTab } from "./settings/BrandingTab";
 import { WorkflowTab } from "./settings/WorkflowTab";
@@ -8,7 +9,9 @@ import { NotificationsTab } from "./settings/NotificationsTab";
 import { DocumentsTab } from "./settings/DocumentsTab";
 import { DeliveryTab } from "./settings/DeliveryTab";
 import { EmailAccountsTab } from "./settings/EmailAccountsTab";
-import { Building2, Palette, Workflow, Receipt, Upload, Bell, FileText, Truck, Mail } from "lucide-react";
+import { BillingTab } from "./settings/BillingTab";
+import { useTenantContext } from "@/hooks/useTenantContext";
+import { Building2, Palette, Workflow, Receipt, Upload, Bell, FileText, Truck, Mail, CreditCard } from "lucide-react";
 
 const AdminSettings = () => {
   return (
