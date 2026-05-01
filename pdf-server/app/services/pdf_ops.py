@@ -1266,6 +1266,7 @@ class PdfOps:
             *common_safer,
             "-dBATCH",
             "-dNOPAUSE",
+            "-dNumRenderingThreads=4",
             "-sDEVICE=pdfwrite",
             "-dCompatibilityLevel=1.7",
             "-sColorConversionStrategy=CMYK",
