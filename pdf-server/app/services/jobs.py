@@ -6,6 +6,14 @@ from datetime import datetime, timezone
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+
+def _json_default(obj):
+    """Handle types that stdlib json cannot serialise (e.g. pikepdf Decimals)."""
+    if isinstance(obj, decimal.Decimal):
+        return float(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
 class JobRepository:
     def create_job(self, db: Session, asset_id: str | None, operation: str, queue: str, payload: dict) -> str:
         job_id = str(uuid.uuid4())
