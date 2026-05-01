@@ -399,21 +399,35 @@ export function useDocumentUpload(
       docId: string,
       assetId: string,
       fileName: string,
-    ): Promise<boolean> => {
+      chainOpts?: {
+        /** When true, server enqueues generate_previews as the last step of
+         *  print-ready and returns a `preview_job_id`. The caller is then
+         *  responsible for polling that id (typically via
+         *  renderDocumentThumbnails({ prechainedJobId })). Preserves the
+         *  CMYK-first → RGB-thumbnail order required for WYSIWYG.
+         *  Falls back to null if print-ready is skipped or fails. */
+        chainGeneratePreviews?: boolean;
+        chainRenderBox?: [number, number, number, number] | null;
+      },
+    ): Promise<{ ok: boolean; previewJobId: string | null }> => {
       // Print-ready CMYK conversion (driven by per-product-family settings).
       // Non-fatal: a failure must NOT block the upload — we still want
       // previews and ordering to work even if the CMYK pass struggles.
       const printPlan = getPrintReadyPlan(productFamilyPrintConfig);
       let printReadyOk = false;
       let printReadyError: string | null = null;
+      let previewJobId: string | null = null;
       if (printPlan) {
         try {
           updateUpload(fileName, { progress: 55, statusText: "Optimising for print…" });
-          const { job_id: printJobId } = await printReady(assetId, {
+          const { job_id: printJobId, preview_job_id } = await printReady(assetId, {
             intent: printPlan.intent,
             destProfile: printPlan.destProfile,
+            chainGeneratePreviews: chainOpts?.chainGeneratePreviews ?? false,
+            chainRenderBox: chainOpts?.chainRenderBox ?? null,
           });
           await pollJob(printJobId);
+          previewJobId = preview_job_id ?? null;
           printReadyOk = true;
         } catch (printErr: any) {
           printReadyError = printErr?.message ?? String(printErr);
@@ -448,9 +462,12 @@ export function useDocumentUpload(
         console.warn("[upload] persist print_ready flag failed:", persistErr);
       }
 
-      // Always return true — print-ready is non-fatal so the rest of
+      // Always return ok=true — print-ready is non-fatal so the rest of
       // the upload pipeline (generate-previews, etc.) keeps running.
-      return true;
+      // previewJobId may be null when chaining was not requested or when
+      // print-ready was skipped/failed — caller falls back to enqueueing
+      // generate_previews itself in that case.
+      return { ok: true, previewJobId };
     },
     [productFamilyPrintConfig, updateUpload],
   );
