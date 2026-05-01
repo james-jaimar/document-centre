@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTenants } from "@/hooks/useTenants";
 import {
   useTenantSubscriptions,
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -38,31 +39,19 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { formatPrice } from "@/lib/formatCurrency";
-import { CreditCard, Loader2, Building2, ArrowUpCircle, XCircle, Zap } from "lucide-react";
+import {
+  CreditCard,
+  Loader2,
+  Building2,
+  ArrowUpCircle,
+  XCircle,
+  Tag,
+  Plus,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import type { Tenant } from "@/hooks/useTenants";
-
-interface CheckoutRegion {
-  id: string;
-  region_code: string;
-  region_label: string;
-  currency_code: string;
-  currency_symbol: string;
-  is_default: boolean;
-  sort_order: number;
-}
-
-interface CheckoutPlan {
-  id: string;
-  plan_slug: string;
-  plan_name: string;
-  price: number;
-  stripe_price_id: string | null;
-  sort_order: number;
-}
-
-const FLAG_MAP: Record<string, string> = {
-  US: "🇺🇸", UK: "🇬🇧", EU: "🇪🇺", AU: "🇦🇺", ZA: "🇿🇦",
-};
+import { TenantSubscriptionDialog } from "@/components/platform/TenantSubscriptionDialog";
 
 const STATUS_COLORS: Record<string, string> = {
   active: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
@@ -71,11 +60,39 @@ const STATUS_COLORS: Record<string, string> = {
   canceled: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
   cancelled: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
   incomplete: "bg-muted text-muted-foreground",
+  pending_payment: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
+  paid: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+  free: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
+  manual: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+};
+
+const BILLING_LABELS: Record<string, string> = {
+  pending_payment: "Pending Payment",
+  paid: "Paid",
+  free: "Free",
+  manual: "Manual",
 };
 
 const PLAN_SLUGS = ["starter", "core", "multi_branch"];
 
+interface PromoCode {
+  id: string;
+  code: string;
+  description: string | null;
+  discount_type: string;
+  discount_value: number;
+  currency_code: string | null;
+  max_uses: number | null;
+  times_used: number;
+  valid_from: string | null;
+  valid_until: string | null;
+  applicable_plan_slugs: string[] | null;
+  is_active: boolean;
+  created_at: string;
+}
+
 export default function PlatformSubscriptions() {
+  const queryClient = useQueryClient();
   const { data: tenants, isLoading: tenantsLoading } = useTenants();
   const { data: subscriptions, isLoading: subsLoading } = useTenantSubscriptions();
   const { data: plans } = useAllPlatformPricingPlans();
@@ -84,55 +101,35 @@ export default function PlatformSubscriptions() {
 
   const [assignDialog, setAssignDialog] = useState<Tenant | null>(null);
   const [selectedPlan, setSelectedPlan] = useState("starter");
-  const [checkoutTenant, setCheckoutTenant] = useState<Tenant | null>(null);
-  const [checkoutRegionId, setCheckoutRegionId] = useState<string | null>(null);
-  const [selectedPriceId, setSelectedPriceId] = useState<string | null>(null);
-  const [checkingOut, setCheckingOut] = useState(false);
+  const [subTenant, setSubTenant] = useState<Tenant | null>(null);
 
-  // Fetch regions for checkout dialog
-  const { data: checkoutRegions } = useQuery({
-    queryKey: ["platform_pricing_regions"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("platform_pricing_regions")
-        .select("*")
-        .order("sort_order");
-      if (error) throw error;
-      return data as CheckoutRegion[];
-    },
-    enabled: !!checkoutTenant,
+  // Promo codes state
+  const [promoDialog, setPromoDialog] = useState<PromoCode | null | "new">(null);
+  const [promoForm, setPromoForm] = useState({
+    code: "",
+    description: "",
+    discount_type: "percentage",
+    discount_value: "0",
+    currency_code: "",
+    max_uses: "",
+    valid_from: "",
+    valid_until: "",
+    applicable_plan_slugs: "",
+    is_active: true,
   });
 
-  // Fetch plans for selected checkout region
-  const { data: checkoutPlans, isLoading: checkoutPlansLoading } = useQuery({
-    queryKey: ["platform_pricing_plans", "checkout_dialog", checkoutRegionId],
+  // Fetch promo codes
+  const { data: promoCodes, isLoading: promosLoading } = useQuery({
+    queryKey: ["platform_promo_codes"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("platform_pricing_plans")
+        .from("platform_promo_codes")
         .select("*")
-        .eq("region_id", checkoutRegionId!)
-        .not("stripe_price_id", "is", null)
-        .order("sort_order");
+        .order("created_at", { ascending: false });
       if (error) throw error;
-      return data as CheckoutPlan[];
+      return data as PromoCode[];
     },
-    enabled: !!checkoutRegionId,
   });
-
-  // Auto-select default region when checkout dialog opens
-  useEffect(() => {
-    if (checkoutTenant && checkoutRegions && !checkoutRegionId) {
-      const def = checkoutRegions.find((r) => r.is_default) || checkoutRegions[0];
-      if (def) setCheckoutRegionId(def.id);
-    }
-  }, [checkoutTenant, checkoutRegions, checkoutRegionId]);
-
-  // Reset plan when region changes
-  useEffect(() => {
-    setSelectedPriceId(null);
-  }, [checkoutRegionId]);
-
-  const selectedCheckoutRegion = checkoutRegions?.find((r) => r.id === checkoutRegionId);
 
   const subByTenant = (subscriptions ?? []).reduce<Record<string, TenantSubscription>>(
     (acc, s) => {
@@ -141,8 +138,6 @@ export default function PlatformSubscriptions() {
     },
     {}
   );
-
-  
 
   const handleAssignPlan = async () => {
     if (!assignDialog) return;
@@ -166,6 +161,7 @@ export default function PlatformSubscriptions() {
         stripe_customer_id: sub.stripe_customer_id,
         plan_slug: "starter",
         status: "cancelled",
+        billing_status: "pending_payment",
         cancelled_at: new Date().toISOString(),
       });
       await updatePlan.mutateAsync({ tenantId: tenant.id, planSlug: "starter" });
@@ -175,47 +171,82 @@ export default function PlatformSubscriptions() {
     }
   };
 
-  const handleActivateManually = async (tenant: Tenant, planSlug: string) => {
-    if (!confirm(`Manually activate "${planSlug}" for ${tenant.name}? No Stripe checkout will be created.`)) return;
-    try {
-      await upsertSub.mutateAsync({
-        tenant_id: tenant.id,
-        stripe_customer_id: `manual_${tenant.id.slice(0, 8)}`,
-        plan_slug: planSlug,
-        status: "active",
-        current_period_start: new Date().toISOString(),
-        current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+  const openPromoForm = (promo: PromoCode | "new") => {
+    if (promo === "new") {
+      setPromoForm({
+        code: "",
+        description: "",
+        discount_type: "percentage",
+        discount_value: "0",
+        currency_code: "",
+        max_uses: "",
+        valid_from: "",
+        valid_until: "",
+        applicable_plan_slugs: "",
+        is_active: true,
       });
-      await updatePlan.mutateAsync({ tenantId: tenant.id, planSlug });
-      toast.success(`Manually activated ${planSlug} for ${tenant.name}`);
+    } else {
+      setPromoForm({
+        code: promo.code,
+        description: promo.description || "",
+        discount_type: promo.discount_type,
+        discount_value: String(promo.discount_value),
+        currency_code: promo.currency_code || "",
+        max_uses: promo.max_uses ? String(promo.max_uses) : "",
+        valid_from: promo.valid_from ? promo.valid_from.slice(0, 10) : "",
+        valid_until: promo.valid_until ? promo.valid_until.slice(0, 10) : "",
+        applicable_plan_slugs: promo.applicable_plan_slugs?.join(", ") || "",
+        is_active: promo.is_active,
+      });
+    }
+    setPromoDialog(promo);
+  };
+
+  const handleSavePromo = async () => {
+    const record = {
+      code: promoForm.code.toUpperCase().trim(),
+      description: promoForm.description || null,
+      discount_type: promoForm.discount_type,
+      discount_value: parseFloat(promoForm.discount_value) || 0,
+      currency_code: promoForm.currency_code || null,
+      max_uses: promoForm.max_uses ? parseInt(promoForm.max_uses) : null,
+      valid_from: promoForm.valid_from ? new Date(promoForm.valid_from).toISOString() : null,
+      valid_until: promoForm.valid_until ? new Date(promoForm.valid_until).toISOString() : null,
+      applicable_plan_slugs: promoForm.applicable_plan_slugs
+        ? promoForm.applicable_plan_slugs.split(",").map((s) => s.trim()).filter(Boolean)
+        : null,
+      is_active: promoForm.is_active,
+    };
+
+    try {
+      if (promoDialog === "new") {
+        const { error } = await supabase.from("platform_promo_codes").insert(record);
+        if (error) throw error;
+        toast.success("Promo code created");
+      } else if (promoDialog) {
+        const { error } = await supabase
+          .from("platform_promo_codes")
+          .update(record)
+          .eq("id", promoDialog.id);
+        if (error) throw error;
+        toast.success("Promo code updated");
+      }
+      queryClient.invalidateQueries({ queryKey: ["platform_promo_codes"] });
+      setPromoDialog(null);
     } catch (e: any) {
       toast.error(e.message);
     }
   };
 
-  const handleCheckout = async () => {
-    if (!checkoutTenant || !selectedPriceId) return;
-    setCheckingOut(true);
+  const handleDeletePromo = async (id: string) => {
+    if (!confirm("Delete this promo code?")) return;
     try {
-      const origin = window.location.origin;
-      const { data, error } = await supabase.functions.invoke("create-checkout", {
-        body: {
-          tenant_id: checkoutTenant.id,
-          price_id: selectedPriceId,
-          success_url: `${origin}/platform/subscriptions?checkout=success`,
-          cancel_url: `${origin}/platform/subscriptions?checkout=cancelled`,
-        },
-      });
+      const { error } = await supabase.from("platform_promo_codes").delete().eq("id", id);
       if (error) throw error;
-      if (data?.url) {
-        window.location.href = data.url;
-      } else {
-        throw new Error("No checkout URL returned");
-      }
+      queryClient.invalidateQueries({ queryKey: ["platform_promo_codes"] });
+      toast.success("Promo code deleted");
     } catch (e: any) {
-      toast.error(e.message || "Failed to create checkout session");
-    } finally {
-      setCheckingOut(false);
+      toast.error(e.message);
     }
   };
 
@@ -226,12 +257,12 @@ export default function PlatformSubscriptions() {
       <div>
         <h1 className="text-2xl font-bold text-foreground">Subscription Management</h1>
         <p className="text-sm text-muted-foreground">
-          Manage tenant subscriptions, assign plans, and trigger billing
+          Assign plans, manage discounts, and track tenant billing
         </p>
       </div>
 
       {/* Summary cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {PLAN_SLUGS.map((slug) => {
           const count = (tenants ?? []).filter(
             (t) => (subByTenant[t.id]?.plan_slug || t.plan_slug || "starter") === slug
@@ -248,262 +279,354 @@ export default function PlatformSubscriptions() {
         })}
         <Card>
           <CardContent className="p-4">
-            <p className="text-sm text-muted-foreground">Active Subscriptions</p>
+            <p className="text-sm text-muted-foreground">Pending Payment</p>
             <p className="text-3xl font-bold">
-              {(subscriptions ?? []).filter((s) => s.status === "active").length}
+              {(subscriptions ?? []).filter((s) => s.billing_status === "pending_payment").length}
             </p>
-            <p className="text-xs text-muted-foreground">via Stripe</p>
+            <p className="text-xs text-muted-foreground">awaiting tenant action</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-sm text-muted-foreground">Active / Paid</p>
+            <p className="text-3xl font-bold">
+              {(subscriptions ?? []).filter((s) => s.billing_status === "paid" || s.billing_status === "free" || s.status === "active").length}
+            </p>
+            <p className="text-xs text-muted-foreground">live subscriptions</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Subscriptions table */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CreditCard className="h-5 w-5" /> All Tenants
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="flex items-center gap-2 py-8 text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Tenant</TableHead>
-                    <TableHead>Current Plan</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Period End</TableHead>
-                    <TableHead>Stripe Customer</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(tenants ?? []).map((tenant) => {
-                    const sub = subByTenant[tenant.id];
-                    const planSlug = sub?.plan_slug || tenant.plan_slug || "starter";
-                    return (
-                      <TableRow key={tenant.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Building2 className="h-4 w-4 text-muted-foreground" />
-                            <div>
-                              <p className="font-medium">{tenant.name}</p>
-                              <p className="text-xs text-muted-foreground">{tenant.slug}</p>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="capitalize">
-                            {planSlug.replace("_", "-")}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {sub ? (
-                            <Badge variant="outline" className={STATUS_COLORS[sub.status] || ""}>
-                              {sub.status}
+      <Tabs defaultValue="subscriptions" className="w-full">
+        <TabsList>
+          <TabsTrigger value="subscriptions" className="gap-2">
+            <CreditCard className="h-4 w-4" /> Subscriptions
+          </TabsTrigger>
+          <TabsTrigger value="promo-codes" className="gap-2">
+            <Tag className="h-4 w-4" /> Promo Codes
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Subscriptions Tab */}
+        <TabsContent value="subscriptions">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CreditCard className="h-5 w-5" /> All Tenants
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="flex items-center gap-2 py-8 text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Tenant</TableHead>
+                        <TableHead>Plan</TableHead>
+                        <TableHead>Billing Status</TableHead>
+                        <TableHead>Stripe Status</TableHead>
+                        <TableHead>Period End</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(tenants ?? []).map((tenant) => {
+                        const sub = subByTenant[tenant.id];
+                        const planSlug = sub?.assigned_plan_slug || sub?.plan_slug || tenant.plan_slug || "starter";
+                        const billingStatus = sub?.billing_status || "pending_payment";
+                        return (
+                          <TableRow key={tenant.id}>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Building2 className="h-4 w-4 text-muted-foreground" />
+                                <div>
+                                  <p className="font-medium">{tenant.name}</p>
+                                  <p className="text-xs text-muted-foreground">{tenant.slug}</p>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="capitalize">
+                                {planSlug.replace("_", "-")}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={STATUS_COLORS[billingStatus] || ""}>
+                                {BILLING_LABELS[billingStatus] || billingStatus}
+                              </Badge>
+                              {sub?.discount_value && sub.discount_value > 0 && (
+                                <span className="ml-1 text-xs text-green-600 dark:text-green-400">
+                                  {sub.discount_type === "percentage" ? `−${sub.discount_value}%` : "discounted"}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {sub ? (
+                                <Badge variant="outline" className={STATUS_COLORS[sub.status] || ""}>
+                                  {sub.status}
+                                </Badge>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {sub?.current_period_end
+                                ? new Date(sub.current_period_end).toLocaleDateString()
+                                : "—"}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setSubTenant(tenant)}
+                                  title="Assign subscription"
+                                >
+                                  <ArrowUpCircle className="h-4 w-4 mr-1" />
+                                  Assign
+                                </Button>
+                                {sub && (sub.status === "active" || sub.billing_status === "paid" || sub.billing_status === "free") && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-destructive hover:text-destructive"
+                                    onClick={() => handleCancelSubscription(tenant, sub)}
+                                    title="Cancel subscription"
+                                  >
+                                    <XCircle className="h-4 w-4 mr-1" />
+                                    Cancel
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Promo Codes Tab */}
+        <TabsContent value="promo-codes">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Tag className="h-5 w-5" /> Promo Codes
+                </CardTitle>
+                <Button size="sm" onClick={() => openPromoForm("new")}>
+                  <Plus className="h-4 w-4 mr-1" /> New Code
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {promosLoading ? (
+                <div className="flex items-center gap-2 py-8 text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+                </div>
+              ) : !promoCodes?.length ? (
+                <p className="text-sm text-muted-foreground py-8 text-center">
+                  No promo codes yet. Create one to offer discounts to tenants.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Code</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Discount</TableHead>
+                        <TableHead>Uses</TableHead>
+                        <TableHead>Valid</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {promoCodes.map((promo) => (
+                        <TableRow key={promo.id}>
+                          <TableCell className="font-mono font-semibold">{promo.code}</TableCell>
+                          <TableCell className="text-sm">{promo.description || "—"}</TableCell>
+                          <TableCell className="text-sm">
+                            {promo.discount_type === "percentage"
+                              ? `${promo.discount_value}%`
+                              : promo.discount_type === "free_months"
+                              ? `${promo.discount_value} free months`
+                              : `${promo.currency_code || ""} ${promo.discount_value}`}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {promo.times_used}
+                            {promo.max_uses ? ` / ${promo.max_uses}` : ""}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {promo.valid_from
+                              ? new Date(promo.valid_from).toLocaleDateString()
+                              : "—"}{" "}
+                            →{" "}
+                            {promo.valid_until
+                              ? new Date(promo.valid_until).toLocaleDateString()
+                              : "∞"}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={promo.is_active ? "default" : "secondary"}>
+                              {promo.is_active ? "Active" : "Inactive"}
                             </Badge>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">No subscription</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {sub?.current_period_end
-                            ? new Date(sub.current_period_end).toLocaleDateString()
-                            : "—"}
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-xs font-mono text-muted-foreground">
-                            {sub?.stripe_customer_id
-                              ? sub.stripe_customer_id.startsWith("manual_")
-                                ? "Manual"
-                                : sub.stripe_customer_id.slice(0, 18) + "…"
-                              : "—"}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setAssignDialog(tenant);
-                                setSelectedPlan(planSlug);
-                              }}
-                              title="Assign plan manually"
-                            >
-                              <ArrowUpCircle className="h-4 w-4 mr-1" />
-                              Assign
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setCheckoutTenant(tenant);
-                                setCheckoutRegionId(null);
-                                setSelectedPriceId(null);
-                              }}
-                              title="Trigger Stripe checkout"
-                            >
-                              <Zap className="h-4 w-4 mr-1" />
-                              Checkout
-                            </Button>
-                            {sub && sub.status === "active" && (
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => openPromoForm(promo)}>
+                                <Pencil className="h-3 w-3" />
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="text-destructive hover:text-destructive"
-                                onClick={() => handleCancelSubscription(tenant, sub)}
-                                title="Cancel subscription"
+                                className="text-destructive"
+                                onClick={() => handleDeletePromo(promo.id)}
                               >
-                                <XCircle className="h-4 w-4 mr-1" />
-                                Cancel
+                                <Trash2 className="h-3 w-3" />
                               </Button>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
-      {/* Manual Plan Assignment Dialog */}
-      <Dialog open={!!assignDialog} onOpenChange={() => setAssignDialog(null)}>
+      {/* Assign Subscription Dialog (reuses the shared component) */}
+      {subTenant && (
+        <TenantSubscriptionDialog
+          open={!!subTenant}
+          onOpenChange={(open) => !open && setSubTenant(null)}
+          tenant={subTenant}
+          subscription={subByTenant[subTenant.id]}
+        />
+      )}
+
+      {/* Promo Code Create/Edit Dialog */}
+      <Dialog open={!!promoDialog} onOpenChange={() => setPromoDialog(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Assign Plan — {assignDialog?.name}</DialogTitle>
+            <DialogTitle>
+              {promoDialog === "new" ? "Create Promo Code" : "Edit Promo Code"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Plan</Label>
-              <Select value={selectedPlan} onValueChange={setSelectedPlan}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PLAN_SLUGS.map((slug) => (
-                    <SelectItem key={slug} value={slug}>
-                      {slug.replace("_", "-").charAt(0).toUpperCase() + slug.replace("_", "-").slice(1)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground mt-1">
-                This updates the tenant's plan directly without billing.
-              </p>
+              <Label>Code</Label>
+              <Input
+                value={promoForm.code}
+                onChange={(e) => setPromoForm({ ...promoForm, code: e.target.value })}
+                placeholder="WELCOME50"
+              />
             </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={handleAssignPlan}
-                disabled={updatePlan.isPending}
-              >
-                {updatePlan.isPending ? "Saving…" : "Update Plan Only"}
-              </Button>
-              {assignDialog && (
-                <Button
-                  className="flex-1"
-                  onClick={() => {
-                    handleActivateManually(assignDialog, selectedPlan);
-                    setAssignDialog(null);
-                  }}
-                  disabled={upsertSub.isPending}
+            <div>
+              <Label>Description</Label>
+              <Input
+                value={promoForm.description}
+                onChange={(e) => setPromoForm({ ...promoForm, description: e.target.value })}
+                placeholder="50% off first month"
+              />
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <Label>Discount Type</Label>
+                <Select
+                  value={promoForm.discount_type}
+                  onValueChange={(v) => setPromoForm({ ...promoForm, discount_type: v })}
                 >
-                  {upsertSub.isPending ? "Activating…" : "Activate + Create Sub Record"}
-                </Button>
-              )}
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="percentage">Percentage</SelectItem>
+                    <SelectItem value="fixed_amount">Fixed Amount</SelectItem>
+                    <SelectItem value="free_months">Free Months</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-24">
+                <Label>Value</Label>
+                <Input
+                  type="number"
+                  value={promoForm.discount_value}
+                  onChange={(e) => setPromoForm({ ...promoForm, discount_value: e.target.value })}
+                />
+              </div>
+            </div>
+            {promoForm.discount_type === "fixed_amount" && (
+              <div>
+                <Label>Currency Code</Label>
+                <Input
+                  value={promoForm.currency_code}
+                  onChange={(e) => setPromoForm({ ...promoForm, currency_code: e.target.value })}
+                  placeholder="GBP"
+                />
+              </div>
+            )}
+            <div>
+              <Label>Max Uses (blank = unlimited)</Label>
+              <Input
+                type="number"
+                value={promoForm.max_uses}
+                onChange={(e) => setPromoForm({ ...promoForm, max_uses: e.target.value })}
+              />
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <Label>Valid From</Label>
+                <Input
+                  type="date"
+                  value={promoForm.valid_from}
+                  onChange={(e) => setPromoForm({ ...promoForm, valid_from: e.target.value })}
+                />
+              </div>
+              <div className="flex-1">
+                <Label>Valid Until</Label>
+                <Input
+                  type="date"
+                  value={promoForm.valid_until}
+                  onChange={(e) => setPromoForm({ ...promoForm, valid_until: e.target.value })}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Applicable Plans (comma-separated, blank = all)</Label>
+              <Input
+                value={promoForm.applicable_plan_slugs}
+                onChange={(e) => setPromoForm({ ...promoForm, applicable_plan_slugs: e.target.value })}
+                placeholder="starter, core, multi_branch"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={promoForm.is_active}
+                onChange={(e) => setPromoForm({ ...promoForm, is_active: e.target.checked })}
+                id="promo-active"
+              />
+              <Label htmlFor="promo-active">Active</Label>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setAssignDialog(null)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Stripe Checkout Dialog */}
-      <Dialog open={!!checkoutTenant} onOpenChange={() => setCheckoutTenant(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Stripe Checkout — {checkoutTenant?.name}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Select a region and plan to start a checkout session.
-            </p>
-
-            {/* Region dropdown */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Region</label>
-              <Select
-                value={checkoutRegionId || ""}
-                onValueChange={setCheckoutRegionId}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select region" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(checkoutRegions ?? []).map((r) => (
-                    <SelectItem key={r.id} value={r.id}>
-                      {FLAG_MAP[r.region_code] || ""} {r.region_label} ({r.currency_code})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Plan dropdown */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Plan</label>
-              {checkoutPlansLoading ? (
-                <div className="flex items-center gap-2 text-muted-foreground text-sm py-2">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Loading plans…
-                </div>
-              ) : !checkoutPlans?.length ? (
-                <p className="text-sm text-muted-foreground py-2">
-                  No Stripe-linked plans for this region.
-                </p>
-              ) : (
-                <Select
-                  value={selectedPriceId || ""}
-                  onValueChange={setSelectedPriceId}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a plan" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {checkoutPlans.map((plan) => (
-                      <SelectItem key={plan.id} value={plan.stripe_price_id!}>
-                        {plan.plan_name} — {formatPrice(plan.price, selectedCheckoutRegion?.currency_code || "USD")}/mo
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-          </div>
-          <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button variant="outline" onClick={() => setCheckoutTenant(null)} className="w-full sm:w-auto">
+            <Button variant="outline" onClick={() => setPromoDialog(null)}>
               Cancel
             </Button>
-            <Button
-              onClick={handleCheckout}
-              disabled={!selectedPriceId || checkingOut}
-              className="w-full sm:w-auto"
-            >
-              {checkingOut && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Start Checkout
+            <Button onClick={handleSavePromo} disabled={!promoForm.code.trim()}>
+              {promoDialog === "new" ? "Create" : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -4,19 +4,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Loader2, CreditCard, Check, AlertCircle } from "lucide-react";
+import { Loader2, CreditCard, Check, AlertCircle, Gift } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useTenantSubscriptions } from "@/hooks/useTenantSubscriptions";
-import type { PlatformPricingPlan } from "@/hooks/useTenantSubscriptions";
+import { formatPrice } from "@/lib/formatCurrency";
 
 interface PricingRegion {
   id: string;
@@ -24,7 +17,15 @@ interface PricingRegion {
   region_label: string;
   currency_code: string;
   currency_symbol: string;
-  is_default: boolean;
+}
+
+interface PricingPlan {
+  id: string;
+  plan_slug: string;
+  plan_name: string;
+  price: number;
+  stripe_price_id: string | null;
+  region_id: string;
 }
 
 const statusColors: Record<string, string> = {
@@ -34,80 +35,90 @@ const statusColors: Record<string, string> = {
   canceled: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
   cancelled: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
   incomplete: "bg-muted text-muted-foreground",
+  pending_payment: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
+  paid: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+  free: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
+  manual: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
 };
 
 export function BillingTab() {
   const { tenantId } = useTenantContext();
   const { data: allSubscriptions, isLoading: subsLoading } = useTenantSubscriptions();
-  const [selectedPriceId, setSelectedPriceId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
-  const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
 
   const subscription = allSubscriptions?.find((s) => s.tenant_id === tenantId);
 
-  // Fetch regions
-  const { data: regions } = useQuery({
-    queryKey: ["platform_pricing_regions"],
+  // Fetch the region for the subscription
+  const { data: region } = useQuery({
+    queryKey: ["platform_pricing_region", subscription?.region_id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("platform_pricing_regions")
         .select("*")
-        .order("sort_order");
+        .eq("id", subscription!.region_id!)
+        .single();
       if (error) throw error;
-      return data as PricingRegion[];
+      return data as PricingRegion;
     },
+    enabled: !!subscription?.region_id,
   });
 
-  // Fetch ALL plans for the selected region
-  const { data: plans, isLoading: plansLoading } = useQuery({
-    queryKey: ["platform_pricing_plans", "billing", selectedRegionId],
+  // Fetch the assigned plan details
+  const { data: assignedPlan } = useQuery({
+    queryKey: ["assigned_plan", subscription?.region_id, subscription?.assigned_plan_slug],
     queryFn: async () => {
-      let query = supabase
+      const { data, error } = await supabase
         .from("platform_pricing_plans")
         .select("*")
-        .order("sort_order");
-      if (selectedRegionId) query = query.eq("region_id", selectedRegionId);
-      const { data, error } = await query;
+        .eq("region_id", subscription!.region_id!)
+        .eq("plan_slug", subscription!.assigned_plan_slug!)
+        .maybeSingle();
       if (error) throw error;
-      return data as PlatformPricingPlan[];
+      return data as PricingPlan | null;
     },
-    enabled: !!selectedRegionId,
+    enabled: !!subscription?.region_id && !!subscription?.assigned_plan_slug,
   });
-
-  // Auto-select default region
-  useEffect(() => {
-    if (regions && !selectedRegionId) {
-      const defaultRegion = regions.find((r) => r.is_default) || regions[0];
-      if (defaultRegion) setSelectedRegionId(defaultRegion.id);
-    }
-  }, [regions, selectedRegionId]);
 
   // Handle checkout return toasts
   useEffect(() => {
     const checkout = searchParams.get("checkout");
     if (checkout === "success") {
-      toast.success("Checkout completed — your subscription will activate shortly");
+      toast.success("Payment completed — your subscription is now active!");
       setSearchParams({}, { replace: true });
     } else if (checkout === "cancelled") {
-      toast.info("Checkout was cancelled");
+      toast.info("Payment was cancelled");
       setSearchParams({}, { replace: true });
     }
   }, [searchParams, setSearchParams]);
 
-  const selectedRegion = regions?.find((r) => r.id === selectedRegionId);
+  // Calculate display price
+  const basePrice = assignedPlan?.price || 0;
+  let finalPrice = basePrice;
+  if (subscription?.discount_value && subscription.discount_value > 0) {
+    if (subscription.discount_type === "percentage") {
+      finalPrice = basePrice * (1 - subscription.discount_value / 100);
+    } else if (subscription.discount_type === "fixed_amount") {
+      finalPrice = Math.max(0, basePrice - subscription.discount_value);
+    }
+  }
+  const currencyCode = region?.currency_code || "USD";
 
-  const handleCheckout = async () => {
-    if (!selectedPriceId || !tenantId) return;
+  const handlePayNow = async () => {
+    if (!assignedPlan?.stripe_price_id || !tenantId) return;
     setLoading(true);
     try {
       const origin = window.location.origin;
       const { data, error } = await supabase.functions.invoke("create-checkout", {
         body: {
           tenant_id: tenantId,
-          price_id: selectedPriceId,
+          price_id: assignedPlan.stripe_price_id,
           success_url: `${origin}/admin/settings?tab=billing&checkout=success`,
           cancel_url: `${origin}/admin/settings?tab=billing&checkout=cancelled`,
+          // Pass discount info for Stripe coupon creation
+          discount_type: subscription?.discount_type || null,
+          discount_value: subscription?.discount_value || 0,
+          trial_days: subscription?.trial_days || 0,
         },
       });
       if (error) throw error;
@@ -117,22 +128,25 @@ export function BillingTab() {
         throw new Error("No checkout URL returned");
       }
     } catch (e: any) {
-      toast.error(e.message || "Failed to create checkout session");
+      toast.error(e.message || "Failed to start payment");
     } finally {
       setLoading(false);
     }
   };
 
-  const isLoading = subsLoading || plansLoading;
+  const billingStatus = subscription?.billing_status || "pending_payment";
+  const isActive = billingStatus === "paid" || billingStatus === "free" || subscription?.status === "active";
+  const isPendingPayment = billingStatus === "pending_payment" && subscription?.assigned_plan_slug;
+  const noSubscription = !subscription || (!subscription.assigned_plan_slug && subscription.status === "trialing");
 
   return (
     <div className="space-y-6">
-      {/* Current Subscription */}
+      {/* Current Subscription Status */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <CreditCard className="h-5 w-5" />
-            Current Subscription
+            Subscription
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -140,22 +154,136 @@ export function BillingTab() {
             <div className="flex items-center gap-2 text-muted-foreground text-sm py-4">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading subscription details…
             </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <span className="text-lg font-semibold capitalize">
-                  {(subscription?.plan_slug || "starter").replace("_", "-")}
-                </span>
-                {subscription ? (
-                  <Badge variant="outline" className={statusColors[subscription.status] || ""}>
-                    {subscription.status}
+          ) : noSubscription ? (
+            /* No subscription assigned */
+            <div className="text-center py-8 space-y-3">
+              <AlertCircle className="h-10 w-10 text-muted-foreground mx-auto" />
+              <p className="text-lg font-medium">No subscription assigned</p>
+              <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                Your account doesn't have a subscription plan yet. Please contact your platform administrator to set up your subscription.
+              </p>
+            </div>
+          ) : isPendingPayment ? (
+            /* Plan assigned, awaiting payment */
+            <div className="space-y-4">
+              <div className="rounded-lg border-2 border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 p-4 space-y-3">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                  <div className="space-y-1">
+                    <p className="font-semibold text-amber-900 dark:text-amber-200">
+                      Subscription ready — payment required
+                    </p>
+                    <p className="text-sm text-amber-800 dark:text-amber-300">
+                      Your <strong className="capitalize">{subscription.assigned_plan_slug?.replace("_", "-")}</strong> plan
+                      {region ? ` (${region.region_label})` : ""} has been set up. Complete payment to activate your subscription.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Plan details card */}
+              <div className="rounded-lg border p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-lg font-semibold capitalize">
+                      {subscription.assigned_plan_slug?.replace("_", "-")}
+                    </p>
+                    {region && (
+                      <p className="text-sm text-muted-foreground">{region.region_label}</p>
+                    )}
+                  </div>
+                  <Badge variant="outline" className={statusColors.pending_payment}>
+                    Pending Payment
                   </Badge>
+                </div>
+
+                {/* Pricing breakdown */}
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span>Base price</span>
+                    <span>{formatPrice(basePrice, currencyCode)}/mo</span>
+                  </div>
+                  {subscription.discount_value && subscription.discount_value > 0 && (
+                    <div className="flex justify-between text-green-600 dark:text-green-400">
+                      <span>Discount</span>
+                      <span>
+                        {subscription.discount_type === "percentage"
+                          ? `−${subscription.discount_value}%`
+                          : `−${formatPrice(subscription.discount_value, currencyCode)}`}
+                      </span>
+                    </div>
+                  )}
+                  {subscription.trial_days && subscription.trial_days > 0 && (
+                    <div className="flex justify-between text-blue-600 dark:text-blue-400">
+                      <span>Free trial</span>
+                      <span>{subscription.trial_days} days</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-semibold border-t pt-1 mt-1">
+                    <span>Amount due</span>
+                    <span>{formatPrice(finalPrice, currencyCode)}/mo</span>
+                  </div>
+                </div>
+
+                {/* Pay Now button */}
+                {assignedPlan?.stripe_price_id ? (
+                  <Button onClick={handlePayNow} disabled={loading} size="lg" className="w-full">
+                    {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Pay Now
+                  </Button>
                 ) : (
-                  <Badge variant="outline" className="bg-muted text-muted-foreground">
-                    No active subscription
-                  </Badge>
+                  <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400 py-2">
+                    <AlertCircle className="h-4 w-4" />
+                    Payment processing is being set up. Please try again shortly.
+                  </div>
                 )}
               </div>
+            </div>
+          ) : isActive ? (
+            /* Active subscription */
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+                  {billingStatus === "free" ? (
+                    <Gift className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                  ) : (
+                    <Check className="h-5 w-5 text-green-600 dark:text-green-400" />
+                  )}
+                </div>
+                <div>
+                  <p className="text-lg font-semibold capitalize">
+                    {(subscription?.assigned_plan_slug || subscription?.plan_slug || "starter").replace("_", "-")}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className={statusColors[billingStatus] || statusColors.paid}>
+                      {billingStatus === "free" ? "Free" : "Active"}
+                    </Badge>
+                    {region && (
+                      <span className="text-sm text-muted-foreground">{region.region_label}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {billingStatus !== "free" && assignedPlan && (
+                <div className="rounded-md bg-muted/50 p-3 space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span>Monthly price</span>
+                    <span>{formatPrice(finalPrice, currencyCode)}/mo</span>
+                  </div>
+                  {subscription?.discount_value && subscription.discount_value > 0 && (
+                    <div className="flex justify-between text-green-600 dark:text-green-400">
+                      <span>Discount applied</span>
+                      <span>
+                        {subscription.discount_type === "percentage"
+                          ? `${subscription.discount_value}% off`
+                          : `${formatPrice(subscription.discount_value, currencyCode)} off`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {subscription?.current_period_end && (
                 <p className="text-sm text-muted-foreground">
                   Current period ends{" "}
@@ -175,116 +303,20 @@ export function BillingTab() {
                 </p>
               )}
             </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Available Plans */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-lg">Available Plans</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Select a plan to subscribe or upgrade
-              </p>
-            </div>
-            {regions && regions.length > 1 && (
-              <Select
-                value={selectedRegionId || ""}
-                onValueChange={setSelectedRegionId}
-              >
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Select region" />
-                </SelectTrigger>
-                <SelectContent>
-                  {regions.map((r) => (
-                    <SelectItem key={r.id} value={r.id}>
-                      {r.region_label} ({r.currency_code})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="flex items-center gap-2 text-muted-foreground text-sm py-4">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading plans…
-            </div>
-          ) : !plans?.length ? (
-            <p className="text-sm text-muted-foreground py-4">
-              No plans are currently available for this region.
-            </p>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {plans.map((plan) => {
-                const isCurrentPlan =
-                  subscription?.plan_slug === plan.plan_slug &&
-                  subscription?.status === "active";
-                const isSelected = selectedPriceId === plan.stripe_price_id;
-                const hasStripe = !!plan.stripe_price_id;
-                return (
-                  <Card
-                    key={plan.id}
-                    className={`transition-all ${
-                      hasStripe ? "cursor-pointer" : "cursor-default"
-                    } ${
-                      isSelected
-                        ? "border-primary ring-2 ring-primary"
-                        : hasStripe
-                        ? "hover:border-primary/50"
-                        : ""
-                    } ${isCurrentPlan ? "opacity-60 cursor-default" : ""}`}
-                    onClick={() => {
-                      if (!isCurrentPlan && hasStripe) {
-                        setSelectedPriceId(plan.stripe_price_id);
-                      }
-                    }}
-                  >
-                    <CardContent className="p-4 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <p className="font-semibold capitalize text-base">
-                          {plan.plan_name}
-                        </p>
-                        {isCurrentPlan && (
-                          <Badge variant="secondary" className="gap-1">
-                            <Check className="h-3 w-3" /> Current
-                          </Badge>
-                        )}
-                        {isSelected && !isCurrentPlan && (
-                          <div className="h-4 w-4 rounded-full bg-primary" />
-                        )}
-                      </div>
-                      <p className="text-2xl font-bold">
-                        {selectedRegion?.currency_symbol || ""}
-                        {plan.price.toFixed(0)}
-                        <span className="text-sm font-normal text-muted-foreground">/mo</span>
-                      </p>
-                      {!hasStripe && (
-                        <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
-                          <AlertCircle className="h-3 w-3" />
-                          Contact admin to subscribe
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-
-          {plans && plans.some((p) => p.stripe_price_id) && (
-            <div className="flex justify-end pt-4">
-              <Button
-                onClick={handleCheckout}
-                disabled={!selectedPriceId || loading}
-                size="lg"
-              >
-                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {subscription?.status === "active" ? "Change Plan" : "Subscribe"}
-              </Button>
+            /* Fallback: some other state */
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <span className="text-lg font-semibold capitalize">
+                  {(subscription?.plan_slug || "starter").replace("_", "-")}
+                </span>
+                <Badge variant="outline" className={statusColors[subscription?.status || ""] || ""}>
+                  {subscription?.status || "unknown"}
+                </Badge>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Contact your platform administrator for subscription assistance.
+              </p>
             </div>
           )}
         </CardContent>

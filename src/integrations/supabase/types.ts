@@ -2151,6 +2151,57 @@ export type Database = {
         }
         Relationships: []
       }
+      platform_promo_codes: {
+        Row: {
+          applicable_plan_slugs: string[] | null
+          code: string
+          created_at: string
+          currency_code: string | null
+          description: string | null
+          discount_type: string
+          discount_value: number
+          id: string
+          is_active: boolean
+          max_uses: number | null
+          times_used: number
+          updated_at: string
+          valid_from: string | null
+          valid_until: string | null
+        }
+        Insert: {
+          applicable_plan_slugs?: string[] | null
+          code: string
+          created_at?: string
+          currency_code?: string | null
+          description?: string | null
+          discount_type?: string
+          discount_value?: number
+          id?: string
+          is_active?: boolean
+          max_uses?: number | null
+          times_used?: number
+          updated_at?: string
+          valid_from?: string | null
+          valid_until?: string | null
+        }
+        Update: {
+          applicable_plan_slugs?: string[] | null
+          code?: string
+          created_at?: string
+          currency_code?: string | null
+          description?: string | null
+          discount_type?: string
+          discount_value?: number
+          id?: string
+          is_active?: boolean
+          max_uses?: number | null
+          times_used?: number
+          updated_at?: string
+          valid_from?: string | null
+          valid_until?: string | null
+        }
+        Relationships: []
+      }
       pricing_currency_profiles: {
         Row: {
           buying_power_mult: number
@@ -2618,51 +2669,99 @@ export type Database = {
       }
       tenant_subscriptions: {
         Row: {
+          assigned_at: string | null
+          assigned_by: string | null
+          assigned_plan_slug: string | null
+          billing_status: string
           cancelled_at: string | null
           created_at: string
           current_period_end: string | null
           current_period_start: string | null
+          discount_type: string | null
+          discount_value: number | null
           id: string
           metadata: Json
           plan_slug: string
+          promo_code_id: string | null
+          region_id: string | null
           status: string
-          stripe_customer_id: string
+          stripe_customer_id: string | null
           stripe_subscription_id: string | null
           tenant_id: string
+          trial_days: number | null
           trial_ends_at: string | null
           updated_at: string
         }
         Insert: {
+          assigned_at?: string | null
+          assigned_by?: string | null
+          assigned_plan_slug?: string | null
+          billing_status?: string
           cancelled_at?: string | null
           created_at?: string
           current_period_end?: string | null
           current_period_start?: string | null
+          discount_type?: string | null
+          discount_value?: number | null
           id?: string
           metadata?: Json
           plan_slug?: string
+          promo_code_id?: string | null
+          region_id?: string | null
           status?: string
-          stripe_customer_id: string
+          stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
           tenant_id: string
+          trial_days?: number | null
           trial_ends_at?: string | null
           updated_at?: string
         }
         Update: {
+          assigned_at?: string | null
+          assigned_by?: string | null
+          assigned_plan_slug?: string | null
+          billing_status?: string
           cancelled_at?: string | null
           created_at?: string
           current_period_end?: string | null
           current_period_start?: string | null
+          discount_type?: string | null
+          discount_value?: number | null
           id?: string
           metadata?: Json
           plan_slug?: string
+          promo_code_id?: string | null
+          region_id?: string | null
           status?: string
-          stripe_customer_id?: string
+          stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
           tenant_id?: string
+          trial_days?: number | null
           trial_ends_at?: string | null
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "tenant_subscriptions_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenant_subscriptions_promo_code_id_fkey"
+            columns: ["promo_code_id"]
+            isOneToOne: false
+            referencedRelation: "platform_promo_codes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenant_subscriptions_region_id_fkey"
+            columns: ["region_id"]
+            isOneToOne: false
+            referencedRelation: "platform_pricing_regions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "tenant_subscriptions_tenant_id_fkey"
             columns: ["tenant_id"]
