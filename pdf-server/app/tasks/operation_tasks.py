@@ -582,6 +582,9 @@ def print_ready(
             result = {"skipped": True, "reason": "already_print_ready",
                       "dest_profile": dest_profile, "intent": intent}
             job_repo.mark_done(db, job_id, result)
+            _maybe_chain_generate_previews(
+                db, asset_id, chain_generate_previews, chain_render_box, chain_job_id,
+            )
             return result
 
         prefix = _tenant_prefix(asset.get("source_storage_path"))
