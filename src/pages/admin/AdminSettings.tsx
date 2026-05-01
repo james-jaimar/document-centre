@@ -38,6 +38,7 @@ const AdminSettings = () => {
             { value: "email", label: "Email Accounts", icon: Mail },
             { value: "documents", label: "Documents", icon: FileText },
             { value: "delivery", label: "Delivery", icon: Truck },
+            ...(isOwnerOrAdmin ? [{ value: "billing", label: "Billing", icon: CreditCard }] : []),
           ].map(({ value, label, icon: Icon }) => (
             <TabsTrigger
               key={value}
