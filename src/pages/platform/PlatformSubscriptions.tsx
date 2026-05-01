@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { formatPrice } from "@/lib/formatCurrency";
 import { CreditCard, Loader2, Building2, ArrowUpCircle, XCircle, Zap } from "lucide-react";
 import type { Tenant } from "@/hooks/useTenants";
 
