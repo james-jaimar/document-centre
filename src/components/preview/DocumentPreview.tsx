@@ -70,6 +70,7 @@ export default function DocumentPreview({
   pdfSources,
   canvasSizeMm,
   pdfSizeMm,
+  scaleMode,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
