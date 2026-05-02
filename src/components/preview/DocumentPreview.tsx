@@ -66,6 +66,8 @@ export default function DocumentPreview({
   bindingEdge,
   bindingArt,
   pdfSources,
+  canvasSizeMm,
+  pdfSizeMm,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
