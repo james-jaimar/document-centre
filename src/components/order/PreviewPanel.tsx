@@ -244,8 +244,8 @@ export default function PreviewPanel({
   productType = "loose_sheets",
   effects,
   bindingEdge,
-  
   bindingArt,
+  canvasSizeMm,
 }: PreviewPanelProps) {
   const [currentPage, setCurrentPage] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
