@@ -25,6 +25,7 @@ import Contact from "@/pages/Contact";
 import PrivacyPolicy from "@/pages/legal/PrivacyPolicy";
 import TermsOfService from "@/pages/legal/TermsOfService";
 import PlatformDemoActivity from "@/pages/platform/PlatformDemoActivity";
+import MobileUpload from "@/pages/MobileUpload";
 
 // Customer
 import CustomerDashboard from "@/pages/dashboard/CustomerDashboard";
