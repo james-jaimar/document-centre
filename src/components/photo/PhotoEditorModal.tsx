@@ -215,7 +215,7 @@ export default function PhotoEditorModal({
               zoom={zoom}
               rotation={rotation}
               aspect={size.aspect}
-              objectFit={zoom < 1 ? "contain" : "cover"}
+              objectFit={effectiveObjectFit}
               showGrid={true}
               onCropChange={setCrop}
               onZoomChange={setZoom}
@@ -224,7 +224,7 @@ export default function PhotoEditorModal({
               minZoom={minZoom}
               maxZoom={4}
               zoomSpeed={0.5}
-              restrictPosition={zoom >= 1}
+              restrictPosition={fitMode !== "fit"}
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center text-white/70 text-sm">
