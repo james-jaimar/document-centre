@@ -1,36 +1,57 @@
 
-# Fix: Flyer Auto-Assign Bug + Revert Fold Preview CORS Regression
+## Problem
 
-## Investigation findings
+Static document previews (loose sheets, posters, flyers, business cards) currently display rasterized thumbnail images that are noticeably low-resolution, especially for small formats like business cards. Since every uploaded file is already converted to PDF, we can render the actual PDF directly in the browser at full resolution.
 
-### Folded leaflet regression — what actually happened
+## Approach
 
-The **original** `sliceImageIntoPanels` in `FoldPreview.tsx` (commit `3ca71ff6`) used `img.crossOrigin = "anonymous"`. This is the correct approach and worked on `document-centre.com` because the S3 bucket has CORS configured for that origin.
+Use **`react-pdf`** (a React wrapper around Mozilla's pdf.js) to render individual PDF pages as high-resolution canvas elements. This replaces the `<img>` tag in `LooseSheetsPreview` with a `<Document>/<Page>` component that renders the PDF at the container's native pixel resolution — vector content stays pin-sharp at any zoom.
 
-The "fix" (commit `6837e3b0`) replaced this with a `fetch()` + blob approach. When `fetch()` fails CORS (e.g. on the Lovable preview domain), the fallback loads the image **without** `crossOrigin`. This silently taints the canvas, and then `canvas.toDataURL()` throws `SecurityError: Tainted canvases may not be exported`.
+### What changes
 
-The original code would either succeed (with CORS) or fail cleanly with "Failed to load surface image". The "fix" made it worse by introducing the tainted canvas path.
+1. **Install `react-pdf`** — lightweight React wrapper for pdf.js with canvas rendering.
 
-**Solution:** Revert `sliceImageIntoPanels` back to the original `crossOrigin = "anonymous"` approach. This restores correct behavior on `document-centre.com`.
+2. **New component: `PdfPageView`** — a small wrapper that takes a signed PDF URL and a page number, renders that page via react-pdf's `<Page>` component at the container's pixel dimensions. No toolbar, no controls, just the rendered page. Handles loading/error states gracefully.
 
-The same `crossOrigin = "anonymous"` pattern is already used in `composePanelImages` (`thumbnailUtils.ts` line 289) and works fine on production.
+3. **Update `LooseSheetsPreview`** — when a signed PDF URL is available for the current document, render `PdfPageView` instead of an `<img>`. Falls back to the existing thumbnail `<img>` if no PDF URL is provided (backward compatible).
 
-### Flyer auto-assign bug — missing `page_range_end`
+4. **Update `PreviewPanel`** — pass each document's `file_path` (the S3 PDF key) alongside the existing thumbnail data so `DocumentPreview` can forward it to `LooseSheetsPreview`. Sign the PDF URL using the existing `getDownloadUrls` utility.
 
-In `OrderFiles.tsx`, `handleAutoAssignFlyer` creates two sections with `page_range_start` but no `page_range_end`. Without `page_range_end`, each section shows ALL pages of the document instead of just the one assigned page. That's why both Front and Back show "2 pages".
+5. **Update `DocumentPreview`** — accept an optional `pdfUrl` prop and forward it to `LooseSheetsPreview` (only for non-bound, non-fold types).
 
-**Solution:** Add `page_range_end: 0` for the front section and `page_range_end: 1` for the back section, so each section shows exactly one page.
+### What does NOT change
 
----
+- **FlipBook / bound documents** — still use thumbnail images (they need pre-rasterized images for the page-flip animation).
+- **FoldPreview / brochures** — still use CSS-based panel slicing of thumbnail images.
+- **RingBinderPreview** — still uses thumbnails.
+- **PageEffects** — still wraps the content (bleed, lamination effects still apply).
+- **Grayscale filter for B&W** — still applied via CSS on the canvas container.
 
-## Changes
+### Scope of product types affected
 
-### 1. `src/components/preview/FoldPreview.tsx`
-Revert `sliceImageIntoPanels` to the original synchronous version with `img.crossOrigin = "anonymous"`. Remove the `fetch()` / blob / `async` wrapper.
+| Product type | Current | After |
+|---|---|---|
+| Loose sheets / stapled | Thumbnail image | PDF page render |
+| Poster | Thumbnail image | PDF page render |
+| Flyer | Thumbnail image | PDF page render |
+| Business cards | Thumbnail image | PDF page render |
+| Bound documents | Thumbnail image | No change |
+| Folded leaflets | CSS panel slice | No change |
+| Ring binder | Thumbnail image | No change |
+| Photo prints | Photo image | No change |
 
-### 2. `src/pages/dashboard/OrderFiles.tsx`
-In `handleAutoAssignFlyer`:
-- Front section: add `page_range_end: 0`
-- Back section: add `page_range_end: 1`
+### Technical details
 
-Also check `handleFlyerDoubleSided` and `handleFlyerSingleSided` for the same missing `page_range_end`.
+- `react-pdf` renders to a `<canvas>` element at configurable pixel width/height. We set it to match the container dimensions multiplied by `devicePixelRatio` for retina sharpness.
+- The PDF URL is signed once per document using the existing `getDownloadUrls` from `s3Storage.ts`.
+- pdf.js worker is loaded from CDN (standard react-pdf setup) to avoid bundling issues.
+- The `<Page>` component is set to `renderTextLayer={false}` and `renderAnnotationLayer={false}` — pure visual render only.
+
+### Files to create/modify
+
+- **New**: `src/components/preview/PdfPageView.tsx`
+- **Edit**: `src/components/preview/LooseSheetsPreview.tsx`
+- **Edit**: `src/components/preview/DocumentPreview.tsx`
+- **Edit**: `src/components/preview/previewTypes.ts`
+- **Edit**: `src/components/order/PreviewPanel.tsx`
+- **Install**: `react-pdf` package
