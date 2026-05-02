@@ -161,23 +161,23 @@ export default function PhotoEditorModal({
     setZoom(1);
   };
 
-  // When image loads or rotation changes, re-snap zoom to match the active
-  // fit mode. If in "fill" mode but the rotated image aspect is very
-  // different from the frame, auto-switch to "fit" so the user sees the
-  // full image rather than a heavily-cropped fill.
+  // When image loads or rotation changes, re-snap zoom. If the rotated
+  // image aspect differs significantly from the frame, auto-switch to
+  // "fit" (contain) so the user sees the full image immediately.
   useEffect(() => {
     if (!imageAspect) return;
     if (fitMode === "fit") {
-      setZoom(fitZoom);
+      // contain mode: zoom=1 already shows the full image.
+      setZoom(1);
     } else if (fitMode === "fill") {
-      // If the aspect mismatch after rotation is significant (fitZoom < 0.75),
-      // auto-switch to fit mode so the user sees their full rotated image.
-      if (fitZoom < 0.75) {
+      // If the aspect mismatch after rotation is significant, auto-switch
+      // to fit mode so the user sees their full rotated image.
+      if (coverFitZoom < 0.75) {
         setFitMode("fit");
-        setZoom(fitZoom);
+        setZoom(1);
         setCrop({ x: 0, y: 0 });
       } else {
-        setZoom(fillZoom);
+        setZoom(1);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
