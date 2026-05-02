@@ -27,7 +27,7 @@ async function validateSession(token: string) {
   const sb = getServiceClient();
   const { data: session, error } = await sb
     .from("upload_sessions")
-    .select("*, tenants!inner(name, slug, branding)")
+    .select("*, tenants!inner(name, slug, logo_url)")
     .eq("token", token)
     .eq("is_active", true)
     .single();
