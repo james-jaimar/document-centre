@@ -744,6 +744,7 @@ export default function PreviewPanel({
           faceLabels={computedPageRoles.map((_, i) => faceLabel(i))}
           bindingEdge={bindingEdge}
           bindingArt={bindingArt}
+          pdfSources={pdfSources}
         />
       </div>
 
