@@ -23,6 +23,7 @@ import OrientationAdvisory from "@/components/order/OrientationAdvisory";
 import ImageSizeDialog, { type ImageSizeSelection } from "@/components/order/ImageSizeDialog";
 import PosterImageEditor, { type PosterEditorResult } from "@/components/order/PosterImageEditor";
 import PageCountWarningDialog from "@/components/order/PageCountWarningDialog";
+import FlyerPageChoiceDialog, { type FlyerPageChoiceItem } from "@/components/order/FlyerPageChoiceDialog";
 import { isImageFile } from "@/lib/imageToPage";
 import { imageToPosterPdf } from "@/lib/imageToPage";
 import { getPageCountRule, validateDocumentPages } from "@/lib/pageCountRules";
