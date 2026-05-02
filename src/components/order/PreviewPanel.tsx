@@ -31,6 +31,8 @@ interface PreviewPanelProps {
   bindingEdge?: "left" | "top";
   /** Selected binding option's method + colour, drives spine artwork. */
   bindingArt?: { method: "spiral" | "comb" | "twin_loop"; color: string };
+  /** Selected paper/canvas size in mm (from Document Size option) */
+  canvasSizeMm?: { widthMm: number; heightMm: number };
 }
 
 interface PageInfo {
@@ -242,8 +244,8 @@ export default function PreviewPanel({
   productType = "loose_sheets",
   effects,
   bindingEdge,
-  
   bindingArt,
+  canvasSizeMm,
 }: PreviewPanelProps) {
   const [currentPage, setCurrentPage] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -572,6 +574,13 @@ export default function PreviewPanel({
     return undefined;
   }, [documents, isBusinessCards]);
 
+  // Native PDF page dimensions for canvas-vs-content sizing
+  const pdfSizeMm = useMemo(() => {
+    const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
+    if (!doc || !doc.page_width_mm || !doc.page_height_mm) return undefined;
+    return { widthMm: Number(doc.page_width_mm), heightMm: Number(doc.page_height_mm) };
+  }, [documents]);
+
   // For ring binders, navigation uses the shared sheet-flip view model:
   //   view 0   = closed (hardware only)
   //   view 1   = left=hardware, right=seq[0]
@@ -745,6 +754,8 @@ export default function PreviewPanel({
           bindingEdge={bindingEdge}
           bindingArt={bindingArt}
           pdfSources={pdfSources}
+          canvasSizeMm={canvasSizeMm}
+          pdfSizeMm={pdfSizeMm}
         />
       </div>
 
@@ -767,6 +778,8 @@ export default function PreviewPanel({
           bindingEdge={bindingEdge}
           bindingArt={bindingArt}
           pdfSources={pdfSources}
+          canvasSizeMm={canvasSizeMm}
+          pdfSizeMm={pdfSizeMm}
         />
       )}
 

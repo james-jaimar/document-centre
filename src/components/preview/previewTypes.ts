@@ -71,12 +71,22 @@ export interface PreviewComponentProps {
   tabPositions?: TabPosition[];
   /** Per-page PDF source for inline rendering (static types only) */
   pdfSources?: (PdfSource | null)[];
+  /** Selected paper/canvas size — when set, PDF content is fit-scaled within this rectangle */
+  canvasSizeMm?: CanvasSize;
+  /** Native PDF page dimensions in mm (from uploaded document) */
+  pdfSizeMm?: { widthMm: number; heightMm: number };
 }
 
 /** Signed PDF URL + 1-based page number for inline PDF rendering */
 export interface PdfSource {
   url: string;
   pageNumber: number;
+}
+
+/** Selected paper/canvas size in millimetres */
+export interface CanvasSize {
+  widthMm: number;
+  heightMm: number;
 }
 
 /** Multi-colour tab cycling palette: blue, red, orange, yellow, green (PVC pre-made dividers) */

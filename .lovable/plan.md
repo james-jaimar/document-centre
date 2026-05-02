@@ -1,26 +1,62 @@
+
+# PDF-on-Canvas Preview: Show Document Scaling Within Selected Paper Size
+
 ## Problem
 
-The inline PDF preview for static documents (flyers, loose sheets, etc.) has three visual issues:
+When a PDF's dimensions don't match the selected Document Size (e.g. a 203x254mm PDF on an A1 594x841mm canvas), the preview currently renders the PDF at the full preview area with no indication of how it fits on the paper. The user should see the white paper canvas at the correct aspect ratio, with the PDF content positioned within it — showing any gaps (white space) where the content doesn't fill the sheet.
 
-1. **Black box behind the PDF** -- `react-pdf`'s `<Page>` renders a canvas with `canvasBackground="transparent"`, but the parent container's `bg-card` class creates a dark background in dark theme.
-2. **White border + gray shadow** -- The `LooseSheetsPreview` wrapper applies `border border-border shadow-lg` and a multi-layer `boxShadow` that creates the stacked-paper effect. This was fine for thumbnails but is wrong for the new PDF rendering -- the user just wants to see the media shape cleanly.
-3. **Unnecessary PageEffects wrapping** -- The PDF is already the trimmed file; wrapping it in `PageEffects` adds extra insets and styling that aren't needed.
+## Approach
 
-## Plan
+Replicate the fit/fill concept from `PosterImageEditor` but adapted for the inline preview (not a cropper dialog). The preview will show:
 
-### 1. Clean up LooseSheetsPreview when rendering PDF
+1. **The paper canvas** — a white rectangle at the selected Document Size aspect ratio
+2. **The PDF content** — rendered inside using `react-pdf`, scaled to fit or fill the canvas
+3. **Visible gaps** — white margins where content doesn't reach the paper edge (fit mode)
 
-When a `pdfSource` is available, skip the decorative wrapper (border, shadow, bg-card) and the `PageEffects` layer. Render `PdfPageView` directly inside the centering container with just a minimal white background (to ensure the PDF page is visible against any theme).
+For static document types (posters, flyers, loose sheets), this replaces the current "raw PDF render" with a canvas-aware version.
 
-### 2. Fix PdfPageView canvas background
+## Changes
 
-Set `canvasBackground` to `"white"` (or `"#ffffff"`) instead of `"transparent"` so the page renders with a proper paper-white backing regardless of the theme.
+### 1. Pass selected canvas dimensions to PreviewPanel
 
-### 3. Remove double aspect-ratio fitting
+**`src/pages/dashboard/OrderBuild.tsx`**
+- Compute `canvasSizeMm` from the selected Document Size option's metadata (`width_mm`, `height_mm`), accounting for orientation.
+- Pass `canvasSizeMm={{ widthMm, heightMm }}` as a new prop to `PreviewPanel`.
 
-Currently both `LooseSheetsPreview` and `PdfPageView` independently compute sizing from the aspect ratio, resulting in the PDF being smaller than the container (95% of an already-65% space). Simplify: `LooseSheetsPreview` computes the page dimensions, and `PdfPageView` receives exact `width`/`height` and renders at that size without re-shrinking.
+### 2. Forward canvas info through the preview pipeline
 
-### Files to edit
+**`src/components/order/PreviewPanel.tsx`**
+- Accept new `canvasSizeMm` prop.
+- Compute `canvasAspectRatio` (width/height of the selected paper) separately from `pageAspectRatio` (the document's native ratio).
+- Pass both to `LooseSheetsPreview`.
 
-- `src/components/preview/LooseSheetsPreview.tsx` -- conditionally skip border/shadow/PageEffects for PDF mode
-- `src/components/preview/PdfPageView.tsx` -- use white canvas background, remove internal re-sizing logic, render at the exact width passed in
+**`src/components/preview/previewTypes.ts`**
+- Add `CanvasSize` interface (`widthMm`, `heightMm`).
+- Add `canvasSizeMm` to `PreviewComponentProps`.
+
+### 3. Render PDF content within a paper canvas
+
+**`src/components/preview/LooseSheetsPreview.tsx`**
+- When `canvasSizeMm` is provided and differs from the PDF's native size:
+  - Draw the outer rectangle at the canvas (paper) aspect ratio — this is the white sheet.
+  - Compute the PDF's native aspect from `page_width_mm` / `page_height_mm`.
+  - Scale the PDF to **fit** within the canvas (maintaining PDF aspect ratio), centering it.
+  - The `PdfPageView` renders inside, smaller than the canvas, showing white margins.
+- When sizes match (or no canvas info), render as currently (PDF fills the preview area).
+
+### 4. Future: Fit/Fill toggle (deferred)
+
+The user mentioned giving clients the option to choose fit vs fill. This plan implements **fit** as the default (showing the gaps). A follow-up can add a small toggle control and the crop/fill logic from `PosterImageEditor`.
+
+## Technical Detail
+
+Canvas aspect vs PDF aspect calculation:
+```text
+canvasAspect = canvasWidthMm / canvasHeightMm  (e.g. 594/841 = 0.707 for A1 portrait)
+pdfAspect    = pdfWidthMm / pdfHeightMm        (e.g. 203/254 = 0.799 for the uploaded doc)
+
+If pdfAspect > canvasAspect → PDF is wider relative to height → fit to width, gap top/bottom
+If pdfAspect < canvasAspect → PDF is taller relative to width → fit to height, gap left/right
+```
+
+The PDF content is rendered via `PdfPageView` at the computed inner dimensions, centered within the paper rectangle.

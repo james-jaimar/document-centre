@@ -8,7 +8,7 @@ import FoldPreview from "./FoldPreview";
 import LooseSheetsPreview from "./LooseSheetsPreview";
 import { Loader2 } from "lucide-react";
 
-import type { PreviewEffects, TabPosition, PdfSource } from "./previewTypes";
+import type { PreviewEffects, TabPosition, PdfSource, CanvasSize } from "./previewTypes";
 
 export interface DocumentPreviewProps {
   thumbnailPaths: string[];
@@ -34,6 +34,10 @@ export interface DocumentPreviewProps {
   bindingArt?: { method: "spiral" | "comb" | "twin_loop"; color: string };
   /** Per-page PDF source for inline rendering (static types only) */
   pdfSources?: (PdfSource | null)[];
+  /** Selected canvas/paper size in mm */
+  canvasSizeMm?: CanvasSize;
+  /** Native PDF page dimensions in mm */
+  pdfSizeMm?: { widthMm: number; heightMm: number };
 }
 
 const BOUND_TYPES = new Set([
@@ -62,6 +66,8 @@ export default function DocumentPreview({
   bindingEdge,
   bindingArt,
   pdfSources,
+  canvasSizeMm,
+  pdfSizeMm,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
@@ -180,7 +186,7 @@ export default function DocumentPreview({
 
   // Business cards use the same LooseSheetsPreview renderer
   if (productType === "business_cards") {
-    return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} />;
+    return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} canvasSizeMm={canvasSizeMm} pdfSizeMm={pdfSizeMm} />;
   }
 
   if (FOLD_TYPES.has(productType)) {
@@ -192,5 +198,5 @@ export default function DocumentPreview({
     );
   }
 
-  return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} />;
+  return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} canvasSizeMm={canvasSizeMm} pdfSizeMm={pdfSizeMm} />;
 }

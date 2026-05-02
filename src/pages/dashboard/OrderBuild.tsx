@@ -439,6 +439,17 @@ export default function OrderBuild() {
   const isLandscapeSize = sizeMeta?.orientation === "landscape";
   const sizeBindingEdge = sizeMeta?.binding_edge as string | undefined;
 
+  // Canvas size from selected Document Size option — drives preview scaling
+  const canvasSizeMm = useMemo(() => {
+    if (!sizeMeta) return undefined;
+    const w = Number(sizeMeta.width_mm ?? 0);
+    const h = Number(sizeMeta.height_mm ?? 0);
+    if (!w || !h) return undefined;
+    // Swap for landscape orientation
+    if (isLandscapeSize) return { widthMm: Math.max(w, h), heightMm: Math.min(w, h) };
+    return { widthMm: Math.min(w, h), heightMm: Math.max(w, h) };
+  }, [sizeMeta, isLandscapeSize]);
+
   // Single source of truth — same helper is used by buildPreviewSnapshot
   // so live builder and saved/admin previews agree on binding artwork.
   const bindingArt = useMemo(
@@ -803,8 +814,8 @@ export default function OrderBuild() {
             productType={productType}
             effects={previewEffects}
             bindingEdge={bindingEdge}
-            
             bindingArt={bindingArt}
+            canvasSizeMm={canvasSizeMm}
           />
         </div>
       </div>
