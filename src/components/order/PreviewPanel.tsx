@@ -766,6 +766,7 @@ export default function PreviewPanel({
           displayPageNumbers={displayPageNumbers}
           bindingEdge={bindingEdge}
           bindingArt={bindingArt}
+          pdfSources={pdfSources}
         />
       )}
 
