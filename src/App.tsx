@@ -125,6 +125,9 @@ const App = () => (
             <Route path="/terms" element={<TermsOfService />} />
             <Route path="/contact" element={<Contact />} />
 
+            {/* Public mobile upload — no auth required */}
+            <Route path="/upload/:token" element={<MobileUpload />} />
+
             {/* Public storefront landing */}
             <Route path="/t/:slug" element={<StorefrontLanding />} />
 
