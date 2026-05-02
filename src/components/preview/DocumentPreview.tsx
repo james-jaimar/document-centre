@@ -34,6 +34,10 @@ export interface DocumentPreviewProps {
   bindingArt?: { method: "spiral" | "comb" | "twin_loop"; color: string };
   /** Per-page PDF source for inline rendering (static types only) */
   pdfSources?: (PdfSource | null)[];
+  /** Selected canvas/paper size in mm */
+  canvasSizeMm?: CanvasSize;
+  /** Native PDF page dimensions in mm */
+  pdfSizeMm?: { widthMm: number; heightMm: number };
 }
 
 const BOUND_TYPES = new Set([
