@@ -1564,6 +1564,7 @@ export default function OrderFiles() {
         section_type: "front_cover" as any,
         sort_order: sections.length,
         page_range_start: 0,
+        page_range_end: 0,
         is_color: true,
       });
       await addSection.mutateAsync({
@@ -1572,6 +1573,7 @@ export default function OrderFiles() {
         section_type: "back_cover" as any,
         sort_order: sections.length + 1,
         page_range_start: 1,
+        page_range_end: 1,
         is_color: true,
       });
       toast.success("Auto-assigned Front + Back from pages 1 & 2");
@@ -1703,6 +1705,7 @@ export default function OrderFiles() {
             section_type: "front_cover" as any,
             sort_order: sections.length,
             page_range_start: 0,
+            page_range_end: 0,
             is_color: true,
           });
           await addSection.mutateAsync({
@@ -1711,6 +1714,7 @@ export default function OrderFiles() {
             section_type: "back_cover" as any,
             sort_order: sections.length + 1,
             page_range_start: 1,
+            page_range_end: 1,
             is_color: true,
           });
         }
@@ -1744,6 +1748,7 @@ export default function OrderFiles() {
             section_type: "front_cover" as any,
             sort_order: sections.length,
             page_range_start: 0,
+            page_range_end: 0,
             is_color: true,
           });
         }

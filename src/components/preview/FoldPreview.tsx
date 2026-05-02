@@ -9,30 +9,13 @@ import { FileText, AlertTriangle } from "lucide-react";
 /**
  * Slices a composed surface image into per-panel data-URLs using canvas.
  */
-/**
- * Loads an image URL as a blob to avoid CORS/tainted-canvas issues with
- * signed storage URLs, then slices it into per-panel data-URLs.
- */
-async function sliceImageIntoPanels(
+function sliceImageIntoPanels(
   imageUrl: string,
   widthFractions: number[]
 ): Promise<string[]> {
-  // Fetch as blob to sidestep crossOrigin CORS requirements
-  let objectUrl: string | undefined;
-  try {
-    const res = await fetch(imageUrl);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const blob = await res.blob();
-    objectUrl = URL.createObjectURL(blob);
-  } catch {
-    // Fallback: try direct load (works for data: URLs)
-    objectUrl = undefined;
-  }
-
-  const srcUrl = objectUrl ?? imageUrl;
-
-  return new Promise<string[]>((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const img = new Image();
+    img.crossOrigin = "anonymous";
     img.onload = () => {
       const results: string[] = [];
       let xOffset = 0;
@@ -48,14 +31,10 @@ async function sliceImageIntoPanels(
         results.push(canvas.toDataURL("image/png"));
         xOffset += pw;
       }
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
       resolve(results);
     };
-    img.onerror = () => {
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-      reject(new Error("Failed to load surface image for slicing"));
-    };
-    img.src = srcUrl;
+    img.onerror = () => reject(new Error("Failed to load surface image for slicing"));
+    img.src = imageUrl;
   });
 }
 

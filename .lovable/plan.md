@@ -1,19 +1,36 @@
 
-## Problem
+# Fix: Flyer Auto-Assign Bug + Revert Fold Preview CORS Regression
 
-The brochure fold preview's `sliceImageIntoPanels` function in `FoldPreview.tsx` sets `img.crossOrigin = "anonymous"` to avoid canvas tainting. However, Supabase signed storage URLs don't return the required CORS headers (`Access-Control-Allow-Origin`), causing the `Image` element to reject the response and fire `onerror`.
+## Investigation findings
 
-This manifests as "Failed to load surface image for slicing" on the Configure Options page for all fold types.
+### Folded leaflet regression — what actually happened
 
-## Fix
+The **original** `sliceImageIntoPanels` in `FoldPreview.tsx` (commit `3ca71ff6`) used `img.crossOrigin = "anonymous"`. This is the correct approach and worked on `document-centre.com` because the S3 bucket has CORS configured for that origin.
 
-**File: `src/components/preview/FoldPreview.tsx`**
+The "fix" (commit `6837e3b0`) replaced this with a `fetch()` + blob approach. When `fetch()` fails CORS (e.g. on the Lovable preview domain), the fallback loads the image **without** `crossOrigin`. This silently taints the canvas, and then `canvas.toDataURL()` throws `SecurityError: Tainted canvases may not be exported`.
 
-Replace the `sliceImageIntoPanels` function to fetch the image as a blob first (using `fetch()` which doesn't require CORS for rendering), create an object URL from the blob, and load the `Image` from that local blob URL. This completely avoids the CORS issue since the canvas draws from a same-origin blob URL.
+The original code would either succeed (with CORS) or fail cleanly with "Failed to load surface image". The "fix" made it worse by introducing the tainted canvas path.
 
-The function becomes `async` and:
-1. `fetch(imageUrl)` → `res.blob()` → `URL.createObjectURL(blob)`
-2. Load `new Image()` from the object URL (no `crossOrigin` needed)
-3. Slice into panels via canvas as before
-4. `URL.revokeObjectURL()` after done
-5. Falls back to direct load for `data:` URLs that don't need fetching
+**Solution:** Revert `sliceImageIntoPanels` back to the original `crossOrigin = "anonymous"` approach. This restores correct behavior on `document-centre.com`.
+
+The same `crossOrigin = "anonymous"` pattern is already used in `composePanelImages` (`thumbnailUtils.ts` line 289) and works fine on production.
+
+### Flyer auto-assign bug — missing `page_range_end`
+
+In `OrderFiles.tsx`, `handleAutoAssignFlyer` creates two sections with `page_range_start` but no `page_range_end`. Without `page_range_end`, each section shows ALL pages of the document instead of just the one assigned page. That's why both Front and Back show "2 pages".
+
+**Solution:** Add `page_range_end: 0` for the front section and `page_range_end: 1` for the back section, so each section shows exactly one page.
+
+---
+
+## Changes
+
+### 1. `src/components/preview/FoldPreview.tsx`
+Revert `sliceImageIntoPanels` to the original synchronous version with `img.crossOrigin = "anonymous"`. Remove the `fetch()` / blob / `async` wrapper.
+
+### 2. `src/pages/dashboard/OrderFiles.tsx`
+In `handleAutoAssignFlyer`:
+- Front section: add `page_range_end: 0`
+- Back section: add `page_range_end: 1`
+
+Also check `handleFlyerDoubleSided` and `handleFlyerSingleSided` for the same missing `page_range_end`.
