@@ -3061,6 +3061,77 @@ export type Database = {
           },
         ]
       }
+      upload_sessions: {
+        Row: {
+          app_id: string
+          created_at: string
+          created_by: string
+          expires_at: string
+          file_count: number
+          id: string
+          is_active: boolean
+          order_item_id: string | null
+          tenant_id: string
+          token: string
+          updated_at: string
+        }
+        Insert: {
+          app_id: string
+          created_at?: string
+          created_by: string
+          expires_at?: string
+          file_count?: number
+          id?: string
+          is_active?: boolean
+          order_item_id?: string | null
+          tenant_id: string
+          token?: string
+          updated_at?: string
+        }
+        Update: {
+          app_id?: string
+          created_at?: string
+          created_by?: string
+          expires_at?: string
+          file_count?: number
+          id?: string
+          is_active?: boolean
+          order_item_id?: string | null
+          tenant_id?: string
+          token?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "upload_sessions_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: false
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "upload_sessions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "upload_sessions_order_item_id_fkey"
+            columns: ["order_item_id"]
+            isOneToOne: false
+            referencedRelation: "order_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "upload_sessions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_admin_audit: {
         Row: {
           action: string
