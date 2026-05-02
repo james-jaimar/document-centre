@@ -460,6 +460,10 @@ export default function PhotoPrintsBuilder() {
               mime_type: d.mime_type || "image/jpeg",
               print_size_slug: currentSize,
               crop: { x: 0, y: 0 },
+              zoom: 1,
+              rotation: 0,
+              fit_mode: "cover" as const,
+              croppedAreaPixels: null,
               quantity: 1,
             }));
             setPhotoSpec((prev) => ({
