@@ -136,11 +136,9 @@ export default function PhotoEditorModal({
 
   const handleRotate = () => {
     setRotation((r) => (r + 90) % 360);
-    // Re-centre and re-snap to current fit mode after rotation, since the
-    // effective aspect ratio has flipped.
     setCrop({ x: 0, y: 0 });
-    // We can't read the new fitZoom synchronously; the effect below
-    // re-snaps zoom whenever fitZoom changes and a fit mode is active.
+    // The effect below will auto-switch to "fit" if the rotated image
+    // can no longer reasonably fill the frame.
   };
 
   const handleFill = () => {
