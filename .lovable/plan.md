@@ -1,22 +1,31 @@
 
-## Problem
+## Root Cause
 
-In the Photo Editor Modal (`PhotoEditorModal.tsx`), when a portrait image is rotated 90 degrees, it can't zoom out below 1x to show the full image within the print frame. The `computeFitZoom` function correctly calculates a sub-1 zoom value, and `minZoom` is set correctly, but two issues prevent it from working:
+The previous fix tried to switch `objectFit` dynamically based on zoom level (`zoom < 1 ? "contain" : "cover"`), which creates a semantic conflict. With `"cover"`, zoom=1 means "image covers the frame." With `"contain"`, zoom=1 means "entire image is visible." The `computeFitZoom` function was designed for "cover" semantics, so its output is meaningless under "contain" -- that's why the user sees zoom go to 0.93 but the image is still "way too big."
 
-1. **`objectFit="cover"` conflict**: With `objectFit="cover"`, react-easy-crop treats zoom=1 as "image covers the frame". When the rotated image's aspect is very different from the frame, the library's internal constraints fight against sub-1 zoom. The fix is to switch to `objectFit="contain"` when the user is zoomed below 1 (or when fit mode is active), which lets the image letterbox inside the frame.
+## Correct Approach
 
-2. **Auto-snap to fillZoom=1 on rotate**: The effect on line 161-167 snaps zoom back to 1 whenever `fitMode === "fill"` and rotation changes. After rotating a portrait to landscape, zoom=1 crops heavily. The rotate handler should detect the aspect mismatch and auto-switch to "fit" mode (or at least not force zoom=1 when the image can no longer fill without severe cropping).
+Tie `objectFit` to `fitMode`, not to zoom level:
 
-## Changes
+- **Fill mode**: `objectFit="cover"`, zoom=1 = image covers frame (excess cropped)
+- **Fit mode**: `objectFit="contain"`, zoom=1 = entire image visible (letterboxed in frame)
 
-**File: `src/components/photo/PhotoEditorModal.tsx`**
+This way each mode has clean, consistent zoom semantics.
 
-1. **Dynamic `objectFit`**: Switch from hardcoded `objectFit="cover"` to a computed value. Use `"contain"` when `zoom < 1` or `fitMode === "fit"`, and `"cover"` otherwise. This lets react-easy-crop properly handle sub-1 zoom levels.
+## Changes (single file: `src/components/photo/PhotoEditorModal.tsx`)
 
-2. **Update `handleRotate`**: After rotating, if the new image aspect differs significantly from the frame aspect (ratio mismatch > threshold), automatically switch to "fit" mode and snap zoom to `fitZoom`. This gives the user an immediate view of their full rotated image rather than a heavily-cropped fill.
+1. **Replace dynamic objectFit logic**: Change `objectFit={zoom < 1 ? "contain" : "cover"}` to `objectFit={fitMode === "fit" ? "contain" : "cover"}`.
 
-3. **Update the rotation effect** (lines 161-167): When in "fill" mode and the rotated image can't reasonably fill the frame (e.g., portrait image in landscape frame after 90-degree rotation), auto-switch to "fit" mode instead of forcing zoom=1.
+2. **Fix zoom/minZoom per mode**:
+   - In "contain" mode: minZoom = 1 (zoom=1 already shows full image), no need for sub-1 zoom.
+   - In "cover" mode: minZoom = `coverFitZoom` (same as current `computeFitZoom` result), allows zooming out to see the full image.
 
-4. **Ensure `restrictPosition={false}` when zoom < 1**: Already partially implemented (`restrictPosition={zoom >= 1}`), but verify this works correctly with the `objectFit` change.
+3. **Fix handleFit**: Set zoom to 1 (not `fitZoom`), because with `objectFit="contain"` zoom=1 already fits.
 
-These are all changes within the single file. The `computeFitZoom` function and `minZoom` calculation are already correct and don't need modification.
+4. **Fix handleFill**: Set zoom to 1 (unchanged), because with `objectFit="cover"` zoom=1 fills.
+
+5. **Fix rotation effect**: When rotating and in "fill" mode, if the aspect mismatch is significant, auto-switch to "fit" mode and set zoom=1 (with contain semantics). Otherwise stay in fill at zoom=1.
+
+6. **Fix restrictPosition**: Use `fitMode !== "fit"` instead of `zoom >= 1`. In fit/contain mode, the image should be freely positionable. In fill/cover mode, restrict to prevent gaps.
+
+7. **Fix Slider min**: Use the mode-appropriate minZoom (1 for contain, coverFitZoom for cover).
