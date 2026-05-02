@@ -90,12 +90,13 @@ export default function PhotoEditorModal({
   const prevSnapKey = useRef("");
   useEffect(() => {
     if (!ready) return;
-    const key = `${fillZoom.toFixed(6)}|${fitZoom.toFixed(6)}`;
+    // Include rotation so rotating always triggers a re-snap
+    const key = `${fillZoom.toFixed(6)}|${fitZoom.toFixed(6)}|${rotation}`;
     if (key === prevSnapKey.current) return;
     prevSnapKey.current = key;
     if (fitMode === "fit") setZoom(fitZoom);
     else setZoom(fillZoom);
-  }, [fillZoom, fitZoom, ready, fitMode]);
+  }, [fillZoom, fitZoom, ready, fitMode, rotation]);
 
   const handleReset = () => {
     setCrop({ x: 0, y: 0 });

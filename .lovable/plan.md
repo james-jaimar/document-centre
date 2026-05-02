@@ -1,47 +1,47 @@
-I’m sorry. You’re right to be angry: the photo editor should not have ended up stuck on “Loading photo…” from a simple rotation/fill change.
+I’ve found the actual cause: the current zoom calculation is modelling `react-easy-crop` incorrectly.
 
-What I can see from the current code is that the editor is still gated behind `signedUrl && containerDims.w > 0`, and the screenshot proves it has opened with a file name and controls but the cropper is never mounting. That means the failure is happening before `react-easy-crop` even gets a chance to load the image. The most likely regression is the new measurement/render gate, not the rotation formula itself.
+The editor is passing a custom `cropSize` and then calculating fit/fill from a guessed “rendered image size” using the outer container dimensions. But `react-easy-crop` already computes its own `mediaSize` after the image loads, and for a `cropSize` override the correct calculation is simply:
+
+```text
+rotatedDisplayedWidth  = rotate(mediaSize.width, mediaSize.height).width
+rotatedDisplayedHeight = rotate(mediaSize.width, mediaSize.height).height
+
+Fill zoom = max(cropFrameWidth / rotatedDisplayedWidth,
+                cropFrameHeight / rotatedDisplayedHeight)
+
+Fit zoom  = min(cropFrameWidth / rotatedDisplayedWidth,
+                cropFrameHeight / rotatedDisplayedHeight)
+```
+
+Right now the code recalculates the displayed image size independently from `containerWidth/containerHeight`, which diverges from what the cropper is actually rendering. That’s why the rotated image can visibly sit inside the crop frame even while the UI thinks it is already at “fit” or “fill”.
 
 Plan:
 
-1. Remove the fragile “container measured before render” dependency
-   - Keep the cropper mounted as soon as an image URL exists.
-   - Stop using `containerDims.w > 0` as a hard gate that can leave the UI permanently on “Loading photo…”.
-   - Give the shared hook safe default container dimensions until the real measurement arrives.
+1. Fix `useCropperZoom.ts`
+   - Stop deriving zoom from a guessed container-based rendered size.
+   - Use the `mediaSize.width` and `mediaSize.height` values supplied by `onMediaLoaded`, because those are the exact rendered dimensions used internally by `react-easy-crop`.
+   - Apply the existing rotation bounding-box formula to those displayed dimensions.
+   - Compute:
+     - `fillZoom = max(cropSize.width / rotatedW, cropSize.height / rotatedH)`
+     - `fitZoom = min(cropSize.width / rotatedW, cropSize.height / rotatedH)`
+   - Clamp to safe finite values only.
 
-2. Replace the current retry-style `ResizeObserver` attach logic with a stable shared measuring hook
-   - Measure after the modal is open using `requestAnimationFrame`.
-   - Store and cancel the animation frame properly on cleanup.
-   - Disconnect the observer reliably.
-   - Reuse the same measurement helper in both `PhotoEditorModal` and `PosterImageEditor`.
+2. Fix fit/fill state application in `PhotoEditorModal.tsx`
+   - When clicking Rotate, reset crop and preserve the current mode, then let the hook snap to the correct new zoom after the rotated dimensions settle.
+   - When clicking Fill or Fit, set zoom from the corrected values and reset crop to centre.
+   - Ensure the snap effect also re-runs when rotation/crop frame changes, not just when rounded zoom values change.
 
-3. Fix the cropper zoom hook so it is safe during initial render
-   - Never calculate zoom from zero/invalid dimensions.
-   - Clamp crop frame size to the actual editor area once available.
-   - Keep the fill/fit formulas based on rendered image bounds, including 90°/270° rotation.
-   - Ensure the hook always returns a valid `cropSize`, `minZoom`, `fillZoom`, and `fitZoom`.
+3. Apply the same corrected behaviour to `PosterImageEditor.tsx`
+   - It uses the same hook, so the core fix should carry over.
+   - Align rotate/fill/fit behaviour with the photo editor so both editors behave predictably.
 
-4. Make the cropper remount when geometry-defining inputs change
-   - Add a stable `key` based on image URL, target aspect, and rotation where necessary so `react-easy-crop` cannot keep stale internal sizing.
-   - Keep user crop/zoom state intact except when clicking Rotate / Fill / Fit / Reset.
+4. Remove any over-complicated/incorrect assumptions introduced in the previous iterations
+   - Keep the stable element measurement hook because it fixed the loading issue.
+   - Do not reintroduce the fragile “only render cropper after measured dimensions” gate.
+   - Do not use `objectFit='cover'` as a shortcut; keep the explicit Fill/Fit buttons controlling zoom.
 
-5. Apply the same fix to both editors
-   - `PhotoEditorModal.tsx`
-   - `PosterImageEditor.tsx`
-   - Shared hook/helper files only; no separate duplicated photo/poster maths.
+5. Add a small regression test for the geometry helper/hook logic if the current test setup supports it cleanly
+   - Specifically test a portrait image rotated 90° into a landscape 4×6 crop frame.
+   - Expected result: Fill zoom covers the entire crop frame; Fit zoom shows the entire rotated image.
 
-6. Reduce irrelevant console noise on these editor flows
-   - Disable or suppress the third-party Tawk widget on the photo/order editor pages if its cookie errors keep masking the real console output.
-
-7. Verification after implementation
-   - Open a photo print editor and confirm it no longer gets stuck on “Loading photo…”.
-   - Confirm a normal landscape photo fills a landscape frame.
-   - Confirm a portrait photo rotated 90° fills a landscape frame using the same fill logic.
-   - Confirm the poster editor still opens and rotates/fills using the same shared logic.
-
-Files expected to change:
-- `src/hooks/useCropperZoom.ts`
-- likely a new small shared measuring hook, e.g. `src/hooks/useElementSize.ts`
-- `src/components/photo/PhotoEditorModal.tsx`
-- `src/components/order/PosterImageEditor.tsx`
-- possibly the chat widget/layout file if needed for editor-page console cleanup
+This is a small targeted fix: the key change is replacing the wrong zoom input dimensions with the cropper’s actual `mediaSize` dimensions.
