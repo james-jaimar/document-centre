@@ -583,6 +583,14 @@ export function usePlaceOrder() {
             (d: any) => d.order_item_id === item.id
           );
 
+          // Determine selected size slug from spec
+          const selectedOptions = item.spec?.selected_options ?? {};
+          const sizeOptionKey = Object.keys(selectedOptions).find(
+            (k) => k.toLowerCase().includes("size")
+          );
+          const sizeSlug = sizeOptionKey ? selectedOptions[sizeOptionKey] : null;
+          const targetDims = sizeSlug ? getTargetDimensions(sizeSlug) : null;
+
           for (const doc of itemDocs) {
             if (!doc.backend_asset_id) continue;
 
