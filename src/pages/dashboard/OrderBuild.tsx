@@ -814,8 +814,8 @@ export default function OrderBuild() {
             productType={productType}
             effects={previewEffects}
             bindingEdge={bindingEdge}
-            
             bindingArt={bindingArt}
+            canvasSizeMm={canvasSizeMm}
           />
         </div>
       </div>
