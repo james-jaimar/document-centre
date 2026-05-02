@@ -79,6 +79,12 @@ export interface PdfSource {
   pageNumber: number;
 }
 
+/** Selected paper/canvas size in millimetres */
+export interface CanvasSize {
+  widthMm: number;
+  heightMm: number;
+}
+
 /** Multi-colour tab cycling palette: blue, red, orange, yellow, green (PVC pre-made dividers) */
 export const TAB_COLORS = ["#3b82f6", "#ef4444", "#f97316", "#eab308", "#22c55e"];
 
