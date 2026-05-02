@@ -12,3 +12,8 @@ Allow: /
 
 User-agent: *
 Allow: /
+Disallow: /admin
+Disallow: /platform
+Disallow: /branch
+
+Sitemap: https://document-centre.com/sitemap.xml
