@@ -22,6 +22,7 @@ export default function PhotoUploader({
   className,
   orderItemId,
   onMobileFilesReceived,
+  onPhoneUpload,
 }: PhotoUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [qrOpen, setQrOpen] = useState(false);
