@@ -115,20 +115,13 @@ export default function PhotoEditorModal({
     return w / h;
   }, [naturalSize, rotation]);
 
-  // objectFit is driven by fitMode:
-  //   "fill" → "cover" (image fills frame, excess cropped, zoom=1 baseline)
-  //   "fit"  → "contain" (entire image visible / letterboxed, zoom=1 baseline)
-  const effectiveObjectFit = fitMode === "fit" ? "contain" as const : "cover" as const;
-
-  // In cover mode we allow sub-1 zoom so the user can manually zoom out.
-  const coverFitZoom = useMemo(
+  const fitZoom = useMemo(
     () => (imageAspect ? computeFitZoom(imageAspect, frameAspect) : 1),
     [imageAspect, frameAspect],
   );
-
-  // In contain mode, zoom=1 already shows the full image — min is 1.
-  // In cover mode, allow zooming out to the computed fit level.
-  const minZoom = effectiveObjectFit === "contain" ? 1 : Math.min(coverFitZoom, 1);
+  const fillZoom = 1;
+  // minZoom must always be ≤ current zoom; allow going down to fitZoom.
+  const minZoom = Math.min(fitZoom, 1);
 
   const onCropComplete = useCallback((_: Area, areaPixels: Area) => {
     setCroppedAreaPixels(areaPixels);
