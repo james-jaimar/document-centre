@@ -28,11 +28,25 @@ export default function LooseSheetsPreview({
 }: LooseSheetsPreviewProps) {
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
   const ratio = pageAspectRatio ?? 0.707; // fallback to A4
-  const isLandscape = ratio > 1;
+
+  // ── Orientation-aware canvas dimensions ──
+  // If the PDF orientation differs from the canvas orientation, swap canvas
+  // dimensions so the preview matches the actual document layout.
+  let effectiveCanvasMm = canvasSizeMm;
+  if (canvasSizeMm && pdfSizeMm) {
+    const pdfIsLandscape = pdfSizeMm.widthMm > pdfSizeMm.heightMm;
+    const canvasIsLandscape = canvasSizeMm.widthMm > canvasSizeMm.heightMm;
+    if (pdfIsLandscape !== canvasIsLandscape) {
+      effectiveCanvasMm = {
+        widthMm: canvasSizeMm.heightMm,
+        heightMm: canvasSizeMm.widthMm,
+      };
+    }
+  }
 
   // Canvas aspect: use selected paper size if available, otherwise fall back to document ratio
-  const canvasAspect = canvasSizeMm
-    ? canvasSizeMm.widthMm / canvasSizeMm.heightMm
+  const canvasAspect = effectiveCanvasMm
+    ? effectiveCanvasMm.widthMm / effectiveCanvasMm.heightMm
     : ratio;
   const canvasIsLandscape = canvasAspect > 1;
 
@@ -55,12 +69,12 @@ export default function LooseSheetsPreview({
 
   // Determine if PDF content is smaller than canvas (different aspect ratio)
   const hasSizeMismatch =
-    canvasSizeMm &&
+    effectiveCanvasMm &&
     pdfSizeMm &&
-    (Math.abs(canvasSizeMm.widthMm - pdfSizeMm.widthMm) > 2 ||
-      Math.abs(canvasSizeMm.heightMm - pdfSizeMm.heightMm) > 2);
+    (Math.abs(effectiveCanvasMm.widthMm - pdfSizeMm.widthMm) > 2 ||
+      Math.abs(effectiveCanvasMm.heightMm - pdfSizeMm.heightMm) > 2);
 
-  // PDF source available — render clean, no border/shadow/PageEffects
+  // PDF source available — render with PageEffects for trim/bleed
   if (pdfSource) {
     let pdfW = canvasWidth;
     let pdfH = canvasHeight;
@@ -91,25 +105,36 @@ export default function LooseSheetsPreview({
 
     return (
       <div className="flex items-center justify-center" style={{ width, height }}>
-        {/* Paper canvas — always the selected size */}
         <div
-          className="relative flex items-center justify-center bg-white"
+          className="relative bg-card border border-border shadow-lg overflow-hidden"
           style={{
             width: canvasWidth,
             height: canvasHeight,
             overflow: isFill && hasSizeMismatch ? "hidden" : undefined,
-            boxShadow: hasSizeMismatch
-              ? "0 1px 4px hsl(var(--foreground) / 0.08)"
-              : undefined,
+            boxShadow: `
+              2px 2px 0 hsl(var(--border)),
+              4px 4px 0 hsl(var(--border)),
+              6px 6px 12px hsl(var(--foreground) / 0.1)
+            `,
           }}
         >
-          <PdfPageView
-            pdfUrl={pdfSource.url}
-            pageNumber={pdfSource.pageNumber}
-            width={pdfW}
-            height={pdfH}
-            style={{ filter: grayscaleFilter }}
-          />
+          <PageEffects
+            effects={resolvedEffects}
+            pageIndex={currentPage}
+            totalPages={urls.length}
+            allowBleed={bleedFlags?.[currentPage] ?? false}
+            bleedInsetPx={bleedInsetPx}
+          >
+            <div className="w-full h-full flex items-center justify-center">
+              <PdfPageView
+                pdfUrl={pdfSource.url}
+                pageNumber={pdfSource.pageNumber}
+                width={pdfW}
+                height={pdfH}
+                style={{ filter: grayscaleFilter }}
+              />
+            </div>
+          </PageEffects>
         </div>
       </div>
     );
