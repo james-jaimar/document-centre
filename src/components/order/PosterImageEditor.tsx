@@ -163,12 +163,12 @@ export default function PosterImageEditor({
   const prevSnapKey = useRef("");
   useEffect(() => {
     if (!ready) return;
-    const key = `${fillZoom.toFixed(6)}|${fitZoom.toFixed(6)}`;
+    const key = `${fillZoom.toFixed(6)}|${fitZoom.toFixed(6)}|${rotation}`;
     if (key === prevSnapKey.current) return;
     prevSnapKey.current = key;
     if (fitMode === "fit") setZoom(fitZoom);
     else setZoom(fillZoom);
-  }, [fillZoom, fitZoom, ready, fitMode]);
+  }, [fillZoom, fitZoom, ready, fitMode, rotation]);
 
   const handleFill = () => {
     setFitMode("fill");
