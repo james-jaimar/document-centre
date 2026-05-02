@@ -163,6 +163,7 @@ export default function SectionActions({
         </>
       )}
 
+      {actions.map(({ type, label, icon: Icon }) => (
         <button
           key={type}
           disabled={!hasSelectedFile}
