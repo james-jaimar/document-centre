@@ -1,43 +1,61 @@
 
 ## Problem
 
-When uploading multiple files (e.g., an A4 PDF then a Letter-size Word doc), the PaperSizeAdvisory dialog appears for the non-ISO file, but if the user tabs away and returns, the dialog auto-dismisses and the size mismatch is silently resolved without user input.
+Two bugs found:
 
-**Root cause (two-part):**
+### Bug 1: Preview shows colour when B&W is selected (Loose Sheets / Stapled)
 
-1. **Radix Dialog dismissal on tab switch**: The `PaperSizeAdvisory` dialog uses a plain `onOpenChange` handler that clears `advisoryDoc` whenever the dialog closes — including when Radix fires `onOpenChange(false)` due to focus loss on tab switch. The document's `preflight_data` is NOT updated (no `size_resolved` flag), so the doc remains unresolved.
+`LooseSheetsPreview.tsx` (used for stapled and loose pages) completely ignores the `colorFlags` prop. It destructures only `bleedFlags` and never applies a grayscale CSS filter. By contrast, `FlipBook.tsx` and `RingBinderOpenSpread.tsx` correctly apply `filter: grayscale(100%)` when `isColor` is false.
 
-2. **Silent auto-apply on re-detection**: When the user returns and the advisory useEffect re-fires, if `sessionSizeLock` was set by the first (ISO) upload, the unresolved Letter-size doc hits the `if (sessionSizeLock)` branch (line 628) and is silently auto-applied — the user never gets to review it.
+`FoldPreview.tsx` has the same gap -- it also ignores `colorFlags`.
 
-## Fix
+### Bug 2: Backend grayscale conversion is too aggressive
 
-### 1. Prevent advisory dialogs from dismissing on background/blur
+In `useCart.ts` (line ~587-600), the grayscale trigger uses `anyBW` -- if ANY section is B&W, ALL documents for that order item get converted to grayscale. This is wrong for mixed-colour orders (e.g. colour cover + B&W body): the cover document should stay colour.
 
-In `OrderFiles.tsx`, update the `PaperSizeAdvisory`, `BleedAdvisory`, and `OrientationAdvisory` dialog wrappers to block dismissal when the dialog is still relevant:
+The fix is to match each document to its section(s) and only convert documents whose section is actually B&W.
 
-- Add `onPointerDownOutside={(e) => e.preventDefault()}` and `onInteractOutside={(e) => e.preventDefault()}` to prevent Radix auto-close behaviour.
-- Change `onOpenChange` to only allow closing via the explicit action buttons (Keep Original / Scale To), not via the backdrop or focus loss.
+---
 
-Alternatively, since the Dialog component is controlled (`open={!!advisoryDoc}`), simply ignore `onOpenChange(false)` — only clear `advisoryDoc` from the explicit button handlers:
+## Plan
 
-```tsx
-onOpenChange={() => {}} // Do nothing — only buttons can dismiss
-```
+### 1. Fix LooseSheetsPreview to apply grayscale filter
 
-### 2. Apply the same protection to BleedAdvisory and OrientationAdvisory
+In `src/components/preview/LooseSheetsPreview.tsx`:
+- Destructure `colorFlags` from props
+- Apply `style={{ filter: isColor ? "none" : "grayscale(100%)" }}` on the `<img>` element, using `colorFlags?.[currentPage] ?? true`
 
-Same pattern — these dialogs should not auto-dismiss on tab switch either.
+### 2. Fix FoldPreview to apply grayscale filter
 
-### 3. Protect UploadProgressModal (already partially handled)
+In `src/components/preview/FoldPreview.tsx`:
+- Same pattern: destructure `colorFlags`, apply grayscale filter to rendered page images
 
-The `UploadProgressModal` already prevents outside-click during active uploads but allows it after completion. This is acceptable since it has the explicit "Continue" button flow. No change needed here.
+### 3. Fix per-document grayscale targeting in order placement
+
+In `src/hooks/useCart.ts` (~line 586-637):
+- Instead of `anyBW` across all sections, determine per-document whether it needs grayscale by checking only the sections that reference that specific document
+- Change `needsGrayscale` to be `true` only when the document's own section has `is_color === false`
+
+---
 
 ## Technical Details
 
-**Files to modify:**
-- `src/pages/dashboard/OrderFiles.tsx` — change `onOpenChange` for PaperSizeAdvisory, BleedAdvisory, and OrientationAdvisory to no-op (preventing Radix-driven dismissal)
-- `src/components/order/PaperSizeAdvisory.tsx` — add `onPointerDownOutside` / `onEscapeKeyDown` prevention on DialogContent
-- `src/components/order/BleedAdvisory.tsx` — same treatment
-- `src/components/order/OrientationAdvisory.tsx` — same treatment
+**LooseSheetsPreview.tsx** change:
+```tsx
+// Destructure colorFlags
+const isColor = colorFlags?.[currentPage] ?? true;
 
-The key principle: these advisory dialogs require an explicit user decision. They should never be dismissible by clicking outside, pressing Escape, or losing focus.
+// On the <img>:
+style={{ filter: isColor ? "none" : "grayscale(100%)" }}
+```
+
+**useCart.ts** change (line ~597-600):
+```ts
+for (const doc of itemDocs) {
+  if (!doc.backend_asset_id) continue;
+  // Only grayscale if THIS doc's section is B&W
+  const docSections = itemSections.filter((s: any) => s.document_id === doc.id);
+  const needsGrayscale = docSections.some((s: any) => !s.is_color);
+  ...
+}
+```
