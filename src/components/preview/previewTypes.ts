@@ -69,6 +69,14 @@ export interface PreviewComponentProps {
   pageColors?: string[];
   /** Tab positions for persistent overlay rendering */
   tabPositions?: TabPosition[];
+  /** Per-page PDF source for inline rendering (static types only) */
+  pdfSources?: (PdfSource | null)[];
+}
+
+/** Signed PDF URL + 1-based page number for inline PDF rendering */
+export interface PdfSource {
+  url: string;
+  pageNumber: number;
 }
 
 /** Multi-colour tab cycling palette: blue, red, orange, yellow, green (PVC pre-made dividers) */

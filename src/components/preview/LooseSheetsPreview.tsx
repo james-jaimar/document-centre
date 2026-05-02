@@ -1,7 +1,13 @@
 import type { PreviewComponentProps } from "./previewTypes";
 import { DEFAULT_PREVIEW_EFFECTS } from "./previewTypes";
+import type { PdfSource } from "./previewTypes";
 import PageEffects from "./PageEffects";
+import PdfPageView from "./PdfPageView";
 import { FileText } from "lucide-react";
+
+interface LooseSheetsPreviewProps extends PreviewComponentProps {
+  pdfSources?: (PdfSource | null)[];
+}
 
 export default function LooseSheetsPreview({
   urls,
@@ -12,7 +18,8 @@ export default function LooseSheetsPreview({
   pageAspectRatio,
   effects,
   bleedFlags,
-}: PreviewComponentProps) {
+  pdfSources,
+}: LooseSheetsPreviewProps) {
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
   const ratio = pageAspectRatio ?? 0.707; // fallback to A4
   const isLandscape = ratio > 1;
@@ -29,8 +36,10 @@ export default function LooseSheetsPreview({
   }
 
   const url = urls[currentPage];
+  const pdfSource = pdfSources?.[currentPage];
   const isColor = colorFlags?.[currentPage] ?? true;
   const bleedInsetPx = Math.round(pageWidth * 0.03);
+  const grayscaleFilter = isColor ? undefined : "grayscale(100%)";
 
   return (
     <div className="flex items-center justify-center" style={{ width, height }}>
@@ -39,7 +48,6 @@ export default function LooseSheetsPreview({
         style={{
           width: pageWidth,
           height: pageHeight,
-          // Stacked paper effect
           boxShadow: `
             2px 2px 0 hsl(var(--border)),
             4px 4px 0 hsl(var(--border)),
@@ -54,7 +62,17 @@ export default function LooseSheetsPreview({
           style={{ animation: "fadeIn 0.3s ease-out" }}
         >
           <PageEffects effects={resolvedEffects} pageIndex={currentPage} totalPages={urls.length} allowBleed={bleedFlags?.[currentPage] ?? false} bleedInsetPx={bleedInsetPx}>
-            {url ? (
+            {pdfSource ? (
+              <div className="w-full h-full flex items-center justify-center" style={{ filter: grayscaleFilter }}>
+                <PdfPageView
+                  pdfUrl={pdfSource.url}
+                  pageNumber={pdfSource.pageNumber}
+                  width={pageWidth}
+                  height={pageHeight}
+                  aspectRatio={ratio}
+                />
+              </div>
+            ) : url ? (
               <img
                 src={url}
                 alt={`Page ${currentPage + 1}`}

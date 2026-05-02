@@ -8,7 +8,7 @@ import FoldPreview from "./FoldPreview";
 import LooseSheetsPreview from "./LooseSheetsPreview";
 import { Loader2 } from "lucide-react";
 
-import type { PreviewEffects, TabPosition } from "./previewTypes";
+import type { PreviewEffects, TabPosition, PdfSource } from "./previewTypes";
 
 export interface DocumentPreviewProps {
   thumbnailPaths: string[];
@@ -32,6 +32,8 @@ export interface DocumentPreviewProps {
   bindingEdge?: "left" | "top";
   /** Selected binding option's method + colour, drives spine artwork. */
   bindingArt?: { method: "spiral" | "comb" | "twin_loop"; color: string };
+  /** Per-page PDF source for inline rendering (static types only) */
+  pdfSources?: (PdfSource | null)[];
 }
 
 const BOUND_TYPES = new Set([
@@ -59,6 +61,7 @@ export default function DocumentPreview({
   faceLabels,
   bindingEdge,
   bindingArt,
+  pdfSources,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
@@ -177,7 +180,7 @@ export default function DocumentPreview({
 
   // Business cards use the same LooseSheetsPreview renderer
   if (productType === "business_cards") {
-    return <LooseSheetsPreview {...commonProps} />;
+    return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} />;
   }
 
   if (FOLD_TYPES.has(productType)) {
@@ -189,5 +192,5 @@ export default function DocumentPreview({
     );
   }
 
-  return <LooseSheetsPreview {...commonProps} />;
+  return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} />;
 }

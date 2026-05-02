@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import type { Tables } from "@/integrations/supabase/types";
 import { Button } from "@/components/ui/button";
 import { composePanelImages, resolveUrls } from "@/lib/thumbnailUtils";
+import { getDownloadUrls } from "@/lib/s3Storage";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -40,6 +41,8 @@ interface PageInfo {
   isColor: boolean;
   label?: string;
   color?: string;
+  /** S3 key of the source PDF (for inline PDF rendering) */
+  filePath?: string;
 }
 
 const SECTION_LABELS: Record<string, string> = {
@@ -178,6 +181,7 @@ function buildPageSequence(
         documentName: doc.file_name,
         section,
         isColor: section.is_color,
+        filePath: doc.file_path,
       });
 
       // Determine whether the natural simplex reverse should be emitted.
@@ -453,6 +457,42 @@ export default function PreviewPanel({
     if (isFold && foldThumbnails) return foldThumbnails;
     return finalPages.map((p) => p.thumbnailUrl);
   }, [finalPages, isFold, foldThumbnails]);
+
+  // For static types (loose sheets, poster, flyer, business cards), sign the
+  // source PDF URLs so LooseSheetsPreview can render pages at full resolution
+  // instead of using low-res rasterised thumbnails.
+  const isStaticType = !isBound && !isFold && !isRingBinder;
+  const [signedPdfUrls, setSignedPdfUrls] = useState<Record<string, string>>({});
+
+  const uniqueFilePaths = useMemo(() => {
+    if (!isStaticType) return [];
+    const paths = new Set<string>();
+    finalPages.forEach((p) => { if (p.filePath) paths.add(p.filePath); });
+    return Array.from(paths);
+  }, [finalPages, isStaticType]);
+
+  useEffect(() => {
+    if (uniqueFilePaths.length === 0) {
+      setSignedPdfUrls({});
+      return;
+    }
+    let cancelled = false;
+    getDownloadUrls(uniqueFilePaths).then((map) => {
+      if (!cancelled) setSignedPdfUrls(map);
+    }).catch(() => {
+      if (!cancelled) setSignedPdfUrls({});
+    });
+    return () => { cancelled = true; };
+  }, [uniqueFilePaths]);
+
+  // Per-page PDF source: { url, pageNumber (1-based) }
+  const pdfSources = useMemo(() => {
+    if (!isStaticType) return undefined;
+    return finalPages.map((p) => {
+      if (!p.filePath || !signedPdfUrls[p.filePath]) return null;
+      return { url: signedPdfUrls[p.filePath], pageNumber: p.pageIndex + 1 };
+    });
+  }, [finalPages, signedPdfUrls, isStaticType]);
   const colorFlags = useMemo(() => finalPages.map((p) => p.isColor), [finalPages]);
   const sectionTypes = useMemo(() => finalPages.map((p) => p.section?.section_type ?? "body"), [finalPages]);
   const pageLabels = useMemo(() => finalPages.map((p) => p.label ?? ""), [finalPages]);
@@ -704,6 +744,7 @@ export default function PreviewPanel({
           faceLabels={computedPageRoles.map((_, i) => faceLabel(i))}
           bindingEdge={bindingEdge}
           bindingArt={bindingArt}
+          pdfSources={pdfSources}
         />
       </div>
 
@@ -725,6 +766,7 @@ export default function PreviewPanel({
           displayPageNumbers={displayPageNumbers}
           bindingEdge={bindingEdge}
           bindingArt={bindingArt}
+          pdfSources={pdfSources}
         />
       )}
 
