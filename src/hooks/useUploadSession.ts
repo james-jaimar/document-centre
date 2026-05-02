@@ -54,8 +54,9 @@ export function useUploadSession(orderItemId: string | undefined) {
       };
       setSession(s);
       return s;
-    } catch (err) {
+    } catch (err: any) {
       console.error("[useUploadSession] create failed:", err);
+      setError(err?.message || "Failed to create upload session");
       return null;
     } finally {
       setCreating(false);
