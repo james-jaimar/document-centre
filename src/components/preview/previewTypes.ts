@@ -75,6 +75,8 @@ export interface PreviewComponentProps {
   canvasSizeMm?: CanvasSize;
   /** Native PDF page dimensions in mm (from uploaded document) */
   pdfSizeMm?: { widthMm: number; heightMm: number };
+  /** How the PDF content is scaled within the canvas: fit (show margins) or fill (crop overflow) */
+  scaleMode?: "fit" | "fill";
 }
 
 /** Signed PDF URL + 1-based page number for inline PDF rendering */
