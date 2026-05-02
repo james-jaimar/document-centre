@@ -583,9 +583,6 @@ export function usePlaceOrder() {
             (d: any) => d.order_item_id === item.id
           );
 
-          // Determine if any section is B&W
-          const anyBW = itemSections.some((s: any) => !s.is_color);
-
           // Determine selected size slug from spec
           const selectedOptions = item.spec?.selected_options ?? {};
           const sizeOptionKey = Object.keys(selectedOptions).find(
@@ -597,7 +594,9 @@ export function usePlaceOrder() {
           for (const doc of itemDocs) {
             if (!doc.backend_asset_id) continue;
 
-            const needsGrayscale = anyBW;
+            // Only grayscale if THIS document's section(s) are B&W
+            const docSections = itemSections.filter((s: any) => s.document_id === doc.id);
+            const needsGrayscale = docSections.length > 0 && docSections.some((s: any) => !s.is_color);
             let needsResize = false;
             let targetW: number | undefined;
             let targetH: number | undefined;

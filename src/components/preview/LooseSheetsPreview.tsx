@@ -8,6 +8,7 @@ export default function LooseSheetsPreview({
   currentPage,
   width,
   height,
+  colorFlags,
   pageAspectRatio,
   effects,
   bleedFlags,
@@ -28,6 +29,7 @@ export default function LooseSheetsPreview({
   }
 
   const url = urls[currentPage];
+  const isColor = colorFlags?.[currentPage] ?? true;
   const bleedInsetPx = Math.round(pageWidth * 0.03);
 
   return (
@@ -57,6 +59,7 @@ export default function LooseSheetsPreview({
                 src={url}
                 alt={`Page ${currentPage + 1}`}
                 className="w-full h-full object-contain"
+                style={{ filter: isColor ? "none" : "grayscale(100%)" }}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-muted/30">
