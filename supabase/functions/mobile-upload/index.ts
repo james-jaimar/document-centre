@@ -27,7 +27,7 @@ async function validateSession(token: string) {
   const sb = getServiceClient();
   const { data: session, error } = await sb
     .from("upload_sessions")
-    .select("*, tenants!inner(name, slug, branding)")
+    .select("*, tenants!inner(name, slug, logo_url)")
     .eq("token", token)
     .eq("is_active", true)
     .single();
@@ -56,7 +56,7 @@ async function handleGet(token: string) {
     sessionId: session.id,
     tenantName: tenant?.name ?? "Print Centre",
     tenantSlug: tenant?.slug,
-    tenantLogo: tenant?.branding?.logo_url ?? null,
+    tenantLogo: tenant?.logo_url ?? null,
     orderItemId: session.order_item_id,
     expiresAt: session.expires_at,
     fileCount: session.file_count,
