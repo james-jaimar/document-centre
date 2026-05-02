@@ -15,6 +15,7 @@ import { RotateCw, Maximize2, Minimize2, RotateCcw } from "lucide-react";
 import type { PhotoPrintEntry, PhotoFitMode, CroppedAreaPixels } from "@/lib/photoPrints/types";
 import { getPhotoPrintSize, PHOTO_BORDER_OPTIONS } from "@/lib/photoPrints/sizes";
 import { borderFractionFor } from "@/lib/photoPrints/renderPreview";
+import { useCropperZoom } from "@/hooks/useCropperZoom";
 
 interface PhotoEditorModalProps {
   open: boolean;
@@ -30,30 +31,6 @@ interface PhotoEditorModalProps {
   ) => void;
 }
 
-/**
- * Compute the zoom value at which the entire image is visible inside the
- * print frame (letterboxed). With react-easy-crop's `objectFit="cover"`,
- * the base image is scaled so its shorter edge matches the frame; the
- * longer edge overflows. To make the whole image visible, we need to
- * shrink it by the ratio of the shorter-to-longer aspect mismatch.
- *
- * - imageAspect: width / height of the (rotation-adjusted) source image
- * - frameAspect: width / height of the print frame
- *
- * Returns a zoom value in (0, 1]. 1 means the image already exactly fits.
- */
-function computeFitZoom(imageAspect: number, frameAspect: number): number {
-  if (!imageAspect || !frameAspect) return 1;
-  // With objectFit="cover", scale = max(frameW/imgW, frameH/imgH) at zoom=1.
-  // To "contain" instead, we want scale = min(frameW/imgW, frameH/imgH).
-  // The ratio between contain and cover is the fit zoom.
-  const ratio =
-    imageAspect > frameAspect
-      ? frameAspect / imageAspect // image is wider than frame → shrink horizontally
-      : imageAspect / frameAspect; // image is taller than frame → shrink vertically
-  return Math.min(1, Math.max(0.1, ratio));
-}
-
 export default function PhotoEditorModal({
   open,
   photo,
@@ -67,8 +44,19 @@ export default function PhotoEditorModal({
   const [rotation, setRotation] = useState(0);
   const [fitMode, setFitMode] = useState<PhotoFitMode>("fill");
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<CroppedAreaPixels | null>(null);
-  const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
 
+  // Shared hook computes fill/fit zoom from real cropper geometry
+  const {
+    fillZoom,
+    fitZoom,
+    minZoom,
+    onMediaLoaded,
+    onCropSizeChange,
+    restrictPosition,
+    ready,
+  } = useCropperZoom({ rotation, zoom });
+
+  // Seed state from the photo entry when the dialog opens
   useEffect(() => {
     if (!open || !photo) return;
     setCrop(photo.crop ?? { x: 0, y: 0 });
@@ -78,65 +66,43 @@ export default function PhotoEditorModal({
     setCroppedAreaPixels(photo.croppedAreaPixels ?? null);
   }, [open, photo]);
 
-  // Load natural image dimensions so we can compute fit/fill zooms.
-  useEffect(() => {
-    if (!open || !signedUrl) {
-      setNaturalSize(null);
-      return;
-    }
-    let cancelled = false;
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      if (!cancelled) setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
-    };
-    img.onerror = () => {
-      if (!cancelled) setNaturalSize(null);
-    };
-    img.src = signedUrl;
-    return () => {
-      cancelled = true;
-    };
-  }, [open, signedUrl]);
-
   const size = photo ? getPhotoPrintSize(photo.print_size_slug) : null;
   const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === borderSlug);
   const borderMm = border?.border_mm ?? 0;
   const longEdgeMm = size ? Math.max(size.width_mm, size.height_mm) : 0;
   const borderFraction = size ? borderFractionFor(longEdgeMm, borderMm) : 0;
-  const frameAspect = size?.aspect ?? 1;
-
-  // Rotation-adjusted image aspect.
-  const imageAspect = useMemo(() => {
-    if (!naturalSize) return null;
-    const swapped = rotation % 180 !== 0;
-    const w = swapped ? naturalSize.h : naturalSize.w;
-    const h = swapped ? naturalSize.w : naturalSize.h;
-    return w / h;
-  }, [naturalSize, rotation]);
-
-  const fitZoom = useMemo(
-    () => (imageAspect ? computeFitZoom(imageAspect, frameAspect) : 1),
-    [imageAspect, frameAspect],
-  );
-  const fillZoom = 1;
-  // minZoom must always be ≤ current zoom; allow going down to fitZoom.
-  const minZoom = Math.min(fitZoom, 1);
 
   const onCropComplete = useCallback((_: Area, areaPixels: Area) => {
     setCroppedAreaPixels(areaPixels);
   }, []);
 
+  // When the hook reports new fill/fit values (after media loads or rotation
+  // changes), snap zoom to match the active mode.
+  const prevFillRef = useMemo(() => ({ v: fillZoom }), []);
+  useEffect(() => {
+    if (!ready) return;
+    // Only snap when fillZoom actually changed (i.e. rotation or media loaded)
+    if (prevFillRef.v === fillZoom && zoom !== 0) {
+      // first load — snap
+    }
+    prevFillRef.v = fillZoom;
+
+    if (fitMode === "fit") setZoom(fitZoom);
+    else setZoom(fillZoom);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fillZoom, fitZoom, ready]);
+
   const handleReset = () => {
     setCrop({ x: 0, y: 0 });
-    setZoom(fillZoom);
     setRotation(0);
     setFitMode("fill");
+    // fillZoom will re-snap via the effect
   };
 
   const handleRotate = () => {
     setRotation((r) => (r + 90) % 360);
     setCrop({ x: 0, y: 0 });
+    // fillZoom/fitZoom will recompute and the effect will snap zoom
   };
 
   const handleFill = () => {
@@ -150,16 +116,6 @@ export default function PhotoEditorModal({
     setCrop({ x: 0, y: 0 });
     setZoom(fitZoom);
   };
-
-  // When image loads or rotation changes, re-snap zoom to match the active
-  // fit mode so users aren't stranded on a zoom value the new aspect can't
-  // accommodate.
-  useEffect(() => {
-    if (!imageAspect) return;
-    if (fitMode === "fit") setZoom(fitZoom);
-    else if (fitMode === "fill") setZoom(fillZoom);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imageAspect, rotation]);
 
   const handleSave = () => {
     onSave({
@@ -193,16 +149,18 @@ export default function PhotoEditorModal({
               zoom={zoom}
               rotation={rotation}
               aspect={size.aspect}
-              objectFit="cover"
+              objectFit="contain"
               showGrid={true}
               onCropChange={setCrop}
               onZoomChange={setZoom}
               onRotationChange={setRotation}
               onCropComplete={onCropComplete}
+              onMediaLoaded={onMediaLoaded}
+              onCropSizeChange={onCropSizeChange}
               minZoom={minZoom}
               maxZoom={4}
               zoomSpeed={0.5}
-              restrictPosition={zoom >= 1}
+              restrictPosition={restrictPosition}
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center text-white/70 text-sm">
