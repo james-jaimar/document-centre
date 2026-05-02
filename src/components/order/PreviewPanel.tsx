@@ -31,6 +31,8 @@ interface PreviewPanelProps {
   bindingEdge?: "left" | "top";
   /** Selected binding option's method + colour, drives spine artwork. */
   bindingArt?: { method: "spiral" | "comb" | "twin_loop"; color: string };
+  /** Selected paper/canvas size in mm (from Document Size option) */
+  canvasSizeMm?: { widthMm: number; heightMm: number };
 }
 
 interface PageInfo {
