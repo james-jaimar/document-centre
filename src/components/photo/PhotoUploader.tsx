@@ -10,6 +10,8 @@ interface PhotoUploaderProps {
   orderItemId?: string;
   /** Called when files arrive via mobile QR upload */
   onMobileFilesReceived?: (fileIds: string[]) => void;
+  /** If provided, the "Upload from Phone" button always shows. Called when user clicks it — parent should ensure order exists then open QR modal. */
+  onPhoneUpload?: () => void;
 }
 
 const ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif";
