@@ -195,7 +195,7 @@ export default function PosterImageEditor({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
-      <DialogContent className="max-w-3xl p-0 overflow-hidden">
+      <DialogContent className="max-w-[95vw] sm:max-w-3xl max-h-[95vh] p-0 overflow-hidden overflow-y-auto">
         <DialogHeader className="px-6 pt-6 pb-2">
           <DialogTitle className="text-lg">{title ?? "Crop & position your poster"}</DialogTitle>
           <DialogDescription className="text-xs">
@@ -246,7 +246,7 @@ export default function PosterImageEditor({
         </div>
 
         {/* Cropper area — mount Cropper as soon as we have a URL */}
-        <div ref={containerRef} className="relative w-full bg-black" style={{ height: 420 }}>
+        <div ref={containerRef} className="relative w-full bg-black h-[50vh] sm:h-[420px]">
           {imageUrl ? (
             <Cropper
               image={imageUrl}
