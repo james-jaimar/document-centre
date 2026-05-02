@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
 import DocumentPreview from "@/components/preview/DocumentPreview";
+import ScaleModeToggle from "@/components/preview/ScaleModeToggle";
 import type { ProductPreviewType, PreviewEffects, TabPosition } from "@/components/preview/previewTypes";
 import { TAB_COLORS } from "@/components/preview/previewTypes";
 import { ringTotalViews, resolveRingView, stepRingView } from "@/lib/preview/ringBinderModel";
