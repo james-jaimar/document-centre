@@ -71,6 +71,7 @@ export default function QRUploadModal({
     }
     closeSession();
     clearIncoming();
+    clearError();
     onOpenChange(false);
   };
 
