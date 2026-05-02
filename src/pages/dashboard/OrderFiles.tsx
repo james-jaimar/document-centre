@@ -1867,6 +1867,7 @@ export default function OrderFiles() {
               selectedFilePageCount={selectedDocId ? (documents.find(d => d.id === selectedDocId)?.page_count ?? 0) : 0}
                onAutoAssignBrochure={handleAutoAssignBrochure}
                onAutoAssignPanels={handleAutoAssignPanels}
+               onAutoAssignFlyer={handleAutoAssignFlyer}
             />
           </div>
         </div>
