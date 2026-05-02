@@ -90,7 +90,29 @@ export default function QRUploadModal({
         </DialogHeader>
 
         <div className="flex flex-col items-center gap-6 py-4">
-          {creating && (
+          {error && (
+            <div className="flex flex-col items-center gap-3 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
+                <X className="h-6 w-6 text-destructive" />
+              </div>
+              <p className="text-sm text-destructive font-medium">
+                Could not generate upload link
+              </p>
+              <p className="text-xs text-muted-foreground">{error}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  clearError();
+                  createSession();
+                }}
+              >
+                Try again
+              </Button>
+            </div>
+          )}
+
+          {creating && !error && (
             <div className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
               Generating upload link…
