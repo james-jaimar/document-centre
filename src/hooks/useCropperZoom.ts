@@ -1,17 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 /**
- * Shared hook for computing Fill / Fit zoom values for react-easy-crop
- * editors. Works identically for photo prints and posters.
+ * Shared hook for computing Fill / Fit zoom values for react-easy-crop.
  *
- * KEY DESIGN: We compute a **fixed** crop-frame size from the container
- * dimensions and the print/poster aspect ratio. This `cropSize` is passed
- * directly to `<Cropper cropSize={...} />` so the library never
- * auto-shrinks the crop frame when the image is rotated.
+ * The crop frame is derived from the container and target aspect ratio.
+ * Fill/Fit zoom values come from comparing the image's natural dimensions
+ * (adjusted for rotation) to the crop frame — pure geometry.
  *
- * Fill/Fit zoom values are derived from the image's **natural** pixel
- * dimensions (swapped for 90°/270° rotation) relative to the fixed crop
- * frame — pure geometry, no guessing.
+ * IMPORTANT: This hook is safe when container dimensions are still 0
+ * (returns sensible defaults so the Cropper can mount immediately).
  */
 
 export interface CropperMediaSize {
@@ -33,9 +30,9 @@ interface UseCropperZoomOpts {
   zoom: number;
   /** Print-frame aspect ratio (width / height). */
   aspect: number;
-  /** The pixel height of the cropper container element. */
+  /** Measured pixel width of the cropper container element. */
   containerWidth: number;
-  /** The pixel height of the cropper container element. */
+  /** Measured pixel height of the cropper container element. */
   containerHeight: number;
 }
 
@@ -47,7 +44,7 @@ interface UseCropperZoomResult {
   cropSize: CropperCropSize;
   /** Pass to <Cropper onMediaLoaded={...} /> to capture natural dimensions. */
   onMediaLoaded: (mediaSize: CropperMediaSize) => void;
-  /** Whether the image currently covers the crop frame (restrict dragging). */
+  /** Whether the image currently covers the crop frame. */
   restrictPosition: boolean;
   /** Whether we have received natural image dimensions. */
   ready: boolean;
@@ -68,16 +65,20 @@ export function useCropperZoom({
 
   // ─── Fixed crop frame from container + aspect ───────────────────────
   const cropSize = useMemo<CropperCropSize>(() => {
-    if (containerWidth <= 0 || containerHeight <= 0) {
-      return { width: 300, height: 300 / (aspect || 1) };
-    }
-    const containerAspect = containerWidth / containerHeight;
-    if (aspect >= containerAspect) {
+    // Use real container dims if available, otherwise a reasonable default
+    const cw = containerWidth > 0 ? containerWidth : 600;
+    const ch = containerHeight > 0 ? containerHeight : 420;
+    const safeAspect = aspect > 0 ? aspect : 1;
+
+    const containerAspect = cw / ch;
+    if (safeAspect >= containerAspect) {
       // Frame is wider relative to container → constrain by width
-      return { width: containerWidth, height: containerWidth / aspect };
+      const w = cw * 0.95; // 5% padding so frame doesn't touch edges
+      return { width: Math.round(w), height: Math.round(w / safeAspect) };
     }
-    // Frame is taller relative to container → constrain by height
-    return { width: containerHeight * aspect, height: containerHeight };
+    // Frame is taller → constrain by height
+    const h = ch * 0.95;
+    return { width: Math.round(h * safeAspect), height: Math.round(h) };
   }, [containerWidth, containerHeight, aspect]);
 
   // ─── Fill / Fit from natural image dims ─────────────────────────────
@@ -86,48 +87,45 @@ export function useCropperZoom({
       return { fillZoom: 1, fitZoom: 1 };
     }
 
-    // The image's rendered size inside the container when zoom=1 and
-    // objectFit=contain. We calculate this ourselves from natural dims
-    // and container size so it's stable across rotations.
     const natW = mediaSize.naturalWidth;
     const natH = mediaSize.naturalHeight;
+    if (natW === 0 || natH === 0) return { fillZoom: 1, fitZoom: 1 };
 
-    // Rendered size at zoom=1 (contain mode): fit the natural image
-    // into the container.
+    // The library renders the image at zoom=1 to fit inside the container
+    // using "contain" logic. We replicate that to know the rendered size.
+    const cw = containerWidth > 0 ? containerWidth : 600;
+    const ch = containerHeight > 0 ? containerHeight : 420;
     const imgAspect = natW / natH;
-    const cAspect = containerWidth / containerHeight;
+    const cAspect = cw / ch;
     let renderedW: number;
     let renderedH: number;
     if (imgAspect > cAspect) {
-      renderedW = containerWidth;
-      renderedH = containerWidth / imgAspect;
+      renderedW = cw;
+      renderedH = cw / imgAspect;
     } else {
-      renderedH = containerHeight;
-      renderedW = containerHeight * imgAspect;
+      renderedH = ch;
+      renderedW = ch * imgAspect;
     }
 
-    // Rotation-adjusted bounding box of the rendered image at zoom=1
+    // Rotation-adjusted bounding box at zoom=1
     const rad = (rotation * Math.PI) / 180;
     const sin = Math.abs(Math.sin(rad));
     const cos = Math.abs(Math.cos(rad));
     const rotW = renderedW * cos + renderedH * sin;
     const rotH = renderedW * sin + renderedH * cos;
 
-    // Fill: scale so the rotated image fully covers the crop frame
+    // Fill: rotated image fully covers crop frame
     const fill = Math.max(cropSize.width / rotW, cropSize.height / rotH);
-    // Fit: scale so the entire rotated image is visible in the crop frame
+    // Fit: entire rotated image visible inside crop frame
     const fit = Math.min(cropSize.width / rotW, cropSize.height / rotH);
 
     return {
-      fillZoom: Math.max(0.01, fill),
-      fitZoom: Math.max(0.01, fit),
+      fillZoom: Math.max(0.1, fill),
+      fitZoom: Math.max(0.1, fit),
     };
   }, [mediaSize, cropSize, rotation, containerWidth, containerHeight]);
 
   const minZoom = Math.min(fitZoom, fillZoom);
-
-  // Restrict position (prevent dragging past edges) only when the image
-  // covers the crop frame at the current zoom
   const restrictPosition = zoom >= fillZoom - 0.001;
 
   return {

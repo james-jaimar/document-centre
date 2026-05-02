@@ -16,6 +16,7 @@ import type { PhotoPrintEntry, PhotoFitMode, CroppedAreaPixels } from "@/lib/pho
 import { getPhotoPrintSize, PHOTO_BORDER_OPTIONS } from "@/lib/photoPrints/sizes";
 import { borderFractionFor } from "@/lib/photoPrints/renderPreview";
 import { useCropperZoom } from "@/hooks/useCropperZoom";
+import { useElementSize } from "@/hooks/useElementSize";
 
 interface PhotoEditorModalProps {
   open: boolean;
@@ -45,36 +46,11 @@ export default function PhotoEditorModal({
   const [fitMode, setFitMode] = useState<PhotoFitMode>("fill");
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<CroppedAreaPixels | null>(null);
 
-  // Measure the cropper container — re-attach when dialog opens
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [containerDims, setContainerDims] = useState({ w: 0, h: 0 });
-  useEffect(() => {
-    if (!open) return;
-    let ro: ResizeObserver | null = null;
-    const attach = () => {
-      const el = containerRef.current;
-      if (!el) {
-        // Portal may not be mounted yet — retry next frame
-        requestAnimationFrame(attach);
-        return;
-      }
-      const rect = el.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        setContainerDims({ w: rect.width, h: rect.height });
-      }
-      ro = new ResizeObserver(([entry]) => {
-        const { width, height } = entry.contentRect;
-        if (width > 0 && height > 0) setContainerDims({ w: width, h: height });
-      });
-      ro.observe(el);
-    };
-    attach();
-    return () => ro?.disconnect();
-  }, [open]);
+  // Measure container — only when dialog is open
+  const [containerRef, containerSize] = useElementSize<HTMLDivElement>(open);
 
   const size = photo ? getPhotoPrintSize(photo.print_size_slug) : null;
 
-  // Shared hook computes fill/fit zoom from real geometry
   const {
     fillZoom,
     fitZoom,
@@ -87,8 +63,8 @@ export default function PhotoEditorModal({
     rotation,
     zoom,
     aspect: size?.aspect ?? 1,
-    containerWidth: containerDims.w,
-    containerHeight: containerDims.h,
+    containerWidth: containerSize.width,
+    containerHeight: containerSize.height,
   });
 
   // Seed state from the photo entry when the dialog opens
@@ -167,9 +143,9 @@ export default function PhotoEditorModal({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Cropper area */}
+        {/* Cropper area — mount Cropper as soon as we have a URL */}
         <div ref={containerRef} className="relative w-full bg-black" style={{ height: 420 }}>
-          {signedUrl && containerDims.w > 0 ? (
+          {signedUrl ? (
             <Cropper
               image={signedUrl}
               crop={crop}
@@ -195,7 +171,7 @@ export default function PhotoEditorModal({
             </div>
           )}
 
-          {/* White-border overlay (non-interactive) — drawn over the crop frame */}
+          {/* White-border overlay */}
           {borderFraction > 0 && (
             <div
               className="pointer-events-none absolute inset-0 flex items-center justify-center"
