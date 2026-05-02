@@ -83,6 +83,7 @@ export default function SectionActions({
   selectedFilePageCount,
   onAutoAssignBrochure,
   onAutoAssignPanels,
+  onAutoAssignFlyer,
 }: SectionActionsProps) {
   const actions = getActions(familySlug);
   const showAutoAssign =
