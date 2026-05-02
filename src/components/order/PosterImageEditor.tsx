@@ -246,7 +246,7 @@ export default function PosterImageEditor({
         </div>
 
         {/* Cropper area — mount Cropper as soon as we have a URL */}
-        <div ref={containerRef} className="relative w-full bg-black" style={{ height: 420 }}>
+        <div ref={containerRef} className="relative w-full bg-black h-[50vh] sm:h-[420px]">
           {imageUrl ? (
             <Cropper
               image={imageUrl}
