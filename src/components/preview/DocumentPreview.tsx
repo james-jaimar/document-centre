@@ -38,6 +38,8 @@ export interface DocumentPreviewProps {
   canvasSizeMm?: CanvasSize;
   /** Native PDF page dimensions in mm */
   pdfSizeMm?: { widthMm: number; heightMm: number };
+  /** How the PDF content is scaled within the canvas */
+  scaleMode?: "fit" | "fill";
 }
 
 const BOUND_TYPES = new Set([
@@ -68,6 +70,7 @@ export default function DocumentPreview({
   pdfSources,
   canvasSizeMm,
   pdfSizeMm,
+  scaleMode,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
@@ -186,7 +189,7 @@ export default function DocumentPreview({
 
   // Business cards use the same LooseSheetsPreview renderer
   if (productType === "business_cards") {
-    return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} canvasSizeMm={canvasSizeMm} pdfSizeMm={pdfSizeMm} />;
+    return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} canvasSizeMm={canvasSizeMm} pdfSizeMm={pdfSizeMm} scaleMode={scaleMode} />;
   }
 
   if (FOLD_TYPES.has(productType)) {
@@ -198,5 +201,5 @@ export default function DocumentPreview({
     );
   }
 
-  return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} canvasSizeMm={canvasSizeMm} pdfSizeMm={pdfSizeMm} />;
+  return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} canvasSizeMm={canvasSizeMm} pdfSizeMm={pdfSizeMm} scaleMode={scaleMode} />;
 }

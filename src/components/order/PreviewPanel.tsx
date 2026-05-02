@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
 import DocumentPreview from "@/components/preview/DocumentPreview";
+import ScaleModeToggle from "@/components/preview/ScaleModeToggle";
 import type { ProductPreviewType, PreviewEffects, TabPosition } from "@/components/preview/previewTypes";
 import { TAB_COLORS } from "@/components/preview/previewTypes";
 import { ringTotalViews, resolveRingView, stepRingView } from "@/lib/preview/ringBinderModel";
@@ -33,6 +34,12 @@ interface PreviewPanelProps {
   bindingArt?: { method: "spiral" | "comb" | "twin_loop"; color: string };
   /** Selected paper/canvas size in mm (from Document Size option) */
   canvasSizeMm?: { widthMm: number; heightMm: number };
+  /** Fit/fill scale mode for the PDF-on-canvas preview */
+  scaleMode?: "fit" | "fill";
+  /** Callback when the user toggles fit/fill */
+  onScaleModeChange?: (mode: "fit" | "fill") => void;
+  /** Product family slug — used to determine fit/fill toggle eligibility */
+  productFamilySlug?: string;
 }
 
 interface PageInfo {
@@ -246,6 +253,9 @@ export default function PreviewPanel({
   bindingEdge,
   bindingArt,
   canvasSizeMm,
+  scaleMode,
+  onScaleModeChange,
+  productFamilySlug,
 }: PreviewPanelProps) {
   const [currentPage, setCurrentPage] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -581,6 +591,18 @@ export default function PreviewPanel({
     return { widthMm: Number(doc.page_width_mm), heightMm: Number(doc.page_height_mm) };
   }, [documents]);
 
+  // Show fit/fill toggle only for eligible product families with a size mismatch
+  const SCALE_TOGGLE_SLUGS = new Set(["poster", "flyers", "flyer", "business-cards", "business_cards"]);
+  const showScaleToggle = !!(
+    onScaleModeChange &&
+    productFamilySlug &&
+    SCALE_TOGGLE_SLUGS.has(productFamilySlug) &&
+    canvasSizeMm &&
+    pdfSizeMm &&
+    (Math.abs(canvasSizeMm.widthMm - pdfSizeMm.widthMm) > 2 ||
+      Math.abs(canvasSizeMm.heightMm - pdfSizeMm.heightMm) > 2)
+  );
+
   // For ring binders, navigation uses the shared sheet-flip view model:
   //   view 0   = closed (hardware only)
   //   view 1   = left=hardware, right=seq[0]
@@ -756,6 +778,7 @@ export default function PreviewPanel({
           pdfSources={pdfSources}
           canvasSizeMm={canvasSizeMm}
           pdfSizeMm={pdfSizeMm}
+          scaleMode={scaleMode}
         />
       </div>
 
@@ -787,12 +810,17 @@ export default function PreviewPanel({
         <>
           <div className="text-center">
             <p className="text-sm font-medium text-foreground">{pageInfoText}</p>
-            {sectionLabel && (
-              <div className="flex items-center justify-center gap-2 mt-1">
-                <Badge variant="secondary" className="text-xs">{sectionLabel}</Badge>
-                <span className="text-xs text-muted-foreground">{colourStatus} · {duplexStatus}</span>
-              </div>
-            )}
+            <div className="flex items-center justify-center gap-2 mt-1">
+              {sectionLabel && (
+                <>
+                  <Badge variant="secondary" className="text-xs">{sectionLabel}</Badge>
+                  <span className="text-xs text-muted-foreground">{colourStatus} · {duplexStatus}</span>
+                </>
+              )}
+              {showScaleToggle && scaleMode && onScaleModeChange && (
+                <ScaleModeToggle value={scaleMode} onChange={onScaleModeChange} />
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-2 w-full max-w-md">

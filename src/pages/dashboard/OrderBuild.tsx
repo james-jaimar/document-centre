@@ -816,6 +816,9 @@ export default function OrderBuild() {
             bindingEdge={bindingEdge}
             bindingArt={bindingArt}
             canvasSizeMm={canvasSizeMm}
+            scaleMode={spec.scale_mode ?? "fit"}
+            onScaleModeChange={(mode) => setSpec((prev) => ({ ...prev, scale_mode: mode }))}
+            productFamilySlug={productFamily?.slug ?? undefined}
           />
         </div>
       </div>

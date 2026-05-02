@@ -23,6 +23,8 @@ export interface ItemSpec {
    * (spiral/comb/twin_loop). `null` / undefined = use the size's default.
    */
   binding_edge_override?: "long" | null;
+  /** How the uploaded PDF is scaled to fit the selected canvas size (posters, flyers, business cards) */
+  scale_mode?: "fit" | "fill";
 }
 
 export interface PriceLineItem {

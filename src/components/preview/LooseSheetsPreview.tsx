@@ -8,6 +8,7 @@ import { FileText } from "lucide-react";
 interface LooseSheetsPreviewProps extends PreviewComponentProps {
   pdfSources?: (PdfSource | null)[];
   canvasSizeMm?: CanvasSize;
+  scaleMode?: "fit" | "fill";
   pdfSizeMm?: { widthMm: number; heightMm: number };
 }
 
@@ -23,6 +24,7 @@ export default function LooseSheetsPreview({
   pdfSources,
   canvasSizeMm,
   pdfSizeMm,
+  scaleMode = "fit",
 }: LooseSheetsPreviewProps) {
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
   const ratio = pageAspectRatio ?? 0.707; // fallback to A4
@@ -62,18 +64,28 @@ export default function LooseSheetsPreview({
   if (pdfSource) {
     let pdfW = canvasWidth;
     let pdfH = canvasHeight;
+    const isFill = scaleMode === "fill";
 
     if (hasSizeMismatch && pdfSizeMm) {
-      // Fit PDF content within the canvas, preserving PDF's native aspect ratio
       const pdfAspect = pdfSizeMm.widthMm / pdfSizeMm.heightMm;
-      if (pdfAspect > canvasAspect) {
-        // PDF is wider → fit to canvas width, shorter height
-        pdfW = canvasWidth;
-        pdfH = canvasWidth / pdfAspect;
+      if (isFill) {
+        // Fill: scale to cover the canvas, overflow is clipped
+        if (pdfAspect > canvasAspect) {
+          pdfH = canvasHeight;
+          pdfW = canvasHeight * pdfAspect;
+        } else {
+          pdfW = canvasWidth;
+          pdfH = canvasWidth / pdfAspect;
+        }
       } else {
-        // PDF is taller → fit to canvas height, narrower width
-        pdfH = canvasHeight;
-        pdfW = canvasHeight * pdfAspect;
+        // Fit: scale to fit within the canvas, showing margins
+        if (pdfAspect > canvasAspect) {
+          pdfW = canvasWidth;
+          pdfH = canvasWidth / pdfAspect;
+        } else {
+          pdfH = canvasHeight;
+          pdfW = canvasHeight * pdfAspect;
+        }
       }
     }
 
@@ -85,6 +97,7 @@ export default function LooseSheetsPreview({
           style={{
             width: canvasWidth,
             height: canvasHeight,
+            overflow: isFill && hasSizeMismatch ? "hidden" : undefined,
             boxShadow: hasSizeMismatch
               ? "0 1px 4px hsl(var(--foreground) / 0.08)"
               : undefined,
