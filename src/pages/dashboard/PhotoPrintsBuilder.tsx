@@ -437,7 +437,38 @@ export default function PhotoPrintsBuilder() {
       </div>
 
       {photoSpec.photos.length === 0 ? (
-        <PhotoUploader onFiles={handleFiles} disabled={createOrder.isPending} />
+        <PhotoUploader
+          onFiles={handleFiles}
+          disabled={createOrder.isPending}
+          orderItemId={orderItem?.id}
+          onMobileFilesReceived={async (fileIds) => {
+            if (!fileIds.length) return;
+            // Fetch the document records created via mobile upload
+            const { data: docs } = await supabase
+              .from("documents")
+              .select("id, file_name, file_path, mime_type, preflight_data")
+              .in("id", fileIds);
+            if (!docs?.length) return;
+            const currentSize = photoSpec.print_size_slug;
+            const newEntries: PhotoPrintEntry[] = docs.map((d: any) => ({
+              id: crypto.randomUUID(),
+              document_id: d.id,
+              file_name: d.file_name,
+              original_storage_path: d.file_path,
+              source_width_px: d.preflight_data?.source_width_px ?? 0,
+              source_height_px: d.preflight_data?.source_height_px ?? 0,
+              mime_type: d.mime_type || "image/jpeg",
+              print_size_slug: currentSize,
+              crop: { x: 0, y: 0 },
+              quantity: 1,
+            }));
+            setPhotoSpec((prev) => ({
+              ...prev,
+              photos: [...prev.photos, ...newEntries],
+            }));
+            qc.invalidateQueries({ queryKey: ["order_data"] });
+          }}
+        />
       ) : (
         <div
           onDragOver={(e) => {
