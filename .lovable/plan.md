@@ -1,26 +1,34 @@
+I found the cause of the loop: `upload_sessions.order_item_id` was created with a foreign key to `order_jobs(id)`, but Photo Prints is passing an `order_items.id`. The database rejects every QR session insert with `409 Conflict`, and the modal keeps trying to create the session again because no session is ever created.
 
-## Problem
+Plan:
 
-The "Upload from Phone" button only appears when `orderItemId` is defined, but the order item is lazily created on first file upload. So on a fresh Photo Prints page (no files yet), the button is hidden.
+1. Fix the database constraint
+   - Add a migration that changes `upload_sessions.order_item_id` to reference `public.order_items(id)` instead of `public.order_jobs(id)`.
+   - Keep cascade delete behavior so temporary upload sessions are cleaned up when an order item is removed.
 
-## Solution
+2. Stop the retry loop in the UI
+   - Update `useUploadSession` to track a session creation error and prevent repeated automatic retries while the modal remains open.
+   - Return the error state to the modal.
 
-Two changes:
+3. Show a clear failure message in the QR modal
+   - If session creation fails, show a visible error such as “Could not generate upload link. Please close and try again.” instead of staying on an infinite spinner/loop.
+   - Add a retry action that attempts session creation once when clicked.
 
-### 1. PhotoUploader: Always show the button, accept an `onPhoneUpload` callback
+4. Check the Photo Prints flow after the fix
+   - Confirm clicking “Upload from Phone” creates the lazy order item, opens the QR modal, and generates the QR link without console spam.
+   - Confirm the QR URL still points to `/upload/:token` and the mobile upload edge function continues to save files against `documents.order_item_id`.
 
-Instead of conditionally rendering the phone button based on `orderItemId`, add an `onPhoneUpload` prop. When provided, the button always shows. When clicked, it calls `onPhoneUpload` which the parent uses to ensure the order exists, then opens the QR modal.
+Technical details:
 
-### 2. PhotoPrintsBuilder: Wire up eager order creation for phone upload
+```sql
+ALTER TABLE public.upload_sessions
+  DROP CONSTRAINT IF EXISTS upload_sessions_order_item_id_fkey;
 
-When the user clicks "Upload from Phone":
-1. Call `ensureOrder()` to create the order/order-item if needed.
-2. Set the resulting order item ID into state.
-3. Open the QR modal with the now-valid `orderItemId`.
+ALTER TABLE public.upload_sessions
+  ADD CONSTRAINT upload_sessions_order_item_id_fkey
+  FOREIGN KEY (order_item_id)
+  REFERENCES public.order_items(id)
+  ON DELETE CASCADE;
+```
 
-### Files modified
-
-- `src/components/photo/PhotoUploader.tsx` -- Add `onPhoneUpload` prop; always show button when prop is provided; call it on click instead of directly opening QR modal.
-- `src/pages/dashboard/PhotoPrintsBuilder.tsx` -- Pass `onPhoneUpload` handler that calls `ensureOrder()` then opens the QR modal via state.
-
-This keeps the lazy-order pattern intact (order is only created when actually needed) while making the phone upload button visible from the start.
+This matches the rest of the app: `documents.order_item_id` already references `order_items(id)`, and the Photo Prints builder uses `order_items` throughout.
