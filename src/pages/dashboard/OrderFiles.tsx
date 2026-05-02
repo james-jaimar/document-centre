@@ -23,6 +23,7 @@ import OrientationAdvisory from "@/components/order/OrientationAdvisory";
 import ImageSizeDialog, { type ImageSizeSelection } from "@/components/order/ImageSizeDialog";
 import PosterImageEditor, { type PosterEditorResult } from "@/components/order/PosterImageEditor";
 import PageCountWarningDialog from "@/components/order/PageCountWarningDialog";
+import FlyerPageChoiceDialog, { type FlyerPageChoiceItem } from "@/components/order/FlyerPageChoiceDialog";
 import { isImageFile } from "@/lib/imageToPage";
 import { imageToPosterPdf } from "@/lib/imageToPage";
 import { getPageCountRule, validateDocumentPages } from "@/lib/pageCountRules";
@@ -298,6 +299,11 @@ export default function OrderFiles() {
   // Doc IDs the user has explicitly chosen to "keep anyway" — don't re-warn.
   const dismissedPageCountDocIds = useRef<Set<string>>(new Set());
 
+  // Flyer multi-page choice dialog state
+  const [flyerChoiceItem, setFlyerChoiceItem] = useState<FlyerPageChoiceItem | null>(null);
+  const [flyerChoiceBusy, setFlyerChoiceBusy] = useState(false);
+  const dismissedFlyerDocIds = useRef<Set<string>>(new Set());
+
   // Check for near-ISO bleed documents after upload completes
   useEffect(() => {
     if (uploadModalOpen || advisoryDoc || bleedDoc || orientationDoc) return;
@@ -352,6 +358,26 @@ export default function OrderFiles() {
       setPageCountWarning({ items });
     }
   }, [documents, productFamily?.slug, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, pageCountWarning]);
+
+  // Flyer multi-page detection: show smart choice dialog for 3+ page flyer uploads
+  useEffect(() => {
+    if (uploadModalOpen || advisoryDoc || bleedDoc || orientationDoc || pageCountWarning || flyerChoiceItem) return;
+    const fSlug = productFamily?.slug;
+    if (fSlug !== "flyers") return;
+
+    const multiPageDoc = documents.find((d) => {
+      if (dismissedFlyerDocIds.current.has(d.id)) return false;
+      if (d.document_status !== "ready") return false;
+      return (d.page_count ?? 0) >= 3;
+    });
+    if (multiPageDoc) {
+      setFlyerChoiceItem({
+        docId: multiPageDoc.id,
+        fileName: multiPageDoc.file_name,
+        pageCount: multiPageDoc.page_count ?? 0,
+      });
+    }
+  }, [documents, productFamily?.slug, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, pageCountWarning, flyerChoiceItem]);
 
   // Check for orientation mismatches via the shared policy module — single
   // source of truth for which products require which orientation.
@@ -1524,6 +1550,36 @@ export default function OrderFiles() {
     }
   }, [selectedDocId, orderItem, documents, sections.length, addSection, assertSizeMatchesActive, assertOrientationOk]);
 
+  // Auto-assign Front + Back for flyers with a 2-page document
+  const handleAutoAssignFlyer = useCallback(async () => {
+    if (!selectedDocId || !orderItem) return;
+    if (!assertOrientationOk(selectedDocId)) return;
+    if (!assertSizeMatchesActive(selectedDocId)) return;
+    const doc = documents.find((d) => d.id === selectedDocId);
+    if (!doc || (doc.page_count ?? 0) < 2) return;
+    try {
+      await addSection.mutateAsync({
+        order_item_id: orderItem.id,
+        document_id: selectedDocId,
+        section_type: "front_cover" as any,
+        sort_order: sections.length,
+        page_range_start: 0,
+        is_color: true,
+      });
+      await addSection.mutateAsync({
+        order_item_id: orderItem.id,
+        document_id: selectedDocId,
+        section_type: "back_cover" as any,
+        sort_order: sections.length + 1,
+        page_range_start: 1,
+        is_color: true,
+      });
+      toast.success("Auto-assigned Front + Back from pages 1 & 2");
+    } catch (err: any) {
+      toast.error("Failed to auto-assign", { description: err.message });
+    }
+  }, [selectedDocId, orderItem, documents, sections.length, addSection, assertSizeMatchesActive, assertOrientationOk]);
+
   const handleRemoveSection = useCallback(async () => {
     if (!selectedSectionId || !orderItem) return;
     try {
@@ -1626,6 +1682,81 @@ export default function OrderFiles() {
     }
     setPageCountWarning(null);
   }, [pageCountWarning]);
+
+  // ── Flyer multi-page choice handlers ──────────────────────────────
+  const handleFlyerDoubleSided = useCallback(
+    async (item: FlyerPageChoiceItem) => {
+      setFlyerChoiceBusy(true);
+      try {
+        const doc = documents.find((d) => d.id === item.docId);
+        if (!doc) return;
+        // Trim to first 2 pages
+        await trimDocumentToFirstPages(doc.id, doc.file_path, doc.file_name, 2);
+        await reprocessDocument({ id: doc.id, file_path: doc.file_path, file_name: doc.file_name });
+        dismissedFlyerDocIds.current.add(doc.id);
+        await refetchDocuments();
+        // Auto-assign Front + Back
+        if (orderItem) {
+          await addSection.mutateAsync({
+            order_item_id: orderItem.id,
+            document_id: doc.id,
+            section_type: "front_cover" as any,
+            sort_order: sections.length,
+            page_range_start: 0,
+            is_color: true,
+          });
+          await addSection.mutateAsync({
+            order_item_id: orderItem.id,
+            document_id: doc.id,
+            section_type: "back_cover" as any,
+            sort_order: sections.length + 1,
+            page_range_start: 1,
+            is_color: true,
+          });
+        }
+        toast.success("Trimmed to 2 pages and assigned as Front + Back");
+        setFlyerChoiceItem(null);
+      } catch (err: any) {
+        toast.error("Failed to process", { description: err?.message });
+      } finally {
+        setFlyerChoiceBusy(false);
+      }
+    },
+    [documents, reprocessDocument, refetchDocuments, orderItem, addSection, sections.length],
+  );
+
+  const handleFlyerSingleSided = useCallback(
+    async (item: FlyerPageChoiceItem) => {
+      setFlyerChoiceBusy(true);
+      try {
+        const doc = documents.find((d) => d.id === item.docId);
+        if (!doc) return;
+        // Trim to first page
+        await trimDocumentToFirstPages(doc.id, doc.file_path, doc.file_name, 1);
+        await reprocessDocument({ id: doc.id, file_path: doc.file_path, file_name: doc.file_name });
+        dismissedFlyerDocIds.current.add(doc.id);
+        await refetchDocuments();
+        // Auto-assign as Front only
+        if (orderItem) {
+          await addSection.mutateAsync({
+            order_item_id: orderItem.id,
+            document_id: doc.id,
+            section_type: "front_cover" as any,
+            sort_order: sections.length,
+            page_range_start: 0,
+            is_color: true,
+          });
+        }
+        toast.success("Trimmed to 1 page and assigned as Front");
+        setFlyerChoiceItem(null);
+      } catch (err: any) {
+        toast.error("Failed to process", { description: err?.message });
+      } finally {
+        setFlyerChoiceBusy(false);
+      }
+    },
+    [documents, reprocessDocument, refetchDocuments, orderItem, addSection, sections.length],
+  );
 
   const handleRerenderGaps = useCallback(
     async (doc: { id: string; backend_asset_id: string | null; preflight_data: unknown }) => {
@@ -1837,6 +1968,7 @@ export default function OrderFiles() {
               selectedFilePageCount={selectedDocId ? (documents.find(d => d.id === selectedDocId)?.page_count ?? 0) : 0}
                onAutoAssignBrochure={handleAutoAssignBrochure}
                onAutoAssignPanels={handleAutoAssignPanels}
+               onAutoAssignFlyer={handleAutoAssignFlyer}
             />
           </div>
         </div>
@@ -1868,6 +2000,7 @@ export default function OrderFiles() {
           selectedFilePageCount={selectedDocId ? (documents.find(d => d.id === selectedDocId)?.page_count ?? 0) : 0}
            onAutoAssignBrochure={handleAutoAssignBrochure}
            onAutoAssignPanels={handleAutoAssignPanels}
+           onAutoAssignFlyer={handleAutoAssignFlyer}
         />
       </div>
 
@@ -1958,6 +2091,15 @@ export default function OrderFiles() {
         onTrim={handlePageCountTrim}
         onReplace={handlePageCountReplace}
         onKeep={handlePageCountKeep}
+      />
+
+      {/* Flyer multi-page choice dialog */}
+      <FlyerPageChoiceDialog
+        open={!!flyerChoiceItem}
+        item={flyerChoiceItem}
+        busy={flyerChoiceBusy}
+        onDoubleSided={handleFlyerDoubleSided}
+        onSingleSided={handleFlyerSingleSided}
       />
     </div>
   );

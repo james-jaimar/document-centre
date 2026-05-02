@@ -27,7 +27,7 @@ export function getPageCountRule(familySlug: FamilySlug): PageCountRule | null {
   switch (familySlug) {
     case "flyers":
       return {
-        max: 2,
+        max: null,
         min: 1,
         label: "flyer",
         allowedDescription: "1 page (single-sided) or 2 pages (double-sided)",
