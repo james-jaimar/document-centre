@@ -18,8 +18,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { RotateCw, RotateCcw } from "lucide-react";
+import { RotateCw, RotateCcw, Maximize2, Minimize2 } from "lucide-react";
 import type { CroppedAreaPixels } from "@/lib/photoPrints/types";
+import { useCropperZoom } from "@/hooks/useCropperZoom";
 
 export interface PosterSizeChoice {
   slug: string;
@@ -38,9 +39,10 @@ export const POSTER_SIZE_CHOICES: PosterSizeChoice[] = [
 
 const DEFAULT_POSTER_SLUG = "a2";
 
+export type PosterFitMode = "fill" | "fit";
+
 export interface PosterEditorResult {
   size: PosterSizeChoice;
-  /** Final orientation as displayed in the editor (after auto-rotate). */
   orientation: "portrait" | "landscape";
   croppedAreaPixels: CroppedAreaPixels;
   rotation: number;
@@ -58,24 +60,14 @@ export interface PosterEditorInitialState {
 
 interface Props {
   open: boolean;
-  /** Source image file the user just uploaded. */
   file: File | null;
-  /** Optional pre-selected size (e.g. from an already-set poster size). */
   initialSizeSlug?: string;
-  /** Optional full state to seed when re-editing an existing poster image. */
   initialState?: PosterEditorInitialState;
-  /** Title shown in the dialog header. */
   title?: string;
   onCancel: () => void;
   onConfirm: (result: PosterEditorResult) => void;
 }
 
-/**
- * Lets the user crop / position / rotate an uploaded image to a chosen poster
- * size before it is rasterised into a print-ready PDF. Mirrors the Photo Prints
- * editor UX but without the white-border overlay (posters print edge-to-edge)
- * and with a built-in poster size picker.
- */
 export default function PosterImageEditor({
   open,
   file,
@@ -94,10 +86,22 @@ export default function PosterImageEditor({
   const [crop, setCrop] = useState(initialState?.crop ?? { x: 0, y: 0 });
   const [zoom, setZoom] = useState(initialState?.zoom ?? 1);
   const [rotation, setRotation] = useState(initialState?.rotation ?? 0);
+  const [fitMode, setFitMode] = useState<PosterFitMode>("fill");
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<CroppedAreaPixels | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageDims, setImageDims] = useState<{ w: number; h: number } | null>(null);
   const hasInitialState = !!initialState;
+
+  // Shared hook computes fill/fit zoom from real cropper geometry
+  const {
+    fillZoom,
+    fitZoom,
+    minZoom,
+    onMediaLoaded,
+    onCropSizeChange,
+    restrictPosition,
+    ready,
+  } = useCropperZoom({ rotation, zoom });
 
   // Build / revoke object URL for the source file.
   useEffect(() => {
@@ -121,11 +125,11 @@ export default function PosterImageEditor({
     setCrop(initialState?.crop ?? { x: 0, y: 0 });
     setZoom(initialState?.zoom ?? 1);
     setRotation(initialState?.rotation ?? 0);
+    setFitMode("fill");
     if (initialState?.orientation) setOrientation(initialState.orientation);
   }, [open, initialSizeSlug, initialState]);
 
-  // Auto-pick orientation to match the source image's natural aspect — but
-  // only when we don't have a saved orientation to honour (re-edit case).
+  // Auto-pick orientation to match the source image's natural aspect
   useEffect(() => {
     if (!imageDims || hasInitialState) return;
     setOrientation(imageDims.w >= imageDims.h ? "landscape" : "portrait");
@@ -145,6 +149,28 @@ export default function PosterImageEditor({
   const onCropComplete = useCallback((_: Area, areaPixels: Area) => {
     setCroppedAreaPixels(areaPixels);
   }, []);
+
+  // Snap zoom when fill/fit values change (rotation, media load, size change)
+  const prevFillRef = useMemo(() => ({ v: fillZoom }), []);
+  useEffect(() => {
+    if (!ready) return;
+    prevFillRef.v = fillZoom;
+    if (fitMode === "fit") setZoom(fitZoom);
+    else setZoom(fillZoom);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fillZoom, fitZoom, ready]);
+
+  const handleFill = () => {
+    setFitMode("fill");
+    setCrop({ x: 0, y: 0 });
+    setZoom(fillZoom);
+  };
+
+  const handleFit = () => {
+    setFitMode("fit");
+    setCrop({ x: 0, y: 0 });
+    setZoom(fitZoom);
+  };
 
   const handleSave = () => {
     if (!croppedAreaPixels) return;
@@ -218,16 +244,18 @@ export default function PosterImageEditor({
               zoom={zoom}
               rotation={rotation}
               aspect={aspect}
-              objectFit="cover"
+              objectFit="contain"
               showGrid
               onCropChange={setCrop}
               onZoomChange={setZoom}
               onRotationChange={setRotation}
               onCropComplete={onCropComplete}
-              minZoom={1}
+              onMediaLoaded={onMediaLoaded}
+              onCropSizeChange={onCropSizeChange}
+              minZoom={minZoom}
               maxZoom={4}
               zoomSpeed={0.5}
-              restrictPosition
+              restrictPosition={restrictPosition}
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center text-white/70 text-sm">
@@ -243,13 +271,13 @@ export default function PosterImageEditor({
               <Label className="text-xs font-medium">Zoom</Label>
               <span className="text-xs text-muted-foreground tabular-nums">{zoom.toFixed(2)}×</span>
             </div>
-            <Slider value={[zoom]} min={1} max={4} step={0.01} onValueChange={(v) => setZoom(v[0])} />
+            <Slider value={[zoom]} min={minZoom} max={4} step={0.01} onValueChange={(v) => setZoom(v[0])} />
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setRotation((r) => (r + 270) % 360)}
+              onClick={() => { setRotation((r) => (r + 270) % 360); setCrop({ x: 0, y: 0 }); }}
               className="gap-1.5"
             >
               <RotateCcw className="h-3.5 w-3.5" />
@@ -258,11 +286,29 @@ export default function PosterImageEditor({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setRotation((r) => (r + 90) % 360)}
+              onClick={() => { setRotation((r) => (r + 90) % 360); setCrop({ x: 0, y: 0 }); }}
               className="gap-1.5"
             >
               <RotateCw className="h-3.5 w-3.5" />
               Rotate +90°
+            </Button>
+            <Button
+              variant={fitMode === "fill" ? "default" : "outline"}
+              size="sm"
+              onClick={handleFill}
+              className="gap-1.5"
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+              Fill
+            </Button>
+            <Button
+              variant={fitMode === "fit" ? "default" : "outline"}
+              size="sm"
+              onClick={handleFit}
+              className="gap-1.5"
+            >
+              <Minimize2 className="h-3.5 w-3.5" />
+              Fit
             </Button>
           </div>
         </div>
