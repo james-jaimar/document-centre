@@ -1,62 +1,90 @@
 
-# PDF-on-Canvas Preview: Show Document Scaling Within Selected Paper Size
+# Fit/Fill Toggle for Posters, Flyers, and Business Cards
 
-## Problem
+## Scope
 
-When a PDF's dimensions don't match the selected Document Size (e.g. a 203x254mm PDF on an A1 594x841mm canvas), the preview currently renders the PDF at the full preview area with no indication of how it fits on the paper. The user should see the white paper canvas at the correct aspect ratio, with the PDF content positioned within it — showing any gaps (white space) where the content doesn't fill the sheet.
+The PDF-on-canvas preview is already working for all static/loose types. This plan adds a **fit/fill toggle** for three product types only:
 
-## Approach
+- **Posters** (`poster`)
+- **Flyers** (falls through to `loose_sheets` via slug)
+- **Business Cards** (`business_cards`)
 
-Replicate the fit/fill concept from `PosterImageEditor` but adapted for the inline preview (not a cropper dialog). The preview will show:
+NOT for stapled/loose bound documents or any bound/fold types.
 
-1. **The paper canvas** — a white rectangle at the selected Document Size aspect ratio
-2. **The PDF content** — rendered inside using `react-pdf`, scaled to fit or fill the canvas
-3. **Visible gaps** — white margins where content doesn't reach the paper edge (fit mode)
+The chosen scale mode must be **persisted** on the order item so the print-ready PDF can be rendered at the customer's chosen scaling.
 
-For static document types (posters, flyers, loose sheets), this replaces the current "raw PDF render" with a canvas-aware version.
+---
 
 ## Changes
 
-### 1. Pass selected canvas dimensions to PreviewPanel
+### 1. Add `scale_mode` to `ItemSpec`
 
-**`src/pages/dashboard/OrderBuild.tsx`**
-- Compute `canvasSizeMm` from the selected Document Size option's metadata (`width_mm`, `height_mm`), accounting for orientation.
-- Pass `canvasSizeMm={{ widthMm, heightMm }}` as a new prop to `PreviewPanel`.
+**`src/lib/calculatePrice.ts`**
+- Add optional field `scale_mode?: "fit" | "fill"` to the `ItemSpec` interface.
+- This is persisted as part of the order item's `spec` JSONB column -- no DB migration needed.
 
-### 2. Forward canvas info through the preview pipeline
+### 2. Create `ScaleModeToggle` component
+
+**`src/components/preview/ScaleModeToggle.tsx`** (new)
+- Small segmented toggle: **Fit** / **Fill**, using the existing `ToggleGroup` / `ToggleGroupItem` from `@/components/ui/toggle-group`.
+- Icons: `Minimize2` (fit) and `Maximize2` (fill).
+- Emits `onChange(mode: "fit" | "fill")`.
+- Only renders when there is a size mismatch between canvas and PDF (i.e. when the toggle is meaningful).
+
+### 3. Wire toggle into `PreviewPanel`
 
 **`src/components/order/PreviewPanel.tsx`**
-- Accept new `canvasSizeMm` prop.
-- Compute `canvasAspectRatio` (width/height of the selected paper) separately from `pageAspectRatio` (the document's native ratio).
-- Pass both to `LooseSheetsPreview`.
+- Accept new props: `scaleMode`, `onScaleModeChange`, and `productFamilySlug` (to determine whether to show the toggle).
+- Determine eligibility: show the toggle when `productFamilySlug` matches poster/flyer/business-card slugs **AND** `canvasSizeMm` differs from `pdfSizeMm`.
+- Render `ScaleModeToggle` in the preview toolbar area (near the page navigation controls).
+- Pass `scaleMode` down to `LooseSheetsPreview`.
 
-**`src/components/preview/previewTypes.ts`**
-- Add `CanvasSize` interface (`widthMm`, `heightMm`).
-- Add `canvasSizeMm` to `PreviewComponentProps`.
-
-### 3. Render PDF content within a paper canvas
+### 4. Implement fill scaling in `LooseSheetsPreview`
 
 **`src/components/preview/LooseSheetsPreview.tsx`**
-- When `canvasSizeMm` is provided and differs from the PDF's native size:
-  - Draw the outer rectangle at the canvas (paper) aspect ratio — this is the white sheet.
-  - Compute the PDF's native aspect from `page_width_mm` / `page_height_mm`.
-  - Scale the PDF to **fit** within the canvas (maintaining PDF aspect ratio), centering it.
-  - The `PdfPageView` renders inside, smaller than the canvas, showing white margins.
-- When sizes match (or no canvas info), render as currently (PDF fills the preview area).
+- Accept `scaleMode?: "fit" | "fill"` prop (default `"fit"`).
+- When `scaleMode === "fill"` and there is a size mismatch:
+  - Scale the PDF to **cover** the canvas (inverse of fit logic).
+  - Wrap the `PdfPageView` in a container with `overflow: hidden` to crop the overflow.
+- When `scaleMode === "fit"`: current behaviour (PDF fits inside canvas, white margins visible).
 
-### 4. Future: Fit/Fill toggle (deferred)
+### 5. Manage state and persistence in `OrderBuild`
 
-The user mentioned giving clients the option to choose fit vs fill. This plan implements **fit** as the default (showing the gaps). A follow-up can add a small toggle control and the crop/fill logic from `PosterImageEditor`.
+**`src/pages/dashboard/OrderBuild.tsx`**
+- Read `spec.scale_mode` as initial state for the toggle.
+- On toggle change, update `spec` via `setSpec(prev => ({ ...prev, scale_mode: mode }))`.
+- This automatically gets persisted when the user saves (existing save flow writes `spec` to the order item).
+- Pass `scaleMode` and `onScaleModeChange` to `PreviewPanel`.
+- Pass `productFamily?.slug` to `PreviewPanel` so it can determine toggle eligibility.
 
-## Technical Detail
+### 6. Update type definitions
 
-Canvas aspect vs PDF aspect calculation:
+**`src/components/preview/previewTypes.ts`**
+- Add `scaleMode?: "fit" | "fill"` to `PreviewComponentProps`.
+
+---
+
+## Technical Detail: Fill Scaling
+
 ```text
-canvasAspect = canvasWidthMm / canvasHeightMm  (e.g. 594/841 = 0.707 for A1 portrait)
-pdfAspect    = pdfWidthMm / pdfHeightMm        (e.g. 203/254 = 0.799 for the uploaded doc)
-
-If pdfAspect > canvasAspect → PDF is wider relative to height → fit to width, gap top/bottom
-If pdfAspect < canvasAspect → PDF is taller relative to width → fit to height, gap left/right
+if (scaleMode === "fill") {
+  if (pdfAspect > canvasAspect) {
+    // PDF is wider -> fit to height, crop sides
+    pdfH = canvasHeight;
+    pdfW = canvasHeight * pdfAspect;
+  } else {
+    // PDF is taller -> fit to width, crop top/bottom
+    pdfW = canvasWidth;
+    pdfH = canvasWidth / pdfAspect;
+  }
+  // Parent container clips overflow
+}
 ```
 
-The PDF content is rendered via `PdfPageView` at the computed inner dimensions, centered within the paper rectangle.
+The canvas wrapper div uses `overflow: hidden` in fill mode to cleanly crop the overflowing PDF content.
+
+---
+
+## Persistence for Print Output
+
+The `scale_mode` field lives in `ItemSpec.spec` JSONB, which is already snapshotted into `order_pricing_snapshots` and `order_jobs`. When the print operator requests the final PDF, the rendering pipeline reads `spec.scale_mode` to apply the same fit or fill transformation, ensuring the print output matches what the customer saw in the preview.
