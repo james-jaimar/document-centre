@@ -136,11 +136,9 @@ export default function PhotoEditorModal({
 
   const handleRotate = () => {
     setRotation((r) => (r + 90) % 360);
-    // Re-centre and re-snap to current fit mode after rotation, since the
-    // effective aspect ratio has flipped.
     setCrop({ x: 0, y: 0 });
-    // We can't read the new fitZoom synchronously; the effect below
-    // re-snaps zoom whenever fitZoom changes and a fit mode is active.
+    // The effect below will auto-switch to "fit" if the rotated image
+    // can no longer reasonably fill the frame.
   };
 
   const handleFill = () => {
@@ -156,13 +154,24 @@ export default function PhotoEditorModal({
   };
 
   // When image loads or rotation changes, re-snap zoom to match the active
-  // fit mode so users aren't stranded on a zoom value the new aspect can't
-  // accommodate.
+  // fit mode. If in "fill" mode but the rotated image aspect is very
+  // different from the frame, auto-switch to "fit" so the user sees the
+  // full image rather than a heavily-cropped fill.
   useEffect(() => {
     if (!imageAspect) return;
-    if (fitMode === "fit") setZoom(fitZoom);
-    else if (fitMode === "fill") setZoom(fillZoom);
-    // Only re-snap on rotation/aspect changes — not on user zoom changes.
+    if (fitMode === "fit") {
+      setZoom(fitZoom);
+    } else if (fitMode === "fill") {
+      // If the aspect mismatch after rotation is significant (fitZoom < 0.75),
+      // auto-switch to fit mode so the user sees their full rotated image.
+      if (fitZoom < 0.75) {
+        setFitMode("fit");
+        setZoom(fitZoom);
+        setCrop({ x: 0, y: 0 });
+      } else {
+        setZoom(fillZoom);
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageAspect, rotation]);
 
@@ -198,7 +207,7 @@ export default function PhotoEditorModal({
               zoom={zoom}
               rotation={rotation}
               aspect={size.aspect}
-              objectFit="cover"
+              objectFit={zoom < 1 ? "contain" : "cover"}
               showGrid={true}
               onCropChange={setCrop}
               onZoomChange={setZoom}
