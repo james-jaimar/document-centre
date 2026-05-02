@@ -198,5 +198,5 @@ export default function DocumentPreview({
     );
   }
 
-  return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} />;
+  return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} canvasSizeMm={canvasSizeMm} pdfSizeMm={pdfSizeMm} />;
 }
