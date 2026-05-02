@@ -207,7 +207,7 @@ export default function PhotoEditorModal({
               zoom={zoom}
               rotation={rotation}
               aspect={size.aspect}
-              objectFit="cover"
+              objectFit={zoom < 1 ? "contain" : "cover"}
               showGrid={true}
               onCropChange={setCrop}
               onZoomChange={setZoom}
