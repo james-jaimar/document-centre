@@ -89,19 +89,20 @@ export default function PdfPageView({
         }
         onLoadError={() => setError(true)}
       >
-        <Page
-          pageNumber={pageNumber}
-          width={renderWidth}
-          scale={deviceScale}
-          renderTextLayer={false}
-          renderAnnotationLayer={false}
-          loading={
-            <div className="flex items-center justify-center" style={{ width: renderWidth, height }}>
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50" />
-            </div>
-          }
-          canvasBackground="transparent"
-        />
+        <div style={{ width: renderWidth, overflow: "hidden" }}>
+          <Page
+            pageNumber={pageNumber}
+            width={renderWidth}
+            renderTextLayer={false}
+            renderAnnotationLayer={false}
+            loading={
+              <div className="flex items-center justify-center" style={{ width: renderWidth, height }}>
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50" />
+              </div>
+            }
+            canvasBackground="transparent"
+          />
+        </div>
       </Document>
     </div>
   );
