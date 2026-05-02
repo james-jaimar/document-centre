@@ -21,6 +21,7 @@ import {
 import { RotateCw, RotateCcw, Maximize2, Minimize2 } from "lucide-react";
 import type { CroppedAreaPixels } from "@/lib/photoPrints/types";
 import { useCropperZoom } from "@/hooks/useCropperZoom";
+import { useElementSize } from "@/hooks/useElementSize";
 
 export interface PosterSizeChoice {
   slug: string;
@@ -92,31 +93,8 @@ export default function PosterImageEditor({
   const [imageDims, setImageDims] = useState<{ w: number; h: number } | null>(null);
   const hasInitialState = !!initialState;
 
-  // Measure the cropper container — re-attach when dialog opens
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [containerDims, setContainerDims] = useState({ w: 0, h: 0 });
-  useEffect(() => {
-    if (!open) return;
-    let ro: ResizeObserver | null = null;
-    const attach = () => {
-      const el = containerRef.current;
-      if (!el) {
-        requestAnimationFrame(attach);
-        return;
-      }
-      const rect = el.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        setContainerDims({ w: rect.width, h: rect.height });
-      }
-      ro = new ResizeObserver(([entry]) => {
-        const { width, height } = entry.contentRect;
-        if (width > 0 && height > 0) setContainerDims({ w: width, h: height });
-      });
-      ro.observe(el);
-    };
-    attach();
-    return () => ro?.disconnect();
-  }, [open]);
+  // Measure container — only when dialog is open
+  const [containerRef, containerSize] = useElementSize<HTMLDivElement>(open);
 
   const sizeChoice = useMemo(
     () => POSTER_SIZE_CHOICES.find((s) => s.slug === sizeSlug) ?? POSTER_SIZE_CHOICES[2],
@@ -129,7 +107,6 @@ export default function PosterImageEditor({
     return w / h;
   }, [sizeChoice, orientation]);
 
-  // Shared hook computes fill/fit zoom from real geometry
   const {
     fillZoom,
     fitZoom,
@@ -142,8 +119,8 @@ export default function PosterImageEditor({
     rotation,
     zoom,
     aspect,
-    containerWidth: containerDims.w,
-    containerHeight: containerDims.h,
+    containerWidth: containerSize.width,
+    containerHeight: containerSize.height,
   });
 
   // Build / revoke object URL for the source file.
@@ -268,9 +245,9 @@ export default function PosterImageEditor({
           </div>
         </div>
 
-        {/* Cropper area */}
+        {/* Cropper area — mount Cropper as soon as we have a URL */}
         <div ref={containerRef} className="relative w-full bg-black" style={{ height: 420 }}>
-          {imageUrl && containerDims.w > 0 ? (
+          {imageUrl ? (
             <Cropper
               image={imageUrl}
               crop={crop}
