@@ -29,6 +29,7 @@ export default function LooseSheetsPreview({
   }
 
   const url = urls[currentPage];
+  const isColor = colorFlags?.[currentPage] ?? true;
   const bleedInsetPx = Math.round(pageWidth * 0.03);
 
   return (
