@@ -487,15 +487,26 @@ export default function PhotoPrintsBuilder() {
               ? "Drop photos to add them"
               : `${photoSpec.photos.length} photo${photoSpec.photos.length === 1 ? "" : "s"} added — drag more here or click`}
           </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => document.getElementById("photo-uploader-trigger")?.click()}
-          >
-            <ImagePlus className="h-3.5 w-3.5" />
-            Add more photos
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => document.getElementById("photo-uploader-trigger")?.click()}
+            >
+              <ImagePlus className="h-3.5 w-3.5" />
+              Add more photos
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={handlePhoneUpload}
+            >
+              <Smartphone className="h-3.5 w-3.5" />
+              Upload from Phone
+            </Button>
+          </div>
           <input
             id="photo-uploader-trigger"
             type="file"
