@@ -116,8 +116,10 @@ export function useUploadSession(orderItemId: string | undefined) {
     uploadUrl,
     incomingFiles,
     creating,
+    error,
     createSession,
     closeSession,
     clearIncoming: useCallback(() => setIncomingFiles([]), []),
+    clearError: useCallback(() => setError(null), []),
   };
 }
