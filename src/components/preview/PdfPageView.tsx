@@ -51,8 +51,6 @@ export default function PdfPageView({
     return Math.round(w);
   }, [width, height, aspectRatio]);
 
-  // Scale for retina displays
-  const deviceScale = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
 
   const fileOptions = useMemo(
     () => ({ url: pdfUrl, withCredentials: false }),
