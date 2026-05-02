@@ -59,8 +59,13 @@ export default function PaperSizeAdvisory({
   const isLocked = !!lockedSize;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog open={open} onOpenChange={() => {}}>
+      <DialogContent
+        className="sm:max-w-md [&>button.absolute]:hidden"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
             {isLocked ? (
