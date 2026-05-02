@@ -8,6 +8,7 @@ import { FileText } from "lucide-react";
 interface LooseSheetsPreviewProps extends PreviewComponentProps {
   pdfSources?: (PdfSource | null)[];
   canvasSizeMm?: CanvasSize;
+  scaleMode?: "fit" | "fill";
   pdfSizeMm?: { widthMm: number; heightMm: number };
 }
 

@@ -33,6 +33,12 @@ interface PreviewPanelProps {
   bindingArt?: { method: "spiral" | "comb" | "twin_loop"; color: string };
   /** Selected paper/canvas size in mm (from Document Size option) */
   canvasSizeMm?: { widthMm: number; heightMm: number };
+  /** Fit/fill scale mode for the PDF-on-canvas preview */
+  scaleMode?: "fit" | "fill";
+  /** Callback when the user toggles fit/fill */
+  onScaleModeChange?: (mode: "fit" | "fill") => void;
+  /** Product family slug — used to determine fit/fill toggle eligibility */
+  productFamilySlug?: string;
 }
 
 interface PageInfo {
