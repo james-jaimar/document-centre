@@ -1,61 +1,45 @@
 
-## Problem
+## Overview
 
-Two bugs found:
+Three improvements to the flyer workflow:
 
-### Bug 1: Preview shows colour when B&W is selected (Loose Sheets / Stapled)
-
-`LooseSheetsPreview.tsx` (used for stapled and loose pages) completely ignores the `colorFlags` prop. It destructures only `bleedFlags` and never applies a grayscale CSS filter. By contrast, `FlipBook.tsx` and `RingBinderOpenSpread.tsx` correctly apply `filter: grayscale(100%)` when `isColor` is false.
-
-`FoldPreview.tsx` has the same gap -- it also ignores `colorFlags`.
-
-### Bug 2: Backend grayscale conversion is too aggressive
-
-In `useCart.ts` (line ~587-600), the grayscale trigger uses `anyBW` -- if ANY section is B&W, ALL documents for that order item get converted to grayscale. This is wrong for mixed-colour orders (e.g. colour cover + B&W body): the cover document should stay colour.
-
-The fix is to match each document to its section(s) and only convert documents whose section is actually B&W.
+1. **Auto-assign Front + Back** — When a 2-page document is selected in a flyer order, show a "Auto-assign Front + Back" button (same pattern as brochures' "Auto-assign Outside + Inside")
+2. **Smart multi-page modal** — When a 3+ page document is uploaded for a flyer, replace the generic "Use first 2 pages" trim dialog with a smarter modal offering: (A) "Double-sided — use pages 1 & 2" or (B) "Single-sided — use page 1 only"
+3. **Orientation** — Already confirmed: flyers have no orientation restriction in `orientationPolicy.ts`, so landscape A4 is accepted without rotation prompts. No changes needed.
 
 ---
 
-## Plan
+## Implementation
 
-### 1. Fix LooseSheetsPreview to apply grayscale filter
+### 1. Add `handleAutoAssignFlyer` in OrderFiles.tsx
 
-In `src/components/preview/LooseSheetsPreview.tsx`:
-- Destructure `colorFlags` from props
-- Apply `style={{ filter: isColor ? "none" : "grayscale(100%)" }}` on the `<img>` element, using `colorFlags?.[currentPage] ?? true`
+After the `handleAutoAssignPanels` callback (~line 1525), add a new `handleAutoAssignFlyer` callback that:
+- Takes the selected 2-page document
+- Creates two sections: `front_cover` (page_range_start: 0) and `back_cover` (page_range_start: 1)
+- Sets `is_color: true` as default
+- Shows toast "Auto-assigned Front + Back from pages 1 & 2"
 
-### 2. Fix FoldPreview to apply grayscale filter
+Pass `onAutoAssignFlyer={handleAutoAssignFlyer}` to both SectionActions instances (~lines 1838 and 1869).
 
-In `src/components/preview/FoldPreview.tsx`:
-- Same pattern: destructure `colorFlags`, apply grayscale filter to rendered page images
+### 2. Update SectionActions.tsx
 
-### 3. Fix per-document grayscale targeting in order placement
+- Add `onAutoAssignFlyer?: () => void` prop
+- Add a `showFlyerAutoAssign` condition: `familySlug === "flyers" && pageCount >= 2 && !!onAutoAssignFlyer`
+- Render a Wand2 button "Auto-assign Front + Back" when condition is met, same styling as the brochure auto-assign button
 
-In `src/hooks/useCart.ts` (~line 586-637):
-- Instead of `anyBW` across all sections, determine per-document whether it needs grayscale by checking only the sections that reference that specific document
-- Change `needsGrayscale` to be `true` only when the document's own section has `is_color === false`
+### 3. Smart multi-page flyer modal
 
----
+**Change `pageCountRules.ts`**: Increase flyer `max` from 2 to `null` (no hard cap) so the existing trim dialog doesn't fire. Instead, we'll handle multi-page detection ourselves.
 
-## Technical Details
+**New component `FlyerPageChoiceDialog.tsx`**: A modal that appears when a flyer document has 3+ pages. Two choices:
+- "Double-sided flyer" — trims to pages 1-2, auto-assigns Front + Back
+- "Single-sided flyer" — trims to page 1, assigns as Front only
 
-**LooseSheetsPreview.tsx** change:
-```tsx
-// Destructure colorFlags
-const isColor = colorFlags?.[currentPage] ?? true;
+**Wire into OrderFiles.tsx**: After upload completes, if `familySlug === "flyers"` and `page_count >= 3`, set state to show `FlyerPageChoiceDialog` instead of relying on `PageCountWarningDialog`. The dialog calls `trimDocumentToFirstPages` (already exists) then auto-assigns sections.
 
-// On the <img>:
-style={{ filter: isColor ? "none" : "grayscale(100%)" }}
-```
+### Files changed
 
-**useCart.ts** change (line ~597-600):
-```ts
-for (const doc of itemDocs) {
-  if (!doc.backend_asset_id) continue;
-  // Only grayscale if THIS doc's section is B&W
-  const docSections = itemSections.filter((s: any) => s.document_id === doc.id);
-  const needsGrayscale = docSections.some((s: any) => !s.is_color);
-  ...
-}
-```
+- `src/pages/dashboard/OrderFiles.tsx` — new callback + new state/dialog wiring
+- `src/components/order/SectionActions.tsx` — new prop + button
+- `src/components/order/FlyerPageChoiceDialog.tsx` — new component
+- `src/lib/pageCountRules.ts` — adjust flyer max to allow the new dialog to handle it
