@@ -252,6 +252,9 @@ export default function PreviewPanel({
   bindingEdge,
   bindingArt,
   canvasSizeMm,
+  scaleMode,
+  onScaleModeChange,
+  productFamilySlug,
 }: PreviewPanelProps) {
   const [currentPage, setCurrentPage] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
