@@ -31,19 +31,21 @@ export default function QRUploadModal({
     uploadUrl,
     incomingFiles,
     creating,
+    error,
     createSession,
     closeSession,
     clearIncoming,
+    clearError,
   } = useUploadSession(orderItemId);
 
   const [expiryText, setExpiryText] = useState("");
 
-  // Create session when modal opens
+  // Create session when modal opens — only if no session and no error (prevents retry loop)
   useEffect(() => {
-    if (open && !session && !creating) {
+    if (open && !session && !creating && !error) {
       createSession();
     }
-  }, [open, session, creating, createSession]);
+  }, [open, session, creating, error, createSession]);
 
   // Expiry countdown
   useEffect(() => {
