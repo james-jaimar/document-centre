@@ -778,6 +778,8 @@ export default function PreviewPanel({
           bindingEdge={bindingEdge}
           bindingArt={bindingArt}
           pdfSources={pdfSources}
+          canvasSizeMm={canvasSizeMm}
+          pdfSizeMm={pdfSizeMm}
         />
       )}
 
