@@ -102,6 +102,21 @@ export default function PhotoPrintsBuilder() {
     return newItem.id;
   }, [orderItem?.id, family?.id, createOrder]);
 
+  // QR mobile upload state
+  const [qrOpen, setQrOpen] = useState(false);
+  const [qrOrderItemId, setQrOrderItemId] = useState<string | undefined>(undefined);
+
+  const handlePhoneUpload = useCallback(async () => {
+    try {
+      const itemId = await ensureOrder();
+      setQrOrderItemId(itemId);
+      setQrOpen(true);
+    } catch (err) {
+      console.error("[PhotoPrintsBuilder] Failed to create order for phone upload:", err);
+      toast.error("Could not start phone upload. Please try again.");
+    }
+  }, [ensureOrder]);
+
   const { uploads, uploadPhotos, clearUploads } = usePhotoUpload(orderItem?.id);
 
   const initialSpec: PhotoPrintsSpec = useMemo(
