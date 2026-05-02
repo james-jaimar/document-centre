@@ -359,6 +359,26 @@ export default function OrderFiles() {
     }
   }, [documents, productFamily?.slug, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, pageCountWarning]);
 
+  // Flyer multi-page detection: show smart choice dialog for 3+ page flyer uploads
+  useEffect(() => {
+    if (uploadModalOpen || advisoryDoc || bleedDoc || orientationDoc || pageCountWarning || flyerChoiceItem) return;
+    const fSlug = productFamily?.slug;
+    if (fSlug !== "flyers") return;
+
+    const multiPageDoc = documents.find((d) => {
+      if (dismissedFlyerDocIds.current.has(d.id)) return false;
+      if (d.document_status !== "ready") return false;
+      return (d.page_count ?? 0) >= 3;
+    });
+    if (multiPageDoc) {
+      setFlyerChoiceItem({
+        docId: multiPageDoc.id,
+        fileName: multiPageDoc.file_name,
+        pageCount: multiPageDoc.page_count ?? 0,
+      });
+    }
+  }, [documents, productFamily?.slug, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, pageCountWarning, flyerChoiceItem]);
+
   // Check for orientation mismatches via the shared policy module — single
   // source of truth for which products require which orientation.
   useEffect(() => {
