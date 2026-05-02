@@ -462,7 +462,7 @@ export default function PhotoPrintsBuilder() {
               crop: { x: 0, y: 0 },
               zoom: 1,
               rotation: 0,
-              fit_mode: "cover" as const,
+              fit_mode: "fill" as const,
               croppedAreaPixels: null,
               quantity: 1,
             }));
