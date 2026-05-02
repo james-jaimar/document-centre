@@ -50,19 +50,26 @@ export default function PhotoEditorModal({
   const [containerDims, setContainerDims] = useState({ w: 0, h: 0 });
   useEffect(() => {
     if (!open) return;
-    const el = containerRef.current;
-    if (!el) return;
-    // Immediate read so we don't wait for a resize event
-    const rect = el.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      setContainerDims({ w: rect.width, h: rect.height });
-    }
-    const ro = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      if (width > 0 && height > 0) setContainerDims({ w: width, h: height });
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
+    let ro: ResizeObserver | null = null;
+    const attach = () => {
+      const el = containerRef.current;
+      if (!el) {
+        // Portal may not be mounted yet — retry next frame
+        requestAnimationFrame(attach);
+        return;
+      }
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setContainerDims({ w: rect.width, h: rect.height });
+      }
+      ro = new ResizeObserver(([entry]) => {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) setContainerDims({ w: width, h: height });
+      });
+      ro.observe(el);
+    };
+    attach();
+    return () => ro?.disconnect();
   }, [open]);
 
   const size = photo ? getPhotoPrintSize(photo.print_size_slug) : null;
