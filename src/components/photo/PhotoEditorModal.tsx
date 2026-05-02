@@ -129,7 +129,7 @@ export default function PhotoEditorModal({
 
   const handleReset = () => {
     setCrop({ x: 0, y: 0 });
-    setZoom(1);
+    setZoom(fillZoom);
     setRotation(0);
     setFitMode("fill");
   };
@@ -137,14 +137,12 @@ export default function PhotoEditorModal({
   const handleRotate = () => {
     setRotation((r) => (r + 90) % 360);
     setCrop({ x: 0, y: 0 });
-    // The effect below will auto-switch to "fit" if the rotated image
-    // aspect mismatches the frame significantly.
   };
 
   const handleFill = () => {
     setFitMode("fill");
     setCrop({ x: 0, y: 0 });
-    setZoom(1);
+    setZoom(fillZoom);
   };
 
   const handleFit = () => {
