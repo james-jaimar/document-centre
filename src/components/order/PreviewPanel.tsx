@@ -41,6 +41,8 @@ interface PageInfo {
   isColor: boolean;
   label?: string;
   color?: string;
+  /** S3 key of the source PDF (for inline PDF rendering) */
+  filePath?: string;
 }
 
 const SECTION_LABELS: Record<string, string> = {
