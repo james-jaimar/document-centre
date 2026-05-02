@@ -41,7 +41,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
-import { ArrowLeft, ImagePlus, Loader2, ShoppingCart } from "lucide-react";
+import { ArrowLeft, ImagePlus, Loader2, ShoppingCart, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
