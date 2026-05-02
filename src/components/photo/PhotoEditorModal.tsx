@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
 import {
   Dialog,
@@ -45,16 +45,38 @@ export default function PhotoEditorModal({
   const [fitMode, setFitMode] = useState<PhotoFitMode>("fill");
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<CroppedAreaPixels | null>(null);
 
-  // Shared hook computes fill/fit zoom from real cropper geometry
+  // Measure the cropper container
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerDims, setContainerDims] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setContainerDims({ w: width, h: height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const size = photo ? getPhotoPrintSize(photo.print_size_slug) : null;
+
+  // Shared hook computes fill/fit zoom from real geometry
   const {
     fillZoom,
     fitZoom,
     minZoom,
+    cropSize,
     onMediaLoaded,
-    onCropSizeChange,
     restrictPosition,
     ready,
-  } = useCropperZoom({ rotation, zoom });
+  } = useCropperZoom({
+    rotation,
+    zoom,
+    aspect: size?.aspect ?? 1,
+    containerWidth: containerDims.w,
+    containerHeight: containerDims.h,
+  });
 
   // Seed state from the photo entry when the dialog opens
   useEffect(() => {
@@ -66,7 +88,6 @@ export default function PhotoEditorModal({
     setCroppedAreaPixels(photo.croppedAreaPixels ?? null);
   }, [open, photo]);
 
-  const size = photo ? getPhotoPrintSize(photo.print_size_slug) : null;
   const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === borderSlug);
   const borderMm = border?.border_mm ?? 0;
   const longEdgeMm = size ? Math.max(size.width_mm, size.height_mm) : 0;
@@ -76,33 +97,26 @@ export default function PhotoEditorModal({
     setCroppedAreaPixels(areaPixels);
   }, []);
 
-  // When the hook reports new fill/fit values (after media loads or rotation
-  // changes), snap zoom to match the active mode.
-  const prevFillRef = useMemo(() => ({ v: fillZoom }), []);
+  // Snap zoom when fill/fit values settle (after media load or rotation)
+  const prevSnapKey = useRef("");
   useEffect(() => {
     if (!ready) return;
-    // Only snap when fillZoom actually changed (i.e. rotation or media loaded)
-    if (prevFillRef.v === fillZoom && zoom !== 0) {
-      // first load — snap
-    }
-    prevFillRef.v = fillZoom;
-
+    const key = `${fillZoom.toFixed(6)}|${fitZoom.toFixed(6)}`;
+    if (key === prevSnapKey.current) return;
+    prevSnapKey.current = key;
     if (fitMode === "fit") setZoom(fitZoom);
     else setZoom(fillZoom);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fillZoom, fitZoom, ready]);
+  }, [fillZoom, fitZoom, ready, fitMode]);
 
   const handleReset = () => {
     setCrop({ x: 0, y: 0 });
     setRotation(0);
     setFitMode("fill");
-    // fillZoom will re-snap via the effect
   };
 
   const handleRotate = () => {
     setRotation((r) => (r + 90) % 360);
     setCrop({ x: 0, y: 0 });
-    // fillZoom/fitZoom will recompute and the effect will snap zoom
   };
 
   const handleFill = () => {
@@ -141,14 +155,15 @@ export default function PhotoEditorModal({
         </DialogHeader>
 
         {/* Cropper area */}
-        <div className="relative w-full bg-black" style={{ height: 420 }}>
-          {signedUrl ? (
+        <div ref={containerRef} className="relative w-full bg-black" style={{ height: 420 }}>
+          {signedUrl && containerDims.w > 0 ? (
             <Cropper
               image={signedUrl}
               crop={crop}
               zoom={zoom}
               rotation={rotation}
               aspect={size.aspect}
+              cropSize={cropSize}
               objectFit="contain"
               showGrid={true}
               onCropChange={setCrop}
@@ -156,7 +171,6 @@ export default function PhotoEditorModal({
               onRotationChange={setRotation}
               onCropComplete={onCropComplete}
               onMediaLoaded={onMediaLoaded}
-              onCropSizeChange={onCropSizeChange}
               minZoom={minZoom}
               maxZoom={4}
               zoomSpeed={0.5}
@@ -177,8 +191,8 @@ export default function PhotoEditorModal({
               <div
                 className="relative"
                 style={{
-                  width: "70%",
-                  aspectRatio: size.aspect,
+                  width: cropSize.width,
+                  height: cropSize.height,
                   boxShadow: `inset 0 0 0 ${Math.max(2, Math.round(borderFraction * 100))}px rgba(255,255,255,0.85)`,
                 }}
               />

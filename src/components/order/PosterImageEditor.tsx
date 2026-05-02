@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
 import {
   Dialog,
@@ -92,16 +92,47 @@ export default function PosterImageEditor({
   const [imageDims, setImageDims] = useState<{ w: number; h: number } | null>(null);
   const hasInitialState = !!initialState;
 
-  // Shared hook computes fill/fit zoom from real cropper geometry
+  // Measure the cropper container
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerDims, setContainerDims] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setContainerDims({ w: width, h: height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const sizeChoice = useMemo(
+    () => POSTER_SIZE_CHOICES.find((s) => s.slug === sizeSlug) ?? POSTER_SIZE_CHOICES[2],
+    [sizeSlug],
+  );
+
+  const aspect = useMemo(() => {
+    const w = orientation === "landscape" ? Math.max(sizeChoice.widthMm, sizeChoice.heightMm) : Math.min(sizeChoice.widthMm, sizeChoice.heightMm);
+    const h = orientation === "landscape" ? Math.min(sizeChoice.widthMm, sizeChoice.heightMm) : Math.max(sizeChoice.widthMm, sizeChoice.heightMm);
+    return w / h;
+  }, [sizeChoice, orientation]);
+
+  // Shared hook computes fill/fit zoom from real geometry
   const {
     fillZoom,
     fitZoom,
     minZoom,
+    cropSize,
     onMediaLoaded,
-    onCropSizeChange,
     restrictPosition,
     ready,
-  } = useCropperZoom({ rotation, zoom });
+  } = useCropperZoom({
+    rotation,
+    zoom,
+    aspect,
+    containerWidth: containerDims.w,
+    containerHeight: containerDims.h,
+  });
 
   // Build / revoke object URL for the source file.
   useEffect(() => {
@@ -135,30 +166,20 @@ export default function PosterImageEditor({
     setOrientation(imageDims.w >= imageDims.h ? "landscape" : "portrait");
   }, [imageDims, hasInitialState]);
 
-  const sizeChoice = useMemo(
-    () => POSTER_SIZE_CHOICES.find((s) => s.slug === sizeSlug) ?? POSTER_SIZE_CHOICES[2],
-    [sizeSlug],
-  );
-
-  const aspect = useMemo(() => {
-    const w = orientation === "landscape" ? Math.max(sizeChoice.widthMm, sizeChoice.heightMm) : Math.min(sizeChoice.widthMm, sizeChoice.heightMm);
-    const h = orientation === "landscape" ? Math.min(sizeChoice.widthMm, sizeChoice.heightMm) : Math.max(sizeChoice.widthMm, sizeChoice.heightMm);
-    return w / h;
-  }, [sizeChoice, orientation]);
-
   const onCropComplete = useCallback((_: Area, areaPixels: Area) => {
     setCroppedAreaPixels(areaPixels);
   }, []);
 
-  // Snap zoom when fill/fit values change (rotation, media load, size change)
-  const prevFillRef = useMemo(() => ({ v: fillZoom }), []);
+  // Snap zoom when fill/fit values settle
+  const prevSnapKey = useRef("");
   useEffect(() => {
     if (!ready) return;
-    prevFillRef.v = fillZoom;
+    const key = `${fillZoom.toFixed(6)}|${fitZoom.toFixed(6)}`;
+    if (key === prevSnapKey.current) return;
+    prevSnapKey.current = key;
     if (fitMode === "fit") setZoom(fitZoom);
     else setZoom(fillZoom);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fillZoom, fitZoom, ready]);
+  }, [fillZoom, fitZoom, ready, fitMode]);
 
   const handleFill = () => {
     setFitMode("fill");
@@ -236,14 +257,15 @@ export default function PosterImageEditor({
         </div>
 
         {/* Cropper area */}
-        <div className="relative w-full bg-black" style={{ height: 420 }}>
-          {imageUrl ? (
+        <div ref={containerRef} className="relative w-full bg-black" style={{ height: 420 }}>
+          {imageUrl && containerDims.w > 0 ? (
             <Cropper
               image={imageUrl}
               crop={crop}
               zoom={zoom}
               rotation={rotation}
               aspect={aspect}
+              cropSize={cropSize}
               objectFit="contain"
               showGrid
               onCropChange={setCrop}
@@ -251,7 +273,6 @@ export default function PosterImageEditor({
               onRotationChange={setRotation}
               onCropComplete={onCropComplete}
               onMediaLoaded={onMediaLoaded}
-              onCropSizeChange={onCropSizeChange}
               minZoom={minZoom}
               maxZoom={4}
               zoomSpeed={0.5}
@@ -318,7 +339,7 @@ export default function PosterImageEditor({
             Cancel
           </Button>
           <Button onClick={handleSave} disabled={!croppedAreaPixels || !imageUrl}>
-            Use this image
+            Confirm
           </Button>
         </DialogFooter>
       </DialogContent>
