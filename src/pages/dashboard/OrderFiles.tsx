@@ -1421,7 +1421,7 @@ export default function OrderFiles() {
           ...extraFields,
         });
         const labelMap: Record<string, string> = {
-          front_cover: familySlug === "brochures" ? "Outside" : familySlug === "flyers" ? "Front" : "Front Cover",
+          front_cover: familySlug === "posters" ? "Print" : familySlug === "brochures" ? "Outside" : familySlug === "flyers" ? "Front" : "Front Cover",
           back_cover: familySlug === "brochures" ? "Inside" : familySlug === "flyers" ? "Back" : "Back Cover",
           body: "Body Pages",
         };
