@@ -20,6 +20,7 @@ interface SectionActionsProps {
   selectedFilePageCount?: number;
   onAutoAssignBrochure?: () => void;
   onAutoAssignPanels?: () => void;
+  onAutoAssignFlyer?: () => void;
 }
 
 interface ActionDef {
