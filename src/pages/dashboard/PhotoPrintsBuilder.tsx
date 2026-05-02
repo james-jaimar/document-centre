@@ -18,6 +18,7 @@ import {
 } from "@/lib/photoPrints/sizes";
 import type { PhotoPrintEntry, PhotoPrintsSpec } from "@/lib/photoPrints/types";
 import PhotoUploader from "@/components/photo/PhotoUploader";
+import QRUploadModal from "@/components/order/QRUploadModal";
 import PhotoTile from "@/components/photo/PhotoTile";
 import PhotoEditorModal from "@/components/photo/PhotoEditorModal";
 import { Button } from "@/components/ui/button";
@@ -100,6 +101,21 @@ export default function PhotoPrintsBuilder() {
     if (error || !newItem) throw error ?? new Error("Failed to load order item");
     return newItem.id;
   }, [orderItem?.id, family?.id, createOrder]);
+
+  // QR mobile upload state
+  const [qrOpen, setQrOpen] = useState(false);
+  const [qrOrderItemId, setQrOrderItemId] = useState<string | undefined>(undefined);
+
+  const handlePhoneUpload = useCallback(async () => {
+    try {
+      const itemId = await ensureOrder();
+      setQrOrderItemId(itemId);
+      setQrOpen(true);
+    } catch (err) {
+      console.error("[PhotoPrintsBuilder] Failed to create order for phone upload:", err);
+      toast.error("Could not start phone upload. Please try again.");
+    }
+  }, [ensureOrder]);
 
   const { uploads, uploadPhotos, clearUploads } = usePhotoUpload(orderItem?.id);
 
@@ -441,37 +457,7 @@ export default function PhotoPrintsBuilder() {
           onFiles={handleFiles}
           disabled={createOrder.isPending}
           orderItemId={orderItem?.id}
-          onMobileFilesReceived={async (fileIds) => {
-            if (!fileIds.length) return;
-            // Fetch the document records created via mobile upload
-            const { data: docs } = await supabase
-              .from("documents")
-              .select("id, file_name, file_path, mime_type, preflight_data")
-              .in("id", fileIds);
-            if (!docs?.length) return;
-            const currentSize = photoSpec.print_size_slug;
-            const newEntries: PhotoPrintEntry[] = docs.map((d: any) => ({
-              id: crypto.randomUUID(),
-              document_id: d.id,
-              file_name: d.file_name,
-              original_storage_path: d.file_path,
-              source_width_px: d.preflight_data?.source_width_px ?? 0,
-              source_height_px: d.preflight_data?.source_height_px ?? 0,
-              mime_type: d.mime_type || "image/jpeg",
-              print_size_slug: currentSize,
-              crop: { x: 0, y: 0 },
-              zoom: 1,
-              rotation: 0,
-              fit_mode: "fill" as const,
-              croppedAreaPixels: null,
-              quantity: 1,
-            }));
-            setPhotoSpec((prev) => ({
-              ...prev,
-              photos: [...prev.photos, ...newEntries],
-            }));
-            qc.invalidateQueries({ queryKey: ["order_data"] });
-          }}
+          onPhoneUpload={handlePhoneUpload}
         />
       ) : (
         <div
@@ -634,6 +620,43 @@ export default function PhotoPrintsBuilder() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* QR mobile upload modal */}
+      <QRUploadModal
+        open={qrOpen}
+        onOpenChange={setQrOpen}
+        orderItemId={qrOrderItemId ?? orderItem?.id}
+        onFilesReceived={async (fileIds) => {
+          if (!fileIds.length) return;
+          const { data: docs } = await supabase
+            .from("documents")
+            .select("id, file_name, file_path, mime_type, preflight_data")
+            .in("id", fileIds);
+          if (!docs?.length) return;
+          const currentSize = photoSpec.print_size_slug;
+          const newEntries: PhotoPrintEntry[] = docs.map((d: any) => ({
+            id: crypto.randomUUID(),
+            document_id: d.id,
+            file_name: d.file_name,
+            original_storage_path: d.file_path,
+            source_width_px: d.preflight_data?.source_width_px ?? 0,
+            source_height_px: d.preflight_data?.source_height_px ?? 0,
+            mime_type: d.mime_type || "image/jpeg",
+            print_size_slug: currentSize,
+            crop: { x: 0, y: 0 },
+            zoom: 1,
+            rotation: 0,
+            fit_mode: "fill" as const,
+            croppedAreaPixels: null,
+            quantity: 1,
+          }));
+          setPhotoSpec((prev) => ({
+            ...prev,
+            photos: [...prev.photos, ...newEntries],
+          }));
+          qc.invalidateQueries({ queryKey: ["order_data"] });
+        }}
+      />
     </div>
   );
 }

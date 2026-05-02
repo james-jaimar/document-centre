@@ -10,6 +10,8 @@ interface PhotoUploaderProps {
   orderItemId?: string;
   /** Called when files arrive via mobile QR upload */
   onMobileFilesReceived?: (fileIds: string[]) => void;
+  /** If provided, the "Upload from Phone" button always shows. Called when user clicks it — parent should ensure order exists then open QR modal. */
+  onPhoneUpload?: () => void;
 }
 
 const ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif";
@@ -20,6 +22,7 @@ export default function PhotoUploader({
   className,
   orderItemId,
   onMobileFilesReceived,
+  onPhoneUpload,
 }: PhotoUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [qrOpen, setQrOpen] = useState(false);
@@ -81,14 +84,18 @@ export default function PhotoUploader({
             <Upload className="h-3.5 w-3.5" />
             Add photos
           </div>
-          {orderItemId && (
+          {(orderItemId || onPhoneUpload) && (
             <>
               <span className="text-muted-foreground text-xs">or</span>
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setQrOpen(true);
+                  if (onPhoneUpload) {
+                    onPhoneUpload();
+                  } else {
+                    setQrOpen(true);
+                  }
                 }}
                 className="flex items-center gap-1 text-xs text-primary font-medium hover:underline"
               >
