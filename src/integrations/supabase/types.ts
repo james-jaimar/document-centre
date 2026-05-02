@@ -3120,7 +3120,7 @@ export type Database = {
             foreignKeyName: "upload_sessions_order_item_id_fkey"
             columns: ["order_item_id"]
             isOneToOne: false
-            referencedRelation: "order_jobs"
+            referencedRelation: "order_items"
             referencedColumns: ["id"]
           },
           {

@@ -24,11 +24,14 @@ export function useUploadSession(orderItemId: string | undefined) {
   const [session, setSession] = useState<UploadSession | null>(null);
   const [incomingFiles, setIncomingFiles] = useState<RealtimeDocument[]>([]);
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const createSession = useCallback(async () => {
     if (!orderItemId || !tenantId || !appId || !user) return null;
+    if (creating) return null;
     setCreating(true);
+    setError(null);
     try {
       const { data, error } = await supabase
         .from("upload_sessions")
@@ -51,8 +54,9 @@ export function useUploadSession(orderItemId: string | undefined) {
       };
       setSession(s);
       return s;
-    } catch (err) {
+    } catch (err: any) {
       console.error("[useUploadSession] create failed:", err);
+      setError(err?.message || "Failed to create upload session");
       return null;
     } finally {
       setCreating(false);
@@ -112,8 +116,10 @@ export function useUploadSession(orderItemId: string | undefined) {
     uploadUrl,
     incomingFiles,
     creating,
+    error,
     createSession,
     closeSession,
     clearIncoming: useCallback(() => setIncomingFiles([]), []),
+    clearError: useCallback(() => setError(null), []),
   };
 }
