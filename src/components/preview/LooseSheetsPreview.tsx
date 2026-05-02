@@ -24,6 +24,7 @@ export default function LooseSheetsPreview({
   pdfSources,
   canvasSizeMm,
   pdfSizeMm,
+  scaleMode = "fit",
 }: LooseSheetsPreviewProps) {
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
   const ratio = pageAspectRatio ?? 0.707; // fallback to A4
