@@ -299,6 +299,11 @@ export default function OrderFiles() {
   // Doc IDs the user has explicitly chosen to "keep anyway" — don't re-warn.
   const dismissedPageCountDocIds = useRef<Set<string>>(new Set());
 
+  // Flyer multi-page choice dialog state
+  const [flyerChoiceItem, setFlyerChoiceItem] = useState<FlyerPageChoiceItem | null>(null);
+  const [flyerChoiceBusy, setFlyerChoiceBusy] = useState(false);
+  const dismissedFlyerDocIds = useRef<Set<string>>(new Set());
+
   // Check for near-ISO bleed documents after upload completes
   useEffect(() => {
     if (uploadModalOpen || advisoryDoc || bleedDoc || orientationDoc) return;
