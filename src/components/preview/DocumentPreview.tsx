@@ -32,6 +32,8 @@ export interface DocumentPreviewProps {
   bindingEdge?: "left" | "top";
   /** Selected binding option's method + colour, drives spine artwork. */
   bindingArt?: { method: "spiral" | "comb" | "twin_loop"; color: string };
+  /** Per-page PDF source for inline rendering (static types only) */
+  pdfSources?: (PdfSource | null)[];
 }
 
 const BOUND_TYPES = new Set([
