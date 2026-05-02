@@ -84,14 +84,18 @@ export default function PhotoUploader({
             <Upload className="h-3.5 w-3.5" />
             Add photos
           </div>
-          {orderItemId && (
+          {(orderItemId || onPhoneUpload) && (
             <>
               <span className="text-muted-foreground text-xs">or</span>
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setQrOpen(true);
+                  if (onPhoneUpload) {
+                    onPhoneUpload();
+                  } else {
+                    setQrOpen(true);
+                  }
                 }}
                 className="flex items-center gap-1 text-xs text-primary font-medium hover:underline"
               >
