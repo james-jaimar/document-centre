@@ -1,46 +1,45 @@
-I agree with you: this should be simple geometry, and the current implementation is still letting `react-easy-crop` choose a crop-frame size based on the rotated image. That is why the rotated portrait image in your screenshot does not fill the actual 4×6 print frame correctly.
+You’re right to be annoyed. The immediate break is not the rotation formula. I can see the likely cause in the code that was just added:
 
-Plan:
+The editor now measures its cropper container with a `ResizeObserver`, but that observer is created only once on component mount. The modal is mounted while closed, so `containerRef.current` is `null` at that moment. The effect exits, never runs again when the modal opens, and `containerDims.w` stays `0`. Because the cropper is gated by:
 
-1. Replace the current shared zoom hook with a frame-first model
-   - The print/poster frame will be treated as the fixed target.
-   - The hook will measure the editor container and calculate the crop frame from the requested print aspect ratio, independent of the image orientation.
-   - Example: 4×6 landscape always uses a landscape crop frame; rotating the image must not shrink or reshape that frame.
+```ts
+signedUrl && containerDims.w > 0
+```
 
-2. Use one formula for Fill/Fit everywhere
-   - Use the image’s natural dimensions, swap width/height for 90°/270° rotation, then calculate:
-     - Fill: `max(frameWidth / rotatedImageWidth, frameHeight / rotatedImageHeight)`
-     - Fit: `min(frameWidth / rotatedImageWidth, frameHeight / rotatedImageHeight)`
-   - This will be used by both the photo print editor and the poster editor.
-   - No aspect-ratio guessing, no special cases for portrait vs landscape.
+it can sit forever on “Loading photo…”.
 
-3. Pass an explicit `cropSize` into `react-easy-crop`
-   - This is the missing piece.
-   - Right now the library is allowed to compute the crop area itself from the rotated media, so when the image rotates it can make the crop frame smaller than the print frame.
-   - I will pass the calculated fixed frame size into both editors so the crop window remains the print/poster canvas.
+## Plan
 
-4. Keep `objectFit="contain"`, but stop relying on its rendered media box for print geometry
-   - `contain` is still useful as a stable baseline.
-   - But the actual Fill/Fit zoom should come from the real target frame and the natural image dimensions, not from the library’s auto-sized rotated crop area.
+1. Fix the modal container measurement bug in both editors
+   - Update `PhotoEditorModal.tsx` and `PosterImageEditor.tsx` so the cropper container is measured when the dialog actually opens, not only on initial mount.
+   - Use a robust shared pattern:
+     - read `getBoundingClientRect()` immediately when open
+     - attach `ResizeObserver`
+     - disconnect it on close/unmount
+     - reset dimensions safely when the modal closes
+   - This will remove the false “Loading photo…” state caused by `containerDims.w` staying `0`.
 
-5. Fix snapping and controls in both editors
-   - Rotate 90° will centre the crop and snap to the active mode, usually Fill.
-   - Fill will guarantee no grey/empty area inside the print frame.
-   - Fit will show the whole image and may intentionally show background where aspect ratios differ.
-   - The slider minimum will allow Fit, but Fill will be the default for photo prints.
+2. Make the cropper render condition less fragile
+   - Keep waiting for a real image URL, but don’t allow a missed observer to permanently block the cropper.
+   - Add a small fallback/default crop frame from the hook so the cropper can initialize even if the first measurement arrives one tick late.
 
-6. Apply the same shared logic to:
-   - `src/components/photo/PhotoEditorModal.tsx`
-   - `src/components/order/PosterImageEditor.tsx`
-   - `src/hooks/useCropperZoom.ts`
+3. Preserve the shared rotation/fill logic
+   - Keep `useCropperZoom` as the single source of truth for Photo Prints and Posters.
+   - Do not add new separate scaling logic.
+   - Once the cropper actually mounts, the existing fill/fit geometry can run as intended.
 
-7. Clean up the broken previous effect logic
-   - Remove the fake `prevFillRef`/snap logic that does not actually distinguish first load from rotation changes.
-   - Make zoom re-snapping deterministic when media, frame, aspect, rotation, or active fit mode changes.
+4. Clean up misleading third-party console noise separately
+   - The screenshot also shows a `Unable to store cookie` error from the Tawk chat widget, not from the photo cropper.
+   - I will prevent the chat widget from loading on logged-in/order/editor surfaces where it is not needed, so it stops polluting the console while you’re testing checkout/editor flows.
 
-Expected result:
+## Files to update
 
-- A landscape image uploaded into a 4×6 frame fills the frame.
-- A portrait image rotated into that same 4×6 frame uses the exact same fill formula and fills the frame.
-- Poster image editing behaves the same way as photo print editing.
-- The crop frame remains the product canvas, not whatever the rotated image happens to fit inside.
+- `src/components/photo/PhotoEditorModal.tsx`
+- `src/components/order/PosterImageEditor.tsx`
+- `src/components/ChatWidget.tsx` or `src/components/CustomerLayout.tsx` for the Tawk cleanup
+
+## Expected result
+
+- Opening “Edit Photo” after uploading should show the actual cropper instead of getting stuck on “Loading photo…”.
+- Rotating portrait/landscape images should use the same shared fill/fit calculation in both photo and poster editors.
+- The unrelated Tawk cookie error should no longer distract from real editor errors on order pages.

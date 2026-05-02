@@ -92,19 +92,31 @@ export default function PosterImageEditor({
   const [imageDims, setImageDims] = useState<{ w: number; h: number } | null>(null);
   const hasInitialState = !!initialState;
 
-  // Measure the cropper container
+  // Measure the cropper container — re-attach when dialog opens
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerDims, setContainerDims] = useState({ w: 0, h: 0 });
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      setContainerDims({ w: width, h: height });
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+    if (!open) return;
+    let ro: ResizeObserver | null = null;
+    const attach = () => {
+      const el = containerRef.current;
+      if (!el) {
+        requestAnimationFrame(attach);
+        return;
+      }
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setContainerDims({ w: rect.width, h: rect.height });
+      }
+      ro = new ResizeObserver(([entry]) => {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) setContainerDims({ w: width, h: height });
+      });
+      ro.observe(el);
+    };
+    attach();
+    return () => ro?.disconnect();
+  }, [open]);
 
   const sizeChoice = useMemo(
     () => POSTER_SIZE_CHOICES.find((s) => s.slug === sizeSlug) ?? POSTER_SIZE_CHOICES[2],

@@ -45,19 +45,32 @@ export default function PhotoEditorModal({
   const [fitMode, setFitMode] = useState<PhotoFitMode>("fill");
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<CroppedAreaPixels | null>(null);
 
-  // Measure the cropper container
+  // Measure the cropper container — re-attach when dialog opens
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerDims, setContainerDims] = useState({ w: 0, h: 0 });
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      setContainerDims({ w: width, h: height });
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+    if (!open) return;
+    let ro: ResizeObserver | null = null;
+    const attach = () => {
+      const el = containerRef.current;
+      if (!el) {
+        // Portal may not be mounted yet — retry next frame
+        requestAnimationFrame(attach);
+        return;
+      }
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setContainerDims({ w: rect.width, h: rect.height });
+      }
+      ro = new ResizeObserver(([entry]) => {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) setContainerDims({ w: width, h: height });
+      });
+      ro.observe(el);
+    };
+    attach();
+    return () => ro?.disconnect();
+  }, [open]);
 
   const size = photo ? getPhotoPrintSize(photo.print_size_slug) : null;
 
