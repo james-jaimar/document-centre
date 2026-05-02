@@ -180,7 +180,7 @@ export default function DocumentPreview({
 
   // Business cards use the same LooseSheetsPreview renderer
   if (productType === "business_cards") {
-    return <LooseSheetsPreview {...commonProps} />;
+    return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} />;
   }
 
   if (FOLD_TYPES.has(productType)) {
