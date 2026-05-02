@@ -38,6 +38,8 @@ export interface DocumentPreviewProps {
   canvasSizeMm?: CanvasSize;
   /** Native PDF page dimensions in mm */
   pdfSizeMm?: { widthMm: number; heightMm: number };
+  /** How the PDF content is scaled within the canvas */
+  scaleMode?: "fit" | "fill";
 }
 
 const BOUND_TYPES = new Set([
