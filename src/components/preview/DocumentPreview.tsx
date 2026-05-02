@@ -192,5 +192,5 @@ export default function DocumentPreview({
     );
   }
 
-  return <LooseSheetsPreview {...commonProps} />;
+  return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} />;
 }
