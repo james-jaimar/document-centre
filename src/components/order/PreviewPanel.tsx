@@ -810,12 +810,17 @@ export default function PreviewPanel({
         <>
           <div className="text-center">
             <p className="text-sm font-medium text-foreground">{pageInfoText}</p>
-            {sectionLabel && (
-              <div className="flex items-center justify-center gap-2 mt-1">
-                <Badge variant="secondary" className="text-xs">{sectionLabel}</Badge>
-                <span className="text-xs text-muted-foreground">{colourStatus} · {duplexStatus}</span>
-              </div>
-            )}
+            <div className="flex items-center justify-center gap-2 mt-1">
+              {sectionLabel && (
+                <>
+                  <Badge variant="secondary" className="text-xs">{sectionLabel}</Badge>
+                  <span className="text-xs text-muted-foreground">{colourStatus} · {duplexStatus}</span>
+                </>
+              )}
+              {showScaleToggle && scaleMode && onScaleModeChange && (
+                <ScaleModeToggle value={scaleMode} onChange={onScaleModeChange} />
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-2 w-full max-w-md">
