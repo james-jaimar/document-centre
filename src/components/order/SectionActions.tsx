@@ -100,6 +100,12 @@ export default function SectionActions({
     (pc === 4 || pc === 6) &&
     !!onAutoAssignPanels;
 
+  const showFlyerAutoAssign =
+    hasSelectedFile &&
+    familySlug === "flyers" &&
+    (selectedFilePageCount ?? 0) >= 2 &&
+    !!onAutoAssignFlyer;
+
   const showBrochureHint =
     hasSelectedFile &&
     familySlug === "brochures" &&
