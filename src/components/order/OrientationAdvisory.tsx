@@ -56,8 +56,13 @@ export default function OrientationAdvisory({
     : "Portrait documents are ideal for Bound Documents (portrait binding)";
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog open={open} onOpenChange={() => {}}>
+      <DialogContent
+        className="sm:max-w-md"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
             <AlertTriangle className="h-5 w-5 shrink-0" />

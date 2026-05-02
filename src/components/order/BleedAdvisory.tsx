@@ -44,8 +44,13 @@ export default function BleedAdvisory({
   const trimH = nearMatch.landscape ? nearMatch.matchedSize.widthMm : nearMatch.matchedSize.heightMm;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog open={open} onOpenChange={() => {}}>
+      <DialogContent
+        className="sm:max-w-md"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
             <Scissors className="h-5 w-5 shrink-0" />
