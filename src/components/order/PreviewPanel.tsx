@@ -181,6 +181,7 @@ function buildPageSequence(
         documentName: doc.file_name,
         section,
         isColor: section.is_color,
+        filePath: doc.file_path,
       });
 
       // Determine whether the natural simplex reverse should be emitted.
