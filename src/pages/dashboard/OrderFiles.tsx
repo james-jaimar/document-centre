@@ -2092,6 +2092,15 @@ export default function OrderFiles() {
         onReplace={handlePageCountReplace}
         onKeep={handlePageCountKeep}
       />
+
+      {/* Flyer multi-page choice dialog */}
+      <FlyerPageChoiceDialog
+        open={!!flyerChoiceItem}
+        item={flyerChoiceItem}
+        busy={flyerChoiceBusy}
+        onDoubleSided={handleFlyerDoubleSided}
+        onSingleSided={handleFlyerSingleSided}
+      />
     </div>
   );
 }
