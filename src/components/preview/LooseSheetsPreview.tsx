@@ -41,6 +41,22 @@ export default function LooseSheetsPreview({
   const bleedInsetPx = Math.round(pageWidth * 0.03);
   const grayscaleFilter = isColor ? undefined : "grayscale(100%)";
 
+  // PDF source available — render clean, no border/shadow/PageEffects
+  if (pdfSource) {
+    return (
+      <div className="flex items-center justify-center" style={{ width, height }}>
+        <PdfPageView
+          pdfUrl={pdfSource.url}
+          pageNumber={pdfSource.pageNumber}
+          width={pageWidth}
+          height={pageHeight}
+          style={{ filter: grayscaleFilter }}
+        />
+      </div>
+    );
+  }
+
+  // Fallback: thumbnail rendering with decorations
   return (
     <div className="flex items-center justify-center" style={{ width, height }}>
       <div
@@ -55,24 +71,13 @@ export default function LooseSheetsPreview({
           `,
         }}
       >
-        {/* Animated slide */}
         <div
           className="absolute inset-0 transition-opacity duration-300"
           key={currentPage}
           style={{ animation: "fadeIn 0.3s ease-out" }}
         >
           <PageEffects effects={resolvedEffects} pageIndex={currentPage} totalPages={urls.length} allowBleed={bleedFlags?.[currentPage] ?? false} bleedInsetPx={bleedInsetPx}>
-            {pdfSource ? (
-              <div className="w-full h-full flex items-center justify-center" style={{ filter: grayscaleFilter }}>
-                <PdfPageView
-                  pdfUrl={pdfSource.url}
-                  pageNumber={pdfSource.pageNumber}
-                  width={pageWidth}
-                  height={pageHeight}
-                  aspectRatio={ratio}
-                />
-              </div>
-            ) : url ? (
+            {url ? (
               <img
                 src={url}
                 alt={`Page ${currentPage + 1}`}
