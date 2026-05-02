@@ -24,6 +24,7 @@ export function useUploadSession(orderItemId: string | undefined) {
   const [session, setSession] = useState<UploadSession | null>(null);
   const [incomingFiles, setIncomingFiles] = useState<RealtimeDocument[]>([]);
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const createSession = useCallback(async () => {
