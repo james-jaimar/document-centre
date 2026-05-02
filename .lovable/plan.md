@@ -1,57 +1,26 @@
-
 ## Problem
 
-Static document previews (loose sheets, posters, flyers, business cards) currently display rasterized thumbnail images that are noticeably low-resolution, especially for small formats like business cards. Since every uploaded file is already converted to PDF, we can render the actual PDF directly in the browser at full resolution.
+The inline PDF preview for static documents (flyers, loose sheets, etc.) has three visual issues:
 
-## Approach
+1. **Black box behind the PDF** -- `react-pdf`'s `<Page>` renders a canvas with `canvasBackground="transparent"`, but the parent container's `bg-card` class creates a dark background in dark theme.
+2. **White border + gray shadow** -- The `LooseSheetsPreview` wrapper applies `border border-border shadow-lg` and a multi-layer `boxShadow` that creates the stacked-paper effect. This was fine for thumbnails but is wrong for the new PDF rendering -- the user just wants to see the media shape cleanly.
+3. **Unnecessary PageEffects wrapping** -- The PDF is already the trimmed file; wrapping it in `PageEffects` adds extra insets and styling that aren't needed.
 
-Use **`react-pdf`** (a React wrapper around Mozilla's pdf.js) to render individual PDF pages as high-resolution canvas elements. This replaces the `<img>` tag in `LooseSheetsPreview` with a `<Document>/<Page>` component that renders the PDF at the container's native pixel resolution — vector content stays pin-sharp at any zoom.
+## Plan
 
-### What changes
+### 1. Clean up LooseSheetsPreview when rendering PDF
 
-1. **Install `react-pdf`** — lightweight React wrapper for pdf.js with canvas rendering.
+When a `pdfSource` is available, skip the decorative wrapper (border, shadow, bg-card) and the `PageEffects` layer. Render `PdfPageView` directly inside the centering container with just a minimal white background (to ensure the PDF page is visible against any theme).
 
-2. **New component: `PdfPageView`** — a small wrapper that takes a signed PDF URL and a page number, renders that page via react-pdf's `<Page>` component at the container's pixel dimensions. No toolbar, no controls, just the rendered page. Handles loading/error states gracefully.
+### 2. Fix PdfPageView canvas background
 
-3. **Update `LooseSheetsPreview`** — when a signed PDF URL is available for the current document, render `PdfPageView` instead of an `<img>`. Falls back to the existing thumbnail `<img>` if no PDF URL is provided (backward compatible).
+Set `canvasBackground` to `"white"` (or `"#ffffff"`) instead of `"transparent"` so the page renders with a proper paper-white backing regardless of the theme.
 
-4. **Update `PreviewPanel`** — pass each document's `file_path` (the S3 PDF key) alongside the existing thumbnail data so `DocumentPreview` can forward it to `LooseSheetsPreview`. Sign the PDF URL using the existing `getDownloadUrls` utility.
+### 3. Remove double aspect-ratio fitting
 
-5. **Update `DocumentPreview`** — accept an optional `pdfUrl` prop and forward it to `LooseSheetsPreview` (only for non-bound, non-fold types).
+Currently both `LooseSheetsPreview` and `PdfPageView` independently compute sizing from the aspect ratio, resulting in the PDF being smaller than the container (95% of an already-65% space). Simplify: `LooseSheetsPreview` computes the page dimensions, and `PdfPageView` receives exact `width`/`height` and renders at that size without re-shrinking.
 
-### What does NOT change
+### Files to edit
 
-- **FlipBook / bound documents** — still use thumbnail images (they need pre-rasterized images for the page-flip animation).
-- **FoldPreview / brochures** — still use CSS-based panel slicing of thumbnail images.
-- **RingBinderPreview** — still uses thumbnails.
-- **PageEffects** — still wraps the content (bleed, lamination effects still apply).
-- **Grayscale filter for B&W** — still applied via CSS on the canvas container.
-
-### Scope of product types affected
-
-| Product type | Current | After |
-|---|---|---|
-| Loose sheets / stapled | Thumbnail image | PDF page render |
-| Poster | Thumbnail image | PDF page render |
-| Flyer | Thumbnail image | PDF page render |
-| Business cards | Thumbnail image | PDF page render |
-| Bound documents | Thumbnail image | No change |
-| Folded leaflets | CSS panel slice | No change |
-| Ring binder | Thumbnail image | No change |
-| Photo prints | Photo image | No change |
-
-### Technical details
-
-- `react-pdf` renders to a `<canvas>` element at configurable pixel width/height. We set it to match the container dimensions multiplied by `devicePixelRatio` for retina sharpness.
-- The PDF URL is signed once per document using the existing `getDownloadUrls` from `s3Storage.ts`.
-- pdf.js worker is loaded from CDN (standard react-pdf setup) to avoid bundling issues.
-- The `<Page>` component is set to `renderTextLayer={false}` and `renderAnnotationLayer={false}` — pure visual render only.
-
-### Files to create/modify
-
-- **New**: `src/components/preview/PdfPageView.tsx`
-- **Edit**: `src/components/preview/LooseSheetsPreview.tsx`
-- **Edit**: `src/components/preview/DocumentPreview.tsx`
-- **Edit**: `src/components/preview/previewTypes.ts`
-- **Edit**: `src/components/order/PreviewPanel.tsx`
-- **Install**: `react-pdf` package
+- `src/components/preview/LooseSheetsPreview.tsx` -- conditionally skip border/shadow/PageEffects for PDF mode
+- `src/components/preview/PdfPageView.tsx` -- use white canvas background, remove internal re-sizing logic, render at the exact width passed in

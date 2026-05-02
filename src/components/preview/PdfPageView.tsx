@@ -12,12 +12,10 @@ interface PdfPageViewProps {
   pdfUrl: string;
   /** 1-based page number to display */
   pageNumber: number;
-  /** Desired display width in CSS pixels */
+  /** Exact display width in CSS pixels (computed by parent) */
   width: number;
-  /** Desired display height in CSS pixels */
+  /** Exact display height in CSS pixels (computed by parent) */
   height: number;
-  /** Aspect ratio (width/height) of the page for sizing */
-  aspectRatio?: number;
   /** CSS filter (e.g. grayscale) */
   style?: React.CSSProperties;
 }
@@ -25,32 +23,18 @@ interface PdfPageViewProps {
 /**
  * Renders a single PDF page at full resolution using react-pdf.
  * No toolbar, no controls — just a clean page render.
+ * Parent is responsible for computing the correct width/height.
  */
 export default function PdfPageView({
   pdfUrl,
   pageNumber,
   width,
   height,
-  aspectRatio,
   style,
 }: PdfPageViewProps) {
   const [error, setError] = useState(false);
 
-  // Compute the rendering width to fill the container while respecting aspect ratio
-  const renderWidth = useMemo(() => {
-    const ratio = aspectRatio ?? 0.707;
-    const isLandscape = ratio > 1;
-    const maxW = width * (isLandscape ? 0.95 : 0.95);
-    const maxH = height * 0.95;
-    let w = maxW;
-    let h = w / ratio;
-    if (h > maxH) {
-      h = maxH;
-      w = h * ratio;
-    }
-    return Math.round(w);
-  }, [width, height, aspectRatio]);
-
+  const renderWidth = Math.round(width);
 
   const fileOptions = useMemo(
     () => ({ url: pdfUrl, withCredentials: false }),
@@ -98,7 +82,7 @@ export default function PdfPageView({
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50" />
               </div>
             }
-            canvasBackground="transparent"
+            canvasBackground="#ffffff"
           />
         </div>
       </Document>
