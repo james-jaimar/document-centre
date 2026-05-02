@@ -29,7 +29,9 @@ export function useUploadSession(orderItemId: string | undefined) {
 
   const createSession = useCallback(async () => {
     if (!orderItemId || !tenantId || !appId || !user) return null;
+    if (creating) return null;
     setCreating(true);
+    setError(null);
     try {
       const { data, error } = await supabase
         .from("upload_sessions")
