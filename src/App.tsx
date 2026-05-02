@@ -25,6 +25,7 @@ import Contact from "@/pages/Contact";
 import PrivacyPolicy from "@/pages/legal/PrivacyPolicy";
 import TermsOfService from "@/pages/legal/TermsOfService";
 import PlatformDemoActivity from "@/pages/platform/PlatformDemoActivity";
+import MobileUpload from "@/pages/MobileUpload";
 
 // Customer
 import CustomerDashboard from "@/pages/dashboard/CustomerDashboard";
@@ -123,6 +124,9 @@ const App = () => (
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/terms" element={<TermsOfService />} />
             <Route path="/contact" element={<Contact />} />
+
+            {/* Public mobile upload — no auth required */}
+            <Route path="/upload/:token" element={<MobileUpload />} />
 
             {/* Public storefront landing */}
             <Route path="/t/:slug" element={<StorefrontLanding />} />
