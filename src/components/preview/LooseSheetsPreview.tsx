@@ -59,6 +59,7 @@ export default function LooseSheetsPreview({
                 src={url}
                 alt={`Page ${currentPage + 1}`}
                 className="w-full h-full object-contain"
+                style={{ filter: isColor ? "none" : "grayscale(100%)" }}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-muted/30">
