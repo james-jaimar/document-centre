@@ -591,6 +591,18 @@ export default function PreviewPanel({
     return { widthMm: Number(doc.page_width_mm), heightMm: Number(doc.page_height_mm) };
   }, [documents]);
 
+  // Show fit/fill toggle only for eligible product families with a size mismatch
+  const SCALE_TOGGLE_SLUGS = new Set(["poster", "flyers", "flyer", "business-cards", "business_cards"]);
+  const showScaleToggle = !!(
+    onScaleModeChange &&
+    productFamilySlug &&
+    SCALE_TOGGLE_SLUGS.has(productFamilySlug) &&
+    canvasSizeMm &&
+    pdfSizeMm &&
+    (Math.abs(canvasSizeMm.widthMm - pdfSizeMm.widthMm) > 2 ||
+      Math.abs(canvasSizeMm.heightMm - pdfSizeMm.heightMm) > 2)
+  );
+
   // For ring binders, navigation uses the shared sheet-flip view model:
   //   view 0   = closed (hardware only)
   //   view 1   = left=hardware, right=seq[0]
