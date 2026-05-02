@@ -1683,6 +1683,81 @@ export default function OrderFiles() {
     setPageCountWarning(null);
   }, [pageCountWarning]);
 
+  // ── Flyer multi-page choice handlers ──────────────────────────────
+  const handleFlyerDoubleSided = useCallback(
+    async (item: FlyerPageChoiceItem) => {
+      setFlyerChoiceBusy(true);
+      try {
+        const doc = documents.find((d) => d.id === item.docId);
+        if (!doc) return;
+        // Trim to first 2 pages
+        await trimDocumentToFirstPages(doc.id, doc.file_path, doc.file_name, 2);
+        await reprocessDocument({ id: doc.id, file_path: doc.file_path, file_name: doc.file_name });
+        dismissedFlyerDocIds.current.add(doc.id);
+        await refetchDocuments();
+        // Auto-assign Front + Back
+        if (orderItem) {
+          await addSection.mutateAsync({
+            order_item_id: orderItem.id,
+            document_id: doc.id,
+            section_type: "front_cover" as any,
+            sort_order: sections.length,
+            page_range_start: 0,
+            is_color: true,
+          });
+          await addSection.mutateAsync({
+            order_item_id: orderItem.id,
+            document_id: doc.id,
+            section_type: "back_cover" as any,
+            sort_order: sections.length + 1,
+            page_range_start: 1,
+            is_color: true,
+          });
+        }
+        toast.success("Trimmed to 2 pages and assigned as Front + Back");
+        setFlyerChoiceItem(null);
+      } catch (err: any) {
+        toast.error("Failed to process", { description: err?.message });
+      } finally {
+        setFlyerChoiceBusy(false);
+      }
+    },
+    [documents, reprocessDocument, refetchDocuments, orderItem, addSection, sections.length],
+  );
+
+  const handleFlyerSingleSided = useCallback(
+    async (item: FlyerPageChoiceItem) => {
+      setFlyerChoiceBusy(true);
+      try {
+        const doc = documents.find((d) => d.id === item.docId);
+        if (!doc) return;
+        // Trim to first page
+        await trimDocumentToFirstPages(doc.id, doc.file_path, doc.file_name, 1);
+        await reprocessDocument({ id: doc.id, file_path: doc.file_path, file_name: doc.file_name });
+        dismissedFlyerDocIds.current.add(doc.id);
+        await refetchDocuments();
+        // Auto-assign as Front only
+        if (orderItem) {
+          await addSection.mutateAsync({
+            order_item_id: orderItem.id,
+            document_id: doc.id,
+            section_type: "front_cover" as any,
+            sort_order: sections.length,
+            page_range_start: 0,
+            is_color: true,
+          });
+        }
+        toast.success("Trimmed to 1 page and assigned as Front");
+        setFlyerChoiceItem(null);
+      } catch (err: any) {
+        toast.error("Failed to process", { description: err?.message });
+      } finally {
+        setFlyerChoiceBusy(false);
+      }
+    },
+    [documents, reprocessDocument, refetchDocuments, orderItem, addSection, sections.length],
+  );
+
   const handleRerenderGaps = useCallback(
     async (doc: { id: string; backend_asset_id: string | null; preflight_data: unknown }) => {
       if (!doc.backend_asset_id) {
