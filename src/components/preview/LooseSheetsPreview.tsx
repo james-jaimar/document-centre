@@ -8,6 +8,7 @@ export default function LooseSheetsPreview({
   currentPage,
   width,
   height,
+  colorFlags,
   pageAspectRatio,
   effects,
   bleedFlags,
