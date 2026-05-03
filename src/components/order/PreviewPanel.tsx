@@ -190,7 +190,9 @@ function buildPageSequence(
         documentName: doc.file_name,
         section,
         isColor: section.is_color,
-        filePath: doc.file_path,
+        // Prefer the processed PDF (post-rotation/resize/CMYK) over the
+        // raw upload so inline PDF preview shows the correct orientation.
+        filePath: (doc.preflight_data as any)?.processed_file_path ?? doc.file_path,
       });
 
       // Determine whether the natural simplex reverse should be emitted.
