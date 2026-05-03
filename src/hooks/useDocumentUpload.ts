@@ -25,8 +25,8 @@ import {
   detectOrientationMismatch as policyDetectMismatch,
   advisoryModeFor,
   requiredOrientationFor,
-  type RequiredOrientation,
 } from "@/lib/orders/orientationPolicy";
+import { clearPdfCacheEntry } from "@/lib/pdfBlobCache";
 
 /**
  * Page-orientation policy.
