@@ -634,6 +634,40 @@ export async function printReady(
   });
 }
 
+/**
+ * One-shot PDF preparation: CMYK → orient → resize.
+ *
+ * Replaces the fragile multi-job frontend sequencing with a single server
+ * call that performs all mutations in the correct deterministic order.
+ * The server promotes one final PDF — no more race between printReady /
+ * normalizeOrientation / resize where Ghostscript can undo pypdf rotations.
+ */
+export async function prepareForProduct(
+  assetId: string,
+  options: {
+    dominantOrientation?: "portrait" | "landscape" | null;
+    targetWidthMm?: number;
+    targetHeightMm?: number;
+    fitMode?: "fit" | "fill";
+    destProfile?: string | null;
+    intent?:
+      | "relative_colorimetric"
+      | "perceptual"
+      | "absolute_colorimetric"
+      | "saturation";
+  } = {},
+): Promise<{ job_id: string }> {
+  return request("v1/operations/prepare-for-product", "POST", {
+    asset_id: assetId,
+    ...(options.dominantOrientation ? { dominant_orientation: options.dominantOrientation } : {}),
+    ...(options.targetWidthMm ? { target_width_mm: options.targetWidthMm } : {}),
+    ...(options.targetHeightMm ? { target_height_mm: options.targetHeightMm } : {}),
+    ...(options.fitMode ? { fit_mode: options.fitMode } : {}),
+    ...(options.destProfile ? { dest_profile: options.destProfile } : {}),
+    ...(options.intent ? { intent: options.intent } : {}),
+  });
+}
+
 // ── Health ────────────────────────────────────────────────────────
 
 export async function health(): Promise<{
