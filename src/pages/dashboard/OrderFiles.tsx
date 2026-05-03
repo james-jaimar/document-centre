@@ -938,12 +938,17 @@ export default function OrderFiles() {
           toast.error("Render failed", { description: err.message });
         }
       }
-      const existing = documents.find((d) => d.id === bleedDoc.id);
-      const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
+      // Re-read preflight AFTER rendering so processed_file_path survives.
+      const { data: freshDoc } = await supabase
+        .from("documents")
+        .select("preflight_data")
+        .eq("id", bleedDoc.id)
+        .maybeSingle();
+      const freshPreflight = (freshDoc?.preflight_data as Record<string, any>) ?? {};
       await supabase
         .from("documents")
         .update({
-          preflight_data: { ...preflight, awaiting_review: false, bleed_resolved: true, bleed_action: "keep" },
+          preflight_data: { ...freshPreflight, awaiting_review: false, bleed_resolved: true, bleed_action: "keep" },
         })
         .eq("id", bleedDoc.id);
       resolvedDocIds.current.add(bleedDoc.id);
