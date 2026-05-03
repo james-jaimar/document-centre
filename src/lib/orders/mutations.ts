@@ -199,6 +199,9 @@ export async function processDocumentForProduction(params: {
   needsResize: boolean;
   targetWidthMm?: number;
   targetHeightMm?: number;
+  /** Pass the product's required orientation so resize atomically
+   *  rotates any mismatched pages while scaling. */
+  dominantOrientation?: "portrait" | "landscape" | null;
 }): Promise<ProcessDocumentResult> {
   const { grayscale, resize } = await import("@/lib/documentCentreApi");
   const result: ProcessDocumentResult = { assetId: params.backendAssetId };
@@ -212,7 +215,9 @@ export async function processDocumentForProduction(params: {
       const { job_id } = await resize(
         params.backendAssetId,
         params.targetWidthMm,
-        params.targetHeightMm
+        params.targetHeightMm,
+        "fit",
+        params.dominantOrientation,
       );
       result.resizeJobId = job_id;
     }
