@@ -118,9 +118,11 @@ interface PageEffectsProps {
  * IMPORTANT: Content positioning uses absolute inset (not padding) so that
  * react-pageflip's canvas measurement is never affected by box-model changes.
  */
-export default function PageEffects({ effects, pageIndex, totalPages, children, pageRole, allowBleed, bleedInsetPx, label, color }: PageEffectsProps) {
+export default function PageEffects({ effects, pageIndex, totalPages, children, pageRole, allowBleed, bleedInsetPx, label, color, isBackFace }: PageEffectsProps) {
   const role = pageRole ?? (pageIndex === 0 ? "front_cover" : "body");
-  const holeSide: "left" | "right" = BACK_FACE_ROLES.has(role) ? "right" : "left";
+  // Hole punch side: explicit back-face roles always go right; for body pages,
+  // use the isBackFace hint (loose sheets: even 0-based index = back of sheet).
+  const holeSide: "left" | "right" = BACK_FACE_ROLES.has(role) || isBackFace ? "right" : "left";
 
   // ── 1. Card material: solid edge-to-edge color ──
   if (CARD_ROLES.has(role)) {
