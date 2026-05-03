@@ -607,9 +607,19 @@ export default function PreviewPanel({
   }, [computedPageRoles, effects?.bleed, isBusinessCards, isPoster, isRingBinder]);
 
   const pageAspectRatio = useMemo(() => {
+    // Prefer trim box dimensions when available (e.g. business cards with bleed)
     const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
-    if (doc && doc.page_width_mm && doc.page_height_mm) {
-      return Number(doc.page_width_mm) / Number(doc.page_height_mm);
+    if (doc) {
+      const preflight = doc.preflight_data as Record<string, unknown> | null;
+      const trimBox = preflight?.trim_box_pt as number[] | undefined;
+      if (trimBox && trimBox.length === 4) {
+        const trimW = Math.abs(trimBox[2] - trimBox[0]);
+        const trimH = Math.abs(trimBox[3] - trimBox[1]);
+        if (trimW > 0 && trimH > 0) return trimW / trimH;
+      }
+      if (doc.page_width_mm && doc.page_height_mm) {
+        return Number(doc.page_width_mm) / Number(doc.page_height_mm);
+      }
     }
     // Business cards fallback: standard 90×50mm = 1.8
     if (isBusinessCards) return 1.8;
@@ -620,6 +630,17 @@ export default function PreviewPanel({
   const pdfSizeMm = useMemo(() => {
     const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
     if (!doc || !doc.page_width_mm || !doc.page_height_mm) return undefined;
+    // Use trim box dimensions if available
+    const preflight = doc.preflight_data as Record<string, unknown> | null;
+    const trimBox = preflight?.trim_box_pt as number[] | undefined;
+    if (trimBox && trimBox.length === 4) {
+      const trimW = Math.abs(trimBox[2] - trimBox[0]);
+      const trimH = Math.abs(trimBox[3] - trimBox[1]);
+      if (trimW > 0 && trimH > 0) {
+        const PT_TO_MM = 25.4 / 72;
+        return { widthMm: trimW * PT_TO_MM, heightMm: trimH * PT_TO_MM };
+      }
+    }
     return { widthMm: Number(doc.page_width_mm), heightMm: Number(doc.page_height_mm) };
   }, [documents]);
 
