@@ -157,7 +157,7 @@ export default function LooseSheetsPreview({
           key={currentPage}
           style={{ animation: "fadeIn 0.3s ease-out" }}
         >
-          <PageEffects effects={resolvedEffects} pageIndex={currentPage} totalPages={urls.length} allowBleed={bleedFlags?.[currentPage] ?? false} bleedInsetPx={bleedInsetPx}>
+          <PageEffects effects={resolvedEffects} pageIndex={currentPage} totalPages={urls.length} allowBleed={bleedFlags?.[currentPage] ?? false} bleedInsetPx={bleedInsetPx} isBackFace={isBackFace}>
             {url ? (
               <img
                 src={url}
