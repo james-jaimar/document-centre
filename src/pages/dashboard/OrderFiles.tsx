@@ -898,10 +898,18 @@ export default function OrderFiles() {
           "Rendering pages…",
         );
       }
+      // Re-read preflight AFTER rendering so processed_file_path survives.
+      const { data: freshDoc } = await supabase
+        .from("documents")
+        .select("preflight_data")
+        .eq("id", doc.id)
+        .maybeSingle();
+      const freshPreflight = (freshDoc?.preflight_data as Record<string, any>) ?? {};
+      const { orientation_mismatch: _omFresh, ...freshRest } = freshPreflight;
       await supabase
         .from("documents")
         .update({
-          preflight_data: { ...preflightRest, awaiting_review: false, orientation_resolved: true, orientation_action: "kept" },
+          preflight_data: { ...freshRest, awaiting_review: false, orientation_resolved: true, orientation_action: "kept" },
         })
         .eq("id", doc.id);
       refetchDocuments();
