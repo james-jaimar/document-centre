@@ -62,6 +62,8 @@ const BOUND_SLUGS = new Set([
   "ring_binders",
   "booklets",
   "stapled_loose",
+  "stapled-loose-pages",
+  "stapled_loose_pages",
 ]);
 
 function getActions(familySlug?: string | null): ActionDef[] {
