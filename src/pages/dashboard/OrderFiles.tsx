@@ -475,10 +475,19 @@ export default function OrderFiles() {
       }
     }
 
+    // Re-read preflight AFTER rendering so we preserve processed_file_path
+    // that renderDocumentThumbnails just wrote (instead of overwriting it
+    // with the stale pre-render snapshot).
+    const { data: freshDoc } = await supabase
+      .from("documents")
+      .select("preflight_data")
+      .eq("id", doc.id)
+      .maybeSingle();
+    const freshPreflight = (freshDoc?.preflight_data as Record<string, any>) ?? {};
     await supabase
       .from("documents")
       .update({
-        preflight_data: { ...preflight, awaiting_review: false, size_resolved: true, size_action: "keep" },
+        preflight_data: { ...freshPreflight, awaiting_review: false, size_resolved: true, size_action: "keep" },
       })
       .eq("id", doc.id);
     resolvedDocIds.current.add(doc.id);
@@ -546,9 +555,14 @@ export default function OrderFiles() {
         `Scaling to ${target.name} and rendering pages…`,
       );
 
-      const existing = documents.find((d) => d.id === doc.id);
-      const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
-      const { detected_size, ...rest } = preflight;
+      // Re-read preflight AFTER rendering so processed_file_path survives.
+      const { data: freshDoc } = await supabase
+        .from("documents")
+        .select("preflight_data")
+        .eq("id", doc.id)
+        .maybeSingle();
+      const freshPreflight = (freshDoc?.preflight_data as Record<string, any>) ?? {};
+      const { detected_size, ...rest } = freshPreflight;
       await supabase
         .from("documents")
         .update({
@@ -814,12 +828,19 @@ export default function OrderFiles() {
         `Rotating to ${targetLabel} and rendering pages…`,
       );
 
-      // Defensive re-assert.
+      // Re-read preflight AFTER rendering so processed_file_path survives.
+      const { data: freshDoc2 } = await supabase
+        .from("documents")
+        .select("preflight_data")
+        .eq("id", orientationDoc.id)
+        .maybeSingle();
+      const freshPreflight2 = (freshDoc2?.preflight_data as Record<string, any>) ?? {};
+      const { orientation_mismatch: _om2, ...freshRest2 } = freshPreflight2;
       await supabase
         .from("documents")
         .update({
           preflight_data: {
-            ...preflightRest,
+            ...freshRest2,
             awaiting_review: false,
             orientation_resolved: true,
             orientation_action: "rotated",
@@ -877,10 +898,18 @@ export default function OrderFiles() {
           "Rendering pages…",
         );
       }
+      // Re-read preflight AFTER rendering so processed_file_path survives.
+      const { data: freshDoc } = await supabase
+        .from("documents")
+        .select("preflight_data")
+        .eq("id", doc.id)
+        .maybeSingle();
+      const freshPreflight = (freshDoc?.preflight_data as Record<string, any>) ?? {};
+      const { orientation_mismatch: _omFresh, ...freshRest } = freshPreflight;
       await supabase
         .from("documents")
         .update({
-          preflight_data: { ...preflightRest, awaiting_review: false, orientation_resolved: true, orientation_action: "kept" },
+          preflight_data: { ...freshRest, awaiting_review: false, orientation_resolved: true, orientation_action: "kept" },
         })
         .eq("id", doc.id);
       refetchDocuments();
@@ -909,12 +938,17 @@ export default function OrderFiles() {
           toast.error("Render failed", { description: err.message });
         }
       }
-      const existing = documents.find((d) => d.id === bleedDoc.id);
-      const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
+      // Re-read preflight AFTER rendering so processed_file_path survives.
+      const { data: freshDoc } = await supabase
+        .from("documents")
+        .select("preflight_data")
+        .eq("id", bleedDoc.id)
+        .maybeSingle();
+      const freshPreflight = (freshDoc?.preflight_data as Record<string, any>) ?? {};
       await supabase
         .from("documents")
         .update({
-          preflight_data: { ...preflight, awaiting_review: false, bleed_resolved: true, bleed_action: "keep" },
+          preflight_data: { ...freshPreflight, awaiting_review: false, bleed_resolved: true, bleed_action: "keep" },
         })
         .eq("id", bleedDoc.id);
       resolvedDocIds.current.add(bleedDoc.id);
@@ -962,13 +996,18 @@ export default function OrderFiles() {
       const newWidthMm = (trimWidthPt * 25.4) / 72;
       const newHeightMm = (trimHeightPt * 25.4) / 72;
 
-      const existing = documents.find((d) => d.id === bleedDoc.id);
-      const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
+      // Re-read preflight AFTER rendering so processed_file_path survives.
+      const { data: freshDoc2 } = await supabase
+        .from("documents")
+        .select("preflight_data")
+        .eq("id", bleedDoc.id)
+        .maybeSingle();
+      const freshPreflight2 = (freshDoc2?.preflight_data as Record<string, any>) ?? {};
       await supabase
         .from("documents")
         .update({
           preflight_data: {
-            ...preflight,
+            ...freshPreflight2,
             awaiting_review: false,
             bleed_resolved: true,
             bleed_action: choice === "custom" ? `custom_${bleedMm}mm` : `trimmed_to_${bleedDoc.nearMatch.matchedSize.name}`,
