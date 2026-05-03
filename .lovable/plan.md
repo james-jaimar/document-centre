@@ -1,48 +1,32 @@
-You're right — adding the loose-sheets slug was only part of it. I checked the actual recent uploads and found the important clue:
-
-- Recent `Stapled & Loose Pages` uploads **are now calling** `normalize_orientation`.
-- For the same Word document, the backend job reports `pages_rotated: 20`.
-- But after that, the size-scaling step runs and can put pages back onto same-orientation canvases, and the new static PDF preview path is also signing `documents.file_path`, which is the **original DOCX/PDF upload**, not the backend `normalized_storage_path` that contains the rotated/print-ready PDF.
-
-So the rotation work exists, but the preview can still display the wrong source, and the resize path can undo the desired loose-sheets portrait constraint.
+I found why this still looks broken: the backend is recording that orientation normalization ran and rotated 20/24 pages, but the final preview row still does not persist the processed PDF path, and the current resize/finalise path can rely on stale document preflight state. We should stop trying to patch this from the preview side and make the PDF pipeline itself guarantee the final asset is portrait for `stapled-loose-pages`.
 
 Plan:
 
-1. Make the static PDF preview use the processed PDF, not the original upload
-   - In `PreviewPanel`, stop using `doc.file_path` as the PDF source for inline PDF rendering when a backend asset exists.
-   - Add a lightweight lookup for each document's `backend_asset_id` to fetch the asset and use `asset.normalized_storage_path` first, falling back to `source_storage_path` only if no normalized PDF exists.
-   - This ensures loose sheets, posters, flyers, and other static PDF-workflow products display the actual PDF produced by the server pipeline.
-   - Bound/flipbook products can continue using thumbnail paths as before.
+1. Fix the upload/advisory finalisation path
+   - In `src/pages/dashboard/OrderFiles.tsx`, after scaling to A4, always run the orientation finalisation for required-orientation products instead of skipping it because an old `preflight.print_ready_done` flag says print-ready already happened.
+   - Clear/stamp the relevant preflight fields after resize so the UI no longer carries stale dimensions/paths from before orientation normalization.
+   - Persist `processed_file_path` from the authoritative backend asset after `resize -> normalize-orientation -> print-ready`, so the inline PDF preview and thumbnails are both reading the same processed PDF.
 
-2. Preserve the loose-sheets portrait constraint after size scaling
-   - In `OrderFiles.applyScaleTo`, after `resize(...)` completes, check `requiredOrientationFor(productFamily?.slug)`.
-   - If the product requires portrait/landscape, call `normalizeOrientation(workingAssetId, required)` **after resize and before print-ready/render**.
-   - This matters because the current sequence is effectively:
-     ```text
-     Office -> PDF -> normalize_orientation -> size advisory -> resize -> print-ready -> render
-     ```
-     and `resize_pages` currently preserves each page's orientation. For loose sheets, we need:
-     ```text
-     Office -> PDF -> inspect -> resize if needed -> normalize_orientation -> print-ready -> render/display
-     ```
+2. Fix the shared render helper so every deferred render stores the processed path
+   - In `renderDocumentThumbnails`, re-fetch the asset after the preview job completes and write `preflight_data.processed_file_path = asset.normalized_storage_path`.
+   - Preserve existing preflight flags while adding `orientation_normalized`, `processed_file_path`, and current `boxes/width_pt/height_pt` from the processed asset.
+   - This covers normal upload, size advisory, orientation advisory, bleed advisory, and reprocess flows.
 
-3. Add a defensive final orientation pass before rendering any PDF-workflow document
-   - In the shared finalisation path, ensure products with a required orientation have had `normalizeOrientation` run on the current asset before `printReady` and before previews are generated.
-   - Keep this product-policy driven so:
-     - Bound documents, ring binders, booklets: portrait enforcement remains.
-     - Presentations: landscape enforcement remains.
-     - Stapled/loose pages: portrait enforcement is added and kept.
-     - Flyers/posters: still no forced orientation.
+3. Make backend orientation normalization more literal and reliable
+   - In `pdf-server/app/services/pdf_ops.py`, adjust `normalize_orientation` to use a simple per-page rule for portrait-required products: if the visual page is landscape, rotate that page 90° clockwise onto a portrait MediaBox.
+   - Keep `/Rotate` baked into content first, then write pages with no residual `/Rotate` hint so Ghostscript, pdf.js, and thumbnail rasterization cannot disagree.
+   - Keep the existing box stamping where possible, but prioritise the correct final page canvas/orientation over preserving stale per-page boxes.
 
-4. Record the final orientation result in preflight metadata
-   - Persist something like `orientation_normalized: true`, `orientation_target: "portrait"`, and optionally `orientation_pages_rotated` from the job result.
-   - This makes it obvious from the database/UI diagnostics whether the step actually ran.
+4. Add a backend safety net after print-ready conversion
+   - Ghostscript/pdfwrite may rewrite page geometry. After `print_ready`, inspect page metadata; if a product has already been orientation-normalized and any page is still landscape for a portrait-required asset, run one final normalize pass before marking the asset ready.
+   - Record this in asset/document metadata so we can see `pages_rotated`, `orientation_normalized`, and the final storage path in ops.
 
-5. Update comments/docs so this doesn’t regress again
-   - Update the upload-flow comments to reflect the true order: conversion/resize first when needed, then orientation normalisation, then CMYK/print-ready, then render/display.
-   - Update `.lovable/plan.md` to note the actual root cause: processed PDF not used by inline preview plus resize after orientation.
+5. Add a small regression check
+   - Add a test/script-level check for a mixed-orientation PDF: portrait pages stay portrait; landscape pages become portrait; page count stays the same; output has no `/Rotate 90/270` pages.
+   - This protects the working bound-document behaviour while applying the same rule to stapled/loose pages.
 
 Expected result:
-- A Word document with mixed portrait/landscape pages uploaded to `Stapled & Loose Pages` will have landscape pages rotated 90° clockwise into portrait.
-- The final preview will render from the backend-normalised PDF, not the original DOCX/original PDF path.
-- Flyers and posters will continue to honour landscape uploads without forced portrait rotation.
+- Word/PDF mixed portrait+landscape uploads for `stapled-loose-pages` end as a 24-page portrait PDF.
+- Landscape pages are rotated 90° clockwise as real PDF pages, not just viewer hints.
+- The preview uses the processed backend PDF, not the original upload.
+- Re-uploading the sample should show page 6 as a portrait sheet with the former landscape content rotated, matching the bound-document behaviour.
