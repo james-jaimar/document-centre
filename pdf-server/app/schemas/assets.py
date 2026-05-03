@@ -163,3 +163,24 @@ class RenderPagesRequest(BaseModel):
     """
     pages: list[int] | Literal["missing"] = "missing"
 
+
+class PrepareForProductRequest(BaseModel):
+    """One-shot PDF preparation: CMYK → orient → resize.
+
+    The frontend sends a single request describing what the product needs.
+    The server performs all mutations in the correct order and promotes one
+    final PDF. No more multi-job sequencing on the client side.
+    """
+    asset_id: UUID
+    dominant_orientation: Literal["portrait", "landscape"] | None = None
+    target_width_mm: float | None = Field(default=None, gt=0)
+    target_height_mm: float | None = Field(default=None, gt=0)
+    fit_mode: Literal["fit", "fill"] = "fit"
+    dest_profile: str | None = None
+    intent: Literal[
+        "relative_colorimetric",
+        "perceptual",
+        "absolute_colorimetric",
+        "saturation",
+    ] = "relative_colorimetric"
+
