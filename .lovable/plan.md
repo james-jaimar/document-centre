@@ -1,88 +1,74 @@
-I’ve pinned down the specific failure path now.
+I’m sorry. You are right: this should not be an 18-layer workflow. The current implementation is still too fragile because rotation, print-ready conversion, scaling, metadata inspection, and preview rendering are separate operations that can each promote a different PDF version.
 
-The problem is not “Word conversion” in general and it is not “presentations” or “bound documents” globally anymore. The latest failing case is specifically:
-
-```text
-Office conversion
-→ initial portrait normalisation works
-→ user chooses Scale to A4
-→ resize creates the A4 PDF
-→ print-ready runs after resize
-→ the final PDF used for preview is the print-ready PDF
-→ landscape pages reappear / render landscape again
-```
-
-The database confirms this on the ring-binder upload:
-
-- Asset: `cf00c494-0496-4066-a721-13655a67500f`
-- Product: `ring-binders`
-- Job order:
-  1. `convert_office` completed
-  2. `normalize_orientation` rotated 20 of 24 pages to portrait
-  3. `resize_pdf` scaled to A4
-  4. `print_ready` ran after resize
-  5. final `normalize_orientation` reported `pages_rotated: 0`, because the PDF metadata said the pages were portrait
-  6. generated previews still show pages 3+ as landscape-sized images (`1520×1075`), while pages 1–2 are portrait (`1075×1520`)
-
-So the issue is exactly what you described: the scale-to-A4 route is leaving the final preview/render source in a state where the print-ready/resize output has portrait page boxes but some page content still renders as landscape. Our current verification only checks page dimensions/metadata, so it falsely accepts the file.
+The fix should be to stop trusting the frontend sequence and make the PDF server produce one final PDF in one authoritative operation.
 
 Plan:
 
-1. Stop doing orientation as a fragile side-effect after scaling
-   - Replace the current `resize → print_ready → normalize_orientation` handoff for mandatory-orientation products with a single finalising path that makes the last mutating operation responsible for both size and orientation.
-   - For ring binders, bound documents, booklets, and stapled/loose pages, scaling to A4 must produce an A4 portrait PDF where every page rasterizes portrait.
-   - For presentations, scaling must produce landscape output.
+1. Add a single server-side “prepare for product” operation
+   - New backend endpoint/task, conceptually:
+     `prepare-pdf(asset_id, target_size?, required_orientation, print_ready_profile?)`
+   - It will always download the current asset PDF, then perform the final workflow in one controlled place:
+     1. Convert Office to PDF if needed before this stage, as today.
+     2. Run print-ready/CMYK first if required.
+     3. Bake all `/Rotate` hints into actual page content.
+     4. Rotate pages whose real rendered orientation does not match the product requirement.
+     5. Scale those already-rotated pages to A4/Letter/etc. if requested.
+     6. Save and promote exactly that final PDF to `normalized_storage_path`.
+   - After this point, the rest of the app only ever previews/prints that promoted PDF.
 
-2. Fix the backend resize operation so it physically rotates content before fitting to the target page
-   - Update `pdf-server/app/services/pdf_ops.py` `resize_pages()` to avoid the current temporary `writer.add_blank_page(...); writer.pages.pop()` pattern.
-   - Build each output page from a clean blank target canvas in one pass:
-     - bake any `/Rotate` hint into content
-     - determine visual orientation
-     - if the product requires portrait/landscape, rotate the artwork physically
-     - scale and centre it onto the requested target page size
-     - clear residual rotation flags
-   - The output file must have no dependency on viewer `/Rotate` hints for correctness.
+2. Replace the current split frontend flow
+   - In `OrderFiles.tsx`, replace the manual `printReady -> resize -> render` chain in `applyScaleTo` with a single call to the new operation.
+   - In `useDocumentUpload.ts`, replace the separate normalise/print-ready finalisation with the same server-side finaliser for products with required orientation.
+   - Keep the existing size advisory UX, but once the user chooses “Scale to A4”, the frontend will only send intent: “this product is portrait; target is A4”. It will not try to manage rotation itself.
 
-3. Make print-ready orientation-safe for resized files
-   - In `pdf-server/app/tasks/operation_tasks.py`, when `print_ready` receives `dominant_orientation`, run a render-based orientation repair/verification after Ghostscript, not just metadata-based `normalize_orientation`.
-   - This is needed because Ghostscript can output pages whose boxes look portrait while rendered artwork is effectively landscape.
-   - If the final rendered previews would be landscape for a portrait product, the job should not silently pass.
+3. Remove the current false-success condition
+   - Right now the database can say `page_width_mm=210`, `page_height_mm=297` even when the rendered artwork inside that portrait page is still landscape/squashed.
+   - The new backend operation will not treat page box dimensions as proof.
+   - It will perform a low-resolution render probe after the final PDF is produced and verify page-level rendered orientation.
+   - If any page still renders landscape inside a portrait product, the job fails with page numbers instead of writing misleading “success” metadata.
 
-4. Add a hard post-process verification step
-   - Add a backend helper that rasterizes low-resolution page probes after resize/print-ready and verifies actual rendered width/height against `dominant_orientation`.
-   - If a portrait product produces any landscape-rendered pages, fail the job with page numbers instead of marking the document ready.
-   - This removes the “metadata says OK, screenshot is wrong” failure mode.
+4. Make resize itself safer on the PDF server
+   - Update `pdf-server/app/services/pdf_ops.py` so `resize_pages` no longer uses an intermediate blank page attached to the writer and then popped.
+   - Use a clean page composition path per page:
+     - read page
+     - bake rotation
+     - if needed, rotate content onto an isolated temporary page
+     - scale that page onto the final target canvas
+     - write only the final target page
+   - This removes the exact class of bug where content can remain landscape while the outer box becomes portrait.
 
-5. Fix the frontend scale flow to always pass orientation through finalisation
-   - In `src/pages/dashboard/OrderFiles.tsx`, make `applyScaleTo()` always call finalisation after resize for required-orientation products, even if `preflight_data.print_ready_done` was already true from an earlier step.
-   - The current `if (!preflightForFinalize?.print_ready_done)` guard is unsafe after geometry changes. Scaling invalidates print-ready/orientation state.
-   - After resize, explicitly treat `print_ready_done` as stale and force the final pass.
+5. Persist only the final processed path
+   - After the backend finaliser completes, update `documents.preflight_data.processed_file_path` from the asset’s final `normalized_storage_path` only.
+   - Clear stale previews/thumbnails every time geometry changes.
+   - Re-render previews from the final PDF only.
 
-6. Correct preflight state after geometry-changing operations
-   - When scale/trim/rotate changes the PDF, update `preflight_data` so old flags cannot suppress required work:
-     - clear stale `print_ready_done` before finalising
-     - set `processed_file_path` only after the final promoted PDF exists
-     - clear stale preview/thumbnail paths before render
-   - This prevents an earlier “done” flag from hiding a later resize.
+6. Keep production/order placement consistent
+   - Update `processDocumentForProduction` and cart/order submission paths to call the same finalisation operation, not a separate resize operation.
+   - This prevents the preview from being correct while the production file is wrong, or vice versa.
 
-7. Update production-time resizing safety
-   - `src/lib/orders/mutations.ts` also has a production resize helper that calls `resize()` without `dominantOrientation`.
-   - Pass the required orientation there as well, or avoid re-resizing documents that were already finalized during upload.
-   - This prevents checkout/order placement from reintroducing the same problem later.
-
-8. Verify using the exact failing path
-   - Re-test the ring-binder flow with the same Word document and “Scale to A4”.
-   - Confirm the final derived preview pages are all portrait dimensions, especially pages 3–22.
-   - Confirm bound documents kept at Letter still work.
-   - Confirm presentations with landscape documents still work.
-
-Files to change:
+Files to change after approval:
 
 - `pdf-server/app/services/pdf_ops.py`
+  - harden page rotation + scale composition
+  - add render-probe verification helper
 - `pdf-server/app/tasks/operation_tasks.py`
-- `src/pages/dashboard/OrderFiles.tsx`
+  - add the new final prepare task
+  - promote only verified final PDFs
+- `pdf-server/app/web/routes.py`
+  - add endpoint for the final prepare operation
+- `pdf-server/app/schemas/assets.py`
+  - add request schema for the final prepare operation
+- `src/lib/documentCentreApi.ts`
+  - add client wrapper for the new operation
 - `src/hooks/useDocumentUpload.ts`
-- `src/lib/orders/mutations.ts`
-- possibly `src/lib/documentCentreApi.ts` only if the client API needs a new verification/finalisation endpoint
+  - use the final prepare operation for upload finalisation
+- `src/pages/dashboard/OrderFiles.tsx`
+  - use the final prepare operation for “Scale to A4” and “Keep original”
+- `src/lib/orders/mutations.ts` and `src/hooks/useCart.ts`
+  - use the same operation for production processing
 
-The key behavioural change: after any scale operation, the system will no longer trust old `print_ready_done` or page metadata. It will force the final orientation-aware pass and verify the rendered result before showing the client preview.
+Technical note:
+
+The most suspicious thing I found is that the latest failed scaled document row says it is A4 and points at a resized PDF, but previous scaled attempts pointed at print-ready PDFs. That confirms the workflow has been promoting different derived PDFs at different stages. The correct fix is not another frontend reorder; it is to make the PDF server own one final PDF mutation and verify the rasterized result before the app marks the file ready.
+
+This will require updating the PDF server files as well as Lovable-side files.
