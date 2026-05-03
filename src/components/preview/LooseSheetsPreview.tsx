@@ -121,6 +121,7 @@ export default function LooseSheetsPreview({
             totalPages={urls.length}
             allowBleed={bleedFlags?.[currentPage] ?? false}
             bleedInsetPx={bleedInsetPx}
+            isBackFace={isBackFace}
           >
             <div className="w-full h-full flex items-center justify-center">
               <PdfPageView
