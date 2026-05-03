@@ -996,13 +996,18 @@ export default function OrderFiles() {
       const newWidthMm = (trimWidthPt * 25.4) / 72;
       const newHeightMm = (trimHeightPt * 25.4) / 72;
 
-      const existing = documents.find((d) => d.id === bleedDoc.id);
-      const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
+      // Re-read preflight AFTER rendering so processed_file_path survives.
+      const { data: freshDoc2 } = await supabase
+        .from("documents")
+        .select("preflight_data")
+        .eq("id", bleedDoc.id)
+        .maybeSingle();
+      const freshPreflight2 = (freshDoc2?.preflight_data as Record<string, any>) ?? {};
       await supabase
         .from("documents")
         .update({
           preflight_data: {
-            ...preflight,
+            ...freshPreflight2,
             awaiting_review: false,
             bleed_resolved: true,
             bleed_action: choice === "custom" ? `custom_${bleedMm}mm` : `trimmed_to_${bleedDoc.nearMatch.matchedSize.name}`,
