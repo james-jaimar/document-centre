@@ -750,8 +750,8 @@ export default function PreviewPanel({
     if (totalPages === 0) return "";
     const idx = visibleLeft ?? visibleRight ?? 0;
     const sec = finalPages[idx]?.section;
-    return sec ? (SECTION_LABELS[sec.section_type] ?? sec.section_type) : "";
-  }, [visibleLeft, visibleRight, finalPages, totalPages]);
+    return sec ? getSectionLabel(sec.section_type, productFamilySlug) : "";
+  }, [visibleLeft, visibleRight, finalPages, totalPages, productFamilySlug]);
 
   const goFirst = () => setCurrentPage(0);
   const goLast = () => setCurrentPage(totalPages - 1);
