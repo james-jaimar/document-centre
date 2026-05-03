@@ -101,6 +101,8 @@ interface PageEffectsProps {
   label?: string;
   /** Optional color slug for insert pages */
   color?: string;
+  /** Whether this is a back/even face in loose-sheet context (holes on right) */
+  isBackFace?: boolean;
 }
 
 /**
