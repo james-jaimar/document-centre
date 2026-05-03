@@ -488,10 +488,6 @@ export default function PreviewPanel({
   }, [finalPages, isStaticType]);
 
   const filePathsKey = uniqueFilePaths.join("|");
-  const stableFilePaths = filePathsKey === prevFilePathsRef.current
-    ? undefined // skip effect
-    : uniqueFilePaths;
-
   useEffect(() => {
     if (filePathsKey === prevFilePathsRef.current) return;
     prevFilePathsRef.current = filePathsKey;
