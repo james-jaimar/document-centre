@@ -46,7 +46,7 @@ interface TabInsertDrawerProps {
   tabEnabled: boolean;
   tabCount: number;
   isMultiColor: boolean;
-  onAddTab: (afterPage: number) => Promise<void>;
+  onAddTab: (afterPage: number, label?: string) => Promise<void>;
   onDeleteTab: (sectionId: string) => Promise<void>;
   onMoveTab: (sectionId: string, afterPage: number) => Promise<void>;
   onUpdateTabLabel: (sectionId: string, label: string) => Promise<void>;
