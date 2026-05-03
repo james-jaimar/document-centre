@@ -32,7 +32,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { resize, rotate, pollJob, cropRasterize, getAsset, getDerivedFiles, ensureFreshAsset, inspectAsset, normalizeOrientation } from "@/lib/documentCentreApi";
+import { resize, rotate, pollJob, cropRasterize, getAsset, getDerivedFiles, ensureFreshAsset, inspectAsset, normalizeOrientation, printReady } from "@/lib/documentCentreApi";
 import { copyS3Object } from "@/lib/s3Storage";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useAuth } from "@/hooks/useAuth";
