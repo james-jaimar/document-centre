@@ -1290,6 +1290,7 @@ class PdfOps:
                 *common_safer,
                 "-dBATCH",
                 "-dNOPAUSE",
+                "-dAutoRotatePages=/None",
                 "-dNumRenderingThreads=4",
                 "-sDEVICE=pdfwrite",
                 "-dCompatibilityLevel=1.7",
@@ -1314,6 +1315,7 @@ class PdfOps:
                 *common_safer,
                 "-dBATCH",
                 "-dNOPAUSE",
+                "-dAutoRotatePages=/None",
                 "-dNumRenderingThreads=4",
                 "-sDEVICE=pdfwrite",
                 "-sColorConversionStrategy=CMYK",
@@ -1330,6 +1332,7 @@ class PdfOps:
         builtin_cmd = [
             settings.ghostscript_bin,
             "-dSAFER", "-dBATCH", "-dNOPAUSE",
+            "-dAutoRotatePages=/None",
             "-dNumRenderingThreads=4",
             "-sDEVICE=pdfwrite",
             "-sColorConversionStrategy=CMYK",
@@ -1342,6 +1345,7 @@ class PdfOps:
         passthrough_cmd = [
             settings.ghostscript_bin,
             "-dSAFER", "-dBATCH", "-dNOPAUSE",
+            "-dAutoRotatePages=/None",
             "-sDEVICE=pdfwrite",
             "-o", str(out_pdf), str(src),
         ]
