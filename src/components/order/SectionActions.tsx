@@ -56,6 +56,11 @@ const POSTER_ACTIONS: ActionDef[] = [
   { type: "front_cover", label: "Add as Print", icon: Image },
 ];
 
+const BUSINESS_CARD_ACTIONS: ActionDef[] = [
+  { type: "front_cover", label: "Front", icon: Image },
+  { type: "back_cover", label: "Back", icon: Image },
+];
+
 const BOUND_SLUGS = new Set([
   "bound_documents",
   "presentations",
