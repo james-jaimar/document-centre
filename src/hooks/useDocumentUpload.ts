@@ -14,6 +14,7 @@ import {
   convertOffice,
   normalizeOrientation,
   printReady,
+  prepareForProduct,
   renderPages,
 } from "@/lib/documentCentreApi";
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
