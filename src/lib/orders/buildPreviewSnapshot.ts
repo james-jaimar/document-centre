@@ -288,6 +288,21 @@ function buildPageSequence(
   }
 
   for (const item of pending) emitDivider(item);
+
+  // ── Saddle-stitched booklet padding: total pages must be divisible by 4 ──
+  if (productType === "saddle_stitched") {
+    const contentCount = result.length;
+    const remainder = contentCount % 4;
+    if (remainder !== 0) {
+      const blanksNeeded = 4 - remainder;
+      for (let b = 0; b < blanksNeeded; b++) {
+        result.push({
+          thumbnailUrl: "", pageIndex: -1, isColor: true,
+        });
+      }
+    }
+  }
+
   return result;
 }
 
