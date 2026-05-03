@@ -21,6 +21,7 @@ interface SectionActionsProps {
   onAutoAssignBrochure?: () => void;
   onAutoAssignPanels?: () => void;
   onAutoAssignFlyer?: () => void;
+  onAutoAssignBusinessCard?: () => void;
 }
 
 interface ActionDef {
