@@ -116,6 +116,12 @@ export default function SectionActions({
     (selectedFilePageCount ?? 0) >= 2 &&
     !!onAutoAssignFlyer;
 
+  const showBusinessCardAutoAssign =
+    hasSelectedFile &&
+    (familySlug === "business_cards" || familySlug === "business-cards") &&
+    (selectedFilePageCount ?? 0) >= 2 &&
+    !!onAutoAssignBusinessCard;
+
   const showBrochureHint =
     hasSelectedFile &&
     familySlug === "brochures" &&
