@@ -76,6 +76,7 @@ class ResizeRequest(BaseModel):
     width_mm: float = Field(gt=0)
     height_mm: float = Field(gt=0)
     fit_mode: Literal["fit", "fill"] = "fit"
+    dominant_orientation: Literal["portrait", "landscape"] | None = None
 
 
 class NupRequest(BaseModel):
@@ -150,6 +151,7 @@ class PrintReadyRequest(BaseModel):
     # downstream preview job.
     chain_generate_previews: bool = False
     chain_render_box: list[float] | None = Field(default=None, min_length=4, max_length=4)
+    dominant_orientation: Literal["portrait", "landscape"] | None = None
 
 
 class RenderPagesRequest(BaseModel):

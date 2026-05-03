@@ -438,13 +438,15 @@ export async function resize(
   assetId: string,
   widthMm: number,
   heightMm: number,
-  fitMode: "fit" | "fill" = "fit"
+  fitMode: "fit" | "fill" = "fit",
+  dominantOrientation?: "portrait" | "landscape" | null,
 ): Promise<{ job_id: string }> {
   return request("v1/operations/resize", "POST", {
     asset_id: assetId,
     width_mm: widthMm,
     height_mm: heightMm,
     fit_mode: fitMode,
+    ...(dominantOrientation ? { dominant_orientation: dominantOrientation } : {}),
   });
 }
 
@@ -619,6 +621,7 @@ export async function printReady(
      *  only the downstream job. Preserves CMYK-first → RGB-thumbnail order. */
     chainGeneratePreviews?: boolean;
     chainRenderBox?: [number, number, number, number] | null;
+    dominantOrientation?: "portrait" | "landscape" | null;
   } = {},
 ): Promise<{ job_id: string; preview_job_id: string | null }> {
   return request("v1/operations/print-ready", "POST", {
@@ -627,6 +630,7 @@ export async function printReady(
     dest_profile: options.destProfile ?? "fogra39",
     chain_generate_previews: options.chainGeneratePreviews ?? false,
     ...(options.chainRenderBox ? { chain_render_box: options.chainRenderBox } : {}),
+    ...(options.dominantOrientation ? { dominant_orientation: options.dominantOrientation } : {}),
   });
 }
 

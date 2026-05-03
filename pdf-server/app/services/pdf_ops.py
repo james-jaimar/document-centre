@@ -284,6 +284,7 @@ class PdfOps:
                 settings.ghostscript_bin,
                 "-dBATCH",
                 "-dNOPAUSE",
+                "-dAutoRotatePages=/None",
                 "-sDEVICE=pdfwrite",
                 "-o",
                 str(out_pdf),
@@ -530,6 +531,7 @@ class PdfOps:
                 settings.ghostscript_bin,
                 "-dBATCH",
                 "-dNOPAUSE",
+                "-dAutoRotatePages=/None",
                 "-sDEVICE=pdfwrite",
                 "-sColorConversionStrategy=Gray",
                 "-dProcessColorModel=/DeviceGray",
@@ -549,6 +551,7 @@ class PdfOps:
             settings.ghostscript_bin,
             "-dBATCH",
             "-dNOPAUSE",
+            "-dAutoRotatePages=/None",
             "-sDEVICE=pdfwrite",
             "-sColorConversionStrategy=CMYK",
             "-o",
@@ -777,6 +780,7 @@ class PdfOps:
         width_mm: float,
         height_mm: float,
         fit_mode: str = "fit",
+        dominant_orientation: str | None = None,
     ) -> Path:
         """Resize each page onto a target canvas of (width_mm × height_mm).
 
@@ -801,6 +805,11 @@ class PdfOps:
         target_w_base = width_mm * mm
         target_h_base = height_mm * mm
         target_landscape = target_w_base > target_h_base
+        force_landscape = None
+        if dominant_orientation == "portrait":
+            force_landscape = False
+        elif dominant_orientation == "landscape":
+            force_landscape = True
 
         for page in reader.pages:
             # Step 1 — bake /Rotate into content. After this, page.mediabox
@@ -809,7 +818,7 @@ class PdfOps:
 
             src_w = float(page.mediabox.width)
             src_h = float(page.mediabox.height)
-            page_landscape = src_w > src_h
+            page_landscape = force_landscape if force_landscape is not None else src_w > src_h
 
             # Step 2 — pick same-orientation target canvas for this page.
             if page_landscape == target_landscape:
@@ -1281,6 +1290,7 @@ class PdfOps:
                 *common_safer,
                 "-dBATCH",
                 "-dNOPAUSE",
+                "-dAutoRotatePages=/None",
                 "-dNumRenderingThreads=4",
                 "-sDEVICE=pdfwrite",
                 "-dCompatibilityLevel=1.7",
@@ -1305,6 +1315,7 @@ class PdfOps:
                 *common_safer,
                 "-dBATCH",
                 "-dNOPAUSE",
+                "-dAutoRotatePages=/None",
                 "-dNumRenderingThreads=4",
                 "-sDEVICE=pdfwrite",
                 "-sColorConversionStrategy=CMYK",
@@ -1321,6 +1332,7 @@ class PdfOps:
         builtin_cmd = [
             settings.ghostscript_bin,
             "-dSAFER", "-dBATCH", "-dNOPAUSE",
+            "-dAutoRotatePages=/None",
             "-dNumRenderingThreads=4",
             "-sDEVICE=pdfwrite",
             "-sColorConversionStrategy=CMYK",
@@ -1333,6 +1345,7 @@ class PdfOps:
         passthrough_cmd = [
             settings.ghostscript_bin,
             "-dSAFER", "-dBATCH", "-dNOPAUSE",
+            "-dAutoRotatePages=/None",
             "-sDEVICE=pdfwrite",
             "-o", str(out_pdf), str(src),
         ]

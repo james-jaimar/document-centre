@@ -92,6 +92,14 @@ export function hasPdfCached(objectPath: string): boolean {
   return cache.has(objectPath);
 }
 
+/** Clear a single cached PDF, used after the backend rewrites/promotes an asset. */
+export function clearPdfCacheEntry(objectPath: string) {
+  const existing = cache.get(objectPath);
+  if (existing) totalBytes -= existing.size;
+  cache.delete(objectPath);
+  inflight.delete(objectPath);
+}
+
 /** Clear the entire cache (e.g. on logout). */
 export function clearPdfCache() {
   cache.clear();
