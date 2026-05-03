@@ -219,7 +219,7 @@ function buildPageSequence(
       // synthetic blank between two documents was the phantom face users
       // saw in the preview. Customers who want a real blank between
       // documents should drop a white insert sheet (InsertManager).
-      const isLastPageOfDoc = i === pageCount - 1;
+      const isLastPageOfDoc = i === rangeEnd || i === fullPageCount - 1;
       const nextDoc = nextSection
         ? documents.find((d) => d.id === nextSection.document_id)
         : null;
