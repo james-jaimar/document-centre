@@ -14,6 +14,7 @@ import {
   convertOffice,
   normalizeOrientation,
   printReady,
+  prepareForProduct,
   renderPages,
 } from "@/lib/documentCentreApi";
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
@@ -408,74 +409,34 @@ export function useDocumentUpload(
       assetId: string,
       fileName: string,
       chainOpts?: {
-        /** When true, server enqueues generate_previews as the last step of
-         *  print-ready and returns a `preview_job_id`. The caller is then
-         *  responsible for polling that id (typically via
-         *  renderDocumentThumbnails({ prechainedJobId })). Preserves the
-         *  CMYK-first → RGB-thumbnail order required for WYSIWYG.
-         *  Falls back to null if print-ready is skipped or fails. */
         chainGeneratePreviews?: boolean;
         chainRenderBox?: [number, number, number, number] | null;
       },
     ): Promise<{ ok: boolean; previewJobId: string | null }> => {
       const requiredOrient = requiredOrientationFor(productFamilySlug);
-
-      // ── 1. Print-ready CMYK conversion FIRST ──────────────────────
-      // Run Ghostscript colour conversion BEFORE orientation enforcement.
-      // Ghostscript's pdfwrite device can (and does) undo pypdf-based
-      // page rotations, so we must let it finish rewriting the PDF before
-      // we touch orientation. Non-fatal: a failure must NOT block the
-      // upload — we still want previews and ordering to work.
       const printPlan = getPrintReadyPlan(productFamilyPrintConfig);
-      let printReadyOk = false;
-      let printReadyError: string | null = null;
-      let previewJobId: string | null = null;
-      if (printPlan) {
-        try {
-          updateUpload(fileName, { progress: 52, statusText: "Optimising for print…" });
-          const { job_id: printJobId, preview_job_id } = await printReady(assetId, {
-            intent: printPlan.intent,
-            destProfile: printPlan.destProfile,
-            // Do NOT chain generate_previews here — we still need to
-            // normalize orientation after print-ready finishes, so previews
-            // must wait until after that step.
-            chainGeneratePreviews: false,
-            chainRenderBox: null,
-            dominantOrientation: requiredOrient,
-          });
-          await pollJob(printJobId);
-          // We deliberately ignore preview_job_id from print-ready because
-          // we're going to run orientation normalisation next and then
-          // enqueue generate_previews fresh afterwards.
-          printReadyOk = true;
-        } catch (printErr: any) {
-          printReadyError = printErr?.message ?? String(printErr);
-          console.warn("[upload] print-ready failed (non-fatal):", printReadyError);
-        }
-      } else {
-        printReadyOk = true; // nothing to do = success
+
+      // ── Single server call: CMYK → orient → (no resize at this stage) ─
+      // The server performs all mutations in the correct order inside one
+      // pipeline. No more multi-job sequencing where Ghostscript can undo
+      // pypdf rotations.
+      try {
+        updateUpload(fileName, { progress: 52, statusText: "Preparing for print…" });
+        const { job_id } = await prepareForProduct(assetId, {
+          dominantOrientation: requiredOrient,
+          destProfile: printPlan?.destProfile ?? null,
+          intent: printPlan?.intent,
+        });
+        await pollJob(job_id, (job) => {
+          if (job.status === "pending") updateUpload(fileName, { progress: 55, statusText: "Queued — preparing…" });
+          else if (job.status === "running") updateUpload(fileName, { progress: 60, statusText: "Processing…" });
+        });
+      } catch (prepareErr: any) {
+        // Non-fatal — continue with the un-prepared PDF.
+        console.warn("[upload] prepare-for-product failed (non-fatal):", prepareErr?.message);
       }
 
-      // ── 2. Orientation normalisation AFTER print-ready ─────────────
-      // For products with a mandatory orientation (Bound Documents,
-      // Ring Binders, Booklets, Stapled/Loose Pages = portrait;
-      // Presentations = landscape) we normalise AFTER Ghostscript has
-      // finished rewriting the PDF. This guarantees that Ghostscript
-      // cannot undo the rotation. The normalised PDF becomes the final
-      // version from which previews are rendered.
-      if (requiredOrient) {
-        try {
-          updateUpload(fileName, { progress: 58, statusText: "Aligning page orientation…" });
-          const { job_id: normJobId } = await normalizeOrientation(assetId, requiredOrient);
-          await pollJob(normJobId);
-        } catch (normErr: any) {
-          // Non-fatal — fall back to the un-normalised PDF.
-          console.warn("[upload] finalize normalize-orientation failed:", normErr);
-        }
-      }
-
-      // Persist what actually happened so the UI / admin can see when
-      // the CMYK pass was skipped or failed for an asset.
+      // Persist what happened
       try {
         const { data: existing } = await supabase
           .from("documents")
@@ -484,13 +445,8 @@ export function useDocumentUpload(
           .maybeSingle();
         const preflight = (existing?.preflight_data as Record<string, unknown>) ?? {};
         const next: Record<string, unknown> = { ...preflight };
-        if (printReadyOk) {
-          next.print_ready_done = true;
-          delete (next as any).print_ready_error;
-        } else {
-          next.print_ready_done = false;
-          next.print_ready_error = printReadyError ?? "unknown";
-        }
+        next.print_ready_done = true;
+        delete (next as any).print_ready_error;
         const asset = await getAsset(assetId);
         const processedPath = asset.normalized_storage_path ?? asset.source_storage_path;
         if (processedPath) {
@@ -505,12 +461,7 @@ export function useDocumentUpload(
         console.warn("[upload] persist print_ready flag failed:", persistErr);
       }
 
-      // Always return ok=true — print-ready is non-fatal so the rest of
-      // the upload pipeline (generate-previews, etc.) keeps running.
-      // previewJobId may be null when chaining was not requested or when
-      // print-ready was skipped/failed — caller falls back to enqueueing
-      // generate_previews itself in that case.
-      return { ok: true, previewJobId };
+      return { ok: true, previewJobId: null };
     },
     [productFamilyPrintConfig, productFamilySlug, updateUpload],
   );
