@@ -2208,12 +2208,19 @@ function InlinePreviewThumb({
     );
   }
 
+  // Derive aspect ratio from document dimensions, fallback to portrait A4
+  const w = document.page_width_mm ? Number(document.page_width_mm) : 210;
+  const h = document.page_height_mm ? Number(document.page_height_mm) : 297;
+  const isLandscape = w > h;
+  const thumbWidth = isLandscape ? 180 : 140;
+
   return (
     <div className="flex flex-col items-center gap-2">
       <button
         onClick={onClick}
+        style={{ width: thumbWidth, aspectRatio: `${w} / ${h}` }}
         className={cn(
-          "relative group w-[140px] aspect-[210/297] bg-muted/30 border border-border/60",
+          "relative group bg-muted/30 border border-border/60",
           "flex items-center justify-center overflow-hidden",
           "hover:border-primary/40 hover:shadow-md transition-all cursor-pointer"
         )}
