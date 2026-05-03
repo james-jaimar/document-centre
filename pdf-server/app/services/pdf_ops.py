@@ -1243,8 +1243,6 @@ class PdfOps:
                     exc,
                 )
 
-        dest_path = resolve_profile(dest_profile)
-        rgb_path = resolve_profile("srgb")
         intent_value = resolve_intent(intent)
 
         icc_dir = str(ICC_DIR)
@@ -1260,46 +1258,63 @@ class PdfOps:
 
         attempts: list[tuple[str, list[str]]] = []
 
-        # Attempt 1: full ICC conversion with K-preserve / overprint flags.
-        rich_cmd = [
-            settings.ghostscript_bin,
-            *common_safer,
-            "-dBATCH",
-            "-dNOPAUSE",
-            "-dNumRenderingThreads=4",
-            "-sDEVICE=pdfwrite",
-            "-dCompatibilityLevel=1.7",
-            "-sColorConversionStrategy=CMYK",
-            "-dProcessColorModel=/DeviceCMYK",
-            "-dOverrideICC=true",
-            f"-sDefaultRGBProfile={rgb_path}",
-            f"-sDefaultCMYKProfile={dest_path}",
-            f"-dRenderIntent={intent_value}",
-            "-dBlackPtComp=true",
-            "-dPreserveOverprintSettings=true",
-        ]
-        if preserve_black:
-            rich_cmd.append("-dKPreserve=2")
-        rich_cmd.extend(["-o", str(out_pdf), str(src)])
-        attempts.append(("rich_icc", rich_cmd))
+        # Resolve ICC profiles for attempts 1 & 2.  If the sRGB source
+        # profile or the destination CMYK profile is missing on disk we
+        # log a warning and skip straight to the built-in fallback
+        # (attempt 3) which needs no external ICC files at all.
+        try:
+            dest_path = resolve_profile(dest_profile)
+            rgb_path = resolve_profile("srgb")
+            icc_available = True
+        except (FileNotFoundError, ValueError) as icc_err:
+            logger.warning(
+                "to_print_ready_cmyk: ICC profiles unavailable (%s) — "
+                "skipping ICC attempts, falling through to built-in CMYK",
+                icc_err,
+            )
+            icc_available = False
 
-        # Attempt 2: core ICC conversion only (drop the flags most often
-        # rejected by older GS builds with exit 255 / empty stderr).
-        core_cmd = [
-            settings.ghostscript_bin,
-            *common_safer,
-            "-dBATCH",
-            "-dNOPAUSE",
-            "-dNumRenderingThreads=4",
-            "-sDEVICE=pdfwrite",
-            "-sColorConversionStrategy=CMYK",
-            "-dProcessColorModel=/DeviceCMYK",
-            "-dOverrideICC=true",
-            f"-sDefaultRGBProfile={rgb_path}",
-            f"-sDefaultCMYKProfile={dest_path}",
-            "-o", str(out_pdf), str(src),
-        ]
-        attempts.append(("core_icc", core_cmd))
+        if icc_available:
+            # Attempt 1: full ICC conversion with K-preserve / overprint flags.
+            rich_cmd = [
+                settings.ghostscript_bin,
+                *common_safer,
+                "-dBATCH",
+                "-dNOPAUSE",
+                "-dNumRenderingThreads=4",
+                "-sDEVICE=pdfwrite",
+                "-dCompatibilityLevel=1.7",
+                "-sColorConversionStrategy=CMYK",
+                "-dProcessColorModel=/DeviceCMYK",
+                "-dOverrideICC=true",
+                f"-sDefaultRGBProfile={rgb_path}",
+                f"-sDefaultCMYKProfile={dest_path}",
+                f"-dRenderIntent={intent_value}",
+                "-dBlackPtComp=true",
+                "-dPreserveOverprintSettings=true",
+            ]
+            if preserve_black:
+                rich_cmd.append("-dKPreserve=2")
+            rich_cmd.extend(["-o", str(out_pdf), str(src)])
+            attempts.append(("rich_icc", rich_cmd))
+
+            # Attempt 2: core ICC conversion only (drop the flags most often
+            # rejected by older GS builds with exit 255 / empty stderr).
+            core_cmd = [
+                settings.ghostscript_bin,
+                *common_safer,
+                "-dBATCH",
+                "-dNOPAUSE",
+                "-dNumRenderingThreads=4",
+                "-sDEVICE=pdfwrite",
+                "-sColorConversionStrategy=CMYK",
+                "-dProcessColorModel=/DeviceCMYK",
+                "-dOverrideICC=true",
+                f"-sDefaultRGBProfile={rgb_path}",
+                f"-sDefaultCMYKProfile={dest_path}",
+                "-o", str(out_pdf), str(src),
+            ]
+            attempts.append(("core_icc", core_cmd))
 
         # Attempt 3: CMYK conversion using GS built-in defaults (no
         # external profiles). Some GS packages can't load arbitrary ICCs.
