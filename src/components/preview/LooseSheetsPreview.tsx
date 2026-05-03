@@ -132,6 +132,7 @@ export default function LooseSheetsPreview({
                 width={pdfW}
                 height={pdfH}
                 style={{ filter: grayscaleFilter }}
+                cacheKey={pdfSource.cacheKey}
               />
             </div>
           </PageEffects>

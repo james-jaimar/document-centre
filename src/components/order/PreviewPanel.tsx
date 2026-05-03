@@ -476,14 +476,22 @@ export default function PreviewPanel({
   const isStaticType = !isBound && !isFold && !isRingBinder;
   const [signedPdfUrls, setSignedPdfUrls] = useState<Record<string, string>>({});
 
+  // Stabilise uniqueFilePaths so we don't re-sign when the array values
+  // haven't changed (option changes rebuild finalPages with new refs but
+  // the same file paths).
+  const prevFilePathsRef = useRef<string>("");
   const uniqueFilePaths = useMemo(() => {
     if (!isStaticType) return [];
     const paths = new Set<string>();
     finalPages.forEach((p) => { if (p.filePath) paths.add(p.filePath); });
-    return Array.from(paths);
+    return Array.from(paths).sort();
   }, [finalPages, isStaticType]);
 
+  const filePathsKey = uniqueFilePaths.join("|");
   useEffect(() => {
+    if (filePathsKey === prevFilePathsRef.current) return;
+    prevFilePathsRef.current = filePathsKey;
+
     if (uniqueFilePaths.length === 0) {
       setSignedPdfUrls({});
       return;
@@ -495,14 +503,18 @@ export default function PreviewPanel({
       if (!cancelled) setSignedPdfUrls({});
     });
     return () => { cancelled = true; };
-  }, [uniqueFilePaths]);
+  }, [filePathsKey]);
 
-  // Per-page PDF source: { url, pageNumber (1-based) }
+  // Per-page PDF source: { url, pageNumber (1-based), cacheKey (S3 path) }
   const pdfSources = useMemo(() => {
     if (!isStaticType) return undefined;
     return finalPages.map((p) => {
       if (!p.filePath || !signedPdfUrls[p.filePath]) return null;
-      return { url: signedPdfUrls[p.filePath], pageNumber: p.pageIndex + 1 };
+      return {
+        url: signedPdfUrls[p.filePath],
+        pageNumber: p.pageIndex + 1,
+        cacheKey: p.filePath,
+      };
     });
   }, [finalPages, signedPdfUrls, isStaticType]);
   const colorFlags = useMemo(() => finalPages.map((p) => p.isColor), [finalPages]);

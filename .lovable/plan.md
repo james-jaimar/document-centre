@@ -1,28 +1,47 @@
+
 ## Problem
 
-When a customer selects single-sided (simplex) printing for loose sheets, the preview inserts "Blank (Back)" pages after every content page. This is physically accurate for bound documents (where a simplex sheet has two faces), but for loose sheets it's unnecessary — the customer just wants to see their pages 1 through N.
+Every time the user changes a print option (page size, colour, sides), the preview re-downloads the full source PDF from S3 in South Africa. This is because:
 
-The screenshot confirms: "Blank (Back) of 8" is shown for a simplex loose-sheets order.
+1. Option changes cause `PreviewPanel` to recalculate `finalPages`
+2. This produces a new `uniqueFilePaths` array reference, triggering the signing `useEffect`
+3. A new signed URL string flows into `PdfPageView`, which creates a new `<Document file={...}>` — causing pdf.js to fetch the entire PDF again
+4. Each round-trip to S3 af-south-1 takes ~11 seconds on the local network
 
-## Performance Note
+Thumbnails (used by bound documents, ring binders, etc.) don't have this problem because they use a module-level `signedUrlCache` with TTL in `thumbnailUtils.ts`.
 
-The preview slowness is likely related to network latency (signed URL fetching and PDF worker loading), not a code issue. The previous fix already bundled the PDF worker locally, which should help in production. No additional performance changes are needed at this stage.
+## Solution: Client-side PDF blob cache
 
-## Plan
+### 1. Create a PDF blob cache module (`src/lib/pdfBlobCache.ts`)
 
-**File: `src/components/order/PreviewPanel.tsx`**
+A module-level `Map<string, ArrayBuffer>` keyed by the S3 object path (not the signed URL, which changes). When a PDF is needed:
+- Check the cache by object path
+- If cached, return the `ArrayBuffer` directly (no network)
+- If not cached, fetch the PDF via the signed URL, store the `ArrayBuffer`, and return it
 
-In `buildPageSequence()` (~line 226), the simplex blank-back injection currently runs for all simplex sections. Add a condition to skip blank-back insertion when the document is **not bound** (`!isBound`).
+Include a simple size limit (e.g. 500MB total) with LRU eviction to prevent unbounded memory growth. Also expose a `clearPdfCache()` for cleanup on logout/navigation.
 
-The change is a single guard: when `!isBound`, never emit `blank_back` faces for simplex pages. This means loose sheets and poster previews will show only the content pages, matching what the customer expects for single-sided printing.
+### 2. Update `PreviewPanel.tsx` — stabilise signed URL lifecycle
 
-Specifically, change the condition at line 226 from:
-```
-if (!section.is_duplex && !forceDuplex) {
-```
-to:
-```
-if (!section.is_duplex && !forceDuplex && isBound) {
-```
+- Prevent `uniqueFilePaths` from triggering re-signing when the actual paths haven't changed (use a ref-based comparison or serialize the array)
+- When signed URLs are obtained, pass the **S3 object path** alongside the signed URL to `PdfPageView` so the cache can key on the stable path
 
-This ensures blank backs are only emitted for bound products where physical sheet parity matters for spread layout.
+### 3. Update `PdfPageView.tsx` — use cached PDF data
+
+- Accept an optional `cacheKey` prop (the S3 object path)
+- On mount or when `cacheKey` changes, check the blob cache
+- If cached, pass the `ArrayBuffer` directly to react-pdf's `<Document file={{ data }}>`  — this bypasses the network entirely
+- If not cached, fetch via the signed URL, cache the result, then render
+- The `file` prop to `<Document>` only changes when the actual binary changes, not on every re-render
+
+### 4. Scope
+
+This applies to all product types that use `PdfPageView` (loose sheets, posters, flyers, business cards). Bound documents and ring binders already use thumbnail images which cache well via the browser and `signedUrlCache`.
+
+### What this achieves
+
+- First load: PDF downloads once (~11s on slow networks)
+- Subsequent option changes (size, colour, sides): instant — PDF served from memory
+- Page navigation within the same PDF: instant — already cached
+- Different document upload: fetches the new PDF, caches it
+- Session cleanup: cache cleared on logout or page unload
