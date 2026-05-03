@@ -474,8 +474,8 @@ class PdfOps:
             new_page = writer.add_blank_page(width=vh, height=vw)
             transform = (
                 Transformation()
-                .rotate(-90)
-                .translate(0, vw)
+                .rotate(90)
+                .translate(vh, 0)
             )
             new_page.merge_transformed_page(page, transform)
 
