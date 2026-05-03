@@ -696,3 +696,101 @@ def print_ready(
         raise exc
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# One-shot product preparation (CMYK → orient → resize)
+# ---------------------------------------------------------------------------
+@shared_task(bind=True, queue="documents")
+def prepare_for_product(
+    self,
+    asset_id: str,
+    job_id: str,
+    dominant_orientation: str | None = None,
+    target_width_mm: float | None = None,
+    target_height_mm: float | None = None,
+    fit_mode: str = "fit",
+    dest_profile: str | None = None,
+    intent: str = "relative_colorimetric",
+):
+    """Perform CMYK conversion, orientation normalisation, and optional
+    resize in one deterministic pipeline. The result is promoted to the
+    asset's ``normalized_storage_path`` and all stale page renders are
+    cleared so the next generate_previews job renders the final PDF.
+
+    This replaces the fragile multi-job client-side sequencing that
+    previously let Ghostscript revert pypdf page rotations.
+    """
+    db = _db()
+    try:
+        job_repo.mark_running(db, job_id)
+        asset = asset_repo.get_asset(db, asset_id)
+        if not asset:
+            raise ValueError(f"Asset not found: {asset_id}")
+
+        prefix = _tenant_prefix(asset.get("source_storage_path"))
+        with Workspace() as ws:
+            src = _download_asset_pdf(db, asset_id, ws)
+            out_pdf = ws.path("prepared.pdf")
+
+            stats = pdf_ops.prepare_for_product(
+                src, out_pdf,
+                dominant_orientation=dominant_orientation,
+                target_width_mm=target_width_mm,
+                target_height_mm=target_height_mm,
+                fit_mode=fit_mode,
+                dest_profile=dest_profile,
+                intent=intent,
+            )
+
+            storage_path = unique_name(f"{prefix}derived/prepared", ".pdf")
+            storage.upload(out_pdf, storage_path, "application/pdf")
+
+            derived_file_repo.create_file(
+                db,
+                asset_id=asset_id,
+                job_id=job_id,
+                kind="prepared_pdf",
+                storage_path=storage_path,
+                media_type="application/pdf",
+                metadata=stats,
+            )
+
+            info = pdf_ops.inspect(out_pdf)
+
+            # Update metadata to record what was done
+            existing_meta = asset.get("metadata") or {}
+            new_meta = {**existing_meta}
+            if dest_profile:
+                new_meta["print_ready_profile"] = dest_profile
+                new_meta["print_ready_intent"] = intent
+
+            asset_repo.update_asset(db, asset_id, {
+                "normalized_storage_path": storage_path,
+                "page_count": info["page_count"],
+                "width_pt": info["width_pt"],
+                "height_pt": info["height_pt"],
+                "boxes": info["boxes"],
+                "metadata": new_meta,
+                "thumbnail_storage_path": None,
+                "preview_storage_path": None,
+            })
+            removed = derived_file_repo.clear_page_renders(db, asset_id)
+
+            result = {
+                **stats,
+                "storage_path": storage_path,
+                "normalized_storage_path": storage_path,
+                "page_count": info["page_count"],
+                "width_pt": info["width_pt"],
+                "height_pt": info["height_pt"],
+                "cleared_page_renders": removed,
+            }
+            job_repo.mark_done(db, job_id, result)
+            return result
+
+    except Exception as exc:
+        job_repo.mark_failed(db, job_id, traceback.format_exc())
+        raise exc
+    finally:
+        db.close()
