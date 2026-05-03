@@ -83,6 +83,8 @@ export interface PreviewComponentProps {
 export interface PdfSource {
   url: string;
   pageNumber: number;
+  /** Stable S3 object path — used as cache key to avoid re-downloading */
+  cacheKey?: string;
 }
 
 /** Selected paper/canvas size in millimetres */
