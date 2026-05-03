@@ -1,39 +1,28 @@
-
 ## Problem
 
-Two related issues:
+When a customer selects single-sided (simplex) printing for loose sheets, the preview inserts "Blank (Back)" pages after every content page. This is physically accurate for bound documents (where a simplex sheet has two faces), but for loose sheets it's unnecessary — the customer just wants to see their pages 1 through N.
 
-1. **CSP blocks PDF worker**: The `pdfjs` worker is loaded from `unpkg.com`, which is not in the `script-src` CSP directive in `customHttp.yml`. Production blocks it, causing the PDF to fall back to a "fake worker" (slower, potentially broken).
+The screenshot confirms: "Blank (Back) of 8" is shown for a simplex loose-sheets order.
 
-2. **Preview disappears**: When the PDF worker fails and `react-pdf` can't render the document, the `PdfPageView` component shows "Preview unavailable". This likely cascades — the preview briefly shows the thumbnail fallback, then switches to the PDF path (because `pdfSources` is set), which fails.
+## Performance Note
 
-## Fix
+The preview slowness is likely related to network latency (signed URL fetching and PDF worker loading), not a code issue. The previous fix already bundled the PDF worker locally, which should help in production. No additional performance changes are needed at this stage.
 
-### 1. Bundle the PDF worker locally instead of loading from CDN
+## Plan
 
-Copy the `pdfjs-dist` worker file to `public/` at build time, and reference it with a local path. This avoids CSP issues entirely.
+**File: `src/components/order/PreviewPanel.tsx`**
 
-**In `PdfPageView.tsx`**, change line 8 from:
-```ts
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+In `buildPageSequence()` (~line 226), the simplex blank-back injection currently runs for all simplex sections. Add a condition to skip blank-back insertion when the document is **not bound** (`!isBound`).
+
+The change is a single guard: when `!isBound`, never emit `blank_back` faces for simplex pages. This means loose sheets and poster previews will show only the content pages, matching what the customer expects for single-sided printing.
+
+Specifically, change the condition at line 226 from:
+```
+if (!section.is_duplex && !forceDuplex) {
 ```
 to:
-```ts
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url
-).toString();
+```
+if (!section.is_duplex && !forceDuplex && isBound) {
 ```
 
-This uses Vite's `import.meta.url` resolution to bundle/reference the worker from `node_modules` directly, keeping it same-origin. The existing CSP already allows `worker-src 'self' blob:`.
-
-### 2. No CSP changes needed
-
-The `worker-src 'self' blob:` directive already permits same-origin workers and blob workers, so bundling locally is sufficient.
-
-### 3. Verify thumbnail fallback still works
-
-The thumbnail (image) path in `LooseSheetsPreview` should continue working when no `pdfSource` is provided. No changes needed there.
-
-## Files changed
-- `src/components/preview/PdfPageView.tsx` (line 8 — worker source)
+This ensures blank backs are only emitted for bound products where physical sheet parity matters for spread layout.
