@@ -584,10 +584,11 @@ export default function PreviewPanel({
   }, [computedPageRoles, finalPages]);
 
   const isBusinessCards = productType === "business_cards";
+  const isPoster = productFamilySlug === "posters";
 
   const bleedFlags = useMemo(() => {
-    // Business cards: server thumbnails are already trim-cropped — always full bleed
-    if (isBusinessCards) return computedPageRoles.map(() => true);
+    // Business cards & posters: always full bleed — edge-to-edge rendering
+    if (isBusinessCards || isPoster) return computedPageRoles.map(() => true);
     const bleedScope = effects?.bleed ?? "none";
     return computedPageRoles.map((role) => {
       if (["pvc_cover_front", "pvc_cover_back", "inside_back_cover_card", "back_cover_card"].includes(role)) return true;
@@ -601,7 +602,7 @@ export default function PreviewPanel({
       if (bleedScope === "covers" && (role === "front_cover" || role === "back_cover")) return true;
       return false;
     });
-  }, [computedPageRoles, effects?.bleed, isBusinessCards, isRingBinder]);
+  }, [computedPageRoles, effects?.bleed, isBusinessCards, isPoster, isRingBinder]);
 
   const pageAspectRatio = useMemo(() => {
     const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
