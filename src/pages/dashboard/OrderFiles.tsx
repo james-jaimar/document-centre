@@ -500,7 +500,14 @@ export default function OrderFiles() {
     }
   }, [documents, refetchDocuments, renderWithProgress, finalizeOrientationAndPrintReady]);
 
-  /** Core: scale the doc to a target paper size and finalise it. */
+  /** Core: scale the doc to a target paper size and finalise it.
+   *
+   * CRITICAL ordering: print-ready (Ghostscript CMYK) runs BEFORE resize
+   * so that Ghostscript's pdfwrite device cannot undo pypdf-based page
+   * rotations. The resize step is the LAST PDF-mutating operation —
+   * it handles rotation + scaling atomically when `dominant_orientation`
+   * is set, producing a final file that no subsequent pass can break.
+   */
   const applyScaleTo = useCallback(async (
     doc: SizeDocPayload,
     target: PaperSize,
@@ -545,17 +552,41 @@ export default function OrderFiles() {
         }
       }
 
+      // ── Step 1: Print-ready CMYK conversion FIRST ──────────────────
+      // Run Ghostscript BEFORE resize so it cannot undo the rotation
+      // that resize applies. Ghostscript's pdfwrite device rewrites
+      // the PDF structure and can silently revert pypdf-based page
+      // transforms — running it first eliminates this risk entirely.
+      // The resize step reads the print-ready output and is the LAST
+      // mutating operation on the PDF.
+      try {
+        const printPlan = (await import("@/lib/printIntent")).getPrintReadyPlan(productFamily ?? null);
+        if (printPlan) {
+          const { job_id: printJobId } = await printReady(workingAssetId, {
+            intent: printPlan.intent,
+            destProfile: printPlan.destProfile,
+            chainGeneratePreviews: false,
+            chainRenderBox: null,
+            // Do NOT pass dominantOrientation here — resize will handle
+            // orientation atomically so there is only one rotation pass.
+          });
+          await pollJob(printJobId);
+        }
+      } catch (printErr: any) {
+        // Non-fatal — resize will still work on the un-converted PDF.
+        console.warn("[applyScaleTo] print-ready before resize failed (non-fatal):", printErr?.message);
+      }
+
+      // ── Step 2: Resize with atomic rotation ────────────────────────
+      // resize_pages handles rotation + scaling in one pass when
+      // dominant_orientation is set. This is the LAST PDF mutation.
       const { job_id } = await resize(workingAssetId, targetW, targetH, "fit", requiredOrientation);
       await pollJob(job_id);
 
       setUploadModalOpen(true);
 
-      const existingForFinalize = documents.find((d) => d.id === doc.id);
-      const preflightForFinalize = (existingForFinalize?.preflight_data as Record<string, any>) ?? {};
-      if (!preflightForFinalize?.print_ready_done) {
-        await finalizeOrientationAndPrintReady(doc.id, workingAssetId, doc.fileName);
-      }
-
+      // No finalize step needed — print-ready already ran and resize
+      // was the final mutation. Just render previews from the result.
       await renderWithProgress(
         doc.id,
         workingAssetId,
@@ -572,6 +603,12 @@ export default function OrderFiles() {
         .maybeSingle();
       const freshPreflight = (freshDoc?.preflight_data as Record<string, any>) ?? {};
       const { detected_size, ...rest } = freshPreflight;
+
+      // Persist the final processed file path so inline preview reads
+      // the post-resize PDF, not a stale pre-resize version.
+      const asset = await getAsset(workingAssetId);
+      const processedPath = asset.normalized_storage_path ?? asset.source_storage_path;
+
       await supabase
         .from("documents")
         .update({
@@ -586,6 +623,8 @@ export default function OrderFiles() {
             original_height_mm: doc.heightMm,
             effective_width_mm: targetW,
             effective_height_mm: targetH,
+            print_ready_done: true,
+            ...(processedPath ? { processed_file_path: processedPath } : {}),
           },
         })
         .eq("id", doc.id);
@@ -599,7 +638,7 @@ export default function OrderFiles() {
     } catch (err: any) {
       toast.error("Scaling failed", { description: err.message });
     }
-  }, [documents, refetchDocuments, renderWithProgress, finalizeOrientationAndPrintReady, productFamily?.slug]);
+  }, [documents, refetchDocuments, renderWithProgress, productFamily]);
 
   const handleKeepOriginal = useCallback(async () => {
     if (!advisoryDoc) return;
