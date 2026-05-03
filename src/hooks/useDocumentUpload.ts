@@ -418,47 +418,35 @@ export function useDocumentUpload(
         chainRenderBox?: [number, number, number, number] | null;
       },
     ): Promise<{ ok: boolean; previewJobId: string | null }> => {
-      // ── Defensive orientation normalisation ────────────────────────
-      // For products with a mandatory orientation (Bound Documents,
-      // Ring Binders, Booklets, Stapled/Loose Pages = portrait;
-      // Presentations = landscape) we run normalize-orientation BEFORE
-      // print-ready. This is critical when this function is called after
-      // a resize step (e.g. from the size advisory) because resize_pages
-      // preserves each page's original orientation — a landscape table
-      // page will survive the resize and still be landscape. Without
-      // this pass, the final PDF displayed to the customer will contain
-      // un-rotated landscape pages in a portrait product.
       const requiredOrient = requiredOrientationFor(productFamilySlug);
-      if (requiredOrient) {
-        try {
-          updateUpload(fileName, { progress: 52, statusText: "Aligning page orientation…" });
-          const { job_id: normJobId } = await normalizeOrientation(assetId, requiredOrient);
-          await pollJob(normJobId);
-        } catch (normErr: any) {
-          // Non-fatal — fall back to the un-normalised PDF.
-          console.warn("[upload] finalize normalize-orientation failed:", normErr);
-        }
-      }
 
-      // Print-ready CMYK conversion (driven by per-product-family settings).
-      // Non-fatal: a failure must NOT block the upload — we still want
-      // previews and ordering to work even if the CMYK pass struggles.
+      // ── 1. Print-ready CMYK conversion FIRST ──────────────────────
+      // Run Ghostscript colour conversion BEFORE orientation enforcement.
+      // Ghostscript's pdfwrite device can (and does) undo pypdf-based
+      // page rotations, so we must let it finish rewriting the PDF before
+      // we touch orientation. Non-fatal: a failure must NOT block the
+      // upload — we still want previews and ordering to work.
       const printPlan = getPrintReadyPlan(productFamilyPrintConfig);
       let printReadyOk = false;
       let printReadyError: string | null = null;
       let previewJobId: string | null = null;
       if (printPlan) {
         try {
-          updateUpload(fileName, { progress: 55, statusText: "Optimising for print…" });
+          updateUpload(fileName, { progress: 52, statusText: "Optimising for print…" });
           const { job_id: printJobId, preview_job_id } = await printReady(assetId, {
             intent: printPlan.intent,
             destProfile: printPlan.destProfile,
-            chainGeneratePreviews: chainOpts?.chainGeneratePreviews ?? false,
-            chainRenderBox: chainOpts?.chainRenderBox ?? null,
+            // Do NOT chain generate_previews here — we still need to
+            // normalize orientation after print-ready finishes, so previews
+            // must wait until after that step.
+            chainGeneratePreviews: false,
+            chainRenderBox: null,
             dominantOrientation: requiredOrient,
           });
           await pollJob(printJobId);
-          previewJobId = preview_job_id ?? null;
+          // We deliberately ignore preview_job_id from print-ready because
+          // we're going to run orientation normalisation next and then
+          // enqueue generate_previews fresh afterwards.
           printReadyOk = true;
         } catch (printErr: any) {
           printReadyError = printErr?.message ?? String(printErr);
@@ -466,6 +454,24 @@ export function useDocumentUpload(
         }
       } else {
         printReadyOk = true; // nothing to do = success
+      }
+
+      // ── 2. Orientation normalisation AFTER print-ready ─────────────
+      // For products with a mandatory orientation (Bound Documents,
+      // Ring Binders, Booklets, Stapled/Loose Pages = portrait;
+      // Presentations = landscape) we normalise AFTER Ghostscript has
+      // finished rewriting the PDF. This guarantees that Ghostscript
+      // cannot undo the rotation. The normalised PDF becomes the final
+      // version from which previews are rendered.
+      if (requiredOrient) {
+        try {
+          updateUpload(fileName, { progress: 58, statusText: "Aligning page orientation…" });
+          const { job_id: normJobId } = await normalizeOrientation(assetId, requiredOrient);
+          await pollJob(normJobId);
+        } catch (normErr: any) {
+          // Non-fatal — fall back to the un-normalised PDF.
+          console.warn("[upload] finalize normalize-orientation failed:", normErr);
+        }
       }
 
       // Persist what actually happened so the UI / admin can see when
