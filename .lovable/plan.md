@@ -1,54 +1,80 @@
+I’ll make these as a focused housekeeping pass, with one important note: the booklet blank-page requirement needs both app changes and PDF server changes, because the actual saved/production PDF must be padded to a multiple of 4 — not just visually faked in the preview.
 
-# Housekeeping Fixes
+Plan:
 
-## Issues and Fixes
+1. Fix auto tab labels in the drawer
+- Update the tab auto-insert flow so each created tab is explicitly saved with the correct label: `Tab 1`, `Tab 2`, `Tab 3`, etc.
+- Sort displayed tab rows by their physical anchor/page position so the labels and colours stay aligned with the preview.
+- Ensure the drawer uses `page_range_start` as the true “After Page N” value, not `sort_order`, so the display cannot drift into `Tab 1, Tab 1, Tab 3, Tab 3, Tab 5`.
 
-### 1. Inline preview thumbnail uses hardcoded portrait aspect ratio
-**File:** `src/pages/dashboard/OrderFiles.tsx` (line 2216)
+Files:
+- `src/components/order/TabInsertDrawer.tsx`
+- `src/pages/dashboard/OrderBuild.tsx`
+- possibly `src/hooks/useOrderBuilder.ts` to allow label/color fields when creating tab sections.
 
-The `InlinePreviewThumb` component hardcodes `aspect-[210/297]` (portrait A4). When the uploaded document is landscape (e.g., a poster image or business card at 90x50mm), the preview squashes it into portrait.
+2. Fix hole punch marks on reverse/even faces
+- Adjust the preview renderer so punch holes are shown on the left for front/odd faces and on the right for reverse/even faces.
+- The current code already does this for explicit back roles like `blank_back`, but not for duplex content pages. I’ll make it also account for the physical face index/page parity.
+- Apply the same rule anywhere `PageEffects` is used so loose sheets, bound documents, and saved order previews agree.
 
-**Fix:** Use the document's `page_width_mm` and `page_height_mm` to compute a dynamic aspect ratio. Fall back to 210/297 only when dimensions are unavailable.
+Files:
+- `src/components/preview/PageEffects.tsx`
+- `src/components/preview/LooseSheetsPreview.tsx`
+- `src/components/preview/FlipBook.tsx` / related preview components if they are the call sites passing page roles.
 
-### 2. Posters showing "Front Cover" label in PreviewPanel
-**File:** `src/components/order/PreviewPanel.tsx` (lines 57-63, 700-703)
+3. Make booklets physically correct: pad to multiples of 4
+- For saddle-stitched/booklet products, add real blank pages until the page count is divisible by 4.
+- Example: a 10-page PDF becomes a 12-page PDF with blank pages 11 and 12.
+- The live preview will show those blanks as real white pages, and page numbering will reflect `Page 11` / `Page 12` rather than silently ending at 10.
+- The saved preview snapshot used after order placement will use the same padding logic.
+- The PDF server will get a proper “pad pages to multiple of 4” step so the normalized production PDF itself is saved with those blank pages. This is necessary for future booklet imposition/download to work correctly.
 
-The `SECTION_LABELS` map and the `pageInfoText` logic don't have product-aware overrides for posters/flyers. A poster's `front_cover` section should display as "Print" or "Poster", not "Front Cover".
+Frontend files:
+- `src/components/order/PreviewPanel.tsx`
+- `src/lib/orders/buildPreviewSnapshot.ts`
+- `src/hooks/useDocumentUpload.ts`
+- `src/pages/dashboard/OrderFiles.tsx` or `OrderBuild.tsx` if an existing unpadded booklet needs correcting before configure/add-to-cart.
 
-**Fix:** Make the label resolution product-family-aware. When `productFamilySlug` is `posters`, map `front_cover` to "Poster". When it's `flyers`, map `front_cover`/`back_cover` to "Front"/"Back". Pass `productFamilySlug` into the label function.
+PDF server files:
+- `pdf-server/app/services/pdf_ops.py`
+- `pdf-server/app/schemas/assets.py`
+- `pdf-server/app/tasks/operation_tasks.py`
+- `pdf-server/app/web/routes.py`
+- `src/lib/documentCentreApi.ts`
 
-### 3. Poster preview showing white border instead of edge-to-edge
-**File:** `src/components/order/PreviewPanel.tsx` (bleed flags logic, line 573-589)
+4. Add business card “Auto-assign Front + Back”
+- Reuse the flyer pattern for business cards.
+- If the selected business-card PDF has 2+ pages, show `Auto-assign Front + Back`.
+- It will create:
+  - Front section: page 1 only (`page_range_start = 0`, `page_range_end = 0`)
+  - Back section: page 2 only (`page_range_start = 1`, `page_range_end = 1`)
+- This avoids manually assigning the same 2-page file twice.
 
-When a poster image fills edge-to-edge, the preview should show it without a white border. Currently the bleed logic only enables full bleed for specific product types (business cards, PVC covers).
+Files:
+- `src/components/order/SectionActions.tsx`
+- `src/pages/dashboard/OrderFiles.tsx`
 
-**Fix:** For posters, default `bleedFlags` to `true` for all pages (same treatment as business cards) so the preview renders edge-to-edge.
+5. Properly use TrimBox for business-card configure preview
+- The current thumbnail/upload stage can show the TrimBox correctly, but the configure preview’s inline PDF renderer is still rendering the full PDF page/media canvas.
+- I’ll make the configure preview use the same finished-size geometry as upload:
+  - prefer `TrimBox`
+  - fallback to `CropBox`
+  - then `MediaBox`
+- For business cards, if the raw PDF has bleed/crop marks but a valid TrimBox, the preview canvas and rendered content should be 90×50mm, not the oversized media box.
+- If PDF.js cannot directly render the TrimBox region cleanly from the source PDF, I’ll route business-card configure preview to the server-generated trimmed thumbnails instead of the raw inline PDF. That is safer because those thumbnails are already crop-rendered correctly.
 
-### 4. Flyer auto-assign creating 4 pages instead of 2
-**File:** `src/components/order/PreviewPanel.tsx` (line 178 in `buildPageSequence`)
+Files:
+- `src/components/order/PreviewPanel.tsx`
+- `src/components/preview/LooseSheetsPreview.tsx`
+- `src/components/preview/PdfPageView.tsx` only if needed for box-aware PDF rendering.
 
-When a 2-page document is auto-assigned as front + back (page_range 0-0 and 1-1), `buildPageSequence` ignores `page_range_start`/`page_range_end` and iterates ALL pages of the document per section, doubling the count to 4.
+6. Keep page counts and pricing honest after booklet padding
+- When booklet padding adds blank pages, update the document row/page count so the app, cart, pricing, order snapshot, and operator-facing job data all agree.
+- Avoid hidden/phantom pages: the blank pages are real booklet pages and should be represented consistently.
 
-**Fix:** In `buildPageSequence`, use `section.page_range_start` and `section.page_range_end` to constrain the page iteration loop. When set, only iterate pages within that range rather than the full document.
-
-### 5. Business cards showing "Front Cover / Body Pages / Back Cover" in SectionActions
-**File:** `src/components/order/SectionActions.tsx`
-
-The `getActions` function has no case for `business_cards` or `business-cards`, so it falls through to `BOUND_ACTIONS` which shows "Front Cover / Body Pages / Back Cover".
-
-**Fix:** Add a `BUSINESS_CARD_ACTIONS` array with "Front" and "Back" labels (similar to flyers but without "optional"), and add slug matching in `getActions`.
-
-### 6. Business cards configure step showing media box instead of trim box
-**File:** `src/components/order/PreviewPanel.tsx` (line 591-598)
-
-The `pageAspectRatio` and `pdfSizeMm` are derived from `page_width_mm`/`page_height_mm` on the document row. If these were set from the media box (full bleed area) rather than the trim box during upload, the configure preview will show a different crop than the upload preview.
-
-**Fix:** When a document has `trim_box_pt` in its metadata, derive `page_width_mm`/`page_height_mm` from the trim box dimensions instead of the media box. This should be done during the upload finalization step so the document row always reflects the trim box dimensions for products that have one.
-
----
-
-## Files to Modify
-
-1. `src/pages/dashboard/OrderFiles.tsx` — Dynamic aspect ratio in `InlinePreviewThumb`
-2. `src/components/order/PreviewPanel.tsx` — Product-aware labels, poster bleed, page range filtering in `buildPageSequence`
-3. `src/components/order/SectionActions.tsx` — Business card section actions
+Validation after implementation:
+- Ring binder with 5 auto tabs: drawer shows `Tab 1` through `Tab 5` and preview colours/labels match.
+- Loose sheets with 2-hole/4-hole punching: front faces show left holes, reverse/even faces show right holes.
+- 10-page booklet: configure preview shows 12 pages, with pages 11 and 12 blank; saved PDF/page count is 12.
+- 2-page business card: `Auto-assign Front + Back` appears and assigns page 1/front, page 2/back.
+- Business-card configure preview uses the finished TrimBox (90×50mm) rather than the full media/crop-mark canvas.
