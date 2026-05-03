@@ -259,6 +259,14 @@ export async function renderDocumentThumbnails(
   // row write triggers a React Query refetch.
   delete nextPreflight.orientation_mismatch;
 
+  // Persist the processed PDF path so the inline PDF preview renders the
+  // post-conversion/rotation/CMYK file — NOT the original upload. Without
+  // this, PdfPageView would fetch the raw DOCX upload or pre-rotation PDF.
+  const processedPath = asset.normalized_storage_path ?? asset.source_storage_path;
+  if (processedPath) {
+    nextPreflight.processed_file_path = processedPath;
+  }
+
   await supabase
     .from("documents")
     .update({
