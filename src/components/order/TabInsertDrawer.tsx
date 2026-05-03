@@ -114,7 +114,7 @@ export default function TabInsertDrawer({
     const interval = totalBodyPages / (tabCount + 1);
     for (let i = 1; i <= tabCount; i++) {
       const targetPage = Math.round(interval * i);
-      await onAddTab(targetPage);
+      await onAddTab(targetPage, `Tab ${i}`);
     }
     toast.success(`${tabCount} tab dividers auto-inserted`);
   }, [tabSections, bodyPages, tabCount, onAddTab, onDeleteTab]);
