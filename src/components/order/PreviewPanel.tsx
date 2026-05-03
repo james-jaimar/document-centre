@@ -62,6 +62,21 @@ const SECTION_LABELS: Record<string, string> = {
   tab: "Tab",
 };
 
+/** Product-aware section label overrides */
+const PRODUCT_SECTION_LABELS: Record<string, Record<string, string>> = {
+  posters: { front_cover: "Poster" },
+  flyers: { front_cover: "Front", back_cover: "Back" },
+  business_cards: { front_cover: "Front", back_cover: "Back" },
+  "business-cards": { front_cover: "Front", back_cover: "Back" },
+};
+
+function getSectionLabel(sectionType: string, productFamilySlug?: string): string {
+  if (productFamilySlug && PRODUCT_SECTION_LABELS[productFamilySlug]?.[sectionType]) {
+    return PRODUCT_SECTION_LABELS[productFamilySlug][sectionType];
+  }
+  return SECTION_LABELS[sectionType] ?? sectionType;
+}
+
 const BOUND_TYPES = new Set([
   "wire_bound", "comb_bound", "saddle_stitched", "perfect_bound", "ring_binder",
 ]);
