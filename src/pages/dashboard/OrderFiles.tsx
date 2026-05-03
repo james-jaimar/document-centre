@@ -828,12 +828,19 @@ export default function OrderFiles() {
         `Rotating to ${targetLabel} and rendering pages…`,
       );
 
-      // Defensive re-assert.
+      // Re-read preflight AFTER rendering so processed_file_path survives.
+      const { data: freshDoc2 } = await supabase
+        .from("documents")
+        .select("preflight_data")
+        .eq("id", orientationDoc.id)
+        .maybeSingle();
+      const freshPreflight2 = (freshDoc2?.preflight_data as Record<string, any>) ?? {};
+      const { orientation_mismatch: _om2, ...freshRest2 } = freshPreflight2;
       await supabase
         .from("documents")
         .update({
           preflight_data: {
-            ...preflightRest,
+            ...freshRest2,
             awaiting_review: false,
             orientation_resolved: true,
             orientation_action: "rotated",
