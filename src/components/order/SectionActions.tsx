@@ -93,6 +93,7 @@ export default function SectionActions({
   onAutoAssignBrochure,
   onAutoAssignPanels,
   onAutoAssignFlyer,
+  onAutoAssignBusinessCard,
 }: SectionActionsProps) {
   const actions = getActions(familySlug);
   const showAutoAssign =
