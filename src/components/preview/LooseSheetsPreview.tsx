@@ -143,15 +143,10 @@ export default function LooseSheetsPreview({
   return (
     <div className="flex items-center justify-center" style={{ width, height }}>
       <div
-        className="relative bg-card border border-border shadow-lg overflow-hidden"
+        className="relative bg-white overflow-hidden"
         style={{
           width: pageWidth,
           height: pageHeight,
-          boxShadow: `
-            2px 2px 0 hsl(var(--border)),
-            4px 4px 0 hsl(var(--border)),
-            6px 6px 12px hsl(var(--foreground) / 0.1)
-          `,
         }}
       >
         <div
