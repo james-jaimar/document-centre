@@ -503,11 +503,9 @@ export default function OrderFiles() {
 
   /** Core: scale the doc to a target paper size and finalise it.
    *
-   * CRITICAL ordering: print-ready (Ghostscript CMYK) runs BEFORE resize
-   * so that Ghostscript's pdfwrite device cannot undo pypdf-based page
-   * rotations. The resize step is the LAST PDF-mutating operation —
-   * it handles rotation + scaling atomically when `dominant_orientation`
-   * is set, producing a final file that no subsequent pass can break.
+   * Uses the single-shot `prepareForProduct` server endpoint that performs
+   * CMYK → orientation → resize in one atomic pipeline. No more multi-job
+   * sequencing where Ghostscript can undo pypdf-based page rotations.
    */
   const applyScaleTo = useCallback(async (
     doc: SizeDocPayload,
@@ -553,41 +551,23 @@ export default function OrderFiles() {
         }
       }
 
-      // ── Step 1: Print-ready CMYK conversion FIRST ──────────────────
-      // Run Ghostscript BEFORE resize so it cannot undo the rotation
-      // that resize applies. Ghostscript's pdfwrite device rewrites
-      // the PDF structure and can silently revert pypdf-based page
-      // transforms — running it first eliminates this risk entirely.
-      // The resize step reads the print-ready output and is the LAST
-      // mutating operation on the PDF.
-      try {
-        const printPlan = (await import("@/lib/printIntent")).getPrintReadyPlan(productFamily ?? null);
-        if (printPlan) {
-          const { job_id: printJobId } = await printReady(workingAssetId, {
-            intent: printPlan.intent,
-            destProfile: printPlan.destProfile,
-            chainGeneratePreviews: false,
-            chainRenderBox: null,
-            // Do NOT pass dominantOrientation here — resize will handle
-            // orientation atomically so there is only one rotation pass.
-          });
-          await pollJob(printJobId);
-        }
-      } catch (printErr: any) {
-        // Non-fatal — resize will still work on the un-converted PDF.
-        console.warn("[applyScaleTo] print-ready before resize failed (non-fatal):", printErr?.message);
-      }
-
-      // ── Step 2: Resize with atomic rotation ────────────────────────
-      // resize_pages handles rotation + scaling in one pass when
-      // dominant_orientation is set. This is the LAST PDF mutation.
-      const { job_id } = await resize(workingAssetId, targetW, targetH, "fit", requiredOrientation);
+      // ── Single server call: CMYK → orient → resize ────────────────
+      // The server performs all mutations in the correct deterministic
+      // order. No more multi-job sequencing.
+      const printPlan = (await import("@/lib/printIntent")).getPrintReadyPlan(productFamily ?? null);
+      const { job_id } = await prepareForProduct(workingAssetId, {
+        dominantOrientation: requiredOrientation,
+        targetWidthMm: targetW,
+        targetHeightMm: targetH,
+        fitMode: "fit",
+        destProfile: printPlan?.destProfile ?? null,
+        intent: printPlan?.intent,
+      });
       await pollJob(job_id);
 
       setUploadModalOpen(true);
 
-      // No finalize step needed — print-ready already ran and resize
-      // was the final mutation. Just render previews from the result.
+      // Render previews from the final prepared PDF
       await renderWithProgress(
         doc.id,
         workingAssetId,
@@ -605,8 +585,7 @@ export default function OrderFiles() {
       const freshPreflight = (freshDoc?.preflight_data as Record<string, any>) ?? {};
       const { detected_size, ...rest } = freshPreflight;
 
-      // Persist the final processed file path so inline preview reads
-      // the post-resize PDF, not a stale pre-resize version.
+      // Persist the final processed file path
       const asset = await getAsset(workingAssetId);
       const processedPath = asset.normalized_storage_path ?? asset.source_storage_path;
 
