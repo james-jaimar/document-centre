@@ -624,6 +624,9 @@ export function usePlaceOrder() {
             }
 
             if (needsGrayscale || needsResize) {
+              // Determine required orientation from product family slug
+              const { requiredOrientationFor } = await import("@/lib/orders/orientationPolicy");
+              const dominantOrientation = requiredOrientationFor(item.product_families?.slug);
               processingPromises.push(
                 processDocumentForProduction({
                   backendAssetId: doc.backend_asset_id,
@@ -631,6 +634,7 @@ export function usePlaceOrder() {
                   needsResize,
                   targetWidthMm: targetW,
                   targetHeightMm: targetH,
+                  dominantOrientation,
                 })
               );
             }
