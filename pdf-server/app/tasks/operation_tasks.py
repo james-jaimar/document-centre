@@ -598,6 +598,7 @@ def print_ready(
     chain_generate_previews: bool = False,
     chain_render_box: list[float] | None = None,
     chain_job_id: str | None = None,
+    dominant_orientation: str | None = None,
 ):
     db = _db()
     try:
@@ -633,6 +634,21 @@ def print_ready(
                 intent=intent,
                 preserve_black=True,
             )
+
+            if dominant_orientation in ("portrait", "landscape"):
+                oriented_pdf = ws.path("print-ready-oriented.pdf")
+                orient_stats = pdf_ops.normalize_orientation(
+                    out_pdf,
+                    oriented_pdf,
+                    dominant=dominant_orientation,
+                )
+                if not orient_stats.get("skipped"):
+                    out_pdf = oriented_pdf
+                stats = {
+                    **stats,
+                    "final_orientation": dominant_orientation,
+                    "final_orientation_stats": orient_stats,
+                }
 
 
             storage_path = unique_name(f"{prefix}derived/print-ready", ".pdf")
