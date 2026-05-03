@@ -790,26 +790,27 @@ class PdfOps:
         /Rotate, the orientation check misclassifies them and the landscape
         content gets squeezed into a portrait canvas (clipped at the bottom).
 
-        For each page we:
-          1. Bake any /Rotate hint into the content stream FIRST so the
-             page's mediabox and content match what users see.
-          2. Decide target orientation based on the (now correct) mediabox.
-          3. Scale + center onto a same-orientation canvas of the target size.
+        When ``dominant_orientation`` is set (e.g. "portrait"), this function
+        performs an ATOMIC rotate-then-resize in a single PDF write pass:
+          1. Bake any /Rotate hint into the content stream.
+          2. If the page's visual orientation doesn't match the dominant,
+             rotate the content 90° CW onto a swapped-dimension canvas FIRST.
+          3. THEN scale + centre the (now correctly oriented) content onto the
+             final target canvas.
 
-        After this pass, ``normalize_orientation`` (when invoked) can rotate
-        landscape sheets to match the dominant orientation with full geometry
-        intact, so downstream renderers don't clip.
+        This replaces the fragile multi-job handoff (normalize-orientation →
+        resize → print-ready) where Ghostscript's pdfwrite device could
+        "repair" pypdf's merge_transformed_page output and revert pages to
+        their original landscape geometry.
         """
         reader = PdfReader(str(src))
         writer = PdfWriter()
         target_w_base = width_mm * mm
         target_h_base = height_mm * mm
         target_landscape = target_w_base > target_h_base
-        force_landscape = None
-        if dominant_orientation == "portrait":
-            force_landscape = False
-        elif dominant_orientation == "landscape":
-            force_landscape = True
+
+        force_portrait = dominant_orientation == "portrait"
+        force_landscape_mode = dominant_orientation == "landscape"
 
         for page in reader.pages:
             # Step 1 — bake /Rotate into content. After this, page.mediabox
@@ -818,13 +819,55 @@ class PdfOps:
 
             src_w = float(page.mediabox.width)
             src_h = float(page.mediabox.height)
-            page_landscape = force_landscape if force_landscape is not None else src_w > src_h
+            page_is_landscape = src_w > src_h
 
-            # Step 2 — pick same-orientation target canvas for this page.
-            if page_landscape == target_landscape:
-                tw, th = target_w_base, target_h_base
+            # Step 2 — atomic rotation when dominant_orientation demands it.
+            # Instead of relying on a separate normalize_orientation job
+            # (whose output Ghostscript pdfwrite can corrupt), we rotate
+            # the content HERE before scaling.
+            needs_rotate = (
+                (force_portrait and page_is_landscape)
+                or (force_landscape_mode and not page_is_landscape)
+            )
+
+            if needs_rotate:
+                # Rotate 90° CW: create a new page with swapped dimensions,
+                # composite the old content with a rotate+translate transform.
+                rotated_page = writer.add_blank_page(width=src_h, height=src_w)
+                transform = (
+                    Transformation()
+                    .rotate(-90)
+                    .translate(0, src_w)
+                )
+                rotated_page.merge_transformed_page(page, transform)
+
+                # Now treat the rotated page as our source for scaling.
+                # Read its dimensions (swapped from original).
+                src_w, src_h = src_h, src_w
+                page_is_landscape = src_w > src_h
+
+                # Remove the blank page we just added to writer — we'll
+                # re-add it properly below after scaling.
+                # Actually, we need to work with rotated_page for scaling.
+                # Remove it from writer, scale it, then add the final page.
+                writer.pages.pop()
+                page = rotated_page
+
+            # Step 3 — pick same-orientation target canvas for this page.
+            if force_portrait:
+                # Always use portrait canvas
+                tw = min(target_w_base, target_h_base)
+                th = max(target_w_base, target_h_base)
+            elif force_landscape_mode:
+                # Always use landscape canvas
+                tw = max(target_w_base, target_h_base)
+                th = min(target_w_base, target_h_base)
             else:
-                tw, th = target_h_base, target_w_base
+                # Original behaviour: match page orientation
+                if page_is_landscape == target_landscape:
+                    tw, th = target_w_base, target_h_base
+                else:
+                    tw, th = target_h_base, target_w_base
 
             sx = tw / src_w
             sy = th / src_h
