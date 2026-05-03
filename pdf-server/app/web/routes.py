@@ -49,6 +49,7 @@ from app.tasks.operation_tasks import (
     convert_office,
     normalize_orientation,
     print_ready,
+    prepare_for_product,
 )
 
 api_router = APIRouter()
