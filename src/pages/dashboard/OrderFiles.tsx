@@ -514,9 +514,18 @@ export default function OrderFiles() {
 
     try {
       if (!opts?.silent) toast.info(`Scaling to ${target.name}…`);
+      const requiredOrientation = requiredOrientationFor(productFamily?.slug);
       const landscape = isLandscape(doc.widthMm, doc.heightMm);
-      const targetW = landscape ? target.heightMm : target.widthMm;
-      const targetH = landscape ? target.widthMm : target.heightMm;
+      const targetW = requiredOrientation === "portrait"
+        ? Math.min(target.widthMm, target.heightMm)
+        : requiredOrientation === "landscape"
+          ? Math.max(target.widthMm, target.heightMm)
+          : landscape ? target.heightMm : target.widthMm;
+      const targetH = requiredOrientation === "portrait"
+        ? Math.max(target.widthMm, target.heightMm)
+        : requiredOrientation === "landscape"
+          ? Math.min(target.widthMm, target.heightMm)
+          : landscape ? target.widthMm : target.heightMm;
 
       let workingAssetId = doc.backendAssetId;
       const docForRecovery = documents.find((d) => d.id === doc.id);
@@ -536,7 +545,7 @@ export default function OrderFiles() {
         }
       }
 
-      const { job_id } = await resize(workingAssetId, targetW, targetH, "fit");
+      const { job_id } = await resize(workingAssetId, targetW, targetH, "fit", requiredOrientation);
       await pollJob(job_id);
 
       setUploadModalOpen(true);
@@ -590,7 +599,7 @@ export default function OrderFiles() {
     } catch (err: any) {
       toast.error("Scaling failed", { description: err.message });
     }
-  }, [documents, refetchDocuments, renderWithProgress, finalizeOrientationAndPrintReady]);
+  }, [documents, refetchDocuments, renderWithProgress, finalizeOrientationAndPrintReady, productFamily?.slug]);
 
   const handleKeepOriginal = useCallback(async () => {
     if (!advisoryDoc) return;
