@@ -394,10 +394,10 @@ export function useDocumentUpload(
    * already final. Safe to call after a `resize` job. Idempotent — server-side
    * no-ops when nothing needs to change.
    *
-   * NOTE: orientation work is NOT performed here. Per-page normalisation
-   * for products with a required orientation runs earlier in
-   * `inspectExistingAsset`; whole-document orientation rewrites only
-   * happen when the user accepts the OrientationAdvisory.
+   * For products with a required orientation (portrait or landscape), this
+   * also runs a defensive normalize-orientation pass BEFORE print-ready.
+   * This catches any landscape pages that survived the resize step (the
+   * resize pipeline preserves each page's original orientation).
    *
    * Returns true on success (or when nothing to do); false only on hard
    * failure (callers continue rendering with the un-finalised PDF).
@@ -418,6 +418,28 @@ export function useDocumentUpload(
         chainRenderBox?: [number, number, number, number] | null;
       },
     ): Promise<{ ok: boolean; previewJobId: string | null }> => {
+      // ── Defensive orientation normalisation ────────────────────────
+      // For products with a mandatory orientation (Bound Documents,
+      // Ring Binders, Booklets, Stapled/Loose Pages = portrait;
+      // Presentations = landscape) we run normalize-orientation BEFORE
+      // print-ready. This is critical when this function is called after
+      // a resize step (e.g. from the size advisory) because resize_pages
+      // preserves each page's original orientation — a landscape table
+      // page will survive the resize and still be landscape. Without
+      // this pass, the final PDF displayed to the customer will contain
+      // un-rotated landscape pages in a portrait product.
+      const requiredOrient = requiredOrientationFor(productFamilySlug);
+      if (requiredOrient) {
+        try {
+          updateUpload(fileName, { progress: 52, statusText: "Aligning page orientation…" });
+          const { job_id: normJobId } = await normalizeOrientation(assetId, requiredOrient);
+          await pollJob(normJobId);
+        } catch (normErr: any) {
+          // Non-fatal — fall back to the un-normalised PDF.
+          console.warn("[upload] finalize normalize-orientation failed:", normErr);
+        }
+      }
+
       // Print-ready CMYK conversion (driven by per-product-family settings).
       // Non-fatal: a failure must NOT block the upload — we still want
       // previews and ordering to work even if the CMYK pass struggles.
