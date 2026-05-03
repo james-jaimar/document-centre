@@ -499,7 +499,7 @@ export function useDocumentUpload(
       // generate_previews itself in that case.
       return { ok: true, previewJobId };
     },
-    [productFamilyPrintConfig, updateUpload],
+    [productFamilyPrintConfig, productFamilySlug, updateUpload],
   );
 
   /**
