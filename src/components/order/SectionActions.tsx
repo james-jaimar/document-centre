@@ -21,6 +21,7 @@ interface SectionActionsProps {
   onAutoAssignBrochure?: () => void;
   onAutoAssignPanels?: () => void;
   onAutoAssignFlyer?: () => void;
+  onAutoAssignBusinessCard?: () => void;
 }
 
 interface ActionDef {
@@ -92,6 +93,7 @@ export default function SectionActions({
   onAutoAssignBrochure,
   onAutoAssignPanels,
   onAutoAssignFlyer,
+  onAutoAssignBusinessCard,
 }: SectionActionsProps) {
   const actions = getActions(familySlug);
   const showAutoAssign =
@@ -113,6 +115,12 @@ export default function SectionActions({
     familySlug === "flyers" &&
     (selectedFilePageCount ?? 0) >= 2 &&
     !!onAutoAssignFlyer;
+
+  const showBusinessCardAutoAssign =
+    hasSelectedFile &&
+    (familySlug === "business_cards" || familySlug === "business-cards") &&
+    (selectedFilePageCount ?? 0) >= 2 &&
+    !!onAutoAssignBusinessCard;
 
   const showBrochureHint =
     hasSelectedFile &&
@@ -161,6 +169,20 @@ export default function SectionActions({
         <>
           <button
             onClick={onAutoAssignFlyer}
+            className="flex items-center gap-2.5 w-full px-3 py-2 rounded-xl text-sm font-medium transition-all text-left bg-primary/10 text-primary hover:bg-primary/20"
+          >
+            <Wand2 className="h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1">Auto-assign Front + Back</span>
+            <ArrowRight className="h-3 w-3 opacity-40" />
+          </button>
+          <div className="border-t border-border/40 my-1" />
+        </>
+      )}
+
+      {showBusinessCardAutoAssign && (
+        <>
+          <button
+            onClick={onAutoAssignBusinessCard}
             className="flex items-center gap-2.5 w-full px-3 py-2 rounded-xl text-sm font-medium transition-all text-left bg-primary/10 text-primary hover:bg-primary/20"
           >
             <Wand2 className="h-3.5 w-3.5 shrink-0" />

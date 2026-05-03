@@ -305,6 +305,40 @@ class PdfOps:
             writer.write(f)
         return out_pdf
 
+    def pad_pages(self, src: Path, out_pdf: Path, multiple: int = 4) -> dict:
+        """Pad a PDF with blank pages so total page count is divisible by `multiple`.
+
+        Used for saddle-stitched booklets where each folded sheet has 4 faces.
+        Returns stats including original and final page counts.
+        """
+        reader = PdfReader(str(src))
+        writer = PdfWriter()
+        for page in reader.pages:
+            writer.add_page(page)
+
+        original_count = len(reader.pages)
+        remainder = original_count % multiple
+        added = 0
+        if remainder != 0:
+            blanks_needed = multiple - remainder
+            # Use page 1 dimensions for blank pages
+            first_page = reader.pages[0]
+            w = float(first_page.mediabox.width)
+            h = float(first_page.mediabox.height)
+            for _ in range(blanks_needed):
+                writer.add_blank_page(width=w, height=h)
+                added += 1
+
+        with open(out_pdf, "wb") as f:
+            writer.write(f)
+
+        return {
+            "original_page_count": original_count,
+            "final_page_count": original_count + added,
+            "pages_added": added,
+            "multiple": multiple,
+        }
+
     def rotate(self, src: Path, out_pdf: Path, angle: int) -> Path:
         reader = PdfReader(str(src))
         writer = PdfWriter()

@@ -184,3 +184,11 @@ class PrepareForProductRequest(BaseModel):
         "saturation",
     ] = "relative_colorimetric"
 
+
+class PadPagesRequest(BaseModel):
+    """Pad a PDF with blank pages so total count is divisible by `multiple`.
+
+    Used for saddle-stitched booklets where each folded sheet has 4 faces.
+    """
+    asset_id: UUID
+    multiple: int = Field(default=4, ge=2)

@@ -658,7 +658,7 @@ export default function OrderBuild() {
   const orderItemId = orderItem?.id ?? "";
 
   // ── Tab/Insert callbacks using page_range_start as anchor ──
-  const handleAddTab = useCallback(async (afterPage: number) => {
+  const handleAddTab = useCallback(async (afterPage: number, label?: string) => {
     if (!orderItemId) return;
     const maxSort = sections.reduce((max, s) => Math.max(max, s.sort_order), 0);
     await addSectionMut.mutateAsync({
@@ -667,6 +667,7 @@ export default function OrderBuild() {
       sort_order: maxSort + 1,
       document_id: null,
       page_range_start: afterPage,
+      ...(label ? { label } : {}),
     } as any);
   }, [orderItemId, addSectionMut, sections]);
 

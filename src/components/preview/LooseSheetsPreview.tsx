@@ -66,6 +66,8 @@ export default function LooseSheetsPreview({
   const isColor = colorFlags?.[currentPage] ?? true;
   const bleedInsetPx = Math.round(canvasWidth * 0.03);
   const grayscaleFilter = isColor ? undefined : "grayscale(100%)";
+  // Physical sheet physics: odd 0-based indices are the back face of a sheet
+  const isBackFace = currentPage % 2 === 1;
 
   // Determine if PDF content is smaller than canvas (different aspect ratio)
   const hasSizeMismatch =
@@ -119,6 +121,7 @@ export default function LooseSheetsPreview({
             totalPages={urls.length}
             allowBleed={bleedFlags?.[currentPage] ?? false}
             bleedInsetPx={bleedInsetPx}
+            isBackFace={isBackFace}
           >
             <div className="w-full h-full flex items-center justify-center">
               <PdfPageView
@@ -154,7 +157,7 @@ export default function LooseSheetsPreview({
           key={currentPage}
           style={{ animation: "fadeIn 0.3s ease-out" }}
         >
-          <PageEffects effects={resolvedEffects} pageIndex={currentPage} totalPages={urls.length} allowBleed={bleedFlags?.[currentPage] ?? false} bleedInsetPx={bleedInsetPx}>
+          <PageEffects effects={resolvedEffects} pageIndex={currentPage} totalPages={urls.length} allowBleed={bleedFlags?.[currentPage] ?? false} bleedInsetPx={bleedInsetPx} isBackFace={isBackFace}>
             {url ? (
               <img
                 src={url}

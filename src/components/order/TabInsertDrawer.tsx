@@ -46,7 +46,7 @@ interface TabInsertDrawerProps {
   tabEnabled: boolean;
   tabCount: number;
   isMultiColor: boolean;
-  onAddTab: (afterPage: number) => Promise<void>;
+  onAddTab: (afterPage: number, label?: string) => Promise<void>;
   onDeleteTab: (sectionId: string) => Promise<void>;
   onMoveTab: (sectionId: string, afterPage: number) => Promise<void>;
   onUpdateTabLabel: (sectionId: string, label: string) => Promise<void>;
@@ -86,7 +86,9 @@ export default function TabInsertDrawer({
   }, [bodyPages, isDuplex]);
 
   const tabSections = useMemo(
-    () => sections.filter((s) => s.section_type === "tab"),
+    () => sections
+      .filter((s) => s.section_type === "tab")
+      .sort((a, b) => (a.page_range_start ?? 0) - (b.page_range_start ?? 0)),
     [sections]
   );
 
@@ -112,7 +114,7 @@ export default function TabInsertDrawer({
     const interval = totalBodyPages / (tabCount + 1);
     for (let i = 1; i <= tabCount; i++) {
       const targetPage = Math.round(interval * i);
-      await onAddTab(targetPage);
+      await onAddTab(targetPage, `Tab ${i}`);
     }
     toast.success(`${tabCount} tab dividers auto-inserted`);
   }, [tabSections, bodyPages, tabCount, onAddTab, onDeleteTab]);
