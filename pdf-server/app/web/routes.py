@@ -256,7 +256,7 @@ def op_resize(payload: ResizeRequest, db: Session = Depends(get_db)):
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "resize_pdf", "documents", body)
-    task = resize_pdf.delay(asset_id, job_id, payload.width_mm, payload.height_mm, payload.fit_mode)
+    task = resize_pdf.delay(asset_id, job_id, payload.width_mm, payload.height_mm, payload.fit_mode, payload.dominant_orientation)
     job_repo.set_celery_task_id(db, job_id, task.id)
     return {"job_id": job_id}
 
@@ -435,6 +435,7 @@ def op_print_ready(payload: PrintReadyRequest, db: Session = Depends(get_db)):
         payload.chain_generate_previews,
         payload.chain_render_box,
         preview_job_id,
+        payload.dominant_orientation,
     )
     job_repo.set_celery_task_id(db, job_id, task.id)
     return {"job_id": job_id, "preview_job_id": preview_job_id}
