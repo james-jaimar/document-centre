@@ -187,10 +187,12 @@ function buildPageSequence(
     const doc = documents.find((d) => d.id === section.document_id);
     if (!doc) continue;
     const thumbnails = Array.isArray(doc.thumbnail_urls) ? (doc.thumbnail_urls as string[]) : [];
-    const pageCount = doc.page_count ?? thumbnails.length;
+    const fullPageCount = doc.page_count ?? thumbnails.length;
+    const rangeStart = section.page_range_start ?? 0;
+    const rangeEnd = section.page_range_end ?? (fullPageCount - 1);
     const nextSection = bodySections[bIdx + 1];
 
-    for (let i = 0; i < pageCount; i++) {
+    for (let i = rangeStart; i <= rangeEnd && i < fullPageCount; i++) {
       pageNum++;
 
       // Before this body page, try flushing any pending dividers
