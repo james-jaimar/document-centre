@@ -22,6 +22,8 @@ const PORTRAIT_REQUIRED = new Set<string>([
   "ring-binders",
   "ring_binders",
   "booklets",
+  "stapled-loose-pages",
+  "stapled_loose_pages",
 ]);
 
 const LANDSCAPE_REQUIRED = new Set<string>([
