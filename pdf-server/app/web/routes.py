@@ -479,3 +479,29 @@ def render_pages(asset_id: str, payload: RenderPagesRequest, db: Session = Depen
     task = render_specific_pages.delay(asset_id, job_id, target_pages)
     job_repo.set_celery_task_id(db, job_id, task.id)
     return {"job_id": job_id, "missing_pages": target_pages}
+
+
+@api_router.post("/operations/prepare-for-product")
+def op_prepare_for_product(payload: PrepareForProductRequest, db: Session = Depends(get_db)):
+    """One-shot PDF preparation: CMYK → orient → resize.
+
+    Replaces the fragile multi-job client-side sequencing (print-ready →
+    normalize-orientation → resize) with a single deterministic pipeline.
+    The server performs all mutations in the correct order and promotes one
+    final PDF to the asset's normalized_storage_path.
+    """
+    asset_id = str(payload.asset_id)
+    body = payload.model_dump(mode="json")
+    job_id = job_repo.create_job(db, asset_id, "prepare_for_product", "documents", body)
+    task = prepare_for_product.delay(
+        asset_id,
+        job_id,
+        payload.dominant_orientation,
+        payload.target_width_mm,
+        payload.target_height_mm,
+        payload.fit_mode,
+        payload.dest_profile,
+        payload.intent,
+    )
+    job_repo.set_celery_task_id(db, job_id, task.id)
+    return {"job_id": job_id}
