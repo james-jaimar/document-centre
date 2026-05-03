@@ -475,10 +475,19 @@ export default function OrderFiles() {
       }
     }
 
+    // Re-read preflight AFTER rendering so we preserve processed_file_path
+    // that renderDocumentThumbnails just wrote (instead of overwriting it
+    // with the stale pre-render snapshot).
+    const { data: freshDoc } = await supabase
+      .from("documents")
+      .select("preflight_data")
+      .eq("id", doc.id)
+      .maybeSingle();
+    const freshPreflight = (freshDoc?.preflight_data as Record<string, any>) ?? {};
     await supabase
       .from("documents")
       .update({
-        preflight_data: { ...preflight, awaiting_review: false, size_resolved: true, size_action: "keep" },
+        preflight_data: { ...freshPreflight, awaiting_review: false, size_resolved: true, size_action: "keep" },
       })
       .eq("id", doc.id);
     resolvedDocIds.current.add(doc.id);
