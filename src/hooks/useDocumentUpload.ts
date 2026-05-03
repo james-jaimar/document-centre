@@ -455,6 +455,7 @@ export function useDocumentUpload(
             destProfile: printPlan.destProfile,
             chainGeneratePreviews: chainOpts?.chainGeneratePreviews ?? false,
             chainRenderBox: chainOpts?.chainRenderBox ?? null,
+            dominantOrientation: requiredOrient,
           });
           await pollJob(printJobId);
           previewJobId = preview_job_id ?? null;
@@ -483,6 +484,12 @@ export function useDocumentUpload(
         } else {
           next.print_ready_done = false;
           next.print_ready_error = printReadyError ?? "unknown";
+        }
+        const asset = await getAsset(assetId);
+        const processedPath = asset.normalized_storage_path ?? asset.source_storage_path;
+        if (processedPath) {
+          next.processed_file_path = processedPath;
+          clearPdfCacheEntry(processedPath);
         }
         await supabase
           .from("documents")
