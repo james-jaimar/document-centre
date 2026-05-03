@@ -555,9 +555,14 @@ export default function OrderFiles() {
         `Scaling to ${target.name} and rendering pages…`,
       );
 
-      const existing = documents.find((d) => d.id === doc.id);
-      const preflight = (existing?.preflight_data as Record<string, any>) ?? {};
-      const { detected_size, ...rest } = preflight;
+      // Re-read preflight AFTER rendering so processed_file_path survives.
+      const { data: freshDoc } = await supabase
+        .from("documents")
+        .select("preflight_data")
+        .eq("id", doc.id)
+        .maybeSingle();
+      const freshPreflight = (freshDoc?.preflight_data as Record<string, any>) ?? {};
+      const { detected_size, ...rest } = freshPreflight;
       await supabase
         .from("documents")
         .update({
