@@ -460,9 +460,10 @@ export default function OrderFiles() {
           }
         }
 
-        if (!preflight?.print_ready_done) {
-          await finalizeOrientationAndPrintReady(doc.id, workingAssetId, doc.fileName);
-        }
+        // Always run finalization — even if print_ready_done was set earlier,
+        // the server idempotently skips when already converted. Unconditional
+        // ensures orientation normalization runs after any advisory resolution.
+        await finalizeOrientationAndPrintReady(doc.id, workingAssetId, doc.fileName);
         await renderWithProgress(
           doc.id,
           workingAssetId,
