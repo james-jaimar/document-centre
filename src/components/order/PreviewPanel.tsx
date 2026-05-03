@@ -62,6 +62,21 @@ const SECTION_LABELS: Record<string, string> = {
   tab: "Tab",
 };
 
+/** Product-aware section label overrides */
+const PRODUCT_SECTION_LABELS: Record<string, Record<string, string>> = {
+  posters: { front_cover: "Poster" },
+  flyers: { front_cover: "Front", back_cover: "Back" },
+  business_cards: { front_cover: "Front", back_cover: "Back" },
+  "business-cards": { front_cover: "Front", back_cover: "Back" },
+};
+
+function getSectionLabel(sectionType: string, productFamilySlug?: string): string {
+  if (productFamilySlug && PRODUCT_SECTION_LABELS[productFamilySlug]?.[sectionType]) {
+    return PRODUCT_SECTION_LABELS[productFamilySlug][sectionType];
+  }
+  return SECTION_LABELS[sectionType] ?? sectionType;
+}
+
 const BOUND_TYPES = new Set([
   "wire_bound", "comb_bound", "saddle_stitched", "perfect_bound", "ring_binder",
 ]);
@@ -172,10 +187,12 @@ function buildPageSequence(
     const doc = documents.find((d) => d.id === section.document_id);
     if (!doc) continue;
     const thumbnails = Array.isArray(doc.thumbnail_urls) ? (doc.thumbnail_urls as string[]) : [];
-    const pageCount = doc.page_count ?? thumbnails.length;
+    const fullPageCount = doc.page_count ?? thumbnails.length;
+    const rangeStart = section.page_range_start ?? 0;
+    const rangeEnd = section.page_range_end ?? (fullPageCount - 1);
     const nextSection = bodySections[bIdx + 1];
 
-    for (let i = 0; i < pageCount; i++) {
+    for (let i = rangeStart; i <= rangeEnd && i < fullPageCount; i++) {
       pageNum++;
 
       // Before this body page, try flushing any pending dividers
@@ -202,7 +219,7 @@ function buildPageSequence(
       // synthetic blank between two documents was the phantom face users
       // saw in the preview. Customers who want a real blank between
       // documents should drop a white insert sheet (InsertManager).
-      const isLastPageOfDoc = i === pageCount - 1;
+      const isLastPageOfDoc = i === rangeEnd || i === fullPageCount - 1;
       const nextDoc = nextSection
         ? documents.find((d) => d.id === nextSection.document_id)
         : null;
@@ -569,10 +586,11 @@ export default function PreviewPanel({
   }, [computedPageRoles, finalPages]);
 
   const isBusinessCards = productType === "business_cards";
+  const isPoster = productFamilySlug === "posters";
 
   const bleedFlags = useMemo(() => {
-    // Business cards: server thumbnails are already trim-cropped — always full bleed
-    if (isBusinessCards) return computedPageRoles.map(() => true);
+    // Business cards & posters: always full bleed — edge-to-edge rendering
+    if (isBusinessCards || isPoster) return computedPageRoles.map(() => true);
     const bleedScope = effects?.bleed ?? "none";
     return computedPageRoles.map((role) => {
       if (["pvc_cover_front", "pvc_cover_back", "inside_back_cover_card", "back_cover_card"].includes(role)) return true;
@@ -586,12 +604,22 @@ export default function PreviewPanel({
       if (bleedScope === "covers" && (role === "front_cover" || role === "back_cover")) return true;
       return false;
     });
-  }, [computedPageRoles, effects?.bleed, isBusinessCards, isRingBinder]);
+  }, [computedPageRoles, effects?.bleed, isBusinessCards, isPoster, isRingBinder]);
 
   const pageAspectRatio = useMemo(() => {
+    // Prefer trim box dimensions when available (e.g. business cards with bleed)
     const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
-    if (doc && doc.page_width_mm && doc.page_height_mm) {
-      return Number(doc.page_width_mm) / Number(doc.page_height_mm);
+    if (doc) {
+      const preflight = doc.preflight_data as Record<string, unknown> | null;
+      const trimBox = preflight?.trim_box_pt as number[] | undefined;
+      if (trimBox && trimBox.length === 4) {
+        const trimW = Math.abs(trimBox[2] - trimBox[0]);
+        const trimH = Math.abs(trimBox[3] - trimBox[1]);
+        if (trimW > 0 && trimH > 0) return trimW / trimH;
+      }
+      if (doc.page_width_mm && doc.page_height_mm) {
+        return Number(doc.page_width_mm) / Number(doc.page_height_mm);
+      }
     }
     // Business cards fallback: standard 90×50mm = 1.8
     if (isBusinessCards) return 1.8;
@@ -602,6 +630,17 @@ export default function PreviewPanel({
   const pdfSizeMm = useMemo(() => {
     const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
     if (!doc || !doc.page_width_mm || !doc.page_height_mm) return undefined;
+    // Use trim box dimensions if available
+    const preflight = doc.preflight_data as Record<string, unknown> | null;
+    const trimBox = preflight?.trim_box_pt as number[] | undefined;
+    if (trimBox && trimBox.length === 4) {
+      const trimW = Math.abs(trimBox[2] - trimBox[0]);
+      const trimH = Math.abs(trimBox[3] - trimBox[1]);
+      if (trimW > 0 && trimH > 0) {
+        const PT_TO_MM = 25.4 / 72;
+        return { widthMm: trimW * PT_TO_MM, heightMm: trimH * PT_TO_MM };
+      }
+    }
     return { widthMm: Number(doc.page_width_mm), heightMm: Number(doc.page_height_mm) };
   }, [documents]);
 
@@ -735,8 +774,8 @@ export default function PreviewPanel({
     if (totalPages === 0) return "";
     const idx = visibleLeft ?? visibleRight ?? 0;
     const sec = finalPages[idx]?.section;
-    return sec ? (SECTION_LABELS[sec.section_type] ?? sec.section_type) : "";
-  }, [visibleLeft, visibleRight, finalPages, totalPages]);
+    return sec ? getSectionLabel(sec.section_type, productFamilySlug) : "";
+  }, [visibleLeft, visibleRight, finalPages, totalPages, productFamilySlug]);
 
   const goFirst = () => setCurrentPage(0);
   const goLast = () => setCurrentPage(totalPages - 1);
