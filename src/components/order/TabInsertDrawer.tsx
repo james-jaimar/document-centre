@@ -86,7 +86,9 @@ export default function TabInsertDrawer({
   }, [bodyPages, isDuplex]);
 
   const tabSections = useMemo(
-    () => sections.filter((s) => s.section_type === "tab"),
+    () => sections
+      .filter((s) => s.section_type === "tab")
+      .sort((a, b) => (a.page_range_start ?? 0) - (b.page_range_start ?? 0)),
     [sections]
   );
 
