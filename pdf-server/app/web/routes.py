@@ -22,6 +22,7 @@ from app.schemas.assets import (
     NormalizeOrientationRequest,
     PrintReadyRequest,
     RenderPagesRequest,
+    PrepareForProductRequest,
 )
 from app.services.assets import asset_repo
 from app.services.jobs import job_repo
