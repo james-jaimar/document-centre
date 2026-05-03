@@ -4,8 +4,11 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import { Loader2, FileText } from "lucide-react";
 
-// Use the CDN worker matching the installed pdfjs-dist version
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// Bundle the worker locally to avoid CSP issues on production
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url,
+).toString();
 
 interface PdfPageViewProps {
   /** Signed URL to the PDF file */
