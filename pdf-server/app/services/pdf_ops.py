@@ -1453,4 +1453,92 @@ class PdfOps:
         }
 
 
+    def prepare_for_product(
+        self,
+        src: Path,
+        out_pdf: Path,
+        *,
+        dominant_orientation: str | None = None,
+        target_width_mm: float | None = None,
+        target_height_mm: float | None = None,
+        fit_mode: str = "fit",
+        dest_profile: str | None = None,
+        intent: str = "relative_colorimetric",
+        preserve_black: bool = True,
+    ) -> dict:
+        """One-shot PDF preparation: CMYK → orient → resize.
+
+        This is the ONLY function the frontend needs to call. It performs
+        every mutation in a deterministic order inside one workspace:
+
+          1. Print-ready CMYK conversion (Ghostscript) — optional, only when
+             ``dest_profile`` is supplied. After this step Ghostscript has
+             finished rewriting the PDF and will never touch it again.
+          2. Orientation normalisation — bake /Rotate hints, physically
+             rotate pages whose visual orientation doesn't match
+             ``dominant_orientation``. Works on the post-CMYK PDF so GS
+             can't undo it.
+          3. Resize to target canvas — scale (and atomically re-rotate any
+             remaining outliers) onto the target paper size. Works on the
+             already-oriented PDF so the content is correct before scaling.
+
+        Each step feeds its output into the next step's input. Only the
+        final result is written to ``out_pdf``.
+
+        Returns a stats dict with keys from each step that was executed.
+        """
+        import shutil
+
+        stats: dict = {"steps": []}
+        current = src
+
+        # ── Step 1: CMYK ─────────────────────────────────────────────
+        if dest_profile:
+            cmyk_out = out_pdf.parent / "prepare_cmyk.pdf"
+            try:
+                cmyk_stats = self.to_print_ready_cmyk(
+                    current, cmyk_out,
+                    dest_profile=dest_profile,
+                    intent=intent,
+                    preserve_black=preserve_black,
+                )
+                stats["cmyk"] = cmyk_stats
+                stats["steps"].append("cmyk")
+                current = cmyk_out
+            except Exception as exc:
+                # CMYK is non-fatal — continue with the un-converted PDF.
+                stats["cmyk_error"] = str(exc)
+                logger.warning("prepare_for_product: CMYK failed (non-fatal): %s", exc)
+
+        # ── Step 2: Orientation ──────────────────────────────────────
+        if dominant_orientation in ("portrait", "landscape"):
+            orient_out = out_pdf.parent / "prepare_oriented.pdf"
+            orient_stats = self.normalize_orientation(
+                current, orient_out, dominant=dominant_orientation,
+            )
+            stats["orientation"] = orient_stats
+            stats["steps"].append("orientation")
+            if not orient_stats.get("skipped"):
+                current = orient_out
+
+        # ── Step 3: Resize ───────────────────────────────────────────
+        if target_width_mm and target_height_mm:
+            resize_out = out_pdf.parent / "prepare_resized.pdf"
+            self.resize_pages(
+                current, resize_out,
+                width_mm=target_width_mm,
+                height_mm=target_height_mm,
+                fit_mode=fit_mode,
+                dominant_orientation=dominant_orientation,
+            )
+            stats["steps"].append("resize")
+            current = resize_out
+
+        # ── Final: copy to out_pdf ───────────────────────────────────
+        if current != out_pdf:
+            shutil.copy2(str(current), str(out_pdf))
+
+        return stats
+
+
 pdf_ops = PdfOps()
