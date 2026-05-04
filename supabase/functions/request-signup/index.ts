@@ -74,9 +74,14 @@ Deno.serve(async (req) => {
     } else {
       const { data: created, error: createErr } = await admin.auth.admin.createUser({
         email,
-        password: randomPassword(),
+        password: userPassword || randomPassword(),
         email_confirm: true,
-        user_metadata: { display_name: display_name || null, tenant_slug },
+        user_metadata: {
+          display_name: display_name || null,
+          first_name: first_name || null,
+          last_name: last_name || null,
+          tenant_slug,
+        },
       });
       if (createErr || !created?.user) {
         if (createErr?.message?.toLowerCase().includes("already")) {
