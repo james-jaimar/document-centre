@@ -1,67 +1,32 @@
 ## Problem
 
-The guest storefront at `/t/:slug` shows no branding, no logo, and a generic "Print Centre" header because the underlying database tables have no `anon` RLS policies. When an unauthenticated user visits, every Supabase query returns empty results.
+The scraped PostNet CSS (Bootstrap + custom styles) is injected as a global `<style>` tag in `CustomerHeader.tsx` line 151. This CSS contains selectors like `body`, `*`, `.container`, `.d-flex`, etc. that override the entire page layout — not just the facsimile header. The result: the page renders the PostNet header fragment but all content below is invisible or broken.
 
-The chain breaks at the first step: `useTenantFromSlug` queries the `tenants` table, gets nothing back, so `useTenantBranding` never fires (no tenant ID), and the product tiles also fail to load.
+The same issue exists in `CustomerFooter.tsx` for the facsimile footer CSS.
 
-## Fix — Add Anon Read Policies
+## Fix
 
-A single migration adding **read-only** anon SELECT policies to the tables the guest storefront needs:
+**Scope all facsimile CSS** by prefixing every rule with `.facsimile-header` (or `.facsimile-footer`) so the scraped styles cannot leak. Two approaches:
 
-### 1. `tenants` — anon can read active tenants by slug
+### Approach: CSS `@scope` with prefix fallback
 
-```sql
-CREATE POLICY "tenants_public_read_by_slug"
-ON public.tenants FOR SELECT TO anon
-USING (is_active = true);
-```
+Wrap the injected CSS in a scoping function that prepends `.facsimile-header ` to every CSS rule selector. This is done at render time by parsing the raw CSS string and rewriting selectors.
 
-This lets `useTenantFromSlug` resolve the tenant. The existing `public_branding_read` policy on `tenant_settings` already covers anon, so branding will load once the tenant ID is available.
+### Changes
 
-### 2. `product_families` — anon can read active products scoped to a tenant
+1. **Create `src/lib/scopeCss.ts`** — a utility function that takes raw CSS text and a scope selector (e.g. `.facsimile-header`), and returns CSS with every rule prefixed. It handles:
+   - Regular rules: `.container { ... }` becomes `.facsimile-header .container { ... }`
+   - Body/html selectors: `body { ... }` becomes `.facsimile-header { ... }`
+   - `@font-face` and `@keyframes` blocks are passed through unchanged
+   - `@media` blocks are recursively scoped
 
-```sql
-CREATE POLICY "product_families_public_read"
-ON public.product_families FOR SELECT TO anon
-USING (is_active = true);
-```
+2. **Update `CustomerHeader.tsx`** (line ~151) — replace the raw CSS injection with the scoped version:
+   ```
+   const scopedCss = scopeCss(branding.header_css, '.facsimile-header');
+   ```
 
-This lets the product tile grid render for guests.
+3. **Update `CustomerFooter.tsx`** — same treatment for `footer_css`, scoped to `.facsimile-footer`.
 
-### 3. `branches` — anon can read active branches (needed for product filtering by branch)
+4. **Update `StorefrontLanding.tsx`** — same treatment for header/footer CSS used on the landing page.
 
-```sql
-CREATE POLICY "branches_public_read"
-ON public.branches FOR SELECT TO anon
-USING (is_active = true);
-```
-
-### 4. `product_options` — anon can read (needed for the order configurator)
-
-```sql
-CREATE POLICY "product_options_public_read"
-ON public.product_options FOR SELECT TO anon
-USING (true);
-```
-
-### 5. `pricing_rules` — anon can read (needed to show prices)
-
-```sql
-CREATE POLICY "pricing_rules_public_read"
-ON public.pricing_rules FOR SELECT TO anon
-USING (true);
-```
-
-## Security Notes
-
-- All policies are **SELECT only** for the `anon` role — no inserts, updates, or deletes.
-- Tenants and products are scoped to `is_active = true` so deactivated records stay hidden.
-- Sensitive settings are already excluded by the existing `is_sensitive = false` filter on `tenant_settings`.
-
-## What This Fixes
-
-- Tenant name and logo appear in the header
-- Facsimile header/footer renders (if configured)
-- Product family tiles load on the dashboard
-- Product options and pricing display in the configurator
-- All of this works for unauthenticated guest visitors
+This ensures all scraped tenant CSS is sandboxed within the facsimile container elements and cannot affect product tiles, navigation, or any other page content.
