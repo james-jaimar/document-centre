@@ -10,6 +10,7 @@ interface LooseSheetsPreviewProps extends PreviewComponentProps {
   canvasSizeMm?: CanvasSize;
   scaleMode?: "fit" | "fill";
   pdfSizeMm?: { widthMm: number; heightMm: number };
+  trimCrop?: TrimCrop;
 }
 
 export default function LooseSheetsPreview({
