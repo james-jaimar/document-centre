@@ -674,18 +674,8 @@ export default function PreviewPanel({
   // Compute trim crop for PDFs with a TrimBox smaller than MediaBox (e.g. business cards with crop marks)
   const trimCrop = useMemo(() => {
     const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
-    if (!doc) return undefined;
+    if (!doc || !resolvedTrimBox) return undefined;
     const preflight = doc.preflight_data as Record<string, unknown> | null;
-    // Check trim_box_pt first, then fall back to boxes.TrimBox or boxes.CropBox
-    let trimBox = preflight?.trim_box_pt as number[] | undefined;
-    if (!trimBox || trimBox.length !== 4) {
-      const boxes = preflight?.boxes as Record<string, number[]> | undefined;
-      trimBox = boxes?.TrimBox ?? boxes?.CropBox;
-    }
-    if (!trimBox || trimBox.length !== 4) return undefined;
-    // MediaBox dimensions — page_width_mm/page_height_mm reflect the full page
-    // (MediaBox). When the backend stores boxes, also check MediaBox there to
-    // ensure we compare against the correct reference.
     const boxes = preflight?.boxes as Record<string, number[]> | undefined;
     const PT_TO_MM = 25.4 / 72;
     let mediaWmm = Number(doc.page_width_mm);
@@ -701,14 +691,14 @@ export default function PreviewPanel({
       }
     }
     if (!mediaWmm || !mediaHmm) return undefined;
-    const trimW = Math.abs(trimBox[2] - trimBox[0]) * PT_TO_MM;
-    const trimH = Math.abs(trimBox[3] - trimBox[1]) * PT_TO_MM;
+    const trimW = Math.abs(resolvedTrimBox[2] - resolvedTrimBox[0]) * PT_TO_MM;
+    const trimH = Math.abs(resolvedTrimBox[3] - resolvedTrimBox[1]) * PT_TO_MM;
     // Only apply crop if trim is meaningfully smaller than media (>1mm difference)
     if (mediaWmm - trimW < 1 && mediaHmm - trimH < 1) return undefined;
-    const left = Math.min(trimBox[0], trimBox[2]) * PT_TO_MM / mediaWmm;
-    const top = 1 - (Math.max(trimBox[1], trimBox[3]) * PT_TO_MM / mediaHmm); // PDF y is bottom-up
+    const left = Math.min(resolvedTrimBox[0], resolvedTrimBox[2]) * PT_TO_MM / mediaWmm;
+    const top = 1 - (Math.max(resolvedTrimBox[1], resolvedTrimBox[3]) * PT_TO_MM / mediaHmm); // PDF y is bottom-up
     return { left, top, width: trimW / mediaWmm, height: trimH / mediaHmm };
-  }, [documents]);
+  }, [documents, resolvedTrimBox]);
 
   const SCALE_TOGGLE_SLUGS = new Set(["poster", "flyers", "flyer", "business-cards", "business_cards"]);
   const showScaleToggle = !!(
