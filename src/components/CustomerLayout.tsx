@@ -81,7 +81,7 @@ function CustomerLayoutInner() {
 
   const isDemo = !!profile?.is_demo;
 
-  // Inject tenant colour CSS variables for the print centre
+  // Inject tenant colour + font CSS variables for the print centre
   const tenantStyle = useMemo(() => {
     const style: Record<string, string> = {};
     const primary = hexToHslString(branding?.primary_color);
@@ -90,6 +90,9 @@ function CustomerLayoutInner() {
     if (primary) style["--tenant-primary"] = primary;
     if (accent) style["--tenant-accent"] = accent;
     if (secondary) style["--tenant-secondary"] = secondary;
+    // Safe font injection — only string names, no CSS import
+    if (branding?.font_heading) style["--tenant-font-heading"] = branding.font_heading;
+    if (branding?.font_body) style["--tenant-font-body"] = branding.font_body;
     return style as React.CSSProperties;
   }, [branding]);
 
