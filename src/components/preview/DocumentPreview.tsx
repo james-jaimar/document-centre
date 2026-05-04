@@ -8,7 +8,7 @@ import FoldPreview from "./FoldPreview";
 import LooseSheetsPreview from "./LooseSheetsPreview";
 import { Loader2 } from "lucide-react";
 
-import type { PreviewEffects, TabPosition, PdfSource, CanvasSize } from "./previewTypes";
+import type { PreviewEffects, TabPosition, PdfSource, CanvasSize, TrimCrop } from "./previewTypes";
 
 export interface DocumentPreviewProps {
   thumbnailPaths: string[];
