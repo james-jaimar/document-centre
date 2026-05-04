@@ -1,5 +1,5 @@
 import { Link, NavLink, useNavigate, useParams } from "react-router-dom";
-import { useMemo } from "react";
+
 import { scopeCss } from "@/lib/scopeCss";
 import { ShoppingCart, User, LogOut, Settings as SettingsIcon, ClipboardList, ExternalLink, LogIn } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -15,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo } from "react";
 
 export default function CustomerHeader() {
   const { slug } = useParams<{ slug: string }>();
