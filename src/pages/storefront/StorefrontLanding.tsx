@@ -207,11 +207,19 @@ export default function StorefrontLanding() {
 
       {/* Footer — facsimile or standard */}
       {isFacsimile && branding?.footer_html ? (
-        <div
-          ref={facsimileFooterRef}
-          className="facsimile-footer mt-auto"
-          dangerouslySetInnerHTML={{ __html: branding.footer_html }}
-        />
+        <>
+          <style dangerouslySetInnerHTML={{ __html: (() => {
+            const base = `.facsimile-footer { all: initial; display: block; } .facsimile-footer * { box-sizing: border-box; }`;
+            const css = branding.footer_css || branding.header_css;
+            if (!css) return base;
+            return `${base}\n${scopeCss(css, '.facsimile-footer')}`;
+          })() }} />
+          <div
+            ref={facsimileFooterRef}
+            className="facsimile-footer mt-auto"
+            dangerouslySetInnerHTML={{ __html: branding.footer_html }}
+          />
+        </>
       ) : (
         <footer className="border-t py-8 bg-muted/20 mt-auto">
           <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
