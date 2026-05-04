@@ -1,10 +1,10 @@
-import { Outlet, useNavigate } from "react-router-dom";
+import { Outlet, useNavigate, useParams } from "react-router-dom";
 import CustomerSidebar from "@/components/CustomerSidebar";
 import CustomerHeader from "@/components/CustomerHeader";
 import CustomerFooter from "@/components/CustomerFooter";
-import { Menu, PanelLeftOpen, Sparkles, X } from "lucide-react";
+import { Menu, PanelLeftOpen, Sparkles, Loader2, X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { SidebarCollapseProvider, useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -62,12 +62,67 @@ function hexToHslString(hex: string | undefined | null): string | null {
 }
 
 function CustomerLayoutInner() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const { slug } = useParams<{ slug: string }>();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { collapsed, toggle } = useSidebarCollapse();
   const { tenant } = useTenantFromSlug();
   const { data: branding } = useTenantBranding(tenant?.id ?? null);
+
+  // --- Anonymous session bootstrap ---
+  const [bootstrapping, setBootstrapping] = useState(false);
+  const bootstrapAttempted = useRef(false);
+
+  useEffect(() => {
+    // Only run on tenant portal routes, not /try or /dashboard
+    if (!slug || authLoading || bootstrapAttempted.current) return;
+
+    // If already signed in, no need to bootstrap
+    if (user) {
+      bootstrapAttempted.current = true;
+      return;
+    }
+
+    bootstrapAttempted.current = true;
+    let cancelled = false;
+
+    (async () => {
+      setBootstrapping(true);
+      try {
+        // Check for existing session first
+        const { data: { session: existing } } = await supabase.auth.getSession();
+        if (existing?.user) {
+          // Already have a session — call tenant-bootstrap as fallback
+          await supabase.functions.invoke("tenant-bootstrap", {
+            body: { tenant_slug: slug },
+          }).catch(() => null);
+          if (!cancelled) setBootstrapping(false);
+          return;
+        }
+
+        // Create anonymous session scoped to this tenant
+        const { error: signInErr } = await supabase.auth.signInAnonymously({
+          options: { data: { tenant_slug: slug } },
+        });
+        if (signInErr) throw signInErr;
+
+        // Wait briefly for the trigger to wire profile + membership
+        await new Promise((r) => setTimeout(r, 400));
+
+        // Belt-and-braces: ensure membership via edge function
+        await supabase.functions.invoke("tenant-bootstrap", {
+          body: { tenant_slug: slug },
+        }).catch((e) => console.warn("tenant-bootstrap warning:", e));
+      } catch (e: any) {
+        console.error("Anonymous session bootstrap failed:", e);
+      } finally {
+        if (!cancelled) setBootstrapping(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [slug, user, authLoading]);
 
   const { data: profile } = useQuery({
     queryKey: ["profile_demo_flag", user?.id],
@@ -90,11 +145,22 @@ function CustomerLayoutInner() {
     if (primary) style["--tenant-primary"] = primary;
     if (accent) style["--tenant-accent"] = accent;
     if (secondary) style["--tenant-secondary"] = secondary;
-    // Safe font injection — only string names, no CSS import
     if (branding?.font_heading) style["--tenant-font-heading"] = branding.font_heading;
     if (branding?.font_body) style["--tenant-font-body"] = branding.font_body;
     return style as React.CSSProperties;
   }, [branding]);
+
+  // Show a brief loading state while bootstrapping anonymous session
+  if (bootstrapping) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Setting up your session…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen w-full flex-col" style={tenantStyle}>
