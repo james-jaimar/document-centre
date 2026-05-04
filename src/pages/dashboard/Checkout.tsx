@@ -307,7 +307,7 @@ export default function Checkout() {
             size="lg"
             className="w-full"
             onClick={handlePlaceOrder}
-            disabled={isSubmitting}
+            disabled={isSubmitting || !user}
           >
             {isSubmitting ? (
               <>
