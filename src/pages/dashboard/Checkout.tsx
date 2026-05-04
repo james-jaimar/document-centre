@@ -21,6 +21,7 @@ import CheckoutAuth from "@/components/checkout/CheckoutAuth";
 export default function Checkout() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { data: cart, isLoading } = useCart();
   const { tenantId } = useTenantContext();
   const placeOrder = usePlaceOrder();
