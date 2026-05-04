@@ -1,4 +1,6 @@
 import { Link, NavLink, useNavigate, useParams } from "react-router-dom";
+
+import { scopeCss } from "@/lib/scopeCss";
 import { ShoppingCart, User, LogOut, Settings as SettingsIcon, ClipboardList, ExternalLink, LogIn } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
@@ -13,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo } from "react";
 
 export default function CustomerHeader() {
   const { slug } = useParams<{ slug: string }>();
@@ -144,12 +146,17 @@ export default function CustomerHeader() {
     );
   };
 
+  const scopedHeaderCss = useMemo(() => {
+    if (!branding?.header_css) return "";
+    const base = `.facsimile-header { all: initial; display: block; } .facsimile-header * { box-sizing: border-box; }`;
+    return `${base}\n${scopeCss(branding.header_css, '.facsimile-header')}`;
+  }, [branding?.header_css]);
+
   if (isFacsimile) {
+
     return (
       <div className="w-full">
-        {branding.header_css && (
-          <style dangerouslySetInnerHTML={{ __html: `.facsimile-header { all: initial; } .facsimile-header * { box-sizing: border-box; } ${branding.header_css}` }} />
-        )}
+        <style dangerouslySetInnerHTML={{ __html: scopedHeaderCss || `.facsimile-header { all: initial; display: block; } .facsimile-header * { box-sizing: border-box; }` }} />
         <div
           ref={facsimileRef}
           className="facsimile-header relative"

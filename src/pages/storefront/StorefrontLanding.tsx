@@ -3,7 +3,8 @@ import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Printer, Shield, Clock, Truck } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo } from "react";
+import { scopeCss } from "@/lib/scopeCss";
 
 export default function StorefrontLanding() {
   const { tenant, slug, loading: tenantLoading, error: tenantError } = useTenantFromSlug();
@@ -74,9 +75,11 @@ export default function StorefrontLanding() {
       {/* Nav — facsimile or standard */}
       {isFacsimile ? (
         <>
-          {branding.header_css && (
-            <style dangerouslySetInnerHTML={{ __html: branding.header_css }} />
-          )}
+          <style dangerouslySetInnerHTML={{ __html: (() => {
+            const base = `.facsimile-header { all: initial; display: block; } .facsimile-header * { box-sizing: border-box; }`;
+            if (!branding.header_css) return base;
+            return `${base}\n${scopeCss(branding.header_css, '.facsimile-header')}`;
+          })() }} />
           <div
             ref={facsimileHeaderRef}
             className="facsimile-header"
@@ -204,11 +207,19 @@ export default function StorefrontLanding() {
 
       {/* Footer — facsimile or standard */}
       {isFacsimile && branding?.footer_html ? (
-        <div
-          ref={facsimileFooterRef}
-          className="facsimile-footer mt-auto"
-          dangerouslySetInnerHTML={{ __html: branding.footer_html }}
-        />
+        <>
+          <style dangerouslySetInnerHTML={{ __html: (() => {
+            const base = `.facsimile-footer { all: initial; display: block; } .facsimile-footer * { box-sizing: border-box; }`;
+            const css = branding.footer_css || branding.header_css;
+            if (!css) return base;
+            return `${base}\n${scopeCss(css, '.facsimile-footer')}`;
+          })() }} />
+          <div
+            ref={facsimileFooterRef}
+            className="facsimile-footer mt-auto"
+            dangerouslySetInnerHTML={{ __html: branding.footer_html }}
+          />
+        </>
       ) : (
         <footer className="border-t py-8 bg-muted/20 mt-auto">
           <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
