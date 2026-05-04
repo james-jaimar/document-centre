@@ -1,4 +1,4 @@
-import type { PreviewComponentProps } from "./previewTypes";
+import type { PreviewComponentProps, TrimCrop } from "./previewTypes";
 import { DEFAULT_PREVIEW_EFFECTS } from "./previewTypes";
 import type { PdfSource, CanvasSize } from "./previewTypes";
 import PageEffects from "./PageEffects";
@@ -10,6 +10,7 @@ interface LooseSheetsPreviewProps extends PreviewComponentProps {
   canvasSizeMm?: CanvasSize;
   scaleMode?: "fit" | "fill";
   pdfSizeMm?: { widthMm: number; heightMm: number };
+  trimCrop?: TrimCrop;
 }
 
 export default function LooseSheetsPreview({
@@ -25,6 +26,7 @@ export default function LooseSheetsPreview({
   canvasSizeMm,
   pdfSizeMm,
   scaleMode = "fit",
+  trimCrop,
 }: LooseSheetsPreviewProps) {
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
   const ratio = pageAspectRatio ?? 0.707; // fallback to A4
@@ -85,7 +87,6 @@ export default function LooseSheetsPreview({
     if (hasSizeMismatch && pdfSizeMm) {
       const pdfAspect = pdfSizeMm.widthMm / pdfSizeMm.heightMm;
       if (isFill) {
-        // Fill: scale to cover the canvas, overflow is clipped
         if (pdfAspect > canvasAspect) {
           pdfH = canvasHeight;
           pdfW = canvasHeight * pdfAspect;
@@ -94,7 +95,6 @@ export default function LooseSheetsPreview({
           pdfH = canvasWidth / pdfAspect;
         }
       } else {
-        // Fit: scale to fit within the canvas, showing margins
         if (pdfAspect > canvasAspect) {
           pdfW = canvasWidth;
           pdfH = canvasWidth / pdfAspect;
@@ -105,6 +105,22 @@ export default function LooseSheetsPreview({
       }
     }
 
+    // When trimCrop is set, the PDF has crop marks outside the TrimBox.
+    // We over-render the full MediaBox page and use CSS to clip to the trim area.
+    let renderW = pdfW;
+    let renderH = pdfH;
+    let offsetX = 0;
+    let offsetY = 0;
+    const useTrimClip = !!trimCrop && trimCrop.width < 1;
+
+    if (useTrimClip && trimCrop) {
+      // Scale up so the trim portion fills the visible area
+      renderW = pdfW / trimCrop.width;
+      renderH = pdfH / trimCrop.height;
+      offsetX = -trimCrop.left * renderW;
+      offsetY = -trimCrop.top * renderH;
+    }
+
     return (
       <div className="flex items-center justify-center" style={{ width, height }}>
         <div
@@ -112,7 +128,7 @@ export default function LooseSheetsPreview({
           style={{
             width: canvasWidth,
             height: canvasHeight,
-            overflow: isFill && hasSizeMismatch ? "hidden" : undefined,
+            overflow: (isFill && hasSizeMismatch) || useTrimClip ? "hidden" : undefined,
           }}
         >
           <PageEffects
@@ -124,14 +140,24 @@ export default function LooseSheetsPreview({
             isBackFace={isBackFace}
           >
             <div className="w-full h-full flex items-center justify-center">
-              <PdfPageView
-                pdfUrl={pdfSource.url}
-                pageNumber={pdfSource.pageNumber}
-                width={pdfW}
-                height={pdfH}
-                style={{ filter: grayscaleFilter }}
-                cacheKey={pdfSource.cacheKey}
-              />
+              <div style={useTrimClip ? {
+                width: pdfW,
+                height: pdfH,
+                overflow: "hidden",
+                position: "relative",
+              } : undefined}>
+                <PdfPageView
+                  pdfUrl={pdfSource.url}
+                  pageNumber={pdfSource.pageNumber}
+                  width={renderW}
+                  height={renderH}
+                  style={{
+                    filter: grayscaleFilter,
+                    ...(useTrimClip ? { transform: `translate(${offsetX}px, ${offsetY}px)` } : {}),
+                  }}
+                  cacheKey={pdfSource.cacheKey}
+                />
+              </div>
             </div>
           </PageEffects>
         </div>

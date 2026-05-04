@@ -77,6 +77,20 @@ export interface PreviewComponentProps {
   pdfSizeMm?: { widthMm: number; heightMm: number };
   /** How the PDF content is scaled within the canvas: fit (show margins) or fill (crop overflow) */
   scaleMode?: "fit" | "fill";
+  /** TrimBox crop as fractions of the MediaBox — used to clip crop marks from inline PDF rendering */
+  trimCrop?: TrimCrop;
+}
+
+/** Fractional crop rectangle: where the TrimBox sits within the MediaBox (0–1 range) */
+export interface TrimCrop {
+  /** Left offset as fraction of MediaBox width */
+  left: number;
+  /** Top offset as fraction of MediaBox height */
+  top: number;
+  /** TrimBox width as fraction of MediaBox width */
+  width: number;
+  /** TrimBox height as fraction of MediaBox height */
+  height: number;
 }
 
 /** Signed PDF URL + 1-based page number for inline PDF rendering */

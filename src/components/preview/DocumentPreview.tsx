@@ -8,7 +8,7 @@ import FoldPreview from "./FoldPreview";
 import LooseSheetsPreview from "./LooseSheetsPreview";
 import { Loader2 } from "lucide-react";
 
-import type { PreviewEffects, TabPosition, PdfSource, CanvasSize } from "./previewTypes";
+import type { PreviewEffects, TabPosition, PdfSource, CanvasSize, TrimCrop } from "./previewTypes";
 
 export interface DocumentPreviewProps {
   thumbnailPaths: string[];
@@ -40,6 +40,8 @@ export interface DocumentPreviewProps {
   pdfSizeMm?: { widthMm: number; heightMm: number };
   /** How the PDF content is scaled within the canvas */
   scaleMode?: "fit" | "fill";
+  /** TrimBox crop for clipping crop marks from inline PDF rendering */
+  trimCrop?: TrimCrop;
 }
 
 const BOUND_TYPES = new Set([
@@ -71,6 +73,7 @@ export default function DocumentPreview({
   canvasSizeMm,
   pdfSizeMm,
   scaleMode,
+  trimCrop,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
@@ -189,7 +192,7 @@ export default function DocumentPreview({
 
   // Business cards use the same LooseSheetsPreview renderer
   if (productType === "business_cards") {
-    return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} canvasSizeMm={canvasSizeMm} pdfSizeMm={pdfSizeMm} scaleMode={scaleMode} />;
+    return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} canvasSizeMm={canvasSizeMm} pdfSizeMm={pdfSizeMm} scaleMode={scaleMode} trimCrop={trimCrop} />;
   }
 
   if (FOLD_TYPES.has(productType)) {
@@ -201,5 +204,5 @@ export default function DocumentPreview({
     );
   }
 
-  return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} canvasSizeMm={canvasSizeMm} pdfSizeMm={pdfSizeMm} scaleMode={scaleMode} />;
+  return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} canvasSizeMm={canvasSizeMm} pdfSizeMm={pdfSizeMm} scaleMode={scaleMode} trimCrop={trimCrop} />;
 }
