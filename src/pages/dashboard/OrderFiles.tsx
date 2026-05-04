@@ -2073,6 +2073,7 @@ export default function OrderFiles() {
                onAutoAssignBrochure={handleAutoAssignBrochure}
                onAutoAssignPanels={handleAutoAssignPanels}
                onAutoAssignFlyer={handleAutoAssignFlyer}
+               onAutoAssignBusinessCard={handleAutoAssignBusinessCard}
             />
           </div>
         </div>
