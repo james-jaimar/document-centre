@@ -98,6 +98,12 @@ export function BrandingTab() {
     }
   };
 
+  const [scrapeStats, setScrapeStats] = useState<{
+    header_length: number;
+    footer_length: number;
+    external_css_count: number;
+  } | null>(null);
+
   const handleScrapeFacsimile = async () => {
     const scrapeUrl = originUrl || importUrl;
     if (!scrapeUrl) {
@@ -105,6 +111,7 @@ export function BrandingTab() {
       return;
     }
     setScrapingFacsimile(true);
+    setScrapeStats(null);
     try {
       const { data, error } = await supabase.functions.invoke("scrape-branding", {
         body: { url: scrapeUrl, mode: "facsimile" },
@@ -118,6 +125,11 @@ export function BrandingTab() {
         if (f.footer_html) setFooterHtml(f.footer_html);
         if (f.head_styles) setHeaderCss(f.head_styles);
         if (!originUrl) setOriginUrl(scrapeUrl);
+        setScrapeStats({
+          header_length: f.header_length ?? 0,
+          footer_length: f.footer_length ?? 0,
+          external_css_count: f.external_css_count ?? 0,
+        });
         toast.success("Header & footer scraped! Review the preview and save.");
       } else {
         toast.error("Could not extract header/footer from the page");
