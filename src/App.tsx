@@ -17,7 +17,6 @@ import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "@/pages/NotFound";
 import { StorefrontRedirect } from "@/components/StorefrontRedirect";
 import { AppEntryRedirect } from "@/components/AppEntryRedirect";
-import StorefrontLanding from "@/pages/storefront/StorefrontLanding";
 import PublicStorefront from "@/components/PublicStorefront";
 import MarketingLanding from "@/pages/MarketingLanding";
 import Try from "@/pages/Try";
