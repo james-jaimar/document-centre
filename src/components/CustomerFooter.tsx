@@ -4,11 +4,13 @@ import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Mail, Phone } from "lucide-react";
+import { useEffect, useRef } from "react";
 
 export default function CustomerFooter() {
   const { slug } = useParams<{ slug: string }>();
   const { tenant } = useTenantFromSlug();
   const { data: branding } = useTenantBranding(tenant?.id ?? null);
+  const facsimileRef = useRef<HTMLDivElement>(null);
 
   const { data: support } = useQuery({
     queryKey: ["tenant_support", tenant?.id],
@@ -35,6 +37,75 @@ export default function CustomerFooter() {
   const logoUrl = branding?.logo_url || tenant?.logo_url || "";
   const isDemo = (tenant?.slug ?? slug) === "demo" || tenantName.toLowerCase().includes("document centre");
 
+  const isFacsimile = branding?.facsimile_enabled && branding?.footer_html;
+
+  // Neutralise all links inside the facsimile footer
+  useEffect(() => {
+    if (!isFacsimile || !facsimileRef.current) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const anchor = target.closest("a");
+      if (anchor) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    const el = facsimileRef.current;
+    el.addEventListener("click", handler, true);
+    return () => el.removeEventListener("click", handler, true);
+  }, [isFacsimile, branding?.footer_html]);
+
+  if (isFacsimile) {
+    return (
+      <>
+        {/* Powered by + legal slim bar */}
+        <div className="border-t border-border bg-muted/20 px-6 py-2 flex items-center justify-between text-xs text-muted-foreground">
+          <div className="flex items-center gap-4">
+            {support?.support_email && (
+              <a
+                href={`mailto:${support.support_email}`}
+                className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+              >
+                <Mail className="h-3 w-3" />
+                {support.support_email}
+              </a>
+            )}
+            {support?.support_phone && (
+              <a
+                href={`tel:${support.support_phone}`}
+                className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+              >
+                <Phone className="h-3 w-3" />
+                {support.support_phone}
+              </a>
+            )}
+          </div>
+          {!isDemo && (
+            <a
+              href="https://document-centre.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-foreground transition-colors"
+            >
+              Powered by Document Centre
+            </a>
+          )}
+        </div>
+
+        {/* Facsimile footer from tenant's website */}
+        {branding.header_css && (
+          <style dangerouslySetInnerHTML={{ __html: `.facsimile-footer { all: initial; } .facsimile-footer * { box-sizing: border-box; }` }} />
+        )}
+        <div
+          ref={facsimileRef}
+          className="facsimile-footer"
+          dangerouslySetInnerHTML={{ __html: branding.footer_html }}
+        />
+      </>
+    );
+  }
+
+  // Standard footer
   const base = `/t/${slug}`;
   const navItems = [
     { to: `${base}/print-centre`, label: "Home" },
