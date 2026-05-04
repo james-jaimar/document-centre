@@ -668,6 +668,20 @@ export async function prepareForProduct(
   });
 }
 
+/**
+ * Pad a PDF with blank pages so total count is divisible by `multiple`.
+ * Used for saddle-stitched booklets where each folded sheet has 4 faces.
+ */
+export async function padPages(
+  assetId: string,
+  multiple: number = 4,
+): Promise<{ job_id: string }> {
+  return request("v1/operations/pad-pages", "POST", {
+    asset_id: assetId,
+    multiple,
+  });
+}
+
 // ── Health ────────────────────────────────────────────────────────
 
 export async function health(): Promise<{
