@@ -346,15 +346,13 @@
 .dc-marketing .dc-muted { color: hsl(var(--dc-text-muted)); }
 
 
-/* ── Facsimile Header/Footer Scoping ── */
-/* The outer wrapper stays in normal flow (no `all: initial` here) */
+/* ── Facsimile Header/Footer Scoping (admin preview only) ── */
 .facsimile-header,
 .facsimile-footer {
   display: block;
   width: 100%;
   position: relative;
 }
-/* Reset only the INNER scraped content so tenant styles don't leak out */
 .facsimile-header > *,
 .facsimile-footer > * {
   all: initial;
@@ -365,17 +363,11 @@
   color: #333;
   box-sizing: border-box;
 }
-.facsimile-header * *,
-.facsimile-footer * * {
-  box-sizing: border-box;
-}
-/* Ensure facsimile images are responsive */
 .facsimile-header img,
 .facsimile-footer img {
   max-width: 100%;
   height: auto;
 }
-/* Neutralise all links visually (cursor stays pointer for familiarity) */
 .facsimile-header a,
 .facsimile-footer a {
   cursor: default;
