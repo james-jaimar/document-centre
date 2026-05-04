@@ -662,7 +662,27 @@ export default function PreviewPanel({
     return { widthMm: Number(doc.page_width_mm), heightMm: Number(doc.page_height_mm) };
   }, [documents]);
 
-  // Show fit/fill toggle only for eligible product families with a size mismatch
+  // Compute trim crop for PDFs with a TrimBox smaller than MediaBox (e.g. business cards with crop marks)
+  const trimCrop = useMemo(() => {
+    const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
+    if (!doc) return undefined;
+    const preflight = doc.preflight_data as Record<string, unknown> | null;
+    const trimBox = preflight?.trim_box_pt as number[] | undefined;
+    if (!trimBox || trimBox.length !== 4) return undefined;
+    // MediaBox dimensions in points (page_width_mm / page_height_mm are MediaBox in mm)
+    const mediaWmm = Number(doc.page_width_mm);
+    const mediaHmm = Number(doc.page_height_mm);
+    if (!mediaWmm || !mediaHmm) return undefined;
+    const PT_TO_MM = 25.4 / 72;
+    const trimW = Math.abs(trimBox[2] - trimBox[0]) * PT_TO_MM;
+    const trimH = Math.abs(trimBox[3] - trimBox[1]) * PT_TO_MM;
+    // Only apply crop if trim is meaningfully smaller than media (>1mm difference)
+    if (mediaWmm - trimW < 1 && mediaHmm - trimH < 1) return undefined;
+    const left = Math.min(trimBox[0], trimBox[2]) * PT_TO_MM / mediaWmm;
+    const top = 1 - (Math.max(trimBox[1], trimBox[3]) * PT_TO_MM / mediaHmm); // PDF y is bottom-up
+    return { left, top, width: trimW / mediaWmm, height: trimH / mediaHmm };
+  }, [documents]);
+
   const SCALE_TOGGLE_SLUGS = new Set(["poster", "flyers", "flyer", "business-cards", "business_cards"]);
   const showScaleToggle = !!(
     onScaleModeChange &&
