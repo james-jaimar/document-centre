@@ -23,6 +23,7 @@ from app.schemas.assets import (
     PrintReadyRequest,
     RenderPagesRequest,
     PrepareForProductRequest,
+    PadPagesRequest,
 )
 from app.services.assets import asset_repo
 from app.services.jobs import job_repo
