@@ -146,12 +146,13 @@ export default function CustomerHeader() {
     );
   };
 
+  const scopedHeaderCss = useMemo(() => {
+    if (!branding?.header_css) return "";
+    const base = `.facsimile-header { all: initial; display: block; } .facsimile-header * { box-sizing: border-box; }`;
+    return `${base}\n${scopeCss(branding.header_css, '.facsimile-header')}`;
+  }, [branding?.header_css]);
+
   if (isFacsimile) {
-    const scopedHeaderCss = useMemo(() => {
-      const base = `.facsimile-header { all: initial; display: block; } .facsimile-header * { box-sizing: border-box; }`;
-      if (!branding.header_css) return base;
-      return `${base}\n${scopeCss(branding.header_css, '.facsimile-header')}`;
-    }, [branding.header_css]);
 
     return (
       <div className="w-full">
