@@ -508,11 +508,9 @@ export default function PreviewPanel({
 
   // For static types (loose sheets, poster, flyer), sign the source PDF URLs
   // so LooseSheetsPreview can render pages at full resolution instead of using
-  // low-res rasterised thumbnails. Business cards are excluded because their
-  // PDFs often include crop marks outside the TrimBox — the pre-rendered
-  // thumbnails are already cropped to the correct trim area.
+  // low-res rasterised thumbnails.
   const isBusinessCard = productFamilySlug === "business_cards" || productFamilySlug === "business-cards";
-  const isStaticType = !isBound && !isFold && !isRingBinder && !isBusinessCard;
+  const isStaticType = !isBound && !isFold && !isRingBinder;
   const [signedPdfUrls, setSignedPdfUrls] = useState<Record<string, string>>({});
 
   // Stabilise uniqueFilePaths so we don't re-sign when the array values
