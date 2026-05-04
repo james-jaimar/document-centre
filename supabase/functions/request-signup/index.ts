@@ -34,7 +34,11 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const email = String(body?.email ?? "").trim().toLowerCase();
     const display_name = body?.display_name ? String(body.display_name).trim() : null;
+    const first_name = body?.first_name ? String(body.first_name).trim() : null;
+    const last_name = body?.last_name ? String(body.last_name).trim() : null;
+    const phone = body?.phone ? String(body.phone).trim() : null;
     const tenant_slug = body?.tenant_slug ? String(body.tenant_slug) : null;
+    const userPassword = body?.password ? String(body.password) : null;
 
     if (!email || !email.includes("@") || !tenant_slug) {
       return new Response(JSON.stringify({ error: "email and tenant_slug required" }), {
@@ -70,9 +74,14 @@ Deno.serve(async (req) => {
     } else {
       const { data: created, error: createErr } = await admin.auth.admin.createUser({
         email,
-        password: randomPassword(),
+        password: userPassword || randomPassword(),
         email_confirm: true,
-        user_metadata: { display_name: display_name || null, tenant_slug },
+        user_metadata: {
+          display_name: display_name || null,
+          first_name: first_name || null,
+          last_name: last_name || null,
+          tenant_slug,
+        },
       });
       if (createErr || !created?.user) {
         if (createErr?.message?.toLowerCase().includes("already")) {
@@ -97,7 +106,14 @@ Deno.serve(async (req) => {
       }
 
       await admin.from("profiles").upsert(
-        { id: profileId, email, display_name: display_name || null },
+        {
+          id: profileId,
+          email,
+          display_name: display_name || null,
+          first_name: first_name || null,
+          last_name: last_name || null,
+          phone: phone || null,
+        },
         { onConflict: "id" }
       );
     }
@@ -121,7 +137,7 @@ Deno.serve(async (req) => {
       await admin.from("profiles").update({ tenant_id: tenant.id }).eq("id", profileId);
     }
 
-    // Generate set-password link via app origin
+    // Generate set-password link via app origin (skip if user provided their own password)
     const callerOrigin = req.headers.get("origin") || req.headers.get("referer") || null;
     const appOrigin = await resolveAppOrigin(admin, tenant.id, callerOrigin);
     if (!appOrigin) {
@@ -131,19 +147,21 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
-      type: "recovery",
-      email,
-      options: { redirectTo: `${appOrigin}/reset-password` },
-    });
-    if (linkErr) {
-      return new Response(JSON.stringify({ error: linkErr.message }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+    let actionLink: string | null = null;
+    if (!userPassword) {
+      const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+        type: "recovery",
+        email,
+        options: { redirectTo: `${appOrigin}/reset-password` },
       });
+      if (linkErr) {
+        return new Response(JSON.stringify({ error: linkErr.message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      actionLink = buildAppVerifyLink(appOrigin, linkData, "/reset-password");
     }
-
-    const actionLink = buildAppVerifyLink(appOrigin, linkData, "/reset-password");
 
     // Tenant branding
     const { data: settings } = await admin
@@ -160,23 +178,29 @@ Deno.serve(async (req) => {
       ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(portalName)}" style="max-height:48px;margin-bottom:24px;" />`
       : `<div style="font-size:20px;font-weight:600;color:${primary};margin-bottom:24px;">${escapeHtml(portalName)}</div>`;
 
+    // Adjust email content based on whether user set their own password
+    const hasPassword = !!userPassword;
     const subject = isNewAccount
-      ? `Welcome to ${portalName} — confirm your account`
+      ? `Welcome to ${portalName}${hasPassword ? "" : " — confirm your account"}`
       : `You've been added to ${portalName}`;
     const heading = isNewAccount ? `Welcome to ${escapeHtml(portalName)}` : `Account access confirmed`;
     const intro = isNewAccount
-      ? `Thanks for signing up. Click below to set your password and sign in.`
+      ? (hasPassword
+        ? `Thanks for creating your account. You're all set to start ordering!`
+        : `Thanks for signing up. Click below to set your password and sign in.`)
       : `Your account has access to <strong>${escapeHtml(portalName)}</strong>. Click below to confirm.`;
+
+    const ctaUrl = hasPassword ? `${appOrigin}/t/${tenant.slug}/print-centre` : (actionLink ?? appOrigin);
+    const ctaLabel = hasPassword ? "Go to My Print Centre" : "Set your password";
 
     const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7;padding:40px 16px;"><tr><td align="center">
 <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:40px;box-shadow:0 1px 3px rgba(0,0,0,0.06);"><tr><td>
 ${logo}<h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 16px;">${heading}</h1>
 <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 28px;">${intro}</p>
-<a href="${escapeHtml(actionLink ?? appOrigin)}" style="display:inline-block;background:${primary};color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:500;font-size:15px;">Set your password</a>
-<p style="font-size:13px;color:#888;margin:32px 0 0;line-height:1.5;">If the button doesn't work, copy this link:<br/><a href="${escapeHtml(actionLink ?? appOrigin)}" style="color:${primary};word-break:break-all;">${escapeHtml(actionLink ?? appOrigin)}</a></p>
+<a href="${escapeHtml(ctaUrl)}" style="display:inline-block;background:${primary};color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:500;font-size:15px;">${ctaLabel}</a>
 </td></tr></table></td></tr></table></body></html>`;
-    const text = `${heading}\n\n${intro.replace(/<[^>]+>/g, "")}\n\nSet your password: ${actionLink}`;
+    const text = `${heading}\n\n${intro.replace(/<[^>]+>/g, "")}\n\n${ctaLabel}: ${ctaUrl}`;
 
     await enqueueEmail(admin, {
       tenant_id: tenant.id,

@@ -305,187 +305,189 @@ const CustomerDashboard = () => {
         </div>
       </div>
 
-      {/* ── 2×2 Data Grid ── */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        {/* Recently Uploaded Files */}
-        <div className="section-card overflow-hidden">
-          <div className="section-header">Recently Uploaded Files</div>
-          {!recentDocs?.length ? (
-            <div className="status-empty">No uploads yet</div>
-          ) : (
-            <table className="metric-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Date</th>
-                  <th>Options</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentDocs.slice(0, 4).map((doc) => (
-                  <tr key={doc.id}>
-                    <td className="max-w-[180px] truncate" title={doc.file_name}>
-                      {doc.file_name}
-                    </td>
-                    <td className="text-muted-foreground">
-                      {formatDistanceToNow(new Date(doc.created_at), { addSuffix: true })}
-                    </td>
-                    <td>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <button className="soft-button soft-button-gold">
-                            Create
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent align="end" className="w-56 p-2">
-                          <p className="px-2 pb-2 text-xs font-medium text-muted-foreground">Choose a product</p>
-                          <div className="grid gap-1">
-                            {families?.map((f) => {
-                              const Icon = ICON_MAP[f.icon ?? ""] ?? Package;
-                              return (
-                                <button
-                                  key={f.id}
-                                  className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-secondary transition-colors text-left"
-                                  onClick={() => navigate(`/t/${slug}/orders/new/${f.id}?fromDoc=${doc.id}`)}
-                                >
-                                  <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
-                                  {f.name}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-                    </td>
+      {/* ── 2×2 Data Grid — only for authenticated users ── */}
+      {user && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          {/* Recently Uploaded Files */}
+          <div className="section-card overflow-hidden">
+            <div className="section-header">Recently Uploaded Files</div>
+            {!recentDocs?.length ? (
+              <div className="status-empty">No uploads yet</div>
+            ) : (
+              <table className="metric-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Date</th>
+                    <th>Options</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        {/* Recently Modified */}
-        <div className="section-card overflow-hidden">
-          <div className="section-header">Recently Modified</div>
-          {!recentItems?.length ? (
-            <div className="status-empty">No recent items</div>
-          ) : (
-            <table className="metric-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Modified</th>
-                  <th>Options</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentItems.slice(0, 3).map((item) => (
-                  <tr key={item.id}>
-                    <td className="max-w-[160px] truncate" title={item.title || `Item ${item.id.slice(0, 8)}`}>
-                      {item.title || `Item ${item.id.slice(0, 8)}`}
-                    </td>
-                    <td className="text-muted-foreground">
-                      {formatDistanceToNow(new Date(item.updated_at), { addSuffix: true })}
-                    </td>
-                    <td>
-                      <button
-                        className="soft-button soft-button-primary"
-                        onClick={() => {
-                          const status = item.build_status;
-                          const path = status === "draft" || status === "building"
-                            ? `/t/${slug}/orders/${item.order_id}/files`
-                            : `/t/${slug}/orders/${item.order_id}/build`;
-                          navigate(path);
-                        }}
-                      >
-                        Continue
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        {/* Frequently Ordered */}
-        <div className="section-card overflow-hidden">
-          <div className="section-header">Frequently Ordered</div>
-          {!recentDocs?.length ? (
-            <div className="status-empty">No items yet</div>
-          ) : (
-            <table className="metric-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Options</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentDocs.slice(0, 4).map((doc) => (
-                  <tr key={doc.id}>
-                    <td className="max-w-[180px] truncate" title={doc.file_name}>
-                      {doc.file_name}
-                    </td>
-                    <td>
-                      <button
-                        className="soft-button soft-button-gold"
-                        onClick={() => navigate(`/t/${slug}/orders/new?fromDoc=${doc.id}`)}
-                      >
-                        Reorder
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        {/* Order Tracking */}
-        <div className="section-card overflow-hidden">
-          <div className="section-header">
-            <span className="flex items-center gap-2">
-              <Truck className="h-4 w-4" /> Order Tracking
-            </span>
+                </thead>
+                <tbody>
+                  {recentDocs.slice(0, 4).map((doc) => (
+                    <tr key={doc.id}>
+                      <td className="max-w-[180px] truncate" title={doc.file_name}>
+                        {doc.file_name}
+                      </td>
+                      <td className="text-muted-foreground">
+                        {formatDistanceToNow(new Date(doc.created_at), { addSuffix: true })}
+                      </td>
+                      <td>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button className="soft-button soft-button-gold">
+                              Create
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent align="end" className="w-56 p-2">
+                            <p className="px-2 pb-2 text-xs font-medium text-muted-foreground">Choose a product</p>
+                            <div className="grid gap-1">
+                              {families?.map((f) => {
+                                const Icon = ICON_MAP[f.icon ?? ""] ?? Package;
+                                return (
+                                  <button
+                                    key={f.id}
+                                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-secondary transition-colors text-left"
+                                    onClick={() => navigate(`/t/${slug}/orders/new/${f.id}?fromDoc=${doc.id}`)}
+                                  >
+                                    <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
+                                    {f.name}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
-          {!trackingOrders?.length ? (
-            <div className="status-empty">No items to display</div>
-          ) : (
-            <div className="divide-y divide-secondary">
-              {trackingOrders.map((order) => (
-                <div
-                  key={order.id}
-                  className="flex items-center justify-between px-4 py-3 hover:bg-secondary/30 transition-colors cursor-pointer"
-                  onClick={() => navigate(`/t/${slug}/orders/${order.id}`)}
-                >
-                  <div className="flex items-center gap-3">
-                    {order.order_status === "dispatched" ? (
-                      <Truck className="h-4 w-4 text-primary" />
-                    ) : order.order_status === "ready_for_collection" ? (
-                      <CheckCircle2 className="h-4 w-4 text-success" />
-                    ) : (
-                      <Clock className="h-4 w-4 text-warning" />
-                    )}
-                    <div>
-                      <p className="text-sm font-medium text-foreground">
-                        Order {order.id.slice(0, 8)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Updated{" "}
-                        {formatDistanceToNow(new Date(order.updated_at), { addSuffix: true })}
-                      </p>
-                    </div>
-                  </div>
-                  <Badge variant={STATUS_VARIANT[order.order_status] ?? "outline"}>
-                    {STATUS_LABEL[order.order_status] ?? order.order_status}
-                  </Badge>
-                </div>
-              ))}
+
+          {/* Recently Modified */}
+          <div className="section-card overflow-hidden">
+            <div className="section-header">Recently Modified</div>
+            {!recentItems?.length ? (
+              <div className="status-empty">No recent items</div>
+            ) : (
+              <table className="metric-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Modified</th>
+                    <th>Options</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentItems.slice(0, 3).map((item) => (
+                    <tr key={item.id}>
+                      <td className="max-w-[160px] truncate" title={item.title || `Item ${item.id.slice(0, 8)}`}>
+                        {item.title || `Item ${item.id.slice(0, 8)}`}
+                      </td>
+                      <td className="text-muted-foreground">
+                        {formatDistanceToNow(new Date(item.updated_at), { addSuffix: true })}
+                      </td>
+                      <td>
+                        <button
+                          className="soft-button soft-button-primary"
+                          onClick={() => {
+                            const status = item.build_status;
+                            const path = status === "draft" || status === "building"
+                              ? `/t/${slug}/orders/${item.order_id}/files`
+                              : `/t/${slug}/orders/${item.order_id}/build`;
+                            navigate(path);
+                          }}
+                        >
+                          Continue
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Frequently Ordered */}
+          <div className="section-card overflow-hidden">
+            <div className="section-header">Frequently Ordered</div>
+            {!recentDocs?.length ? (
+              <div className="status-empty">No items yet</div>
+            ) : (
+              <table className="metric-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Options</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentDocs.slice(0, 4).map((doc) => (
+                    <tr key={doc.id}>
+                      <td className="max-w-[180px] truncate" title={doc.file_name}>
+                        {doc.file_name}
+                      </td>
+                      <td>
+                        <button
+                          className="soft-button soft-button-gold"
+                          onClick={() => navigate(`/t/${slug}/orders/new?fromDoc=${doc.id}`)}
+                        >
+                          Reorder
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Order Tracking */}
+          <div className="section-card overflow-hidden">
+            <div className="section-header">
+              <span className="flex items-center gap-2">
+                <Truck className="h-4 w-4" /> Order Tracking
+              </span>
             </div>
-          )}
+            {!trackingOrders?.length ? (
+              <div className="status-empty">No items to display</div>
+            ) : (
+              <div className="divide-y divide-secondary">
+                {trackingOrders.map((order) => (
+                  <div
+                    key={order.id}
+                    className="flex items-center justify-between px-4 py-3 hover:bg-secondary/30 transition-colors cursor-pointer"
+                    onClick={() => navigate(`/t/${slug}/orders/${order.id}`)}
+                  >
+                    <div className="flex items-center gap-3">
+                      {order.order_status === "dispatched" ? (
+                        <Truck className="h-4 w-4 text-primary" />
+                      ) : order.order_status === "ready_for_collection" ? (
+                        <CheckCircle2 className="h-4 w-4 text-success" />
+                      ) : (
+                        <Clock className="h-4 w-4 text-warning" />
+                      )}
+                      <div>
+                        <p className="text-sm font-medium text-foreground">
+                          Order {order.id.slice(0, 8)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Updated{" "}
+                          {formatDistanceToNow(new Date(order.updated_at), { addSuffix: true })}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge variant={STATUS_VARIANT[order.order_status] ?? "outline"}>
+                      {STATUS_LABEL[order.order_status] ?? order.order_status}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

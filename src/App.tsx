@@ -17,7 +17,7 @@ import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "@/pages/NotFound";
 import { StorefrontRedirect } from "@/components/StorefrontRedirect";
 import { AppEntryRedirect } from "@/components/AppEntryRedirect";
-import PublicStorefront from "@/components/PublicStorefront";
+
 import MarketingLanding from "@/pages/MarketingLanding";
 import Try from "@/pages/Try";
 import Pricing from "@/pages/Pricing";
@@ -128,29 +128,28 @@ const App = () => (
             {/* Public mobile upload — no auth required */}
             <Route path="/upload/:token" element={<MobileUpload />} />
 
-            {/* Public storefront landing (guests see landing, authed users → print-centre) */}
-            <Route path="/t/:slug" element={<PublicStorefront />} />
-
-            {/* Customer portal — slug-based storefront */}
-            <Route path="/t/:slug" element={<ProtectedRoute><CustomerLayout /></ProtectedRoute>}>
-              <Route index element={<Navigate to="print-centre" replace />} />
+            {/* Customer portal — slug-based storefront (public layout, auth only where needed) */}
+            <Route path="/t/:slug" element={<CustomerLayout />}>
+              <Route index element={<CustomerDashboard />} />
               <Route path="dashboard" element={<CustomerDashboard />} />
               <Route path="print-centre" element={<CustomerDashboard />} />
-              <Route path="orders/:id" element={<CustomerOrderDetail />} />
-              <Route path="orders" element={<CustomerOrders />} />
+              {/* Public routes — guests can browse, upload, configure */}
               <Route path="orders/new" element={<NewOrder />} />
               <Route path="orders/new/photo-prints" element={<PhotoPrintsBuilder />} />
               <Route path="orders/new/:familyId" element={<OrderFiles />} />
-              <Route path="orders/:id/photo-prints" element={<PhotoPrintsBuilder />} />
               <Route path="orders/:id/files" element={<OrderFiles />} />
               <Route path="orders/:id/build" element={<OrderBuild />} />
-              <Route path="orders/:id/confirmation" element={<OrderConfirmation />} />
+              <Route path="orders/:id/photo-prints" element={<PhotoPrintsBuilder />} />
               <Route path="cart" element={<Cart />} />
               <Route path="checkout" element={<Checkout />} />
-              <Route path="account" element={<CustomerAccount />} />
-              <Route path="settings" element={<CustomerAccount />} />
               <Route path="terms" element={<PortalTerms />} />
               <Route path="privacy" element={<PortalPrivacy />} />
+              {/* Auth-required routes */}
+              <Route path="orders/:id" element={<ProtectedRoute><CustomerOrderDetail /></ProtectedRoute>} />
+              <Route path="orders/:id/confirmation" element={<ProtectedRoute><OrderConfirmation /></ProtectedRoute>} />
+              <Route path="orders" element={<ProtectedRoute><CustomerOrders /></ProtectedRoute>} />
+              <Route path="account" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
+              <Route path="settings" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
             </Route>
 
             {/* Legacy /dashboard redirects to slug-based URL */}

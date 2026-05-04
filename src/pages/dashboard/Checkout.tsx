@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useCart, usePlaceOrder } from "@/hooks/useCart";
@@ -15,10 +16,12 @@ import { ArrowLeft, Loader2, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
+import CheckoutAuth from "@/components/checkout/CheckoutAuth";
 
 export default function Checkout() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { data: cart, isLoading } = useCart();
   const { tenantId } = useTenantContext();
   const placeOrder = usePlaceOrder();
@@ -136,6 +139,9 @@ export default function Checkout() {
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
         {/* Left: Form */}
         <div className="space-y-6">
+          {/* Account — inline auth */}
+          <CheckoutAuth />
+
           {/* Delivery Method */}
           <div className="border border-border rounded-lg p-4 space-y-3">
             <h3 className="font-semibold text-foreground">Delivery Method</h3>
@@ -301,7 +307,7 @@ export default function Checkout() {
             size="lg"
             className="w-full"
             onClick={handlePlaceOrder}
-            disabled={isSubmitting}
+            disabled={isSubmitting || !user}
           >
             {isSubmitting ? (
               <>
