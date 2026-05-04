@@ -16,6 +16,7 @@ import { ArrowLeft, Loader2, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
+import CheckoutAuth from "@/components/checkout/CheckoutAuth";
 
 export default function Checkout() {
   const { slug } = useParams<{ slug: string }>();
