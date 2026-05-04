@@ -159,7 +159,7 @@ export default function CustomerHeader() {
             </DropdownMenu>
           </div>
         </div>
-      </>
+      </div>
     );
   }
 
