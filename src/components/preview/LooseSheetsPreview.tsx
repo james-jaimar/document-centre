@@ -1,4 +1,4 @@
-import type { PreviewComponentProps } from "./previewTypes";
+import type { PreviewComponentProps, TrimCrop } from "./previewTypes";
 import { DEFAULT_PREVIEW_EFFECTS } from "./previewTypes";
 import type { PdfSource, CanvasSize } from "./previewTypes";
 import PageEffects from "./PageEffects";
