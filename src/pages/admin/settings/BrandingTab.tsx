@@ -3,10 +3,12 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { useTenantSettingsMap, useBulkUpsertTenantSettings } from "@/hooks/useTenantSettings";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Save, Palette, Globe, Loader2, Type, Image, Layout } from "lucide-react";
+import { Save, Palette, Globe, Loader2, Type, Image, Layout, Code, ExternalLink, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 export function BrandingTab() {
@@ -25,9 +27,22 @@ export function BrandingTab() {
   const [ctaText, setCtaText] = useState("");
   const [landingLayout, setLandingLayout] = useState("hero_centered");
 
+  // Facsimile state
+  const [facsimileEnabled, setFacsimileEnabled] = useState(false);
+  const [headerHtml, setHeaderHtml] = useState("");
+  const [footerHtml, setFooterHtml] = useState("");
+  const [headerCss, setHeaderCss] = useState("");
+  const [footerCss, setFooterCss] = useState("");
+  const [originUrl, setOriginUrl] = useState("");
+  const [showHeaderSource, setShowHeaderSource] = useState(false);
+  const [showFooterSource, setShowFooterSource] = useState(false);
+
   // Import state
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
+
+  // Facsimile scrape state
+  const [scrapingFacsimile, setScrapingFacsimile] = useState(false);
 
   useEffect(() => {
     if (!isLoading && settingsMap) {
@@ -42,6 +57,14 @@ export function BrandingTab() {
       setFontBody((settingsMap.font_body as string) ?? "");
       setCtaText((settingsMap.cta_text as string) ?? "");
       setLandingLayout((settingsMap.landing_layout as string) ?? "hero_centered");
+      // Facsimile
+      const fe = settingsMap.facsimile_enabled;
+      setFacsimileEnabled(fe === true || fe === "true");
+      setHeaderHtml((settingsMap.header_html as string) ?? "");
+      setFooterHtml((settingsMap.footer_html as string) ?? "");
+      setHeaderCss((settingsMap.header_css as string) ?? "");
+      setFooterCss((settingsMap.footer_css as string) ?? "");
+      setOriginUrl((settingsMap.origin_url as string) ?? "");
     }
   }, [isLoading, settingsMap]);
 
@@ -75,6 +98,37 @@ export function BrandingTab() {
     }
   };
 
+  const handleScrapeFacsimile = async () => {
+    const scrapeUrl = originUrl || importUrl;
+    if (!scrapeUrl) {
+      toast.error("Enter the tenant's website URL first");
+      return;
+    }
+    setScrapingFacsimile(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("scrape-branding", {
+        body: { url: scrapeUrl, mode: "facsimile" },
+      });
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error ?? "Scrape failed");
+
+      const f = data.facsimile;
+      if (f) {
+        if (f.header_html) setHeaderHtml(f.header_html);
+        if (f.footer_html) setFooterHtml(f.footer_html);
+        if (f.head_styles) setHeaderCss(f.head_styles);
+        if (!originUrl) setOriginUrl(scrapeUrl);
+        toast.success("Header & footer scraped! Review the preview and save.");
+      } else {
+        toast.error("Could not extract header/footer from the page");
+      }
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to scrape header/footer");
+    } finally {
+      setScrapingFacsimile(false);
+    }
+  };
+
   const handleSave = async () => {
     try {
       await bulkUpsert.mutateAsync([
@@ -89,6 +143,13 @@ export function BrandingTab() {
         { category: "branding", setting_key: "font_body", setting_value: fontBody, value_type: "string" },
         { category: "branding", setting_key: "cta_text", setting_value: ctaText, value_type: "string" },
         { category: "branding", setting_key: "landing_layout", setting_value: landingLayout, value_type: "string" },
+        // Facsimile settings
+        { category: "branding", setting_key: "facsimile_enabled", setting_value: facsimileEnabled, value_type: "boolean" },
+        { category: "branding", setting_key: "header_html", setting_value: headerHtml, value_type: "string" },
+        { category: "branding", setting_key: "footer_html", setting_value: footerHtml, value_type: "string" },
+        { category: "branding", setting_key: "header_css", setting_value: headerCss, value_type: "string" },
+        { category: "branding", setting_key: "footer_css", setting_value: footerCss, value_type: "string" },
+        { category: "branding", setting_key: "origin_url", setting_value: originUrl, value_type: "string" },
       ]);
       toast.success("Branding settings saved");
     } catch (e: any) {
@@ -119,6 +180,139 @@ export function BrandingTab() {
               {importing ? "Scraping..." : "Import"}
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Website Header & Footer Facsimile */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Code className="h-5 w-5" /> Website Header & Footer</CardTitle>
+          <CardDescription>
+            Scrape the tenant's website header and footer to create a seamless branded experience.
+            Customers will see a facsimile of the tenant's real site navigation — all links are disabled except a single "back to site" link.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {/* Enable toggle */}
+          <div className="flex items-center gap-3">
+            <Switch checked={facsimileEnabled} onCheckedChange={setFacsimileEnabled} id="facsimile-toggle" />
+            <Label htmlFor="facsimile-toggle" className="font-medium">
+              Use website header & footer
+            </Label>
+          </div>
+
+          {/* Origin URL */}
+          <div className="space-y-2 max-w-xl">
+            <Label>Tenant Website URL</Label>
+            <div className="flex gap-2">
+              <Input
+                value={originUrl}
+                onChange={(e) => setOriginUrl(e.target.value)}
+                placeholder="https://www.postnet.co.za"
+                type="url"
+              />
+              {originUrl && (
+                <a href={originUrl} target="_blank" rel="noopener noreferrer">
+                  <Button variant="ghost" size="icon" type="button">
+                    <ExternalLink className="h-4 w-4" />
+                  </Button>
+                </a>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              This URL is used for the "Back to site" link and as the scrape source. Customers clicking links in the facsimile header/footer will be taken here.
+            </p>
+          </div>
+
+          {/* Scrape button */}
+          <Button onClick={handleScrapeFacsimile} disabled={scrapingFacsimile || (!originUrl && !importUrl)} variant="secondary">
+            {scrapingFacsimile ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Globe className="mr-2 h-4 w-4" />}
+            {scrapingFacsimile ? "Scraping Header & Footer..." : "Scrape Header & Footer"}
+          </Button>
+
+          {/* Header preview */}
+          {headerHtml && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Header Preview</Label>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowHeaderSource(!showHeaderSource)}
+                  className="gap-1 text-xs"
+                >
+                  {showHeaderSource ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                  {showHeaderSource ? "Preview" : "Source"}
+                </Button>
+              </div>
+              {showHeaderSource ? (
+                <Textarea
+                  value={headerHtml}
+                  onChange={(e) => setHeaderHtml(e.target.value)}
+                  className="font-mono text-xs min-h-[150px]"
+                />
+              ) : (
+                <div className="border rounded-lg overflow-hidden bg-white">
+                  <div
+                    className="facsimile-header"
+                    dangerouslySetInnerHTML={{ __html: headerHtml }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Footer preview */}
+          {footerHtml && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Footer Preview</Label>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowFooterSource(!showFooterSource)}
+                  className="gap-1 text-xs"
+                >
+                  {showFooterSource ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                  {showFooterSource ? "Preview" : "Source"}
+                </Button>
+              </div>
+              {showFooterSource ? (
+                <Textarea
+                  value={footerHtml}
+                  onChange={(e) => setFooterHtml(e.target.value)}
+                  className="font-mono text-xs min-h-[150px]"
+                />
+              ) : (
+                <div className="border rounded-lg overflow-hidden bg-white">
+                  <div
+                    className="facsimile-footer"
+                    dangerouslySetInnerHTML={{ __html: footerHtml }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* CSS editor (collapsed by default) */}
+          {(headerCss || footerCss) && (
+            <details className="space-y-2">
+              <summary className="text-sm font-medium cursor-pointer text-muted-foreground hover:text-foreground">
+                Advanced: Edit scraped CSS
+              </summary>
+              <div className="space-y-3 pt-2">
+                <div className="space-y-1">
+                  <Label className="text-xs">Header/Footer CSS</Label>
+                  <Textarea
+                    value={headerCss}
+                    onChange={(e) => setHeaderCss(e.target.value)}
+                    className="font-mono text-xs min-h-[100px]"
+                    placeholder="Scraped CSS styles..."
+                  />
+                </div>
+              </div>
+            </details>
+          )}
         </CardContent>
       </Card>
 
