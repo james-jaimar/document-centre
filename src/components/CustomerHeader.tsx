@@ -1,4 +1,6 @@
 import { Link, NavLink, useNavigate, useParams } from "react-router-dom";
+import { useMemo } from "react";
+import { scopeCss } from "@/lib/scopeCss";
 import { ShoppingCart, User, LogOut, Settings as SettingsIcon, ClipboardList, ExternalLink, LogIn } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
