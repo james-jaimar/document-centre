@@ -156,7 +156,7 @@ export default function CustomerHeader() {
 
     return (
       <div className="w-full">
-        <style dangerouslySetInnerHTML={{ __html: scopedHeaderCss }} />
+        <style dangerouslySetInnerHTML={{ __html: scopedHeaderCss || `.facsimile-header { all: initial; display: block; } .facsimile-header * { box-sizing: border-box; }` }} />
         <div
           ref={facsimileRef}
           className="facsimile-header relative"
