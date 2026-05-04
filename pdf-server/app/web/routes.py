@@ -51,6 +51,21 @@ from app.tasks.operation_tasks import (
     normalize_orientation,
     print_ready,
     prepare_for_product,
+    pad_pages_pdf,
+)
+    crop_rasterize,
+    rotate_pdf,
+    grayscale_pdf,
+    cmyk_pdf,
+    resize_pdf,
+    nup_pdf,
+    booklet_pdf,
+    merge_pdfs,
+    impose_sheet_pdf,
+    convert_office,
+    normalize_orientation,
+    print_ready,
+    prepare_for_product,
 )
 
 api_router = APIRouter()
