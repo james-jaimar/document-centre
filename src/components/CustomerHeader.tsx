@@ -147,11 +147,15 @@ export default function CustomerHeader() {
   };
 
   if (isFacsimile) {
+    const scopedHeaderCss = useMemo(() => {
+      const base = `.facsimile-header { all: initial; display: block; } .facsimile-header * { box-sizing: border-box; }`;
+      if (!branding.header_css) return base;
+      return `${base}\n${scopeCss(branding.header_css, '.facsimile-header')}`;
+    }, [branding.header_css]);
+
     return (
       <div className="w-full">
-        {branding.header_css && (
-          <style dangerouslySetInnerHTML={{ __html: `.facsimile-header { all: initial; } .facsimile-header * { box-sizing: border-box; } ${branding.header_css}` }} />
-        )}
+        <style dangerouslySetInnerHTML={{ __html: scopedHeaderCss }} />
         <div
           ref={facsimileRef}
           className="facsimile-header relative"

@@ -4,7 +4,8 @@ import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Mail, Phone } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo } from "react";
+import { scopeCss } from "@/lib/scopeCss";
 
 export default function CustomerFooter() {
   const { slug } = useParams<{ slug: string }>();
@@ -93,9 +94,11 @@ export default function CustomerFooter() {
         </div>
 
         {/* Facsimile footer from tenant's website */}
-        {branding.header_css && (
-          <style dangerouslySetInnerHTML={{ __html: `.facsimile-footer { all: initial; } .facsimile-footer * { box-sizing: border-box; }` }} />
-        )}
+        <style dangerouslySetInnerHTML={{ __html: (() => {
+          const base = `.facsimile-footer { all: initial; display: block; } .facsimile-footer * { box-sizing: border-box; }`;
+          if (!branding.footer_css && !branding.header_css) return base;
+          return `${base}\n${scopeCss(branding.footer_css || branding.header_css, '.facsimile-footer')}`;
+        })() }} />
         <div
           ref={facsimileRef}
           className="facsimile-footer"
