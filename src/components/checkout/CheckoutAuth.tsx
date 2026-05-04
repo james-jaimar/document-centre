@@ -30,7 +30,7 @@ export default function CheckoutAuth() {
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
 
-  const isAnonymous = !!user?.is_anonymous;
+  const isAnonymous = !!(user as any)?.is_anonymous;
 
   // Fully authenticated (non-anonymous) user — show confirmed state
   if (user && !isAnonymous) {
