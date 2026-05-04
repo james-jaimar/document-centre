@@ -17,8 +17,9 @@ export async function trimDocumentToFirstPages(
   keepPages: number,
 ): Promise<number> {
   // 1. Pull the existing PDF down via signed URL.
+  if (!filePath) throw new Error("Document has no file path — it may still be uploading");
   const urls = await getDownloadUrls([filePath]);
-  const url = urls[0];
+  const url = urls[filePath];
   if (!url) throw new Error("Could not generate download URL for the PDF");
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Failed to fetch PDF (${resp.status})`);
