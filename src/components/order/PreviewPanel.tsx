@@ -870,6 +870,7 @@ export default function PreviewPanel({
           canvasSizeMm={canvasSizeMm}
           pdfSizeMm={pdfSizeMm}
           scaleMode={scaleMode}
+          trimCrop={trimCrop}
         />
       </div>
 
