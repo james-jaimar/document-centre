@@ -9,6 +9,50 @@ const corsHeaders = {
 
 const FIRECRAWL_V2 = "https://api.firecrawl.dev/v2";
 
+/** Resolve a relative URL to absolute based on the page origin */
+function resolveUrl(relative: string, baseUrl: string): string {
+  try {
+    return new URL(relative, baseUrl).href;
+  } catch {
+    return relative;
+  }
+}
+
+/** Make all src, href, srcset, action, poster, data attributes absolute */
+function resolveAllUrls(html: string, baseUrl: string): string {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  if (!doc) return html;
+
+  const attrs = ["src", "href", "action", "poster", "data"];
+  for (const el of doc.querySelectorAll("*")) {
+    const element = el as Element;
+    for (const attr of attrs) {
+      const val = element.getAttribute(attr);
+      if (val && !val.startsWith("data:") && !val.startsWith("javascript:") && !val.startsWith("#") && !val.startsWith("mailto:")) {
+        element.setAttribute(attr, resolveUrl(val, baseUrl));
+      }
+    }
+    // Handle srcset
+    const srcset = element.getAttribute("srcset");
+    if (srcset) {
+      const resolved = srcset.split(",").map(part => {
+        const [url, ...rest] = part.trim().split(/\s+/);
+        return [resolveUrl(url, baseUrl), ...rest].join(" ");
+      }).join(", ");
+      element.setAttribute("srcset", resolved);
+    }
+    // Handle style with url()
+    const style = element.getAttribute("style");
+    if (style && style.includes("url(")) {
+      const resolved = style.replace(/url\(['"]?([^'")]+)['"]?\)/g, (_match, url) => {
+        return `url('${resolveUrl(url, baseUrl)}')`;
+      });
+      element.setAttribute("style", resolved);
+    }
+  }
+  return doc.body?.innerHTML ?? html;
+}
+
 /** Remove all <script>, <iframe>, <form>, <noscript> tags and on* attributes */
 function sanitiseHtml(html: string, originUrl: string): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
@@ -31,16 +75,14 @@ function sanitiseHtml(html: string, originUrl: string): string {
         element.removeAttribute(attr.name);
       }
     }
-    // Neutralise links — replace href with "#" so they don't navigate away
+    // Neutralise links
     if (element.tagName === "A") {
       const href = element.getAttribute("href") || "";
       if (href.startsWith("javascript:")) {
         element.removeAttribute("href");
       } else {
-        // Keep the link visually but make it inert
         element.setAttribute("href", "#");
         element.setAttribute("data-original-href", href);
-        // Prevent click via inline attribute (will also be handled client-side)
         element.setAttribute("onclick", "return false;");
       }
     }
@@ -49,21 +91,32 @@ function sanitiseHtml(html: string, originUrl: string): string {
   return doc.body?.innerHTML ?? "";
 }
 
-/** Extract the first matching element's outerHTML from a full HTML document */
-function extractSection(html: string, selectors: string[]): string | null {
+/** Extract ALL matching elements and return the LONGEST one (most content) */
+function extractBestSection(html: string, selectors: string[]): string | null {
   const doc = new DOMParser().parseFromString(html, "text/html");
   if (!doc) return null;
 
+  let best: string | null = null;
+  let bestLen = 0;
+
   for (const sel of selectors) {
-    const el = doc.querySelector(sel);
-    if (el) {
-      return (el as Element).outerHTML;
+    try {
+      const els = doc.querySelectorAll(sel);
+      for (const el of els) {
+        const outer = (el as Element).outerHTML;
+        if (outer.length > bestLen) {
+          best = outer;
+          bestLen = outer.length;
+        }
+      }
+    } catch {
+      // Skip invalid selectors
     }
   }
-  return null;
+  return best;
 }
 
-/** Extract inline and linked stylesheet content hints from <head> */
+/** Extract inline <style> content from <head> */
 function extractHeadStyles(html: string): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
   if (!doc) return "";
@@ -72,6 +125,51 @@ function extractHeadStyles(html: string): string {
     styles.push((el as Element).textContent || "");
   }
   return styles.join("\n");
+}
+
+/** Extract external stylesheet URLs from <link rel="stylesheet"> */
+function extractLinkedStylesheetUrls(html: string, baseUrl: string): string[] {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  if (!doc) return [];
+  const urls: string[] = [];
+  for (const el of doc.querySelectorAll('link[rel="stylesheet"], link[rel="Stylesheet"]')) {
+    const href = (el as Element).getAttribute("href");
+    if (href) {
+      urls.push(resolveUrl(href, baseUrl));
+    }
+  }
+  return urls;
+}
+
+/** Fetch external CSS files and concatenate (with size limit) */
+async function fetchExternalCss(urls: string[], maxTotalBytes = 200_000): Promise<string> {
+  const parts: string[] = [];
+  let totalLen = 0;
+
+  for (const url of urls.slice(0, 10)) { // max 10 stylesheets
+    try {
+      const res = await fetch(url, { 
+        headers: { "Accept": "text/css,*/*" },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) continue;
+      const text = await res.text();
+      if (totalLen + text.length > maxTotalBytes) break;
+      parts.push(`/* Source: ${url} */\n${text}`);
+      totalLen += text.length;
+    } catch {
+      // Skip failed fetches
+    }
+  }
+  return parts.join("\n\n");
+}
+
+/** Resolve url() references inside CSS to absolute URLs */
+function resolveCssUrls(css: string, baseUrl: string): string {
+  return css.replace(/url\(['"]?([^'")]+)['"]?\)/g, (_match, url) => {
+    if (url.startsWith("data:") || url.startsWith("#")) return _match;
+    return `url('${resolveUrl(url, baseUrl)}')`;
+  });
 }
 
 serve(async (req) => {
@@ -125,13 +223,13 @@ serve(async (req) => {
       );
     }
 
-    // Choose formats based on mode
-    const formats: string[] = ["branding", "screenshot"];
+    // Choose formats based on mode — always include rawHtml for facsimile
+    const formats: string[] = ["screenshot"];
     if (mode === "facsimile" || mode === "both") {
-      formats.push("html");
+      formats.push("rawHtml");
     }
     if (mode === "branding" || mode === "both") {
-      formats.push("markdown");
+      formats.push("branding", "markdown");
     }
 
     // Scrape with Firecrawl
@@ -145,7 +243,7 @@ serve(async (req) => {
         url,
         formats,
         onlyMainContent: false,
-        waitFor: 3000,
+        waitFor: 5000,
       }),
     });
 
@@ -169,6 +267,7 @@ serve(async (req) => {
     const metadata =
       scrapeData?.data?.metadata ?? scrapeData?.metadata ?? null;
     const rawHtml =
+      scrapeData?.data?.rawHtml ?? scrapeData?.rawHtml ??
       scrapeData?.data?.html ?? scrapeData?.html ?? null;
 
     // Build facsimile data if HTML is available
@@ -176,20 +275,69 @@ serve(async (req) => {
       header_html: string | null;
       footer_html: string | null;
       head_styles: string | null;
+      header_length: number;
+      footer_length: number;
+      external_css_count: number;
     } | null = null;
 
     if (rawHtml && (mode === "facsimile" || mode === "both")) {
-      const headerSelectors = ["header", "nav", "[role='banner']", ".header", "#header", ".navbar", ".nav-bar", ".site-header"];
-      const footerSelectors = ["footer", "[role='contentinfo']", ".footer", "#footer", ".site-footer"];
+      const headerSelectors = [
+        "header", 
+        "nav", 
+        "[role='banner']", 
+        ".header", 
+        "#header", 
+        ".navbar", 
+        ".nav-bar", 
+        ".site-header",
+        ".main-header",
+        "#main-header",
+        ".top-bar",
+        "#masthead",
+        ".masthead",
+      ];
+      const footerSelectors = [
+        "footer", 
+        "[role='contentinfo']", 
+        ".footer", 
+        "#footer", 
+        ".site-footer",
+        ".main-footer",
+        "#main-footer",
+      ];
 
-      const rawHeader = extractSection(rawHtml, headerSelectors);
-      const rawFooter = extractSection(rawHtml, footerSelectors);
-      const headStyles = extractHeadStyles(rawHtml);
+      // Pick the best (largest) match
+      const rawHeader = extractBestSection(rawHtml, headerSelectors);
+      const rawFooter = extractBestSection(rawHtml, footerSelectors);
+      
+      // Get inline styles from head
+      const inlineStyles = extractHeadStyles(rawHtml);
+      
+      // Get external stylesheets and fetch them
+      const externalCssUrls = extractLinkedStylesheetUrls(rawHtml, url);
+      const externalCss = await fetchExternalCss(externalCssUrls);
+      
+      // Combine all CSS and resolve URLs
+      let combinedCss = [inlineStyles, externalCss].filter(Boolean).join("\n\n");
+      if (combinedCss) {
+        combinedCss = resolveCssUrls(combinedCss, url);
+      }
+
+      // Process header/footer: sanitise then resolve URLs
+      const processedHeader = rawHeader 
+        ? resolveAllUrls(sanitiseHtml(rawHeader, url), url) 
+        : null;
+      const processedFooter = rawFooter 
+        ? resolveAllUrls(sanitiseHtml(rawFooter, url), url) 
+        : null;
 
       facsimile = {
-        header_html: rawHeader ? sanitiseHtml(rawHeader, url) : null,
-        footer_html: rawFooter ? sanitiseHtml(rawFooter, url) : null,
-        head_styles: headStyles ? headStyles.substring(0, 50000) : null,
+        header_html: processedHeader,
+        footer_html: processedFooter,
+        head_styles: combinedCss ? combinedCss.substring(0, 300_000) : null,
+        header_length: processedHeader?.length ?? 0,
+        footer_length: processedFooter?.length ?? 0,
+        external_css_count: externalCssUrls.length,
       };
     }
 

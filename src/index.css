@@ -347,17 +347,26 @@
 
 
 /* ── Facsimile Header/Footer Scoping ── */
+/* The outer wrapper stays in normal flow (no `all: initial` here) */
 .facsimile-header,
 .facsimile-footer {
-  all: initial;
   display: block;
   width: 100%;
+  position: relative;
+}
+/* Reset only the INNER scraped content so tenant styles don't leak out */
+.facsimile-header > *,
+.facsimile-footer > * {
+  all: initial;
+  display: revert;
+  visibility: revert;
   font-family: system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   color: #333;
+  box-sizing: border-box;
 }
-.facsimile-header *,
-.facsimile-footer * {
+.facsimile-header * *,
+.facsimile-footer * * {
   box-sizing: border-box;
 }
 /* Ensure facsimile images are responsive */
