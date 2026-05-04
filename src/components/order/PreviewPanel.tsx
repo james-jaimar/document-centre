@@ -624,15 +624,26 @@ export default function PreviewPanel({
     });
   }, [computedPageRoles, effects?.bleed, isBusinessCards, isPoster, isRingBinder]);
 
+  /** Resolve TrimBox from preflight_data — checks trim_box_pt, then boxes.TrimBox/CropBox */
+  const resolvedTrimBox = useMemo(() => {
+    const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
+    if (!doc) return undefined;
+    const preflight = doc.preflight_data as Record<string, unknown> | null;
+    let tb = preflight?.trim_box_pt as number[] | undefined;
+    if (!tb || tb.length !== 4) {
+      const boxes = preflight?.boxes as Record<string, number[]> | undefined;
+      tb = boxes?.TrimBox ?? boxes?.CropBox;
+    }
+    return tb && tb.length === 4 ? tb : undefined;
+  }, [documents]);
+
   const pageAspectRatio = useMemo(() => {
     // Prefer trim box dimensions when available (e.g. business cards with bleed)
     const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
     if (doc) {
-      const preflight = doc.preflight_data as Record<string, unknown> | null;
-      const trimBox = preflight?.trim_box_pt as number[] | undefined;
-      if (trimBox && trimBox.length === 4) {
-        const trimW = Math.abs(trimBox[2] - trimBox[0]);
-        const trimH = Math.abs(trimBox[3] - trimBox[1]);
+      if (resolvedTrimBox) {
+        const trimW = Math.abs(resolvedTrimBox[2] - resolvedTrimBox[0]);
+        const trimH = Math.abs(resolvedTrimBox[3] - resolvedTrimBox[1]);
         if (trimW > 0 && trimH > 0) return trimW / trimH;
       }
       if (doc.page_width_mm && doc.page_height_mm) {
@@ -642,46 +653,52 @@ export default function PreviewPanel({
     // Business cards fallback: standard 90×50mm = 1.8
     if (isBusinessCards) return 1.8;
     return undefined;
-  }, [documents, isBusinessCards]);
+  }, [documents, isBusinessCards, resolvedTrimBox]);
 
   // Native PDF page dimensions for canvas-vs-content sizing
   const pdfSizeMm = useMemo(() => {
     const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
     if (!doc || !doc.page_width_mm || !doc.page_height_mm) return undefined;
     // Use trim box dimensions if available
-    const preflight = doc.preflight_data as Record<string, unknown> | null;
-    const trimBox = preflight?.trim_box_pt as number[] | undefined;
-    if (trimBox && trimBox.length === 4) {
-      const trimW = Math.abs(trimBox[2] - trimBox[0]);
-      const trimH = Math.abs(trimBox[3] - trimBox[1]);
+    if (resolvedTrimBox) {
+      const trimW = Math.abs(resolvedTrimBox[2] - resolvedTrimBox[0]);
+      const trimH = Math.abs(resolvedTrimBox[3] - resolvedTrimBox[1]);
       if (trimW > 0 && trimH > 0) {
         const PT_TO_MM = 25.4 / 72;
         return { widthMm: trimW * PT_TO_MM, heightMm: trimH * PT_TO_MM };
       }
     }
     return { widthMm: Number(doc.page_width_mm), heightMm: Number(doc.page_height_mm) };
-  }, [documents]);
+  }, [documents, resolvedTrimBox]);
 
   // Compute trim crop for PDFs with a TrimBox smaller than MediaBox (e.g. business cards with crop marks)
   const trimCrop = useMemo(() => {
     const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
-    if (!doc) return undefined;
+    if (!doc || !resolvedTrimBox) return undefined;
     const preflight = doc.preflight_data as Record<string, unknown> | null;
-    const trimBox = preflight?.trim_box_pt as number[] | undefined;
-    if (!trimBox || trimBox.length !== 4) return undefined;
-    // MediaBox dimensions in points (page_width_mm / page_height_mm are MediaBox in mm)
-    const mediaWmm = Number(doc.page_width_mm);
-    const mediaHmm = Number(doc.page_height_mm);
-    if (!mediaWmm || !mediaHmm) return undefined;
+    const boxes = preflight?.boxes as Record<string, number[]> | undefined;
     const PT_TO_MM = 25.4 / 72;
-    const trimW = Math.abs(trimBox[2] - trimBox[0]) * PT_TO_MM;
-    const trimH = Math.abs(trimBox[3] - trimBox[1]) * PT_TO_MM;
+    let mediaWmm = Number(doc.page_width_mm);
+    let mediaHmm = Number(doc.page_height_mm);
+    // If boxes.MediaBox exists, use it as the authoritative MediaBox since
+    // page_width_mm may have already been set to the TrimBox dimensions.
+    if (boxes?.MediaBox && boxes.MediaBox.length === 4) {
+      const mbW = Math.abs(boxes.MediaBox[2] - boxes.MediaBox[0]) * PT_TO_MM;
+      const mbH = Math.abs(boxes.MediaBox[3] - boxes.MediaBox[1]) * PT_TO_MM;
+      if (mbW > 0 && mbH > 0) {
+        mediaWmm = mbW;
+        mediaHmm = mbH;
+      }
+    }
+    if (!mediaWmm || !mediaHmm) return undefined;
+    const trimW = Math.abs(resolvedTrimBox[2] - resolvedTrimBox[0]) * PT_TO_MM;
+    const trimH = Math.abs(resolvedTrimBox[3] - resolvedTrimBox[1]) * PT_TO_MM;
     // Only apply crop if trim is meaningfully smaller than media (>1mm difference)
     if (mediaWmm - trimW < 1 && mediaHmm - trimH < 1) return undefined;
-    const left = Math.min(trimBox[0], trimBox[2]) * PT_TO_MM / mediaWmm;
-    const top = 1 - (Math.max(trimBox[1], trimBox[3]) * PT_TO_MM / mediaHmm); // PDF y is bottom-up
+    const left = Math.min(resolvedTrimBox[0], resolvedTrimBox[2]) * PT_TO_MM / mediaWmm;
+    const top = 1 - (Math.max(resolvedTrimBox[1], resolvedTrimBox[3]) * PT_TO_MM / mediaHmm); // PDF y is bottom-up
     return { left, top, width: trimW / mediaWmm, height: trimH / mediaHmm };
-  }, [documents]);
+  }, [documents, resolvedTrimBox]);
 
   const SCALE_TOGGLE_SLUGS = new Set(["poster", "flyers", "flyer", "business-cards", "business_cards"]);
   const showScaleToggle = !!(
