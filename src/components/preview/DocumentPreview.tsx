@@ -192,7 +192,7 @@ export default function DocumentPreview({
 
   // Business cards use the same LooseSheetsPreview renderer
   if (productType === "business_cards") {
-    return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} canvasSizeMm={canvasSizeMm} pdfSizeMm={pdfSizeMm} scaleMode={scaleMode} />;
+    return <LooseSheetsPreview {...commonProps} pdfSources={pdfSources} canvasSizeMm={canvasSizeMm} pdfSizeMm={pdfSizeMm} scaleMode={scaleMode} trimCrop={trimCrop} />;
   }
 
   if (FOLD_TYPES.has(productType)) {
