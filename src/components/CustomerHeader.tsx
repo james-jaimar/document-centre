@@ -61,7 +61,7 @@ export default function CustomerHeader() {
 
   if (isFacsimile) {
     return (
-      <>
+      <div className="w-full">
         {/* Facsimile header from tenant's website */}
         {branding.header_css && (
           <style dangerouslySetInnerHTML={{ __html: `.facsimile-header { all: initial; } .facsimile-header * { box-sizing: border-box; } ${branding.header_css}` }} />
