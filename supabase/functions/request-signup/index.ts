@@ -106,7 +106,14 @@ Deno.serve(async (req) => {
       }
 
       await admin.from("profiles").upsert(
-        { id: profileId, email, display_name: display_name || null },
+        {
+          id: profileId,
+          email,
+          display_name: display_name || null,
+          first_name: first_name || null,
+          last_name: last_name || null,
+          phone: phone || null,
+        },
         { onConflict: "id" }
       );
     }
