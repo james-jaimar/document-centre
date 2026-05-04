@@ -98,6 +98,12 @@ export function BrandingTab() {
     }
   };
 
+  const [scrapeStats, setScrapeStats] = useState<{
+    header_length: number;
+    footer_length: number;
+    external_css_count: number;
+  } | null>(null);
+
   const handleScrapeFacsimile = async () => {
     const scrapeUrl = originUrl || importUrl;
     if (!scrapeUrl) {
@@ -105,6 +111,7 @@ export function BrandingTab() {
       return;
     }
     setScrapingFacsimile(true);
+    setScrapeStats(null);
     try {
       const { data, error } = await supabase.functions.invoke("scrape-branding", {
         body: { url: scrapeUrl, mode: "facsimile" },
@@ -118,6 +125,11 @@ export function BrandingTab() {
         if (f.footer_html) setFooterHtml(f.footer_html);
         if (f.head_styles) setHeaderCss(f.head_styles);
         if (!originUrl) setOriginUrl(scrapeUrl);
+        setScrapeStats({
+          header_length: f.header_length ?? 0,
+          footer_length: f.footer_length ?? 0,
+          external_css_count: f.external_css_count ?? 0,
+        });
         toast.success("Header & footer scraped! Review the preview and save.");
       } else {
         toast.error("Could not extract header/footer from the page");
@@ -230,7 +242,30 @@ export function BrandingTab() {
             {scrapingFacsimile ? "Scraping Header & Footer..." : "Scrape Header & Footer"}
           </Button>
 
-          {/* Header preview */}
+          {/* Scrape quality feedback */}
+          {scrapeStats && (
+            <div className={`rounded-md border px-4 py-3 text-sm ${
+              scrapeStats.header_length < 200 
+                ? "border-amber-300 bg-amber-50 text-amber-800" 
+                : "border-green-300 bg-green-50 text-green-800"
+            }`}>
+              <p className="font-medium mb-1">
+                {scrapeStats.header_length < 200 ? "⚠️ Low quality scrape" : "✓ Scrape completed"}
+              </p>
+              <p className="text-xs">
+                Header: {scrapeStats.header_length.toLocaleString()} chars · 
+                Footer: {scrapeStats.footer_length.toLocaleString()} chars · 
+                {scrapeStats.external_css_count} external stylesheet{scrapeStats.external_css_count !== 1 ? "s" : ""} fetched
+              </p>
+              {scrapeStats.header_length < 200 && (
+                <p className="text-xs mt-1">
+                  The scraped header is very short — the site may use JavaScript-heavy rendering. 
+                  Consider editing the HTML manually or trying a different URL.
+                </p>
+              )}
+            </div>
+          )}
+
           {headerHtml && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">

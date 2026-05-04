@@ -3,11 +3,29 @@ import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Printer, Shield, Clock, Truck } from "lucide-react";
+import { useEffect, useRef } from "react";
 
 export default function StorefrontLanding() {
   const { tenant, slug, loading: tenantLoading, error: tenantError } = useTenantFromSlug();
   const { data: branding, isLoading: brandingLoading } = useTenantBranding(tenant?.id ?? null);
   const navigate = useNavigate();
+  const facsimileHeaderRef = useRef<HTMLDivElement>(null);
+  const facsimileFooterRef = useRef<HTMLDivElement>(null);
+
+  // Neutralise all links inside facsimile elements
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const anchor = target.closest("a");
+      if (anchor) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    const refs = [facsimileHeaderRef.current, facsimileFooterRef.current];
+    refs.forEach(el => el?.addEventListener("click", handler, true));
+    return () => refs.forEach(el => el?.removeEventListener("click", handler, true));
+  }, [branding?.header_html, branding?.footer_html]);
 
   if (tenantLoading || brandingLoading) {
     return (
@@ -42,37 +60,63 @@ export default function StorefrontLanding() {
 
   const portalName = b.portal_name || tenant.name;
   const handleCTA = () => navigate(`/t/${slug}/auth`);
+  const isFacsimile = branding?.facsimile_enabled && branding?.header_html;
 
   return (
     <div
-      className="min-h-screen"
+      className="min-h-screen flex flex-col"
       style={{
         "--storefront-primary": b.primary_color,
         "--storefront-secondary": b.secondary_color,
         "--storefront-accent": b.accent_color,
       } as React.CSSProperties}
     >
-      {/* Nav */}
-      <nav className="sticky top-0 z-50 border-b backdrop-blur-md bg-white/80 dark:bg-gray-900/80">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {b.logo_url && (
-              <img src={b.logo_url} alt={portalName} className="h-8 w-auto object-contain" />
-            )}
-            <span className="text-lg font-bold" style={{ color: b.primary_color }}>
-              {portalName}
-            </span>
+      {/* Nav — facsimile or standard */}
+      {isFacsimile ? (
+        <>
+          {branding.header_css && (
+            <style dangerouslySetInnerHTML={{ __html: branding.header_css }} />
+          )}
+          <div
+            ref={facsimileHeaderRef}
+            className="facsimile-header"
+            dangerouslySetInnerHTML={{ __html: branding.header_html }}
+          />
+          {/* Slim bar with Sign In / Get Started */}
+          <div className="flex items-center justify-between px-6 py-2 border-b bg-white/90 backdrop-blur-sm">
+            <span className="text-sm text-muted-foreground">Online Print Centre</span>
+            <div className="flex items-center gap-3">
+              <Button variant="ghost" size="sm" onClick={() => navigate(`/t/${slug}/auth`)}>
+                Sign In
+              </Button>
+              <Button size="sm" onClick={handleCTA} style={{ backgroundColor: b.primary_color, color: "#fff" }}>
+                Get Started
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" onClick={() => navigate(`/t/${slug}/auth`)}>
-              Sign In
-            </Button>
-            <Button onClick={handleCTA} style={{ backgroundColor: b.primary_color, color: "#fff" }}>
-              Get Started
-            </Button>
+        </>
+      ) : (
+        <nav className="sticky top-0 z-50 border-b backdrop-blur-md bg-white/80 dark:bg-gray-900/80">
+          <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {b.logo_url && (
+                <img src={b.logo_url} alt={portalName} className="h-8 w-auto object-contain" />
+              )}
+              <span className="text-lg font-bold" style={{ color: b.primary_color }}>
+                {portalName}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button variant="ghost" onClick={() => navigate(`/t/${slug}/auth`)}>
+                Sign In
+              </Button>
+              <Button onClick={handleCTA} style={{ backgroundColor: b.primary_color, color: "#fff" }}>
+                Get Started
+              </Button>
+            </div>
           </div>
-        </div>
-      </nav>
+        </nav>
+      )}
 
       {/* Hero */}
       <section className="relative overflow-hidden">
@@ -158,20 +202,28 @@ export default function StorefrontLanding() {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t py-8 bg-muted/20">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            {b.logo_url && <img src={b.logo_url} alt="" className="h-5 w-auto" />}
-            <span>© {new Date().getFullYear()} {portalName}</span>
+      {/* Footer — facsimile or standard */}
+      {isFacsimile && branding?.footer_html ? (
+        <div
+          ref={facsimileFooterRef}
+          className="facsimile-footer mt-auto"
+          dangerouslySetInnerHTML={{ __html: branding.footer_html }}
+        />
+      ) : (
+        <footer className="border-t py-8 bg-muted/20 mt-auto">
+          <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2">
+              {b.logo_url && <img src={b.logo_url} alt="" className="h-5 w-auto" />}
+              <span>© {new Date().getFullYear()} {portalName}</span>
+            </div>
+            <div className="flex gap-6">
+              <button onClick={() => navigate(`/t/${slug}/auth`)} className="hover:text-foreground transition-colors">
+                Sign In
+              </button>
+            </div>
           </div>
-          <div className="flex gap-6">
-            <button onClick={() => navigate(`/t/${slug}/auth`)} className="hover:text-foreground transition-colors">
-              Sign In
-            </button>
-          </div>
-        </div>
-      </footer>
+        </footer>
+      )}
     </div>
   );
 }
