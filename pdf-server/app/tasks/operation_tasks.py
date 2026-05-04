@@ -794,3 +794,47 @@ def prepare_for_product(
         raise exc
     finally:
         db.close()
+
+
+@shared_task(bind=True, queue='documents')
+def pad_pages_pdf(self, asset_id: str, job_id: str, multiple: int = 4):
+    """Pad a PDF with blank pages so total count is divisible by `multiple`.
+
+    Used for saddle-stitched booklets. Promotes the padded PDF to
+    normalized_storage_path and updates the asset's page_count.
+    """
+    db = _db()
+    try:
+        with Workspace() as ws:
+            src = _download_asset_pdf(db, asset_id, ws)
+            prefix = _get_asset_prefix(db, asset_id)
+            out = ws.path("padded.pdf")
+            stats = pdf_ops.pad_pages(src, out, multiple)
+
+            if stats["pages_added"] == 0:
+                job_repo.mark_done(db, job_id, {**stats, "skipped": True})
+                return {**stats, "skipped": True}
+
+            storage_path = unique_name(f'{prefix}outputs', '.pdf')
+            storage.upload(out, storage_path, 'application/pdf')
+
+            asset_repo.update_asset(db, asset_id, {
+                "normalized_storage_path": storage_path,
+                "page_count": stats["final_page_count"],
+            })
+
+            derived_file_repo.create_file(
+                db, asset_id=asset_id, job_id=job_id,
+                kind="padded_pdf", storage_path=storage_path,
+                media_type="application/pdf", metadata=stats,
+            )
+
+            result = {**stats, "storage_path": storage_path}
+            job_repo.mark_done(db, job_id, result)
+            return result
+
+    except Exception as exc:
+        job_repo.mark_failed(db, job_id, traceback.format_exc())
+        raise exc
+    finally:
+        db.close()

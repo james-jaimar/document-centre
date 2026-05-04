@@ -1649,6 +1649,38 @@ export default function OrderFiles() {
     }
   }, [selectedDocId, orderItem, documents, sections.length, addSection, assertSizeMatchesActive, assertOrientationOk]);
 
+  // Auto-assign Front + Back for business cards with a 2-page document
+  const handleAutoAssignBusinessCard = useCallback(async () => {
+    if (!selectedDocId || !orderItem) return;
+    if (!assertOrientationOk(selectedDocId)) return;
+    if (!assertSizeMatchesActive(selectedDocId)) return;
+    const doc = documents.find((d) => d.id === selectedDocId);
+    if (!doc || (doc.page_count ?? 0) < 2) return;
+    try {
+      await addSection.mutateAsync({
+        order_item_id: orderItem.id,
+        document_id: selectedDocId,
+        section_type: "front_cover" as any,
+        sort_order: sections.length,
+        page_range_start: 0,
+        page_range_end: 0,
+        is_color: true,
+      });
+      await addSection.mutateAsync({
+        order_item_id: orderItem.id,
+        document_id: selectedDocId,
+        section_type: "back_cover" as any,
+        sort_order: sections.length + 1,
+        page_range_start: 1,
+        page_range_end: 1,
+        is_color: true,
+      });
+      toast.success("Auto-assigned Front + Back from pages 1 & 2");
+    } catch (err: any) {
+      toast.error("Failed to auto-assign", { description: err.message });
+    }
+  }, [selectedDocId, orderItem, documents, sections.length, addSection, assertSizeMatchesActive, assertOrientationOk]);
+
   const handleRemoveSection = useCallback(async () => {
     if (!selectedSectionId || !orderItem) return;
     try {
@@ -2041,6 +2073,7 @@ export default function OrderFiles() {
                onAutoAssignBrochure={handleAutoAssignBrochure}
                onAutoAssignPanels={handleAutoAssignPanels}
                onAutoAssignFlyer={handleAutoAssignFlyer}
+               onAutoAssignBusinessCard={handleAutoAssignBusinessCard}
             />
           </div>
         </div>
@@ -2073,6 +2106,7 @@ export default function OrderFiles() {
            onAutoAssignBrochure={handleAutoAssignBrochure}
            onAutoAssignPanels={handleAutoAssignPanels}
            onAutoAssignFlyer={handleAutoAssignFlyer}
+           onAutoAssignBusinessCard={handleAutoAssignBusinessCard}
         />
       </div>
 

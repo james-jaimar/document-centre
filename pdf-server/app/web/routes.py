@@ -23,6 +23,7 @@ from app.schemas.assets import (
     PrintReadyRequest,
     RenderPagesRequest,
     PrepareForProductRequest,
+    PadPagesRequest,
 )
 from app.services.assets import asset_repo
 from app.services.jobs import job_repo
@@ -50,6 +51,7 @@ from app.tasks.operation_tasks import (
     normalize_orientation,
     print_ready,
     prepare_for_product,
+    pad_pages_pdf,
 )
 
 api_router = APIRouter()
@@ -503,5 +505,20 @@ def op_prepare_for_product(payload: PrepareForProductRequest, db: Session = Depe
         payload.dest_profile,
         payload.intent,
     )
+    job_repo.set_celery_task_id(db, job_id, task.id)
+    return {"job_id": job_id}
+
+
+@api_router.post("/operations/pad-pages")
+def op_pad_pages(payload: PadPagesRequest, db: Session = Depends(get_db)):
+    """Pad a PDF with blank pages so total count is divisible by `multiple`.
+
+    Used for saddle-stitched booklets where each folded sheet has 4 faces.
+    Promotes the padded PDF to the asset's normalized_storage_path.
+    """
+    asset_id = str(payload.asset_id)
+    body = payload.model_dump(mode="json")
+    job_id = job_repo.create_job(db, asset_id, "pad_pages", "documents", body)
+    task = pad_pages_pdf.delay(asset_id, job_id, payload.multiple)
     job_repo.set_celery_task_id(db, job_id, task.id)
     return {"job_id": job_id}
