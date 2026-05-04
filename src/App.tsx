@@ -128,11 +128,12 @@ const App = () => (
             {/* Public mobile upload — no auth required */}
             <Route path="/upload/:token" element={<MobileUpload />} />
 
-            {/* Public storefront landing */}
-            <Route path="/t/:slug" element={<StorefrontLanding />} />
+            {/* Public storefront landing (guests see landing, authed users → print-centre) */}
+            <Route path="/t/:slug" element={<PublicStorefront />} />
 
             {/* Customer portal — slug-based storefront */}
             <Route path="/t/:slug" element={<ProtectedRoute><CustomerLayout /></ProtectedRoute>}>
+              <Route index element={<Navigate to="print-centre" replace />} />
               <Route path="dashboard" element={<CustomerDashboard />} />
               <Route path="print-centre" element={<CustomerDashboard />} />
               <Route path="orders/:id" element={<CustomerOrderDetail />} />
