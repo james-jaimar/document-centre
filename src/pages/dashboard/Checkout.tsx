@@ -139,6 +139,9 @@ export default function Checkout() {
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
         {/* Left: Form */}
         <div className="space-y-6">
+          {/* Account — inline auth */}
+          <CheckoutAuth />
+
           {/* Delivery Method */}
           <div className="border border-border rounded-lg p-4 space-y-3">
             <h3 className="font-semibold text-foreground">Delivery Method</h3>
