@@ -40,6 +40,8 @@ export interface DocumentPreviewProps {
   pdfSizeMm?: { widthMm: number; heightMm: number };
   /** How the PDF content is scaled within the canvas */
   scaleMode?: "fit" | "fill";
+  /** TrimBox crop for clipping crop marks from inline PDF rendering */
+  trimCrop?: TrimCrop;
 }
 
 const BOUND_TYPES = new Set([
