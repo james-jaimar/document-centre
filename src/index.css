@@ -345,3 +345,30 @@
 
 .dc-marketing .dc-muted { color: hsl(var(--dc-text-muted)); }
 
+
+/* ── Facsimile Header/Footer Scoping ── */
+.facsimile-header,
+.facsimile-footer {
+  all: initial;
+  display: block;
+  width: 100%;
+  font-family: system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  color: #333;
+}
+.facsimile-header *,
+.facsimile-footer * {
+  box-sizing: border-box;
+}
+/* Ensure facsimile images are responsive */
+.facsimile-header img,
+.facsimile-footer img {
+  max-width: 100%;
+  height: auto;
+}
+/* Neutralise all links visually (cursor stays pointer for familiarity) */
+.facsimile-header a,
+.facsimile-footer a {
+  cursor: default;
+  pointer-events: none;
+}

@@ -13,6 +13,13 @@ export interface TenantBranding {
   font_body: string;
   cta_text: string;
   landing_layout: string;
+  // Facsimile fields
+  facsimile_enabled: boolean;
+  header_html: string;
+  footer_html: string;
+  header_css: string;
+  footer_css: string;
+  origin_url: string;
 }
 
 const DEFAULTS: TenantBranding = {
@@ -27,6 +34,12 @@ const DEFAULTS: TenantBranding = {
   font_body: "",
   cta_text: "Start Printing",
   landing_layout: "hero_centered",
+  facsimile_enabled: false,
+  header_html: "",
+  footer_html: "",
+  header_css: "",
+  footer_css: "",
+  origin_url: "",
 };
 
 /**
@@ -51,6 +64,12 @@ export function useTenantBranding(tenantId: string | null) {
       const map: Record<string, unknown> = {};
       for (const row of data ?? []) {
         map[row.setting_key] = row.setting_value;
+      }
+
+      // Parse boolean for facsimile_enabled
+      if (map.facsimile_enabled !== undefined) {
+        const v = map.facsimile_enabled;
+        map.facsimile_enabled = v === true || v === "true";
       }
 
       return {
