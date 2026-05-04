@@ -34,7 +34,11 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const email = String(body?.email ?? "").trim().toLowerCase();
     const display_name = body?.display_name ? String(body.display_name).trim() : null;
+    const first_name = body?.first_name ? String(body.first_name).trim() : null;
+    const last_name = body?.last_name ? String(body.last_name).trim() : null;
+    const phone = body?.phone ? String(body.phone).trim() : null;
     const tenant_slug = body?.tenant_slug ? String(body.tenant_slug) : null;
+    const userPassword = body?.password ? String(body.password) : null;
 
     if (!email || !email.includes("@") || !tenant_slug) {
       return new Response(JSON.stringify({ error: "email and tenant_slug required" }), {
