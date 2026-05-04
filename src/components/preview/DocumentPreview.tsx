@@ -73,6 +73,7 @@ export default function DocumentPreview({
   canvasSizeMm,
   pdfSizeMm,
   scaleMode,
+  trimCrop,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
