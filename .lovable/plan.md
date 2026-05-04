@@ -1,38 +1,99 @@
-## Problem
+## Goal
 
-Two competing `<Route path="/t/:slug">` definitions cause React Router v6 to always prefer the layout route (with children), meaning:
-- **Unauthenticated users** at `/t/postnet` get redirected to `/t/postnet/auth` by `ProtectedRoute` instead of seeing the public `StorefrontLanding`.
-- **Authenticated users** at `/t/postnet` see a blank page because the layout route has no `index` child.
+Make `/t/:slug` fully public (no auth gate). Auth is only needed at checkout, and it happens **inline** — no redirect. The top of the checkout page has an embedded account section where guests either sign in or create a new account before placing their order.
 
-## Fix (src/App.tsx)
+## Auth Boundaries (Final)
 
-1. **Remove the standalone StorefrontLanding route** (line 132).
-2. **Add an index route** inside the `/t/:slug` customer portal layout that:
-   - If the user is **not authenticated** → renders `StorefrontLanding` (public landing page).
-   - If the user **is authenticated** → redirects to `/t/:slug/print-centre` (their dashboard).
+| Action | Auth required? |
+|--------|---------------|
+| View My Print Centre | No |
+| Browse product tiles | No |
+| Upload files / configure order | No |
+| View cart | No |
+| **Checkout** | **Yes — inline on the same page** |
+| View orders / account | Yes |
 
-This can be done with a small wrapper component (e.g. `StorefrontIndex`) that checks auth state:
-- No user → `<StorefrontLanding />`
-- Has user → `<Navigate to="print-centre" replace />`
+## Changes
 
-3. **Unwrap ProtectedRoute from the `/t/:slug` layout route** and instead apply it to each child route individually (or use a nested layout). This allows the index route to be public while child routes remain protected.
+### 1. Routes — remove auth gate from `/t/:slug` layout (`src/App.tsx`)
 
-Alternative simpler approach: Keep `ProtectedRoute` on the layout but add the `StorefrontLanding` as a separate route with a **more specific path** pattern, and add an index redirect inside the protected layout. Since React Router v6 doesn't easily support "public index + protected children" on the same path, the cleanest fix is:
+- Remove `<ProtectedRoute>` wrapper from the `/t/:slug` layout route.
+- Remove the dead `<Route path="/t/:slug" element={<PublicStorefront />} />` line.
+- Index route renders `<CustomerDashboard />` directly.
+- Wrap **only** `orders`, `orders/:id`, `orders/:id/confirmation`, `account`, `settings` in `<ProtectedRoute>`.
+- Checkout stays **public** (it handles auth inline).
 
-**Approach chosen:**
-- Keep line 132 (`StorefrontLanding` on `/t/:slug`) but make it render **only for unauthenticated users** by wrapping it in a component that checks auth and redirects authenticated users to `print-centre`.
-- Add `<Route index element={<Navigate to="print-centre" replace />} />` inside the protected `/t/:slug` layout (line 135) so authenticated users hitting `/t/postnet/` don't see a blank page.
+### 2. Inline checkout auth (`src/pages/dashboard/Checkout.tsx`)
 
-### Files to edit
+Add a collapsible **Account** section at the top of the checkout page (above Delivery Method):
 
-**src/App.tsx**
-- Line 132: Wrap `StorefrontLanding` in a new `PublicStorefront` component that renders the landing for guests but redirects logged-in users to `/t/:slug/print-centre`.
-- After line 135: Add `<Route index element={<Navigate to="print-centre" replace />} />` as the first child of the customer portal layout.
+- **If user is already logged in**: show a green "Signed in as name@email.com" badge. No form needed.
+- **If guest**: show two tabs — **"New Account"** and **"Sign In"**:
+  - **New Account tab**: First Name, Last Name, Email, Phone, Password fields. On submit, calls `request-signup` edge function (which creates the user + tenant membership), then auto-signs them in with `supabase.auth.signInWithPassword`. The checkout page re-renders with the user now authenticated.
+  - **Sign In tab**: Email + Password. On submit, calls `supabase.auth.signInWithPassword`. 
+- The "Place Order" button is **disabled** until the user is authenticated.
+- Error/success feedback inline (no toast redirect).
 
-**src/components/PublicStorefront.tsx** (new file)
-- Small component: checks `useAuth()` user state. If logged in, `<Navigate to="print-centre" replace />`. If not, renders `<StorefrontLanding />`.
+### 3. Update `request-signup` edge function
 
-This ensures:
-- `/t/postnet` unauthenticated → sees the branded landing page
-- `/t/postnet` authenticated → redirects to `/t/postnet/print-centre`
-- `/t/postnet/dashboard` etc. → still protected as before
+Currently it generates a random password and sends a "set your password" email. For checkout signup we need to accept an actual password from the user:
+
+- Accept optional `password` field in the request body.
+- If `password` is provided: create the user with that password (instead of random). Still send a welcome email but skip the "set your password" link — just confirm the account.
+- If `password` is not provided: existing flow unchanged (random password + set-password email).
+
+### 4. Guest-safe sidebar and header
+
+**`CustomerSidebar.tsx`**: When `user` is null — show Home + Create only. Hide Orders, Cart badge count, My Account, user card, sign-out button.
+
+**`CustomerHeader.tsx`**: When `user` is null — hide Orders, My Account nav items. Show a "Sign In" link instead of account dropdown.
+
+### 5. Guest-safe dashboard (`CustomerDashboard.tsx`)
+
+Product family tiles always visible. User-specific sections (recent uploads, tracking, drafts) only render when `user` exists.
+
+### 6. Guest-safe order/upload hooks
+
+`useCreateOrder` and `useUploadSession` currently require `user.id`. For guest usage:
+- Allow `user_id = null` in order creation — resolve `tenant_id` from the slug context instead of from membership.
+- Store guest order IDs in `sessionStorage`.
+- After inline checkout auth, update the guest orders' `user_id` to the newly authenticated user before placing the order.
+
+### 7. Database migration
+
+- Make `orders.user_id` nullable (if not already).
+- Make `upload_sessions.created_by` nullable.
+- Add RLS policies allowing guest inserts on orders/upload_sessions (scoped by tenant).
+- After checkout auth: an RPC or direct update claims guest orders by setting `user_id`.
+
+### 8. Cleanup
+
+- Delete `src/components/PublicStorefront.tsx`.
+- `StorefrontLanding.tsx` kept for potential future use.
+
+## Checkout UX Flow
+
+```text
+┌─────────────────────────────────────────────┐
+│  Account                                     │
+│  ┌──────────────┬──────────────┐            │
+│  │ New Account  │  Sign In     │  (tabs)    │
+│  └──────────────┴──────────────┘            │
+│  First Name: [________] Last Name: [______] │
+│  Email:      [________________________]     │
+│  Phone:      [________________________]     │
+│  Password:   [________________________]     │
+│        [Create Account & Continue]          │
+├─────────────────────────────────────────────┤
+│  Delivery Method                             │
+│  ○ Collection  ○ Delivery                   │
+├─────────────────────────────────────────────┤
+│  Special Instructions                        │
+│  [_______________________________________]  │
+├─────────────────────────────────────────────┤
+│  Order Summary          │  Total  R 3,490   │
+│                         │  [Place Order]     │
+└─────────────────────────────────────────────┘
+```
+
+Once authenticated, the Account section collapses to a simple confirmation line and "Place Order" becomes active.
