@@ -464,6 +464,32 @@ export default function OrderFiles() {
         // the server idempotently skips when already converted. Unconditional
         // ensures orientation normalization runs after any advisory resolution.
         await finalizeOrientationAndPrintReady(doc.id, workingAssetId, doc.fileName);
+        // Persist boxes so the preview can resolve TrimBox for CSS cropping
+        try {
+          const asset = await getAsset(workingAssetId);
+          const assetBoxes = asset.boxes as Record<string, number[]> | null;
+          if (assetBoxes) {
+            const { data: preDoc } = await supabase
+              .from("documents")
+              .select("preflight_data")
+              .eq("id", doc.id)
+              .maybeSingle();
+            const pre = (preDoc?.preflight_data as Record<string, any>) ?? {};
+            const trimBox = assetBoxes.TrimBox;
+            await supabase
+              .from("documents")
+              .update({
+                preflight_data: {
+                  ...pre,
+                  boxes: assetBoxes,
+                  ...(trimBox && trimBox.length === 4 ? { trim_box_pt: trimBox } : {}),
+                },
+              })
+              .eq("id", doc.id);
+          }
+        } catch {
+          // Non-critical — preview will still work, just without trim cropping
+        }
         await renderWithProgress(
           doc.id,
           workingAssetId,
