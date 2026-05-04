@@ -1,111 +1,65 @@
 
-# Seamless Tenant Header/Footer Facsimile
+# Fix Tenant Header/Footer Facsimile System
 
-## Concept
+## Problems Identified
 
-When a customer visits `onlineprint.postnet.co.za` (CNAME to `postnet.document-centre.com`), they see a header and footer that looks identical to Postnet's real website. All links in the facsimile are disabled/removed except a single "Back to [tenant].co.za" link. The customer never feels like they left the tenant's site.
+From the screenshots:
 
-## What Changes
+1. **`/t/postnet` (StorefrontLanding)** -- Shows a generic branded landing page with "PostNet South Africa | PostNet" text in the nav. This page is **standalone** and does NOT use the facsimile header/footer system at all. It should wrap itself in the scraped PostNet header/footer when facsimile is enabled.
 
-### 1. Enhanced `scrape-branding` Edge Function
+2. **`/t/postnet/dashboard` (CustomerLayout)** -- The facsimile header renders but is broken: just "Call Us Now: 0860 767 8638" and a tiny broken PostNet logo, then a completely empty content area below. The scraped HTML is clearly low quality and the CSS isolation (`all: initial`) is nuking inherited styles needed by the content area.
 
-The current scrape only extracts colours/logos/fonts. We'll extend it to also capture:
+3. **Demo/Try page** (screenshot 3) shows the correct experience a PostNet customer should see -- products, upload area, sidebar -- but with Document Centre branding instead of PostNet's.
 
-- **Header HTML** — the `<header>`, `<nav>`, or top-of-page navigation block
-- **Footer HTML** — the `<footer>` or bottom-of-page block
-- **Associated CSS** — computed styles for the header/footer elements, inlined
-- **Logo and images** — re-uploaded to our S3/storage so they don't break if the tenant changes theirs
+## Plan
 
-The scraping approach:
-- Use Firecrawl's `html` format to get the full rendered page
-- Server-side: parse the HTML with a DOM parser, extract `<header>` and `<footer>` elements
-- Strip all `<a href>` links (replace with `<span>` or dead links) except one designated "back to site" link
-- Strip all `<script>` tags and event handlers (security)
-- Inline critical CSS so the facsimile renders standalone
-- Store the sanitised HTML blobs
+### 1. Fix StorefrontLanding to use facsimile header/footer
 
-### 2. New Branding Settings Keys
+When `facsimile_enabled` is true for a tenant, the `StorefrontLanding` page should replace its built-in nav/footer with the scraped facsimile header/footer. The hero, features, and CTA sections stay but sit between the tenant's header and footer.
 
-Add to `tenant_settings` (category: `branding`):
+**File**: `src/pages/storefront/StorefrontLanding.tsx`
+- Import `useTenantBranding` (already imported)
+- When `branding.facsimile_enabled && branding.header_html`, render the facsimile header div instead of the generic nav bar
+- Same for footer: render facsimile footer instead of the generic footer
+- Add the same click-neutralisation logic used in `CustomerHeader.tsx`
 
-| Key | Type | Description |
-|-----|------|-------------|
-| `header_html` | string | Sanitised HTML for the header facsimile |
-| `footer_html` | string | Sanitised HTML for the footer facsimile |
-| `header_css` | string | Scoped CSS for the header |
-| `footer_css` | string | Scoped CSS for the footer |
-| `origin_url` | string | The tenant's real website URL (for the "back" link) |
-| `facsimile_enabled` | boolean | Toggle to use facsimile vs default branding header |
+### 2. Fix CSS isolation breaking the content area
 
-No schema migration needed — `tenant_settings` is already a flexible key/value store.
+The current `all: initial` on `.facsimile-header` is too aggressive -- it creates an isolation boundary that can interfere with layout. The facsimile container should be isolated but not break the flex layout of `CustomerLayout`.
 
-### 3. BrandingTab UI Update
+**File**: `src/index.css`
+- Scope `all: initial` more carefully -- apply it only to the inner content, not the wrapper div, so the flex layout of CustomerLayout remains intact
+- Ensure the facsimile container has `width: 100%` and `display: block`
 
-Add a new card section "Website Header & Footer" to the admin branding settings:
+### 3. Improve scrape-branding Edge Function
 
-- Input field for the tenant's website URL
-- "Scrape Header/Footer" button that calls the enhanced edge function
-- Preview of the scraped header and footer HTML
-- Toggle: "Use website header/footer" (facsimile_enabled)
-- Manual HTML editor (optional, for tweaking the scraped result)
-- The "back to site" link URL (auto-populated from origin_url)
+The current scraper extracts the first `<header>` element but PostNet's site likely uses a complex structure. The scraper needs to:
+- Try multiple selectors and pick the **largest** match (by HTML length) rather than the first
+- Also grab the linked stylesheets from the page (not just inline `<style>` tags) since most sites load CSS externally
+- Resolve relative image URLs (like the PostNet logo) to absolute URLs so they render in our app
+- Increase Firecrawl `waitFor` for JS-heavy sites
 
-### 4. CustomerHeader / CustomerFooter — Facsimile Mode
+**File**: `supabase/functions/scrape-branding/index.ts`
+- When extracting header/footer, try all selectors and pick the one with the most content
+- Add a `resolveUrls()` function that converts relative `src` and `href` attributes to absolute URLs based on the origin
+- Request `rawHtml` format from Firecrawl (unprocessed HTML) in addition to `html` to get better fidelity
+- Extract linked stylesheet URLs from `<link rel="stylesheet">` tags and attempt to fetch + inline them (up to a size limit)
 
-When `facsimile_enabled` is true for the tenant:
+### 4. Add "Re-scrape" feedback in BrandingTab
 
-- **CustomerHeader**: Instead of rendering our nav bar, render the `header_html` inside a scoped container (e.g. `<div class="facsimile-header" dangerouslySetInnerHTML>`) plus our own minimal internal nav (Home, Orders, Cart, Account) as a slim secondary bar below it
-- **CustomerFooter**: Render `footer_html` in a scoped container, with "Powered by Document Centre" retained
-- All tenant HTML is sandboxed via scoped CSS class prefixing to prevent style leaks
-- Our internal navigation (the slim bar) remains functional
+Currently there's no way to see what was scraped or retry easily with feedback.
 
-When `facsimile_enabled` is false, everything works exactly as it does today.
+**File**: `src/pages/admin/settings/BrandingTab.tsx`
+- After scraping, show a live preview of the header/footer HTML in an iframe or sandboxed div
+- Show a warning if the scraped header is very short (< 200 chars) suggesting the scrape may have been poor quality
 
-### 5. `useTenantBranding` Hook Extension
+### Files to modify
 
-Add `header_html`, `footer_html`, `header_css`, `footer_css`, `origin_url`, and `facsimile_enabled` to the `TenantBranding` interface and query.
-
-### 6. Security Considerations
-
-- All scraped HTML is sanitised server-side (strip scripts, event handlers, iframes, forms)
-- Use DOMPurify or equivalent on the server edge function
-- CSS is scoped under a `.facsimile-header` / `.facsimile-footer` wrapper to prevent global style pollution
-- `dangerouslySetInnerHTML` is acceptable here because content is admin-controlled and server-sanitised
-
-## Architecture Flow
-
-```text
-Admin enters tenant website URL
-        │
-        ▼
-scrape-branding edge function
-  ├─ Firecrawl fetches full HTML
-  ├─ Parse DOM, extract <header> + <footer>
-  ├─ Strip links, scripts, forms
-  ├─ Inline computed CSS
-  ├─ Scope CSS under .facsimile-*
-  └─ Return sanitised blobs
-        │
-        ▼
-Admin previews + saves to tenant_settings
-        │
-        ▼
-Customer visits onlineprint.postnet.co.za
-  ├─ CNAME → postnet.document-centre.com
-  ├─ useTenantBranding loads facsimile HTML
-  ├─ CustomerHeader renders scraped header
-  │   + slim internal nav bar below
-  └─ CustomerFooter renders scraped footer
-      + "Powered by Document Centre"
-```
-
-## Files to Create/Modify
-
-| File | Action |
+| File | Change |
 |------|--------|
-| `supabase/functions/scrape-branding/index.ts` | Extend to extract/sanitise header+footer HTML |
-| `src/hooks/useTenantBranding.ts` | Add facsimile fields to interface and query |
-| `src/pages/admin/settings/BrandingTab.tsx` | Add header/footer scrape UI section |
-| `src/components/CustomerHeader.tsx` | Facsimile mode rendering |
-| `src/components/CustomerFooter.tsx` | Facsimile mode rendering |
-| `src/index.css` | Scoped `.facsimile-header` / `.facsimile-footer` base styles |
+| `src/pages/storefront/StorefrontLanding.tsx` | Use facsimile header/footer when enabled |
+| `src/index.css` | Fix CSS isolation to not break layout |
+| `supabase/functions/scrape-branding/index.ts` | Better selector logic, resolve URLs, fetch external CSS |
+| `src/pages/admin/settings/BrandingTab.tsx` | Preview + quality warning |
+| `src/components/CustomerHeader.tsx` | Minor fix: ensure facsimile wrapper doesn't break flex layout |
+| `src/components/CustomerFooter.tsx` | Same fix as header |
