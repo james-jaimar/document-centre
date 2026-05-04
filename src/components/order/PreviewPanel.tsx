@@ -895,6 +895,7 @@ export default function PreviewPanel({
           pdfSources={pdfSources}
           canvasSizeMm={canvasSizeMm}
           pdfSizeMm={pdfSizeMm}
+          trimCrop={trimCrop}
         />
       )}
 
