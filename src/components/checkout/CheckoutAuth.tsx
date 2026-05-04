@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, CheckCircle2, Loader2, User } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 type AuthTab = "register" | "login";
 
@@ -29,7 +30,10 @@ export default function CheckoutAuth() {
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
 
-  if (user) {
+  const isAnonymous = !!user?.is_anonymous;
+
+  // Fully authenticated (non-anonymous) user — show confirmed state
+  if (user && !isAnonymous) {
     return (
       <div className="border border-border rounded-lg p-4">
         <div className="flex items-center gap-3">
@@ -45,6 +49,7 @@ export default function CheckoutAuth() {
     );
   }
 
+  // Convert anonymous user to a real account
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -58,28 +63,57 @@ export default function CheckoutAuth() {
     }
     setLoading(true);
     try {
-      // Create account via request-signup with password
-      const { data, error: fnErr } = await supabase.functions.invoke("request-signup", {
-        body: {
+      if (isAnonymous) {
+        // Convert the anonymous user to a permanent account
+        const { error: updateErr } = await supabase.auth.updateUser({
           email: email.trim(),
-          display_name: `${firstName.trim()} ${lastName.trim()}`.trim(),
-          first_name: firstName.trim(),
-          last_name: lastName.trim(),
-          phone: phone.trim() || null,
-          tenant_slug: slug,
-          password: password,
-        },
-      });
-      if (fnErr) throw fnErr;
-      if ((data as any)?.error) throw new Error((data as any).error);
+          password,
+          data: {
+            display_name: `${firstName.trim()} ${lastName.trim()}`.trim(),
+            first_name: firstName.trim(),
+            last_name: lastName.trim(),
+            tenant_slug: slug,
+          },
+        });
+        if (updateErr) throw updateErr;
 
-      // Auto sign-in
-      const { error: signInErr } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
-      if (signInErr) throw signInErr;
-      // useAuth will re-render with the user
+        // Update the profile with name/email
+        await supabase
+          .from("profiles")
+          .update({
+            display_name: `${firstName.trim()} ${lastName.trim()}`.trim(),
+            first_name: firstName.trim(),
+            last_name: lastName.trim(),
+            email: email.trim(),
+            phone: phone.trim() || null,
+            is_demo: false,
+          })
+          .eq("id", user!.id);
+
+        toast.success("Account created! You can now place your order.");
+      } else {
+        // No session at all — create via request-signup + auto sign-in
+        const { data, error: fnErr } = await supabase.functions.invoke("request-signup", {
+          body: {
+            email: email.trim(),
+            display_name: `${firstName.trim()} ${lastName.trim()}`.trim(),
+            first_name: firstName.trim(),
+            last_name: lastName.trim(),
+            phone: phone.trim() || null,
+            tenant_slug: slug,
+            password: password,
+          },
+        });
+        if (fnErr) throw fnErr;
+        if ((data as any)?.error) throw new Error((data as any).error);
+
+        const { error: signInErr } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+        if (signInErr) throw signInErr;
+        toast.success("Account created!");
+      }
     } catch (err: any) {
       setError(err.message || "Failed to create account.");
     } finally {
@@ -87,6 +121,7 @@ export default function CheckoutAuth() {
     }
   };
 
+  // Sign into existing account — need to transfer anonymous orders
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -96,11 +131,30 @@ export default function CheckoutAuth() {
     }
     setLoading(true);
     try {
+      const anonUserId = isAnonymous ? user!.id : null;
+
+      // Sign out anonymous session first, then sign in as real user
+      if (isAnonymous) {
+        await supabase.auth.signOut();
+      }
+
       const { error: signInErr } = await supabase.auth.signInWithPassword({
         email: loginEmail.trim(),
         password: loginPassword,
       });
       if (signInErr) throw signInErr;
+
+      // Transfer draft orders from anonymous user to the real user
+      if (anonUserId) {
+        const { error: claimErr } = await supabase.functions.invoke("claim-anonymous-orders", {
+          body: { anonymous_user_id: anonUserId },
+        });
+        if (claimErr) {
+          console.warn("Failed to claim anonymous orders:", claimErr);
+        }
+      }
+
+      toast.success("Signed in!");
     } catch (err: any) {
       setError(err.message || "Sign in failed.");
     } finally {
