@@ -667,13 +667,31 @@ export default function PreviewPanel({
     const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
     if (!doc) return undefined;
     const preflight = doc.preflight_data as Record<string, unknown> | null;
-    const trimBox = preflight?.trim_box_pt as number[] | undefined;
+    // Check trim_box_pt first, then fall back to boxes.TrimBox or boxes.CropBox
+    let trimBox = preflight?.trim_box_pt as number[] | undefined;
+    if (!trimBox || trimBox.length !== 4) {
+      const boxes = preflight?.boxes as Record<string, number[]> | undefined;
+      trimBox = boxes?.TrimBox ?? boxes?.CropBox;
+    }
     if (!trimBox || trimBox.length !== 4) return undefined;
-    // MediaBox dimensions in points (page_width_mm / page_height_mm are MediaBox in mm)
-    const mediaWmm = Number(doc.page_width_mm);
-    const mediaHmm = Number(doc.page_height_mm);
-    if (!mediaWmm || !mediaHmm) return undefined;
+    // MediaBox dimensions — page_width_mm/page_height_mm reflect the full page
+    // (MediaBox). When the backend stores boxes, also check MediaBox there to
+    // ensure we compare against the correct reference.
+    const boxes = preflight?.boxes as Record<string, number[]> | undefined;
     const PT_TO_MM = 25.4 / 72;
+    let mediaWmm = Number(doc.page_width_mm);
+    let mediaHmm = Number(doc.page_height_mm);
+    // If boxes.MediaBox exists, use it as the authoritative MediaBox since
+    // page_width_mm may have already been set to the TrimBox dimensions.
+    if (boxes?.MediaBox && boxes.MediaBox.length === 4) {
+      const mbW = Math.abs(boxes.MediaBox[2] - boxes.MediaBox[0]) * PT_TO_MM;
+      const mbH = Math.abs(boxes.MediaBox[3] - boxes.MediaBox[1]) * PT_TO_MM;
+      if (mbW > 0 && mbH > 0) {
+        mediaWmm = mbW;
+        mediaHmm = mbH;
+      }
+    }
+    if (!mediaWmm || !mediaHmm) return undefined;
     const trimW = Math.abs(trimBox[2] - trimBox[0]) * PT_TO_MM;
     const trimH = Math.abs(trimBox[3] - trimBox[1]) * PT_TO_MM;
     // Only apply crop if trim is meaningfully smaller than media (>1mm difference)
