@@ -49,7 +49,12 @@ export function useCartItemCount() {
 /**
  * Get or create the cart order, returning its ID.
  */
-async function getOrCreateCartId(userId: string, tenantId: string, appId: string | null): Promise<string> {
+async function getOrCreateCartId(
+  userId: string,
+  tenantId: string,
+  appId: string | null,
+  branchId?: string | null
+): Promise<string> {
   // Try to find existing cart scoped to tenant
   const { data: existing } = await supabase
     .from("orders")
@@ -62,13 +67,14 @@ async function getOrCreateCartId(userId: string, tenantId: string, appId: string
 
   if (existing) return existing.id;
 
-  // Create new cart order
+  // Create new cart order — stamp with active branch
   const { data: newCart, error } = await supabase
     .from("orders")
     .insert({
       user_id: userId,
       tenant_id: tenantId,
       app_id: appId,
+      branch_id: branchId ?? null,
       order_status: "cart" as any,
       total_price: 0,
     })

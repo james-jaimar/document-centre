@@ -102,7 +102,13 @@ export function useCreateOrder() {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: async (productFamilyId: string) => {
+    mutationFn: async (input: string | { productFamilyId: string; branchId?: string | null }) => {
+      // Accept either a plain familyId string (legacy) or an object with branchId
+      const { productFamilyId, branchId } =
+        typeof input === "string"
+          ? { productFamilyId: input, branchId: null as string | null }
+          : { productFamilyId: input.productFamilyId, branchId: input.branchId ?? null };
+
       if (!user) throw new Error("Not authenticated");
 
       // Get user's tenant membership for tenant_id and app_id
@@ -126,13 +132,14 @@ export function useCreateOrder() {
         tenantId = profile?.tenant_id ?? null;
       }
 
-      // Create order
+      // Create order — stamp with branch_id when available
       const { data: order, error: orderError } = await supabase
         .from("orders")
         .insert({
           user_id: user.id,
           tenant_id: tenantId,
           app_id: appId,
+          branch_id: branchId,
           order_status: "draft",
         })
         .select()
