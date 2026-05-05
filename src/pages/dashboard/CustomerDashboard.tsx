@@ -23,6 +23,8 @@ import {
   UploadCloud,
   FolderOpen,
   FileImage,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useState, useCallback, useRef, useEffect } from "react";
