@@ -43,7 +43,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
 
 export default function NewOrder() {
   const navigate = useNavigate();
-  const { slug } = useParams<{ slug: string }>();
+  const { tenantPath } = useTenantSlug();
 
   const { data: families, isLoading } = useQuery({
     queryKey: ["product_families_active"],

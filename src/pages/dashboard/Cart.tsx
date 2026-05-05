@@ -18,7 +18,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 export default function Cart() {
-  const { slug } = useParams<{ slug: string }>();
+  const { tenantPath } = useTenantSlug();
   const navigate = useNavigate();
   const { data: cart, isLoading } = useCart();
   const { region } = useRegionalPricing();
