@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { useBranch } from "@/contexts/BranchContext";
 import { buildJobSnapshot } from "@/lib/orders/buildJobSnapshot";
 import { copyS3Object } from "@/lib/s3Storage";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
