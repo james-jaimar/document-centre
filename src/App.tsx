@@ -17,7 +17,7 @@ import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "@/pages/NotFound";
 import { StorefrontRedirect } from "@/components/StorefrontRedirect";
 import { AppEntryRedirect } from "@/components/AppEntryRedirect";
-import { SubdomainWrapper } from "@/components/SubdomainRouter";
+import { SubdomainWrapper, useSubdomainTenant } from "@/components/SubdomainRouter";
 
 import MarketingLanding from "@/pages/MarketingLanding";
 import Try from "@/pages/Try";
