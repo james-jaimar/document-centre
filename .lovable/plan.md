@@ -1,26 +1,15 @@
-## Issue 1: Demo Banner Showing on Tenant Portals
+## Problem
 
-The `DemoBanner` in `CustomerLayout.tsx` displays whenever the logged-in user's `profiles.is_demo` is `true`. This is wrong for real tenant portals -- demo mode is a platform concern, not a tenant portal concern.
+The subdomain customer routes (`<Route path="/" element={<CustomerLayout />}>` at line 158 of App.tsx) are always mounted in the route tree. React Router matches them before the `MarketingLanding` route (line 332), so visiting `document-centre.com` (bare domain) renders the empty CustomerLayout instead of the marketing landing page.
 
-**Fix**: Remove the demo banner entirely from `CustomerLayout.tsx` (the tenant customer layout). Demo banners belong only in the platform/Try experience, not on tenant storefronts. Remove the `DemoBanner` component, the `is_demo` profile query, and the conditional render.
+## Fix
 
-### Files changed
-- `src/components/CustomerLayout.tsx` -- Remove `DemoBanner` component definition, remove `useQuery` for `profile_demo_flag`, remove `isDemo` variable, remove `{isDemo && <DemoBanner .../>}` render. Clean up unused imports (`Sparkles`, `X` if no longer used, the profile query).
+**Approach**: Make the subdomain routes conditional. Only include them when `useTenantFromHost` has matched a tenant subdomain.
 
----
+### Changes
 
-## Issue 2: Logo Upload in Branding Settings
+1. **`src/components/SubdomainRouter.tsx`** -- Export a new component `SubdomainRoutes` that renders the root-level customer routes only when a subdomain tenant is matched. Also expose `useSubdomainTenant()` so routing can branch conditionally.
 
-Currently the branding tab only has a text input for "Logo URL". Admins need to upload an image file directly.
+2. **`src/App.tsx`** -- Replace the static subdomain route block (lines 157-176) with the conditional `SubdomainRoutes` component that only renders when on a tenant subdomain. The `MarketingLanding` route at `/` will then correctly match on the bare domain.
 
-**Fix**: Add a file upload button next to the Logo URL input. When a file is selected, upload it to Supabase Storage (using the existing `s3-storage` edge function pattern or direct Supabase storage) under a tenant-scoped path like `tenant-assets/{tenantId}/logo.{ext}`. On success, set the `logoUrl` state to the resulting public/signed URL.
-
-### Files changed
-- `src/pages/admin/settings/BrandingTab.tsx`:
-  - Add a hidden `<input type="file" accept="image/*">` and an "Upload" button next to the Logo URL input
-  - On file select, upload via `supabase.storage.from('tenant-assets').upload(...)` (or via `s3-storage` edge function)
-  - Set `logoUrl` to the public URL of the uploaded file
-  - Show upload progress/loading state
-  - Same treatment for Hero Image if desired
-
-- **Migration** (if `tenant-assets` bucket doesn't exist): Create a Supabase storage bucket `tenant-assets` with appropriate RLS policies allowing tenant admins to upload.
+This is a small, surgical fix -- no other files need to change. The `/t/:slug` path-based routes remain untouched.
