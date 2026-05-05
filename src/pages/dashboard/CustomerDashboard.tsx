@@ -241,42 +241,11 @@ const CustomerDashboard = () => {
       </div>
 
       {/* ── Product Picker ── */}
-      <div className="glass-card overflow-hidden">
-        <div className="border-b border-border bg-gradient-to-r from-secondary/90 to-secondary/40 px-6 py-5">
-          <h2 className="text-center text-xl font-semibold tracking-tight text-foreground">
-            Get started by choosing a product
-          </h2>
-        </div>
-        <div className="overflow-x-auto px-5 py-6">
-          <div className="flex gap-4">
-            {familiesLoading
-              ? Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-32 w-[150px] shrink-0 rounded-3xl" />
-                ))
-              : families?.map((f) => {
-                  const Icon = ICON_MAP[f.icon ?? ""] ?? Package;
-                  return (
-                    <button
-                      key={f.id}
-                      className="product-tile"
-                      onClick={() => handlePickProduct(f.id, f.slug)}
-                    >
-                      <div className="product-thumb overflow-hidden">
-                        {(SLUG_IMAGE_MAP[f.slug] || f.image_url) ? (
-                          <img src={SLUG_IMAGE_MAP[f.slug] || f.image_url!} alt={f.name} className="h-full w-full object-cover" />
-                        ) : (
-                          <Icon className="h-9 w-9 text-muted-foreground" />
-                        )}
-                      </div>
-                      <span className="text-center text-base font-medium text-foreground">
-                        {f.name}
-                      </span>
-                    </button>
-                  );
-                })}
-          </div>
-        </div>
-      </div>
+      <ProductCarousel
+        families={families}
+        familiesLoading={familiesLoading}
+        onPickProduct={handlePickProduct}
+      />
 
       {/* ── Full-width Upload Zone ── */}
       <div>
