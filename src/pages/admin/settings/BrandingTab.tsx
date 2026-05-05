@@ -5,13 +5,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useTenantSettingsMap, useBulkUpsertTenantSettings } from "@/hooks/useTenantSettings";
-import { useState, useEffect } from "react";
+import { useTenantContext } from "@/hooks/useTenantContext";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { Save, Palette, Globe, Loader2, Type, Image, Layout, Eye, EyeOff, Info } from "lucide-react";
+import { Save, Palette, Globe, Loader2, Type, Image, Layout, Eye, EyeOff, Info, Upload } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 export function BrandingTab() {
   const { settingsMap, isLoading } = useTenantSettingsMap("branding");
+  const { tenantId } = useTenantContext();
   const bulkUpsert = useBulkUpsertTenantSettings();
 
   const [primaryColor, setPrimaryColor] = useState("");
@@ -262,19 +264,25 @@ export function BrandingTab() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Image className="h-5 w-5" /> Images</CardTitle>
-          <CardDescription>Logo and hero image URLs for the portal header and landing page</CardDescription>
+          <CardDescription>Logo and hero image for the portal header and landing page. Upload a file or paste a URL.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-6 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label>Logo URL</Label>
-            <Input value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="https://..." />
-            {logoUrl && <img src={logoUrl} alt="Logo preview" className="h-10 w-auto mt-2 object-contain rounded border p-1" />}
-          </div>
-          <div className="space-y-2">
-            <Label>Hero Image URL</Label>
-            <Input value={heroImageUrl} onChange={(e) => setHeroImageUrl(e.target.value)} placeholder="https://..." />
-            {heroImageUrl && <img src={heroImageUrl} alt="Hero preview" className="h-20 w-auto mt-2 object-cover rounded border" />}
-          </div>
+          <ImageUploadField
+            label="Logo"
+            value={logoUrl}
+            onChange={setLogoUrl}
+            tenantId={tenantId}
+            fileKey="logo"
+            previewClass="h-12 w-auto object-contain"
+          />
+          <ImageUploadField
+            label="Hero Image"
+            value={heroImageUrl}
+            onChange={setHeroImageUrl}
+            tenantId={tenantId}
+            fileKey="hero"
+            previewClass="h-20 w-auto object-cover"
+          />
         </CardContent>
       </Card>
 
