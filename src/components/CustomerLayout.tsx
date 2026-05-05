@@ -131,6 +131,7 @@ function CustomerLayoutInner() {
 
   return (
     <div className="flex h-screen w-full flex-col" style={tenantStyle}>
+      <BranchPicker />
       {/* Header — full width across the top */}
       <CustomerHeader />
 
