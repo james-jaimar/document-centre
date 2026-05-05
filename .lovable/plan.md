@@ -1,19 +1,18 @@
-## Logo as "Back to site" link
+## Tenant Favicon Support
 
-**Current behaviour**: A small "Back to site" text link sits left of the logo. The logo itself links to the print centre home (`/t/:slug/print-centre`).
+### What changes
 
-**New behaviour**:
-1. Remove the "Back to site" text link entirely.
-2. When `originUrl` is set, the logo becomes an `<a href={originUrl} target="_blank">` (opens origin site in a new tab, keeping the print centre tab open).
-3. When `originUrl` is **not** set, the logo remains a React Router `<Link>` to the print centre home (current fallback behaviour).
+1. **Branding Tab** (`src/pages/admin/settings/BrandingTab.tsx`)
+   - Add a `favicon_url` state field, loaded from `settingsMap.favicon_url`
+   - Add an `ImageUploadField` for "Favicon" in the Images card (accepts .ico, .png, .svg), using `fileKey="favicon"` so it uploads to `tenant-assets/{tenantId}/favicon.{ext}`
+   - Include `favicon_url` in the `handleSave` bulk upsert
 
-### File changed
+2. **Tenant Branding hook** (`src/hooks/useTenantBranding.ts`)
+   - Add `favicon_url: string` to the `TenantBranding` interface with default `""`
 
-**`src/components/CustomerHeader.tsx`** (lines 131-156)
+3. **Customer Layout** (`src/components/CustomerLayout.tsx`)
+   - Once branding is loaded, if `branding.favicon_url` is set, dynamically update `document.querySelector('link[rel="icon"]')` href to the tenant's favicon URL via a `useEffect`
+   - On unmount (or when leaving the tenant portal), restore the default `/favicon.svg`
 
-- Delete the "Back to site" `<a>` block (lines 133-143).
-- Replace the `<Link to={tenantPath("print-centre")}>` logo wrapper with a conditional:
-  - If `originUrl` exists → `<a href={originUrl} target="_blank" rel="noopener noreferrer">` wrapping the logo image/text.
-  - Otherwise → keep the existing `<Link to={tenantPath("print-centre")}>`.
-
-No other files are affected. The `ExternalLink` icon import can be removed since nothing else uses it.
+### No database migration needed
+`favicon_url` is stored as a `tenant_settings` row (category=branding, key=favicon_url) — same pattern as all other branding fields.

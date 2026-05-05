@@ -48,6 +48,16 @@ function CustomerLayoutInner() {
   // True once branding has resolved (or there's no tenant to load for)
   const brandingReady = !tenant?.id || !brandingLoading;
 
+  // Dynamic favicon
+  useEffect(() => {
+    if (!branding?.favicon_url) return;
+    const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (!link) return;
+    const original = link.href;
+    link.href = branding.favicon_url;
+    return () => { link.href = original; };
+  }, [branding?.favicon_url]);
+
   // --- Anonymous session bootstrap ---
   const bootstrapAttempted = useRef(false);
 

@@ -96,6 +96,7 @@ export function BrandingTab() {
   const [ctaText, setCtaText] = useState("");
   const [landingLayout, setLandingLayout] = useState("hero_centered");
   const [originUrl, setOriginUrl] = useState("");
+  const [faviconUrl, setFaviconUrl] = useState("");
 
   // Import state
   const [importUrl, setImportUrl] = useState("");
@@ -127,6 +128,7 @@ export function BrandingTab() {
       setCtaText((settingsMap.cta_text as string) ?? "");
       setLandingLayout((settingsMap.landing_layout as string) ?? "hero_centered");
       setOriginUrl((settingsMap.origin_url as string) ?? "");
+      setFaviconUrl((settingsMap.favicon_url as string) ?? "");
       setHeaderHtml((settingsMap.header_html as string) ?? "");
       setFooterHtml((settingsMap.footer_html as string) ?? "");
     }
@@ -214,6 +216,7 @@ export function BrandingTab() {
         { category: "branding", setting_key: "cta_text", setting_value: ctaText, value_type: "string" },
         { category: "branding", setting_key: "landing_layout", setting_value: landingLayout, value_type: "string" },
         { category: "branding", setting_key: "origin_url", setting_value: originUrl, value_type: "string" },
+        { category: "branding", setting_key: "favicon_url", setting_value: faviconUrl, value_type: "string" },
         // Store scraped HTML for reference (not rendered live on customer pages)
         { category: "branding", setting_key: "header_html", setting_value: headerHtml, value_type: "string" },
         { category: "branding", setting_key: "footer_html", setting_value: footerHtml, value_type: "string" },
@@ -350,6 +353,14 @@ export function BrandingTab() {
             tenantId={tenantId}
             fileKey="hero"
             previewClass="h-20 w-auto object-cover"
+          />
+          <ImageUploadField
+            label="Favicon"
+            value={faviconUrl}
+            onChange={setFaviconUrl}
+            tenantId={tenantId}
+            fileKey="favicon"
+            previewClass="h-8 w-8 object-contain"
           />
         </CardContent>
       </Card>
