@@ -20,7 +20,7 @@ export default function CustomerFooter() {
         .select("setting_key, setting_value")
         .eq("tenant_id", tenant!.id)
         .eq("category", "general")
-        .in("setting_key", ["support_email", "support_phone"]);
+        .in("setting_key", ["support_email", "support_phone", "terms_url", "privacy_url"]);
       const map: Record<string, string> = {};
       for (const row of data ?? []) {
         const v = row.setting_value as unknown;
@@ -83,8 +83,16 @@ export default function CustomerFooter() {
 
         {/* Right: legal + powered-by */}
         <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <Link to={`${base}/terms`} className="hover:text-foreground transition-colors">Terms</Link>
-          <Link to={`${base}/privacy`} className="hover:text-foreground transition-colors">Privacy</Link>
+          {support?.terms_url ? (
+            <a href={support.terms_url} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Terms</a>
+          ) : (
+            <Link to={`${base}/terms`} className="hover:text-foreground transition-colors">Terms</Link>
+          )}
+          {support?.privacy_url ? (
+            <a href={support.privacy_url} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Privacy</a>
+          ) : (
+            <Link to={`${base}/privacy`} className="hover:text-foreground transition-colors">Privacy</Link>
+          )}
           {!isDemo && (
             <a
               href="https://document-centre.com"

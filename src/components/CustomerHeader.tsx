@@ -27,7 +27,13 @@ export default function CustomerHeader() {
   const cartCount = useCartItemCount();
 
   const portalName = branding?.portal_name || tenant?.name || "Print Centre";
-  const logoUrl = branding?.logo_url || tenant?.logo_url || "";
+
+  // Logo resolution: explicit branding > tenant table > extract from scraped header HTML
+  let logoUrl = branding?.logo_url || tenant?.logo_url || "";
+  if (!logoUrl && branding?.facsimile_enabled && branding?.header_html) {
+    const match = branding.header_html.match(/<img[^>]+src=["']([^"']+)["']/i);
+    if (match?.[1]) logoUrl = match[1];
+  }
   const initial = (user?.email?.[0] || "U").toUpperCase();
   const originUrl = branding?.origin_url;
 
