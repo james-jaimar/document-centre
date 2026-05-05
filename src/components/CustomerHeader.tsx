@@ -167,6 +167,19 @@ export default function CustomerHeader() {
         </Link>
       )}
 
+      {/* Branch indicator — multi-branch tenants only */}
+      {isMultiBranch && activeBranch && (
+        <button
+          onClick={openPicker}
+          className="hidden md:flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-colors border border-border/50 ml-2 shrink-0"
+          title="Change branch"
+        >
+          <MapPin className="h-3.5 w-3.5 shrink-0" style={{ color: "hsl(var(--tenant-primary, var(--primary)))" }} />
+          <span className="truncate max-w-[140px]">{activeBranch.name}</span>
+          <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
+        </button>
+      )}
+
       <nav className="hidden md:flex items-center gap-7 mx-auto">
         {navItems.map((item) => (
           <NavLink
