@@ -11,7 +11,75 @@ import { toast } from "sonner";
 import { Save, Palette, Globe, Loader2, Type, Image, Layout, Eye, EyeOff, Info, Upload } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
-export function BrandingTab() {
+function ImageUploadField({
+  label, value, onChange, tenantId, fileKey, previewClass,
+}: {
+  label: string; value: string; onChange: (v: string) => void;
+  tenantId: string | null; fileKey: string; previewClass: string;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleUpload = async (file: File) => {
+    if (!tenantId) { toast.error("No tenant context"); return; }
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop()?.toLowerCase() || "png";
+      const path = `${tenantId}/${fileKey}.${ext}`;
+      const { error } = await supabase.storage
+        .from("tenant-assets")
+        .upload(path, file, { upsert: true, contentType: file.type });
+      if (error) throw error;
+      const { data: urlData } = supabase.storage.from("tenant-assets").getPublicUrl(path);
+      // Append cache-buster so browser picks up the new file
+      onChange(urlData.publicUrl + "?v=" + Date.now());
+      toast.success(`${label} uploaded`);
+    } catch (e: any) {
+      toast.error(e.message ?? "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <div className="flex gap-2">
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="https://..."
+          className="flex-1"
+        />
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleUpload(f);
+            e.target.value = "";
+          }}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          disabled={uploading}
+          onClick={() => fileRef.current?.click()}
+          title={`Upload ${label.toLowerCase()}`}
+        >
+          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+        </Button>
+      </div>
+      {value && (
+        <img src={value} alt={`${label} preview`} className={`mt-2 rounded border p-1 ${previewClass}`} />
+      )}
+    </div>
+  );
+}
+
   const { settingsMap, isLoading } = useTenantSettingsMap("branding");
   const { tenantId } = useTenantContext();
   const bulkUpsert = useBulkUpsertTenantSettings();
