@@ -1,3 +1,4 @@
+import { useBranch } from "@/contexts/BranchContext";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -62,6 +63,7 @@ export default function PhotoPrintsBuilder() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { tenantId } = useTenantContext();
+  const { activeBranch } = useBranch();
 
   const createOrder = useCreateOrder();
   const addItemToCart = useAddItemToCart();
@@ -93,7 +95,10 @@ export default function PhotoPrintsBuilder() {
     if (orderItem?.id) return orderItem.id;
     if (!family?.id) throw new Error("Photo Prints product is not configured.");
 
-    const newOrder = await createOrder.mutateAsync(family.id);
+   const newOrder = await createOrder.mutateAsync({
+     productFamilyId: family.id,
+     branchId: activeBranch?.id ?? null,
+   });
     setCreatedOrderId(newOrder.id);
     const { data: newItem, error } = await supabase
       .from("order_items")
