@@ -4,11 +4,13 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useUpdateTenant, type Tenant } from "@/hooks/useTenants";
+import { useTenantSettingsMap, useBulkUpsertTenantSettings } from "@/hooks/useTenantSettings";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Save, Globe, ExternalLink, Copy } from "lucide-react";
+import { Save, Globe, ExternalLink, Copy, MessageSquare } from "lucide-react";
 
 const CURRENCIES = ["ZAR", "USD", "GBP", "EUR", "AUD", "CAD", "NZD"];
 const COUNTRIES = [
