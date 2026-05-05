@@ -2,7 +2,7 @@ import { Outlet, useNavigate, useParams } from "react-router-dom";
 import CustomerSidebar from "@/components/CustomerSidebar";
 import CustomerHeader from "@/components/CustomerHeader";
 import CustomerFooter from "@/components/CustomerFooter";
-import { Menu, PanelLeftOpen, Sparkles, Loader2, X } from "lucide-react";
+import { Menu, PanelLeftOpen, Sparkles, X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { SidebarCollapseProvider, useSidebarCollapse } from "@/hooks/useSidebarCollapse";
@@ -71,7 +71,6 @@ function CustomerLayoutInner() {
   const { data: branding } = useTenantBranding(tenant?.id ?? null);
 
   // --- Anonymous session bootstrap ---
-  const [bootstrapping, setBootstrapping] = useState(false);
   const bootstrapAttempted = useRef(false);
 
   useEffect(() => {
@@ -85,10 +84,8 @@ function CustomerLayoutInner() {
     }
 
     bootstrapAttempted.current = true;
-    let cancelled = false;
 
     (async () => {
-      setBootstrapping(true);
       try {
         // Check for existing session first
         const { data: { session: existing } } = await supabase.auth.getSession();
@@ -97,7 +94,6 @@ function CustomerLayoutInner() {
           await supabase.functions.invoke("tenant-bootstrap", {
             body: { tenant_slug: slug },
           }).catch(() => null);
-          if (!cancelled) setBootstrapping(false);
           return;
         }
 
@@ -107,21 +103,14 @@ function CustomerLayoutInner() {
         });
         if (signInErr) throw signInErr;
 
-        // Wait briefly for the trigger to wire profile + membership
-        await new Promise((r) => setTimeout(r, 400));
-
         // Belt-and-braces: ensure membership via edge function
         await supabase.functions.invoke("tenant-bootstrap", {
           body: { tenant_slug: slug },
         }).catch((e) => console.warn("tenant-bootstrap warning:", e));
       } catch (e: any) {
         console.error("Anonymous session bootstrap failed:", e);
-      } finally {
-        if (!cancelled) setBootstrapping(false);
       }
     })();
-
-    return () => { cancelled = true; };
   }, [slug, user, authLoading]);
 
   const { data: profile } = useQuery({
@@ -150,17 +139,6 @@ function CustomerLayoutInner() {
     return style as React.CSSProperties;
   }, [branding]);
 
-  // Show a brief loading state while bootstrapping anonymous session
-  if (bootstrapping) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-3 text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Setting up your session…</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex h-screen w-full flex-col" style={tenantStyle}>
