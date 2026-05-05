@@ -196,6 +196,123 @@ function getOrderDisplayName(order: any): string {
   return `Order ${order.id.slice(0, 8)}`;
 }
 
+/* ── Product Carousel ── */
+function ProductCarousel({
+  families,
+  familiesLoading,
+  onPickProduct,
+}: {
+  families: any[] | undefined;
+  familiesLoading: boolean;
+  onPickProduct: (id: string, slug: string) => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const checkScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    checkScroll();
+    el.addEventListener("scroll", checkScroll, { passive: true });
+    const ro = new ResizeObserver(checkScroll);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", checkScroll);
+      ro.disconnect();
+    };
+  }, [checkScroll, families]);
+
+  const scroll = (dir: "left" | "right") => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const amount = el.clientWidth * 0.75;
+    el.scrollBy({ left: dir === "left" ? -amount : amount, behavior: "smooth" });
+  };
+
+  return (
+    <div className="glass-card overflow-hidden">
+      <div className="border-b border-border bg-gradient-to-r from-secondary/90 to-secondary/40 px-6 py-5">
+        <h2 className="text-center text-xl font-semibold tracking-tight text-foreground">
+          Get started by choosing a product
+        </h2>
+      </div>
+      <div className="relative">
+        {/* Left arrow */}
+        {canScrollLeft && (
+          <button
+            onClick={() => scroll("left")}
+            className="absolute left-2 top-1/2 -translate-y-1/2 z-10 hidden md:flex h-9 w-9 items-center justify-center rounded-full bg-white/80 backdrop-blur-sm border border-border/60 shadow-md hover:bg-white transition-all"
+            aria-label="Scroll left"
+          >
+            <ChevronLeft className="h-5 w-5 text-foreground" />
+          </button>
+        )}
+
+        {/* Right arrow */}
+        {canScrollRight && (
+          <button
+            onClick={() => scroll("right")}
+            className="absolute right-2 top-1/2 -translate-y-1/2 z-10 hidden md:flex h-9 w-9 items-center justify-center rounded-full bg-white/80 backdrop-blur-sm border border-border/60 shadow-md hover:bg-white transition-all"
+            aria-label="Scroll right"
+          >
+            <ChevronRight className="h-5 w-5 text-foreground" />
+          </button>
+        )}
+
+        {/* Left fade */}
+        {canScrollLeft && (
+          <div className="pointer-events-none absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-white/80 to-transparent z-[5] hidden md:block" />
+        )}
+        {/* Right fade */}
+        {canScrollRight && (
+          <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-white/80 to-transparent z-[5] hidden md:block" />
+        )}
+
+        <div
+          ref={scrollRef}
+          className="overflow-x-auto px-5 py-6 hide-scrollbar"
+        >
+          <div className="flex gap-4">
+            {familiesLoading
+              ? Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-32 w-[150px] shrink-0 rounded-3xl" />
+                ))
+              : families?.map((f) => {
+                  const Icon = ICON_MAP[f.icon ?? ""] ?? Package;
+                  return (
+                    <button
+                      key={f.id}
+                      className="product-tile"
+                      onClick={() => onPickProduct(f.id, f.slug)}
+                    >
+                      <div className="product-thumb overflow-hidden">
+                        {(SLUG_IMAGE_MAP[f.slug] || f.image_url) ? (
+                          <img src={SLUG_IMAGE_MAP[f.slug] || f.image_url!} alt={f.name} className="h-full w-full object-cover" />
+                        ) : (
+                          <Icon className="h-9 w-9 text-muted-foreground" />
+                        )}
+                      </div>
+                      <span className="text-center text-base font-medium text-foreground">
+                        {f.name}
+                      </span>
+                    </button>
+                  );
+                })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Component ── */
 const CustomerDashboard = () => {
   const navigate = useNavigate();
