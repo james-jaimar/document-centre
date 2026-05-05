@@ -1,18 +1,40 @@
-## Tenant Favicon Support
 
-### What changes
+## Tawk.to Chat Widget Scoping
 
-1. **Branding Tab** (`src/pages/admin/settings/BrandingTab.tsx`)
-   - Add a `favicon_url` state field, loaded from `settingsMap.favicon_url`
-   - Add an `ImageUploadField` for "Favicon" in the Images card (accepts .ico, .png, .svg), using `fileKey="favicon"` so it uploads to `tenant-assets/{tenantId}/favicon.{ext}`
-   - Include `favicon_url` in the `handleSave` bulk upsert
+### Problem
+The platform's Tawk.to widget currently loads on all tenant portals. It should only appear on the main marketing site and the demo tenant. Real tenants should be able to configure their own Tawk.to widget.
 
-2. **Tenant Branding hook** (`src/hooks/useTenantBranding.ts`)
-   - Add `favicon_url: string` to the `TenantBranding` interface with default `""`
+### Changes
 
-3. **Customer Layout** (`src/components/CustomerLayout.tsx`)
-   - Once branding is loaded, if `branding.favicon_url` is set, dynamically update `document.querySelector('link[rel="icon"]')` href to the tenant's favicon URL via a `useEffect`
-   - On unmount (or when leaving the tenant portal), restore the default `/favicon.svg`
+#### 1. Remove ChatWidget from CustomerLayout
+**File: `src/components/CustomerLayout.tsx`**
+- Remove the `<ChatWidget />` import and rendering.
+- Replace with a new `<TenantChatWidget />` component that conditionally loads based on tenant settings.
+
+#### 2. New TenantChatWidget component
+**File: `src/components/TenantChatWidget.tsx`**
+- Accepts tenant branding/settings data.
+- If the tenant `is_demo` is true, load the platform's Tawk.to script (hardcoded platform property ID).
+- Otherwise, check `tenant_settings` for `integrations` category with keys `tawk_enabled` (boolean) and `tawk_property_id` (string like `XXXXXXX/YYYYYYY`).
+- If enabled and a property ID is set, inject the tenant's own Tawk.to embed script.
+- Uses a unique script per tenant property ID; cleans up on unmount/tenant change.
+
+#### 3. Marketing pages keep the existing ChatWidget
+**Files: `MarketingLanding.tsx`, `Contact.tsx`, `Pricing.tsx`**
+- No changes. These already use the platform `ChatWidget` with the hardcoded property ID.
+
+#### 4. Admin Settings -- Integrations section in GeneralTab (or new tab)
+**File: `src/pages/admin/settings/GeneralTab.tsx`**
+- Add a "Live Chat" card with:
+  - Toggle: "Enable Tawk.to live chat" (saves `integrations.tawk_enabled`)
+  - Text input: "Tawk.to Property ID" (format: `propertyId/widgetId`, saves `integrations.tawk_property_id`)
+  - Help text explaining where to find their property ID in Tawk.to dashboard.
+- Uses the existing `useBulkUpsertTenantSettings` pattern with category `integrations`.
+
+#### 5. Load tenant chat settings in CustomerLayout
+**File: `src/components/CustomerLayout.tsx`**
+- Pass `tenant.is_demo` and the integrations settings to `TenantChatWidget`.
+- Use `useTenantSettingsMap("integrations")` to fetch `tawk_enabled` and `tawk_property_id`.
 
 ### No database migration needed
-`favicon_url` is stored as a `tenant_settings` row (category=branding, key=favicon_url) — same pattern as all other branding fields.
+Settings are stored via the existing `tenant_settings` table (category=`integrations`, keys=`tawk_enabled` / `tawk_property_id`).
