@@ -345,14 +345,6 @@
 
 .dc-marketing .dc-muted { color: hsl(var(--dc-text-muted)); }
 
-  .hide-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-  .hide-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
-
 
 /* ── Facsimile Header/Footer Scoping (admin preview only) ── */
 .facsimile-header,
