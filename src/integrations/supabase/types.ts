@@ -222,6 +222,7 @@ export type Database = {
           postal_code: string | null
           province: string | null
           settings: Json
+          slug: string
           tenant_id: string
           updated_at: string
         }
@@ -240,6 +241,7 @@ export type Database = {
           postal_code?: string | null
           province?: string | null
           settings?: Json
+          slug: string
           tenant_id: string
           updated_at?: string
         }
@@ -258,6 +260,7 @@ export type Database = {
           postal_code?: string | null
           province?: string | null
           settings?: Json
+          slug?: string
           tenant_id?: string
           updated_at?: string
         }

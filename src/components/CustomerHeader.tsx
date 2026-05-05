@@ -1,5 +1,5 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { ShoppingCart, User, LogOut, Settings as SettingsIcon, ClipboardList, LogIn } from "lucide-react";
+import { ShoppingCart, User, LogOut, Settings as SettingsIcon, ClipboardList, LogIn, MapPin, ChevronDown } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
@@ -8,6 +8,7 @@ import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { setTenantSignOutFlag, isAnonymousUser } from "@/lib/tenantSignOut";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { useBranch, clearSavedBranch } from "@/contexts/BranchContext";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,18 +26,17 @@ export default function CustomerHeader() {
   const { data: branding } = useTenantBranding(tenant?.id ?? null);
   const queryClient = useQueryClient();
   const isAnon = isAnonymousUser(user);
+  const { activeBranch, isMultiBranch, openPicker } = useBranch();
 
   const handleSignOut = async () => {
-    // Set suppression flag so anonymous bootstrap doesn't re-login
     if (slug) setTenantSignOutFlag(slug);
+    if (tenant?.id) clearSavedBranch(tenant.id);
     await signOut();
-    // Clear cached queries (cart, profile, orders, etc.)
     queryClient.clear();
     const origin = branding?.origin_url;
     if (origin) {
       window.location.href = origin;
     } else {
-      // Navigate to main site
       window.location.href = "https://document-centre.com";
     }
   };
@@ -165,6 +165,19 @@ export default function CustomerHeader() {
         <Link to={tenantPath("print-centre")} className="flex items-center shrink-0">
           {logoContent}
         </Link>
+      )}
+
+      {/* Branch indicator — multi-branch tenants only */}
+      {isMultiBranch && activeBranch && (
+        <button
+          onClick={openPicker}
+          className="hidden md:flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-colors border border-border/50 ml-2 shrink-0"
+          title="Change branch"
+        >
+          <MapPin className="h-3.5 w-3.5 shrink-0" style={{ color: "hsl(var(--tenant-primary, var(--primary)))" }} />
+          <span className="truncate max-w-[140px]">{activeBranch.name}</span>
+          <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
+        </button>
       )}
 
       <nav className="hidden md:flex items-center gap-7 mx-auto">

@@ -13,7 +13,8 @@ import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import TenantChatWidget from "@/components/TenantChatWidget";
 import { useTenantSettingsMap } from "@/hooks/useTenantSettings";
-
+import { BranchProvider } from "@/contexts/BranchContext";
+import BranchPicker from "@/components/BranchPicker";
 
 // Convert a hex colour to "H S% L%" for CSS variable injection
 function hexToHslString(hex: string | undefined | null): string | null {
@@ -130,6 +131,7 @@ function CustomerLayoutInner() {
 
   return (
     <div className="flex h-screen w-full flex-col" style={tenantStyle}>
+      <BranchPicker />
       {/* Header — full width across the top */}
       <CustomerHeader />
 
@@ -198,10 +200,17 @@ function CustomerLayoutInner() {
   );
 }
 
-export default function CustomerLayout() {
+function CustomerLayoutWithBranch() {
+  const { tenant } = useTenantFromSlug();
   return (
-    <SidebarCollapseProvider>
-      <CustomerLayoutInner />
-    </SidebarCollapseProvider>
+    <BranchProvider tenantId={tenant?.id ?? null}>
+      <SidebarCollapseProvider>
+        <CustomerLayoutInner />
+      </SidebarCollapseProvider>
+    </BranchProvider>
   );
+}
+
+export default function CustomerLayout() {
+  return <CustomerLayoutWithBranch />;
 }
