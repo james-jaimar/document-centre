@@ -59,7 +59,7 @@ export default function Cart() {
     setEditingIds((prev) => new Set(prev).add(itemId));
     try {
       const draftOrderId = await editItem.mutateAsync({ orderItemId: itemId, cartOrderId: cart.id });
-      navigate(tenantPath("orders/${draftOrderId}/build));
+      navigate(tenantPath(`orders/${draftOrderId}/build`));
     } catch (err: any) {
       toast.error("Failed to edit item", { description: err.message });
       setEditingIds((prev) => {
@@ -85,7 +85,7 @@ export default function Cart() {
         <ShoppingBag className="h-16 w-16 text-muted-foreground/40" />
         <h2 className="text-xl font-semibold text-foreground">Your cart is empty</h2>
         <p className="text-muted-foreground text-sm">Add items to your cart to get started.</p>
-        <Button onClick={() => navigate(tenantPath("orders/new))}>
+        <Button onClick={() => navigate(tenantPath("orders/new"))}>
           <Plus className="h-4 w-4 mr-1" />
           Start New Order
         </Button>
@@ -177,7 +177,7 @@ export default function Cart() {
             <Plus className="h-4 w-4 mr-1" />
             Add More Items
           </Button>
-          <Button size="lg" onClick={() => navigate(tenantPath("checkout))}>
+          <Button size="lg" onClick={() => navigate(tenantPath("checkout"))}>
             Proceed to Checkout
             <ArrowRight className="h-4 w-4 ml-1" />
           </Button>
