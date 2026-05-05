@@ -19,12 +19,17 @@ export default function CustomerHeader() {
   const { tenantPath } = useTenantSlug();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
-  const handleSignOut = async () => {
-    await signOut();
-    navigate("/", { replace: true });
-  };
   const { tenant } = useTenantFromSlug();
   const { data: branding } = useTenantBranding(tenant?.id ?? null);
+  const handleSignOut = async () => {
+    await signOut();
+    const origin = branding?.origin_url;
+    if (origin) {
+      window.location.href = origin;
+    } else {
+      navigate("/", { replace: true });
+    }
+  };
   const cartCount = useCartItemCount();
 
   const portalName = branding?.portal_name || tenant?.name || "Print Centre";
