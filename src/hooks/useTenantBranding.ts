@@ -20,6 +20,7 @@ export interface TenantBranding {
   header_css: string;
   footer_css: string;
   origin_url: string;
+  favicon_url: string;
 }
 
 const DEFAULTS: TenantBranding = {
@@ -40,6 +41,7 @@ const DEFAULTS: TenantBranding = {
   header_css: "",
   footer_css: "",
   origin_url: "",
+  favicon_url: "",
 };
 
 /**
