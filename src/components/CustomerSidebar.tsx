@@ -1,4 +1,4 @@
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Home,
   Plus,
@@ -16,23 +16,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { useCartItemCount } from "@/hooks/useCart";
 import { resolveDisplayName, resolveInitials } from "@/lib/displayName";
-
-const buildPublicNavItems = (slug: string) => [
-  { to: `/t/${slug}/print-centre`, icon: Home, label: "Home", exact: true },
-  { to: `/t/${slug}/orders/new`, icon: Plus, label: "Create", exact: false },
-];
-
-const buildAuthNavItems = (slug: string) => [
-  { to: `/t/${slug}/print-centre`, icon: Home, label: "Home", exact: true },
-  { to: `/t/${slug}/orders/new`, icon: Plus, label: "Create", exact: false },
-  { to: `/t/${slug}/orders`, icon: ClipboardList, label: "Orders", exact: false },
-  { to: `/t/${slug}/cart`, icon: ShoppingCart, label: "Cart", exact: false, badge: true },
-  { to: `/t/${slug}/account`, icon: Settings, label: "My Account", exact: false },
-];
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 
 export default function CustomerSidebar() {
   const location = useLocation();
-  const { slug } = useParams<{ slug: string }>();
+  const { tenantPath } = useTenantSlug();
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const handleSignOut = async () => {
@@ -40,7 +28,19 @@ export default function CustomerSidebar() {
     navigate("/", { replace: true });
   };
   const cartCount = useCartItemCount();
-  const navItems = user ? buildAuthNavItems(slug ?? "") : buildPublicNavItems(slug ?? "");
+
+  const publicNavItems = [
+    { to: tenantPath("print-centre"), icon: Home, label: "Home", exact: true },
+    { to: tenantPath("orders/new"), icon: Plus, label: "Create", exact: false },
+  ];
+  const authNavItems = [
+    { to: tenantPath("print-centre"), icon: Home, label: "Home", exact: true },
+    { to: tenantPath("orders/new"), icon: Plus, label: "Create", exact: false },
+    { to: tenantPath("orders"), icon: ClipboardList, label: "Orders", exact: false },
+    { to: tenantPath("cart"), icon: ShoppingCart, label: "Cart", exact: false, badge: true },
+    { to: tenantPath("account"), icon: Settings, label: "My Account", exact: false },
+  ];
+  const navItems = user ? authNavItems : publicNavItems;
 
   const { data: profile } = useQuery({
     queryKey: ["profile", user?.id],
@@ -135,7 +135,7 @@ export default function CustomerSidebar() {
       ) : (
         <div className="mt-6">
           <Link
-            to={`/t/${slug}/auth`}
+            to={tenantPath("auth")}
             className="sidebar-nav-item flex items-center gap-2 text-sm text-sidebar-foreground/70 hover:text-sidebar-foreground"
           >
             <LogIn className="h-[18px] w-[18px]" />

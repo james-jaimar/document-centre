@@ -1,9 +1,10 @@
-import { Link, NavLink, useNavigate, useParams } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import { ShoppingCart, User, LogOut, Settings as SettingsIcon, ClipboardList, ExternalLink, LogIn } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useCartItemCount } from "@/hooks/useCart";
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -15,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export default function CustomerHeader() {
-  const { slug } = useParams<{ slug: string }>();
+  const { tenantPath } = useTenantSlug();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const handleSignOut = async () => {
@@ -37,19 +38,17 @@ export default function CustomerHeader() {
   const initial = (user?.email?.[0] || "U").toUpperCase();
   const originUrl = branding?.origin_url;
 
-  const base = `/t/${slug}`;
-
   // Build nav items based on auth state
   const publicNavItems = [
-    { to: `${base}/print-centre`, label: "Home", end: true },
-    { to: `${base}/orders/new`, label: "Create", end: false },
+    { to: tenantPath("print-centre"), label: "Home", end: true },
+    { to: tenantPath("orders/new"), label: "Create", end: false },
   ];
   const authNavItems = [
-    { to: `${base}/print-centre`, label: "Home", end: true },
-    { to: `${base}/orders/new`, label: "Create", end: false },
-    { to: `${base}/orders`, label: "Orders", end: false },
-    { to: `${base}/cart`, label: "Cart", end: false },
-    { to: `${base}/account`, label: "My Account", end: false },
+    { to: tenantPath("print-centre"), label: "Home", end: true },
+    { to: tenantPath("orders/new"), label: "Create", end: false },
+    { to: tenantPath("orders"), label: "Orders", end: false },
+    { to: tenantPath("cart"), label: "Cart", end: false },
+    { to: tenantPath("account"), label: "My Account", end: false },
   ];
   const navItems = user ? authNavItems : publicNavItems;
 
@@ -58,7 +57,7 @@ export default function CustomerHeader() {
     if (!user) {
       return (
         <Link
-          to={`${base}/auth`}
+          to={tenantPath("auth")}
           className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors hover:bg-secondary"
         >
           <LogIn className="h-4 w-4" />
@@ -70,7 +69,7 @@ export default function CustomerHeader() {
     return (
       <>
         <Link
-          to={`${base}/cart`}
+          to={tenantPath("cart")}
           className="relative rounded-xl p-2 hover:bg-secondary transition-colors"
           aria-label="Cart"
         >
@@ -105,11 +104,11 @@ export default function CustomerHeader() {
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel className="truncate">{user?.email ?? "Account"}</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate(`${base}/account`)}>
+            <DropdownMenuItem onClick={() => navigate(tenantPath("account"))}>
               <SettingsIcon className="mr-2 h-4 w-4" />
               My Account
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate(`${base}/orders`)}>
+            <DropdownMenuItem onClick={() => navigate(tenantPath("orders"))}>
               <ClipboardList className="mr-2 h-4 w-4" />
               My Orders
             </DropdownMenuItem>
@@ -139,7 +138,7 @@ export default function CustomerHeader() {
         </a>
       )}
 
-      <Link to={`${base}/print-centre`} className="flex items-center shrink-0">
+      <Link to={tenantPath("print-centre")} className="flex items-center shrink-0">
         {logoUrl ? (
           <img
             src={logoUrl}

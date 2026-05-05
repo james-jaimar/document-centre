@@ -1,12 +1,13 @@
-import { Link, useParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Mail, Phone } from "lucide-react";
 
 export default function CustomerFooter() {
-  const { slug } = useParams<{ slug: string }>();
+  const { slug, tenantPath } = useTenantSlug();
   const { tenant } = useTenantFromSlug();
   const { data: branding } = useTenantBranding(tenant?.id ?? null);
 
@@ -33,14 +34,13 @@ export default function CustomerFooter() {
   const year = new Date().getFullYear();
   const tenantName = branding?.portal_name || tenant?.name || "Print Centre";
   const logoUrl = branding?.logo_url || tenant?.logo_url || "";
-  const isDemo = (tenant?.slug ?? slug) === "demo" || tenantName.toLowerCase().includes("document centre");
+  const isDemo = slug === "demo" || tenantName.toLowerCase().includes("document centre");
 
-  const base = `/t/${slug}`;
   const navItems = [
-    { to: `${base}/print-centre`, label: "Home" },
-    { to: `${base}/orders/new`, label: "Create an Order" },
-    { to: `${base}/orders`, label: "My Orders" },
-    { to: `${base}/account`, label: "My Account" },
+    { to: tenantPath("print-centre"), label: "Home" },
+    { to: tenantPath("orders/new"), label: "Create an Order" },
+    { to: tenantPath("orders"), label: "My Orders" },
+    { to: tenantPath("account"), label: "My Account" },
   ];
 
   return (
@@ -86,12 +86,12 @@ export default function CustomerFooter() {
           {support?.terms_url ? (
             <a href={support.terms_url} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Terms</a>
           ) : (
-            <Link to={`${base}/terms`} className="hover:text-foreground transition-colors">Terms</Link>
+            <Link to={tenantPath("terms")} className="hover:text-foreground transition-colors">Terms</Link>
           )}
           {support?.privacy_url ? (
             <a href={support.privacy_url} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Privacy</a>
           ) : (
-            <Link to={`${base}/privacy`} className="hover:text-foreground transition-colors">Privacy</Link>
+            <Link to={tenantPath("privacy")} className="hover:text-foreground transition-colors">Privacy</Link>
           )}
           {!isDemo && (
             <a
