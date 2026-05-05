@@ -1,5 +1,5 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { ShoppingCart, User, LogOut, Settings as SettingsIcon, ClipboardList, LogIn } from "lucide-react";
+import { ShoppingCart, User, LogOut, Settings as SettingsIcon, ClipboardList, LogIn, MapPin, ChevronDown } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
@@ -8,6 +8,7 @@ import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { setTenantSignOutFlag, isAnonymousUser } from "@/lib/tenantSignOut";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { useBranch, clearSavedBranch } from "@/contexts/BranchContext";
 import {
   DropdownMenu,
   DropdownMenuContent,
