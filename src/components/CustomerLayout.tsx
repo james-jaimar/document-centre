@@ -139,17 +139,6 @@ function CustomerLayoutInner() {
     return style as React.CSSProperties;
   }, [branding]);
 
-  // Show a brief loading state while bootstrapping anonymous session
-  if (bootstrapping) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-3 text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Setting up your session…</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex h-screen w-full flex-col" style={tenantStyle}>
