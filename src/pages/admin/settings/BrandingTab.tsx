@@ -79,7 +79,7 @@ function ImageUploadField({
     </div>
   );
 }
-
+export function BrandingTab() {
   const { settingsMap, isLoading } = useTenantSettingsMap("branding");
   const { tenantId } = useTenantContext();
   const bulkUpsert = useBulkUpsertTenantSettings();
