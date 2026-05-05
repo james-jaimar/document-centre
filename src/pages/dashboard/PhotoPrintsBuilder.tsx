@@ -1,3 +1,4 @@
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -55,7 +56,8 @@ interface ProductFamilyRow {
 }
 
 export default function PhotoPrintsBuilder() {
-  const { id: orderIdParam, slug: tenantSlug } = useParams<{ id?: string; slug: string }>();
+  const { id: orderIdParam } = useParams<{ id?: string }>();
+  const { slug: tenantSlug, tenantPath } = useTenantSlug();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -352,7 +354,7 @@ export default function PhotoPrintsBuilder() {
 
       invalidateUserOrderCaches(qc);
       toast.success("Added to cart!");
-      navigate(`/t/${tenantSlug}/cart`);
+      navigate(tenantPath("cart"));
     } catch (err: any) {
       console.error("[photo] add to cart failed", err);
       toast.error("Failed to add to cart", { description: err?.message });
@@ -369,7 +371,7 @@ export default function PhotoPrintsBuilder() {
         <p className="text-sm text-muted-foreground">
           Photo Prints product hasn't been configured for this tenant yet.
         </p>
-        <Button variant="outline" onClick={() => navigate(`/t/${tenantSlug}/orders/new`)}>
+        <Button variant="outline" onClick={() => navigate(tenantPath("orders/new"))}>
           Back to products
         </Button>
       </div>
@@ -383,7 +385,7 @@ export default function PhotoPrintsBuilder() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate(`/t/${tenantSlug}/orders/new`)}
+            onClick={() => navigate(tenantPath("orders/new"))}
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>

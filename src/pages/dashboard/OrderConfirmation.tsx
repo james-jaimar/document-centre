@@ -1,3 +1,4 @@
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -8,7 +9,8 @@ import { format } from "date-fns";
 import { formatPrice } from "@/lib/formatCurrency";
 
 export default function OrderConfirmation() {
-  const { id: orderId, slug } = useParams<{ id: string; slug: string }>();
+  const { id: orderId } = useParams<{ id: string }>();
+  const { slug, tenantPath } = useTenantSlug();
   const navigate = useNavigate();
 
   const { data: order, isLoading } = useQuery({
@@ -85,15 +87,15 @@ export default function OrderConfirmation() {
       )}
 
       <div className="flex flex-wrap gap-3 pt-2 justify-center">
-        <Button onClick={() => navigate(`/t/${slug}/orders/${orderId}`)}>
+        <Button onClick={() => navigate(tenantPath(`orders/${orderId}`))}>
           <Eye className="h-4 w-4 mr-1" />
           View Order Details
         </Button>
-        <Button variant="outline" onClick={() => navigate(`/t/${slug}/orders`)}>
+        <Button variant="outline" onClick={() => navigate(tenantPath("orders"))}>
           <ClipboardList className="h-4 w-4 mr-1" />
           My Orders
         </Button>
-        <Button variant="outline" onClick={() => navigate(`/t/${slug}/orders/new`)}>
+        <Button variant="outline" onClick={() => navigate(tenantPath("orders/new"))}>
           <Plus className="h-4 w-4 mr-1" />
           New Order
         </Button>

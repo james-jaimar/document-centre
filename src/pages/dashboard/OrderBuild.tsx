@@ -1,3 +1,4 @@
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useOrderData, useUpdateOrderItemSpec, useAddSection, useUpdateSection, useDeleteSection } from "@/hooks/useOrderBuilder";
@@ -34,7 +35,8 @@ import { formatPrice } from "@/lib/formatCurrency";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
 
 export default function OrderBuild() {
-  const { id: orderId, slug } = useParams<{ id: string; slug: string }>();
+  const { id: orderId } = useParams<{ id: string }>();
+  const { slug, tenantPath } = useTenantSlug();
   const navigate = useNavigate();
   const { order, orderItem, documents, sections, loading } =
     useOrderData(orderId);
@@ -565,7 +567,7 @@ export default function OrderBuild() {
       });
       setShowCartDialog(false);
       toast.success("Added to cart!");
-      navigate(`/t/${slug}/cart`);
+      navigate(tenantPath("cart"));
     } catch (err: any) {
       console.error("handleAddToCart failed", err);
       toast.error("Failed to add to cart", { description: err.message });
@@ -585,7 +587,7 @@ export default function OrderBuild() {
   }, [dirty, navigate]);
 
   const handleBackToFiles = useCallback(() => {
-    guardedNavigate(`/t/${slug}/orders/${orderId}/files`);
+    guardedNavigate(tenantPath(`orders/${orderId}/files`));
   }, [orderId, slug, guardedNavigate]);
 
   const handleSaveAndLeave = useCallback(async (ref: string) => {
@@ -724,7 +726,7 @@ export default function OrderBuild() {
       <div className="flex flex-col items-center justify-center py-20 space-y-4">
         <p className="text-muted-foreground text-lg">No files uploaded yet</p>
         <p className="text-muted-foreground text-sm">Upload your documents first, then come back to configure options.</p>
-        <Button onClick={() => navigate(`/t/${slug}/orders/${orderId}/files`)}>
+        <Button onClick={() => navigate(tenantPath(`orders/${orderId}/files`))}>
           <ArrowLeft className="h-4 w-4 mr-1" />
           Go to Upload Files
         </Button>

@@ -1,3 +1,4 @@
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { Navigate, useParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import StorefrontLanding from "@/pages/storefront/StorefrontLanding";
@@ -7,7 +8,7 @@ import StorefrontLanding from "@/pages/storefront/StorefrontLanding";
  * Authenticated users are redirected to the print-centre dashboard.
  */
 export default function PublicStorefront() {
-  const { slug } = useParams<{ slug: string }>();
+  const { slug, tenantPath } = useTenantSlug();
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -19,7 +20,7 @@ export default function PublicStorefront() {
   }
 
   if (user) {
-    return <Navigate to={`/t/${slug}/print-centre`} replace />;
+    return <Navigate to={tenantPath("print-centre")} replace />;
   }
 
   return <StorefrontLanding />;

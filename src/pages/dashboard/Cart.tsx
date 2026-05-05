@@ -1,4 +1,5 @@
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useCart, useRemoveCartItem, useEditCartItem } from "@/hooks/useCart";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
@@ -17,7 +18,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 export default function Cart() {
-  const { slug } = useParams<{ slug: string }>();
+  const { tenantPath } = useTenantSlug();
   const navigate = useNavigate();
   const { data: cart, isLoading } = useCart();
   const { region } = useRegionalPricing();
@@ -58,7 +59,7 @@ export default function Cart() {
     setEditingIds((prev) => new Set(prev).add(itemId));
     try {
       const draftOrderId = await editItem.mutateAsync({ orderItemId: itemId, cartOrderId: cart.id });
-      navigate(`/t/${slug}/orders/${draftOrderId}/build`);
+      navigate(tenantPath(`orders/${draftOrderId}/build`));
     } catch (err: any) {
       toast.error("Failed to edit item", { description: err.message });
       setEditingIds((prev) => {
@@ -84,7 +85,7 @@ export default function Cart() {
         <ShoppingBag className="h-16 w-16 text-muted-foreground/40" />
         <h2 className="text-xl font-semibold text-foreground">Your cart is empty</h2>
         <p className="text-muted-foreground text-sm">Add items to your cart to get started.</p>
-        <Button onClick={() => navigate(`/t/${slug}/orders/new`)}>
+        <Button onClick={() => navigate(tenantPath("orders/new"))}>
           <Plus className="h-4 w-4 mr-1" />
           Start New Order
         </Button>
@@ -172,11 +173,11 @@ export default function Cart() {
           <div className="text-2xl font-bold text-foreground">{formatPrice(cartTotal, currency)}</div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => navigate(`/t/${slug}/orders/new`)}>
+          <Button variant="outline" onClick={() => navigate(tenantPath("orders/new"))}>
             <Plus className="h-4 w-4 mr-1" />
             Add More Items
           </Button>
-          <Button size="lg" onClick={() => navigate(`/t/${slug}/checkout`)}>
+          <Button size="lg" onClick={() => navigate(tenantPath("checkout"))}>
             Proceed to Checkout
             <ArrowRight className="h-4 w-4 ml-1" />
           </Button>

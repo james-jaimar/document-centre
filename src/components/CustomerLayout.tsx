@@ -1,4 +1,4 @@
-import { Outlet, useParams } from "react-router-dom";
+import { Outlet } from "react-router-dom";
 import CustomerSidebar from "@/components/CustomerSidebar";
 import CustomerHeader from "@/components/CustomerHeader";
 import CustomerFooter from "@/components/CustomerFooter";
@@ -9,6 +9,7 @@ import { SidebarCollapseProvider, useSidebarCollapse } from "@/hooks/useSidebarC
 import { supabase } from "@/integrations/supabase/client";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 import ChatWidget from "@/components/ChatWidget";
 
 
@@ -39,7 +40,7 @@ function hexToHslString(hex: string | undefined | null): string | null {
 
 function CustomerLayoutInner() {
   const { user, loading: authLoading } = useAuth();
-  const { slug } = useParams<{ slug: string }>();
+  const { slug } = useTenantSlug();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { collapsed, toggle } = useSidebarCollapse();
   const { tenant } = useTenantFromSlug();

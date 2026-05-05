@@ -1,4 +1,5 @@
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
@@ -42,7 +43,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
 
 export default function NewOrder() {
   const navigate = useNavigate();
-  const { slug } = useParams<{ slug: string }>();
+  const { tenantPath } = useTenantSlug();
 
   const { data: families, isLoading } = useQuery({
     queryKey: ["product_families_active"],
@@ -59,10 +60,10 @@ export default function NewOrder() {
 
   const handleSelect = (familyId: string, familySlug: string) => {
     if (familySlug === "photo-prints") {
-      navigate(`/t/${slug}/orders/new/photo-prints`);
+      navigate(tenantPath("orders/new/photo-prints"));
       return;
     }
-    navigate(`/t/${slug}/orders/new/${familyId}`);
+    navigate(tenantPath(`orders/new/${familyId}`));
   };
 
   return (

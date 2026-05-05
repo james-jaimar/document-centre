@@ -1,3 +1,4 @@
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import SocialAuthButtons from "@/components/auth/SocialAuthButtons";
@@ -15,7 +16,7 @@ type AuthTab = "register" | "login";
 
 export default function CheckoutAuth() {
   const { user } = useAuth();
-  const { slug } = useParams<{ slug: string }>();
+  const { slug, tenantPath } = useTenantSlug();
   const [tab, setTab] = useState<AuthTab>("register");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");

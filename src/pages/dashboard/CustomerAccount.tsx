@@ -1,3 +1,4 @@
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -14,7 +15,7 @@ import { ClipboardList } from "lucide-react";
 
 export default function CustomerAccount() {
   const { user } = useAuth();
-  const { slug } = useParams<{ slug: string }>();
+  const { slug, tenantPath } = useTenantSlug();
   const navigate = useNavigate();
   const qc = useQueryClient();
 
@@ -219,7 +220,7 @@ export default function CustomerAccount() {
             <p className="text-sm text-muted-foreground mb-4">
               View all your past and current orders.
             </p>
-            <Button onClick={() => navigate(`/t/${slug}/orders`)}>Go to my orders</Button>
+            <Button onClick={() => navigate(tenantPath("orders"))}>Go to my orders</Button>
           </Card>
         </TabsContent>
 

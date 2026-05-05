@@ -1,3 +1,4 @@
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
@@ -115,7 +116,7 @@ async function deleteDraftOrder(orderId: string) {
 
 const CustomerOrders = () => {
   const navigate = useNavigate();
-  const { slug } = useParams<{ slug: string }>();
+  const { slug, tenantPath } = useTenantSlug();
   const { user } = useAuth();
   const { tenantId } = useTenantContext();
   const queryClient = useQueryClient();
@@ -189,7 +190,7 @@ const CustomerOrders = () => {
     const paymentKey = order.payment_status;
     return (
       <button
-        onClick={() => navigate(`/t/${slug}/orders/${order.id}`)}
+        onClick={() => navigate(tenantPath(`orders/${order.id}`))}
         className="w-full text-left rounded-lg border bg-card p-4 hover:border-primary/40 hover:shadow-sm transition-all group"
       >
         <div className="flex items-start justify-between gap-4">
@@ -254,7 +255,7 @@ const CustomerOrders = () => {
       <div className="relative rounded-lg border border-dashed bg-muted/30 p-4 hover:bg-muted/50 transition-colors">
         <div className="flex items-start justify-between gap-4">
           <button
-            onClick={() => !isDeleting && navigate(`/t/${slug}/orders/${order.id}/files`)}
+            onClick={() => !isDeleting && navigate(tenantPath(`orders/${order.id}/files`))}
             disabled={isDeleting}
             className="flex items-start gap-3 min-w-0 flex-1 text-left"
           >
@@ -301,7 +302,7 @@ const CustomerOrders = () => {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => !isDeleting && navigate(`/t/${slug}/orders/${order.id}/files`)}
+              onClick={() => !isDeleting && navigate(tenantPath(`orders/${order.id}/files`))}
               disabled={isDeleting}
             >
               Resume
@@ -319,7 +320,7 @@ const CustomerOrders = () => {
           <h1 className="text-2xl font-bold text-foreground">My Orders</h1>
           <p className="text-muted-foreground">View and manage all your print orders</p>
         </div>
-        <Button onClick={() => navigate(`/t/${slug}/orders/new`)}>
+        <Button onClick={() => navigate(tenantPath("orders/new"))}>
           <Plus className="mr-1 h-4 w-4" />
           New Order
         </Button>
@@ -350,7 +351,7 @@ const CustomerOrders = () => {
                 <p className="text-sm text-muted-foreground mt-1">
                   Start by uploading a file or selecting a product.
                 </p>
-                <Button className="mt-4" onClick={() => navigate(`/t/${slug}/orders/new`)}>
+                <Button className="mt-4" onClick={() => navigate(tenantPath("orders/new"))}>
                   <Plus className="mr-1 h-4 w-4" />
                   New Order
                 </Button>

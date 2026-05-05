@@ -17,6 +17,7 @@ import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "@/pages/NotFound";
 import { StorefrontRedirect } from "@/components/StorefrontRedirect";
 import { AppEntryRedirect } from "@/components/AppEntryRedirect";
+import { SubdomainWrapper } from "@/components/SubdomainRouter";
 
 import MarketingLanding from "@/pages/MarketingLanding";
 import Try from "@/pages/Try";
@@ -111,6 +112,7 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <TenantProvider>
+          <SubdomainWrapper>
           <Routes>
             {/* Public */}
             <Route path="/auth" element={<Auth />} />
@@ -145,6 +147,27 @@ const App = () => (
               <Route path="terms" element={<PortalTerms />} />
               <Route path="privacy" element={<PortalPrivacy />} />
               {/* Auth-required routes */}
+              <Route path="orders/:id" element={<ProtectedRoute><CustomerOrderDetail /></ProtectedRoute>} />
+              <Route path="orders/:id/confirmation" element={<ProtectedRoute><OrderConfirmation /></ProtectedRoute>} />
+              <Route path="orders" element={<ProtectedRoute><CustomerOrders /></ProtectedRoute>} />
+              <Route path="account" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
+              <Route path="settings" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
+            </Route>
+
+            {/* Customer portal — subdomain-based (same routes as /t/:slug but at root) */}
+            <Route path="/" element={<CustomerLayout />}>
+              <Route path="dashboard" element={<CustomerDashboard />} />
+              <Route path="print-centre" element={<CustomerDashboard />} />
+              <Route path="orders/new" element={<NewOrder />} />
+              <Route path="orders/new/photo-prints" element={<PhotoPrintsBuilder />} />
+              <Route path="orders/new/:familyId" element={<OrderFiles />} />
+              <Route path="orders/:id/files" element={<OrderFiles />} />
+              <Route path="orders/:id/build" element={<OrderBuild />} />
+              <Route path="orders/:id/photo-prints" element={<PhotoPrintsBuilder />} />
+              <Route path="cart" element={<Cart />} />
+              <Route path="checkout" element={<Checkout />} />
+              <Route path="terms" element={<PortalTerms />} />
+              <Route path="privacy" element={<PortalPrivacy />} />
               <Route path="orders/:id" element={<ProtectedRoute><CustomerOrderDetail /></ProtectedRoute>} />
               <Route path="orders/:id/confirmation" element={<ProtectedRoute><OrderConfirmation /></ProtectedRoute>} />
               <Route path="orders" element={<ProtectedRoute><CustomerOrders /></ProtectedRoute>} />
@@ -305,7 +328,7 @@ const App = () => (
               </Route>
             </Route>
 
-            {/* Public marketing landing — always shown at root */}
+            {/* Public marketing landing — only when NOT on a tenant subdomain */}
             <Route path="/" element={<MarketingLanding />} />
             {/* One-click demo entry */}
             <Route path="/try" element={<Try />} />
@@ -314,6 +337,7 @@ const App = () => (
             <Route path="/app" element={<AppEntryRedirect />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </SubdomainWrapper>
           </TenantProvider>
         </AuthProvider>
       </BrowserRouter>

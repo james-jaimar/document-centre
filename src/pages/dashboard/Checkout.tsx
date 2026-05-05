@@ -1,3 +1,4 @@
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate, useParams } from "react-router-dom";
@@ -19,7 +20,7 @@ import { formatPrice } from "@/lib/formatCurrency";
 import CheckoutAuth from "@/components/checkout/CheckoutAuth";
 
 export default function Checkout() {
-  const { slug } = useParams<{ slug: string }>();
+  const { slug, tenantPath } = useTenantSlug();
   const navigate = useNavigate();
   const { user } = useAuth();
   const { data: cart, isLoading } = useCart();
@@ -95,7 +96,7 @@ export default function Checkout() {
           ? (selectedBranchId || branches?.[0]?.id || undefined)
           : undefined,
       });
-      navigate(`/t/${slug}/orders/${newOrderId}/confirmation`);
+      navigate(tenantPath(`orders/${newOrderId}/confirmation`));
     } catch (err: any) {
       toast.error("Failed to place order", { description: err.message });
     } finally {
@@ -118,7 +119,7 @@ export default function Checkout() {
         <ShoppingBag className="h-16 w-16 text-muted-foreground/40" />
         <h2 className="text-xl font-semibold text-foreground">Nothing to checkout</h2>
         <p className="text-muted-foreground text-sm">Your cart is empty.</p>
-        <Button onClick={() => navigate(`/t/${slug}/orders/new`)}>Start Shopping</Button>
+        <Button onClick={() => navigate(tenantPath("orders/new"))}>Start Shopping</Button>
       </div>
     );
   }
@@ -130,7 +131,7 @@ export default function Checkout() {
           <h1 className="text-2xl font-bold text-foreground">Checkout</h1>
           <p className="text-muted-foreground">Review and place your order</p>
         </div>
-        <Button variant="ghost" onClick={() => navigate(`/t/${slug}/cart`)}>
+        <Button variant="ghost" onClick={() => navigate(tenantPath("cart"))}>
           <ArrowLeft className="h-4 w-4 mr-1" />
           Back to Cart
         </Button>
