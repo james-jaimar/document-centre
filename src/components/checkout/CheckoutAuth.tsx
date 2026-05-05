@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
+import SocialAuthButtons from "@/components/auth/SocialAuthButtons";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -204,6 +205,18 @@ export default function CheckoutAuth() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+
+      {/* Google OAuth */}
+      <SocialAuthButtons tenantSlug={slug ?? null} />
+
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center">
+          <span className="w-full border-t border-border" />
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-background px-2 text-muted-foreground">or continue with email</span>
+        </div>
+      </div>
 
       {tab === "register" ? (
         <form onSubmit={handleRegister} className="space-y-3">
