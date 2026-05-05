@@ -1,6 +1,17 @@
-import { type ReactNode } from "react";
+import { type ReactNode, createContext, useContext } from "react";
 import { useTenantFromHost } from "@/hooks/useTenantFromHost";
 import { TenantSlugProvider } from "@/contexts/TenantSlugContext";
+
+interface SubdomainState {
+  matched: boolean;
+  slug: string | null;
+}
+
+const SubdomainContext = createContext<SubdomainState>({ matched: false, slug: null });
+
+export function useSubdomainTenant() {
+  return useContext(SubdomainContext);
+}
 
 /**
  * Wraps the entire route tree. When a tenant subdomain is detected,
@@ -18,13 +29,21 @@ export function SubdomainWrapper({ children }: { children: ReactNode }) {
     );
   }
 
+  const state: SubdomainState = { matched: !!matched && !!tenant, slug: tenant?.slug ?? null };
+
   if (matched && tenant) {
     return (
-      <TenantSlugProvider slug={tenant.slug}>
-        {children}
-      </TenantSlugProvider>
+      <SubdomainContext.Provider value={state}>
+        <TenantSlugProvider slug={tenant.slug}>
+          {children}
+        </TenantSlugProvider>
+      </SubdomainContext.Provider>
     );
   }
 
-  return <>{children}</>;
+  return (
+    <SubdomainContext.Provider value={state}>
+      {children}
+    </SubdomainContext.Provider>
+  );
 }
