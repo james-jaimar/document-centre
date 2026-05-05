@@ -44,6 +44,9 @@ export const SocialAuthButtons = ({
         localStorage.setItem("dc_anon_user_id", user.id);
       }
 
+      // Save current path so AuthCallback can return the user here after OAuth
+      localStorage.setItem("dc_return_path", window.location.pathname + window.location.search);
+
       const callback = new URL("/auth/callback", window.location.origin);
       if (tenantSlug) callback.searchParams.set("tenant", tenantSlug);
 

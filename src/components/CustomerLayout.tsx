@@ -68,7 +68,9 @@ function CustomerLayoutInner() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { collapsed, toggle } = useSidebarCollapse();
   const { tenant } = useTenantFromSlug();
-  const { data: branding } = useTenantBranding(tenant?.id ?? null);
+  const { data: branding, isLoading: brandingLoading } = useTenantBranding(tenant?.id ?? null);
+  // True once branding has resolved (or there's no tenant to load for)
+  const brandingReady = !tenant?.id || !brandingLoading;
 
   // --- Anonymous session bootstrap ---
   const bootstrapAttempted = useRef(false);
