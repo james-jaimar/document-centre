@@ -10,7 +10,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
-import ChatWidget from "@/components/ChatWidget";
+import TenantChatWidget from "@/components/TenantChatWidget";
+import { useTenantSettingsMap } from "@/hooks/useTenantSettings";
 
 
 // Convert a hex colour to "H S% L%" for CSS variable injection
