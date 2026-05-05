@@ -4,6 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { getDefaultRoute } from "@/hooks/useAuth";
 import { pickPrimaryMembership, resolveTenantLanding, type LandingMembership } from "@/lib/auth/landingRoute";
 import { buildAdminPath } from "@/lib/adminRouting";
+
+const RETURN_PATH_KEY = "dc_return_path";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -102,7 +104,14 @@ const AuthCallback = () => {
         if (match) {
           const primary = pickPrimaryMembership(memberships, tenantSlug) ?? match;
           toast.success("Signed in");
-          navigate(resolveTenantLanding(primary, tenantSlug), { replace: true });
+
+          // Return to the page the user was on before OAuth (e.g. checkout/cart)
+          const returnPath = localStorage.getItem(RETURN_PATH_KEY);
+          localStorage.removeItem(RETURN_PATH_KEY);
+          const destination = returnPath && returnPath.startsWith(`/t/${tenantSlug}`)
+            ? returnPath
+            : resolveTenantLanding(primary, tenantSlug);
+          navigate(destination, { replace: true });
           return;
         }
         await supabase.auth.signOut();
