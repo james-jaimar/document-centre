@@ -28,7 +28,7 @@ export function useTenantFromSlug() {
       setError(null);
       const { data, error: err } = await supabase
         .from("tenants")
-        .select("id, name, slug, logo_url, custom_domain")
+        .select("id, name, slug, logo_url, custom_domain, is_demo")
         .eq("slug", slug)
         .eq("is_active", true)
         .maybeSingle();
