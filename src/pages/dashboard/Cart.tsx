@@ -173,7 +173,7 @@ export default function Cart() {
           <div className="text-2xl font-bold text-foreground">{formatPrice(cartTotal, currency)}</div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => navigate(tenantPath("orders/new))}>
+          <Button variant="outline" onClick={() => navigate(tenantPath("orders/new"))}>
             <Plus className="h-4 w-4 mr-1" />
             Add More Items
           </Button>
