@@ -37,6 +37,17 @@ export function GeneralTab() {
   const [tenant, setTenant] = useState<Partial<Tenant> | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Integrations settings (tawk.to)
+  const { settingsMap } = useTenantSettingsMap("integrations");
+  const bulkUpsert = useBulkUpsertTenantSettings();
+  const [tawkEnabled, setTawkEnabled] = useState(false);
+  const [tawkPropertyId, setTawkPropertyId] = useState("");
+
+  useEffect(() => {
+    setTawkEnabled(settingsMap.tawk_enabled === true);
+    setTawkPropertyId(String(settingsMap.tawk_property_id || ""));
+  }, [settingsMap]);
+
   useEffect(() => {
     if (!tenantId) return;
     (async () => {
