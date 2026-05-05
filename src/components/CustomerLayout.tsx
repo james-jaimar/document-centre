@@ -85,10 +85,8 @@ function CustomerLayoutInner() {
     }
 
     bootstrapAttempted.current = true;
-    let cancelled = false;
 
     (async () => {
-      setBootstrapping(true);
       try {
         // Check for existing session first
         const { data: { session: existing } } = await supabase.auth.getSession();
@@ -97,7 +95,6 @@ function CustomerLayoutInner() {
           await supabase.functions.invoke("tenant-bootstrap", {
             body: { tenant_slug: slug },
           }).catch(() => null);
-          if (!cancelled) setBootstrapping(false);
           return;
         }
 
@@ -107,21 +104,14 @@ function CustomerLayoutInner() {
         });
         if (signInErr) throw signInErr;
 
-        // Wait briefly for the trigger to wire profile + membership
-        await new Promise((r) => setTimeout(r, 400));
-
         // Belt-and-braces: ensure membership via edge function
         await supabase.functions.invoke("tenant-bootstrap", {
           body: { tenant_slug: slug },
         }).catch((e) => console.warn("tenant-bootstrap warning:", e));
       } catch (e: any) {
         console.error("Anonymous session bootstrap failed:", e);
-      } finally {
-        if (!cancelled) setBootstrapping(false);
       }
     })();
-
-    return () => { cancelled = true; };
   }, [slug, user, authLoading]);
 
   const { data: profile } = useQuery({
