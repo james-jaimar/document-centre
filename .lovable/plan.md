@@ -1,15 +1,19 @@
-## Problem
+## Logo as "Back to site" link
 
-The subdomain customer routes (`<Route path="/" element={<CustomerLayout />}>` at line 158 of App.tsx) are always mounted in the route tree. React Router matches them before the `MarketingLanding` route (line 332), so visiting `document-centre.com` (bare domain) renders the empty CustomerLayout instead of the marketing landing page.
+**Current behaviour**: A small "Back to site" text link sits left of the logo. The logo itself links to the print centre home (`/t/:slug/print-centre`).
 
-## Fix
+**New behaviour**:
+1. Remove the "Back to site" text link entirely.
+2. When `originUrl` is set, the logo becomes an `<a href={originUrl} target="_blank">` (opens origin site in a new tab, keeping the print centre tab open).
+3. When `originUrl` is **not** set, the logo remains a React Router `<Link>` to the print centre home (current fallback behaviour).
 
-**Approach**: Make the subdomain routes conditional. Only include them when `useTenantFromHost` has matched a tenant subdomain.
+### File changed
 
-### Changes
+**`src/components/CustomerHeader.tsx`** (lines 131-156)
 
-1. **`src/components/SubdomainRouter.tsx`** -- Export a new component `SubdomainRoutes` that renders the root-level customer routes only when a subdomain tenant is matched. Also expose `useSubdomainTenant()` so routing can branch conditionally.
+- Delete the "Back to site" `<a>` block (lines 133-143).
+- Replace the `<Link to={tenantPath("print-centre")}>` logo wrapper with a conditional:
+  - If `originUrl` exists → `<a href={originUrl} target="_blank" rel="noopener noreferrer">` wrapping the logo image/text.
+  - Otherwise → keep the existing `<Link to={tenantPath("print-centre")}>`.
 
-2. **`src/App.tsx`** -- Replace the static subdomain route block (lines 157-176) with the conditional `SubdomainRoutes` component that only renders when on a tenant subdomain. The `MarketingLanding` route at `/` will then correctly match on the bare domain.
-
-This is a small, surgical fix -- no other files need to change. The `/t/:slug` path-based routes remain untouched.
+No other files are affected. The `ExternalLink` icon import can be removed since nothing else uses it.
