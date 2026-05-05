@@ -200,10 +200,17 @@ function CustomerLayoutInner() {
   );
 }
 
-export default function CustomerLayout() {
+function CustomerLayoutWithBranch() {
+  const { tenant } = useTenantFromSlug();
   return (
-    <SidebarCollapseProvider>
-      <CustomerLayoutInner />
-    </SidebarCollapseProvider>
+    <BranchProvider tenantId={tenant?.id ?? null}>
+      <SidebarCollapseProvider>
+        <CustomerLayoutInner />
+      </SidebarCollapseProvider>
+    </BranchProvider>
   );
+}
+
+export default function CustomerLayout() {
+  return <CustomerLayoutWithBranch />;
 }
