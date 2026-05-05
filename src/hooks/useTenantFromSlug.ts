@@ -8,6 +8,7 @@ interface SlugTenant {
   slug: string;
   logo_url: string | null;
   custom_domain: string | null;
+  is_demo: boolean;
 }
 
 export function useTenantFromSlug() {
