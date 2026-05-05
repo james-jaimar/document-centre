@@ -1,22 +1,13 @@
 import { type ReactNode } from "react";
-import { Routes, Route } from "react-router-dom";
 import { useTenantFromHost } from "@/hooks/useTenantFromHost";
 import { TenantSlugProvider } from "@/contexts/TenantSlugContext";
 
-interface SubdomainRouterProps {
-  /** Customer portal routes to render at / when a subdomain matches */
-  customerRoutes: ReactNode;
-  /** All other routes (platform, admin, marketing, etc.) */
-  children: ReactNode;
-}
-
 /**
- * Detects tenant subdomains (e.g. postnet.document-centre.com) and renders
- * customer portal routes at `/` instead of requiring `/t/:slug/` prefix.
- *
- * When no subdomain matches, falls through to the normal route tree.
+ * Wraps the entire route tree. When a tenant subdomain is detected,
+ * provides the slug via context so all customer components can build
+ * paths without the /t/:slug prefix.
  */
-export function SubdomainRouter({ customerRoutes, children }: SubdomainRouterProps) {
+export function SubdomainWrapper({ children }: { children: ReactNode }) {
   const { tenant, loading, matched } = useTenantFromHost();
 
   if (loading) {
@@ -27,19 +18,13 @@ export function SubdomainRouter({ customerRoutes, children }: SubdomainRouterPro
     );
   }
 
-  // Subdomain matched — render customer routes at root, wrapped in slug context
   if (matched && tenant) {
     return (
       <TenantSlugProvider slug={tenant.slug}>
-        <Routes>
-          {customerRoutes}
-          {/* Also include non-customer routes so /auth, /auth/callback, etc. still work */}
-          {children}
-        </Routes>
+        {children}
       </TenantSlugProvider>
     );
   }
 
-  // No subdomain — render all routes as normal
-  return <Routes>{children}</Routes>;
+  return <>{children}</>;
 }
