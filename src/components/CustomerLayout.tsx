@@ -46,6 +46,7 @@ function CustomerLayoutInner() {
   const { collapsed, toggle } = useSidebarCollapse();
   const { tenant } = useTenantFromSlug();
   const { data: branding, isLoading: brandingLoading } = useTenantBranding(tenant?.id ?? null);
+  const { settingsMap: integrations } = useTenantSettingsMap("integrations");
   // True once branding has resolved (or there's no tenant to load for)
   const brandingReady = !tenant?.id || !brandingLoading;
 
