@@ -1,3 +1,4 @@
+import { useBranch } from "@/contexts/BranchContext";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
@@ -60,6 +61,7 @@ export default function OrderFiles() {
   const fromDocId = searchParams.get("fromDoc");
   const createOrder = useCreateOrder();
   const { tenantId: activeTenantId } = useTenantContext();
+  const { activeBranch } = useBranch();
   const { user } = useAuth();
   const qc = useQueryClient();
 
@@ -112,7 +114,10 @@ export default function OrderFiles() {
 
     if (!routeFamilyId) throw new Error("No product family selected");
 
-    const order = await createOrder.mutateAsync(routeFamilyId);
+    const order = await createOrder.mutateAsync({
+      productFamilyId: routeFamilyId,
+      branchId: activeBranch?.id ?? null,
+    });
     setCreatedOrderId(order.id);
 
     // Fetch the order item that was just created
