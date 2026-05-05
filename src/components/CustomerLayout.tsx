@@ -155,7 +155,7 @@ function CustomerLayoutInner() {
         <div
           className={`hidden lg:flex transition-all duration-300 ease-in-out overflow-hidden ${
             collapsed ? "w-0" : "w-64"
-          }`}
+          } ${brandingReady ? "opacity-100" : "opacity-0"}`}
         >
           <CustomerSidebar />
         </div>
