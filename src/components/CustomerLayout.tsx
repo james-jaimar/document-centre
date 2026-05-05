@@ -180,7 +180,11 @@ function CustomerLayoutInner() {
           <CustomerFooter />
         </div>
       </div>
-      <ChatWidget />
+      <TenantChatWidget
+        isDemo={!!tenant?.is_demo}
+        tawkEnabled={integrations.tawk_enabled === true}
+        tawkPropertyId={String(integrations.tawk_property_id || "")}
+      />
     </div>
   );
 }
