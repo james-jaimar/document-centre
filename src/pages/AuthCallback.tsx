@@ -10,20 +10,22 @@ import { Button } from "@/components/ui/button";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+const ANON_KEY = "dc_anon_user_id";
+
 const AuthCallback = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const ranRef = useRef(false);
 
+  const tenantSlug = params.get("tenant");
+
   useEffect(() => {
     if (ranRef.current) return;
     ranRef.current = true;
 
-    const tenantSlug = params.get("tenant");
-
     const run = async () => {
-      // Wait briefly for Supabase to process the OAuth callback hash and persist the session.
+      // Wait for Supabase to process the OAuth callback hash
       let session = null;
       for (let i = 0; i < 30; i++) {
         const { data } = await supabase.auth.getSession();
@@ -50,6 +52,21 @@ const AuthCallback = () => {
         return;
       }
 
+      // Claim anonymous orders if the user was previously browsing anonymously
+      const anonUserId = localStorage.getItem(ANON_KEY);
+      if (anonUserId && anonUserId !== session.user.id) {
+        localStorage.removeItem(ANON_KEY);
+        try {
+          await supabase.functions.invoke("claim-anonymous-orders", {
+            body: { anonymous_user_id: anonUserId },
+          });
+        } catch (e) {
+          console.warn("Failed to claim anonymous orders:", e);
+        }
+      } else {
+        localStorage.removeItem(ANON_KEY);
+      }
+
       // Resolve roles + memberships in parallel.
       const [rolesRes, membershipsRes] = await Promise.all([
         supabase.from("user_roles").select("role").eq("user_id", session.user.id),
@@ -65,8 +82,7 @@ const AuthCallback = () => {
       const highest = priority.find((r) => roleList.includes(r)) ?? null;
       const memberships = (membershipsRes.data ?? []) as LandingMembership[];
 
-      // Tenant-scoped OAuth flow — platform admins are allowed in regardless;
-      // otherwise route by membership role for this tenant.
+      // Tenant-scoped OAuth flow
       if (tenantSlug) {
         if (highest === "platform_admin") {
           const { data: t } = await supabase
@@ -120,36 +136,35 @@ const AuthCallback = () => {
     };
 
     run();
-  }, [params, navigate]);
+  }, [params, navigate, tenantSlug]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[hsl(222,47%,11%)] to-[hsl(215,70%,25%)] p-4">
-      <Card className="w-full max-w-md shadow-2xl">
-        <CardContent className="space-y-4 pt-6">
-          {error ? (
-            <>
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-              <Button
-                className="w-full"
-                onClick={() => {
-                  const tenantSlug = params.get("tenant");
-                  navigate(tenantSlug ? `/t/${tenantSlug}/auth` : "/auth", { replace: true });
-                }}
-              >
-                Back to sign in
-              </Button>
-            </>
-          ) : (
-            <div className="flex flex-col items-center gap-3 py-6 text-center">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="text-sm text-muted-foreground">Completing sign-in…</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+    <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
+      {error ? (
+        <Card className="w-full max-w-md shadow-lg">
+          <CardContent className="space-y-4 pt-6">
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+            <Button
+              className="w-full"
+              onClick={() => {
+                navigate(tenantSlug ? `/t/${tenantSlug}/auth` : "/auth", { replace: true });
+              }}
+            >
+              Back to sign in
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="flex flex-col items-center gap-3 text-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            {tenantSlug ? "Redirecting…" : "Completing sign-in…"}
+          </p>
+        </div>
+      )}
     </div>
   );
 };

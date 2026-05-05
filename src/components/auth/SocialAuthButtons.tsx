@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -31,11 +32,18 @@ export const SocialAuthButtons = ({
   tenantSlug,
   providers = ["google"],
 }: SocialAuthButtonsProps) => {
+  const { user } = useAuth();
   const [pending, setPending] = useState<Provider | null>(null);
 
   const signIn = async (provider: Provider) => {
     setPending(provider);
     try {
+      // Persist anonymous user ID so AuthCallback can transfer orders after OAuth
+      const isAnonymous = !!(user as any)?.is_anonymous;
+      if (isAnonymous && user?.id) {
+        localStorage.setItem("dc_anon_user_id", user.id);
+      }
+
       const callback = new URL("/auth/callback", window.location.origin);
       if (tenantSlug) callback.searchParams.set("tenant", tenantSlug);
 
