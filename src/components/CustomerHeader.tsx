@@ -29,16 +29,14 @@ export default function CustomerHeader() {
   const { activeBranch, isMultiBranch, openPicker } = useBranch();
 
   const handleSignOut = async () => {
-    // Set suppression flag so anonymous bootstrap doesn't re-login
     if (slug) setTenantSignOutFlag(slug);
+    if (tenant?.id) clearSavedBranch(tenant.id);
     await signOut();
-    // Clear cached queries (cart, profile, orders, etc.)
     queryClient.clear();
     const origin = branding?.origin_url;
     if (origin) {
       window.location.href = origin;
     } else {
-      // Navigate to main site
       window.location.href = "https://document-centre.com";
     }
   };
