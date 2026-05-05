@@ -1,4 +1,5 @@
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useCart, useRemoveCartItem, useEditCartItem } from "@/hooks/useCart";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";

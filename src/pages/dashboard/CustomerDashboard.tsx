@@ -196,7 +196,7 @@ function getOrderDisplayName(order: any): string {
 /* ── Component ── */
 const CustomerDashboard = () => {
   const navigate = useNavigate();
-  const { slug } = useParams<{ slug: string }>();
+  const { slug, tenantPath } = useTenantSlug();
   const { user } = useAuth();
   const { tenantId } = useTenantContext();
   const qc = useQueryClient();
