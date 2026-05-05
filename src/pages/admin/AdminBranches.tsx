@@ -88,6 +88,12 @@ const AdminBranches = () => {
     if (!tenantId) return;
     try {
       if (isNew) {
+        const slugVal = (form.code || form.name)
+          .toLowerCase()
+          .replace(/[^a-z0-9\s-]/g, "")
+          .replace(/\s+/g, "-")
+          .replace(/-+/g, "-")
+          .replace(/^-|-$/g, "");
         await createBranch.mutateAsync({
           ...form,
           tenant_id: tenantId,
@@ -98,6 +104,7 @@ const AdminBranches = () => {
           email: form.email || null,
           phone: form.phone || null,
           code: form.code || null,
+          slug: slugVal,
         });
         toast.success("Branch created");
       } else if (editing) {
