@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { SidebarCollapseProvider, useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { supabase } from "@/integrations/supabase/client";
+import { hasTenantSignOutFlag, clearTenantSignOutFlag } from "@/lib/tenantSignOut";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
@@ -67,9 +68,17 @@ function CustomerLayoutInner() {
     // Only run on tenant portal routes, not /try or /dashboard
     if (!slug || authLoading || bootstrapAttempted.current) return;
 
-    // If already signed in, no need to bootstrap
+    // If the user just signed out, do NOT recreate an anonymous session
+    if (hasTenantSignOutFlag(slug)) {
+      bootstrapAttempted.current = true;
+      return;
+    }
+
+    // If already signed in (non-anonymous or anonymous), no need to bootstrap
     if (user) {
       bootstrapAttempted.current = true;
+      // Clear any stale sign-out flag since user is actively signed in
+      clearTenantSignOutFlag(slug);
       return;
     }
 

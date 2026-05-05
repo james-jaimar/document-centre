@@ -11,21 +11,37 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { useCartItemCount } from "@/hooks/useCart";
 import { resolveDisplayName, resolveInitials } from "@/lib/displayName";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
+import { useTenantBranding } from "@/hooks/useTenantBranding";
+import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
+import { setTenantSignOutFlag, isAnonymousUser } from "@/lib/tenantSignOut";
 
 export default function CustomerSidebar() {
   const location = useLocation();
-  const { tenantPath } = useTenantSlug();
+  const { slug, tenantPath } = useTenantSlug();
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const { tenant } = useTenantFromSlug();
+  const { data: branding } = useTenantBranding(tenant?.id ?? null);
+  const queryClient = useQueryClient();
+  const isAnon = isAnonymousUser(user);
+  const isAuthenticated = !!user && !isAnon;
+
   const handleSignOut = async () => {
+    if (slug) setTenantSignOutFlag(slug);
     await signOut();
-    navigate("/", { replace: true });
+    queryClient.clear();
+    const origin = branding?.origin_url;
+    if (origin) {
+      window.location.href = origin;
+    } else {
+      window.location.href = "https://document-centre.com";
+    }
   };
   const cartCount = useCartItemCount();
 
@@ -40,7 +56,7 @@ export default function CustomerSidebar() {
     { to: tenantPath("cart"), icon: ShoppingCart, label: "Cart", exact: false, badge: true },
     { to: tenantPath("account"), icon: Settings, label: "My Account", exact: false },
   ];
-  const navItems = user ? authNavItems : publicNavItems;
+  const navItems = isAuthenticated ? authNavItems : publicNavItems;
 
   const { data: profile } = useQuery({
     queryKey: ["profile", user?.id],
@@ -53,7 +69,7 @@ export default function CustomerSidebar() {
         .single();
       return data;
     },
-    enabled: !!user?.id,
+    enabled: isAuthenticated,
   });
 
   const isActive = (path: string, exact: boolean) =>
@@ -106,7 +122,7 @@ export default function CustomerSidebar() {
       </nav>
 
       {/* User card — only for authenticated users */}
-      {user ? (
+      {isAuthenticated ? (
         <div className="mt-6 flex items-center gap-3 rounded-2xl border border-sidebar-border bg-sidebar-accent/30 px-3 py-3">
           <div
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-sidebar-foreground"
