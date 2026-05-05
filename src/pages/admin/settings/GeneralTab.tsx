@@ -228,6 +228,63 @@ export function GeneralTab() {
         </CardContent>
       </Card>
 
+      {/* Live Chat Integration */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            Live Chat (Tawk.to)
+          </CardTitle>
+          <CardDescription>
+            Enable Tawk.to live chat on your customer portal. You must use your own Tawk.to account — sign up free at{" "}
+            <a href="https://www.tawk.to" target="_blank" rel="noopener noreferrer" className="underline text-primary">tawk.to</a>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4 max-w-lg">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="tawk-enabled">Enable live chat widget</Label>
+            <Switch
+              id="tawk-enabled"
+              checked={tawkEnabled}
+              onCheckedChange={setTawkEnabled}
+            />
+          </div>
+          {tawkEnabled && (
+            <div className="space-y-2">
+              <Label htmlFor="tawk-property">Tawk.to Property ID</Label>
+              <Input
+                id="tawk-property"
+                value={tawkPropertyId}
+                onChange={(e) => setTawkPropertyId(e.target.value)}
+                placeholder="e.g. 60a1b2c3d4e5f6001c7g8h9i/1abc2defg"
+              />
+              <p className="text-xs text-muted-foreground">
+                Find this in your Tawk.to Dashboard → Administration → Chat Widget → Direct Chat Link.
+                Copy the two path segments after <code>embed.tawk.to/</code>.
+              </p>
+            </div>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              try {
+                await bulkUpsert.mutateAsync([
+                  { category: "integrations", setting_key: "tawk_enabled", setting_value: tawkEnabled, value_type: "boolean" },
+                  { category: "integrations", setting_key: "tawk_property_id", setting_value: tawkPropertyId, value_type: "string" },
+                ]);
+                toast.success("Chat settings saved");
+              } catch (e: any) {
+                toast.error(e.message);
+              }
+            }}
+            disabled={bulkUpsert.isPending}
+          >
+            <Save className="mr-2 h-4 w-4" /> Save Chat Settings
+          </Button>
+        </CardContent>
+      </Card>
+
       <div className="flex justify-end">
         <Button onClick={handleSave} disabled={updateTenant.isPending}>
           <Save className="mr-2 h-4 w-4" /> Save Changes
