@@ -71,7 +71,6 @@ function CustomerLayoutInner() {
   const { data: branding } = useTenantBranding(tenant?.id ?? null);
 
   // --- Anonymous session bootstrap ---
-  const [bootstrapping, setBootstrapping] = useState(false);
   const bootstrapAttempted = useRef(false);
 
   useEffect(() => {
