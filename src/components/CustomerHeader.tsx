@@ -5,6 +5,8 @@ import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useCartItemCount } from "@/hooks/useCart";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
+import { setTenantSignOutFlag, isAnonymousUser } from "@/lib/tenantSignOut";
+import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -16,21 +18,31 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export default function CustomerHeader() {
-  const { tenantPath } = useTenantSlug();
+  const { slug, tenantPath } = useTenantSlug();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const { tenant } = useTenantFromSlug();
   const { data: branding } = useTenantBranding(tenant?.id ?? null);
+  const queryClient = useQueryClient();
+  const isAnon = isAnonymousUser(user);
+
   const handleSignOut = async () => {
+    // Set suppression flag so anonymous bootstrap doesn't re-login
+    if (slug) setTenantSignOutFlag(slug);
     await signOut();
+    // Clear cached queries (cart, profile, orders, etc.)
+    queryClient.clear();
     const origin = branding?.origin_url;
     if (origin) {
       window.location.href = origin;
     } else {
-      navigate("/", { replace: true });
+      // Navigate to main site
+      window.location.href = "https://document-centre.com";
     }
   };
   const cartCount = useCartItemCount();
+  // Treat anonymous users as guests — only show full nav for real users
+  const isAuthenticated = !!user && !isAnon;
 
   const portalName = branding?.portal_name || tenant?.name || "Print Centre";
 
@@ -55,11 +67,11 @@ export default function CustomerHeader() {
     { to: tenantPath("cart"), label: "Cart", end: false },
     { to: tenantPath("account"), label: "My Account", end: false },
   ];
-  const navItems = user ? authNavItems : publicNavItems;
+  const navItems = isAuthenticated ? authNavItems : publicNavItems;
 
   // Right controls renderer
   const renderRightControls = () => {
-    if (!user) {
+    if (!isAuthenticated) {
       return (
         <Link
           to={tenantPath("auth")}
