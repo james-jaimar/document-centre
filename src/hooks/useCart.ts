@@ -112,7 +112,7 @@ export function useAddItemToCart() {
       if (!user) throw new Error("Not authenticated");
       if (!tenantId) throw new Error("No tenant context");
 
-      const cartId = await getOrCreateCartId(user.id, tenantId, appId);
+      const cartId = await getOrCreateCartId(user.id, tenantId, appId, activeBranch?.id);
 
       // Stamp the cart order with the active currency on first add. We do
       // this idempotently so subsequent adds keep the existing currency
