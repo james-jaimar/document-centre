@@ -5,6 +5,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BookOpen, FileText, Layers, Printer, Presentation, Image, Newspaper } from "lucide-react";
+import { useBranch } from "@/contexts/BranchContext";
+import { useBranchCapabilities } from "@/hooks/useBranchCapabilities";
 
 import boundDocumentsImg from "@/assets/products/bound-documents.jpg";
 import presentationsImg from "@/assets/products/presentations.jpg";
@@ -44,6 +46,8 @@ const ICON_MAP: Record<string, React.ElementType> = {
 export default function NewOrder() {
   const navigate = useNavigate();
   const { tenantPath } = useTenantSlug();
+  const { activeBranch } = useBranch();
+  const { data: capabilities } = useBranchCapabilities(activeBranch?.id ?? null);
 
   const { data: families, isLoading } = useQuery({
     queryKey: ["product_families_active"],
@@ -56,6 +60,16 @@ export default function NewOrder() {
       if (error) throw error;
       return data;
     },
+  });
+
+  // Filter families to only those enabled at the active branch
+  const filteredFamilies = families?.filter((family) => {
+    // If no branch selected or no capabilities loaded yet, show all
+    if (!activeBranch || !capabilities || capabilities.length === 0) return true;
+    const cap = capabilities.find((c) => c.product_family_id === family.id);
+    // If no capability row exists for this family, hide it (branch doesn't offer it)
+    if (!cap) return false;
+    return cap.is_enabled && !cap.temporary_outage;
   });
 
   const handleSelect = (familyId: string, familySlug: string) => {
@@ -83,7 +97,7 @@ export default function NewOrder() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {families?.map((family) => {
+          {filteredFamilies?.map((family) => {
             const heroImage = family.image_url || SLUG_IMAGE_MAP[family.slug];
             const Icon = ICON_MAP[family.icon ?? ""] ?? FileText;
 
@@ -125,7 +139,7 @@ export default function NewOrder() {
         </div>
       )}
 
-      {!isLoading && (!families || families.length === 0) && (
+      {!isLoading && (!filteredFamilies || filteredFamilies.length === 0) && (
         <div className="text-center py-16 text-muted-foreground">
           <FileText className="h-12 w-12 mx-auto mb-3 opacity-40" />
           <p>No product types available yet.</p>

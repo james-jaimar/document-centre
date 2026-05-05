@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { useBranch } from "@/contexts/BranchContext";
 import { buildJobSnapshot } from "@/lib/orders/buildJobSnapshot";
 import { copyS3Object } from "@/lib/s3Storage";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
@@ -49,7 +50,12 @@ export function useCartItemCount() {
 /**
  * Get or create the cart order, returning its ID.
  */
-async function getOrCreateCartId(userId: string, tenantId: string, appId: string | null): Promise<string> {
+async function getOrCreateCartId(
+  userId: string,
+  tenantId: string,
+  appId: string | null,
+  branchId?: string | null
+): Promise<string> {
   // Try to find existing cart scoped to tenant
   const { data: existing } = await supabase
     .from("orders")
@@ -62,13 +68,14 @@ async function getOrCreateCartId(userId: string, tenantId: string, appId: string
 
   if (existing) return existing.id;
 
-  // Create new cart order
+  // Create new cart order — stamp with active branch
   const { data: newCart, error } = await supabase
     .from("orders")
     .insert({
       user_id: userId,
       tenant_id: tenantId,
       app_id: appId,
+      branch_id: branchId ?? null,
       order_status: "cart" as any,
       total_price: 0,
     })
@@ -86,6 +93,7 @@ async function getOrCreateCartId(userId: string, tenantId: string, appId: string
 export function useAddItemToCart() {
   const { user } = useAuth();
   const { tenantId, appId } = useTenantContext();
+  const { activeBranch } = useBranch();
   const qc = useQueryClient();
 
   return useMutation({
@@ -104,7 +112,7 @@ export function useAddItemToCart() {
       if (!user) throw new Error("Not authenticated");
       if (!tenantId) throw new Error("No tenant context");
 
-      const cartId = await getOrCreateCartId(user.id, tenantId, appId);
+      const cartId = await getOrCreateCartId(user.id, tenantId, appId, activeBranch?.id);
 
       // Stamp the cart order with the active currency on first add. We do
       // this idempotently so subsequent adds keep the existing currency
