@@ -112,6 +112,7 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <TenantProvider>
+          <SubdomainWrapper>
           <Routes>
             {/* Public */}
             <Route path="/auth" element={<Auth />} />
