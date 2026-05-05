@@ -93,6 +93,7 @@ async function getOrCreateCartId(
 export function useAddItemToCart() {
   const { user } = useAuth();
   const { tenantId, appId } = useTenantContext();
+  const { activeBranch } = useBranch();
   const qc = useQueryClient();
 
   return useMutation({
