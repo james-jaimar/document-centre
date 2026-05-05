@@ -1,3 +1,4 @@
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useState, useEffect } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,7 +19,7 @@ type AuthMode = "login" | "register" | "forgot";
 
 const Auth = () => {
   const navigate = useNavigate();
-  const { slug: tenantSlug } = useParams<{ slug: string }>();
+  const { slug: tenantSlug, tenantPath } = useTenantSlug();
   const [searchParams] = useSearchParams();
   const { user, highestRole, loading: authLoading, rolesLoaded } = useAuth();
   const { tenant: brandedTenant } = useTenantFromSlug();

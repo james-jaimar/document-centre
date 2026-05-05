@@ -1,3 +1,4 @@
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useNavigate, useParams } from "react-router-dom";
 import { useOrderDetail } from "@/hooks/useOrders";
 import { useTenantContext } from "@/hooks/useTenantContext";
@@ -91,7 +92,8 @@ const formatBytes = (bytes?: number | null) => {
 };
 
 const CustomerOrderDetail = () => {
-  const { slug, id } = useParams<{ slug: string; id: string }>();
+  const { id } = useParams<{ id: string }>();
+  const { slug, tenantPath } = useTenantSlug();
   const navigate = useNavigate();
   const { tenantId } = useTenantContext();
   const { data, isLoading, error } = useOrderDetail(id);
@@ -159,7 +161,7 @@ const CustomerOrderDetail = () => {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">Order not found</p>
-        <Button variant="outline" className="mt-4" onClick={() => navigate(`/t/${slug}/orders`)}>
+        <Button variant="outline" className="mt-4" onClick={() => navigate(tenantPath("orders"))}>
           Back to Orders
         </Button>
       </div>
@@ -170,7 +172,7 @@ const CustomerOrderDetail = () => {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">This order doesn't belong to this storefront</p>
-        <Button variant="outline" className="mt-4" onClick={() => navigate(`/t/${slug}/orders`)}>
+        <Button variant="outline" className="mt-4" onClick={() => navigate(tenantPath("orders"))}>
           Back to Orders
         </Button>
       </div>
@@ -195,7 +197,7 @@ const CustomerOrderDetail = () => {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3 flex-wrap">
-        <Button variant="ghost" size="icon" onClick={() => navigate(`/t/${slug}/orders`)}>
+        <Button variant="ghost" size="icon" onClick={() => navigate(tenantPath("orders"))}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1 min-w-0">

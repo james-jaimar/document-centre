@@ -1,3 +1,4 @@
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -52,7 +53,8 @@ import {
 } from "@/lib/orders/orientationPolicy";
 
 export default function OrderFiles() {
-  const { id: orderId, familyId: routeFamilyId, slug } = useParams<{ id: string; familyId: string; slug: string }>();
+  const { id: orderId, familyId: routeFamilyId } = useParams<{ id: string; familyId: string }>();
+  const { slug, tenantPath } = useTenantSlug();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const fromDocId = searchParams.get("fromDoc");
@@ -124,7 +126,7 @@ export default function OrderFiles() {
 
     // Replace URL so browser shows the real order ID (no history push — use replace)
     if (!opts?.skipNavigate) {
-      navigate(`/t/${slug}/orders/${order.id}/files`, { replace: true });
+      navigate(tenantPath(`orders/${order.id}/files`), { replace: true });
     }
 
     return newItem.id;
@@ -207,7 +209,7 @@ export default function OrderFiles() {
         // 6) NOW navigate to the canonical order URL (clone is complete).
         const newOrderId = createdOrderId ?? orderId;
         if (newOrderId) {
-          navigate(`/t/${slug}/orders/${newOrderId}/files`, { replace: true });
+          navigate(tenantPath(`orders/${newOrderId}/files`), { replace: true });
         }
 
         toast.success(`Copied "${sourceDoc.file_name}" into new order`);
@@ -918,7 +920,7 @@ export default function OrderFiles() {
   const handleSwitchProductFamily = useCallback(() => {
     const toPortrait = orientationDoc?.mode === "to-portrait";
     setOrientationDoc(null);
-    navigate(`/t/${slug}/orders/new`);
+    navigate(tenantPath("orders/new"));
     toast.info(
       toPortrait
         ? "Please select Presentations for landscape files"
@@ -2016,7 +2018,7 @@ export default function OrderFiles() {
           </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => navigate(`/t/${slug}/orders/new`)}
+              onClick={() => navigate(tenantPath("orders/new"))}
               className="soft-button flex items-center gap-1.5 text-sm"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -2024,7 +2026,7 @@ export default function OrderFiles() {
             </button>
             <button
               disabled={!canContinue || !effectiveOrderId}
-              onClick={() => navigate(`/t/${slug}/orders/${effectiveOrderId}/build`)}
+              onClick={() => navigate(tenantPath(`orders/${effectiveOrderId}/build`))}
               className="soft-button soft-button-primary flex items-center gap-1.5 text-sm rounded-xl disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Configure Options
