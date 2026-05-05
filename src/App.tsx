@@ -154,6 +154,27 @@ const App = () => (
               <Route path="settings" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
             </Route>
 
+            {/* Customer portal — subdomain-based (same routes as /t/:slug but at root) */}
+            <Route path="/" element={<CustomerLayout />}>
+              <Route path="dashboard" element={<CustomerDashboard />} />
+              <Route path="print-centre" element={<CustomerDashboard />} />
+              <Route path="orders/new" element={<NewOrder />} />
+              <Route path="orders/new/photo-prints" element={<PhotoPrintsBuilder />} />
+              <Route path="orders/new/:familyId" element={<OrderFiles />} />
+              <Route path="orders/:id/files" element={<OrderFiles />} />
+              <Route path="orders/:id/build" element={<OrderBuild />} />
+              <Route path="orders/:id/photo-prints" element={<PhotoPrintsBuilder />} />
+              <Route path="cart" element={<Cart />} />
+              <Route path="checkout" element={<Checkout />} />
+              <Route path="terms" element={<PortalTerms />} />
+              <Route path="privacy" element={<PortalPrivacy />} />
+              <Route path="orders/:id" element={<ProtectedRoute><CustomerOrderDetail /></ProtectedRoute>} />
+              <Route path="orders/:id/confirmation" element={<ProtectedRoute><OrderConfirmation /></ProtectedRoute>} />
+              <Route path="orders" element={<ProtectedRoute><CustomerOrders /></ProtectedRoute>} />
+              <Route path="account" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
+              <Route path="settings" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
+            </Route>
+
             {/* Legacy /dashboard redirects to slug-based URL */}
             <Route path="/dashboard/*" element={<ProtectedRoute><StorefrontRedirect /></ProtectedRoute>} />
 
@@ -307,7 +328,7 @@ const App = () => (
               </Route>
             </Route>
 
-            {/* Public marketing landing — always shown at root */}
+            {/* Public marketing landing — only when NOT on a tenant subdomain */}
             <Route path="/" element={<MarketingLanding />} />
             {/* One-click demo entry */}
             <Route path="/try" element={<Try />} />
