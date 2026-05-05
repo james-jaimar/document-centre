@@ -10,7 +10,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
-import ChatWidget from "@/components/ChatWidget";
+import TenantChatWidget from "@/components/TenantChatWidget";
+import { useTenantSettingsMap } from "@/hooks/useTenantSettings";
 
 
 // Convert a hex colour to "H S% L%" for CSS variable injection
@@ -45,6 +46,7 @@ function CustomerLayoutInner() {
   const { collapsed, toggle } = useSidebarCollapse();
   const { tenant } = useTenantFromSlug();
   const { data: branding, isLoading: brandingLoading } = useTenantBranding(tenant?.id ?? null);
+  const { settingsMap: integrations } = useTenantSettingsMap("integrations");
   // True once branding has resolved (or there's no tenant to load for)
   const brandingReady = !tenant?.id || !brandingLoading;
 
@@ -178,7 +180,11 @@ function CustomerLayoutInner() {
           <CustomerFooter />
         </div>
       </div>
-      <ChatWidget />
+      <TenantChatWidget
+        isDemo={!!tenant?.is_demo}
+        tawkEnabled={integrations.tawk_enabled === true}
+        tawkPropertyId={String(integrations.tawk_property_id || "")}
+      />
     </div>
   );
 }
