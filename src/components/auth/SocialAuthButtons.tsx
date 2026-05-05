@@ -32,6 +32,7 @@ export const SocialAuthButtons = ({
   tenantSlug,
   providers = ["google"],
 }: SocialAuthButtonsProps) => {
+  const { user } = useAuth();
   const [pending, setPending] = useState<Provider | null>(null);
 
   const signIn = async (provider: Provider) => {
