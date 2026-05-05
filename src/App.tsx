@@ -337,6 +337,7 @@ const App = () => (
             <Route path="/app" element={<AppEntryRedirect />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </SubdomainWrapper>
           </TenantProvider>
         </AuthProvider>
       </BrowserRouter>
