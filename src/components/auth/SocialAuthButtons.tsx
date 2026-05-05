@@ -38,6 +38,12 @@ export const SocialAuthButtons = ({
   const signIn = async (provider: Provider) => {
     setPending(provider);
     try {
+      // Persist anonymous user ID so AuthCallback can transfer orders after OAuth
+      const isAnonymous = !!(user as any)?.is_anonymous;
+      if (isAnonymous && user?.id) {
+        localStorage.setItem("dc_anon_user_id", user.id);
+      }
+
       const callback = new URL("/auth/callback", window.location.origin);
       if (tenantSlug) callback.searchParams.set("tenant", tenantSlug);
 
