@@ -218,14 +218,14 @@ const CustomerDashboard = () => {
   // only created on first file upload (see OrderFiles.ensureOrder).
   const handlePickProduct = (familyId: string, familySlug: string) => {
     if (familySlug === "photo-prints") {
-      navigate(`/t/${slug}/orders/new/photo-prints`);
+      navigate(tenantPath("orders/new/photo-prints"));
       return;
     }
-    navigate(`/t/${slug}/orders/new/${familyId}`);
+    navigate(tenantPath(`orders/new/${familyId}`));
   };
 
   const handleUploadClick = useCallback(() => {
-    navigate(`/t/${slug}/orders/new`);
+    navigate(tenantPath("orders/new"));
   }, [navigate, slug]);
 
   return (
@@ -291,7 +291,7 @@ const CustomerDashboard = () => {
           onDrop={(e) => {
             e.preventDefault();
             setDragOver(false);
-            navigate(`/t/${slug}/orders/new`);
+            navigate(tenantPath("orders/new"));
           }}
           onClick={handleUploadClick}
         >
@@ -348,7 +348,7 @@ const CustomerDashboard = () => {
                                   <button
                                     key={f.id}
                                     className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-secondary transition-colors text-left"
-                                    onClick={() => navigate(`/t/${slug}/orders/new/${f.id}?fromDoc=${doc.id}`)}
+                                    onClick={() => navigate(tenantPath(`orders/new/${f.id}?fromDoc=${doc.id}`))}
                                   >
                                     <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
                                     {f.name}
@@ -395,8 +395,8 @@ const CustomerDashboard = () => {
                           onClick={() => {
                             const status = item.build_status;
                             const path = status === "draft" || status === "building"
-                              ? `/t/${slug}/orders/${item.order_id}/files`
-                              : `/t/${slug}/orders/${item.order_id}/build`;
+                              ? tenantPath(`orders/${item.order_id}/files`)
+                              : tenantPath(`orders/${item.order_id}/build`);
                             navigate(path);
                           }}
                         >
@@ -432,7 +432,7 @@ const CustomerDashboard = () => {
                       <td>
                         <button
                           className="soft-button soft-button-gold"
-                          onClick={() => navigate(`/t/${slug}/orders/new?fromDoc=${doc.id}`)}
+                          onClick={() => navigate(tenantPath(`orders/new?fromDoc=${doc.id}`))}
                         >
                           Reorder
                         </button>
@@ -459,7 +459,7 @@ const CustomerDashboard = () => {
                   <div
                     key={order.id}
                     className="flex items-center justify-between px-4 py-3 hover:bg-secondary/30 transition-colors cursor-pointer"
-                    onClick={() => navigate(`/t/${slug}/orders/${order.id}`)}
+                    onClick={() => navigate(tenantPath(`orders/${order.id}`))}
                   >
                     <div className="flex items-center gap-3">
                       {order.order_status === "dispatched" ? (

@@ -60,10 +60,10 @@ export default function NewOrder() {
 
   const handleSelect = (familyId: string, familySlug: string) => {
     if (familySlug === "photo-prints") {
-      navigate(`/t/${slug}/orders/new/photo-prints`);
+      navigate(tenantPath("orders/new/photo-prints"));
       return;
     }
-    navigate(`/t/${slug}/orders/new/${familyId}`);
+    navigate(tenantPath(`orders/new/${familyId}`));
   };
 
   return (
