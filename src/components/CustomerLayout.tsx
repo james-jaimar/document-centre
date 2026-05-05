@@ -1,40 +1,16 @@
-import { Outlet, useNavigate, useParams } from "react-router-dom";
+import { Outlet, useParams } from "react-router-dom";
 import CustomerSidebar from "@/components/CustomerSidebar";
 import CustomerHeader from "@/components/CustomerHeader";
 import CustomerFooter from "@/components/CustomerFooter";
-import { Menu, PanelLeftOpen, Sparkles, X } from "lucide-react";
+import { Menu, PanelLeftOpen } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { SidebarCollapseProvider, useSidebarCollapse } from "@/hooks/useSidebarCollapse";
-import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import ChatWidget from "@/components/ChatWidget";
 
-function DemoBanner({ onUpgrade }: { onUpgrade: () => void }) {
-  const [dismissed, setDismissed] = useState(false);
-  if (dismissed) return null;
-  return (
-    <div className="flex items-center justify-between gap-3 border-b border-amber-300/60 bg-gradient-to-r from-amber-100 via-amber-50 to-amber-100 px-4 py-2.5 text-sm text-amber-900">
-      <div className="flex items-center gap-2 min-w-0">
-        <Sparkles className="h-4 w-4 shrink-0 text-amber-700" />
-        <span className="truncate">
-          <strong>Demo mode</strong> — explore the full ordering flow. No real orders are placed.
-        </span>
-      </div>
-      <div className="flex items-center gap-2 shrink-0">
-        <button
-          onClick={() => setDismissed(true)}
-          className="rounded-md p-1 hover:bg-amber-200/60"
-          aria-label="Dismiss"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-    </div>
-  );
-}
 
 // Convert a hex colour to "H S% L%" for CSS variable injection
 function hexToHslString(hex: string | undefined | null): string | null {
@@ -63,7 +39,6 @@ function hexToHslString(hex: string | undefined | null): string | null {
 
 function CustomerLayoutInner() {
   const { user, loading: authLoading } = useAuth();
-  const navigate = useNavigate();
   const { slug } = useParams<{ slug: string }>();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { collapsed, toggle } = useSidebarCollapse();
@@ -115,17 +90,6 @@ function CustomerLayoutInner() {
     })();
   }, [slug, user, authLoading]);
 
-  const { data: profile } = useQuery({
-    queryKey: ["profile_demo_flag", user?.id],
-    queryFn: async () => {
-      if (!user?.id) return null;
-      const { data } = await supabase.from("profiles").select("is_demo").eq("id", user.id).maybeSingle();
-      return data;
-    },
-    enabled: !!user?.id,
-  });
-
-  const isDemo = !!profile?.is_demo;
 
   // Inject tenant colour + font CSS variables for the print centre
   const tenantStyle = useMemo(() => {
@@ -144,8 +108,6 @@ function CustomerLayoutInner() {
 
   return (
     <div className="flex h-screen w-full flex-col" style={tenantStyle}>
-      {isDemo && <DemoBanner onUpgrade={() => navigate("/auth?mode=register&from=demo")} />}
-
       {/* Header — full width across the top */}
       <CustomerHeader />
 

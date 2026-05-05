@@ -5,13 +5,83 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useTenantSettingsMap, useBulkUpsertTenantSettings } from "@/hooks/useTenantSettings";
-import { useState, useEffect } from "react";
+import { useTenantContext } from "@/hooks/useTenantContext";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { Save, Palette, Globe, Loader2, Type, Image, Layout, Eye, EyeOff, Info } from "lucide-react";
+import { Save, Palette, Globe, Loader2, Type, Image, Layout, Eye, EyeOff, Info, Upload } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
+function ImageUploadField({
+  label, value, onChange, tenantId, fileKey, previewClass,
+}: {
+  label: string; value: string; onChange: (v: string) => void;
+  tenantId: string | null; fileKey: string; previewClass: string;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleUpload = async (file: File) => {
+    if (!tenantId) { toast.error("No tenant context"); return; }
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop()?.toLowerCase() || "png";
+      const path = `${tenantId}/${fileKey}.${ext}`;
+      const { error } = await supabase.storage
+        .from("tenant-assets")
+        .upload(path, file, { upsert: true, contentType: file.type });
+      if (error) throw error;
+      const { data: urlData } = supabase.storage.from("tenant-assets").getPublicUrl(path);
+      // Append cache-buster so browser picks up the new file
+      onChange(urlData.publicUrl + "?v=" + Date.now());
+      toast.success(`${label} uploaded`);
+    } catch (e: any) {
+      toast.error(e.message ?? "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <div className="flex gap-2">
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="https://..."
+          className="flex-1"
+        />
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleUpload(f);
+            e.target.value = "";
+          }}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          disabled={uploading}
+          onClick={() => fileRef.current?.click()}
+          title={`Upload ${label.toLowerCase()}`}
+        >
+          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+        </Button>
+      </div>
+      {value && (
+        <img src={value} alt={`${label} preview`} className={`mt-2 rounded border p-1 ${previewClass}`} />
+      )}
+    </div>
+  );
+}
 export function BrandingTab() {
   const { settingsMap, isLoading } = useTenantSettingsMap("branding");
+  const { tenantId } = useTenantContext();
   const bulkUpsert = useBulkUpsertTenantSettings();
 
   const [primaryColor, setPrimaryColor] = useState("");
@@ -262,19 +332,25 @@ export function BrandingTab() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Image className="h-5 w-5" /> Images</CardTitle>
-          <CardDescription>Logo and hero image URLs for the portal header and landing page</CardDescription>
+          <CardDescription>Logo and hero image for the portal header and landing page. Upload a file or paste a URL.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-6 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label>Logo URL</Label>
-            <Input value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="https://..." />
-            {logoUrl && <img src={logoUrl} alt="Logo preview" className="h-10 w-auto mt-2 object-contain rounded border p-1" />}
-          </div>
-          <div className="space-y-2">
-            <Label>Hero Image URL</Label>
-            <Input value={heroImageUrl} onChange={(e) => setHeroImageUrl(e.target.value)} placeholder="https://..." />
-            {heroImageUrl && <img src={heroImageUrl} alt="Hero preview" className="h-20 w-auto mt-2 object-cover rounded border" />}
-          </div>
+          <ImageUploadField
+            label="Logo"
+            value={logoUrl}
+            onChange={setLogoUrl}
+            tenantId={tenantId}
+            fileKey="logo"
+            previewClass="h-12 w-auto object-contain"
+          />
+          <ImageUploadField
+            label="Hero Image"
+            value={heroImageUrl}
+            onChange={setHeroImageUrl}
+            tenantId={tenantId}
+            fileKey="hero"
+            previewClass="h-20 w-auto object-cover"
+          />
         </CardContent>
       </Card>
 
