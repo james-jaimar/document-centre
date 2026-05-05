@@ -1,5 +1,5 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { ShoppingCart, User, LogOut, Settings as SettingsIcon, ClipboardList, ExternalLink, LogIn } from "lucide-react";
+import { ShoppingCart, User, LogOut, Settings as SettingsIcon, ClipboardList, LogIn } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
@@ -128,32 +128,32 @@ export default function CustomerHeader() {
     );
   };
 
+  const logoContent = logoUrl ? (
+    <img
+      src={logoUrl}
+      alt={portalName}
+      className="h-16 w-auto max-w-[260px] object-contain"
+    />
+  ) : (
+    <span className="text-lg font-semibold text-foreground truncate">{portalName}</span>
+  );
+
   return (
     <header className="print-topbar">
-      {/* Optional "Back to site" link */}
-      {originUrl && (
+      {originUrl ? (
         <a
           href={originUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mr-3 shrink-0"
+          className="flex items-center shrink-0"
         >
-          <ExternalLink className="h-3 w-3" />
-          Back to site
+          {logoContent}
         </a>
+      ) : (
+        <Link to={tenantPath("print-centre")} className="flex items-center shrink-0">
+          {logoContent}
+        </Link>
       )}
-
-      <Link to={tenantPath("print-centre")} className="flex items-center shrink-0">
-        {logoUrl ? (
-          <img
-            src={logoUrl}
-            alt={portalName}
-            className="h-16 w-auto max-w-[260px] object-contain"
-          />
-        ) : (
-          <span className="text-lg font-semibold text-foreground truncate">{portalName}</span>
-        )}
-      </Link>
 
       <nav className="hidden md:flex items-center gap-7 mx-auto">
         {navItems.map((item) => (
