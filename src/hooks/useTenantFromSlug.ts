@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 
 interface SlugTenant {
   id: string;
@@ -11,7 +11,7 @@ interface SlugTenant {
 }
 
 export function useTenantFromSlug() {
-  const { slug } = useParams<{ slug: string }>();
+  const { slug } = useTenantSlug();
   const [tenant, setTenant] = useState<SlugTenant | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
