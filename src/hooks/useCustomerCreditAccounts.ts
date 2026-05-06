@@ -16,12 +16,12 @@ export function useCustomerCreditAccounts(customerProfileId: string | undefined)
       if (!tenantId || !customerProfileId) return [];
       const { data, error } = await supabase
         .from("customer_credit_accounts")
-        .select("*, branches(id, name)")
+        .select("*")
         .eq("tenant_id", tenantId)
         .eq("customer_profile_id", customerProfileId)
         .order("created_at");
       if (error) throw error;
-      return data as (CreditAccount & { branches: { id: string; name: string } | null })[];
+      return data as CreditAccount[];
     },
     enabled: !!tenantId && !!customerProfileId,
   });
