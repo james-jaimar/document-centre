@@ -1,5 +1,5 @@
 import { useTenantSlug } from "@/hooks/useTenantSlug";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, getDefaultRoute } from "@/hooks/useAuth";
@@ -12,6 +12,7 @@ import { AlertCircle, Printer, Info } from "lucide-react";
 import { toast } from "sonner";
 import SocialAuthButtons from "@/components/auth/SocialAuthButtons";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
+import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { pickPrimaryMembership, resolveTenantLanding, type LandingMembership } from "@/lib/auth/landingRoute";
 import { buildAdminPath } from "@/lib/adminRouting";
 
