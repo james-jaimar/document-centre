@@ -61,9 +61,20 @@ export default function BranchSidebar() {
       <div className="flex items-center justify-between border-b border-sidebar-border p-4">
         {!collapsed && (
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-              <Printer size={18} />
-            </div>
+            {branding?.logo_url ? (
+              <img
+                src={branding.logo_url}
+                alt={tenantName ?? "Tenant"}
+                className="h-8 w-8 rounded-lg object-contain"
+              />
+            ) : (
+              <div
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-sidebar-primary-foreground"
+                style={{ backgroundColor: branding?.primary_color || undefined }}
+              >
+                <Printer size={18} />
+              </div>
+            )}
             <div className="min-w-0">
               <h1 className="truncate text-base font-bold leading-tight">
                 {tenantName ? `${tenantName} — ${branchLabel}` : branchLabel}
