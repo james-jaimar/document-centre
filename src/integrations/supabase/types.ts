@@ -436,6 +436,54 @@ export type Database = {
           },
         ]
       }
+      customer_credit_accounts: {
+        Row: {
+          account_ref: string | null
+          app_id: string
+          branch_id: string | null
+          created_at: string
+          credit_limit: number | null
+          customer_profile_id: string
+          default_discount_pct: number | null
+          id: string
+          is_active: boolean
+          notes: string | null
+          payment_terms_days: number | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          account_ref?: string | null
+          app_id: string
+          branch_id?: string | null
+          created_at?: string
+          credit_limit?: number | null
+          customer_profile_id: string
+          default_discount_pct?: number | null
+          id?: string
+          is_active?: boolean
+          notes?: string | null
+          payment_terms_days?: number | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          account_ref?: string | null
+          app_id?: string
+          branch_id?: string | null
+          created_at?: string
+          credit_limit?: number | null
+          customer_profile_id?: string
+          default_discount_pct?: number | null
+          id?: string
+          is_active?: boolean
+          notes?: string | null
+          payment_terms_days?: number | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       customer_notes: {
         Row: {
           app_id: string

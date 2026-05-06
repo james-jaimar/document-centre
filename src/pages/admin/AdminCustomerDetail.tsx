@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -59,10 +59,7 @@ export default function AdminCustomerDetail() {
   const [editingAddress, setEditingAddress] = useState<CustomerAddress | null>(null);
   const [confirmDeleteAddress, setConfirmDeleteAddress] = useState<string | null>(null);
 
-  const accountSettings = useMemo(
-    () => ((data?.membership as any)?.metadata ?? {}) as any,
-    [data?.membership]
-  );
+  // (credit accounts are now loaded inside CustomerAccountSettings)
 
   if (isLoading || !data) {
     return (
@@ -148,9 +145,6 @@ export default function AdminCustomerDetail() {
               <Badge variant={membership.is_active ? "default" : "secondary"}>
                 {membership.is_active ? "Active" : "Inactive"}
               </Badge>
-            )}
-            {accountSettings.is_account_customer && (
-              <Badge variant="outline">Account customer</Badge>
             )}
           </div>
         </div>
@@ -432,10 +426,9 @@ export default function AdminCustomerDetail() {
 
         <TabsContent value="account">
           {id && (
-            <CustomerAccountSettings
-              customerProfileId={id}
-              initial={accountSettings}
-            />
+             <CustomerAccountSettings
+               customerProfileId={id}
+             />
           )}
           <Card className="p-4 mt-4">
             <h3 className="text-sm font-semibold mb-3">Membership</h3>
