@@ -14,6 +14,7 @@ import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useBranches } from "@/hooks/useBranches";
+import { useTenantBranding } from "@/hooks/useTenantBranding";
 
 const ROLE_LABELS: Record<string, string> = {
   owner: "Owner",
