@@ -40,6 +40,7 @@ interface Body {
   app_id?: string | null;
   membership_id?: string | null;
   new_email?: string;
+  new_password?: string;
   display_name?: string | null;
   first_name?: string | null;
   last_name?: string | null;
