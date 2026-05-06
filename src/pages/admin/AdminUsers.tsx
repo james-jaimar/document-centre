@@ -9,6 +9,7 @@ import { useManageUser } from "@/hooks/useManageUser";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -16,8 +17,11 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Users, UserPlus, Search } from "lucide-react";
+import { Users, UserPlus, Search, Loader2 } from "lucide-react";
 import { AddMemberDialog } from "@/components/admin/AddMemberDialog";
 import { EditMemberDialog } from "@/components/admin/EditMemberDialog";
 import { MembersTable, displayName } from "@/components/admin/MembersTable";
@@ -55,6 +59,9 @@ const AdminUsers = () => {
     type: "disable" | "enable" | "reset" | "invite";
   } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [setPasswordTarget, setSetPasswordTarget] = useState<TenantMemberRow | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [settingPassword, setSettingPassword] = useState(false);
 
   const filtered = useMemo(() => {
     if (!members) return [];
