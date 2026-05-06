@@ -115,6 +115,27 @@ const AdminUsers = () => {
     }
   };
 
+  const handleSetPassword = async () => {
+    if (!setPasswordTarget || !newPassword) return;
+    setSettingPassword(true);
+    try {
+      await manageUser.mutateAsync({
+        action: "set_password",
+        target_profile_id: setPasswordTarget.profile_id,
+        tenant_id: setPasswordTarget.tenant_id,
+        app_id: setPasswordTarget.app_id,
+        new_password: newPassword,
+      });
+      toast.success("Password updated");
+      setSetPasswordTarget(null);
+      setNewPassword("");
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setSettingPassword(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
