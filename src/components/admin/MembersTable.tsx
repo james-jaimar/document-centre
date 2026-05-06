@@ -57,6 +57,7 @@ interface Props {
   stats: UserStat[] | undefined;
   onEdit: (m: TenantMemberRow) => void;
   onResetPassword: (m: TenantMemberRow) => void;
+  onSetPassword: (m: TenantMemberRow) => void;
   onToggleActive: (m: TenantMemberRow) => void;
   onResendInvite: (m: TenantMemberRow) => void;
   onRemove: (m: TenantMemberRow) => void;
