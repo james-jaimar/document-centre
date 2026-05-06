@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
     const admin = createClient(url, serviceKey);
 
     const body = (await req.json()) as Body;
-    const { action, target_profile_id, tenant_id, app_id, membership_id, new_email, display_name, first_name, last_name, phone, reason } = body;
+    const { action, target_profile_id, tenant_id, app_id, membership_id, new_email, new_password, display_name, first_name, last_name, phone, reason } = body;
 
     if (!action || !target_profile_id) {
       return err("Missing action or target_profile_id");
