@@ -146,9 +146,6 @@ export default function AdminCustomerDetail() {
                 {membership.is_active ? "Active" : "Inactive"}
               </Badge>
             )}
-            {accountSettings.is_account_customer && (
-              <Badge variant="outline">Account customer</Badge>
-            )}
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
