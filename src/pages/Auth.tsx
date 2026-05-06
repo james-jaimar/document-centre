@@ -24,6 +24,7 @@ const Auth = () => {
   const [searchParams] = useSearchParams();
   const { user, highestRole, loading: authLoading, rolesLoaded } = useAuth();
   const { tenant: brandedTenant } = useTenantFromSlug();
+  const { data: branding } = useTenantBranding(brandedTenant?.id ?? null);
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
