@@ -1,24 +1,45 @@
 
-# Fix: Tenant Auth Page Auto-Login via Anonymous Session
+## Problem 1: Branch staff cannot see order contents
 
-## Root Cause
+The screenshot shows "No jobs in this order" and empty timeline — the order row loads but all child data is missing.
 
-When a user visits a tenant storefront (e.g. `asset-print.document-centre.com`), `CustomerLayout` creates an anonymous Supabase session and `tenant-bootstrap` gives that anonymous user a `customer` membership. When the user then navigates to `/auth`, the Auth page's gating effect sees a `user` object, queries `tenant_memberships`, finds the customer membership, and auto-redirects to `/t/asset-print/print-centre` — never showing the login form.
+**Root cause**: The RLS helper functions `user_is_staff_for()` and `user_can_read_order()` only recognize roles `owner, admin, sales, production, accounts`. Branch roles (`branch_manager`, `store_operator`) are excluded. The `orders` table has a separate "Branch staff can view branch orders" policy that works, but child tables (`order_jobs`, `order_documents`, `payments`, `messages`, `timeline_events`, `order_addresses`) all delegate to these helper functions — so branch staff get empty results.
 
-This affects all tenants, not just asset-print.
+**Fix**: Update `user_is_staff_for()` to include `branch_manager` and `store_operator` in the role list, scoped to the user's assigned branch. This is the single-point fix that cascades to all child table policies.
 
-## Fix
-
-**File: `src/pages/Auth.tsx`** — Add an anonymous user check at the top of the gating `useEffect`. If `user.is_anonymous` is true, sign them out silently so the login form appears. This lets them authenticate with real credentials.
-
-```ts
-// Inside the gating useEffect, right after the early-return guards:
-if (user.is_anonymous) {
-  supabase.auth.signOut();
-  return;
-}
+```sql
+CREATE OR REPLACE FUNCTION public.user_is_staff_for(p_app_id uuid, p_tenant_id uuid)
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT (
+    public.has_role(auth.uid(), 'platform_admin'::app_role)
+    OR EXISTS (
+      SELECT 1
+      FROM public.tenant_memberships tm
+      WHERE tm.profile_id = auth.uid()
+        AND tm.app_id = p_app_id
+        AND tm.tenant_id = p_tenant_id
+        AND tm.is_active = true
+        AND tm.role IN ('owner','admin','sales','production','accounts',
+                        'branch_manager','store_operator')
+    )
+  );
+$$;
 ```
 
-This is a single-line guard that prevents anonymous sessions from triggering the redirect logic. Once signed out, the auth state resets to `null`, and the login form renders normally. Real users who sign in will proceed through the existing gating logic as before.
+This grants branch staff read AND write access to order child tables for orders in their tenant. Since branch staff should only see their branch's orders, the existing `orders` SELECT policy ("Branch staff can view branch orders") already limits which orders they can fetch. The child table policies join back to `orders`, so the branch scope is preserved transitively.
 
-No database, edge function, or routing changes needed.
+## Problem 2: Tenant branding on branch login
+
+Branch users log in via `/t/:slug/auth` (the tenant auth page), which already applies branding from the previous implementation (logo, colors, gradient, favicon). This should already work.
+
+However, the `BranchLayout` and `BranchSidebar` do not reflect tenant branding — they use generic sidebar styling. I will:
+
+1. Add tenant branding to `BranchSidebar` — show the tenant logo instead of the generic Printer icon, and apply `primary_color` to the sidebar brand area.
+
+## Changes
+
+1. **Database migration** — Update `user_is_staff_for()` to include `branch_manager` and `store_operator`.
+2. **`src/components/BranchSidebar.tsx`** — Fetch tenant branding and display logo/colors in the sidebar header.
