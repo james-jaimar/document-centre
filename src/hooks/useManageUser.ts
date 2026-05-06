@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 export type ManageUserAction =
   | "force_password_reset"
+  | "set_password"
   | "disable_account"
   | "enable_account"
   | "delete_account"
@@ -20,6 +21,7 @@ export interface ManageUserInput {
   app_id?: string | null;
   membership_id?: string | null;
   new_email?: string;
+  new_password?: string;
   display_name?: string | null;
   first_name?: string | null;
   last_name?: string | null;

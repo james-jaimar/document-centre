@@ -23,6 +23,7 @@ function err(message: string, status = 400) {
 
 type Action =
   | "force_password_reset"
+  | "set_password"
   | "disable_account"
   | "enable_account"
   | "delete_account"
@@ -39,6 +40,7 @@ interface Body {
   app_id?: string | null;
   membership_id?: string | null;
   new_email?: string;
+  new_password?: string;
   display_name?: string | null;
   first_name?: string | null;
   last_name?: string | null;
@@ -68,7 +70,7 @@ Deno.serve(async (req) => {
     const admin = createClient(url, serviceKey);
 
     const body = (await req.json()) as Body;
-    const { action, target_profile_id, tenant_id, app_id, membership_id, new_email, display_name, first_name, last_name, phone, reason } = body;
+    const { action, target_profile_id, tenant_id, app_id, membership_id, new_email, new_password, display_name, first_name, last_name, phone, reason } = body;
 
     if (!action || !target_profile_id) {
       return err("Missing action or target_profile_id");
@@ -230,6 +232,18 @@ ${logo}<h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 16px;">${
             ? `Invite link sent to ${targetEmail}`
             : `Reset link sent to ${targetEmail}`,
         });
+      }
+
+      case "set_password": {
+        if (!new_password || new_password.length < 6) {
+          return err("Password must be at least 6 characters");
+        }
+        const { error: pwErr } = await admin.auth.admin.updateUserById(target_profile_id, {
+          password: new_password,
+        });
+        if (pwErr) return err(`Failed to set password: ${pwErr.message}`);
+        await audit({ note: "Password manually set by admin" });
+        return json({ success: true, message: "Password updated successfully" });
       }
 
       case "disable_account": {

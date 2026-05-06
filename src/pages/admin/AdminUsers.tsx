@@ -9,6 +9,7 @@ import { useManageUser } from "@/hooks/useManageUser";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -16,8 +17,11 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Users, UserPlus, Search } from "lucide-react";
+import { Users, UserPlus, Search, Loader2 } from "lucide-react";
 import { AddMemberDialog } from "@/components/admin/AddMemberDialog";
 import { EditMemberDialog } from "@/components/admin/EditMemberDialog";
 import { MembersTable, displayName } from "@/components/admin/MembersTable";
@@ -55,6 +59,9 @@ const AdminUsers = () => {
     type: "disable" | "enable" | "reset" | "invite";
   } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [setPasswordTarget, setSetPasswordTarget] = useState<TenantMemberRow | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [settingPassword, setSettingPassword] = useState(false);
 
   const filtered = useMemo(() => {
     if (!members) return [];
@@ -105,6 +112,27 @@ const AdminUsers = () => {
       setConfirmAction(null);
     } catch (e: any) {
       toast.error(e.message);
+    }
+  };
+
+  const handleSetPassword = async () => {
+    if (!setPasswordTarget || !newPassword) return;
+    setSettingPassword(true);
+    try {
+      await manageUser.mutateAsync({
+        action: "set_password",
+        target_profile_id: setPasswordTarget.profile_id,
+        tenant_id: setPasswordTarget.tenant_id,
+        app_id: setPasswordTarget.app_id,
+        new_password: newPassword,
+      });
+      toast.success("Password updated");
+      setSetPasswordTarget(null);
+      setNewPassword("");
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setSettingPassword(false);
     }
   };
 
@@ -167,6 +195,7 @@ const AdminUsers = () => {
               stats={stats}
               onEdit={setEditing}
               onResetPassword={(m) => setConfirmAction({ member: m, type: "reset" })}
+              onSetPassword={(m) => { setSetPasswordTarget(m); setNewPassword(""); }}
               onResendInvite={(m) => setConfirmAction({ member: m, type: "invite" })}
               onToggleActive={(m) => setConfirmAction({ member: m, type: m.is_active ? "disable" : "enable" })}
               onRemove={setRemoveTarget}
@@ -237,6 +266,42 @@ const AdminUsers = () => {
           appId={appId}
         />
       )}
+
+      {/* Set Password Dialog */}
+      <Dialog open={!!setPasswordTarget} onOpenChange={(open) => { if (!open) { setSetPasswordTarget(null); setNewPassword(""); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Set password manually</DialogTitle>
+            <DialogDescription>
+              Assign a new password for <strong>{setPasswordTarget && displayName(setPasswordTarget)}</strong> ({setPasswordTarget?.profiles?.email}). They will be able to sign in with this password immediately.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="new-password" className="text-sm">New Password</Label>
+              <Input
+                id="new-password"
+                type="text"
+                placeholder="At least 6 characters"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                autoFocus
+              />
+              {newPassword.length > 0 && newPassword.length < 6 && (
+                <p className="text-xs text-destructive">Password must be at least 6 characters.</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setSetPasswordTarget(null); setNewPassword(""); }}>
+              Cancel
+            </Button>
+            <Button onClick={handleSetPassword} disabled={settingPassword || newPassword.length < 6}>
+              {settingPassword ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Setting…</> : "Set Password"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

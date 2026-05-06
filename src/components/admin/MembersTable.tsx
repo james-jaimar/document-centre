@@ -6,7 +6,7 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Pencil, MoreVertical, Shield, KeyRound, UserX, UserCheck, Trash2, Mail } from "lucide-react";
+import { Pencil, MoreVertical, Shield, KeyRound, Lock, UserX, UserCheck, Trash2, Mail } from "lucide-react";
 import type { TenantMemberRow } from "@/hooks/useTenantMembers";
 import type { UserStat } from "@/hooks/useUserOrderStats";
 import { formatPrice } from "@/lib/formatCurrency";
@@ -57,13 +57,14 @@ interface Props {
   stats: UserStat[] | undefined;
   onEdit: (m: TenantMemberRow) => void;
   onResetPassword: (m: TenantMemberRow) => void;
+  onSetPassword: (m: TenantMemberRow) => void;
   onToggleActive: (m: TenantMemberRow) => void;
   onResendInvite: (m: TenantMemberRow) => void;
   onRemove: (m: TenantMemberRow) => void;
 }
 
 export function MembersTable({
-  members, branches, stats, onEdit, onResetPassword, onToggleActive, onResendInvite, onRemove,
+  members, branches, stats, onEdit, onResetPassword, onSetPassword, onToggleActive, onResendInvite, onRemove,
 }: Props) {
   const statsMap = new Map(stats?.map((s) => [s.profile_id, s]) ?? []);
 
@@ -118,7 +119,10 @@ export function MembersTable({
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-56 bg-popover">
                       <DropdownMenuItem onClick={() => onResetPassword(m)}>
-                        <KeyRound size={14} className="mr-2" /> Force password reset
+                        <KeyRound size={14} className="mr-2" /> Send password reset email
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onSetPassword(m)}>
+                        <Lock size={14} className="mr-2" /> Set password manually
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => onResendInvite(m)}>
                         <Mail size={14} className="mr-2" /> Resend invite email
