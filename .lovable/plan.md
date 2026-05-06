@@ -1,22 +1,24 @@
 
-# Tenant-Branded Login Page
+# Fix: Tenant Auth Page Auto-Login via Anonymous Session
 
-Currently the Auth page at `/t/:slug/auth` shows the tenant name and logo (if set), but uses a hardcoded blue gradient background and the default primary button color. We'll pull in the full tenant branding and apply it dynamically.
+## Root Cause
 
-## What changes
+When a user visits a tenant storefront (e.g. `asset-print.document-centre.com`), `CustomerLayout` creates an anonymous Supabase session and `tenant-bootstrap` gives that anonymous user a `customer` membership. When the user then navigates to `/auth`, the Auth page's gating effect sees a `user` object, queries `tenant_memberships`, finds the customer membership, and auto-redirects to `/t/asset-print/print-centre` — never showing the login form.
 
-**File: `src/pages/Auth.tsx`**
+This affects all tenants, not just asset-print.
 
-1. Import and call `useTenantBranding(brandedTenant?.id)` to fetch the tenant's branding settings (primary_color, secondary_color, accent_color, favicon_url, font_heading, font_body, etc.).
+## Fix
 
-2. **Background gradient** — replace the hardcoded `from-[hsl(222,47%,11%)] to-[hsl(215,70%,25%)]` with the tenant's `primary_color` and `secondary_color` via inline `style` when on a tenant portal (keep the default gradient for platform `/auth`).
+**File: `src/pages/Auth.tsx`** — Add an anonymous user check at the top of the gating `useEffect`. If `user.is_anonymous` is true, sign them out silently so the login form appears. This lets them authenticate with real credentials.
 
-3. **Sign In button** — apply `primary_color` as the button's background via inline style so it matches the tenant brand.
+```ts
+// Inside the gating useEffect, right after the early-return guards:
+if (user.is_anonymous) {
+  supabase.auth.signOut();
+  return;
+}
+```
 
-4. **Logo container** — enlarge slightly and remove the rounded background so the logo displays more prominently against the card.
+This is a single-line guard that prevents anonymous sessions from triggering the redirect logic. Once signed out, the auth state resets to `null`, and the login form renders normally. Real users who sign in will proceed through the existing gating logic as before.
 
-5. **Favicon** — when `branding.favicon_url` is set, dynamically update `document.querySelector('link[rel="icon"]')` via a `useEffect` so the browser tab shows the tenant's favicon on the login page.
-
-6. **Fonts** — if `font_heading` or `font_body` are set, apply them to the card title and inputs via inline `fontFamily`.
-
-No database or edge function changes required — all branding data is already available via the existing `useTenantBranding` hook and public RLS policy.
+No database, edge function, or routing changes needed.
