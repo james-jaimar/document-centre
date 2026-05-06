@@ -234,6 +234,18 @@ ${logo}<h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 16px;">${
         });
       }
 
+      case "set_password": {
+        if (!new_password || new_password.length < 6) {
+          return err("Password must be at least 6 characters");
+        }
+        const { error: pwErr } = await admin.auth.admin.updateUserById(target_profile_id, {
+          password: new_password,
+        });
+        if (pwErr) return err(`Failed to set password: ${pwErr.message}`);
+        await audit({ note: "Password manually set by admin" });
+        return json({ success: true, message: "Password updated successfully" });
+      }
+
       case "disable_account": {
         const { error: e } = await admin.auth.admin.updateUserById(target_profile_id, {
           ban_duration: "876000h", // ~100 years
