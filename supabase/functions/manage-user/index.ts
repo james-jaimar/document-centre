@@ -23,6 +23,7 @@ function err(message: string, status = 400) {
 
 type Action =
   | "force_password_reset"
+  | "set_password"
   | "disable_account"
   | "enable_account"
   | "delete_account"
