@@ -266,6 +266,42 @@ const AdminUsers = () => {
           appId={appId}
         />
       )}
+
+      {/* Set Password Dialog */}
+      <Dialog open={!!setPasswordTarget} onOpenChange={(open) => { if (!open) { setSetPasswordTarget(null); setNewPassword(""); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Set password manually</DialogTitle>
+            <DialogDescription>
+              Assign a new password for <strong>{setPasswordTarget && displayName(setPasswordTarget)}</strong> ({setPasswordTarget?.profiles?.email}). They will be able to sign in with this password immediately.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="new-password" className="text-sm">New Password</Label>
+              <Input
+                id="new-password"
+                type="text"
+                placeholder="At least 6 characters"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                autoFocus
+              />
+              {newPassword.length > 0 && newPassword.length < 6 && (
+                <p className="text-xs text-destructive">Password must be at least 6 characters.</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setSetPasswordTarget(null); setNewPassword(""); }}>
+              Cancel
+            </Button>
+            <Button onClick={handleSetPassword} disabled={settingPassword || newPassword.length < 6}>
+              {settingPassword ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Setting…</> : "Set Password"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
