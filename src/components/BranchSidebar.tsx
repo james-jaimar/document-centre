@@ -38,6 +38,7 @@ export default function BranchSidebar() {
   const location = useLocation();
   const { signOut, user } = useAuth();
   const { tenantName, tenantId, branchId, membershipRole } = useTenantContext();
+  const { data: branding } = useTenantBranding(tenantId);
   const { data: branches } = useBranches(tenantId);
   const branch = branches?.find((b) => b.id === branchId);
   const branchLabel = branch?.name ?? "Branch";
