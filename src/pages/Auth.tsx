@@ -325,7 +325,7 @@ const Auth = () => {
             </CardContent>
 
             <CardFooter className="flex flex-col gap-3">
-              <Button type="submit" className="w-full" disabled={loading || gating}>
+              <Button type="submit" className="w-full" disabled={loading || gating} style={btnStyle}>
                 {loading
                   ? "Please wait..."
                   : mode === "login"
