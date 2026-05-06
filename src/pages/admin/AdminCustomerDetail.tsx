@@ -59,10 +59,7 @@ export default function AdminCustomerDetail() {
   const [editingAddress, setEditingAddress] = useState<CustomerAddress | null>(null);
   const [confirmDeleteAddress, setConfirmDeleteAddress] = useState<string | null>(null);
 
-  const accountSettings = useMemo(
-    () => ((data?.membership as any)?.metadata ?? {}) as any,
-    [data?.membership]
-  );
+  // (credit accounts are now loaded inside CustomerAccountSettings)
 
   if (isLoading || !data) {
     return (
