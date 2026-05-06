@@ -187,17 +187,48 @@ const Auth = () => {
   const submitHandler =
     mode === "login" ? handleLogin : mode === "register" ? handleRegister : handleForgotPassword;
 
+  // Dynamically set favicon for tenant portal
+  useEffect(() => {
+    if (!isTenantPortal || !branding?.favicon_url) return;
+    const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (link) {
+      const original = link.href;
+      link.href = branding.favicon_url;
+      return () => { link.href = original; };
+    }
+  }, [isTenantPortal, branding?.favicon_url]);
+
+  // Build branded background style
+  const bgStyle = useMemo(() => {
+    if (isTenantPortal && branding?.primary_color && branding.primary_color !== "#1a1a2e") {
+      return {
+        background: `linear-gradient(135deg, ${branding.primary_color} 0%, ${branding.secondary_color || branding.primary_color} 100%)`,
+      };
+    }
+    return undefined;
+  }, [isTenantPortal, branding?.primary_color, branding?.secondary_color]);
+
+  const btnStyle = useMemo(() => {
+    if (isTenantPortal && branding?.primary_color && branding.primary_color !== "#1a1a2e") {
+      return { backgroundColor: branding.primary_color, borderColor: branding.primary_color };
+    }
+    return undefined;
+  }, [isTenantPortal, branding?.primary_color]);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[hsl(222,47%,11%)] to-[hsl(215,70%,25%)]">
+    <div
+      className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[hsl(222,47%,11%)] to-[hsl(215,70%,25%)]"
+      style={bgStyle}
+    >
       <div className="w-full max-w-md px-4">
         <Card className="shadow-2xl">
           <CardHeader className="text-center">
             {isTenantPortal && brandedTenant?.logo_url ? (
-              <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl bg-card">
+              <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center overflow-hidden rounded-xl">
                 <img
                   src={brandedTenant.logo_url}
                   alt={`${brandedTenant.name} logo`}
-                  className="max-h-16 max-w-16 object-contain"
+                  className="max-h-20 max-w-20 object-contain"
                 />
               </div>
             ) : (
