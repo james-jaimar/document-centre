@@ -92,7 +92,7 @@ export function useDeleteCreditAccount(customerProfileId: string | undefined) {
 
 /** Resolve the effective credit account for a given branch — branch-specific wins over tenant default. */
 export function resolveCredit(
-  accounts: (CreditAccount & { branches: { id: string; name: string } | null })[],
+  accounts: CreditAccount[],
   branchId: string | null | undefined,
 ) {
   const branchRow = branchId ? accounts.find((a) => a.branch_id === branchId) : undefined;
