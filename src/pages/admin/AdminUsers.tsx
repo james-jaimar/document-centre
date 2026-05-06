@@ -195,6 +195,7 @@ const AdminUsers = () => {
               stats={stats}
               onEdit={setEditing}
               onResetPassword={(m) => setConfirmAction({ member: m, type: "reset" })}
+              onSetPassword={(m) => { setSetPasswordTarget(m); setNewPassword(""); }}
               onResendInvite={(m) => setConfirmAction({ member: m, type: "invite" })}
               onToggleActive={(m) => setConfirmAction({ member: m, type: m.is_active ? "disable" : "enable" })}
               onRemove={setRemoveTarget}
