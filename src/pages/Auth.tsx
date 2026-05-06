@@ -43,6 +43,13 @@ const Auth = () => {
   useEffect(() => {
     if (!user || authLoading || !rolesLoaded || gating) return;
 
+    // Anonymous users (from storefront bootstrap) should see the login form,
+    // not be auto-redirected. Sign them out so they can use real credentials.
+    if ((user as any).is_anonymous) {
+      supabase.auth.signOut();
+      return;
+    }
+
     (async () => {
       setGating(true);
       try {
