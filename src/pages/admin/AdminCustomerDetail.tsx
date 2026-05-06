@@ -432,10 +432,9 @@ export default function AdminCustomerDetail() {
 
         <TabsContent value="account">
           {id && (
-            <CustomerAccountSettings
-              customerProfileId={id}
-              initial={accountSettings}
-            />
+             <CustomerAccountSettings
+               customerProfileId={id}
+             />
           )}
           <Card className="p-4 mt-4">
             <h3 className="text-sm font-semibold mb-3">Membership</h3>
