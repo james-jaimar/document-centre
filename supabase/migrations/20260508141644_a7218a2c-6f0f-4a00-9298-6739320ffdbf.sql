@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS public._temp_bulk_import_branches(jsonb);
