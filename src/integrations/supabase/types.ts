@@ -3266,7 +3266,6 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      _temp_bulk_import_branches: { Args: { rows: Json }; Returns: number }
       create_email_account_secret: {
         Args: { p_name: string; p_secret: string }
         Returns: string
