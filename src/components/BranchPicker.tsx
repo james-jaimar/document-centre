@@ -1,11 +1,22 @@
 import { useState, useMemo } from "react";
 import { Search, MapPin, Store } from "lucide-react";
-import { useBranch, type Branch } from "@/contexts/BranchContext";
+import { useBranch, type Branch, branchUrlSlug } from "@/contexts/BranchContext";
 import { Input } from "@/components/ui/input";
+import { useNavigate } from "react-router-dom";
+import { useTenantSlug } from "@/hooks/useTenantSlug";
 
 export default function BranchPicker() {
   const { branches, showPicker, selectBranch, closePicker, activeBranch } = useBranch();
+  const { slug: tenantSlug, isSubdomain } = useTenantSlug();
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
+
+  const handleSelect = (b: Branch) => {
+    selectBranch(b);
+    const seg = branchUrlSlug(b);
+    const target = isSubdomain ? `/${seg}` : `/t/${tenantSlug}/${seg}`;
+    navigate(target);
+  };
 
   const filtered = useMemo(() => {
     if (!search.trim()) return branches;
@@ -67,7 +78,7 @@ export default function BranchPicker() {
                   key={branch.id}
                   branch={branch}
                   isSelected={activeBranch?.id === branch.id}
-                  onSelect={selectBranch}
+                  onSelect={handleSelect}
                 />
               ))}
             </div>

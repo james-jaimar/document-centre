@@ -18,6 +18,7 @@ import NotFound from "@/pages/NotFound";
 import { StorefrontRedirect } from "@/components/StorefrontRedirect";
 import { AppEntryRedirect } from "@/components/AppEntryRedirect";
 import { SubdomainWrapper, useSubdomainTenant } from "@/components/SubdomainRouter";
+import BranchSlugRoute from "@/components/BranchSlugRoute";
 
 import MarketingLanding from "@/pages/MarketingLanding";
 import Try from "@/pages/Try";
@@ -104,6 +105,33 @@ const branchRoles = ["branch_manager", "store_operator", "head_office_admin", "p
 const adminMembershipRoles = ["owner", "admin"];
 const operationsMembershipRoles = ["owner", "admin", "sales", "production", "accounts"];
 
+function customerRoutes() {
+  return (
+    <>
+      <Route index element={<CustomerDashboard />} />
+      <Route path="dashboard" element={<CustomerDashboard />} />
+      <Route path="print-centre" element={<CustomerDashboard />} />
+      {/* Public routes */}
+      <Route path="orders/new" element={<NewOrder />} />
+      <Route path="orders/new/photo-prints" element={<PhotoPrintsBuilder />} />
+      <Route path="orders/new/:familyId" element={<OrderFiles />} />
+      <Route path="orders/:id/files" element={<OrderFiles />} />
+      <Route path="orders/:id/build" element={<OrderBuild />} />
+      <Route path="orders/:id/photo-prints" element={<PhotoPrintsBuilder />} />
+      <Route path="cart" element={<Cart />} />
+      <Route path="checkout" element={<Checkout />} />
+      <Route path="terms" element={<PortalTerms />} />
+      <Route path="privacy" element={<PortalPrivacy />} />
+      {/* Auth-required routes */}
+      <Route path="orders/:id" element={<ProtectedRoute><CustomerOrderDetail /></ProtectedRoute>} />
+      <Route path="orders/:id/confirmation" element={<ProtectedRoute><OrderConfirmation /></ProtectedRoute>} />
+      <Route path="orders" element={<ProtectedRoute><CustomerOrders /></ProtectedRoute>} />
+      <Route path="account" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
+      <Route path="settings" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
+    </>
+  );
+}
+
 function AppRoutes() {
   const { matched } = useSubdomainTenant();
 
@@ -112,8 +140,10 @@ function AppRoutes() {
       {/* Public */}
       <Route path="/auth" element={<Auth />} />
       <Route path="/t/:slug/auth" element={<Auth />} />
+      <Route path="/t/:slug/:branchSlug/auth" element={<Auth />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/t/:slug/auth/callback" element={<AuthCallback />} />
+      <Route path="/t/:slug/:branchSlug/auth/callback" element={<AuthCallback />} />
       <Route path="/auth/verify" element={<AuthVerify />} />
       <Route path="/reset-password" element={<ResetPassword />} />
 
@@ -127,49 +157,20 @@ function AppRoutes() {
 
       {/* Customer portal — slug-based storefront (public layout, auth only where needed) */}
       <Route path="/t/:slug" element={<CustomerLayout />}>
-        <Route index element={<CustomerDashboard />} />
-        <Route path="dashboard" element={<CustomerDashboard />} />
-        <Route path="print-centre" element={<CustomerDashboard />} />
-        {/* Public routes — guests can browse, upload, configure */}
-        <Route path="orders/new" element={<NewOrder />} />
-        <Route path="orders/new/photo-prints" element={<PhotoPrintsBuilder />} />
-        <Route path="orders/new/:familyId" element={<OrderFiles />} />
-        <Route path="orders/:id/files" element={<OrderFiles />} />
-        <Route path="orders/:id/build" element={<OrderBuild />} />
-        <Route path="orders/:id/photo-prints" element={<PhotoPrintsBuilder />} />
-        <Route path="cart" element={<Cart />} />
-        <Route path="checkout" element={<Checkout />} />
-        <Route path="terms" element={<PortalTerms />} />
-        <Route path="privacy" element={<PortalPrivacy />} />
-        {/* Auth-required routes */}
-        <Route path="orders/:id" element={<ProtectedRoute><CustomerOrderDetail /></ProtectedRoute>} />
-        <Route path="orders/:id/confirmation" element={<ProtectedRoute><OrderConfirmation /></ProtectedRoute>} />
-        <Route path="orders" element={<ProtectedRoute><CustomerOrders /></ProtectedRoute>} />
-        <Route path="account" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
-        <Route path="settings" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
+        {customerRoutes()}
+        {/* Branch-scoped variants: /t/:slug/:branchSlug/... */}
+        <Route path=":branchSlug" element={<BranchSlugRoute />}>
+          {customerRoutes()}
+        </Route>
       </Route>
 
       {/* Customer portal — subdomain-based (same routes as /t/:slug but at root) — only when on a tenant subdomain */}
       {matched && (
         <Route path="/" element={<CustomerLayout />}>
-          <Route index element={<CustomerDashboard />} />
-          <Route path="dashboard" element={<CustomerDashboard />} />
-          <Route path="print-centre" element={<CustomerDashboard />} />
-          <Route path="orders/new" element={<NewOrder />} />
-          <Route path="orders/new/photo-prints" element={<PhotoPrintsBuilder />} />
-          <Route path="orders/new/:familyId" element={<OrderFiles />} />
-          <Route path="orders/:id/files" element={<OrderFiles />} />
-          <Route path="orders/:id/build" element={<OrderBuild />} />
-          <Route path="orders/:id/photo-prints" element={<PhotoPrintsBuilder />} />
-          <Route path="cart" element={<Cart />} />
-          <Route path="checkout" element={<Checkout />} />
-          <Route path="terms" element={<PortalTerms />} />
-          <Route path="privacy" element={<PortalPrivacy />} />
-          <Route path="orders/:id" element={<ProtectedRoute><CustomerOrderDetail /></ProtectedRoute>} />
-          <Route path="orders/:id/confirmation" element={<ProtectedRoute><OrderConfirmation /></ProtectedRoute>} />
-          <Route path="orders" element={<ProtectedRoute><CustomerOrders /></ProtectedRoute>} />
-          <Route path="account" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
-          <Route path="settings" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
+          {customerRoutes()}
+          <Route path=":branchSlug" element={<BranchSlugRoute />}>
+            {customerRoutes()}
+          </Route>
         </Route>
       )}
 

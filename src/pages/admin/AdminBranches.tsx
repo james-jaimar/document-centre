@@ -19,8 +19,9 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { Building2, MapPin, Phone, Mail, Plus, Pencil, Trash2, ChevronRight, LayoutGrid, List } from "lucide-react";
+import { Building2, MapPin, Phone, Mail, Plus, Pencil, Trash2, ChevronRight, LayoutGrid, List, Copy, Globe } from "lucide-react";
 import { buildAdminPath } from "@/lib/adminRouting";
+import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 
 interface BranchFormData {
   name: string;
@@ -33,11 +34,14 @@ interface BranchFormData {
   email: string;
   phone: string;
   is_active: boolean;
+  is_live: boolean;
+  url_slug: string;
 }
 
 const emptyForm: BranchFormData = {
   name: "", code: "", address: "", city: "", province: "",
   postal_code: "", country: "ZA", email: "", phone: "", is_active: true,
+  is_live: false, url_slug: "",
 };
 
 const AdminBranches = () => {
@@ -81,6 +85,8 @@ const AdminBranches = () => {
       email: b.email || "",
       phone: b.phone || "",
       is_active: b.is_active,
+      is_live: b.is_live,
+      url_slug: b.url_slug || "",
     });
   };
 
@@ -105,6 +111,7 @@ const AdminBranches = () => {
           phone: form.phone || null,
           code: form.code || null,
           slug: slugVal,
+          url_slug: form.url_slug.trim() || null,
         });
         toast.success("Branch created");
       } else if (editing) {
@@ -118,6 +125,7 @@ const AdminBranches = () => {
           email: form.email || null,
           phone: form.phone || null,
           code: form.code || null,
+          url_slug: form.url_slug.trim() || null,
         });
         toast.success("Branch updated");
       }
@@ -335,9 +343,28 @@ const AdminBranches = () => {
               <Label>Email</Label>
               <Input value={form.email} onChange={(e) => set("email", e.target.value)} />
             </div>
-            <div className="flex items-center gap-2">
-              <Switch checked={form.is_active} onCheckedChange={(v) => set("is_active", v)} />
-              <Label>Active</Label>
+            <div className="md:col-span-2 border-t pt-4 space-y-3">
+              <div>
+                <Label>URL slug (optional)</Label>
+                <Input
+                  value={form.url_slug}
+                  onChange={(e) => set("url_slug", e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                  placeholder="e.g. sandtoncity"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Friendly URL for the customer portal: <code>/{form.url_slug || "auto-from-name"}</code>. Lowercase, letters/numbers/hyphens only.
+                </p>
+              </div>
+              <div className="flex items-center gap-6">
+                <div className="flex items-center gap-2">
+                  <Switch checked={form.is_active} onCheckedChange={(v) => set("is_active", v)} />
+                  <Label>Active</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch checked={form.is_live} onCheckedChange={(v) => set("is_live", v)} />
+                  <Label>Live (accepts online orders)</Label>
+                </div>
+              </div>
             </div>
           </div>
           <DialogFooter>

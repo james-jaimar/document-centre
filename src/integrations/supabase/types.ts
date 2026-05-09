@@ -217,6 +217,7 @@ export type Database = {
           external_ref: string | null
           id: string
           is_active: boolean
+          is_live: boolean
           name: string
           phone: string | null
           postal_code: string | null
@@ -225,6 +226,7 @@ export type Database = {
           slug: string
           tenant_id: string
           updated_at: string
+          url_slug: string | null
         }
         Insert: {
           address?: string | null
@@ -236,6 +238,7 @@ export type Database = {
           external_ref?: string | null
           id?: string
           is_active?: boolean
+          is_live?: boolean
           name: string
           phone?: string | null
           postal_code?: string | null
@@ -244,6 +247,7 @@ export type Database = {
           slug: string
           tenant_id: string
           updated_at?: string
+          url_slug?: string | null
         }
         Update: {
           address?: string | null
@@ -255,6 +259,7 @@ export type Database = {
           external_ref?: string | null
           id?: string
           is_active?: boolean
+          is_live?: boolean
           name?: string
           phone?: string | null
           postal_code?: string | null
@@ -263,6 +268,7 @@ export type Database = {
           slug?: string
           tenant_id?: string
           updated_at?: string
+          url_slug?: string | null
         }
         Relationships: [
           {
