@@ -403,7 +403,7 @@ export default function Checkout() {
                 Placing Order…
               </>
             ) : (
-              "Place Order"
+              paymentMethod === "offline" ? "Place Order" : "Place Order & Pay"
             )}
           </Button>
         </div>
