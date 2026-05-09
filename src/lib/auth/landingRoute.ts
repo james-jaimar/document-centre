@@ -3,6 +3,7 @@
 // branch staff in /branch, and customers in the storefront.
 
 import { buildAdminPath } from "@/lib/adminRouting";
+import { buildTenantPath } from "@/lib/tenantUrl";
 
 export type MembershipRole =
   | "owner"
