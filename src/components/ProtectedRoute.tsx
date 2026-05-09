@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { parseTenantPath, buildTenantPath } from "@/lib/tenantUrl";
 import type { Database } from "@/integrations/supabase/types";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
