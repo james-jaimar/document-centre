@@ -214,6 +214,9 @@ const PlatformTenants = () => {
                     <Button variant="ghost" size="sm" onClick={() => setSubTenant(t)}>
                       <CreditCard size={14} className="mr-1" /> Subscription
                     </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setPaymentsTenant(t)}>
+                      <Globe size={14} className="mr-1" /> Payments
+                    </Button>
                     <Button variant="ghost" size="sm" onClick={() => openEdit(t)}>
                       <Pencil size={14} className="mr-1" /> Edit
                     </Button>
