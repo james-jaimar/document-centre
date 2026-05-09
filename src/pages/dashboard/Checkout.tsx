@@ -35,6 +35,27 @@ export default function Checkout() {
   const [selectedBranchId, setSelectedBranchId] = useState<string>("");
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<string>("offline");
+
+  // Fetch online payment providers enabled for this tenant
+  const { data: onlineProviders } = useQuery({
+    queryKey: ["tenant-online-payment-providers", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("tenant_payment_gateways")
+        .select("provider, display_label, mode, is_enabled, credentials_secret_id")
+        .eq("tenant_id", tenantId!)
+        .eq("is_enabled", true);
+      if (error) throw error;
+      // Only show providers with credentials configured AND compatible currency
+      return (data ?? []).filter((g) => {
+        if (!g.credentials_secret_id) return false;
+        if (g.provider === "payfast" && currency !== "ZAR") return false;
+        return true;
+      });
+    },
+  });
 
   // Fetch active branches for collection picker
   const { data: branches } = useQuery({
@@ -96,6 +117,44 @@ export default function Checkout() {
           ? (selectedBranchId || branches?.[0]?.id || undefined)
           : undefined,
       });
+
+      // Online payment selected — create payment session and redirect
+      if (paymentMethod === "stripe" || paymentMethod === "payfast") {
+        const origin = window.location.origin;
+        const returnUrl = `${origin}${tenantPath(`orders/${newOrderId}/confirmation`)}`;
+        const cancelUrl = `${origin}${tenantPath("checkout")}?payment=cancelled`;
+        const { data, error } = await supabase.functions.invoke("payments-create-session", {
+          body: {
+            order_id: newOrderId,
+            provider: paymentMethod,
+            return_url: returnUrl,
+            cancel_url: cancelUrl,
+          },
+        });
+        if (error) throw error;
+        if (paymentMethod === "stripe" && data?.redirect_url) {
+          window.location.href = data.redirect_url;
+          return;
+        }
+        if (paymentMethod === "payfast" && data?.form_action && data?.form_fields) {
+          // Build & auto-submit a hidden form
+          const form = document.createElement("form");
+          form.method = "POST";
+          form.action = data.form_action;
+          Object.entries(data.form_fields as Record<string, string>).forEach(([k, v]) => {
+            const input = document.createElement("input");
+            input.type = "hidden";
+            input.name = k;
+            input.value = v;
+            form.appendChild(input);
+          });
+          document.body.appendChild(form);
+          form.submit();
+          return;
+        }
+        throw new Error("Payment session response was empty");
+      }
+
       navigate(tenantPath(`orders/${newOrderId}/confirmation`));
     } catch (err: any) {
       toast.error("Failed to place order", { description: err.message });
@@ -271,6 +330,34 @@ export default function Checkout() {
             </div>
           )}
 
+          {/* Payment Method */}
+          <div className="border border-border rounded-lg p-4 space-y-3">
+            <h3 className="font-semibold text-foreground">Payment Method</h3>
+            <RadioGroup
+              value={paymentMethod}
+              onValueChange={setPaymentMethod}
+              className="space-y-2"
+            >
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="offline" id="pm-offline" />
+                <Label htmlFor="pm-offline" className="cursor-pointer">
+                  Pay on collection / EFT (we'll send instructions)
+                </Label>
+              </div>
+              {(onlineProviders ?? []).map((p) => (
+                <div key={p.provider} className="flex items-center space-x-2">
+                  <RadioGroupItem value={p.provider} id={`pm-${p.provider}`} />
+                  <Label htmlFor={`pm-${p.provider}`} className="cursor-pointer">
+                    {p.display_label || (p.provider === "stripe" ? "Pay by Card" : "PayFast")}
+                    {p.mode === "test" && (
+                      <span className="ml-2 text-xs text-muted-foreground">(sandbox)</span>
+                    )}
+                  </Label>
+                </div>
+              ))}
+            </RadioGroup>
+          </div>
+
           {/* Notes */}
           <div className="border border-border rounded-lg p-4 space-y-3">
             <h3 className="font-semibold text-foreground">Special Instructions</h3>
@@ -316,7 +403,7 @@ export default function Checkout() {
                 Placing Order…
               </>
             ) : (
-              "Place Order"
+              paymentMethod === "offline" ? "Place Order" : "Place Order & Pay"
             )}
           </Button>
         </div>

@@ -21,9 +21,10 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Building2, Users, Settings2, Shield, UserPlus } from "lucide-react";
+import { ArrowLeft, Building2, Users, Settings2, Shield, UserPlus, CreditCard } from "lucide-react";
 import { buildAdminPath } from "@/lib/adminRouting";
 import { AddMemberDialog } from "@/components/admin/AddMemberDialog";
+import { PaymentGatewaysCard } from "@/components/payments/PaymentGatewaysCard";
 
 const AdminBranchDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -153,6 +154,7 @@ const AdminBranchDetail = () => {
           <TabsTrigger value="details" className="gap-1.5"><Building2 size={14} /> Details</TabsTrigger>
           <TabsTrigger value="users" className="gap-1.5"><Users size={14} /> Users ({branchMembers.length})</TabsTrigger>
           <TabsTrigger value="capabilities" className="gap-1.5"><Settings2 size={14} /> Capabilities</TabsTrigger>
+          <TabsTrigger value="payments" className="gap-1.5"><CreditCard size={14} /> Payments</TabsTrigger>
         </TabsList>
 
         {/* ─── DETAILS TAB ─── */}
@@ -293,6 +295,13 @@ const AdminBranchDetail = () => {
         {/* ─── CAPABILITIES TAB ─── */}
         <TabsContent value="capabilities">
           {id && <BranchProductToggles branchId={id} />}
+        </TabsContent>
+
+        {/* ─── PAYMENTS TAB ─── */}
+        <TabsContent value="payments">
+          {id && tenantId && (
+            <PaymentGatewaysCard scope="branch" scopeId={id} tenantId={tenantId} />
+          )}
         </TabsContent>
       </Tabs>
 

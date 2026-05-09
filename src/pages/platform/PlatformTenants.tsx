@@ -12,8 +12,9 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { TenantSubscriptionDialog } from "@/components/platform/TenantSubscriptionDialog";
+import { PlatformTenantPaymentsDialog } from "@/components/platform/PlatformTenantPaymentsDialog";
 import { toast } from "sonner";
-import { Building2, Pencil, ArrowRight, ExternalLink, CreditCard, Plus } from "lucide-react";
+import { Building2, Pencil, ArrowRight, ExternalLink, CreditCard, Plus, Globe } from "lucide-react";
 import type { Tenant } from "@/hooks/useTenants";
 import { buildAdminPath } from "@/lib/adminRouting";
 import { supabase } from "@/integrations/supabase/client";
@@ -63,6 +64,7 @@ const PlatformTenants = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [editing, setEditing] = useState<Tenant | null>(null);
   const [subTenant, setSubTenant] = useState<Tenant | null>(null);
+  const [paymentsTenant, setPaymentsTenant] = useState<Tenant | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ name: "", slug: "", logo_url: "" });
   const [createForm, setCreateForm] = useState<CreateForm>(EMPTY_CREATE);
@@ -211,6 +213,9 @@ const PlatformTenants = () => {
                   <div className="flex items-center gap-1">
                     <Button variant="ghost" size="sm" onClick={() => setSubTenant(t)}>
                       <CreditCard size={14} className="mr-1" /> Subscription
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setPaymentsTenant(t)}>
+                      <Globe size={14} className="mr-1" /> Payments
                     </Button>
                     <Button variant="ghost" size="sm" onClick={() => openEdit(t)}>
                       <Pencil size={14} className="mr-1" /> Edit
@@ -364,6 +369,15 @@ const PlatformTenants = () => {
           onOpenChange={(open) => !open && setSubTenant(null)}
           tenant={subTenant}
           subscription={subByTenant[subTenant.id]}
+        />
+      )}
+
+      {paymentsTenant && (
+        <PlatformTenantPaymentsDialog
+          open={!!paymentsTenant}
+          onOpenChange={(open) => !open && setPaymentsTenant(null)}
+          tenantId={paymentsTenant.id}
+          tenantName={paymentsTenant.name}
         />
       )}
     </div>
