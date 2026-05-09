@@ -21,9 +21,10 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Building2, Users, Settings2, Shield, UserPlus } from "lucide-react";
+import { ArrowLeft, Building2, Users, Settings2, Shield, UserPlus, CreditCard } from "lucide-react";
 import { buildAdminPath } from "@/lib/adminRouting";
 import { AddMemberDialog } from "@/components/admin/AddMemberDialog";
+import { PaymentGatewaysCard } from "@/components/payments/PaymentGatewaysCard";
 
 const AdminBranchDetail = () => {
   const { id } = useParams<{ id: string }>();
