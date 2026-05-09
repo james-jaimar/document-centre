@@ -109,9 +109,11 @@ const AuthCallback = () => {
           // Return to the page the user was on before OAuth (e.g. checkout/cart)
           const returnPath = localStorage.getItem(RETURN_PATH_KEY);
           localStorage.removeItem(RETURN_PATH_KEY);
+          // Recover branch from returnPath so post-login lands on /t/:slug/:branchSlug/...
+          const branchFromReturn = returnPath ? parseTenantPath(returnPath).branchSlug : null;
           const destination = returnPath && returnPath.startsWith(`/t/${tenantSlug}`)
             ? returnPath
-            : resolveTenantLanding(primary, tenantSlug);
+            : resolveTenantLanding(primary, tenantSlug, branchFromReturn);
           navigate(destination, { replace: true });
           return;
         }
