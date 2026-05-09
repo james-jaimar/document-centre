@@ -154,6 +154,7 @@ const AdminBranchDetail = () => {
           <TabsTrigger value="details" className="gap-1.5"><Building2 size={14} /> Details</TabsTrigger>
           <TabsTrigger value="users" className="gap-1.5"><Users size={14} /> Users ({branchMembers.length})</TabsTrigger>
           <TabsTrigger value="capabilities" className="gap-1.5"><Settings2 size={14} /> Capabilities</TabsTrigger>
+          <TabsTrigger value="payments" className="gap-1.5"><CreditCard size={14} /> Payments</TabsTrigger>
         </TabsList>
 
         {/* ─── DETAILS TAB ─── */}
