@@ -58,6 +58,8 @@ export function PaymentsTab() {
   return (
     <div className="space-y-6">
       {tenantId && <PaymentGatewaysCard scope="tenant" scopeId={tenantId} />}
+
+      <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><CreditCard className="h-5 w-5" /> Payment Methods</CardTitle>
           <CardDescription>Choose which payment methods are offered to your customers</CardDescription>
