@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { parseTenantPath, buildTenantPath } from "@/lib/tenantUrl";
 import type { Database } from "@/integrations/supabase/types";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
@@ -28,11 +29,15 @@ export function ProtectedRoute({ children, allowedRoles, allowedMembershipRoles 
     );
   }
 
-  const slugMatch = location.pathname.match(/^\/t\/([^/]+)/);
-  const fallback = slugMatch ? `/t/${slugMatch[1]}/dashboard` : "/dashboard";
+  const { slug, branchSlug } = parseTenantPath(location.pathname);
+  const fallback = slug
+    ? buildTenantPath(slug, branchSlug, "dashboard")
+    : "/dashboard";
 
   if (!user) {
-    const authPath = slugMatch ? `/t/${slugMatch[1]}/auth` : "/auth";
+    const authPath = slug
+      ? buildTenantPath(slug, branchSlug, "auth")
+      : "/auth";
     return <Navigate to={authPath} replace />;
   }
 

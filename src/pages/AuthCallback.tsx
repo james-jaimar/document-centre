@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getDefaultRoute } from "@/hooks/useAuth";
 import { pickPrimaryMembership, resolveTenantLanding, type LandingMembership } from "@/lib/auth/landingRoute";
 import { buildAdminPath } from "@/lib/adminRouting";
+import { parseTenantPath, buildTenantPath } from "@/lib/tenantUrl";
 
 const RETURN_PATH_KEY = "dc_return_path";
 import { Card, CardContent } from "@/components/ui/card";
@@ -108,9 +109,11 @@ const AuthCallback = () => {
           // Return to the page the user was on before OAuth (e.g. checkout/cart)
           const returnPath = localStorage.getItem(RETURN_PATH_KEY);
           localStorage.removeItem(RETURN_PATH_KEY);
+          // Recover branch from returnPath so post-login lands on /t/:slug/:branchSlug/...
+          const branchFromReturn = returnPath ? parseTenantPath(returnPath).branchSlug : null;
           const destination = returnPath && returnPath.startsWith(`/t/${tenantSlug}`)
             ? returnPath
-            : resolveTenantLanding(primary, tenantSlug);
+            : resolveTenantLanding(primary, tenantSlug, branchFromReturn);
           navigate(destination, { replace: true });
           return;
         }
@@ -132,7 +135,9 @@ const AuthCallback = () => {
         await supabase.auth.signOut();
         if (targetSlug) {
           toast.info("Please sign in via your organisation's portal.");
-          navigate(`/t/${targetSlug}/auth`, { replace: true });
+          const returnPath = localStorage.getItem(RETURN_PATH_KEY);
+          const branchFromReturn = returnPath ? parseTenantPath(returnPath).branchSlug : null;
+          navigate(buildTenantPath(targetSlug, branchFromReturn, "auth"), { replace: true });
         } else {
           setError("Please sign in via your organisation's portal.");
         }
@@ -159,7 +164,9 @@ const AuthCallback = () => {
             <Button
               className="w-full"
               onClick={() => {
-                navigate(tenantSlug ? `/t/${tenantSlug}/auth` : "/auth", { replace: true });
+                const returnPath = localStorage.getItem(RETURN_PATH_KEY);
+                const branchFromReturn = returnPath ? parseTenantPath(returnPath).branchSlug : null;
+                navigate(tenantSlug ? buildTenantPath(tenantSlug, branchFromReturn, "auth") : "/auth", { replace: true });
               }}
             >
               Back to sign in

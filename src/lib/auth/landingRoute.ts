@@ -3,6 +3,7 @@
 // branch staff in /branch, and customers in the storefront.
 
 import { buildAdminPath } from "@/lib/adminRouting";
+import { buildTenantPath } from "@/lib/tenantUrl";
 
 export type MembershipRole =
   | "owner"
@@ -32,7 +33,8 @@ const BRANCH_ROLES = new Set(["branch_manager", "store_operator"]);
  */
 export function resolveTenantLanding(
   membership: LandingMembership,
-  slug: string | null
+  slug: string | null,
+  branchSlug: string | null = null,
 ): string {
   const role = membership.role;
   const targetSlug = slug ?? membership.tenants?.slug ?? null;
@@ -45,7 +47,7 @@ export function resolveTenantLanding(
     return buildAdminPath("/admin", membership.tenant_id);
   }
   // Default: customer storefront
-  if (targetSlug) return `/t/${targetSlug}/print-centre`;
+  if (targetSlug) return buildTenantPath(targetSlug, branchSlug, "print-centre");
   return "/dashboard";
 }
 
