@@ -164,7 +164,9 @@ const AuthCallback = () => {
             <Button
               className="w-full"
               onClick={() => {
-                navigate(tenantSlug ? `/t/${tenantSlug}/auth` : "/auth", { replace: true });
+                const returnPath = localStorage.getItem(RETURN_PATH_KEY);
+                const branchFromReturn = returnPath ? parseTenantPath(returnPath).branchSlug : null;
+                navigate(tenantSlug ? buildTenantPath(tenantSlug, branchFromReturn, "auth") : "/auth", { replace: true });
               }}
             >
               Back to sign in
