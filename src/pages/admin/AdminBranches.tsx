@@ -85,6 +85,8 @@ const AdminBranches = () => {
       email: b.email || "",
       phone: b.phone || "",
       is_active: b.is_active,
+      is_live: b.is_live,
+      url_slug: b.url_slug || "",
     });
   };
 
