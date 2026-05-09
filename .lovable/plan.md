@@ -1,95 +1,160 @@
-# Branch-Slug Suffix Coverage Audit
+# Customer Payment Gateways — Stripe + PayFast (per tenant / per branch)
 
-I traced every place that builds a tenant URL or redirects within a tenant. The good news: **all routine in-app navigation already preserves the branch segment automatically** because it goes through `tenantPath()` in `useTenantSlug`, which now injects `activeBranch` from `BranchContext`.
+## Scope
 
-The gaps are in a handful of low-level redirects that build `/t/${slug}/...` strings directly and don't know about the branch.
+Add online payment for **customer orders** (cart checkout). Two providers:
 
-## What's already correct (no action needed)
+- **Stripe** — international card payments
+- **PayFast** — South African payment gateway
 
-- All sidebar / header / footer links (`CustomerSidebar`, `CustomerHeader`, `CustomerFooter`)
-- All in-page `navigate(tenantPath(...))` calls in `OrderFiles`, `OrderBuild`, `NewOrder`, `Cart`, `Checkout`, `OrderConfirmation`, `CustomerDashboard`, `CustomerOrders`, `CustomerOrderDetail`, `PhotoPrintsBuilder`
-- `BranchPicker` (intentionally writes the branch segment when user picks)
-- `StoreNotAvailable` "back to picker" link
-- `App.tsx` route table — auth + customer routes have both `/t/:slug/...` and `/t/:slug/:branchSlug/...` variants
-- Route ranking — static segments (`orders`, `cart`, etc.) win over `:branchSlug` in React Router v6, and the slug-validation trigger blocks reserved words, so collisions are impossible
+Money flows directly into each tenant's (or branch's) own merchant account, so credentials are **bring-your-own-key per tenant** with optional **per-branch override for PayFast** (each branch has its own PayFast merchant account in real-world PostNet operations).
 
-## Gaps found — files that strip the branch segment
+## Important clarification
 
-These all build raw `/t/${slug}/...` strings without consulting the active branch URL slug:
+The existing `STRIPE_SECRET_KEY` / `stripe-webhook` / `create-checkout` in this project are for **platform subscriptions** (tenants paying you for their SaaS plan). They will NOT be touched. This work adds a parallel system for **customer order payments** (end customers paying tenants for prints).
 
-1. **`src/components/ProtectedRoute.tsx`** (lines 31–35)
-   - `slugMatch` only captures `:slug`, drops `:branchSlug`
-   - Unauthenticated user on `/t/postnet/sandtoncity/orders/123` gets bounced to `/t/postnet/auth` (branch lost). After login they land back in the no-branch picker.
+This means we cannot use Lovable's built-in `enable_stripe_payments` / `enable_paddle_payments` — those route to a single platform account. We need BYOK per tenant.
 
-2. **`src/pages/AuthCallback.tsx`** (lines 111, 135, 162)
-   - The `returnPath` check uses `startsWith('/t/' + tenantSlug)` which DOES match branch-scoped paths, so the happy-path return works.
-   - But the fallback redirects (`/t/${targetSlug}/auth`, `/t/${targetSlug}/print-centre` via landingRoute) drop the branch.
+## Data model
 
-3. **`src/lib/auth/landingRoute.ts`** (line 48)
-   - `/t/${targetSlug}/print-centre` — strips branch on every "where do I send this user after login" decision.
+### `tenant_payment_gateways`
+One row per (tenant, provider). Platform admin enables; tenant admin fills in credentials.
 
-4. **`src/pages/Auth.tsx`** (line 118)
-   - Post-signup redirect to `/t/${targetSlug}/auth?email=...` strips branch.
+| column | type | notes |
+|--------|------|-------|
+| id | uuid | pk |
+| tenant_id | uuid | fk |
+| provider | text | `stripe` \| `payfast` |
+| is_enabled | boolean | platform-admin toggle |
+| display_label | text | optional override (e.g. "Pay by Card") |
+| credentials_secret_id | uuid | vault id (JSON blob: stripe = secret_key + publishable_key + webhook_secret; payfast = merchant_id + merchant_key + passphrase) |
+| mode | text | `test` \| `live` |
+| sort_order | int | for checkout ordering |
+| created_at, updated_at | | |
 
-5. **`src/components/StorefrontRedirect.tsx`** (line 44)
-   - Legacy `/dashboard/*` → `/t/${slug}/${targetPath}` rewrite strips branch (acceptable — legacy callers pre-date branches, picker will appear).
+Unique on `(tenant_id, provider)`.
 
-6. **`src/pages/storefront/StorefrontLanding.tsx`** (lines 44, 67, 169)
-   - Hardcoded `/t/${slug}/auth`. This page is the no-branch tenant landing, so technically OK, but if we ever surface it under a branch URL it would lose context.
+### `branch_payment_gateways`
+Per-branch override (PayFast only for now, but provider-agnostic schema).
 
-## Proposed fix (small, surgical)
+| column | type | notes |
+|--------|------|-------|
+| id | uuid | pk |
+| branch_id | uuid | fk |
+| provider | text | `payfast` (extensible) |
+| credentials_secret_id | uuid | vault id, same shape as tenant row |
+| mode | text | `test` \| `live` |
+| created_at, updated_at | | |
 
-Add a helper and thread the branch slug through the affected redirects.
+Unique on `(branch_id, provider)`.
 
-### A. Read branch from URL, not just context
+### `order_payment_attempts`
+Audit trail for every checkout attempt (works for both providers).
 
-`ProtectedRoute`, `AuthCallback`, `Auth.tsx`, `landingRoute.ts` all run before `BranchContext` may have resolved (or in places where the branch is purely URL-derived). So the cleanest fix is to **parse the branch slug from `location.pathname` at the same time as the tenant slug**.
+| column | type | notes |
+|--------|------|-------|
+| id | uuid | pk |
+| order_id | uuid | fk |
+| tenant_id | uuid | denormalised for RLS |
+| branch_id | uuid \| null | which branch's account received the funds |
+| provider | text | `stripe` \| `payfast` |
+| provider_session_id | text | Stripe session id / PayFast pf_payment_id |
+| status | text | `pending` \| `succeeded` \| `failed` \| `cancelled` |
+| amount | numeric(12,2) | |
+| currency | text | |
+| raw_payload | jsonb | webhook/ITN body for debugging |
+| created_at, updated_at | | |
 
-Add to `src/lib/auth/landingRoute.ts` (or a new `src/lib/tenantUrl.ts`):
+### Vault helpers
+Mirror the existing `create_email_account_secret` / `read_email_account_secret` / `delete_email_account_secret` pattern with three new functions: `create_payment_secret`, `read_payment_secret`, `delete_payment_secret`. Stored value is a JSON blob.
 
-```ts
-// Extract { slug, branchSlug } from any tenant-style pathname.
-export function parseTenantPath(pathname: string): { slug: string | null; branchSlug: string | null } {
-  const m = pathname.match(/^\/t\/([^/]+)(?:\/([^/]+))?/);
-  if (!m) return { slug: null, branchSlug: null };
-  const reserved = new Set(['auth','dashboard','print-centre','orders','cart','checkout','account','settings','terms','privacy','upload']);
-  const second = m[2] && !reserved.has(m[2]) ? m[2] : null;
-  return { slug: m[1], branchSlug: second };
-}
+## RLS
 
-export function buildTenantPath(slug: string, branchSlug: string | null, rest: string) {
-  const branch = branchSlug ? `${branchSlug}/` : '';
-  return `/t/${slug}/${branch}${rest.replace(/^\//, '')}`;
-}
+- `tenant_payment_gateways`: platform admin can do anything; tenant owner/admin can read + update credentials & display_label of their own rows but **cannot** flip `is_enabled` (platform admin only).
+- `branch_payment_gateways`: tenant owner/admin can manage rows for branches in their tenant; branch_manager can manage their own branch's row.
+- `order_payment_attempts`: read-only for tenant staff and the customer who owns the order; insert via edge function only.
+- Vault read functions must be `SECURITY DEFINER` and only callable from edge functions (caller-id check via `auth.uid()` membership lookup).
+
+## Provider resolution
+
+When the customer hits checkout for an order:
+
+```
+1. Determine the order's branch_id (from cart's selected branch, falls back to active branch).
+2. For each provider where tenant_payment_gateways.is_enabled = true:
+     - If branch override exists → use branch credentials.
+     - Else → use tenant credentials.
+3. Filter providers by currency match (Stripe: any; PayFast: ZAR only).
+4. Return enabled+configured providers to the checkout UI.
+5. Customer picks one → server creates session.
 ```
 
-(Reserved-word guard mirrors the DB trigger, so `/t/postnet/orders/123` doesn't get parsed as branch="orders".)
+## Edge functions
 
-### B. Apply it in 4 files
+| function | purpose |
+|----------|---------|
+| `payments-list-providers` | GET, returns the available providers for an order (after resolution above), masked credentials only — used by Checkout UI to render provider buttons. |
+| `payments-create-session` | POST `{ order_id, provider }`. Creates Stripe Checkout Session OR PayFast signed form payload. Writes `order_payment_attempts` row with `pending` status. Returns `{ redirect_url, form_fields? }`. |
+| `stripe-order-webhook` | Receives `checkout.session.completed` / `payment_intent.payment_failed` for **customer orders** (separate from subscription webhook). Looks up tenant by metadata, validates signature using that tenant's webhook secret, marks order paid + invokes `order-engine` to finalise. |
+| `payfast-itn` | PayFast Instant Transaction Notification. Validates source IP + signature using tenant/branch passphrase, marks order paid. PayFast posts to a **single fixed URL**, so the handler resolves tenant/branch from the `m_payment_id` (= our `order_payment_attempts.id`). |
 
-1. **`ProtectedRoute.tsx`** — replace `slugMatch` block with `parseTenantPath(location.pathname)` and use `buildTenantPath(slug, branchSlug, 'auth' | 'dashboard')`. Also save `location.pathname + location.search` as `RETURN_PATH_KEY` so post-login can resume the exact URL.
+All four use `supabase.auth.getUser()` (where applicable), Zod input validation, and project standards.
 
-2. **`AuthCallback.tsx`** — when computing the fallback destination, parse the current URL (and/or stored `returnPath`) for the branch and pass it through `buildTenantPath`.
+## Admin UI
 
-3. **`Auth.tsx`** (line 118) — parse current pathname for branch; build redirect with `buildTenantPath`.
+### Platform admin — `/platform/tenants/:id` (new "Payments" section)
+- Toggle Stripe enabled / PayFast enabled per tenant
+- View whether tenant has supplied credentials (✓ / ✗), test/live mode badge
+- No credential editing here — just enablement
 
-4. **`landingRoute.ts`** — accept optional `branchSlug` arg and emit `/t/${slug}/${branchSlug}/print-centre` when present. Caller (`AuthCallback`) passes the parsed value.
+### Tenant admin — `src/pages/admin/settings/PaymentsTab.tsx` (extend existing tab)
+- New "Online payments" card above the existing EFT card
+- For each platform-enabled provider: show credential form (masked), test/live toggle, display label
+- "Test connection" button (Stripe: list balance; PayFast: ping their validate URL)
+- For multi-branch tenants: link to "Branch payment overrides" sub-page
 
-### C. Subdomain parity
+### Branch override — new `BranchPaymentsTab` under `/branch/settings`
+- Visible only when tenant has PayFast enabled
+- Form for branch's own merchant_id / merchant_key / passphrase
+- Falls back to tenant credentials when blank
 
-The same bug exists on subdomain hosts in theory, but every redirect we touched is path-based (`/t/...`). On subdomains the URL is just `/branchSlug/...` and `tenantPath()` already injects it. No subdomain changes needed.
+## Customer checkout UI
 
-### D. StorefrontLanding & StorefrontRedirect
+`src/pages/dashboard/Checkout.tsx`:
+- Replace the single "Place Order" button with a payment-method selector populated from `payments-list-providers`
+- Existing EFT option stays as one of the choices
+- Stripe → redirect to Checkout Session URL
+- PayFast → POST a hidden form to `process.payfast.co.za/eng/process` with the signed fields
+- After payment, customer returns to `/t/:slug/:branchSlug/orders/:id/confirmation` (Stripe success_url / PayFast return_url); webhook is the source of truth for marking paid.
 
-Leave as-is for this pass — these are entry points where no branch has been chosen yet, so dropping to the picker is the correct behaviour.
+## Webhook URLs
 
-## Out of scope
+- Stripe (per tenant): `https://lcvdhtaqoumyokjqaqfw.supabase.co/functions/v1/stripe-order-webhook` — same URL for all tenants; signature validated against tenant-specific secret resolved from `metadata.tenant_id`.
+- PayFast ITN (per tenant/branch): `https://lcvdhtaqoumyokjqaqfw.supabase.co/functions/v1/payfast-itn` — same URL; tenant/branch resolved from `m_payment_id`.
 
-- Changing `BranchPicker` (it intentionally writes the branch slug)
-- Subdomain-specific routing
-- Marketing pages (`/try`, `/contact`, `/pricing`) — tenant-agnostic
-- Admin / Platform / Branch-portal routes — all branch-scoped via `branch_id` in the data layer, not the URL
+Both URLs are shown in the tenant admin Payments tab so they can be pasted into the respective dashboards if needed (Stripe is auto-configured via API, PayFast requires manual ITN URL entry in their merchant dashboard).
 
-## Risk
+## Out of scope (this pass)
 
-Low. All four edited files are small and the helper is pure. Existing no-branch URLs continue to work because `branchSlug` is `null` and `buildTenantPath` collapses to the legacy form.
+- Recurring/subscription billing for customer orders (one-off payments only)
+- Refunds via UI (manual via provider dashboards for now; refund button comes later)
+- 3DS challenge flows beyond what Stripe Checkout / PayFast handle natively
+- Saved cards / customer payment methods
+- Payment splits / marketplace flows
+- Apple Pay / Google Pay configuration (Stripe Checkout enables them automatically when merchant is verified)
+
+## Rollout order
+
+1. Migration: tables + vault helpers + RLS + indexes
+2. Edge functions: `payments-list-providers`, `payments-create-session`, `stripe-order-webhook`, `payfast-itn`
+3. Tenant admin Payments tab extension
+4. Platform admin enablement toggle
+5. Branch override sub-page
+6. Customer checkout UI swap
+7. End-to-end test with Stripe test card + PayFast sandbox merchant
+
+## Questions before I start (one quick decision)
+
+1. **PayFast sandbox vs live toggle** — should I store a single `mode` column per credential set (so a tenant has either test OR live), or allow them to keep both side-by-side and switch per checkout? PostNet's likely workflow: each branch has one live merchant, so single `mode` per row is simpler — I'll go with that unless you say otherwise.
+
+2. **Stripe Connect vs raw BYOK** — raw BYOK (each tenant pastes their Stripe secret key) is simpler and works today. Stripe Connect (you onboard tenants as connected accounts under your platform) is cleaner long-term but requires you to register as a Stripe platform and take ~2 weeks of approval. I'll go with **raw BYOK** unless you want Connect — happy to add a migration path later.
