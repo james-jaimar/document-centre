@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getDefaultRoute } from "@/hooks/useAuth";
 import { pickPrimaryMembership, resolveTenantLanding, type LandingMembership } from "@/lib/auth/landingRoute";
 import { buildAdminPath } from "@/lib/adminRouting";
+import { parseTenantPath, buildTenantPath } from "@/lib/tenantUrl";
 
 const RETURN_PATH_KEY = "dc_return_path";
 import { Card, CardContent } from "@/components/ui/card";
