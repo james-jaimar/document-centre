@@ -35,6 +35,27 @@ export default function Checkout() {
   const [selectedBranchId, setSelectedBranchId] = useState<string>("");
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<string>("offline");
+
+  // Fetch online payment providers enabled for this tenant
+  const { data: onlineProviders } = useQuery({
+    queryKey: ["tenant-online-payment-providers", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("tenant_payment_gateways")
+        .select("provider, display_label, mode, is_enabled, credentials_secret_id")
+        .eq("tenant_id", tenantId!)
+        .eq("is_enabled", true);
+      if (error) throw error;
+      // Only show providers with credentials configured AND compatible currency
+      return (data ?? []).filter((g) => {
+        if (!g.credentials_secret_id) return false;
+        if (g.provider === "payfast" && currency !== "ZAR") return false;
+        return true;
+      });
+    },
+  });
 
   // Fetch active branches for collection picker
   const { data: branches } = useQuery({
