@@ -78,7 +78,7 @@ export default function BranchPicker() {
                   key={branch.id}
                   branch={branch}
                   isSelected={activeBranch?.id === branch.id}
-                  onSelect={selectBranch}
+                  onSelect={handleSelect}
                 />
               ))}
             </div>
