@@ -18,6 +18,7 @@ import NotFound from "@/pages/NotFound";
 import { StorefrontRedirect } from "@/components/StorefrontRedirect";
 import { AppEntryRedirect } from "@/components/AppEntryRedirect";
 import { SubdomainWrapper, useSubdomainTenant } from "@/components/SubdomainRouter";
+import BranchSlugRoute from "@/components/BranchSlugRoute";
 
 import MarketingLanding from "@/pages/MarketingLanding";
 import Try from "@/pages/Try";
