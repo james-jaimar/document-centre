@@ -45,3 +45,5 @@ project_id = "lcvdhtaqoumyokjqaqfw"
     verify_jwt = false
   [functions.payments-create-session]
     verify_jwt = false
+  [functions.payments-save-credentials]
+    verify_jwt = false
