@@ -296,6 +296,13 @@ const AdminBranchDetail = () => {
         <TabsContent value="capabilities">
           {id && <BranchProductToggles branchId={id} />}
         </TabsContent>
+
+        {/* ─── PAYMENTS TAB ─── */}
+        <TabsContent value="payments">
+          {id && tenantId && (
+            <PaymentGatewaysCard scope="branch" scopeId={id} tenantId={tenantId} />
+          )}
+        </TabsContent>
       </Tabs>
 
       {/* Assign User Dialog */}
