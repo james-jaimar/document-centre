@@ -111,6 +111,7 @@ const AdminBranches = () => {
           phone: form.phone || null,
           code: form.code || null,
           slug: slugVal,
+          url_slug: form.url_slug.trim() || null,
         });
         toast.success("Branch created");
       } else if (editing) {
@@ -124,6 +125,7 @@ const AdminBranches = () => {
           email: form.email || null,
           phone: form.phone || null,
           code: form.code || null,
+          url_slug: form.url_slug.trim() || null,
         });
         toast.success("Branch updated");
       }
