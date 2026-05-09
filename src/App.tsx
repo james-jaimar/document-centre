@@ -140,8 +140,10 @@ function AppRoutes() {
       {/* Public */}
       <Route path="/auth" element={<Auth />} />
       <Route path="/t/:slug/auth" element={<Auth />} />
+      <Route path="/t/:slug/:branchSlug/auth" element={<Auth />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/t/:slug/auth/callback" element={<AuthCallback />} />
+      <Route path="/t/:slug/:branchSlug/auth/callback" element={<AuthCallback />} />
       <Route path="/auth/verify" element={<AuthVerify />} />
       <Route path="/reset-password" element={<ResetPassword />} />
 
