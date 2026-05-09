@@ -19,8 +19,9 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { Building2, MapPin, Phone, Mail, Plus, Pencil, Trash2, ChevronRight, LayoutGrid, List } from "lucide-react";
+import { Building2, MapPin, Phone, Mail, Plus, Pencil, Trash2, ChevronRight, LayoutGrid, List, Copy, Globe } from "lucide-react";
 import { buildAdminPath } from "@/lib/adminRouting";
+import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 
 interface BranchFormData {
   name: string;
@@ -33,11 +34,14 @@ interface BranchFormData {
   email: string;
   phone: string;
   is_active: boolean;
+  is_live: boolean;
+  url_slug: string;
 }
 
 const emptyForm: BranchFormData = {
   name: "", code: "", address: "", city: "", province: "",
   postal_code: "", country: "ZA", email: "", phone: "", is_active: true,
+  is_live: false, url_slug: "",
 };
 
 const AdminBranches = () => {
