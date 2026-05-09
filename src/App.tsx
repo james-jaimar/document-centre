@@ -128,49 +128,20 @@ function AppRoutes() {
 
       {/* Customer portal — slug-based storefront (public layout, auth only where needed) */}
       <Route path="/t/:slug" element={<CustomerLayout />}>
-        <Route index element={<CustomerDashboard />} />
-        <Route path="dashboard" element={<CustomerDashboard />} />
-        <Route path="print-centre" element={<CustomerDashboard />} />
-        {/* Public routes — guests can browse, upload, configure */}
-        <Route path="orders/new" element={<NewOrder />} />
-        <Route path="orders/new/photo-prints" element={<PhotoPrintsBuilder />} />
-        <Route path="orders/new/:familyId" element={<OrderFiles />} />
-        <Route path="orders/:id/files" element={<OrderFiles />} />
-        <Route path="orders/:id/build" element={<OrderBuild />} />
-        <Route path="orders/:id/photo-prints" element={<PhotoPrintsBuilder />} />
-        <Route path="cart" element={<Cart />} />
-        <Route path="checkout" element={<Checkout />} />
-        <Route path="terms" element={<PortalTerms />} />
-        <Route path="privacy" element={<PortalPrivacy />} />
-        {/* Auth-required routes */}
-        <Route path="orders/:id" element={<ProtectedRoute><CustomerOrderDetail /></ProtectedRoute>} />
-        <Route path="orders/:id/confirmation" element={<ProtectedRoute><OrderConfirmation /></ProtectedRoute>} />
-        <Route path="orders" element={<ProtectedRoute><CustomerOrders /></ProtectedRoute>} />
-        <Route path="account" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
-        <Route path="settings" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
+        {customerRoutes()}
+        {/* Branch-scoped variants: /t/:slug/:branchSlug/... */}
+        <Route path=":branchSlug" element={<BranchSlugRoute />}>
+          {customerRoutes()}
+        </Route>
       </Route>
 
       {/* Customer portal — subdomain-based (same routes as /t/:slug but at root) — only when on a tenant subdomain */}
       {matched && (
         <Route path="/" element={<CustomerLayout />}>
-          <Route index element={<CustomerDashboard />} />
-          <Route path="dashboard" element={<CustomerDashboard />} />
-          <Route path="print-centre" element={<CustomerDashboard />} />
-          <Route path="orders/new" element={<NewOrder />} />
-          <Route path="orders/new/photo-prints" element={<PhotoPrintsBuilder />} />
-          <Route path="orders/new/:familyId" element={<OrderFiles />} />
-          <Route path="orders/:id/files" element={<OrderFiles />} />
-          <Route path="orders/:id/build" element={<OrderBuild />} />
-          <Route path="orders/:id/photo-prints" element={<PhotoPrintsBuilder />} />
-          <Route path="cart" element={<Cart />} />
-          <Route path="checkout" element={<Checkout />} />
-          <Route path="terms" element={<PortalTerms />} />
-          <Route path="privacy" element={<PortalPrivacy />} />
-          <Route path="orders/:id" element={<ProtectedRoute><CustomerOrderDetail /></ProtectedRoute>} />
-          <Route path="orders/:id/confirmation" element={<ProtectedRoute><OrderConfirmation /></ProtectedRoute>} />
-          <Route path="orders" element={<ProtectedRoute><CustomerOrders /></ProtectedRoute>} />
-          <Route path="account" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
-          <Route path="settings" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
+          {customerRoutes()}
+          <Route path=":branchSlug" element={<BranchSlugRoute />}>
+            {customerRoutes()}
+          </Route>
         </Route>
       )}
 
