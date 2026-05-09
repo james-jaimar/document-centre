@@ -371,6 +371,15 @@ const PlatformTenants = () => {
           subscription={subByTenant[subTenant.id]}
         />
       )}
+
+      {paymentsTenant && (
+        <PlatformTenantPaymentsDialog
+          open={!!paymentsTenant}
+          onOpenChange={(open) => !open && setPaymentsTenant(null)}
+          tenantId={paymentsTenant.id}
+          tenantName={paymentsTenant.name}
+        />
+      )}
     </div>
   );
 };
