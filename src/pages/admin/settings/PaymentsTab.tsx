@@ -6,10 +6,13 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useTenantSettingsMap, useBulkUpsertTenantSettings } from "@/hooks/useTenantSettings";
+import { useTenantContext } from "@/hooks/useTenantContext";
+import { PaymentGatewaysCard } from "@/components/payments/PaymentGatewaysCard";
 import { toast } from "sonner";
 import { Save, Banknote, CreditCard } from "lucide-react";
 
 export function PaymentsTab() {
+  const { tenantId } = useTenantContext();
   const { settingsMap, isLoading } = useTenantSettingsMap("payments");
   const bulkUpsert = useBulkUpsertTenantSettings();
 
@@ -54,6 +57,8 @@ export function PaymentsTab() {
 
   return (
     <div className="space-y-6">
+      {tenantId && <PaymentGatewaysCard scope="tenant" scopeId={tenantId} />}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><CreditCard className="h-5 w-5" /> Payment Methods</CardTitle>

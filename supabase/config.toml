@@ -37,3 +37,13 @@ project_id = "lcvdhtaqoumyokjqaqfw"
     verify_jwt = false
   [functions.create-checkout]
     verify_jwt = false
+  [functions.stripe-order-webhook]
+    verify_jwt = false
+  [functions.payfast-itn]
+    verify_jwt = false
+  [functions.payments-list-providers]
+    verify_jwt = false
+  [functions.payments-create-session]
+    verify_jwt = false
+  [functions.payments-save-credentials]
+    verify_jwt = false

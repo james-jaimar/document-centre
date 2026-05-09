@@ -206,6 +206,44 @@ export type Database = {
           },
         ]
       }
+      branch_payment_gateways: {
+        Row: {
+          branch_id: string
+          created_at: string
+          credentials_secret_id: string | null
+          id: string
+          mode: string
+          provider: string
+          updated_at: string
+        }
+        Insert: {
+          branch_id: string
+          created_at?: string
+          credentials_secret_id?: string | null
+          id?: string
+          mode?: string
+          provider: string
+          updated_at?: string
+        }
+        Update: {
+          branch_id?: string
+          created_at?: string
+          credentials_secret_id?: string | null
+          id?: string
+          mode?: string
+          provider?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "branch_payment_gateways_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       branches: {
         Row: {
           address: string | null
@@ -1874,6 +1912,62 @@ export type Database = {
           },
         ]
       }
+      order_payment_attempts: {
+        Row: {
+          amount: number
+          app_id: string
+          branch_id: string | null
+          created_at: string
+          currency: string
+          id: string
+          order_id: string
+          provider: string
+          provider_session_id: string | null
+          raw_payload: Json
+          status: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          app_id: string
+          branch_id?: string | null
+          created_at?: string
+          currency?: string
+          id?: string
+          order_id: string
+          provider: string
+          provider_session_id?: string | null
+          raw_payload?: Json
+          status?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          app_id?: string
+          branch_id?: string | null
+          created_at?: string
+          currency?: string
+          id?: string
+          order_id?: string
+          provider?: string
+          provider_session_id?: string | null
+          raw_payload?: Json
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_payment_attempts_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_pricing_snapshots: {
         Row: {
           amount_due: number
@@ -2776,6 +2870,53 @@ export type Database = {
           },
         ]
       }
+      tenant_payment_gateways: {
+        Row: {
+          created_at: string
+          credentials_secret_id: string | null
+          display_label: string | null
+          id: string
+          is_enabled: boolean
+          mode: string
+          provider: string
+          sort_order: number
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          credentials_secret_id?: string | null
+          display_label?: string | null
+          id?: string
+          is_enabled?: boolean
+          mode?: string
+          provider: string
+          sort_order?: number
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          credentials_secret_id?: string | null
+          display_label?: string | null
+          id?: string
+          is_enabled?: boolean
+          mode?: string
+          provider?: string
+          sort_order?: number
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_payment_gateways_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenant_settings: {
         Row: {
           category: string
@@ -3276,7 +3417,15 @@ export type Database = {
         Args: { p_name: string; p_secret: string }
         Returns: string
       }
+      create_payment_secret: {
+        Args: { p_name: string; p_secret: string }
+        Returns: string
+      }
       delete_email_account_secret: {
+        Args: { p_secret_id: string }
+        Returns: undefined
+      }
+      delete_payment_secret: {
         Args: { p_secret_id: string }
         Returns: undefined
       }
@@ -3314,6 +3463,7 @@ export type Database = {
         Args: { p_secret_id: string }
         Returns: string
       }
+      read_payment_secret: { Args: { p_secret_id: string }; Returns: string }
       regenerate_pricing_rules_for_currency: {
         Args: { p_currency: string }
         Returns: number
