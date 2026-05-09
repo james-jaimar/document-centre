@@ -29,11 +29,15 @@ export function ProtectedRoute({ children, allowedRoles, allowedMembershipRoles 
     );
   }
 
-  const slugMatch = location.pathname.match(/^\/t\/([^/]+)/);
-  const fallback = slugMatch ? `/t/${slugMatch[1]}/dashboard` : "/dashboard";
+  const { slug, branchSlug } = parseTenantPath(location.pathname);
+  const fallback = slug
+    ? buildTenantPath(slug, branchSlug, "dashboard")
+    : "/dashboard";
 
   if (!user) {
-    const authPath = slugMatch ? `/t/${slugMatch[1]}/auth` : "/auth";
+    const authPath = slug
+      ? buildTenantPath(slug, branchSlug, "auth")
+      : "/auth";
     return <Navigate to={authPath} replace />;
   }
 
