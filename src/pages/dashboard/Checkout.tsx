@@ -330,6 +330,34 @@ export default function Checkout() {
             </div>
           )}
 
+          {/* Payment Method */}
+          <div className="border border-border rounded-lg p-4 space-y-3">
+            <h3 className="font-semibold text-foreground">Payment Method</h3>
+            <RadioGroup
+              value={paymentMethod}
+              onValueChange={setPaymentMethod}
+              className="space-y-2"
+            >
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="offline" id="pm-offline" />
+                <Label htmlFor="pm-offline" className="cursor-pointer">
+                  Pay on collection / EFT (we'll send instructions)
+                </Label>
+              </div>
+              {(onlineProviders ?? []).map((p) => (
+                <div key={p.provider} className="flex items-center space-x-2">
+                  <RadioGroupItem value={p.provider} id={`pm-${p.provider}`} />
+                  <Label htmlFor={`pm-${p.provider}`} className="cursor-pointer">
+                    {p.display_label || (p.provider === "stripe" ? "Pay by Card" : "PayFast")}
+                    {p.mode === "test" && (
+                      <span className="ml-2 text-xs text-muted-foreground">(sandbox)</span>
+                    )}
+                  </Label>
+                </div>
+              ))}
+            </RadioGroup>
+          </div>
+
           {/* Notes */}
           <div className="border border-border rounded-lg p-4 space-y-3">
             <h3 className="font-semibold text-foreground">Special Instructions</h3>
