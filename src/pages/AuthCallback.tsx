@@ -135,7 +135,9 @@ const AuthCallback = () => {
         await supabase.auth.signOut();
         if (targetSlug) {
           toast.info("Please sign in via your organisation's portal.");
-          navigate(`/t/${targetSlug}/auth`, { replace: true });
+          const returnPath = localStorage.getItem(RETURN_PATH_KEY);
+          const branchFromReturn = returnPath ? parseTenantPath(returnPath).branchSlug : null;
+          navigate(buildTenantPath(targetSlug, branchFromReturn, "auth"), { replace: true });
         } else {
           setError("Please sign in via your organisation's portal.");
         }
