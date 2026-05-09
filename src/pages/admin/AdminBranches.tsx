@@ -343,11 +343,29 @@ const AdminBranches = () => {
               <Label>Email</Label>
               <Input value={form.email} onChange={(e) => set("email", e.target.value)} />
             </div>
-            <div className="flex items-center gap-2">
-              <Switch checked={form.is_active} onCheckedChange={(v) => set("is_active", v)} />
-              <Label>Active</Label>
+            <div className="md:col-span-2 border-t pt-4 space-y-3">
+              <div>
+                <Label>URL slug (optional)</Label>
+                <Input
+                  value={form.url_slug}
+                  onChange={(e) => set("url_slug", e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                  placeholder="e.g. sandtoncity"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Friendly URL for the customer portal: <code>/{form.url_slug || "auto-from-name"}</code>. Lowercase, letters/numbers/hyphens only.
+                </p>
+              </div>
+              <div className="flex items-center gap-6">
+                <div className="flex items-center gap-2">
+                  <Switch checked={form.is_active} onCheckedChange={(v) => set("is_active", v)} />
+                  <Label>Active</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch checked={form.is_live} onCheckedChange={(v) => set("is_live", v)} />
+                  <Label>Live (accepts online orders)</Label>
+                </div>
+              </div>
             </div>
-          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setEditing(null); setIsNew(false); }}>Cancel</Button>
             <Button onClick={handleSave} disabled={!form.name || createBranch.isPending || updateBranch.isPending}>
