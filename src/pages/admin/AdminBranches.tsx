@@ -366,6 +366,7 @@ const AdminBranches = () => {
                 </div>
               </div>
             </div>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setEditing(null); setIsNew(false); }}>Cancel</Button>
             <Button onClick={handleSave} disabled={!form.name || createBranch.isPending || updateBranch.isPending}>
