@@ -50,6 +50,7 @@ import AdminBranches from "@/pages/admin/AdminBranches";
 import AdminProducts from "@/pages/admin/AdminProducts";
 import AdminProductCatalogue from "@/pages/admin/AdminProductCatalogue";
 import AdminPricing from "@/pages/admin/AdminPricing";
+import AdminRateCard from "@/pages/admin/AdminRateCard";
 import AdminUsers from "@/pages/admin/AdminUsers";
 import AdminSettings from "@/pages/admin/AdminSettings";
 import AdminOrders from "@/pages/admin/AdminOrders";
@@ -237,8 +238,12 @@ function AppRoutes() {
             <AdminBindingArtworkAudit />
           </ProtectedRoute>
         } />
-        {/* Legacy /admin/pricing redirects to per-product pricing inside the catalogue */}
-        <Route path="/admin/pricing" element={<Navigate to="/admin/products" replace />} />
+        {/* Tenant rate card (clone of master) */}
+        <Route path="/admin/pricing" element={
+          <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
+            <AdminRateCard />
+          </ProtectedRoute>
+        } />
         <Route path="/admin/users" element={
           <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
             <AdminUsers />

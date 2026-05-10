@@ -123,6 +123,7 @@ const ADMIN_SECTIONS: NavSection[] = [
     items: [
       { to: "/admin/branches", icon: <Building2 size={20} />, label: "Branches" },
       { to: "/admin/products", icon: <Package size={20} />, label: "Products" },
+      { to: "/admin/pricing", icon: <DollarSign size={20} />, label: "Pricing" },
       { to: "/admin/customers", icon: <UserSquare2 size={20} />, label: "Customers" },
       { to: "/admin/users", icon: <Users size={20} />, label: "Users & Roles" },
     ],
