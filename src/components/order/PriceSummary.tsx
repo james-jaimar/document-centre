@@ -1,8 +1,9 @@
 import { useMemo } from "react";
 import type { Tables } from "@/integrations/supabase/types";
-import type { ItemSpec, PriceBreakdown } from "@/lib/calculatePrice";
-import { calculateItemPrice } from "@/lib/calculatePrice";
+import type { ItemSpec, PriceBreakdown, RateCardBundle } from "@/lib/calculatePrice";
+import { calculateItemPrice, calculatePriceFromRateCard } from "@/lib/calculatePrice";
 import type { ProductPriceOverride } from "@/hooks/useProductPriceOverrides";
+import type { ProductRecipe } from "@/hooks/useProductRecipe";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Minus, Plus, ShoppingCart } from "lucide-react";
@@ -22,6 +23,9 @@ interface PriceSummaryProps {
   options: ProductOption[];
   rules: PricingRule[];
   overrides?: ProductPriceOverride[];
+  /** When both supplied, the new rate-card engine is used instead of legacy rules. */
+  recipe?: ProductRecipe | null;
+  rateCard?: RateCardBundle | null;
   onQuantityChange: (qty: number) => void;
   onAddToCart: () => void;
   disabled?: boolean;
@@ -33,6 +37,8 @@ export default function PriceSummary({
   options,
   rules,
   overrides = [],
+  recipe = null,
+  rateCard = null,
   onQuantityChange,
   onAddToCart,
   disabled,
@@ -40,9 +46,12 @@ export default function PriceSummary({
 }: PriceSummaryProps) {
   const { region } = useRegionalPricing();
   const currency = region?.currency_code ?? "ZAR";
-  const breakdown = useMemo(
-    () => calculateItemPrice(spec, options, rules, currency, overrides),
-    [spec, options, rules, currency, overrides]
+  const breakdown: PriceBreakdown = useMemo(
+    () =>
+      recipe && rateCard
+        ? calculatePriceFromRateCard(spec, recipe, rateCard)
+        : calculateItemPrice(spec, options, rules, currency, overrides),
+    [spec, options, rules, currency, overrides, recipe, rateCard]
   );
 
   return (
