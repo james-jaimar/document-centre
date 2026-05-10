@@ -844,6 +844,8 @@ export default function OrderBuild() {
               options={options}
               rules={pricingRules}
               overrides={cascadedOverrides}
+              recipe={useNewEngine ? recipe : null}
+              rateCard={useNewEngine ? rateCard : null}
               onQuantityChange={handleQuantityChange}
               onAddToCart={handleAddToCartClick}
               disabled={!canAddToCart}
