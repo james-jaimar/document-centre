@@ -31,6 +31,8 @@ import { ArrowLeft, Settings2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
+import { useTenantContext } from "@/hooks/useTenantContext";
+import { useProductPriceOverrides } from "@/hooks/useProductPriceOverrides";
 import { formatPrice } from "@/lib/formatCurrency";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
 
@@ -106,6 +108,27 @@ export default function OrderBuild() {
   // Active region currency (geo-detected, with manual override support).
   const { region } = useRegionalPricing();
   const activeCurrency = region?.currency_code ?? "ZAR";
+
+  // Tenant + branch context for cascaded price overrides.
+  const { tenantId, branchId } = useTenantContext();
+
+  // Layer 3 cascade: branch overrides take priority over tenant overrides.
+  const { data: branchOverrides = [] } = useProductPriceOverrides(
+    tenantId,
+    productFamilyId,
+    activeCurrency,
+    branchId ?? null,
+  );
+  const { data: tenantOverrides = [] } = useProductPriceOverrides(
+    tenantId,
+    productFamilyId,
+    activeCurrency,
+    null,
+  );
+  const cascadedOverrides = useMemo(
+    () => [...branchOverrides, ...tenantOverrides],
+    [branchOverrides, tenantOverrides],
+  );
 
   // Fetch pricing rules for this product family in the active currency.
   const { data: pricingRules = [] } = useQuery({
@@ -526,7 +549,7 @@ export default function OrderBuild() {
       return;
     }
     try {
-      const breakdown = calculateItemPrice(spec, options, pricingRules, activeCurrency);
+      const breakdown = calculateItemPrice(spec, options, pricingRules, activeCurrency, cascadedOverrides);
       if (breakdown.lines.length === 0) {
         toast.error("No pricing rules configured", {
           description: "Please contact the administrator to set up pricing for this product.",
@@ -551,7 +574,7 @@ export default function OrderBuild() {
     }
     setIsSubmitting(true);
     try {
-      const breakdown = calculateItemPrice(spec, options, pricingRules, activeCurrency);
+      const breakdown = calculateItemPrice(spec, options, pricingRules, activeCurrency, cascadedOverrides);
       // Check if this draft was created by editing a cart item
       const replacesCartItemId = (order.metadata as any)?.replaces_cart_item_id;
       await addItemToCart.mutateAsync({
@@ -801,6 +824,7 @@ export default function OrderBuild() {
               spec={spec}
               options={options}
               rules={pricingRules}
+              overrides={cascadedOverrides}
               onQuantityChange={handleQuantityChange}
               onAddToCart={handleAddToCartClick}
               disabled={!canAddToCart}

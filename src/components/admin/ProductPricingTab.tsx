@@ -43,6 +43,8 @@ import { formatPrice } from "@/lib/formatCurrency";
 interface Props {
   productFamilyId: string;
   productFamilyName: string;
+  /** When provided, overrides are scoped to this branch instead of the tenant. */
+  branchId?: string | null;
 }
 
 const RULE_TYPE_LABELS: Record<string, string> = {
@@ -56,13 +58,16 @@ const RULE_TYPE_LABELS: Record<string, string> = {
 export default function ProductPricingTab({
   productFamilyId,
   productFamilyName,
+  branchId = null,
 }: Props) {
   const { tenantId } = useTenantContext();
   const { data: options = [] } = useProductOptions(productFamilyId);
   const { data: allRules = [] } = usePricingRules(tenantId);
   const { data: overrides = [] } = useProductPriceOverrides(
     tenantId,
-    productFamilyId
+    productFamilyId,
+    "ZAR",
+    branchId,
   );
   const createOverride = useCreatePriceOverride();
   const deleteOverride = useDeletePriceOverride();
@@ -141,7 +146,7 @@ export default function ProductPricingTab({
     try {
       await createOverride.mutateAsync({
         tenant_id: tenantId,
-        branch_id: null,
+        branch_id: branchId ?? null,
         product_family_id: productFamilyId,
         conditions: newConditions,
         quantity_min: newQtyMin,
@@ -151,7 +156,7 @@ export default function ProductPricingTab({
         weight_grams: newWeightGrams,
         currency_code: "ZAR",
       });
-      toast({ title: "Price override created" });
+      toast({ title: branchId ? "Branch price override created" : "Tenant price override created" });
       setOverrideDialogOpen(false);
     } catch (e: any) {
       toast({

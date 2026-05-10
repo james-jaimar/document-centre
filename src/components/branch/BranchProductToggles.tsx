@@ -7,8 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import ProductPricingTab from "@/components/admin/ProductPricingTab";
 import { toast } from "sonner";
-import { ChevronDown, Package, AlertTriangle, RefreshCw, ToggleLeft, ToggleRight } from "lucide-react";
+import { ChevronDown, Package, AlertTriangle, RefreshCw, ToggleLeft, ToggleRight, Tag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { BranchCapability } from "@/hooks/useBranchCapabilities";
 
@@ -22,6 +24,7 @@ export default function BranchProductToggles({ branchId, readOnly = false }: Pro
   const update = useUpdateBranchCapability();
   const seed = useSeedBranchCapabilities();
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [pricingFamily, setPricingFamily] = useState<{ id: string; name: string } | null>(null);
 
   const handleToggle = async (cap: BranchCapability, field: keyof BranchCapability, value: unknown) => {
     try {
@@ -122,6 +125,16 @@ export default function BranchProductToggles({ branchId, readOnly = false }: Pro
                     onCheckedChange={(v) => handleToggle(cap, "is_enabled", v)}
                     disabled={readOnly || update.isPending}
                   />
+                  {!readOnly && cap.product_family_id && cap.product_families?.name && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8"
+                      onClick={() => setPricingFamily({ id: cap.product_family_id!, name: cap.product_families!.name })}
+                    >
+                      <Tag size={12} className="mr-1.5" /> Pricing
+                    </Button>
+                  )}
                   {!readOnly && (
                     <CollapsibleTrigger asChild>
                       <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -216,6 +229,21 @@ export default function BranchProductToggles({ branchId, readOnly = false }: Pro
           );
         })}
       </div>
+
+      <Dialog open={!!pricingFamily} onOpenChange={(o) => !o && setPricingFamily(null)}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{pricingFamily?.name} — Branch Pricing</DialogTitle>
+          </DialogHeader>
+          {pricingFamily && (
+            <ProductPricingTab
+              productFamilyId={pricingFamily.id}
+              productFamilyName={pricingFamily.name}
+              branchId={branchId}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
