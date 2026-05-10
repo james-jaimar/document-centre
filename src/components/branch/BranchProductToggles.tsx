@@ -125,6 +125,16 @@ export default function BranchProductToggles({ branchId, readOnly = false }: Pro
                     onCheckedChange={(v) => handleToggle(cap, "is_enabled", v)}
                     disabled={readOnly || update.isPending}
                   />
+                  {!readOnly && cap.product_family_id && cap.product_families?.name && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8"
+                      onClick={() => setPricingFamily({ id: cap.product_family_id!, name: cap.product_families!.name })}
+                    >
+                      <Tag size={12} className="mr-1.5" /> Pricing
+                    </Button>
+                  )}
                   {!readOnly && (
                     <CollapsibleTrigger asChild>
                       <Button variant="ghost" size="icon" className="h-8 w-8">
