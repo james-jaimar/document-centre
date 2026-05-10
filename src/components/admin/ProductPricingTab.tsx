@@ -43,6 +43,8 @@ import { formatPrice } from "@/lib/formatCurrency";
 interface Props {
   productFamilyId: string;
   productFamilyName: string;
+  /** When provided, overrides are scoped to this branch instead of the tenant. */
+  branchId?: string | null;
 }
 
 const RULE_TYPE_LABELS: Record<string, string> = {
