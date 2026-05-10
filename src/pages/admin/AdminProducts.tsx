@@ -32,8 +32,8 @@ import { seedBoundDocument } from "@/lib/seedBoundDocument";
 import { seedAllProducts } from "@/lib/seedAllProducts";
 
 const AdminProducts = () => {
-  const { tenantId } = useTenantContext();
-  const { data: families = [], isLoading } = useProductFamilies(tenantId);
+  // Master catalogue editor (platform admin). Always operates on tenant_id IS NULL.
+  const { data: families = [], isLoading } = useProductFamilies(null, { masterOnly: true });
   const createFamily = useCreateProductFamily();
   const updateFamily = useUpdateProductFamily();
   const deleteFamily = useDeleteProductFamily();
