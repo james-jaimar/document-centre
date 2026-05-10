@@ -238,8 +238,12 @@ function AppRoutes() {
             <AdminBindingArtworkAudit />
           </ProtectedRoute>
         } />
-        {/* Legacy /admin/pricing redirects to per-product pricing inside the catalogue */}
-        <Route path="/admin/pricing" element={<Navigate to="/admin/products" replace />} />
+        {/* Tenant rate card (clone of master) */}
+        <Route path="/admin/pricing" element={
+          <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
+            <AdminRateCard />
+          </ProtectedRoute>
+        } />
         <Route path="/admin/users" element={
           <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
             <AdminUsers />
