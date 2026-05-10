@@ -295,6 +295,16 @@ function AppRoutes() {
             <PlatformDemoActivity />
           </ProtectedRoute>
         } />
+        <Route path="/platform/products" element={
+          <ProtectedRoute allowedRoles={["platform_admin"]}>
+            <PlatformProducts />
+          </ProtectedRoute>
+        } />
+        <Route path="/platform/master-pricing" element={
+          <ProtectedRoute allowedRoles={["platform_admin"]}>
+            <PlatformMasterPricing />
+          </ProtectedRoute>
+        } />
         <Route path="/platform/pricing" element={
           <ProtectedRoute allowedRoles={["platform_admin"]}>
             <PlatformPricingRegions />
