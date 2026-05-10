@@ -141,6 +141,7 @@ export default function ProductPricingTab({
     try {
       await createOverride.mutateAsync({
         tenant_id: tenantId,
+        branch_id: null,
         product_family_id: productFamilyId,
         conditions: newConditions,
         quantity_min: newQtyMin,

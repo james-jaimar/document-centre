@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 export interface ProductPriceOverride {
   id: string;
   tenant_id: string;
+  branch_id: string | null;
   product_family_id: string;
   conditions: Record<string, string>;
   quantity_min: number;
@@ -17,13 +18,20 @@ export interface ProductPriceOverride {
 
 const QUERY_KEY = ["product_price_overrides"];
 
+/**
+ * Fetch price overrides for a tenant and/or branch.
+ * - Pass `branchId` to scope to a specific branch (returns ONLY branch overrides).
+ * - Pass `branchId = null` (default) to get tenant-level overrides (branch_id IS NULL).
+ * - Pass `branchId = "any"` to get both tenant + all branch overrides for the tenant.
+ */
 export function useProductPriceOverrides(
   tenantId?: string | null,
   familyId?: string | null,
-  currencyCode: string = "ZAR"
+  currencyCode: string = "ZAR",
+  branchId: string | null | "any" = null
 ) {
   return useQuery({
-    queryKey: [...QUERY_KEY, tenantId, familyId, currencyCode],
+    queryKey: [...QUERY_KEY, tenantId, familyId, currencyCode, branchId],
     enabled: !!tenantId,
     queryFn: async () => {
       let query = supabase
@@ -34,6 +42,11 @@ export function useProductPriceOverrides(
 
       if (tenantId) query = query.eq("tenant_id", tenantId);
       if (familyId) query = query.eq("product_family_id", familyId);
+      if (branchId === null) {
+        query = query.is("branch_id", null);
+      } else if (branchId !== "any") {
+        query = query.eq("branch_id", branchId);
+      }
 
       const { data, error } = await query;
       if (error) throw error;

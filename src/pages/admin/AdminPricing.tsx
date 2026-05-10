@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useTenantContext } from "@/hooks/useTenantContext";
 import {
   usePricingRules,
   useCreatePricingRule,
@@ -35,9 +34,9 @@ const RULE_TYPE_LABELS: Record<string, string> = {
 };
 
 const AdminPricing = () => {
-  const { tenantId } = useTenantContext();
-  const { data: rules = [], isLoading } = usePricingRules(tenantId);
-  const { data: families = [] } = useProductFamilies(tenantId);
+  // Master pricing rules editor (platform admin). Always tenant_id IS NULL.
+  const { data: rules = [], isLoading } = usePricingRules(null, "ZAR", { masterOnly: true });
+  const { data: families = [] } = useProductFamilies(null, { masterOnly: true });
   const createRule = useCreatePricingRule();
   const updateRule = useUpdatePricingRule();
   const deleteRule = useDeletePricingRule();
