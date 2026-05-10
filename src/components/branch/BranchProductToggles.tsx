@@ -229,6 +229,21 @@ export default function BranchProductToggles({ branchId, readOnly = false }: Pro
           );
         })}
       </div>
+
+      <Dialog open={!!pricingFamily} onOpenChange={(o) => !o && setPricingFamily(null)}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{pricingFamily?.name} — Branch Pricing</DialogTitle>
+          </DialogHeader>
+          {pricingFamily && (
+            <ProductPricingTab
+              productFamilyId={pricingFamily.id}
+              productFamilyName={pricingFamily.name}
+              branchId={branchId}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
