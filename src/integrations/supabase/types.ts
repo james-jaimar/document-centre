@@ -2652,6 +2652,35 @@ export type Database = {
         }
         Relationships: []
       }
+      product_recipes: {
+        Row: {
+          created_at: string
+          product_family_id: string
+          recipe: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          product_family_id: string
+          recipe?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          product_family_id?: string
+          recipe?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_recipes_product_family_id_fkey"
+            columns: ["product_family_id"]
+            isOneToOne: true
+            referencedRelation: "product_families"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -2701,6 +2730,177 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "profiles_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rate_card_clicks: {
+        Row: {
+          colour: Database["public"]["Enums"]["click_colour"]
+          cost_price: number
+          created_at: string
+          id: string
+          is_active: boolean
+          scope_type: Database["public"]["Enums"]["rate_card_scope"]
+          sell_price: number
+          sides: Database["public"]["Enums"]["click_sides"]
+          size: Database["public"]["Enums"]["click_size"]
+          tenant_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          colour: Database["public"]["Enums"]["click_colour"]
+          cost_price?: number
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          scope_type: Database["public"]["Enums"]["rate_card_scope"]
+          sell_price?: number
+          sides: Database["public"]["Enums"]["click_sides"]
+          size: Database["public"]["Enums"]["click_size"]
+          tenant_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          colour?: Database["public"]["Enums"]["click_colour"]
+          cost_price?: number
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          scope_type?: Database["public"]["Enums"]["rate_card_scope"]
+          sell_price?: number
+          sides?: Database["public"]["Enums"]["click_sides"]
+          size?: Database["public"]["Enums"]["click_size"]
+          tenant_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rate_card_clicks_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rate_card_finishing: {
+        Row: {
+          category: string
+          code: string
+          cost_price: number
+          created_at: string
+          id: string
+          is_active: boolean
+          label: string
+          pricing_basis: Database["public"]["Enums"]["finishing_basis"]
+          scope_type: Database["public"]["Enums"]["rate_card_scope"]
+          sell_price: number
+          size: Database["public"]["Enums"]["click_size"] | null
+          sort_order: number
+          tenant_id: string | null
+          updated_at: string
+          variant: string | null
+        }
+        Insert: {
+          category: string
+          code: string
+          cost_price?: number
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label: string
+          pricing_basis: Database["public"]["Enums"]["finishing_basis"]
+          scope_type: Database["public"]["Enums"]["rate_card_scope"]
+          sell_price?: number
+          size?: Database["public"]["Enums"]["click_size"] | null
+          sort_order?: number
+          tenant_id?: string | null
+          updated_at?: string
+          variant?: string | null
+        }
+        Update: {
+          category?: string
+          code?: string
+          cost_price?: number
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label?: string
+          pricing_basis?: Database["public"]["Enums"]["finishing_basis"]
+          scope_type?: Database["public"]["Enums"]["rate_card_scope"]
+          sell_price?: number
+          size?: Database["public"]["Enums"]["click_size"] | null
+          sort_order?: number
+          tenant_id?: string | null
+          updated_at?: string
+          variant?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rate_card_finishing_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rate_card_papers: {
+        Row: {
+          code: string
+          cost_price: number
+          created_at: string
+          finish: string
+          id: string
+          is_active: boolean
+          label: string
+          scope_type: Database["public"]["Enums"]["rate_card_scope"]
+          sell_price: number
+          size: Database["public"]["Enums"]["click_size"]
+          sort_order: number
+          tenant_id: string | null
+          updated_at: string
+          weight_gsm: number
+        }
+        Insert: {
+          code: string
+          cost_price?: number
+          created_at?: string
+          finish?: string
+          id?: string
+          is_active?: boolean
+          label: string
+          scope_type: Database["public"]["Enums"]["rate_card_scope"]
+          sell_price?: number
+          size: Database["public"]["Enums"]["click_size"]
+          sort_order?: number
+          tenant_id?: string | null
+          updated_at?: string
+          weight_gsm: number
+        }
+        Update: {
+          code?: string
+          cost_price?: number
+          created_at?: string
+          finish?: string
+          id?: string
+          is_active?: boolean
+          label?: string
+          scope_type?: Database["public"]["Enums"]["rate_card_scope"]
+          sell_price?: number
+          size?: Database["public"]["Enums"]["click_size"]
+          sort_order?: number
+          tenant_id?: string | null
+          updated_at?: string
+          weight_gsm?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rate_card_papers_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -3443,6 +3643,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      clone_master_rate_card_to_tenant: {
+        Args: { p_tenant_id: string }
+        Returns: undefined
+      }
       create_email_account_secret: {
         Args: { p_name: string; p_secret: string }
         Returns: string
@@ -3539,6 +3743,9 @@ export type Database = {
         | "store_operator"
         | "customer"
       build_status: "draft" | "building" | "ready" | "quoted" | "ordered"
+      click_colour: "mono" | "colour"
+      click_sides: "simplex" | "duplex"
+      click_size: "A4" | "A3"
       document_status:
         | "pending"
         | "uploading"
@@ -3546,6 +3753,13 @@ export type Database = {
         | "analyzed"
         | "ready"
         | "error"
+      finishing_basis:
+        | "per_unit"
+        | "per_sheet"
+        | "per_set"
+        | "per_cut"
+        | "per_document"
+        | "per_page"
       fulfillment_type: "collection" | "delivery" | "courier"
       node_type: "branch" | "hub" | "partner"
       order_status:
@@ -3559,6 +3773,7 @@ export type Database = {
         | "dispatched"
         | "delivered"
         | "cancelled"
+      rate_card_scope: "master" | "tenant"
       section_type: "body" | "front_cover" | "back_cover" | "insert" | "tab"
     }
     CompositeTypes: {
@@ -3695,6 +3910,9 @@ export const Constants = {
         "customer",
       ],
       build_status: ["draft", "building", "ready", "quoted", "ordered"],
+      click_colour: ["mono", "colour"],
+      click_sides: ["simplex", "duplex"],
+      click_size: ["A4", "A3"],
       document_status: [
         "pending",
         "uploading",
@@ -3702,6 +3920,14 @@ export const Constants = {
         "analyzed",
         "ready",
         "error",
+      ],
+      finishing_basis: [
+        "per_unit",
+        "per_sheet",
+        "per_set",
+        "per_cut",
+        "per_document",
+        "per_page",
       ],
       fulfillment_type: ["collection", "delivery", "courier"],
       node_type: ["branch", "hub", "partner"],
@@ -3717,6 +3943,7 @@ export const Constants = {
         "delivered",
         "cancelled",
       ],
+      rate_card_scope: ["master", "tenant"],
       section_type: ["body", "front_cover", "back_cover", "insert", "tab"],
     },
   },
