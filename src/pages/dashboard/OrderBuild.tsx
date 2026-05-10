@@ -549,7 +549,7 @@ export default function OrderBuild() {
       return;
     }
     try {
-      const breakdown = calculateItemPrice(spec, options, pricingRules, activeCurrency);
+      const breakdown = calculateItemPrice(spec, options, pricingRules, activeCurrency, cascadedOverrides);
       if (breakdown.lines.length === 0) {
         toast.error("No pricing rules configured", {
           description: "Please contact the administrator to set up pricing for this product.",
@@ -574,7 +574,7 @@ export default function OrderBuild() {
     }
     setIsSubmitting(true);
     try {
-      const breakdown = calculateItemPrice(spec, options, pricingRules, activeCurrency);
+      const breakdown = calculateItemPrice(spec, options, pricingRules, activeCurrency, cascadedOverrides);
       // Check if this draft was created by editing a cart item
       const replacesCartItemId = (order.metadata as any)?.replaces_cart_item_id;
       await addItemToCart.mutateAsync({
