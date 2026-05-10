@@ -146,7 +146,7 @@ export default function ProductPricingTab({
     try {
       await createOverride.mutateAsync({
         tenant_id: tenantId,
-        branch_id: null,
+        branch_id: branchId ?? null,
         product_family_id: productFamilyId,
         conditions: newConditions,
         quantity_min: newQtyMin,
@@ -156,7 +156,7 @@ export default function ProductPricingTab({
         weight_grams: newWeightGrams,
         currency_code: "ZAR",
       });
-      toast({ title: "Price override created" });
+      toast({ title: branchId ? "Branch price override created" : "Tenant price override created" });
       setOverrideDialogOpen(false);
     } catch (e: any) {
       toast({
