@@ -48,6 +48,7 @@ import PortalPrivacy from "@/pages/dashboard/PortalPrivacy";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
 import AdminBranches from "@/pages/admin/AdminBranches";
 import AdminProducts from "@/pages/admin/AdminProducts";
+import AdminProductCatalogue from "@/pages/admin/AdminProductCatalogue";
 import AdminPricing from "@/pages/admin/AdminPricing";
 import AdminUsers from "@/pages/admin/AdminUsers";
 import AdminSettings from "@/pages/admin/AdminSettings";
@@ -73,6 +74,8 @@ import PlatformTenants from "@/pages/platform/PlatformTenants";
 import PlatformUsers from "@/pages/platform/PlatformUsers";
 import PlatformSettings from "@/pages/platform/PlatformSettings";
 import PlatformPricingRegions from "@/pages/platform/PlatformPricingRegions";
+import PlatformProducts from "@/pages/platform/PlatformProducts";
+import PlatformMasterPricing from "@/pages/platform/PlatformMasterPricing";
 import PlatformSubscriptions from "@/pages/platform/PlatformSubscriptions";
 import PlatformDemoPrintPricing from "@/pages/platform/PlatformDemoPrintPricing";
 import DocumentCentreLayout from "@/components/platform/DocumentCentreLayout";
@@ -226,7 +229,7 @@ function AppRoutes() {
         } />
         <Route path="/admin/products" element={
           <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
-            <AdminProducts />
+            <AdminProductCatalogue />
           </ProtectedRoute>
         } />
         <Route path="/admin/binding-artwork-audit" element={
@@ -234,11 +237,8 @@ function AppRoutes() {
             <AdminBindingArtworkAudit />
           </ProtectedRoute>
         } />
-        <Route path="/admin/pricing" element={
-          <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
-            <AdminPricing />
-          </ProtectedRoute>
-        } />
+        {/* Legacy /admin/pricing redirects to per-product pricing inside the catalogue */}
+        <Route path="/admin/pricing" element={<Navigate to="/admin/products" replace />} />
         <Route path="/admin/users" element={
           <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
             <AdminUsers />
