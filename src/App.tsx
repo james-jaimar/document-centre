@@ -50,6 +50,7 @@ import AdminBranches from "@/pages/admin/AdminBranches";
 import AdminProducts from "@/pages/admin/AdminProducts";
 import AdminProductCatalogue from "@/pages/admin/AdminProductCatalogue";
 import AdminPricing from "@/pages/admin/AdminPricing";
+import AdminRateCard from "@/pages/admin/AdminRateCard";
 import AdminUsers from "@/pages/admin/AdminUsers";
 import AdminSettings from "@/pages/admin/AdminSettings";
 import AdminOrders from "@/pages/admin/AdminOrders";
