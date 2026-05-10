@@ -109,6 +109,27 @@ export default function OrderBuild() {
   const { region } = useRegionalPricing();
   const activeCurrency = region?.currency_code ?? "ZAR";
 
+  // Tenant + branch context for cascaded price overrides.
+  const { tenantId, branchId } = useTenantContext();
+
+  // Layer 3 cascade: branch overrides take priority over tenant overrides.
+  const { data: branchOverrides = [] } = useProductPriceOverrides(
+    tenantId,
+    productFamilyId,
+    activeCurrency,
+    branchId ?? null,
+  );
+  const { data: tenantOverrides = [] } = useProductPriceOverrides(
+    tenantId,
+    productFamilyId,
+    activeCurrency,
+    null,
+  );
+  const cascadedOverrides = useMemo(
+    () => [...branchOverrides, ...tenantOverrides],
+    [branchOverrides, tenantOverrides],
+  );
+
   // Fetch pricing rules for this product family in the active currency.
   const { data: pricingRules = [] } = useQuery({
     queryKey: ["pricing_rules", productFamilyId, activeCurrency],
