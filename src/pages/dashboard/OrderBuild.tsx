@@ -824,6 +824,7 @@ export default function OrderBuild() {
               spec={spec}
               options={options}
               rules={pricingRules}
+              overrides={cascadedOverrides}
               onQuantityChange={handleQuantityChange}
               onAddToCart={handleAddToCartClick}
               disabled={!canAddToCart}
