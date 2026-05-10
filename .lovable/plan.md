@@ -1,160 +1,135 @@
-# Customer Payment Gateways — Stripe + PayFast (per tenant / per branch)
 
-## Scope
+# Pricing Overhaul — Master Rate Card
 
-Add online payment for **customer orders** (cart checkout). Two providers:
+## Goal
 
-- **Stripe** — international card payments
-- **PayFast** — South African payment gateway
+Kill the per-product `pricing_rules` + `product_options` price impacts + `product_price_overrides` cascade. Replace with **one rate card** containing every priceable atom. Each product declares which rate-card items it consumes. Tenants get their own cloned rate card, seeded from the master, that they can edit freely.
 
-Money flows directly into each tenant's (or branch's) own merchant account, so credentials are **bring-your-own-key per tenant** with optional **per-branch override for PayFast** (each branch has its own PayFast merchant account in real-world PostNet operations).
+## The Rate Card (single source of truth)
 
-## Important clarification
+Three sections, all rows live in one logical "rate card" scoped to either the master (platform) or a tenant.
 
-The existing `STRIPE_SECRET_KEY` / `stripe-webhook` / `create-checkout` in this project are for **platform subscriptions** (tenants paying you for their SaaS plan). They will NOT be touched. This work adds a parallel system for **customer order payments** (end customers paying tenants for prints).
+### 1. Click charges — 8-cell matrix
+`size (A4|A3) × colour (mono|colour) × sides (simplex|duplex)` → unit price per impression.
+- Stored as 8 rows so it's flat and visible in a table.
+- Cost price column kept but optional (user de-prioritised).
 
-This means we cannot use Lovable's built-in `enable_stripe_payments` / `enable_paddle_payments` — those route to a single platform account. We need BYOK per tenant.
+### 2. Paper stocks
+One row per `(name, weight_gsm, finish, size)`:
+- e.g. "80gsm Bond A4", "135gsm Gloss A3", "350gsm Matt A4".
+- `price_per_sheet` (sell), optional cost.
+- Used by all paper-consuming products.
 
-## Data model
+### 3. Finishing items — each declares its own pricing basis
+Single table with a `pricing_basis` discriminator:
 
-### `tenant_payment_gateways`
-One row per (tenant, provider). Platform admin enables; tenant admin fills in credentials.
+| Item | Basis | Example unit |
+|---|---|---|
+| Comb / Wire / Spiral binding | `per_unit` (by spine size) | per book |
+| Saddle-stitch staple | `per_unit` | per booklet |
+| Acetate cover | `per_sheet` (size-aware) | per cover |
+| Card back | `per_sheet` | per cover |
+| Lamination | `per_sheet` (size-aware: A4 / A3) | per side |
+| Folding (brochures, leaflets) | `per_unit` | per piece |
+| Guillotining (flyers) | `per_cut` or `per_unit` | per piece |
+| Trimming (business cards) | `per_set` | per set of N |
+| Ring binder | `per_unit` (by ring size) | per binder |
 
-| column | type | notes |
-|--------|------|-------|
-| id | uuid | pk |
-| tenant_id | uuid | fk |
-| provider | text | `stripe` \| `payfast` |
-| is_enabled | boolean | platform-admin toggle |
-| display_label | text | optional override (e.g. "Pay by Card") |
-| credentials_secret_id | uuid | vault id (JSON blob: stripe = secret_key + publishable_key + webhook_secret; payfast = merchant_id + merchant_key + passphrase) |
-| mode | text | `test` \| `live` |
-| sort_order | int | for checkout ordering |
-| created_at, updated_at | | |
+Each row: `code`, `label`, `pricing_basis`, `unit_price`, optional `size`, optional `variant` (e.g. spine size 6mm/8mm/10mm…), `is_active`.
 
-Unique on `(tenant_id, provider)`.
+## Product → Rate Card wiring
 
-### `branch_payment_gateways`
-Per-branch override (PayFast only for now, but provider-agnostic schema).
+Each product family declares a small JSON "recipe" — which rate-card items apply and how:
 
-| column | type | notes |
-|--------|------|-------|
-| id | uuid | pk |
-| branch_id | uuid | fk |
-| provider | text | `payfast` (extensible) |
-| credentials_secret_id | uuid | vault id, same shape as tenant row |
-| mode | text | `test` \| `live` |
-| created_at, updated_at | | |
-
-Unique on `(branch_id, provider)`.
-
-### `order_payment_attempts`
-Audit trail for every checkout attempt (works for both providers).
-
-| column | type | notes |
-|--------|------|-------|
-| id | uuid | pk |
-| order_id | uuid | fk |
-| tenant_id | uuid | denormalised for RLS |
-| branch_id | uuid \| null | which branch's account received the funds |
-| provider | text | `stripe` \| `payfast` |
-| provider_session_id | text | Stripe session id / PayFast pf_payment_id |
-| status | text | `pending` \| `succeeded` \| `failed` \| `cancelled` |
-| amount | numeric(12,2) | |
-| currency | text | |
-| raw_payload | jsonb | webhook/ITN body for debugging |
-| created_at, updated_at | | |
-
-### Vault helpers
-Mirror the existing `create_email_account_secret` / `read_email_account_secret` / `delete_email_account_secret` pattern with three new functions: `create_payment_secret`, `read_payment_secret`, `delete_payment_secret`. Stored value is a JSON blob.
-
-## RLS
-
-- `tenant_payment_gateways`: platform admin can do anything; tenant owner/admin can read + update credentials & display_label of their own rows but **cannot** flip `is_enabled` (platform admin only).
-- `branch_payment_gateways`: tenant owner/admin can manage rows for branches in their tenant; branch_manager can manage their own branch's row.
-- `order_payment_attempts`: read-only for tenant staff and the customer who owns the order; insert via edge function only.
-- Vault read functions must be `SECURITY DEFINER` and only callable from edge functions (caller-id check via `auth.uid()` membership lookup).
-
-## Provider resolution
-
-When the customer hits checkout for an order:
-
-```
-1. Determine the order's branch_id (from cart's selected branch, falls back to active branch).
-2. For each provider where tenant_payment_gateways.is_enabled = true:
-     - If branch override exists → use branch credentials.
-     - Else → use tenant credentials.
-3. Filter providers by currency match (Stripe: any; PayFast: ZAR only).
-4. Return enabled+configured providers to the checkout UI.
-5. Customer picks one → server creates session.
+```json
+{
+  "uses_click_charges": true,
+  "default_paper_code": "80gsm-bond-a4",
+  "available_papers": ["80gsm-bond-a4", "100gsm-bond-a4", "160gsm-card-a4"],
+  "finishing": [
+    { "code": "comb-binding", "required": true },
+    { "code": "acetate-cover", "required": false },
+    { "code": "card-back", "required": false }
+  ]
+}
 ```
 
-## Edge functions
+The customer-side configurator reads the recipe, lets the user pick from `available_papers` and toggle optional finishing. Price = clicks (qty × pages × matrix cell) + paper (sheets × paper price) + finishing (per its basis).
 
-| function | purpose |
-|----------|---------|
-| `payments-list-providers` | GET, returns the available providers for an order (after resolution above), masked credentials only — used by Checkout UI to render provider buttons. |
-| `payments-create-session` | POST `{ order_id, provider }`. Creates Stripe Checkout Session OR PayFast signed form payload. Writes `order_payment_attempts` row with `pending` status. Returns `{ redirect_url, form_fields? }`. |
-| `stripe-order-webhook` | Receives `checkout.session.completed` / `payment_intent.payment_failed` for **customer orders** (separate from subscription webhook). Looks up tenant by metadata, validates signature using that tenant's webhook secret, marks order paid + invokes `order-engine` to finalise. |
-| `payfast-itn` | PayFast Instant Transaction Notification. Validates source IP + signature using tenant/branch passphrase, marks order paid. PayFast posts to a **single fixed URL**, so the handler resolves tenant/branch from the `m_payment_id` (= our `order_payment_attempts.id`). |
+## Tenant override model — Full Clone
 
-All four use `supabase.auth.getUser()` (where applicable), Zod input validation, and project standards.
+On tenant onboarding (or first visit to `/admin/pricing`):
+- Copy every master row into `tenant_rate_card_*` tables tagged `tenant_id`.
+- Tenant admins edit their copy freely. No cascade, no merge.
+- Branch override (Phase 2): same clone pattern down to `branch_id`. Out of scope for this pass — branch keeps the existing on/off toggle only.
+- Platform admin "Push update from master" button per row (Phase 2) — not in this pass.
 
-## Admin UI
+## Schema changes
 
-### Platform admin — `/platform/tenants/:id` (new "Payments" section)
-- Toggle Stripe enabled / PayFast enabled per tenant
-- View whether tenant has supplied credentials (✓ / ✗), test/live mode badge
-- No credential editing here — just enablement
+**New tables**
+- `rate_card_clicks` — `(scope_type, scope_id, size, colour, sides, sell_price, cost_price)`. `scope_type ∈ ('master','tenant')`.
+- `rate_card_papers` — `(scope_type, scope_id, code, label, weight_gsm, finish, size, sell_price, cost_price, is_active)`.
+- `rate_card_finishing` — `(scope_type, scope_id, code, label, pricing_basis, variant, size, sell_price, cost_price, is_active)`.
+- `product_recipes` — `(product_family_id, recipe jsonb)`. One row per family.
 
-### Tenant admin — `src/pages/admin/settings/PaymentsTab.tsx` (extend existing tab)
-- New "Online payments" card above the existing EFT card
-- For each platform-enabled provider: show credential form (masked), test/live toggle, display label
-- "Test connection" button (Stripe: list balance; PayFast: ping their validate URL)
-- For multi-branch tenants: link to "Branch payment overrides" sub-page
+**Dropped / deprecated**
+- `pricing_rules` — drop after migration.
+- `product_price_overrides` — drop.
+- `product_options.values[].price_impact` — keep the column (options still exist for non-price config like orientation), but stop using it for pricing. Calculator ignores it.
 
-### Branch override — new `BranchPaymentsTab` under `/branch/settings`
-- Visible only when tenant has PayFast enabled
-- Form for branch's own merchant_id / merchant_key / passphrase
-- Falls back to tenant credentials when blank
+**Snapshot preservation**
+- `order_pricing_snapshots` continues to capture the resolved price at order time, so existing carts/orders are untouched.
 
-## Customer checkout UI
+**Functions**
+- `clone_master_rate_card_to_tenant(p_tenant_id uuid)` — security-definer, called on tenant create / from `/admin/pricing` "Initialise" button.
+- All RLS: master rows readable by everyone, writable only by `platform_admin`. Tenant rows writable by `user_is_tenant_admin(tenant_id)`.
 
-`src/pages/dashboard/Checkout.tsx`:
-- Replace the single "Place Order" button with a payment-method selector populated from `payments-list-providers`
-- Existing EFT option stays as one of the choices
-- Stripe → redirect to Checkout Session URL
-- PayFast → POST a hidden form to `process.payfast.co.za/eng/process` with the signed fields
-- After payment, customer returns to `/t/:slug/:branchSlug/orders/:id/confirmation` (Stripe success_url / PayFast return_url); webhook is the source of truth for marking paid.
+## UI changes
 
-## Webhook URLs
+**Platform `/platform/master-pricing`** — three tabs:
+1. **Click Charges** — 8-cell editable grid (A4/A3 × Mono/Colour × Simplex/Duplex).
+2. **Paper Stocks** — table with add/edit/delete.
+3. **Finishing** — table grouped by category, with basis badge.
 
-- Stripe (per tenant): `https://lcvdhtaqoumyokjqaqfw.supabase.co/functions/v1/stripe-order-webhook` — same URL for all tenants; signature validated against tenant-specific secret resolved from `metadata.tenant_id`.
-- PayFast ITN (per tenant/branch): `https://lcvdhtaqoumyokjqaqfw.supabase.co/functions/v1/payfast-itn` — same URL; tenant/branch resolved from `m_payment_id`.
+**Tenant `/admin/pricing`** — same three tabs, editing the tenant's clone. "Reset to master" per row.
 
-Both URLs are shown in the tenant admin Payments tab so they can be pasted into the respective dashboards if needed (Stripe is auto-configured via API, PayFast requires manual ITN URL entry in their merchant dashboard).
+**Tenant `/admin/products/:id`** — new "Recipe" tab: pick papers, toggle finishing items. Replaces today's pricing tab on the product editor.
 
-## Out of scope (this pass)
+**Branch `/branch/products`** — keep on/off toggle. Per-branch pricing deferred.
 
-- Recurring/subscription billing for customer orders (one-off payments only)
-- Refunds via UI (manual via provider dashboards for now; refund button comes later)
-- 3DS challenge flows beyond what Stripe Checkout / PayFast handle natively
-- Saved cards / customer payment methods
-- Payment splits / marketplace flows
-- Apple Pay / Google Pay configuration (Stripe Checkout enables them automatically when merchant is verified)
+**Customer storefront** — `OrderBuild` reads recipe + tenant rate card; `PriceSummary` shows the three line groups (Print / Paper / Finishing).
 
-## Rollout order
+## Calculator (`src/lib/calculatePrice.ts`)
 
-1. Migration: tables + vault helpers + RLS + indexes
-2. Edge functions: `payments-list-providers`, `payments-create-session`, `stripe-order-webhook`, `payfast-itn`
-3. Tenant admin Payments tab extension
-4. Platform admin enablement toggle
-5. Branch override sub-page
-6. Customer checkout UI swap
-7. End-to-end test with Stripe test card + PayFast sandbox merchant
+Rewritten. New signature:
+```ts
+calculateItemPrice(spec, recipe, rateCard) → { lines, total }
+```
+Where `rateCard = { clicks, papers, finishing }` already scoped to the active tenant. No more rule-matching, no more cascade.
 
-## Questions before I start (one quick decision)
+## Data migration
 
-1. **PayFast sandbox vs live toggle** — should I store a single `mode` column per credential set (so a tenant has either test OR live), or allow them to keep both side-by-side and switch per checkout? PostNet's likely workflow: each branch has one live merchant, so single `mode` per row is simpler — I'll go with that unless you say otherwise.
+1. Migration creates the four new tables + RLS + clone function.
+2. Seed master rate card from today's South African defaults (sensible click + common stocks + standard finishing) — done as INSERT data, separate from schema migration.
+3. Auto-clone master to every existing tenant.
+4. Drop `pricing_rules`, `product_price_overrides` after the new flow is verified in preview.
+5. Existing orders unaffected (they use `order_pricing_snapshots`).
 
-2. **Stripe Connect vs raw BYOK** — raw BYOK (each tenant pastes their Stripe secret key) is simpler and works today. Stripe Connect (you onboard tenants as connected accounts under your platform) is cleaner long-term but requires you to register as a Stripe platform and take ~2 weeks of approval. I'll go with **raw BYOK** unless you want Connect — happy to add a migration path later.
+## Out of scope (for now)
+
+- Branch-level rate card overrides
+- "Push from master" diff/merge
+- Multi-currency rate card (master stays ZAR; existing currency profiles can be reapplied later)
+- Cost-side analytics
+
+## Implementation order
+
+1. Schema migration + clone function + RLS.
+2. Seed master rate card with SA defaults.
+3. Platform master-pricing UI (3 tabs).
+4. Tenant pricing UI (3 tabs, edits clone).
+5. `product_recipes` + product editor "Recipe" tab; backfill recipes for existing families.
+6. Rewrite `calculatePrice.ts` + plumb into `OrderBuild` / `PriceSummary` / order snapshots.
+7. Drop legacy tables + dead code paths.
+
+Ready to build on approval.
