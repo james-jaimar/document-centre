@@ -2603,6 +2603,7 @@ export type Database = {
       }
       product_price_overrides: {
         Row: {
+          branch_id: string | null
           conditions: Json
           cost_price: number | null
           created_at: string
@@ -2618,6 +2619,7 @@ export type Database = {
           weight_grams: number | null
         }
         Insert: {
+          branch_id?: string | null
           conditions?: Json
           cost_price?: number | null
           created_at?: string
@@ -2633,6 +2635,7 @@ export type Database = {
           weight_grams?: number | null
         }
         Update: {
+          branch_id?: string | null
           conditions?: Json
           cost_price?: number | null
           created_at?: string
@@ -2916,6 +2919,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      tenant_product_toggles: {
+        Row: {
+          created_at: string
+          id: string
+          is_enabled: boolean
+          product_family_id: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          product_family_id: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          product_family_id?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       tenant_settings: {
         Row: {
