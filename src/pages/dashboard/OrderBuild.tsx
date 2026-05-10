@@ -31,6 +31,8 @@ import { ArrowLeft, Settings2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
+import { useTenantContext } from "@/hooks/useTenantContext";
+import { useProductPriceOverrides } from "@/hooks/useProductPriceOverrides";
 import { formatPrice } from "@/lib/formatCurrency";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
 
