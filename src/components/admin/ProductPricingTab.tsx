@@ -58,13 +58,16 @@ const RULE_TYPE_LABELS: Record<string, string> = {
 export default function ProductPricingTab({
   productFamilyId,
   productFamilyName,
+  branchId = null,
 }: Props) {
   const { tenantId } = useTenantContext();
   const { data: options = [] } = useProductOptions(productFamilyId);
   const { data: allRules = [] } = usePricingRules(tenantId);
   const { data: overrides = [] } = useProductPriceOverrides(
     tenantId,
-    productFamilyId
+    productFamilyId,
+    "ZAR",
+    branchId,
   );
   const createOverride = useCreatePriceOverride();
   const deleteOverride = useDeletePriceOverride();
