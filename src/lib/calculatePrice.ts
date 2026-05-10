@@ -215,3 +215,141 @@ export function calculateItemPrice(
     total: subtotal_per_unit * spec.quantity,
   };
 }
+
+// ============================================================================
+// Master Rate Card calculator (new pricing engine)
+// ============================================================================
+
+import type {
+  RateCardClick,
+  RateCardPaper,
+  RateCardFinishing,
+} from "@/hooks/useRateCard";
+import type { ProductRecipe } from "@/hooks/useProductRecipe";
+
+export interface RateCardBundle {
+  clicks: RateCardClick[];
+  papers: RateCardPaper[];
+  finishing: RateCardFinishing[];
+}
+
+/**
+ * Spec extension for the rate-card calculator. The classic ItemSpec is reused
+ * unchanged; we read additional fields from selected_options without forcing
+ * a schema migration of stored carts.
+ *
+ * Conventions on `spec.selected_options` for the new engine:
+ *   - "paper":     paper code (e.g. "80gsm-bond-a4")
+ *   - "size":      "A4" | "A3"  (falls back to "A4")
+ *   - "finishing": comma-separated list of finishing codes the customer chose
+ *                  on top of the recipe's `required` items.
+ */
+export function calculatePriceFromRateCard(
+  spec: ItemSpec,
+  recipe: ProductRecipe,
+  rc: RateCardBundle
+): PriceBreakdown {
+  const lines: PriceLineItem[] = [];
+
+  const size = ((spec.selected_options.size as "A4" | "A3") || "A4") as
+    | "A4"
+    | "A3";
+  const colour = spec.is_color ? "colour" : "mono";
+  const sides = spec.is_duplex ? "duplex" : "simplex";
+
+  // 1) Clicks
+  if (recipe.uses_click_charges !== false && spec.page_count > 0) {
+    const cell = rc.clicks.find(
+      (c) =>
+        c.is_active &&
+        c.size === size &&
+        c.colour === colour &&
+        c.sides === sides
+    );
+    if (cell) {
+      lines.push({
+        label: `Print ${size} ${colour} ${sides}`,
+        type: "per_page",
+        unit_amount: Number(cell.sell_price),
+        multiplier: spec.page_count,
+        total: Number(cell.sell_price) * spec.page_count,
+      });
+    }
+  }
+
+  // 2) Paper
+  const paperCode =
+    (spec.selected_options.paper as string | undefined) ||
+    recipe.default_paper_code ||
+    null;
+  if (paperCode) {
+    const paper = rc.papers.find((p) => p.code === paperCode && p.is_active);
+    if (paper) {
+      // 1 sheet per page when simplex, 1 sheet per 2 pages when duplex.
+      const sheets = spec.is_duplex
+        ? Math.ceil(spec.page_count / 2)
+        : spec.page_count;
+      if (sheets > 0) {
+        lines.push({
+          label: `Paper: ${paper.label}`,
+          type: "per_page",
+          unit_amount: Number(paper.sell_price),
+          multiplier: sheets,
+          total: Number(paper.sell_price) * sheets,
+        });
+      }
+    }
+  }
+
+  // 3) Finishing — required + customer-selected
+  const customerSelected = new Set(
+    String(spec.selected_options.finishing ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
+  const finishingCodes = new Set<string>();
+  for (const f of recipe.finishing ?? []) {
+    if (f.required || customerSelected.has(f.code)) finishingCodes.add(f.code);
+  }
+  for (const code of finishingCodes) {
+    const fin = rc.finishing.find((x) => x.code === code && x.is_active);
+    if (!fin) continue;
+    let multiplier = 1;
+    switch (fin.pricing_basis) {
+      case "per_unit":
+        multiplier = 1; // per finished book/piece, multiplied by quantity below
+        break;
+      case "per_sheet":
+        multiplier = spec.is_duplex
+          ? Math.ceil(spec.page_count / 2)
+          : spec.page_count;
+        break;
+      case "per_page":
+        multiplier = spec.page_count;
+        break;
+      case "per_document":
+      case "per_set":
+        multiplier = 1;
+        break;
+      case "per_cut":
+        multiplier = 1;
+        break;
+    }
+    lines.push({
+      label: `Finishing: ${fin.label}`,
+      type: "option",
+      unit_amount: Number(fin.sell_price),
+      multiplier,
+      total: Number(fin.sell_price) * multiplier,
+    });
+  }
+
+  const subtotal_per_unit = lines.reduce((sum, l) => sum + l.total, 0);
+  return {
+    lines,
+    subtotal_per_unit,
+    quantity: spec.quantity,
+    total: subtotal_per_unit * spec.quantity,
+  };
+}

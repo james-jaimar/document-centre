@@ -33,6 +33,12 @@ import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useProductPriceOverrides } from "@/hooks/useProductPriceOverrides";
+import { useProductRecipe } from "@/hooks/useProductRecipe";
+import {
+  useRateCardClicks,
+  useRateCardPapers,
+  useRateCardFinishing,
+} from "@/hooks/useRateCard";
 import { formatPrice } from "@/lib/formatCurrency";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
 
@@ -129,6 +135,19 @@ export default function OrderBuild() {
     () => [...branchOverrides, ...tenantOverrides],
     [branchOverrides, tenantOverrides],
   );
+
+  // New rate-card engine: recipe + tenant rate card. If both are present,
+  // PriceSummary will use the new calculator and ignore the legacy rules path.
+  const { data: recipe = null } = useProductRecipe(productFamilyId);
+  const rcArgs = { scope: "tenant" as const, tenantId: tenantId ?? undefined };
+  const { data: rcClicks = [] } = useRateCardClicks(rcArgs);
+  const { data: rcPapers = [] } = useRateCardPapers(rcArgs);
+  const { data: rcFinishing = [] } = useRateCardFinishing(rcArgs);
+  const rateCard = useMemo(
+    () => ({ clicks: rcClicks, papers: rcPapers, finishing: rcFinishing }),
+    [rcClicks, rcPapers, rcFinishing],
+  );
+  const useNewEngine = !!recipe && rcClicks.length > 0;
 
   // Fetch pricing rules for this product family in the active currency.
   const { data: pricingRules = [] } = useQuery({
@@ -825,6 +844,8 @@ export default function OrderBuild() {
               options={options}
               rules={pricingRules}
               overrides={cascadedOverrides}
+              recipe={useNewEngine ? recipe : null}
+              rateCard={useNewEngine ? rateCard : null}
               onQuantityChange={handleQuantityChange}
               onAddToCart={handleAddToCartClick}
               disabled={!canAddToCart}
