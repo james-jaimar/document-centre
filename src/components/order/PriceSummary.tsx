@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type { Tables } from "@/integrations/supabase/types";
 import type { ItemSpec, PriceBreakdown } from "@/lib/calculatePrice";
 import { calculateItemPrice } from "@/lib/calculatePrice";
+import type { ProductPriceOverride } from "@/hooks/useProductPriceOverrides";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Minus, Plus, ShoppingCart } from "lucide-react";
@@ -20,6 +21,7 @@ interface PriceSummaryProps {
   spec: ItemSpec;
   options: ProductOption[];
   rules: PricingRule[];
+  overrides?: ProductPriceOverride[];
   onQuantityChange: (qty: number) => void;
   onAddToCart: () => void;
   disabled?: boolean;
@@ -30,6 +32,7 @@ export default function PriceSummary({
   spec,
   options,
   rules,
+  overrides = [],
   onQuantityChange,
   onAddToCart,
   disabled,
@@ -38,8 +41,8 @@ export default function PriceSummary({
   const { region } = useRegionalPricing();
   const currency = region?.currency_code ?? "ZAR";
   const breakdown = useMemo(
-    () => calculateItemPrice(spec, options, rules, currency),
-    [spec, options, rules, currency]
+    () => calculateItemPrice(spec, options, rules, currency, overrides),
+    [spec, options, rules, currency, overrides]
   );
 
   return (
