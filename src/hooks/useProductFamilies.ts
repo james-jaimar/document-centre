@@ -21,16 +21,22 @@ export type ProductFamilyUpdate = TablesUpdate<"product_families"> & Partial<Pri
 
 const QUERY_KEY = ["product_families"];
 
-export function useProductFamilies(tenantId?: string | null) {
+export function useProductFamilies(
+  tenantId?: string | null,
+  opts: { masterOnly?: boolean } = {}
+) {
+  const { masterOnly = false } = opts;
   return useQuery({
-    queryKey: [...QUERY_KEY, tenantId],
+    queryKey: [...QUERY_KEY, masterOnly ? "master" : tenantId ?? null],
     queryFn: async () => {
       let query = supabase
         .from("product_families")
         .select("*, product_options(count)")
         .order("sort_order", { ascending: true });
 
-      if (tenantId) {
+      if (masterOnly) {
+        query = query.is("tenant_id", null);
+      } else if (tenantId) {
         query = query.or(`tenant_id.eq.${tenantId},tenant_id.is.null`);
       }
 

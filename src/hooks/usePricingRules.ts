@@ -13,9 +13,14 @@ const QUERY_KEY = ["pricing_rules"];
  * focused on the source of truth. Pass `currencyCode` to read a derived
  * currency variant (used by the storefront via the active region).
  */
-export function usePricingRules(tenantId?: string | null, currencyCode: string = "ZAR") {
+export function usePricingRules(
+  tenantId?: string | null,
+  currencyCode: string = "ZAR",
+  opts: { masterOnly?: boolean } = {}
+) {
+  const { masterOnly = false } = opts;
   return useQuery({
-    queryKey: [...QUERY_KEY, tenantId, currencyCode],
+    queryKey: [...QUERY_KEY, masterOnly ? "master" : tenantId ?? null, currencyCode],
     queryFn: async () => {
       let query = supabase
         .from("pricing_rules")
@@ -23,7 +28,9 @@ export function usePricingRules(tenantId?: string | null, currencyCode: string =
         .eq("currency_code", currencyCode)
         .order("sort_order", { ascending: true });
 
-      if (tenantId) {
+      if (masterOnly) {
+        query = query.is("tenant_id", null);
+      } else if (tenantId) {
         query = query.or(`tenant_id.eq.${tenantId},tenant_id.is.null`);
       }
 
