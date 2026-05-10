@@ -209,10 +209,14 @@ const AdminProducts = () => {
                             <Tabs defaultValue="options" className="w-full">
                               <TabsList className="mb-3">
                                 <TabsTrigger value="options">Options</TabsTrigger>
-                                <TabsTrigger value="pricing">Pricing</TabsTrigger>
+                                <TabsTrigger value="recipe">Recipe</TabsTrigger>
+                                <TabsTrigger value="pricing">Pricing (legacy)</TabsTrigger>
                               </TabsList>
                               <TabsContent value="options">
                                 <ProductOptionsEditor productFamilyId={f.id} />
+                              </TabsContent>
+                              <TabsContent value="recipe">
+                                <ProductRecipeTab productFamilyId={f.id} />
                               </TabsContent>
                               <TabsContent value="pricing">
                                 <ProductPricingTab productFamilyId={f.id} productFamilyName={f.name} />
