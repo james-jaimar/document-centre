@@ -424,11 +424,19 @@ export default function PhotoPrintsBuilder() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {PHOTO_PRINT_SIZES.map((s) => (
-                <SelectItem key={s.slug} value={s.slug}>
-                  {s.label} — {formatPrice(s.unit_price, activeCurrency)}
-                </SelectItem>
-              ))}
+              {PHOTO_PRINT_SIZES.map((s) => {
+                const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === photoSpec.border_slug);
+                const price = resolvePhotoPrintPrice(photoRateCard, {
+                  size_slug: s.slug,
+                  finish: photoSpec.finish_slug,
+                  border_mm: border?.border_mm ?? 0,
+                });
+                return (
+                  <SelectItem key={s.slug} value={s.slug}>
+                    {s.label} — {formatPrice(price, activeCurrency)}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>
