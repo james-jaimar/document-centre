@@ -10,6 +10,7 @@ import ProductFamilyForm from "@/components/admin/ProductFamilyForm";
 import ProductOptionsEditor from "@/components/admin/ProductOptionsEditor";
 import ProductPricingTab from "@/components/admin/ProductPricingTab";
 import ProductRecipeTab from "@/components/admin/ProductRecipeTab";
+import { seedDefaultRecipes } from "@/lib/seedDefaultRecipes";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
