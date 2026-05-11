@@ -8,7 +8,12 @@ export interface ProductRecipeFinishingItem {
   variants?: string[];
 }
 
+/** Which pricing engine drives this product family. */
+export type ProductRecipeEngine = "click_charges" | "photo_prints";
+
 export interface ProductRecipe {
+  /** Defaults to "click_charges" when omitted (backwards compat). */
+  engine?: ProductRecipeEngine;
   uses_click_charges?: boolean;
   default_paper_code?: string | null;
   available_papers?: string[];
@@ -16,6 +21,7 @@ export interface ProductRecipe {
 }
 
 export const EMPTY_RECIPE: ProductRecipe = {
+  engine: "click_charges",
   uses_click_charges: true,
   default_paper_code: null,
   available_papers: [],
