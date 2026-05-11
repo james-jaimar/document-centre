@@ -141,7 +141,9 @@ export async function seedDefaultRecipes(): Promise<SeedResult> {
   if (recErr) throw recErr;
 
   const existingIds = new Set(
-    ((existing ?? []) as { product_family_id: string }[]).map((r) => r.product_family_id),
+    (((existing ?? []) as unknown) as { product_family_id: string }[]).map(
+      (r) => r.product_family_id,
+    ),
   );
 
   const created: string[] = [];
@@ -154,8 +156,8 @@ export async function seedDefaultRecipes(): Promise<SeedResult> {
     }
     const recipe = deriveRecipe(
       f.slug,
-      (papers ?? []) as PaperRow[],
-      (finishing ?? []) as FinishingRow[],
+      ((papers ?? []) as unknown) as PaperRow[],
+      ((finishing ?? []) as unknown) as FinishingRow[],
     );
     const { error } = await supabase
       .from("product_recipes" as any)
