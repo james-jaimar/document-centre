@@ -244,6 +244,8 @@ export default function ProductRecipeTab({ productFamilyId }: Props) {
           )}
         </CardContent>
       </Card>
+        </>
+      )}
 
       <div className="flex justify-end">
         <Button onClick={onSave} disabled={upsert.isPending}>
