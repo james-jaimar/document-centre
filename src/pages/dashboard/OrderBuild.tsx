@@ -38,6 +38,7 @@ import {
   useRateCardClicks,
   useRateCardPapers,
   useRateCardFinishing,
+  useRateCardPhotoPrints,
 } from "@/hooks/useRateCard";
 import { formatPrice } from "@/lib/formatCurrency";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
@@ -143,11 +144,12 @@ export default function OrderBuild() {
   const { data: rcClicks = [] } = useRateCardClicks(rcArgs);
   const { data: rcPapers = [] } = useRateCardPapers(rcArgs);
   const { data: rcFinishing = [] } = useRateCardFinishing(rcArgs);
+  const { data: rcPhotoPrints = [] } = useRateCardPhotoPrints(rcArgs);
   const rateCard = useMemo(
-    () => ({ clicks: rcClicks, papers: rcPapers, finishing: rcFinishing }),
-    [rcClicks, rcPapers, rcFinishing],
+    () => ({ clicks: rcClicks, papers: rcPapers, finishing: rcFinishing, photoPrints: rcPhotoPrints }),
+    [rcClicks, rcPapers, rcFinishing, rcPhotoPrints],
   );
-  const useNewEngine = !!recipe && rcClicks.length > 0;
+  const useNewEngine = !!recipe && (rcClicks.length > 0 || rcPhotoPrints.length > 0);
 
   // Fetch pricing rules for this product family in the active currency.
   const { data: pricingRules = [] } = useQuery({

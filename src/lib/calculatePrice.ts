@@ -224,13 +224,16 @@ import type {
   RateCardClick,
   RateCardPaper,
   RateCardFinishing,
+  RateCardPhotoPrint,
 } from "@/hooks/useRateCard";
 import type { ProductRecipe } from "@/hooks/useProductRecipe";
+import { resolvePhotoPrintPrice } from "@/lib/photoPrints/pricing";
 
 export interface RateCardBundle {
   clicks: RateCardClick[];
   papers: RateCardPaper[];
   finishing: RateCardFinishing[];
+  photoPrints?: RateCardPhotoPrint[];
 }
 
 /**
@@ -240,20 +243,55 @@ export interface RateCardBundle {
  *
  * Conventions on `spec.selected_options` for the new engine:
  *   - "paper":     paper code (e.g. "80gsm-bond-a4")
- *   - "size":      "A4" | "A3"  (falls back to "A4")
+ *   - "size":      free-text size token (A4, A3, SRA3, A5, …); falls back to "A4"
  *   - "finishing": comma-separated list of finishing codes the customer chose
  *                  on top of the recipe's `required` items.
+ *
+ * Photo-prints engine reads:
+ *   - "Print Size" / "size_slug"   → matches rate_card_photo_prints.size_slug
+ *   - "Finish"     / "finish"      → gloss | matte | lustre
+ *   - "Border"     / "border_slug" → border slug from PHOTO_BORDER_OPTIONS
  */
 export function calculatePriceFromRateCard(
   spec: ItemSpec,
   recipe: ProductRecipe,
-  rc: RateCardBundle
+  rc: RateCardBundle,
 ): PriceBreakdown {
+  // ---- Photo Prints branch ------------------------------------------------
+  if (recipe.engine === "photo_prints") {
+    const opts = spec.selected_options ?? {};
+    const sizeSlug = String(opts["Print Size"] ?? opts.size_slug ?? "4x6");
+    const finish = String(opts["Finish"] ?? opts.finish ?? "gloss");
+    const borderSlug = String(opts["Border"] ?? opts.border_slug ?? "none");
+    const borderMm = borderSlug === "white_3mm" ? 3 : 0;
+
+    const unit = resolvePhotoPrintPrice(rc.photoPrints ?? [], {
+      size_slug: sizeSlug,
+      finish,
+      border_mm: borderMm,
+    });
+
+    const lines: PriceLineItem[] = [
+      {
+        label: `Photo print ${sizeSlug} ${finish}${borderMm ? ` +${borderMm}mm border` : ""}`,
+        type: "per_unit",
+        unit_amount: unit,
+        multiplier: 1,
+        total: unit,
+      },
+    ];
+    return {
+      lines,
+      subtotal_per_unit: unit,
+      quantity: spec.quantity,
+      total: unit * spec.quantity,
+    };
+  }
+
+  // ---- Click-charges (printed pages) branch -------------------------------
   const lines: PriceLineItem[] = [];
 
-  const size = ((spec.selected_options.size as "A4" | "A3") || "A4") as
-    | "A4"
-    | "A3";
+  const size = String(spec.selected_options.size ?? "A4");
   const colour = spec.is_color ? "colour" : "mono";
   const sides = spec.is_duplex ? "duplex" : "simplex";
 
