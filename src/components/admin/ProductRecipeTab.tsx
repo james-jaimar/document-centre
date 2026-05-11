@@ -137,8 +137,7 @@ export default function ProductRecipeTab({ productFamilyId }: Props) {
       </Card>
 
       {engine === "click_charges" && (
-        <></>
-      )}
+        <>
 
       <Card>
         <CardHeader className="pb-3">
