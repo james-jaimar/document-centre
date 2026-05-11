@@ -93,24 +93,52 @@ export default function ProductRecipeTab({ productFamilyId }: Props) {
   const selectedFinishing = new Set((recipe.finishing ?? []).map((f) => f.code));
   const selectedPapers = new Set(recipe.available_papers ?? []);
 
+  const engine = recipe.engine ?? "click_charges";
+
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Print engine</CardTitle>
+          <CardTitle className="text-base">Pricing engine</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox
-              checked={recipe.uses_click_charges !== false}
-              onCheckedChange={(v) =>
-                setRecipe({ ...recipe, uses_click_charges: !!v })
-              }
-            />
-            Uses click charges (printed pages)
-          </label>
+          <Select
+            value={engine}
+            onValueChange={(v) =>
+              setRecipe({ ...recipe, engine: v as "click_charges" | "photo_prints" })
+            }
+          >
+            <SelectTrigger className="w-full md:w-72">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="click_charges">Click charges (printed pages)</SelectItem>
+              <SelectItem value="photo_prints">Photo prints (per-print rate card)</SelectItem>
+            </SelectContent>
+          </Select>
+          {engine === "click_charges" && (
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={recipe.uses_click_charges !== false}
+                onCheckedChange={(v) =>
+                  setRecipe({ ...recipe, uses_click_charges: !!v })
+                }
+              />
+              Charge per printed page (click charges)
+            </label>
+          )}
+          {engine === "photo_prints" && (
+            <p className="text-xs text-muted-foreground">
+              Pricing is read from the <strong>Photo Prints</strong> tab in Master Pricing.
+              Paper &amp; finishing pickers below are not used for this engine.
+            </p>
+          )}
         </CardContent>
       </Card>
+
+      {engine === "click_charges" && (
+        <></>
+      )}
 
       <Card>
         <CardHeader className="pb-3">
