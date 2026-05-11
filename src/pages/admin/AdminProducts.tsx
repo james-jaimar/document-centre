@@ -45,6 +45,26 @@ const AdminProducts = () => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [seedingAll, setSeedingAll] = useState(false);
+  const [seedingRecipes, setSeedingRecipes] = useState(false);
+
+  async function handleSeedRecipes() {
+    setSeedingRecipes(true);
+    try {
+      const result = await seedDefaultRecipes();
+      if (result.created.length === 0) {
+        toast({ title: "All families already have recipes", description: `Skipped ${result.skipped.length}` });
+      } else {
+        toast({
+          title: "Default recipes created",
+          description: `Seeded ${result.created.length} families. Skipped ${result.skipped.length}.`,
+        });
+      }
+    } catch (e: any) {
+      toast({ title: "Seed failed", description: e.message, variant: "destructive" });
+    } finally {
+      setSeedingRecipes(false);
+    }
+  }
 
   function handleCreate() {
     setEditingFamily(null);
