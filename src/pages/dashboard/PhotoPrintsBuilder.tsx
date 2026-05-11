@@ -286,13 +286,24 @@ export default function PhotoPrintsBuilder() {
   const [editorPhotoId, setEditorPhotoId] = useState<string | null>(null);
   const editorPhoto = photoSpec.photos.find((p) => p.id === editorPhotoId) ?? null;
 
+  const { data: photoRateCard = [] } = useRateCardPhotoPrints({
+    scope: "tenant",
+    tenantId: tenantId ?? undefined,
+  });
+
   const totals = useMemo(() => {
     const size = getPhotoPrintSize(photoSpec.print_size_slug);
     const totalPhotos = photoSpec.photos.length;
     const totalPrints = photoSpec.photos.reduce((s, p) => s + p.quantity, 0);
-    const totalPrice = totalPrints * size.unit_price;
-    return { size, totalPhotos, totalPrints, totalPrice };
-  }, [photoSpec]);
+    const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === photoSpec.border_slug);
+    const unitPrice = resolvePhotoPrintPrice(photoRateCard, {
+      size_slug: photoSpec.print_size_slug,
+      finish: photoSpec.finish_slug,
+      border_mm: border?.border_mm ?? 0,
+    });
+    const totalPrice = totalPrints * unitPrice;
+    return { size, totalPhotos, totalPrints, totalPrice, unitPrice };
+  }, [photoSpec, photoRateCard]);
 
   const [showCartDialog, setShowCartDialog] = useState(false);
   const [cartReference, setCartReference] = useState("");
@@ -340,9 +351,9 @@ export default function PhotoPrintsBuilder() {
         orderItemId: orderItem.id,
         draftOrderId: order.id,
         title: ref,
-        unitPrice: totals.size.unit_price,
+        unitPrice: totals.unitPrice,
         quantity: totalQty,
-        totalPrice: totalQty * totals.size.unit_price,
+        totalPrice: totalQty * totals.unitPrice,
         spec: {
           page_count: photosWithCrops.length,
           quantity: totalQty,
