@@ -1,75 +1,80 @@
 ## Goal
 
-Finish the rate card so it's fully editable everywhere, and add Photo Prints as a first-class pricing surface that mirrors the rest (master + tenant clone).
+Rate Card → Recipe → Product. Every priced product reads from `rate_card_*` tables via its `product_recipes.recipe`. No more legacy `pricing_rules`/`product_price_overrides` UI surface. Photo Prints reads from `rate_card_photo_prints`.
 
-## 1. Click Charges tab — full CRUD + cost/active
+## 1. Auto-seed default recipes
 
-Today: 8 fixed rows (A4/A3 × mono/colour × simplex/duplex), only `sell_price` editable.
+New helper `src/lib/seedDefaultRecipes.ts`:
 
-Changes:
-- Turn into a dynamic table. **Add row** dialog lets you pick `size` (free text — A4, A3, SRA3, A5, …), `colour`, `sides`. Uniqueness enforced per `(scope, tenant, size, colour, sides)`.
-- Inline-edit `sell_price` and `cost_price` per row.
-- `is_active` toggle per row.
-- Row delete (with confirm).
-- The 8 seeded rows stay; you can add SRA3, A5, etc.
+- Loads master rate-card papers + finishing once.
+- For every active master `product_families` row that has **no** `product_recipes` entry, derives a sensible default and inserts it.
+- Heuristics keyed off `slug`:
+  - `bound-document` / `notebook` → `uses_click_charges: true`, all bond+silk papers, finishing = bind/comb/wire/spiral/saddle-stitch + lamination cover.
+  - `loose-sheets` / `flyers` / `letterheads` → click on, all bond+silk papers, finishing = trim, optional lamination.
+  - `posters` → click on (large-format papers if present, else A3), no binding.
+  - `business-cards` → click on, 350gsm+ papers, finishing = corner round / lamination.
+  - `brochures` → click on, silk papers, finishing = fold + trim.
+  - `photo-prints` → `uses_click_charges: false`, recipe just tags `engine: "photo_prints"` (see §3).
+  - Unknown slugs → click on + every active paper, no finishing required.
+- Idempotent: skips families already with a recipe.
 
-DB: `rate_card_clicks.size` is already free text — no schema change needed. Add an `is_active` default and surface `cost_price` (column already exists). Drop the implicit "must be A4 or A3" check if one exists.
+Surfaced as a button on `AdminProducts.tsx` ("Seed default recipes") next to Seed All Products. Called once automatically when a freshly-seeded family is created.
 
-## 2. Photo Prints — new tab + new table
+## 2. Extend the rate-card calculator
 
-New table `rate_card_photo_prints` mirroring the others:
+`src/lib/calculatePrice.ts → calculatePriceFromRateCard`:
 
-| col | notes |
-|---|---|
-| `id`, `scope_type`, `tenant_id` | same scoping pattern |
-| `code` | e.g. `4x6-gloss`, unique per scope |
-| `label` | "4×6\" Gloss" |
-| `size_slug` | `4x6`, `5x7`, `6x8`, `8x10`, `a4`, custom |
-| `width_mm`, `height_mm` | physical size |
-| `finish` | `gloss` \| `matte` \| `lustre` (free text) |
-| `border_mm` | 0 = no border |
-| `sell_price`, `cost_price` | per print |
-| `min_quantity` | optional, default 1 |
-| `sort_order`, `is_active` | |
+- Read `size` from `spec.selected_options.size` with broader fallback (`A4|A3|SRA3|A5|A6|DL|BC`). Match on free-text size now that `rate_card_clicks.size` is text.
+- Add a **Photo Prints branch** when `recipe.engine === "photo_prints"`:
+  - Read `size_slug`, `finish`, `border_mm` from spec.
+  - Look up matching `rate_card_photo_prints` row; multiply by `quantity`.
+  - Skip click/paper/finishing entirely.
+- Extend `RateCardBundle` with `photoPrints: RateCardPhotoPrint[]`.
 
-RLS: same pattern as the other rate-card tables (master read-all, platform admin writes master, tenant admin writes own clone). Extend `clone_master_rate_card_to_tenant()` to copy these rows too.
+## 3. Photo Prints lookup module
 
-Seed master with the existing five sizes × {gloss, matte} × {no border, 3mm white border} = ~20 rows, prices from `src/lib/photoPrints/sizes.ts` as the starting point.
+`src/lib/photoPrints/pricing.ts` (new):
 
-## 3. Editor UI
+- `function resolvePhotoPrintPrice(rows, { size_slug, finish, border_mm }): number | null` — matches against rate-card rows; falls back to `PHOTO_PRINT_SIZES[*].unit_price` if no match (so dev keeps working before tenant clones).
+- `PhotoPrintsBuilder.tsx` and `PhotoPrintsAdminGallery.tsx` swap their `size.unit_price` reads for this lookup, fed by `useRateCardPhotoPrints({ scope: "tenant", tenantId })`.
+- `OrderBuild` already feeds `recipe + rateCard` to `PriceSummary`; nothing to change there beyond passing `photoPrints` rows through the bundle.
 
-`RateCardEditor.tsx` gets a 4th tab **Photo Prints** with the same table + dialog pattern as Papers/Finishing:
-- Columns: Code · Label · Size · Finish · Border · Price · Active · 🗑
-- Add/Edit dialog with size preset picker (4×6, 5×7, 6×8, 8×10, A4, Custom) + finish + border + price.
+## 4. Recipe tab improvements
 
-Clicks tab gets:
-- "Add row" button (size / colour / sides / sell / cost).
-- Cost price column.
-- Active switch column.
-- Delete button per row.
+`ProductRecipeTab.tsx`:
 
-## 4. Hooks & types
+- Add an "Engine" radio at the top: **Click charges** (default) / **Photo prints**.
+- When engine = `photo_prints`, hide the papers + finishing pickers, show a read-only note linking to Master Pricing → Photo Prints.
+- Persist as `recipe.engine: "click_charges" | "photo_prints"`.
 
-`src/hooks/useRateCard.ts`:
-- New types `RateCardPhotoPrint`, `useRateCardPhotoPrints`, `useUpsertRateCardPhotoPrint`, `useDeleteRateCardPhotoPrint`.
-- New `useInsertRateCardClick`, `useDeleteRateCardClick`, extend `useUpdateRateCardClick` to take `cost_price` and `is_active`.
+## 5. Remove legacy pricing tab
 
-## 5. Photo Prints recipe wiring (light touch, kept additive)
+- Delete `src/components/admin/ProductPricingTab.tsx`.
+- Drop the `<TabsTrigger value="pricing">` and `<TabsContent>` block from `AdminProducts.tsx`. Remaining tabs: Options, Recipe.
+- Delete unreferenced files if any: `useProductPriceOverrides.ts` is still consumed by the legacy calculator path — keep the hook + table, but stop surfacing it in Admin UI.
+- Keep `calculateItemPrice` (legacy fn) only as a fallback for product families without a recipe yet; once auto-seed runs, every family has one and the legacy branch is dormant. We do **not** delete the legacy fn this pass to avoid breaking carts that referenced it.
 
-`PhotoPrintsBuilder` / pricing currently uses the hardcoded `PHOTO_PRINT_SIZES`. We add a thin lookup so when a tenant rate card has matching `size_slug + finish + border_mm`, the price comes from the rate card. Hardcoded list stays as a fallback so nothing breaks during rollout.
+## 6. Files
 
-(Full recipe-driven rewrite of the photo prints builder UI is **out of scope** for this pass — flagged for a follow-up.)
+**New**
+- `src/lib/seedDefaultRecipes.ts`
+- `src/lib/photoPrints/pricing.ts`
 
-## 6. Out of scope
+**Edited**
+- `src/lib/calculatePrice.ts` — photo-prints branch + bundle extension + free-text size matching
+- `src/hooks/useProductRecipe.ts` — add `engine` field to `ProductRecipe` interface
+- `src/components/admin/ProductRecipeTab.tsx` — engine selector + conditional UI
+- `src/pages/admin/AdminProducts.tsx` — remove Pricing tab, add "Seed default recipes" button
+- `src/pages/dashboard/OrderBuild.tsx` — include `useRateCardPhotoPrints` in the rate-card bundle
+- `src/pages/dashboard/PhotoPrintsBuilder.tsx` — read price via `resolvePhotoPrintPrice`
+- `src/components/orders/detail/PhotoPrintsAdminGallery.tsx` — same
 
-- Branch-level photo print overrides
-- Volume-discount tiers on photo prints
-- Removing the legacy `PHOTO_PRINT_SIZES` constants
+**Deleted**
+- `src/components/admin/ProductPricingTab.tsx`
 
-## Files
+## Out of scope
 
-- migration: new `rate_card_photo_prints` table + RLS + seed + extend clone fn
-- `src/hooks/useRateCard.ts` — new hooks, click CRUD extras
-- `src/components/pricing/RateCardEditor.tsx` — new tab, click tab CRUD
-- `src/lib/photoPrints/pricing.ts` (new) — small lookup that prefers rate-card price
-- `src/components/order/PriceSummary.tsx` / `PhotoPrintsBuilder` — call the new lookup
+- Branch-level photo-print overrides.
+- Quantity-tier discounts on the rate card.
+- Removing `PHOTO_PRINT_SIZES` constants (still used for crop aspect / DPI thresholds).
+- Removing `pricing_rules` / `product_price_overrides` tables and their hooks.
