@@ -2747,7 +2747,7 @@ export type Database = {
           scope_type: Database["public"]["Enums"]["rate_card_scope"]
           sell_price: number
           sides: Database["public"]["Enums"]["click_sides"]
-          size: Database["public"]["Enums"]["click_size"]
+          size: string
           tenant_id: string | null
           updated_at: string
         }
@@ -2760,7 +2760,7 @@ export type Database = {
           scope_type: Database["public"]["Enums"]["rate_card_scope"]
           sell_price?: number
           sides: Database["public"]["Enums"]["click_sides"]
-          size: Database["public"]["Enums"]["click_size"]
+          size: string
           tenant_id?: string | null
           updated_at?: string
         }
@@ -2773,7 +2773,7 @@ export type Database = {
           scope_type?: Database["public"]["Enums"]["rate_card_scope"]
           sell_price?: number
           sides?: Database["public"]["Enums"]["click_sides"]
-          size?: Database["public"]["Enums"]["click_size"]
+          size?: string
           tenant_id?: string | null
           updated_at?: string
         }
@@ -2799,7 +2799,7 @@ export type Database = {
           pricing_basis: Database["public"]["Enums"]["finishing_basis"]
           scope_type: Database["public"]["Enums"]["rate_card_scope"]
           sell_price: number
-          size: Database["public"]["Enums"]["click_size"] | null
+          size: string | null
           sort_order: number
           tenant_id: string | null
           updated_at: string
@@ -2816,7 +2816,7 @@ export type Database = {
           pricing_basis: Database["public"]["Enums"]["finishing_basis"]
           scope_type: Database["public"]["Enums"]["rate_card_scope"]
           sell_price?: number
-          size?: Database["public"]["Enums"]["click_size"] | null
+          size?: string | null
           sort_order?: number
           tenant_id?: string | null
           updated_at?: string
@@ -2833,7 +2833,7 @@ export type Database = {
           pricing_basis?: Database["public"]["Enums"]["finishing_basis"]
           scope_type?: Database["public"]["Enums"]["rate_card_scope"]
           sell_price?: number
-          size?: Database["public"]["Enums"]["click_size"] | null
+          size?: string | null
           sort_order?: number
           tenant_id?: string | null
           updated_at?: string
@@ -2860,7 +2860,7 @@ export type Database = {
           label: string
           scope_type: Database["public"]["Enums"]["rate_card_scope"]
           sell_price: number
-          size: Database["public"]["Enums"]["click_size"]
+          size: string
           sort_order: number
           tenant_id: string | null
           updated_at: string
@@ -2876,7 +2876,7 @@ export type Database = {
           label: string
           scope_type: Database["public"]["Enums"]["rate_card_scope"]
           sell_price?: number
-          size: Database["public"]["Enums"]["click_size"]
+          size: string
           sort_order?: number
           tenant_id?: string | null
           updated_at?: string
@@ -2892,7 +2892,7 @@ export type Database = {
           label?: string
           scope_type?: Database["public"]["Enums"]["rate_card_scope"]
           sell_price?: number
-          size?: Database["public"]["Enums"]["click_size"]
+          size?: string
           sort_order?: number
           tenant_id?: string | null
           updated_at?: string
@@ -2901,6 +2901,74 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "rate_card_papers_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rate_card_photo_prints: {
+        Row: {
+          border_mm: number
+          code: string
+          cost_price: number
+          created_at: string
+          finish: string
+          height_mm: number
+          id: string
+          is_active: boolean
+          label: string
+          min_quantity: number
+          scope_type: Database["public"]["Enums"]["rate_card_scope"]
+          sell_price: number
+          size_slug: string
+          sort_order: number
+          tenant_id: string | null
+          updated_at: string
+          width_mm: number
+        }
+        Insert: {
+          border_mm?: number
+          code: string
+          cost_price?: number
+          created_at?: string
+          finish?: string
+          height_mm: number
+          id?: string
+          is_active?: boolean
+          label: string
+          min_quantity?: number
+          scope_type: Database["public"]["Enums"]["rate_card_scope"]
+          sell_price?: number
+          size_slug: string
+          sort_order?: number
+          tenant_id?: string | null
+          updated_at?: string
+          width_mm: number
+        }
+        Update: {
+          border_mm?: number
+          code?: string
+          cost_price?: number
+          created_at?: string
+          finish?: string
+          height_mm?: number
+          id?: string
+          is_active?: boolean
+          label?: string
+          min_quantity?: number
+          scope_type?: Database["public"]["Enums"]["rate_card_scope"]
+          sell_price?: number
+          size_slug?: string
+          sort_order?: number
+          tenant_id?: string | null
+          updated_at?: string
+          width_mm?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rate_card_photo_prints_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"

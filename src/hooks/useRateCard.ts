@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 export type RateCardScope = "master" | "tenant";
-export type ClickSize = "A4" | "A3";
+export type ClickSize = string; // free text — A4, A3, SRA3, A5, etc.
 export type ClickColour = "mono" | "colour";
 export type ClickSides = "simplex" | "duplex";
 export type FinishingBasis =
@@ -33,7 +33,7 @@ export interface RateCardPaper {
   label: string;
   weight_gsm: number;
   finish: string;
-  size: ClickSize;
+  size: string;
   sell_price: number;
   cost_price: number;
   sort_order: number;
@@ -49,9 +49,27 @@ export interface RateCardFinishing {
   category: string;
   pricing_basis: FinishingBasis;
   variant: string | null;
-  size: ClickSize | null;
+  size: string | null;
   sell_price: number;
   cost_price: number;
+  sort_order: number;
+  is_active: boolean;
+}
+
+export interface RateCardPhotoPrint {
+  id: string;
+  scope_type: RateCardScope;
+  tenant_id: string | null;
+  code: string;
+  label: string;
+  size_slug: string;
+  width_mm: number;
+  height_mm: number;
+  finish: string;
+  border_mm: number;
+  sell_price: number;
+  cost_price: number;
+  min_quantity: number;
   sort_order: number;
   is_active: boolean;
 }
@@ -99,12 +117,39 @@ export function useRateCardClicks(args: ScopeArgs) {
 export function useUpdateRateCardClick() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { id: string; sell_price?: number; cost_price?: number; is_active?: boolean }) => {
+    mutationFn: async (input: {
+      id: string;
+      sell_price?: number;
+      cost_price?: number;
+      is_active?: boolean;
+    }) => {
       const { id, ...rest } = input;
       const { error } = await supabase
         .from("rate_card_clicks" as any)
         .update(rest)
         .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "clicks"] }),
+  });
+}
+
+export function useInsertRateCardClick() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: Partial<RateCardClick> & { scope_type: RateCardScope }) => {
+      const { error } = await supabase.from("rate_card_clicks" as any).insert(input as any);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "clicks"] }),
+  });
+}
+
+export function useDeleteRateCardClick() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("rate_card_clicks" as any).delete().eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "clicks"] }),
@@ -200,6 +245,58 @@ export function useDeleteRateCardFinishing() {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "finishing"] }),
+  });
+}
+
+// ----- Photo Prints -----
+
+export function useRateCardPhotoPrints(args: ScopeArgs) {
+  return useQuery({
+    queryKey: KEY("photo_prints", args),
+    enabled: args.scope === "master" || !!args.tenantId,
+    queryFn: async () => {
+      const q = scopeFilter(
+        supabase.from("rate_card_photo_prints" as any).select("*"),
+        args,
+      );
+      const { data, error } = await q.order("sort_order");
+      if (error) throw error;
+      return (data ?? []) as unknown as RateCardPhotoPrint[];
+    },
+  });
+}
+
+export function useUpsertRateCardPhotoPrint() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: Partial<RateCardPhotoPrint> & { scope_type: RateCardScope }) => {
+      if (input.id) {
+        const { id, ...rest } = input;
+        const { error } = await supabase
+          .from("rate_card_photo_prints" as any)
+          .update(rest)
+          .eq("id", id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("rate_card_photo_prints" as any).insert(input);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "photo_prints"] }),
+  });
+}
+
+export function useDeleteRateCardPhotoPrint() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("rate_card_photo_prints" as any)
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "photo_prints"] }),
   });
 }
 
