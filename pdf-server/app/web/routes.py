@@ -24,6 +24,7 @@ from app.schemas.assets import (
     RenderPagesRequest,
     PrepareForProductRequest,
     PadPagesRequest,
+    JobArtefactRequest,
 )
 from app.services.assets import asset_repo
 from app.services.jobs import job_repo
@@ -52,6 +53,11 @@ from app.tasks.operation_tasks import (
     print_ready,
     prepare_for_product,
     pad_pages_pdf,
+)
+from app.tasks.production_tasks import (
+    assemble_print_ready_for_job,
+    assemble_imposed_sheet_for_job,
+    render_job_ticket_for_job,
 )
 
 api_router = APIRouter()
