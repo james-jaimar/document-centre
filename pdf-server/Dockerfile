@@ -14,6 +14,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     xz-utils \
     fonts-dejavu-core \
+    fonts-liberation \
+    fonts-noto \
+    fonts-noto-cjk \
+    fonts-symbola \
     && rm -rf /var/lib/apt/lists/*
 
 # pdfcpu is optional for some imposition helpers. Keep build resilient if the
