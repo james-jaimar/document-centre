@@ -1699,6 +1699,62 @@ export type Database = {
           },
         ]
       }
+      order_item_production: {
+        Row: {
+          bound_at: string | null
+          created_at: string
+          finished_at: string | null
+          id: string
+          imposed_pdf_path: string | null
+          job_ticket_pdf_path: string | null
+          notes: string | null
+          operator_id: string | null
+          order_item_id: string
+          print_ready_pdf_path: string | null
+          printed_at: string | null
+          status: Database["public"]["Enums"]["production_status"]
+          updated_at: string
+        }
+        Insert: {
+          bound_at?: string | null
+          created_at?: string
+          finished_at?: string | null
+          id?: string
+          imposed_pdf_path?: string | null
+          job_ticket_pdf_path?: string | null
+          notes?: string | null
+          operator_id?: string | null
+          order_item_id: string
+          print_ready_pdf_path?: string | null
+          printed_at?: string | null
+          status?: Database["public"]["Enums"]["production_status"]
+          updated_at?: string
+        }
+        Update: {
+          bound_at?: string | null
+          created_at?: string
+          finished_at?: string | null
+          id?: string
+          imposed_pdf_path?: string | null
+          job_ticket_pdf_path?: string | null
+          notes?: string | null
+          operator_id?: string | null
+          order_item_id?: string
+          print_ready_pdf_path?: string | null
+          printed_at?: string | null
+          status?: Database["public"]["Enums"]["production_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_item_production_order_item_id_fkey"
+            columns: ["order_item_id"]
+            isOneToOne: true
+            referencedRelation: "order_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_items: {
         Row: {
           build_status: Database["public"]["Enums"]["build_status"]
@@ -3780,6 +3836,7 @@ export type Database = {
         Returns: undefined
       }
       sync_order_amounts: { Args: { p_order_id: string }; Returns: undefined }
+      tenant_id_for_order_item: { Args: { _item_id: string }; Returns: string }
       user_branch_id: { Args: never; Returns: string }
       user_can_read_order: {
         Args: {
@@ -3841,6 +3898,14 @@ export type Database = {
         | "dispatched"
         | "delivered"
         | "cancelled"
+      production_status:
+        | "pending"
+        | "ready_to_print"
+        | "printing"
+        | "printed"
+        | "binding"
+        | "finishing"
+        | "done"
       rate_card_scope: "master" | "tenant"
       section_type: "body" | "front_cover" | "back_cover" | "insert" | "tab"
     }
@@ -4010,6 +4075,15 @@ export const Constants = {
         "dispatched",
         "delivered",
         "cancelled",
+      ],
+      production_status: [
+        "pending",
+        "ready_to_print",
+        "printing",
+        "printed",
+        "binding",
+        "finishing",
+        "done",
       ],
       rate_card_scope: ["master", "tenant"],
       section_type: ["body", "front_cover", "back_cover", "insert", "tab"],
