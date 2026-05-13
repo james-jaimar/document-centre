@@ -55,6 +55,7 @@ import AdminUsers from "@/pages/admin/AdminUsers";
 import AdminSettings from "@/pages/admin/AdminSettings";
 import AdminOrders from "@/pages/admin/AdminOrders";
 import AdminOrderDetail from "@/pages/admin/AdminOrderDetail";
+import AdminProductionQueue from "@/pages/admin/AdminProductionQueue";
 import AdminBranchDetail from "@/pages/admin/AdminBranchDetail";
 import AdminCustomers from "@/pages/admin/AdminCustomers";
 import AdminCustomerDetail from "@/pages/admin/AdminCustomerDetail";
