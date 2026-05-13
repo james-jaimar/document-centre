@@ -185,6 +185,16 @@ class PrepareForProductRequest(BaseModel):
     ] = "relative_colorimetric"
 
 
+class JobArtefactRequest(BaseModel):
+    """Production-pipeline request keyed off an `order_jobs.id`.
+
+    The pdf-server resolves all inputs (source PDFs, product spec, tenant
+    branding) directly from Supabase using its service-role credentials,
+    so the caller only needs to supply the job id.
+    """
+    job_id: UUID
+
+
 class PadPagesRequest(BaseModel):
     """Pad a PDF with blank pages so total count is divisible by `multiple`.
 

@@ -1,14 +1,16 @@
-// Production PDF orchestrator
+// Production PDF orchestrator (thin proxy).
 //
-// Three actions:
-//   - assemble : merge the job's section PDFs into a single print-ready PDF,
-//                save the path to order_jobs.print_ready_pdf_path
-//   - impose   : (placeholder) reserve a slot for sheet imposition once the
-//                pdf-server `assemble-print-ready` op is in place
-//   - ticket   : generate a one-page job ticket (placeholder)
+// All real PDF work happens on the pdf-server (VPS) where Ghostscript,
+// pikepdf, qpdf, ICC profiles, fonts and ReportLab live. This function
+// only:
+//   1. Authorises the caller (tenant staff or platform admin)
+//   2. Forwards { job_id } to the matching pdf-server endpoint
+//   3. Polls the pdf-server job until it completes
+//   4. Returns the resulting storage path
 //
-// Calls the Document Centre API (pdf-server) via fetch using VPS_PDF_API_URL +
-// VPS_PDF_API_KEY, then writes the resulting storage path back to order_jobs.
+// The pdf-server itself writes the path back to order_jobs.{column} via
+// service-role Supabase access, so this function doesn't need to update
+// the DB on success.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 
@@ -23,6 +25,18 @@ const json = (body: unknown, status = 200) =>
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+
+const ENDPOINTS: Record<string, string> = {
+  assemble: "/v1/operations/assemble-print-ready",
+  impose: "/v1/operations/assemble-imposed-sheet",
+  ticket: "/v1/operations/render-job-ticket",
+};
+
+const COLUMN: Record<string, string> = {
+  assemble: "print_ready_pdf_path",
+  impose: "imposed_pdf_path",
+  ticket: "job_ticket_pdf_path",
+};
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -43,20 +57,16 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
     const { action, job_id } = body ?? {};
-    if (!job_id || !["assemble", "impose", "ticket"].includes(action)) {
-      return json({ error: "Invalid request" }, 400);
-    }
+    if (!job_id || !ENDPOINTS[action]) return json({ error: "Invalid request" }, 400);
 
-    // Service-role client for cross-table ops + RLS bypass
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Authorise: caller must be staff (owner/admin/production) of the job's tenant
     const { data: job, error: jobErr } = await admin
       .from("order_jobs")
-      .select("id, order_id, tenant_id, app_id, job_number, product_name, quantity")
+      .select("id, tenant_id")
       .eq("id", job_id)
       .single();
     if (jobErr || !job) return json({ error: "Job not found" }, 404);
@@ -70,7 +80,6 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (!membership || !["owner", "admin", "production", "sales"].includes(membership.role)) {
-      // Allow platform admins
       const { data: roles } = await admin
         .from("user_roles")
         .select("role")
@@ -79,109 +88,55 @@ Deno.serve(async (req) => {
       if (!isPlatformAdmin) return json({ error: "Forbidden" }, 403);
     }
 
-    if (action === "assemble") {
-      return await assemble(admin, job);
+    const apiUrl = Deno.env.get("VPS_PDF_API_URL");
+    const apiKey = Deno.env.get("VPS_PDF_API_KEY");
+    if (!apiUrl || !apiKey) return json({ error: "PDF API not configured" }, 500);
+
+    const dispatchRes = await fetch(`${apiUrl}${ENDPOINTS[action]}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+      body: JSON.stringify({ job_id }),
+    });
+    if (!dispatchRes.ok) {
+      const txt = await dispatchRes.text();
+      return json({ error: `pdf-server dispatch failed: ${dispatchRes.status} ${txt}` }, 502);
     }
-    if (action === "impose") {
-      return json({ error: "Imposition pipeline not yet deployed on pdf-server. Coming next." }, 501);
-    }
-    if (action === "ticket") {
-      return await generateTicket(admin, job);
+    const { job_id: pdfJobId } = await dispatchRes.json();
+    if (!pdfJobId) return json({ error: "pdf-server returned no job id" }, 502);
+
+    // Poll up to 90s
+    let storagePath: string | null = null;
+    let lastError: string | null = null;
+    for (let i = 0; i < 45; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const statusRes = await fetch(`${apiUrl}/v1/jobs/${pdfJobId}`, {
+        headers: { "x-api-key": apiKey },
+      });
+      if (!statusRes.ok) continue;
+      const statusData = await statusRes.json();
+      if (statusData.status === "completed") {
+        storagePath = statusData.result?.storage_path ?? null;
+        break;
+      }
+      if (statusData.status === "failed") {
+        lastError = statusData.error ?? "Unknown failure";
+        break;
+      }
     }
 
-    return json({ error: "Unknown action" }, 400);
+    if (!storagePath) {
+      return json({ error: lastError ?? "Operation timed out" }, lastError ? 502 : 504);
+    }
+
+    // Defensive: ensure the column is updated even if the worker raced us.
+    await admin
+      .from("order_jobs")
+      .update({ [COLUMN[action]]: storagePath })
+      .eq("id", job_id);
+
+    return json({ ok: true, path: storagePath, action });
   } catch (e) {
     console.error("[production-pdf] error", e);
     return json({ error: (e as Error).message ?? "Internal error" }, 500);
   }
 });
-
-async function assemble(admin: any, job: any) {
-  // Collect ordered section asset IDs for this job
-  const { data: docs, error: docsErr } = await admin
-    .from("order_documents")
-    .select("id, storage_path, file_name, metadata")
-    .eq("job_id", job.id)
-    .order("created_at", { ascending: true });
-  if (docsErr) return json({ error: docsErr.message }, 500);
-
-  // Resolve assets via documents.backend_asset_id where possible
-  const { data: customerDocs } = await admin
-    .from("documents")
-    .select("id, backend_asset_id, sort_order")
-    .in(
-      "order_item_id",
-      // documents are keyed off order_items, so resolve via order_jobs.order_id → items
-      (await admin.from("order_items").select("id").eq("order_id", job.order_id)).data?.map(
-        (oi: any) => oi.id
-      ) ?? []
-    )
-    .order("sort_order", { ascending: true });
-
-  const assetIds = (customerDocs ?? [])
-    .map((d: any) => d.backend_asset_id)
-    .filter((id: string | null): id is string => !!id);
-
-  if (assetIds.length === 0) {
-    return json(
-      { error: "No source PDFs available. Customer hasn't uploaded files yet." },
-      400
-    );
-  }
-
-  const apiUrl = Deno.env.get("VPS_PDF_API_URL");
-  const apiKey = Deno.env.get("VPS_PDF_API_KEY");
-  if (!apiUrl || !apiKey) return json({ error: "PDF API not configured" }, 500);
-
-  const outputName = `${job.job_number}-print-ready.pdf`;
-  const mergeRes = await fetch(`${apiUrl}/v1/operations/merge`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-api-key": apiKey },
-    body: JSON.stringify({ asset_ids: assetIds, output_filename: outputName }),
-  });
-
-  if (!mergeRes.ok) {
-    const txt = await mergeRes.text();
-    return json({ error: `Merge failed: ${mergeRes.status} ${txt}` }, 502);
-  }
-  const mergeData = await mergeRes.json();
-  const jobId = mergeData.job_id;
-
-  // Poll the merge job until completion (max 60s)
-  let storagePath: string | null = null;
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 2000));
-    const statusRes = await fetch(`${apiUrl}/v1/jobs/${jobId}`, {
-      headers: { "x-api-key": apiKey },
-    });
-    if (!statusRes.ok) continue;
-    const statusData = await statusRes.json();
-    if (statusData.status === "completed") {
-      storagePath = statusData.result?.storage_path ?? statusData.result?.path ?? null;
-      break;
-    }
-    if (statusData.status === "failed") {
-      return json({ error: `Merge failed: ${statusData.error}` }, 502);
-    }
-  }
-  if (!storagePath) return json({ error: "Merge timed out" }, 504);
-
-  await admin
-    .from("order_jobs")
-    .update({ print_ready_pdf_path: storagePath })
-    .eq("id", job.id);
-
-  return json({ ok: true, path: storagePath, asset_count: assetIds.length });
-}
-
-async function generateTicket(admin: any, job: any) {
-  // Minimal placeholder: store a marker path for now. Real ticket generation
-  // happens once the pdf-server has the `render-job-ticket` op.
-  const path = `production/tickets/${job.id}.pdf`;
-  await admin.from("order_jobs").update({ job_ticket_pdf_path: path }).eq("id", job.id);
-  return json({
-    ok: true,
-    path,
-    note: "Ticket pipeline not yet deployed — placeholder path saved.",
-  });
-}

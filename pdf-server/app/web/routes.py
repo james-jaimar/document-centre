@@ -24,6 +24,7 @@ from app.schemas.assets import (
     RenderPagesRequest,
     PrepareForProductRequest,
     PadPagesRequest,
+    JobArtefactRequest,
 )
 from app.services.assets import asset_repo
 from app.services.jobs import job_repo
@@ -52,6 +53,11 @@ from app.tasks.operation_tasks import (
     print_ready,
     prepare_for_product,
     pad_pages_pdf,
+)
+from app.tasks.production_tasks import (
+    assemble_print_ready_for_job,
+    assemble_imposed_sheet_for_job,
+    render_job_ticket_for_job,
 )
 
 api_router = APIRouter()
@@ -520,5 +526,47 @@ def op_pad_pages(payload: PadPagesRequest, db: Session = Depends(get_db)):
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "pad_pages", "documents", body)
     task = pad_pages_pdf.delay(asset_id, job_id, payload.multiple)
+    job_repo.set_celery_task_id(db, job_id, task.id)
+    return {"job_id": job_id}
+
+
+# ---------------------------------------------------------------------------
+# Production pipeline (admin-facing artefacts keyed off order_jobs.id)
+# ---------------------------------------------------------------------------
+@api_router.post("/operations/assemble-print-ready")
+def op_assemble_print_ready(payload: JobArtefactRequest, db: Session = Depends(get_db)):
+    """Resolve the order job's documents → ordered → merged print-ready PDF.
+
+    Writes the result path back to ``order_jobs.print_ready_pdf_path`` so the
+    admin UI's ProductionPanel can open it directly.
+    """
+    body = payload.model_dump(mode="json")
+    job_id = job_repo.create_job(db, None, "assemble_print_ready", "documents", body)
+    task = assemble_print_ready_for_job.delay(str(payload.job_id), job_id)
+    job_repo.set_celery_task_id(db, job_id, task.id)
+    return {"job_id": job_id}
+
+
+@api_router.post("/operations/assemble-imposed-sheet")
+def op_assemble_imposed_sheet(payload: JobArtefactRequest, db: Session = Depends(get_db)):
+    """Run product-aware imposition on the print-ready PDF.
+
+    Strategy is picked from the job's product snapshot (booklet for saddle-
+    stitched, n-up grid for flyers/postcards/loose sheets, none otherwise).
+    Tenants may override via ``order_jobs.production_specs.imposition_strategy``.
+    """
+    body = payload.model_dump(mode="json")
+    job_id = job_repo.create_job(db, None, "assemble_imposed_sheet", "imposition", body)
+    task = assemble_imposed_sheet_for_job.delay(str(payload.job_id), job_id)
+    job_repo.set_celery_task_id(db, job_id, task.id)
+    return {"job_id": job_id}
+
+
+@api_router.post("/operations/render-job-ticket")
+def op_render_job_ticket(payload: JobArtefactRequest, db: Session = Depends(get_db)):
+    """Render a 1-page A4 operator ticket (header, specs, files, QR, sign-off)."""
+    body = payload.model_dump(mode="json")
+    job_id = job_repo.create_job(db, None, "render_job_ticket", "documents", body)
+    task = render_job_ticket_for_job.delay(str(payload.job_id), job_id)
     job_repo.set_celery_task_id(db, job_id, task.id)
     return {"job_id": job_id}
