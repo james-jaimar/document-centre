@@ -8,6 +8,7 @@ import PreviewLightbox from "@/components/order/PreviewLightbox";
 import { inferPreviewTypeFromJob } from "@/lib/orders/inferPreviewType";
 import type { JobConfiguration, ConfigSection } from "@/lib/orders/types";
 import PhotoPrintsAdminGallery from "./PhotoPrintsAdminGallery";
+import { ProductionPanel } from "./ProductionPanel";
 import { formatPrice } from "@/lib/formatCurrency";
 
 interface Props {
@@ -190,6 +191,8 @@ export function JobDetailPanel({ job, documents, currency = "ZAR" }: Props) {
           </div>
         )
       )}
+
+      <ProductionPanel jobId={job.id} jobStatus={job.job_status} />
 
       {previewOpen && (
         <PreviewLightbox

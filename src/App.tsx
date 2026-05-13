@@ -213,7 +213,7 @@ function AppRoutes() {
         } />
         <Route path="/admin/production" element={
           <ProtectedRoute allowedRoles={[...operationsRoles]} allowedMembershipRoles={operationsMembershipRoles}>
-            <BranchDashboard />
+            <AdminProductionQueue />
           </ProtectedRoute>
         } />
 
