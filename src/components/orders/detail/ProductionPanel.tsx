@@ -65,7 +65,7 @@ export function ProductionPanel({ jobId, jobStatus }: Props) {
         onGenerate={generateImposition}
         onOpen={() => open(artefacts?.imposed_pdf_path ?? null)}
         generateLabel="Impose"
-        disabledReason={!artefacts?.print_ready_pdf_path ? "Assemble first" : undefined}
+        disabledReason={!artefacts?.print_ready_pdf_path ? "Assemble print-ready first" : undefined}
       />
 
       <Separator />
