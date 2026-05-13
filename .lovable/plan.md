@@ -1,144 +1,120 @@
-# Where we are
+## Goal
 
-The catalogue + pricing stack is done end-to-end:
-- Master Rate Card (clicks, papers, finishing, photo prints) → `product_recipes` (with `engine`) → live pricing in builders + cart.
-- Auto-seed defaults wired into Admin Products. Legacy pricing tab retired.
-- All product families (Bound, Loose, Flyers, Posters, Brochures, Business Cards, Photo Prints) build, preview, price, and cart correctly.
+Stand up the three production-PDF endpoints on `pdf-server` that the `production-pdf` edge function and `ProductionPanel` already expect, so admins can produce real, press-ready files from any job in the queue.
 
-What's **not** done is everything that happens *after* checkout: how the print operator actually receives, opens, and prints the file. Today an admin sees the order in `AdminOrderDetail` but there is no "production" surface — no print-ready PDF, no imposed sheet, no operator checklist, no download button.
-
-# What this plan covers
-
-1. **Production workflow** — what an operator sees and does for each order.
-2. **Print-ready PDF generation** — turning the customer's uploaded PDF + spec into a file the press can run.
-3. **PDF-server gap audit** — confirm we have every binary/library we need, flag what's missing.
-4. **Other recommendations** — small but important things the system needs before going live to a real print shop.
+Today: only `assemble` works (basic merge of normalized PDFs). `impose` returns 501; `ticket` writes a placeholder path. We'll replace both with real renderers and harden assembly to be production-grade.
 
 ---
 
-## 1. Production workflow (admin surface)
+## 1. Smart assembly (replace the naive merge)
 
-New tab on `AdminOrderDetail`: **Production** (sits alongside Summary / Pricing / Delivery / Timeline).
+Promote the current edge-function merge to a dedicated pdf-server task `assemble_print_ready`:
 
-Per order item it shows:
+- Resolve job → ordered section list (covers, body, tabs, inserts) using `order_documents` + `document_sections`, honouring the existing print-shop output rules (insert sheets are real PDF pages, no phantom blanks between docs — see memory).
+- For each section, use `normalized_storage_path` (CMYK + oriented + sized via the existing `prepare_for_product` pipeline). If missing, run `prepare_for_product` on demand.
+- Pad to multiples-of-4 for saddle-stitched products (reuse `pad_pages_pdf`).
+- Merge with pikepdf preserving page boxes (Trim/Bleed/Media), then upload to `production/print-ready/{job_number}.pdf` and write `order_jobs.print_ready_pdf_path`.
 
-```text
-┌─ Item: 50× A4 Bound Document, Wire-O, 80gsm body, 250gsm cover ─┐
-│ Source PDF       [📄 cover.pdf]  [📄 body.pdf]   inspect ✓       │
-│ Print-ready PDF  [⚙ Generate]  → [📄 print-ready.pdf]  ✓        │
-│ Imposition       Single-up A4 SRA3 sheet  [⚙ Impose] [download] │
-│ Job ticket       [📄 ticket.pdf]                                 │
-│ Status           ☐ Ready to print  ☐ Printed  ☐ Bound  ☐ Done   │
-└──────────────────────────────────────────────────────────────────┘
+Edge function becomes a thin proxy: POST → poll → write path.
+
+## 2. Imposition endpoint `assemble_imposed_sheet`
+
+Build on the existing `impose_sheet_pdf` task, but driven by the **product recipe** instead of raw geometry from the client:
+
+- Look up product family + finished size from the order item snapshot.
+- Decide imposition automatically:
+  - Flyers/postcards → n-up grid on SRA3 (or tenant default press sheet) with crop marks + bleed marks.
+  - Saddle-stitch booklets → booklet imposition (already implemented in `booklet_pdf`).
+  - Bound documents → no imposition; just print-ready 1-up.
+  - Photo prints → grid pack on the lab's standard sheet.
+- Output → `production/imposed/{job_number}.pdf`, write `order_jobs.imposed_pdf_path`.
+
+New schema field on `pricing_rules` or product config → `imposition_strategy` (auto | nup | booklet | none) so admins can override per product. Default `auto`.
+
+## 3. Job ticket endpoint `render_job_ticket`
+
+New ReportLab task `render_job_ticket(job_id)` that produces a 1-page A4 PDF containing everything the operator needs at the press:
+
+- Header: tenant logo, job number, due date, customer name, order number
+- Product spec block: product family, size, paper stock, weight (gsm), colour/sides, binding, finishing
+- Quantity, page count, total sheets, run-on info
+- Source files table: filename, page count, position in book
+- QR code linking back to `/admin/orders/{order_id}` for one-tap dashboard access
+- Footer: generated-at timestamp, operator slot, sign-off line
+
+Output → `production/tickets/{job_number}.pdf`, write `order_jobs.job_ticket_pdf_path`.
+
+Add `qrcode[pil]` to `requirements.txt` (small, pure-Python).
+
+## 4. Edge-function rewiring
+
+Replace inline merge code in `supabase/functions/production-pdf/index.ts` with three thin proxy paths:
+
+- `assemble` → `POST /v1/operations/assemble-print-ready` { job_id }
+- `impose`   → `POST /v1/operations/assemble-imposed-sheet` { job_id }
+- `ticket`   → `POST /v1/operations/render-job-ticket` { job_id }
+
+Each call:
+1. Sends the job_id (the pdf-server fetches the job's data through a service-role Supabase call using existing env vars on the VPS).
+2. Polls `/v1/jobs/{job_id}` until done.
+3. Writes the returned `storage_path` back to `order_jobs.{print_ready|imposed|job_ticket}_pdf_path`.
+
+This keeps all PDF logic on the pdf-server (where ICC profiles, fonts, qpdf, pikepdf, ghostscript and pdfcpu live) and out of Deno.
+
+## 5. PDF-server toolchain audit
+
+Confirm what's already installed on the VPS and add anything missing:
+
+| Tool | Status | Purpose |
+|------|--------|---------|
+| Ghostscript | installed | rasterize, CMYK |
+| qpdf | installed | merge/split/rotate |
+| pikepdf | installed | precise page-box manipulation |
+| pypdf | installed | basic merge |
+| LibreOffice | installed | office → pdf |
+| poppler-utils | installed | pdftoppm/pdfinfo |
+| pdfcpu | installed (best-effort) | n-up/booklet imposition |
+| reportlab | installed | job ticket rendering |
+| **qrcode** | **add** | QR on job ticket |
+| **fonts-noto-color-emoji** | optional | emoji in tenant names |
+| **icc-profiles-free** | verify | required for print_ready |
+
+`requirements.txt` += `qrcode[pil]==7.4.2`. Dockerfile already has the right system fonts.
+
+## 6. Optional: imposition presets table
+
+Tiny table `imposition_presets`:
+
+```
+id, app_id, name, sheet_w_mm, sheet_h_mm, bleed_mm, gap_mm, margin_mm, crop_marks
 ```
 
-Each item has three artefacts the operator can download:
-- **Print-ready PDF** — single PDF with covers + body (+ inserts/tabs) merged in correct order, oriented, and with bleed boxes set.
-- **Imposed sheet PDF** — laid out N-up on the press sheet (e.g. 2-up A4 on SRA3 for bound bodies, 10-up business cards on SRA3, booklet-imposed for saddle-stitch). Generated on demand.
-- **Job ticket PDF** — one-pager with order #, customer, qty, paper, finishing, special instructions, barcodes for tracking.
-
-Production status checkboxes write to a new `order_item_production` table and feed the existing timeline.
-
-A **"Production queue"** page (`/admin/production`) lists all paid orders not yet marked Done, sorted by promised date, with per-item status chips. This is the operator's daily worklist.
+Lets a tenant configure their own press-sheet sizes (SRA3, B2, 12x18 etc.) without code changes. Out of scope for first pass — we'll ship sensible defaults and add the UI later.
 
 ---
 
-## 2. Print-ready PDF generation
+## Technical notes
 
-The pdf-server already has `nup`, `impose-sheet`, and `booklet` operations. What's missing is the **assembly step** that turns an order item into one production-ready PDF before imposition.
+**Files to add/edit on pdf-server:**
+- `app/tasks/production_tasks.py` — three new celery tasks
+- `app/web/routes.py` — three new endpoints under `/operations/`
+- `app/schemas/assets.py` — request models
+- `app/services/production_orchestrator.py` — section ordering + recipe lookup (talks to Supabase via service role)
+- `requirements.txt` — add `qrcode[pil]`
 
-New edge function `production-pdf` (or extend `pdf-api`) that, given an order item:
+**Files to edit on Lovable:**
+- `supabase/functions/production-pdf/index.ts` — rewrite to thin proxy
+- `src/components/orders/detail/ProductionPanel.tsx` — remove the "Imposition coming next" disabled state
 
-1. Loads the section list (`order_documents` ordered by `position`).
-2. Resolves each section to its normalized PDF (`assets.normalized_storage_path`).
-3. Calls a new pdf-server endpoint `POST /v1/operations/assemble-print-ready` with:
-   - ordered section paths
-   - target trim size + bleed
-   - blank-back rules (covers `blank_back`, divider tabs, insert sheets)
-   - duplex/simplex flag, mixed-orientation policy
-   - cover stock vs body stock break (so imposition can split later)
-4. Server merges, pads to multiples-of-4 for saddle stitch, inserts coloured insert sheets as real pages, applies tab artwork, writes a single PDF with correct **TrimBox + BleedBox** per page.
-5. Result is registered as a derived file `kind = "print_ready_pdf"` against the asset and surfaced on the Production tab.
-
-Imposition (existing endpoints) is then applied to that print-ready PDF on demand:
-- Bound bodies → 2-up SRA3 booklet imposition or 1-up SRA3 perfect-bind, depending on binding.
-- Business cards → 10-up SRA3 with crop marks + 3mm bleed.
-- Flyers/posters → 1-up at trim, no imposition needed.
-- Saddle-stitched booklets → existing `booklet` op.
-
-**Decision points to confirm with you (low risk, defaults shown):**
-- Default press sheet: SRA3 (450×320) for digital, with admin override per branch.
-- Default bleed: 3mm.
-- Crop marks + colour bars: on by default for imposed sheets.
+**No DB migration needed for first pass** — the three artefact columns on `order_jobs` are already there.
 
 ---
 
-## 3. PDF-server gap audit
+## Delivery order
 
-Currently installed (from `Dockerfile` + `requirements.txt`):
-- LibreOffice, Ghostscript, qpdf, poppler-utils, pdfcpu (best-effort), DejaVu fonts.
-- Python: pikepdf, pypdf, Pillow, reportlab.
+1. Job ticket endpoint (smallest, fully self-contained, instantly useful — operator can print a real ticket today).
+2. Smart assembly (replaces merge with section-aware version).
+3. Imposition (depends on assembly being correct).
+4. Wire edge function to all three.
 
-**Confirmed sufficient for:** Office→PDF, rasterise, page boxes, basic imposition, n-up, booklet, watermark, merge, rotate, crop.
-
-**Gaps to fill before production-PDF generation:**
-
-| Need | Recommended addition | Why |
-|------|----------------------|-----|
-| Embedded ICC colour profiles / PDF/X-1a conversion | `ghostscript` already does this — just need to install ICC profiles (FOGRA39 / SWOP / sRGB) and add a `convert-to-pdfx` op | Press operators expect PDF/X-1a or PDF/X-4 for colour-managed output |
-| Preflight (overprint, font embedding, low-res images, RGB-in-CMYK) | `pdfix-sdk` (commercial) **or** lightweight DIY using `pikepdf` + `Pillow` for the checks we already do | We already have an in-house preflight; needs a proper PDF/X compliance pass |
-| Missing-font auto-substitution on Office conversion | Install full font set: `fonts-liberation`, `fonts-noto`, `fonts-noto-cjk`, `fonts-symbola`, `ttf-mscorefonts-installer` | Avoid LibreOffice swapping fonts silently and breaking layout |
-| Exact crop/bleed marks on imposed sheets | Already in `pdf_ops.impose_sheet_with_bleed` — just expose `show_crop_marks` / `show_bleed_outline` to admin | Operators want to toggle per-job |
-| Tab divider / insert sheet rendering | reportlab (have it) | Build custom artwork pages on the fly |
-| Barcode on job ticket | `python-barcode` or `reportlab.graphics.barcode` (built into reportlab) | Track jobs through production |
-| Spot-colour preview / separation | Out of scope — only matters for offset, we're digital-only |
-
-**Recommendation:** add `fonts-liberation fonts-noto fonts-noto-cjk fonts-symbola ttf-mscorefonts-installer` to the Dockerfile + install ICC profiles via the existing `scripts/install-icc-profiles.sh` (already exists, confirm it's run on boot). Skip pdfix-sdk for now; revisit if customers report colour issues.
-
----
-
-## 4. Other recommendations
-
-- **Order numbering on production artefacts** — every PDF (print-ready, imposed, ticket) must embed the order number + item number in the filename and as a footer slug, so a stack of paper on the production floor never gets confused.
-- **Reprint trail** — store every generated print-ready PDF as a derived file with timestamp + admin user; if someone re-generates after a spec change, the old one stays available.
-- **Production status visibility to customer** — when the operator ticks "Printed", flip the order to "In production" in the customer portal timeline. Already wired structurally; just needs the new statuses mapped.
-- **Operator role** — `tenant_memberships.role = 'Production'` already exists. The new `/admin/production` page should be visible to Production + Admin + Owner only; hidden from Sales/Accounts.
-- **Daily production digest email** — optional: 06:00 email to Production role with the day's queue. Cheap to add since `send-email` already exists.
-
----
-
-## Technical breakdown
-
-**Database**
-- New table `order_item_production` (item_id PK, status enum, printed_at, bound_at, finished_at, operator_id, notes).
-- New `derived_files.kind` values: `print_ready_pdf`, `imposed_sheet_pdf`, `job_ticket_pdf`.
-
-**Edge functions**
-- `production-pdf` (new) — orchestrates assemble + impose; thin wrapper over pdf-server.
-
-**pdf-server**
-- New op `POST /v1/operations/assemble-print-ready` (handler in `pdf_ops.py`, task in `operation_tasks.py`, route in `routes.py`).
-- New op `POST /v1/operations/render-job-ticket` (reportlab, no external deps).
-- `Dockerfile` — add font packages + ensure ICC profiles installed.
-- `pdf-server/scripts/install-icc-profiles.sh` already exists; document running it post-deploy.
-
-**Frontend**
-- New `src/components/orders/detail/ProductionTab.tsx`.
-- New `src/pages/admin/AdminProductionQueue.tsx` + sidebar link gated to Production/Admin/Owner.
-- Hooks: `useOrderItemProduction`, `useGenerateProductionPdf`.
-
-## Out of scope (this round)
-
-- Offset/spot-colour separation.
-- Full PDF/X-4 compliance certification.
-- Press-operator mobile UI (the admin desktop view is enough for v1).
-- Automatic imposition based on press-sheet inventory — operator picks the sheet for now.
-
-## Suggested order of work
-
-1. Audit + patch pdf-server (fonts + ICC) — small, unblocks colour fidelity.
-2. Build assemble-print-ready op + production-pdf edge function.
-3. Build Production tab on AdminOrderDetail (download + status).
-4. Build AdminProductionQueue page.
-5. Wire job ticket + reprint trail.
-6. Optional: daily digest email.
+I'll deliver in that order so you get visible progress at each step. After step 1 you'll be able to print a real job ticket from any job in the production queue.
