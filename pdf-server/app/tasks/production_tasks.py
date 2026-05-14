@@ -214,7 +214,12 @@ def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str):
             storage.upload(out_pdf, storage_path, "application/pdf")
 
         write_artefact_path(job_id, "imposed_pdf_path", storage_path)
-        result = {"storage_path": storage_path, "strategy": strategy, "sheet_mm": [sheet_w, sheet_h]}
+        result = {
+            "storage_path": storage_path,
+            "strategy": strategy,
+            "sheet_mm": [sheet_w, sheet_h],
+            "stats": stats,
+        }
         job_repo.mark_done(db, pdf_job_id, result)
         return result
     except Exception as exc:
