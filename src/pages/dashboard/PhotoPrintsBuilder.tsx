@@ -296,13 +296,8 @@ export default function PhotoPrintsBuilder() {
   const [editorPhotoId, setEditorPhotoId] = useState<string | null>(null);
   const editorPhoto = photoSpec.photos.find((p) => p.id === editorPhotoId) ?? null;
 
-  const { data: photoRateCard = [] } = useRateCardPhotoPrints({
-    scope: "tenant",
-    tenantId: tenantId ?? undefined,
-  });
-
   const totals = useMemo(() => {
-    const size = getPhotoPrintSize(photoSpec.print_size_slug);
+    const size = getPhotoPrintSize(photoSpec.print_size_slug, availableSizes);
     const totalPhotos = photoSpec.photos.length;
     const totalPrints = photoSpec.photos.reduce((s, p) => s + p.quantity, 0);
     const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === photoSpec.border_slug);
