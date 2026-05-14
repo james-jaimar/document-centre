@@ -1,121 +1,132 @@
-## Goal
 
-Make cross-tenant leakage in the customer portal structurally impossible — not just defended in one React context. Three independent workstreams.
+# Imposition Templates — Build Plan
+
+## Goal
+Give platform admins a library of imposition templates (uploaded PDFs + slot definitions). Each product can declare a **default template per output paper**. Operators see a "Print size → Output size" picker on the Impose step and can override before generating the imposed PDF.
+
+This round covers everything **except booklets / saddle-stitched** (page reordering needs its own engine — deferred).
 
 ---
 
-## 1. RLS hardening — DB-enforced storefront tenant
+## 1. Data model (Supabase migration)
 
-### Current state (verified against `pg_policies`)
+### `imposition_templates` (platform-owned)
+| field | notes |
+|---|---|
+| `id`, `created_at`, `updated_at` | standard |
+| `name` | e.g. "A4 → SRA3 — 2-up, double cut, bleed + crops" |
+| `description` | free text |
+| `input_size` | enum slug: `A6`, `A5`, `A4`, `A3`, `BC`, `DL`, `custom` |
+| `input_width_mm`, `input_height_mm` | numeric (for `custom`) |
+| `output_size` | `A4`, `A3`, `SRA3`, `B2`, `custom` |
+| `output_width_mm`, `output_height_mm` | numeric |
+| `n_up` | integer (1, 2, 4, 8…) |
+| `has_bleed` | boolean |
+| `has_crop_marks` | boolean |
+| `work_style` | `cut_sheet` \| `work_and_turn` \| `sheetwise` |
+| `template_pdf_path` | storage key in `assets` bucket |
+| `slots` | jsonb: `[{index, x_mm, y_mm, width_mm, height_mm, rotation_deg}]` — coordinates from bottom-left of output sheet |
+| `is_active`, `sort_order` | |
 
-- `pricing_rules` has `pricing_rules_public_read USING (true)` — anyone reads any tenant's rules.
-- `product_options` has `product_options_public_read USING (true)` — same.
-- `branches` has `branches_public_read USING (is_active = true)` — any active branch from any tenant.
-- `branches_select_membership` additionally lets members read all rows in tenants they belong to (this is the actual enabler of the PostNet leak: jimmybhawkins is a PostNet member, so PostNet branches are returned even on a `/t/demo` query if the WHERE is wrong).
-- `tenant_payment_gateways`, `rate_card_*`, `product_price_overrides` need the same audit.
+RLS: read = anyone authenticated; write = `has_role(auth.uid(),'platform_admin')`.
 
-RLS today protects against reading **other tenants you don't belong to**. It does **not** protect against the client asking for the **wrong tenant you do belong to**. That's the gap.
+### `product_imposition_defaults`
+Maps a `product_family` (or product) to one or more templates, with a `is_primary` flag per template.
+| field | notes |
+|---|---|
+| `product_family_id` | fk |
+| `imposition_template_id` | fk |
+| `is_primary` | boolean — exactly one true per family enforced by partial unique index |
+| `sort_order` | for the operator picker |
 
-### Fix — propagate the URL-resolved tenant into the DB and enforce it
+RLS: same as above (platform-owned).
 
-Introduce a per-request header `x-storefront-tenant: <uuid>` set by the browser whenever the user is on `/t/:slug/*`. PostgREST exposes request headers via `current_setting('request.headers', true)`, so RLS can read it.
+### `order_jobs` additions
+Add columns:
+- `imposition_template_id uuid null` — operator's choice (or default at impose time)
+- `imposition_n_up int null` — convenience copy
+- `imposed_pdf_path text` already exists.
 
-a. **DB helper**
+### Storage
+New bucket: **`imposition-templates`** (private). Platform admins read/write; service-role reads from pdf-server.
 
-```sql
-CREATE OR REPLACE FUNCTION public.current_storefront_tenant_id()
-RETURNS uuid LANGUAGE sql STABLE
-SET search_path = public
-AS $$
-  SELECT NULLIF(
-    ((current_setting('request.headers', true))::json ->> 'x-storefront-tenant'),
-    ''
-  )::uuid
-$$;
+---
+
+## 2. Platform admin UI
+
+New page: **`/platform/imposition`** (linked from Platform sidebar under "Production").
+
+- List of all templates: name, input → output, n-up, bleed, work style, active toggle.
+- Create / edit modal:
+  - Metadata fields (name, sizes, n-up, bleed, crops, work style).
+  - **PDF upload** (the press sheet template — gripper marks, colour bars, registration, slot guides).
+  - **Slot editor**: visual canvas showing the uploaded PDF as background, admin draws/positions N rectangles representing where customer pages are stamped. Each rect editable (x/y/w/h/rotation in mm). Live preview of a sample A4 stamped into each slot.
+  - Save → uploads PDF, writes row.
+- Soft delete via `is_active=false`.
+
+New page: **`/platform/products/:id/imposition`** (or a tab on the existing product editor) — assign templates to product families, mark one primary per family.
+
+---
+
+## 3. Operator UI (`ProductionPanel`)
+
+Replace the current single "Impose" button with a small **Imposition** sub-section:
+
+```text
+Print size: A4   →   Output:  [ A4 cut sheet         ▼ ]   [ Impose ]
+                              · A4 cut sheet (default)
+                              · A3 — 2-up, no bleed
+                              · SRA3 — 2-up, bleed + crops
 ```
 
-Returns `NULL` outside the storefront — admin/platform unaffected.
-
-b. **Tighten SELECT policies on tenant-scoped tables**
-
-For each of `branches`, `pricing_rules`, `product_options`, `product_price_overrides`, `tenant_payment_gateways`, `rate_card_clicks`, `rate_card_papers`, `rate_card_finishing`, `rate_card_photo_prints`:
-
-- Drop `*_public_read USING (true)` policies.
-- Replace with: rows are readable when **any** of these is true:
-  1. `current_storefront_tenant_id() IS NOT NULL AND tenant_id = current_storefront_tenant_id()` (storefront mode — only the URL tenant)
-  2. `current_storefront_tenant_id() IS NULL AND <existing membership/admin check>` (admin/platform mode — unchanged)
-  3. `tenant_id IS NULL` for master/global rows where applicable (pricing, product_options, rate_card master scope).
-
-This makes RLS the second wall: even if a client query forgets to filter, the DB returns nothing from the wrong tenant when on a storefront.
-
-c. **Client wiring**
-
-- Add a tiny wrapper around the supabase client (`src/integrations/supabase/storefrontClient.ts`) that injects `x-storefront-tenant` into `global.headers` whenever `TenantProvider` resolves a slug tenant. Two viable mechanisms:
-  - Mutate `supabase.realtime.headers` and rebuild the postgrest fetch with a custom header per call (cleanest: `supabase.functions.setAuth` style — actually use `supabase.rest.headers` via `setHeader`), OR
-  - Wrap fetch globally and inject the header when `window.__storefrontTenantId` is set by `TenantProvider`.
-
-The second is lighter and survives the singleton client. We'll use a small `fetch` interceptor installed in `main.tsx`, with `TenantProvider` writing `window.__storefrontTenantId` on every render.
-
-d. **Migration risk**
-
-- Anonymous storefront browsing must continue to work — the header doesn't depend on auth, so it's fine.
-- `/admin` and `/platform` never set the header — existing membership policies apply unchanged.
-- Edge Functions that act on behalf of tenants must continue passing the tenant explicitly (they don't go through PostgREST's request header path) — service role bypass is unaffected.
+- Dropdown is populated from `product_imposition_defaults` filtered by the job's input size.
+- Default selection = `is_primary` row.
+- "Impose" calls `production-pdf` with `{ action: 'impose', job_id, imposition_template_id }`.
+- After completion, shows the imposed PDF link as today.
 
 ---
 
-## 2. Vitest regression for tenant isolation
+## 4. pdf-server changes
 
-New file: `src/test/tenant-isolation.test.tsx`.
+`/v1/operations/assemble-imposed-sheet` currently a stub — replace with real implementation:
 
-Coverage:
+1. Look up `order_jobs` → get `print_ready_pdf_path` and `imposition_template_id` (passed from edge fn).
+2. Fetch template row → download `template_pdf_path` and read `slots` JSON.
+3. Open print-ready PDF with `pikepdf`. For each customer page:
+   - Group into chunks of `n_up`.
+   - For each chunk: clone the template page, then **stamp** each customer page onto the slot rectangle (scale to fit, rotate per slot).
+   - If `has_crop_marks` and template doesn't already include them, the template PDF is the source of truth — admin draws marks into the template artwork itself. (No procedural mark generation in this round; keeps slot-editor simple.)
+4. Write composite PDF, upload to `documents/imposed/{job_id}.pdf`, update `order_jobs.imposed_pdf_path` and `imposition_template_id`/`imposition_n_up`.
 
-- Mount `<MemoryRouter initialEntries={["/t/demo/checkout"]}><TenantProvider>…</TenantProvider></MemoryRouter>` with `useAuth` mocked to return a user whose only `tenant_memberships` row is `tenant_id = postnet-uuid`.
-- Mock `supabase.from("tenants")` to return `{ id: 'demo-uuid', app_id: 'app-uuid', name: 'Demo', slug: 'demo' }` for `slug=demo`.
-- Spy on `supabase.from("branches").select(...).eq` and assert the `tenant_id` argument equals `demo-uuid`, NOT `postnet-uuid`.
-- Second case: `/admin/orders` with the same user → `tenantId` resolves to `postnet-uuid` (membership wins when no slug).
-- Third case: `/t/demo/checkout` with anonymous user (no memberships) → `tenantId` is still `demo-uuid`, no crash.
+Library: `pikepdf` (already in requirements.txt) — use `Page.add_overlay` with a transformation matrix for placement + rotation.
 
-Add a tiny test helper `src/test/mocks/supabase.ts` that returns chainable spies for `.from().select().eq()` so we can assert call arguments without standing up a real client.
-
-Wire into existing `vitest.config.ts` (already has `src/test/example.test.ts` so the runner is configured).
-
----
-
-## 3. Subdomain-aware slug resolution
-
-Today `TenantProvider` only matches `^/t/:slug` from the pathname. When `{slug}.document-centre.com` goes live, `useTenantFromHost` resolves the tenant but `TenantProvider` would fall back to membership — re-opening the leak.
-
-Change in `src/hooks/useTenantContext.tsx`:
-
-- Read `TenantSlugContext` (already populated by `SubdomainWrapper` for subdomain hosts).
-- Derive `urlSlug` as: `slugContext?.slug ?? pathname.match(/^\/t\/([^/]+)/)?.[1] ?? null`.
-- Everything else in the provider stays the same — same lookup, same precedence, same effective values.
-
-Provider order check (in `src/App.tsx` / `main.tsx`): `SubdomainWrapper` → `TenantSlugProvider` → `AuthProvider` → `TenantProvider`. Reorder if `TenantProvider` currently sits above `TenantSlugProvider`, otherwise the context read returns `null`.
-
-Add one extra vitest case to step 2: render with `TenantSlugContext` providing `{ slug: 'demo', isSubdomain: true }` and route `/checkout` (no `/t/...`) → tenantId resolves to demo.
+Edge fn `production-pdf` change: forward `imposition_template_id` from request body to the pdf-server payload.
 
 ---
 
-## Order of execution
+## 5. Hard size enforcement (your point #3)
 
-1. Subdomain fix (smallest, lowest risk, immediately closes the future hole).
-2. Vitest regression suite (locks current behaviour before touching RLS).
-3. RLS migration + client header interceptor (biggest blast radius — gated behind passing tests).
+Out of scope for this round — you said you'd double-check it. Once you confirm, we can:
+- Add `allowed_sizes jsonb` to `product_families` (already partly done via `product_options` — needs audit).
+- Block configurator from offering sizes the family can't produce.
 
-## Out of scope
+I'll flag this as a follow-up after you've reviewed.
 
-- Edge Function header propagation (service-role bypass already correct).
-- Tightening write policies (this round is about read leakage; writes already gated by `user_is_tenant_admin`/`user_is_staff_for`).
-- Removing `get_user_tenant_id()` legacy helper (still used by other tables; separate cleanup).
+---
 
-## Verification checklist
+## 6. Verification checklist
+- Platform admin can create "A4 → SRA3 — 2-up bleed/crops" template, upload artwork PDF, draw 2 slots.
+- Bound document product family lists three templates; one marked primary.
+- Operator on a bound-doc job sees dropdown defaulted to primary; can switch.
+- Click Impose → pdf-server stamps body pages 2-up onto SRA3 sheets → imposed PDF opens, slots correctly placed, crop marks visible.
+- Switching template and re-imposing replaces the file.
+- Non-platform users get 403 on template CRUD.
 
-1. Vitest green, including the three new isolation cases.
-2. `jimmybhawkins@gmail.com` on `/t/demo/checkout` → only demo branches; Network tab shows `x-storefront-tenant: <demo-uuid>` on every PostgREST call.
-3. Same user on `/t/postnet/checkout` → PostNet branches (regression).
-4. Same user on `/admin/orders` → no `x-storefront-tenant` header; PostNet data as before.
-5. Anonymous on `/t/demo` → demo data; storefront header present.
-6. Manually crafted curl with `x-storefront-tenant: <postnet-uuid>` against the demo `pricing_rules` endpoint → empty (RLS denies).
-7. Linter clean after migration.
+---
+
+## 7. Out of scope (next rounds)
+- Booklets (saddle-stitched) — needs page-order shuffling (1+last on one sheet, 2+second-last, etc.).
+- Auto-pick template from branch press capability.
+- Procedural crop-mark/colour-bar generation.
+- Tenant-specific template overrides.
+- Hard size enforcement audit.
