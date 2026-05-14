@@ -549,13 +549,26 @@ def op_assemble_print_ready(payload: JobArtefactRequest, db: Session = Depends(g
 
 @api_router.post("/operations/assemble-imposed-sheet")
 def op_assemble_imposed_sheet(payload: JobArtefactRequest, db: Session = Depends(get_db)):
-    """Run product-aware imposition on the print-ready PDF.
+    """Run imposition on the print-ready PDF.
 
-    Strategy is picked from the job's product snapshot (booklet for saddle-
-    stitched, n-up grid for flyers/postcards/loose sheets, none otherwise).
-    Tenants may override via ``order_jobs.production_specs.imposition_strategy``.
+    If `imposition_template_id` is supplied (preferred path), the worker
+    overlays customer pages onto the platform-managed press-sheet template.
+    Otherwise it falls back to the legacy product-aware nup/booklet/none
+    strategy (overridable via ``order_jobs.production_specs.imposition_strategy``).
     """
     body = payload.model_dump(mode="json")
+
+    # Defence in depth: persist the chosen template on the job before kicking
+    # off the worker, so the worker reads it from the bundle even if the
+    # caller (edge function) raced us.
+    if payload.imposition_template_id:
+        from app.services.production_orchestrator import write_job_field
+        write_job_field(
+            str(payload.job_id),
+            "imposition_template_id",
+            str(payload.imposition_template_id),
+        )
+
     job_id = job_repo.create_job(db, None, "assemble_imposed_sheet", "imposition", body)
     task = assemble_imposed_sheet_for_job.delay(str(payload.job_id), job_id)
     job_repo.set_celery_task_id(db, job_id, task.id)
