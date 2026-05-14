@@ -1145,7 +1145,7 @@ class PdfOps:
             output.save(str(out_pdf))
             return sheets
 
-
+    def booklet(self, src: Path, out_pdf: Path, sheet_width_mm: float, sheet_height_mm: float) -> Path:
         reader = PdfReader(str(src))
         pages = list(reader.pages)
         writer = PdfWriter()
