@@ -1,37 +1,45 @@
-# Restore product visibility on Create
+## Photo Prints — make sizes 100% rate-card driven
 
-## What's broken
+**Root cause.** Photo print sizes are defined in three duplicated places, and only one of them (the Rate Card) is what you actually edit:
 
-The Create page filters product families through `branch_capabilities` (per-branch on/off rows). The filter has a foot-gun: if a branch has **zero** capability rows it shows everything, but if it has **some** rows it hides any family that doesn't appear. That's exactly what's biting the Demo tenant.
+1. **Rate Card** (`rate_card_photo_prints`) — source of truth, what you edit on the Pricing page. You've removed A4 from master and the demo tenant rate card is also clean.
+2. **Hardcoded catalogue** `src/lib/photoPrints/sizes.ts` — `PHOTO_PRINT_SIZES` still lists `4x6, 5x7, 6x8, 8x10, a4`. The customer Photo Prints builder iterates this list, so A4 still appears in the size dropdown even though no rate exists for it. (No `8x12` is hardcoded — it isn't in the catalogue or DB anywhere; safe to ignore.)
+3. **Master `pricing_rules` + `product_options`** for the `photo-prints` family — still contain `A4 Photo Print` rules and an `a4` value in the Print Size group. This is what the Demo tenant Products → Pricing modal is showing as "hard coded A4".
 
-`branch_capabilities` rows are only inserted by `seed_branch_capabilities(branch_id)`, which is called when an admin first opens the branch products tab. It inserts a row per active product family **at that moment**. When `business-cards` and `photo-prints` were added later, no backfill ran, so any branch seeded before that date is now missing exactly those two.
+The Photo Prints family is fully priced by the rate card; the per-family `pricing_rules` and the `Print Size` option values are dead duplicates that just leak old sizes into the UI.
 
-State across the whole DB right now (516 active branches):
+### Fix
 
-```text
-zero_caps     454   show all 10 by accident — fine for now
-partial_caps   58   seeded before business-cards/photo-prints — hide both
-full_caps       4   seeded recently — show all 10
-```
+**1. Drive sizes from the rate card.** Replace the hardcoded `PHOTO_PRINT_SIZES` with a derivation from the active rate card rows for the current tenant (falling back to master if the tenant has none):
 
-Demo Branch sits in the `partial_caps` bucket, which is why Business Cards and Photo Prints are missing on the Demo tenant.
+- New helper `derivePhotoPrintSizesFromRateCard(rows)` returns one `PhotoPrintSize` per distinct active `size_slug`, computing dimensions/aspect/DPI thresholds from a small static metadata map (`SIZE_METADATA`) keyed by slug — `4x6`, `5x7`, `6x8`, `8x10`, `a4`, `a3`, etc. The metadata map only carries physical dimensions; whether a size is *offered* is decided by the rate card alone.
+- `PhotoPrintsBuilder.tsx` uses this derived list for the Size dropdown and for `getPhotoPrintSize(...)` lookups.
+- If the current `photoSpec.print_size_slug` is no longer in the rate card (e.g. customer had A4 selected before it was removed), auto-switch to the first available size and toast a notice.
+- `DEFAULT_PHOTO_PRINT_SIZE_SLUG` becomes "first active rate-card size, else `4x6`".
 
-`tenant_product_toggles`, `pricing_rules`, `product_options`, `product_recipes` and `product_price_overrides` are all complete for these two families — pricing is **not** the cause. The user's hunch ("it's all the new pricing") is close but the actual culprit is the capability seeding, which was never re-run when the two new families landed.
+**2. Hide rate-card-managed families from the generic pricing UI.**
 
-## Fix
+- In the Demo tenant **Products → Photo Prints → Pricing** modal (`ProductPricingModal` or similar — opened from `AdminProducts`), detect that `photo-prints` is rate-card-driven and replace the "Base Pricing Rules" block with a read-only message: *"Photo Print prices are managed on the Rate Card → Photo Prints tab."* with a deep link. Keep "Combination Overrides" and "Option Surcharges" sections intact (they remain valid for non-price options like Border).
+- Same treatment on `AdminPricing` (master): hide / filter out pricing rules whose family is rate-card-driven, with the same message.
 
-Two-part migration, no app code changes:
+**3. Clean up the stale data.** A migration that:
 
-### 1. Backfill existing branches
-For every active branch, insert a `branch_capabilities` row (defaulting `is_enabled = true`) for every active platform-level product family that doesn't already have one. Equivalent to running `seed_branch_capabilities` for every branch, but as one set-based insert.
+- Removes the `a4` value from the `Print Size` `product_options` row for `photo-prints` (master + any tenant copies).
+- Deletes all rows in `pricing_rules` where the family slug is `photo-prints` (both master and tenant copies). The rate card is the only price source for this family.
 
-This restores Business Cards and Photo Prints on the 58 partial-caps branches. The 454 zero-caps branches will gain explicit rows for all 10 families — same effective behaviour, but now the filter is driven by data instead of a fallback.
+No schema changes — purely a data cleanup INSERT/DELETE migration.
 
-### 2. Auto-seed when new families are added
-Add an `AFTER INSERT` trigger on `product_families` (only when `tenant_id IS NULL` and `is_active = true`) that inserts an enabled capability row for every existing active branch. That stops this drift from recurring next time we add a product family.
+### Files touched
 
-No changes to the React filter, the seed RPC, or the UI. Demo tenant — and every other partial-caps branch — will immediately show all 10 products on Create.
+- `src/lib/photoPrints/sizes.ts` — keep `SIZE_METADATA` map, drop hardcoded `PHOTO_PRINT_SIZES` list, add `derivePhotoPrintSizesFromRateCard`.
+- `src/lib/photoPrints/pricing.ts` — minor: drop the static fallback (rate card is required now).
+- `src/pages/dashboard/PhotoPrintsBuilder.tsx` — derive sizes from rate card, auto-correct stale selection.
+- `src/components/photo/PhotoTile.tsx`, `PhotoEditorModal.tsx` — pass rate-card-derived sizes via prop or context lookup instead of `getPhotoPrintSize` against the static list.
+- `src/pages/admin/AdminProducts.tsx` (the Pricing modal) and `src/pages/admin/AdminPricing.tsx` / `PlatformMasterPricing.tsx` — show "managed by rate card" banner and hide the per-size rule rows for `photo-prints`.
+- New migration: clean A4 product option value + delete `photo-prints` pricing_rules rows.
 
-## Files
+### Outcome
 
-- New Supabase migration with the backfill `INSERT` and the trigger.
+- Removing a size from the Rate Card immediately removes it from the customer Photo Prints builder and from any admin pricing UI.
+- No more orphaned "A4" anywhere in the demo tenant.
+- Future sizes (e.g. `8x12`) are added by inserting a rate-card row + a one-line entry in `SIZE_METADATA`; nothing else hardcodes the catalogue.
