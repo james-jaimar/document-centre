@@ -75,7 +75,9 @@ export function BranchProvider({
     if (!tenantId) {
       setAllBranches([]);
       setActiveBranch(null);
-      setLoading(false);
+      // Keep loading=true while tenantId is still resolving so route guards
+      // (e.g. BranchSlugRoute) don't briefly render StoreNotAvailable.
+      setLoading(true);
       return;
     }
 
