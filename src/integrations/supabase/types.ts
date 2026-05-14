@@ -1052,8 +1052,15 @@ export type Database = {
       }
       imposition_templates: {
         Row: {
+          bleed_mm: number
+          columns: number | null
           created_at: string
+          creep_per_sheet_mm: number
+          crop_mark_length_mm: number
+          crop_mark_offset_mm: number
           description: string | null
+          fallback_trim_inset_mm: number
+          gutter_mm: number
           has_bleed: boolean
           has_crop_marks: boolean
           id: string
@@ -1061,11 +1068,14 @@ export type Database = {
           input_size: string
           input_width_mm: number
           is_active: boolean
-          n_up: number
+          kind: string
+          n_up: number | null
           name: string
           output_height_mm: number
           output_size: string
           output_width_mm: number
+          rows: number | null
+          show_registration: boolean
           slots: Json
           sort_order: number
           template_pdf_path: string | null
@@ -1073,8 +1083,15 @@ export type Database = {
           work_style: string
         }
         Insert: {
+          bleed_mm?: number
+          columns?: number | null
           created_at?: string
+          creep_per_sheet_mm?: number
+          crop_mark_length_mm?: number
+          crop_mark_offset_mm?: number
           description?: string | null
+          fallback_trim_inset_mm?: number
+          gutter_mm?: number
           has_bleed?: boolean
           has_crop_marks?: boolean
           id?: string
@@ -1082,11 +1099,14 @@ export type Database = {
           input_size: string
           input_width_mm: number
           is_active?: boolean
-          n_up: number
+          kind?: string
+          n_up?: number | null
           name: string
           output_height_mm: number
           output_size: string
           output_width_mm: number
+          rows?: number | null
+          show_registration?: boolean
           slots?: Json
           sort_order?: number
           template_pdf_path?: string | null
@@ -1094,8 +1114,15 @@ export type Database = {
           work_style?: string
         }
         Update: {
+          bleed_mm?: number
+          columns?: number | null
           created_at?: string
+          creep_per_sheet_mm?: number
+          crop_mark_length_mm?: number
+          crop_mark_offset_mm?: number
           description?: string | null
+          fallback_trim_inset_mm?: number
+          gutter_mm?: number
           has_bleed?: boolean
           has_crop_marks?: boolean
           id?: string
@@ -1103,11 +1130,14 @@ export type Database = {
           input_size?: string
           input_width_mm?: number
           is_active?: boolean
-          n_up?: number
+          kind?: string
+          n_up?: number | null
           name?: string
           output_height_mm?: number
           output_size?: string
           output_width_mm?: number
+          rows?: number | null
+          show_registration?: boolean
           slots?: Json
           sort_order?: number
           template_pdf_path?: string | null
