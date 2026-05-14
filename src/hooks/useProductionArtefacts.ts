@@ -27,7 +27,7 @@ export function useProductionArtefacts(jobId: string | null) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("order_jobs")
-        .select("print_ready_pdf_path, imposed_pdf_path, job_ticket_pdf_path, imposition_template_id, product_family_id")
+        .select("print_ready_pdf_path, imposed_pdf_path, job_ticket_pdf_path, imposition_template_id, product_category")
         .eq("id", jobId!)
         .single();
       if (error) throw error;
