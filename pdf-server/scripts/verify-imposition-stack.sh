@@ -186,8 +186,10 @@ check_unit() {
   if ! command -v systemctl >/dev/null 2>&1; then
     row_fail "$unit" "systemctl not available"; return
   fi
-  if ! systemctl list-unit-files "$unit" >/dev/null 2>&1 \
-       || ! systemctl list-unit-files | grep -q "^${unit}"; then
+  # `systemctl cat` returns 0 iff systemd can resolve the unit file from any
+  # of its drop-in paths (regardless of regular file vs symlink vs transient).
+  # More reliable than greping `list-unit-files` column output.
+  if ! systemctl cat "$unit" >/dev/null 2>&1; then
     row_fail "$unit" "unit file not installed"
     return
   fi
