@@ -12,11 +12,10 @@ import { useTenantContext } from "@/hooks/useTenantContext";
 import { resolveUrls } from "@/lib/thumbnailUtils";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import {
-  PHOTO_PRINT_SIZES,
   PHOTO_FINISH_OPTIONS,
   PHOTO_BORDER_OPTIONS,
-  DEFAULT_PHOTO_PRINT_SIZE_SLUG,
   getPhotoPrintSize,
+  derivePhotoPrintSizesFromRateCard,
 } from "@/lib/photoPrints/sizes";
 import { resolvePhotoPrintPrice } from "@/lib/photoPrints/pricing";
 import { useRateCardPhotoPrints } from "@/hooks/useRateCard";
