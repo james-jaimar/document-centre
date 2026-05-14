@@ -1,44 +1,37 @@
-# Two small fixes for the customer portal
+# Restore product visibility on Create
 
-## 1. Flash of unbranded UI on slow connections
+## What's broken
 
-**What's happening today**
-`CustomerLayoutInner` renders the full header / sidebar / footer immediately, then injects tenant CSS variables (`--tenant-primary`, fonts, logo) only once `useTenantBranding` resolves. On a slow connection that means the customer sees the default Document Centre theme (white header, default font, no logo) for a beat before PostNet red overlays it. Today we already track `brandingReady`, but only use it to fade the sidebar — the header and main area still paint unbranded.
+The Create page filters product families through `branch_capabilities` (per-branch on/off rows). The filter has a foot-gun: if a branch has **zero** capability rows it shows everything, but if it has **some** rows it hides any family that doesn't appear. That's exactly what's biting the Demo tenant.
 
-**Fix**
-Gate the entire layout behind `brandingReady` and show a minimal full-screen splash in the meantime:
+`branch_capabilities` rows are only inserted by `seed_branch_capabilities(branch_id)`, which is called when an admin first opens the branch products tab. It inserts a row per active product family **at that moment**. When `business-cards` and `photo-prints` were added later, no backfill ran, so any branch seeded before that date is now missing exactly those two.
 
-- Neutral background (`bg-background`) with a centered subtle spinner.
-- If `tenant?.logo_url` (or the value extracted from `branding.header_html`) is already known from the cached tenant fetch, render it above the spinner so the brand is the first paintable thing.
-- Once `brandingReady` flips to true, render the real layout. CSS variables are already in `tenantStyle`, so the first paint of the real header is fully branded.
+State across the whole DB right now (516 active branches):
 
-Branding query is already cached by react-query, so repeat visits are instant — this only affects cold loads.
-
-## 2. Branch picker can't be re-opened after a store is selected
-
-**Root cause**
-`BranchContext.showPicker` is computed as:
-
-```ts
-showPicker: pickerOpen && isMultiBranch && !urlBranchSlug
+```text
+zero_caps     454   show all 10 by accident — fine for now
+partial_caps   58   seeded before business-cards/photo-prints — hide both
+full_caps       4   seeded recently — show all 10
 ```
 
-As soon as the customer lands on `/sandton-city`, `BranchSlugRoute` calls `setUrlBranchSlug("sandton-city")`. From that point `urlBranchSlug` is truthy, so `showPicker` is forced to `false` even when the header's branch chip calls `openPicker()`. That's why clicking "PostNet Sandton City" in the top bar does nothing.
+Demo Branch sits in the `partial_caps` bucket, which is why Business Cards and Photo Prints are missing on the Demo tenant.
 
-**Fix**
-The `!urlBranchSlug` guard was only there to stop the picker from auto-opening on initial load when the URL already names a branch. The auto-open logic in the resolver `useEffect` already handles that case (it returns early when `urlBranchSlug` is set), so the guard on `showPicker` is redundant and harmful.
+`tenant_product_toggles`, `pricing_rules`, `product_options`, `product_recipes` and `product_price_overrides` are all complete for these two families — pricing is **not** the cause. The user's hunch ("it's all the new pricing") is close but the actual culprit is the capability seeding, which was never re-run when the two new families landed.
 
-Change the derived value to:
+## Fix
 
-```ts
-showPicker: pickerOpen && isMultiBranch
-```
+Two-part migration, no app code changes:
 
-Result: the picker stays closed on initial load (because nothing calls `openPicker`), but `openPicker()` from the header chip now actually opens it. Selecting a different branch then navigates to its URL via the existing `BranchPicker` `handleSelect`, which updates the URL slug and re-resolves the active branch.
+### 1. Backfill existing branches
+For every active branch, insert a `branch_capabilities` row (defaulting `is_enabled = true`) for every active platform-level product family that doesn't already have one. Equivalent to running `seed_branch_capabilities` for every branch, but as one set-based insert.
 
-## Files to touch
+This restores Business Cards and Photo Prints on the 58 partial-caps branches. The 454 zero-caps branches will gain explicit rows for all 10 families — same effective behaviour, but now the filter is driven by data instead of a fallback.
 
-- `src/contexts/BranchContext.tsx` — drop `!urlBranchSlug` from `showPicker`.
-- `src/components/CustomerLayout.tsx` — render a tenant-aware splash while `!brandingReady`, then mount the real layout.
+### 2. Auto-seed when new families are added
+Add an `AFTER INSERT` trigger on `product_families` (only when `tenant_id IS NULL` and `is_active = true`) that inserts an enabled capability row for every existing active branch. That stops this drift from recurring next time we add a product family.
 
-No backend, no schema, no routing changes.
+No changes to the React filter, the seed RPC, or the UI. Demo tenant — and every other partial-caps branch — will immediately show all 10 products on Create.
+
+## Files
+
+- New Supabase migration with the backfill `INSERT` and the trigger.
