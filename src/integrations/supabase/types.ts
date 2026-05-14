@@ -3732,6 +3732,7 @@ export type Database = {
         Args: { p_name: string; p_secret: string }
         Returns: string
       }
+      current_storefront_tenant_id: { Args: never; Returns: string }
       delete_email_account_secret: {
         Args: { p_secret_id: string }
         Returns: undefined
