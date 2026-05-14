@@ -92,6 +92,7 @@ const PLATFORM_SECTIONS: NavSection[] = [
       { to: "/platform/master-pricing", icon: <DollarSign size={20} />, label: "Master Pricing" },
       { to: "/platform/pricing", icon: <DollarSign size={20} />, label: "Pricing Regions" },
       { to: "/platform/demo-print-pricing", icon: <DollarSign size={20} />, label: "Demo Print Pricing" },
+      { to: "/platform/imposition", icon: <Package size={20} />, label: "Imposition Templates" },
     ],
   },
 ];
