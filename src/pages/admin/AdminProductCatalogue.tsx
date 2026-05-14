@@ -131,6 +131,7 @@ const AdminProductCatalogue = () => {
                         onClick={() => {
                           setOpenFamilyId(f.id);
                           setOpenFamilyName(f.name);
+                          setOpenFamilySlug(f.slug);
                         }}
                       >
                         <Settings2 className="h-3 w-3 mr-1" />
