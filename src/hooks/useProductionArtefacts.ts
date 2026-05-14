@@ -8,7 +8,7 @@ export interface ProductionArtefacts {
   imposed_pdf_path: string | null;
   job_ticket_pdf_path: string | null;
   imposition_template_id: string | null;
-  product_family_id: string | null;
+  product_category: string | null;
 }
 
 /**
