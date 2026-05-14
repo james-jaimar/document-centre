@@ -127,14 +127,25 @@ export default function PhotoPrintsBuilder() {
 
   const { uploads, uploadPhotos, clearUploads } = usePhotoUpload(orderItem?.id);
 
+  const { data: photoRateCard = [] } = useRateCardPhotoPrints({
+    scope: "tenant",
+    tenantId: tenantId ?? undefined,
+  });
+
+  const availableSizes = useMemo(
+    () => derivePhotoPrintSizesFromRateCard(photoRateCard),
+    [photoRateCard],
+  );
+  const defaultSizeSlug = availableSizes[0]?.slug ?? "4x6";
+
   const initialSpec: PhotoPrintsSpec = useMemo(
     () => ({
-      print_size_slug: DEFAULT_PHOTO_PRINT_SIZE_SLUG,
+      print_size_slug: defaultSizeSlug,
       finish_slug: PHOTO_FINISH_OPTIONS.find((o) => o.is_default)!.slug,
       border_slug: PHOTO_BORDER_OPTIONS.find((o) => o.is_default)!.slug,
       photos: [],
     }),
-    [],
+    [defaultSizeSlug],
   );
   const [photoSpec, setPhotoSpec] = useState<PhotoPrintsSpec>(initialSpec);
 
