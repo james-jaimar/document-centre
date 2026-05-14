@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { setDocumentCentreContext } from "@/lib/documentCentreApi";
+import { TenantSlugContext } from "@/contexts/TenantSlugContext";
 
 export interface TenantMembership {
   id: string;
@@ -55,12 +56,12 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const isPlatformAdmin = roles.includes("platform_admin");
 
   // -----------------------------------------------------------------
-  // URL-slug tenant resolution (customer portal: /t/:slug/...)
+  // URL-slug tenant resolution (customer portal: /t/:slug/... OR
+  // {slug}.document-centre.com subdomain via TenantSlugContext).
   // -----------------------------------------------------------------
-  // Derive the slug directly from the pathname so this works regardless
-  // of where TenantProvider sits in the React Router tree.
+  const slugContext = useContext(TenantSlugContext);
   const urlSlugMatch = location.pathname.match(/^\/t\/([^/]+)/);
-  const urlSlug = urlSlugMatch ? urlSlugMatch[1] : null;
+  const urlSlug = slugContext?.slug ?? (urlSlugMatch ? urlSlugMatch[1] : null);
 
   const [slugTenant, setSlugTenant] = useState<{
     id: string;
@@ -237,6 +238,17 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setDocumentCentreContext({ tenantId: effectiveTenantId, appId: effectiveAppId });
   }, [effectiveTenantId, effectiveAppId]);
+
+  // Publish the URL-resolved storefront tenant so the global fetch
+  // interceptor can attach `x-storefront-tenant` to every PostgREST
+  // request. Only set when we're on a /t/:slug or subdomain route —
+  // never on /admin or /platform.
+  useEffect(() => {
+    const id = slugTenant?.id ?? null;
+    if (typeof window !== "undefined") {
+      (window as unknown as { __storefrontTenantId: string | null }).__storefrontTenantId = id;
+    }
+  }, [slugTenant?.id]);
 
 
   return (
