@@ -160,6 +160,7 @@ const AdminProductCatalogue = () => {
             <ProductPricingTab
               productFamilyId={openFamilyId}
               productFamilyName={openFamilyName}
+              productFamilySlug={openFamilySlug}
             />
           )}
         </DialogContent>
