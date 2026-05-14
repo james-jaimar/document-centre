@@ -1,83 +1,87 @@
-## Goal
+## Goal — Option B: admin-managed imposition presets
 
-Reconcile the installed `document-centre-api.service` on `srv1516161` with the canonical unit in the repo (`pdf-server/deploy/systemd/document-centre-api.service`), and add a one-shot installer so future hosts (and re-deploys) get the right unit without hand-editing.
+You define a small library of imposition templates ahead of time (e.g. "1-up A4 cut sheet", "2-up SRA3 with 5 mm gap, bleed, crop marks"). Per product family, you whitelist which templates are allowed. Operators on the Production panel just pick from that short list — no parameters to tweak.
 
-## Current state vs. canonical
+Today's `imposition_templates` table only supports **press-sheet PDF artwork** (admin uploads a sheet with marks/bars baked in, worker stamps slot rectangles). That's overkill for most cut-sheet jobs and means producing a PDF for every preset. We extend the same table with a **parametric mode** so most presets are just rows of numbers — no PDF needed.
 
-Installed at `/etc/systemd/system/document-centre-api.service`:
+## Architecture
 
-```
-ExecStart=/opt/document-centre-api/.venv/bin/uvicorn app.main:app \
-  --host 127.0.0.1 --port 8000
-[Unit] After=network.target redis-server.service
-(no Wants=, no Group=, no PYTHONUNBUFFERED, no proxy/forward flags,
- no --workers, no --timeout-keep-alive, no TimeoutStartSec, no KillSignal)
-```
+`imposition_templates.kind` decides which engine runs on the VPS:
 
-Repo canonical (`pdf-server/deploy/systemd/document-centre-api.service`):
+| `kind` | Engine | Required fields | Use case |
+|---|---|---|---|
+| `template_pdf` (existing) | `impose_with_template` | `template_pdf_path`, `slots`, `n_up` | Branded press sheets with colour bars |
+| `parametric_nup` (new) | `impose_nup_trimbox` | `columns`, `rows`, output sheet, bleed, gutter, crop-mark params | Cut-sheet n-up (the common case) |
+| `parametric_booklet` (new) | `booklet_saddle_stitch` | output sheet, bleed, `creep_per_sheet_mm` | Saddle-stitched booklets |
 
-```
-ExecStart=... uvicorn app.main:app --host 0.0.0.0 --port 8000 \
-  --workers 3 --proxy-headers --forwarded-allow-ips=* \
-  --timeout-keep-alive 30
-[Unit] After=...; Wants=redis-server.service
-[Service] Group=root, PYTHONUNBUFFERED=1, TimeoutStartSec=60, KillSignal=SIGTERM
-```
+Per-product whitelist already exists: `product_imposition_defaults(product_family_id, imposition_template_id, is_primary, sort_order)`. We're keeping that.
 
-Functionally important deltas:
-1. **`--workers 3`** — installed runs a single uvicorn worker; repo runs 3 (tuned for 4 vCPU / 16 GB).
-2. **`--host 0.0.0.0`** — installed binds `127.0.0.1` only. Fine if nginx fronts it on the same box (which is the current topology — see `pdf-server/deploy/nginx/document-centre-api.conf`); changing to `0.0.0.0` would expose port 8000 publicly. **Decision needed.**
-3. **`--proxy-headers --forwarded-allow-ips=*`** — needed so FastAPI sees the real client IP/scheme behind nginx. Currently missing.
-4. **`--timeout-keep-alive 30`** — minor; aligns with nginx keep-alive.
-5. `Wants=redis-server.service`, `Group=root`, `PYTHONUNBUFFERED=1`, `TimeoutStartSec=60`, `KillSignal=SIGTERM` — hardening / log-flushing niceties.
+## Steps
 
-## Recommendation
+### 1. DB migration (needs your approval)
 
-Keep `--host 127.0.0.1` (nginx is already the public edge — see existing nginx conf). Update the **repo** canonical to match (single source of truth = what we actually run), then ship an installer that brings any host into compliance.
+Add to `imposition_templates`:
+- `kind text not null default 'template_pdf'` with check constraint
+- `columns int`, `rows int` — parametric n-up grid
+- `bleed_mm numeric default 3`
+- `gutter_mm numeric default 0`
+- `crop_mark_offset_mm numeric default 3`, `crop_mark_length_mm numeric default 5`
+- `show_registration boolean default true`
+- `creep_per_sheet_mm numeric default 0` — booklet only
+- `fallback_trim_inset_mm numeric default 0`
+- Make `template_pdf_path`, `slots` legitimately nullable (n_up stays required, defaulted from columns × rows for parametric)
 
-Concretely:
+No data loss — existing template_pdf rows get `kind='template_pdf'` and keep working.
 
-### 1. Edit repo canonical to bind localhost
+### 2. pdf-server worker (`assemble_imposed_sheet_for_job`)
 
-`pdf-server/deploy/systemd/document-centre-api.service`:
+In `pdf-server/app/tasks/production_tasks.py`, when `imposition_template_id` is set:
+- Fetch the row first (cheap), branch on `kind`.
+- `template_pdf` → existing `impose_with_template` flow (unchanged).
+- `parametric_nup` → call `impose_nup_trimbox(columns, rows, sheet_w, sheet_h, bleed_mm, gutter_mm, crop_mark_offset_mm, crop_mark_length_mm, show_registration, fallback_trim_inset_mm)`.
+- `parametric_booklet` → call `booklet_saddle_stitch(sheet_w, sheet_h, bleed_mm, creep_per_sheet_mm)`.
 
-- `--host 0.0.0.0` → `--host 127.0.0.1`
-- Keep `--workers 3 --proxy-headers --forwarded-allow-ips=* --timeout-keep-alive 30`
-- Keep `Wants=`, `Group=`, `PYTHONUNBUFFERED=1`, `TimeoutStartSec=60`, `KillSignal=SIGTERM`
+`load_imposition_template` already lives in `app/services/imposition_templates.py` — extend its `ImpositionTemplate` dataclass with the new fields and skip the `template_pdf` download for parametric kinds.
 
-Add a top-of-file comment: "Bound to 127.0.0.1 — nginx (`deploy/nginx/document-centre-api.conf`) is the public edge. Do NOT switch to 0.0.0.0 without firewalling port 8000."
+### 3. Admin UI — `PlatformImposition.tsx`
 
-### 2. New script: `pdf-server/scripts/install-api-service.sh`
+Add a "Kind" radio group at the top of the create/edit dialog:
+- **Template PDF** → existing form (PDF upload + slot editor).
+- **Parametric N-up** → fields: input size, output size (with paper-size presets), columns, rows, bleed mm, gutter mm, crop-mark offset/length, show registration, fallback trim inset.
+- **Parametric Booklet** → fields: input size, output size, bleed mm, creep-per-sheet mm.
 
-Mirrors the heavy/light worker migrator pattern (`migrate-to-split-workers.sh`):
+Show/hide fields per kind. Existing rows keep their UI.
 
-- Idempotent. Safe to re-run.
-- If `/etc/systemd/system/document-centre-api.service` exists, `cmp` it against the repo file. If identical → no-op exit 0. If different → back up to `*.bak.$(date +%s)` and replace.
-- `systemctl daemon-reload`
-- `systemctl enable document-centre-api.service`
-- `systemctl restart document-centre-api.service`
-- Wait up to 30s for `is-active` + `curl -fsS http://127.0.0.1:8000/health` to return 200.
-- On failure: print last 50 journal lines and exit 1 (do NOT auto-rollback — let the operator inspect).
+### 4. Operator picker — `ProductionPanel.tsx`
 
-### 3. Run on `srv1516161`
+Right now the Imposition Select shows **all** active templates via `useImpositionTemplates({ activeOnly: true })`. Switch to the per-product whitelist:
 
-```
-cd ~/document-centre && git pull
-sudo bash pdf-server/scripts/install-api-service.sh
-sudo bash pdf-server/scripts/verify-imposition-stack.sh   # expect 28/28
-curl -fsS http://127.0.0.1:8000/health                    # expect 200
-```
+- New hook `useTemplatesForProductFamily(productFamilyId)` → reads `product_imposition_defaults` joined to `imposition_templates`, ordered by `is_primary DESC, sort_order ASC`.
+- `ProductionPanel` resolves the product family from the job (already in props chain via `bundle.product_family_id`), defaults selection to the `is_primary` template, falls back to first.
+- If no templates are assigned for the product family, show "No imposition templates configured for this product — ask an admin." (no free-pick fallback — that's the whole point of Option B).
 
-After restart there will be **3 uvicorn worker processes** instead of 1 (`ps -ef | grep uvicorn`).
+### 5. Edge function — `production-pdf`
 
-## Files touched
-
-- `pdf-server/deploy/systemd/document-centre-api.service` — change `--host` to `127.0.0.1`, add the safety comment.
-- `pdf-server/scripts/install-api-service.sh` — new installer (cmp → backup → install → daemon-reload → enable → restart → health-check).
-
-No app code, no DB, no nginx changes.
+No code changes needed. It already forwards `imposition_template_id` straight to the VPS dispatch endpoint.
 
 ## Out of scope
 
-- Switching the API to listen publicly on `0.0.0.0` — current nginx fronting is correct; flag if you want the opposite.
-- Auditing the worker units (`document-centre-worker-heavy/light/beat`) for the same drift — can do as a follow-up if you want.
+- Per-job overrides on `production_specs` (Option C). All knobs live on the template row.
+- New imposition strategies (work-and-turn, perfect-bound signatures).
+- Auto-pick-template-for-job (operator always picks; we just narrow the list).
+
+## Verification
+
+After deploy:
+1. Create one parametric `1-up A4 cut sheet` template, assign to Bound Documents → operator should see only that, generate imposed PDF identical to print-ready.
+2. Create `2-up SRA3 with 5 mm gap + bleed + crop marks`, assign to Bound Documents (alongside #1) → operator picks it, imposed PDF shows two A4s gang-up on SRA3 with marks.
+3. Create `Booklet on SRA3 with 0.1 mm creep`, assign to a saddle-stitched product → check signature ordering.
+
+## Files touched
+
+- migration (1 SQL statement — additive)
+- `pdf-server/app/services/imposition_templates.py` — extend dataclass + loader
+- `pdf-server/app/tasks/production_tasks.py` — branch on `kind`
+- `src/hooks/useImpositionTemplates.ts` — add `useTemplatesForProductFamily`, types for new fields
+- `src/pages/platform/PlatformImposition.tsx` — kind selector + conditional fields
+- `src/components/orders/detail/ProductionPanel.tsx` — restrict picker to assigned templates
