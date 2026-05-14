@@ -1,3 +1,13 @@
+# Document Centre API systemd unit.
+#
+# Bound to 127.0.0.1 — nginx (deploy/nginx/document-centre-api.conf) is the
+# public edge and terminates TLS. Do NOT switch to 0.0.0.0 without first
+# firewalling port 8000 (ufw / security group), or the API will be exposed
+# to the public internet without auth in front of it.
+#
+# Install / refresh on a host with:
+#   sudo bash pdf-server/scripts/install-api-service.sh
+
 [Unit]
 Description=Document Centre API
 After=network.target redis-server.service
@@ -11,8 +21,9 @@ WorkingDirectory=/opt/document-centre-api
 EnvironmentFile=/opt/document-centre-api/.env
 Environment=PYTHONUNBUFFERED=1
 # 3 uvicorn workers tuned for a 4 vCPU / 16 GB host.
-# Override by setting UVICORN_WORKERS in /opt/document-centre-api/.env
-ExecStart=/opt/document-centre-api/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 3 --proxy-headers --forwarded-allow-ips=* --timeout-keep-alive 30
+# --proxy-headers + --forwarded-allow-ips=* so FastAPI sees real client
+# IP/scheme behind nginx (X-Forwarded-For / X-Forwarded-Proto).
+ExecStart=/opt/document-centre-api/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 3 --proxy-headers --forwarded-allow-ips=* --timeout-keep-alive 30
 Restart=always
 RestartSec=5
 TimeoutStartSec=60
