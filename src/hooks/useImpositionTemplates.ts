@@ -130,3 +130,31 @@ export function useUnassignImpositionTemplate() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["product_imposition_defaults"] }),
   });
 }
+
+/**
+ * Templates assigned to a given product family, ordered with the primary
+ * default first. Used by the Production panel imposition picker so
+ * operators only see what an admin has whitelisted for the product.
+ */
+export function useTemplatesForProductFamily(productFamilyId?: string | null) {
+  return useQuery({
+    queryKey: ["imposition_templates_for_family", productFamilyId ?? null],
+    queryFn: async () => {
+      if (!productFamilyId) return [] as (ImpositionTemplate & { is_primary: boolean })[];
+      const { data, error } = await supabase
+        .from("product_imposition_defaults")
+        .select("is_primary, sort_order, imposition_templates(*)")
+        .eq("product_family_id", productFamilyId)
+        .order("is_primary", { ascending: false })
+        .order("sort_order");
+      if (error) throw error;
+      return (data ?? [])
+        .filter((row) => row.imposition_templates && (row.imposition_templates as ImpositionTemplate).is_active)
+        .map((row) => ({
+          ...(row.imposition_templates as ImpositionTemplate),
+          is_primary: !!row.is_primary,
+        }));
+    },
+    enabled: !!productFamilyId,
+  });
+}
