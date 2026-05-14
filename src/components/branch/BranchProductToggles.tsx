@@ -239,6 +239,7 @@ export default function BranchProductToggles({ branchId, readOnly = false }: Pro
             <ProductPricingTab
               productFamilyId={pricingFamily.id}
               productFamilyName={pricingFamily.name}
+              productFamilySlug={pricingFamily.slug ?? null}
               branchId={branchId}
             />
           )}
