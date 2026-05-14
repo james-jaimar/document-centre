@@ -327,6 +327,11 @@ function AppRoutes() {
             <PlatformDemoPrintPricing />
           </ProtectedRoute>
         } />
+        <Route path="/platform/imposition" element={
+          <ProtectedRoute allowedRoles={["platform_admin"]}>
+            <PlatformImposition />
+          </ProtectedRoute>
+        } />
         <Route path="/platform/document-centre" element={
           <ProtectedRoute allowedRoles={["platform_admin"]}>
             <DocumentCentreLayout />
