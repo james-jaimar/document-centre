@@ -56,12 +56,12 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const isPlatformAdmin = roles.includes("platform_admin");
 
   // -----------------------------------------------------------------
-  // URL-slug tenant resolution (customer portal: /t/:slug/...)
+  // URL-slug tenant resolution (customer portal: /t/:slug/... OR
+  // {slug}.document-centre.com subdomain via TenantSlugContext).
   // -----------------------------------------------------------------
-  // Derive the slug directly from the pathname so this works regardless
-  // of where TenantProvider sits in the React Router tree.
+  const slugContext = useContext(TenantSlugContext);
   const urlSlugMatch = location.pathname.match(/^\/t\/([^/]+)/);
-  const urlSlug = urlSlugMatch ? urlSlugMatch[1] : null;
+  const urlSlug = slugContext?.slug ?? (urlSlugMatch ? urlSlugMatch[1] : null);
 
   const [slugTenant, setSlugTenant] = useState<{
     id: string;
