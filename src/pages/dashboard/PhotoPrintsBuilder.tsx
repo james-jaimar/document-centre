@@ -155,7 +155,7 @@ export default function PhotoPrintsBuilder() {
     const spec = orderItem?.spec as any;
     if (spec?.photo_prints?.photos) {
       setPhotoSpec({
-        print_size_slug: spec.photo_prints.print_size_slug || DEFAULT_PHOTO_PRINT_SIZE_SLUG,
+        print_size_slug: spec.photo_prints.print_size_slug || defaultSizeSlug,
         finish_slug: spec.photo_prints.finish_slug || initialSpec.finish_slug,
         border_slug: spec.photo_prints.border_slug || initialSpec.border_slug,
         photos: spec.photo_prints.photos as PhotoPrintEntry[],
