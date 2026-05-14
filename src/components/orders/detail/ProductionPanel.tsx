@@ -4,14 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useProductionArtefacts } from "@/hooks/useProductionArtefacts";
-import { useImpositionTemplates } from "@/hooks/useImpositionTemplates";
+import { useTemplatesForProductFamily } from "@/hooks/useImpositionTemplates";
 
 interface Props {
   jobId: string;
   jobStatus?: string | null;
+  /** Product family this job belongs to — scopes the imposition picker. */
+  productFamilyId?: string | null;
 }
 
-export function ProductionPanel({ jobId, jobStatus }: Props) {
+export function ProductionPanel({ jobId, jobStatus, productFamilyId }: Props) {
   const {
     artefacts,
     isLoading,
@@ -21,17 +23,23 @@ export function ProductionPanel({ jobId, jobStatus }: Props) {
     generateJobTicket,
     signedUrl,
   } = useProductionArtefacts(jobId);
-  const { data: templates = [] } = useImpositionTemplates({ activeOnly: true });
+  const { data: templates = [], isLoading: loadingTemplates } =
+    useTemplatesForProductFamily(productFamilyId);
   const [openingPath, setOpeningPath] = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
 
-  // Default the picker to the existing job template, otherwise leave null
-  // (operator must explicitly pick before imposing).
+  // Default the picker to the existing job template, otherwise the
+  // product family's primary template, otherwise null.
   useEffect(() => {
     if (artefacts?.imposition_template_id) {
       setSelectedTemplateId(artefacts.imposition_template_id);
+      return;
     }
-  }, [artefacts?.imposition_template_id]);
+    if (templates.length > 0) {
+      const primary = templates.find((t) => t.is_primary) ?? templates[0];
+      setSelectedTemplateId(primary.id);
+    }
+  }, [artefacts?.imposition_template_id, templates]);
 
   const open = async (path: string | null) => {
     if (!path) return;
@@ -45,6 +53,25 @@ export function ProductionPanel({ jobId, jobStatus }: Props) {
   };
 
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId) ?? null;
+  const noTemplatesAssigned = !loadingTemplates && templates.length === 0;
+
+  const describeTemplate = (t: typeof templates[number]) => {
+    const kind = (t as any).kind ?? "template_pdf";
+    if (kind === "parametric_nup") {
+      const grid = `${(t as any).columns ?? "?"}×${(t as any).rows ?? "?"}`;
+      const extras = [
+        Number((t as any).bleed_mm) > 0 ? "bleed" : null,
+        t.has_crop_marks ? "crops" : null,
+        Number((t as any).gutter_mm) > 0 ? `${(t as any).gutter_mm}mm gap` : null,
+      ].filter(Boolean).join(" · ");
+      return `${grid} on ${t.output_size}${extras ? ` · ${extras}` : ""}`;
+    }
+    if (kind === "parametric_booklet") {
+      const creep = Number((t as any).creep_per_sheet_mm) > 0 ? ` · ${(t as any).creep_per_sheet_mm}mm creep` : "";
+      return `Booklet on ${t.output_size}${creep}`;
+    }
+    return `${t.input_size} → ${t.output_size} · ${t.n_up}-up${t.has_bleed ? " · bleed" : ""}${t.has_crop_marks ? " · crops" : ""}`;
+  };
 
   return (
     <div className="rounded-lg border bg-card p-3 space-y-3">
@@ -70,27 +97,36 @@ export function ProductionPanel({ jobId, jobStatus }: Props) {
 
       <Separator />
 
-      {/* Imposition picker */}
+      {/* Imposition picker — scoped to templates assigned to this product family */}
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
           <Layers className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-xs font-medium">Imposition</span>
         </div>
-        <Select value={selectedTemplateId ?? ""} onValueChange={(v) => setSelectedTemplateId(v || null)}>
-          <SelectTrigger className="h-7 text-[11px]">
-            <SelectValue placeholder="Choose output sheet…" />
-          </SelectTrigger>
-          <SelectContent>
-            {templates.length === 0 && (
-              <div className="text-[11px] text-muted-foreground px-2 py-1.5">No templates configured</div>
-            )}
-            {templates.map((t) => (
-              <SelectItem key={t.id} value={t.id} className="text-[11px]">
-                {t.input_size} → {t.output_size} · {t.n_up}-up{t.has_bleed ? " · bleed" : ""}{t.has_crop_marks ? " · crops" : ""}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+
+        {noTemplatesAssigned ? (
+          <div className="rounded border border-dashed border-border bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
+            No imposition templates configured for this product. Ask an admin to assign one in
+            <span className="font-medium"> Platform → Imposition → Assign to products</span>.
+          </div>
+        ) : (
+          <Select value={selectedTemplateId ?? ""} onValueChange={(v) => setSelectedTemplateId(v || null)}>
+            <SelectTrigger className="h-7 text-[11px]">
+              <SelectValue placeholder={loadingTemplates ? "Loading…" : "Choose output sheet…"} />
+            </SelectTrigger>
+            <SelectContent>
+              {templates.map((t) => (
+                <SelectItem key={t.id} value={t.id} className="text-[11px]">
+                  <span>
+                    {t.name}
+                    {t.is_primary && <span className="ml-1 text-muted-foreground">· default</span>}
+                  </span>
+                  <span className="block text-[10px] text-muted-foreground">{describeTemplate(t)}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         <Row
           icon={<Layers className="h-3.5 w-3.5" />}
@@ -104,6 +140,8 @@ export function ProductionPanel({ jobId, jobStatus }: Props) {
           disabledReason={
             !artefacts?.print_ready_pdf_path
               ? "Assemble print-ready first"
+              : noTemplatesAssigned
+              ? "No templates assigned"
               : !selectedTemplate
               ? "Pick a template above"
               : undefined

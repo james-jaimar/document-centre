@@ -141,13 +141,42 @@ def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str):
             # ---------- Template-driven imposition (preferred) ----------
             if template_id:
                 template = load_imposition_template(str(template_id), ws.path("template"))
-                sheets = pdf_ops.impose_with_template(
-                    source_pdf=src,
-                    template_pdf=template.local_pdf,
-                    slots=template.slots,
-                    n_up=template.n_up,
-                    out_pdf=out_pdf,
-                )
+
+                if template.kind == "template_pdf":
+                    sheets = pdf_ops.impose_with_template(
+                        source_pdf=src,
+                        template_pdf=template.local_pdf,
+                        slots=template.slots,
+                        n_up=template.n_up,
+                        out_pdf=out_pdf,
+                    )
+                    extra = {"sheets": sheets}
+                elif template.kind == "parametric_nup":
+                    sheets = pdf_ops.impose_nup_trimbox(
+                        src, out_pdf,
+                        columns=template.columns,
+                        rows=template.rows,
+                        sheet_width_mm=template.output_width_mm,
+                        sheet_height_mm=template.output_height_mm,
+                        bleed_mm=template.bleed_mm,
+                        gutter_mm=template.gutter_mm,
+                        crop_mark_offset_mm=template.crop_mark_offset_mm,
+                        crop_mark_length_mm=template.crop_mark_length_mm,
+                        show_registration=template.show_registration,
+                        fallback_trim_inset_mm=template.fallback_trim_inset_mm,
+                    )
+                    extra = {"stats": sheets}
+                elif template.kind == "parametric_booklet":
+                    sheets = pdf_ops.booklet_saddle_stitch(
+                        src, out_pdf,
+                        sheet_width_mm=template.output_width_mm,
+                        sheet_height_mm=template.output_height_mm,
+                        bleed_mm=template.bleed_mm,
+                        creep_per_sheet_mm=template.creep_per_sheet_mm,
+                    )
+                    extra = {"stats": sheets}
+                else:
+                    raise ValueError(f"Unknown template kind: {template.kind}")
 
                 job_number = _safe(bundle.job.get("job_number"), pdf_job_id[:8])
                 storage_path = unique_name(f"production/imposed/{job_number}", ".pdf")
@@ -158,11 +187,11 @@ def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str):
 
                 result = {
                     "storage_path": storage_path,
-                    "strategy": "template",
+                    "strategy": template.kind,
                     "template_id": str(template_id),
                     "template_name": template.name,
                     "n_up": template.n_up,
-                    "sheets": sheets,
+                    **extra,
                 }
                 job_repo.mark_done(db, pdf_job_id, result)
                 return result

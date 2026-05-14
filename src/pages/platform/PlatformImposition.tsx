@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Plus, Pencil, Trash2, Upload, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,16 +33,20 @@ const PAPER_SIZES: Record<string, { w: number; h: number }> = {
   A4: { w: 210, h: 297 },
   A3: { w: 297, h: 420 },
   SRA3: { w: 320, h: 450 },
+  "320x455": { w: 320, h: 455 },
   B2: { w: 500, h: 707 },
   BC: { w: 90, h: 55 },
   DL: { w: 210, h: 99 },
   custom: { w: 0, h: 0 },
 };
 
+type TemplateKind = "template_pdf" | "parametric_nup" | "parametric_booklet";
+
 interface FormState {
   id?: string;
   name: string;
   description: string;
+  kind: TemplateKind;
   input_size: string;
   input_width_mm: number;
   input_height_mm: number;
@@ -56,11 +60,23 @@ interface FormState {
   template_pdf_path: string | null;
   slots: ImpositionSlot[];
   is_active: boolean;
+  // Parametric n-up fields
+  columns: number;
+  rows: number;
+  bleed_mm: number;
+  gutter_mm: number;
+  crop_mark_offset_mm: number;
+  crop_mark_length_mm: number;
+  show_registration: boolean;
+  fallback_trim_inset_mm: number;
+  // Parametric booklet
+  creep_per_sheet_mm: number;
 }
 
 const blank: FormState = {
   name: "",
   description: "",
+  kind: "parametric_nup",
   input_size: "A4",
   input_width_mm: 210,
   input_height_mm: 297,
@@ -74,6 +90,21 @@ const blank: FormState = {
   template_pdf_path: null,
   slots: [],
   is_active: true,
+  columns: 2,
+  rows: 1,
+  bleed_mm: 3,
+  gutter_mm: 5,
+  crop_mark_offset_mm: 3,
+  crop_mark_length_mm: 5,
+  show_registration: true,
+  fallback_trim_inset_mm: 0,
+  creep_per_sheet_mm: 0,
+};
+
+const KIND_LABEL: Record<TemplateKind, string> = {
+  template_pdf: "Template PDF",
+  parametric_nup: "Parametric N-up",
+  parametric_booklet: "Parametric Booklet",
 };
 
 export default function PlatformImposition() {
@@ -87,46 +118,76 @@ export default function PlatformImposition() {
   const [showAssign, setShowAssign] = useState(false);
 
   const openNew = () => setEditing({ ...blank });
-  const openEdit = (t: ImpositionTemplate) =>
+  const openEdit = (t: ImpositionTemplate) => {
+    const k = ((t as any).kind as TemplateKind) || "template_pdf";
     setEditing({
       id: t.id,
       name: t.name,
       description: t.description ?? "",
+      kind: k,
       input_size: t.input_size,
       input_width_mm: Number(t.input_width_mm),
       input_height_mm: Number(t.input_height_mm),
       output_size: t.output_size,
       output_width_mm: Number(t.output_width_mm),
       output_height_mm: Number(t.output_height_mm),
-      n_up: t.n_up,
+      n_up: t.n_up ?? 1,
       has_bleed: t.has_bleed,
       has_crop_marks: t.has_crop_marks,
       work_style: t.work_style as FormState["work_style"],
       template_pdf_path: t.template_pdf_path,
       slots: (t.slots as unknown as ImpositionSlot[]) ?? [],
       is_active: t.is_active,
+      columns: Number((t as any).columns ?? 1),
+      rows: Number((t as any).rows ?? 1),
+      bleed_mm: Number((t as any).bleed_mm ?? 3),
+      gutter_mm: Number((t as any).gutter_mm ?? 0),
+      crop_mark_offset_mm: Number((t as any).crop_mark_offset_mm ?? 3),
+      crop_mark_length_mm: Number((t as any).crop_mark_length_mm ?? 5),
+      show_registration: (t as any).show_registration ?? true,
+      fallback_trim_inset_mm: Number((t as any).fallback_trim_inset_mm ?? 0),
+      creep_per_sheet_mm: Number((t as any).creep_per_sheet_mm ?? 0),
     });
+  };
 
   const save = async () => {
     if (!editing) return;
     try {
-      const payload = {
+      const computedNup =
+        editing.kind === "parametric_nup"
+          ? Math.max(1, editing.columns) * Math.max(1, editing.rows)
+          : editing.kind === "parametric_booklet"
+          ? 2
+          : editing.n_up;
+
+      const payload: any = {
         name: editing.name,
         description: editing.description || null,
+        kind: editing.kind,
         input_size: editing.input_size,
         input_width_mm: editing.input_width_mm,
         input_height_mm: editing.input_height_mm,
         output_size: editing.output_size,
         output_width_mm: editing.output_width_mm,
         output_height_mm: editing.output_height_mm,
-        n_up: editing.n_up,
+        n_up: computedNup,
         has_bleed: editing.has_bleed,
         has_crop_marks: editing.has_crop_marks,
         work_style: editing.work_style,
-        template_pdf_path: editing.template_pdf_path,
-        slots: editing.slots as unknown as never,
+        template_pdf_path: editing.kind === "template_pdf" ? editing.template_pdf_path : null,
+        slots: editing.kind === "template_pdf" ? (editing.slots as unknown as never) : ([] as unknown as never),
         is_active: editing.is_active,
+        columns: editing.kind === "parametric_nup" ? editing.columns : null,
+        rows: editing.kind === "parametric_nup" ? editing.rows : null,
+        bleed_mm: editing.bleed_mm,
+        gutter_mm: editing.gutter_mm,
+        crop_mark_offset_mm: editing.crop_mark_offset_mm,
+        crop_mark_length_mm: editing.crop_mark_length_mm,
+        show_registration: editing.show_registration,
+        fallback_trim_inset_mm: editing.fallback_trim_inset_mm,
+        creep_per_sheet_mm: editing.creep_per_sheet_mm,
       };
+
       if (editing.id) {
         await update.mutateAsync({ id: editing.id, ...payload });
         toast.success("Template updated");
@@ -213,7 +274,8 @@ export default function PlatformImposition() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Imposition Templates</h1>
           <p className="text-sm text-muted-foreground">
-            Master library of press-sheet templates. Operators pick from these on the Impose step.
+            Master library of imposition presets. Define them once here, assign them per product family,
+            then operators just pick from the dropdown on each job.
           </p>
         </div>
         <div className="flex gap-2">
@@ -228,40 +290,47 @@ export default function PlatformImposition() {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Input → Output</TableHead>
-                <TableHead>n-up</TableHead>
+                <TableHead>Kind</TableHead>
+                <TableHead>Layout</TableHead>
+                <TableHead>Output</TableHead>
                 <TableHead>Bleed</TableHead>
                 <TableHead>Crops</TableHead>
-                <TableHead>Work style</TableHead>
-                <TableHead>PDF</TableHead>
                 <TableHead>Active</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading && <TableRow><TableCell colSpan={9}>Loading…</TableCell></TableRow>}
+              {isLoading && <TableRow><TableCell colSpan={8}>Loading…</TableCell></TableRow>}
               {!isLoading && templates.length === 0 && (
-                <TableRow><TableCell colSpan={9} className="text-muted-foreground">No templates yet.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="text-muted-foreground">No templates yet.</TableCell></TableRow>
               )}
-              {templates.map((t) => (
-                <TableRow key={t.id}>
-                  <TableCell className="font-medium">{t.name}</TableCell>
-                  <TableCell>{t.input_size} → {t.output_size}</TableCell>
-                  <TableCell>{t.n_up}</TableCell>
-                  <TableCell>{t.has_bleed ? "Yes" : "—"}</TableCell>
-                  <TableCell>{t.has_crop_marks ? "Yes" : "—"}</TableCell>
-                  <TableCell><Badge variant="outline">{t.work_style}</Badge></TableCell>
-                  <TableCell>{t.template_pdf_path ? <Badge>uploaded</Badge> : <span className="text-muted-foreground text-xs">missing</span>}</TableCell>
-                  <TableCell>{t.is_active ? <Badge>active</Badge> : <Badge variant="secondary">inactive</Badge>}</TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(t)}><Pencil className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="sm" onClick={async () => {
-                      if (!confirm(`Delete template "${t.name}"?`)) return;
-                      try { await remove.mutateAsync(t.id); toast.success("Deleted"); } catch (e) { toast.error((e as Error).message); }
-                    }}><Trash2 className="h-4 w-4" /></Button>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {templates.map((t) => {
+                const k = ((t as any).kind as TemplateKind) || "template_pdf";
+                const layout =
+                  k === "parametric_nup"
+                    ? `${(t as any).columns ?? "?"}×${(t as any).rows ?? "?"} grid`
+                    : k === "parametric_booklet"
+                    ? "Saddle-stitched booklet"
+                    : `${t.n_up}-up template${t.template_pdf_path ? "" : " (no PDF)"}`;
+                return (
+                  <TableRow key={t.id}>
+                    <TableCell className="font-medium">{t.name}</TableCell>
+                    <TableCell><Badge variant="outline">{KIND_LABEL[k]}</Badge></TableCell>
+                    <TableCell className="text-xs">{layout}</TableCell>
+                    <TableCell>{t.output_size} ({Number(t.output_width_mm)}×{Number(t.output_height_mm)}mm)</TableCell>
+                    <TableCell>{t.has_bleed ? `${(t as any).bleed_mm ?? "—"}mm` : "—"}</TableCell>
+                    <TableCell>{t.has_crop_marks ? "Yes" : "—"}</TableCell>
+                    <TableCell>{t.is_active ? <Badge>active</Badge> : <Badge variant="secondary">inactive</Badge>}</TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(t)}><Pencil className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="sm" onClick={async () => {
+                        if (!confirm(`Delete template "${t.name}"?`)) return;
+                        try { await remove.mutateAsync(t.id); toast.success("Deleted"); } catch (e) { toast.error((e as Error).message); }
+                      }}><Trash2 className="h-4 w-4" /></Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>
@@ -275,17 +344,31 @@ export default function PlatformImposition() {
             </DialogHeader>
 
             <div className="grid grid-cols-2 gap-4">
+              {/* --- Kind selector --- */}
+              <div className="col-span-2">
+                <Label>Template kind</Label>
+                <Select value={editing.kind} onValueChange={(v) => setEditing({ ...editing, kind: v as TemplateKind })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="parametric_nup">Parametric N-up — server generates marks &amp; layout (cut-sheet, most common)</SelectItem>
+                    <SelectItem value="parametric_booklet">Parametric Booklet — saddle-stitch signatures with creep</SelectItem>
+                    <SelectItem value="template_pdf">Template PDF — admin uploads a press sheet with brand artwork baked in</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="col-span-2">
                 <Label>Name</Label>
-                <Input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
+                <Input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} placeholder="e.g. 2-up SRA3 with bleed and crops" />
               </div>
               <div className="col-span-2">
                 <Label>Description</Label>
                 <Textarea value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} />
               </div>
 
+              {/* --- Common: input + output size --- */}
               <div>
-                <Label>Input size</Label>
+                <Label>Input (finished) size</Label>
                 <Select value={editing.input_size} onValueChange={onChangeInputSize}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>{Object.keys(PAPER_SIZES).map(k => <SelectItem key={k} value={k}>{k}</SelectItem>)}</SelectContent>
@@ -297,7 +380,7 @@ export default function PlatformImposition() {
               </div>
 
               <div>
-                <Label>Output size</Label>
+                <Label>Output (press sheet) size</Label>
                 <Select value={editing.output_size} onValueChange={onChangeOutputSize}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>{Object.keys(PAPER_SIZES).map(k => <SelectItem key={k} value={k}>{k}</SelectItem>)}</SelectContent>
@@ -306,11 +389,6 @@ export default function PlatformImposition() {
                   <Input type="number" value={editing.output_width_mm} onChange={(e) => setEditing({ ...editing, output_width_mm: Number(e.target.value) })} placeholder="W mm" />
                   <Input type="number" value={editing.output_height_mm} onChange={(e) => setEditing({ ...editing, output_height_mm: Number(e.target.value) })} placeholder="H mm" />
                 </div>
-              </div>
-
-              <div>
-                <Label>n-up</Label>
-                <Input type="number" min={1} value={editing.n_up} onChange={(e) => setEditing({ ...editing, n_up: Math.max(1, Number(e.target.value)) })} />
               </div>
 
               <div>
@@ -326,76 +404,171 @@ export default function PlatformImposition() {
               </div>
 
               <div className="flex items-center gap-3 pt-6">
-                <Switch checked={editing.has_bleed} onCheckedChange={(v) => setEditing({ ...editing, has_bleed: v })} />
-                <Label>Has bleed</Label>
-              </div>
-              <div className="flex items-center gap-3 pt-6">
-                <Switch checked={editing.has_crop_marks} onCheckedChange={(v) => setEditing({ ...editing, has_crop_marks: v })} />
-                <Label>Has crop marks</Label>
-              </div>
-              <div className="flex items-center gap-3">
                 <Switch checked={editing.is_active} onCheckedChange={(v) => setEditing({ ...editing, is_active: v })} />
                 <Label>Active</Label>
               </div>
 
-              <div className="col-span-2 border-t pt-4">
-                <div className="flex items-center justify-between mb-2">
-                  <Label>Template artwork PDF</Label>
-                  <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
-                    <input type="file" accept="application/pdf" className="hidden"
-                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} />
-                    <Button type="button" variant="outline" size="sm" disabled={uploading || !editing.id} asChild>
-                      <span>{uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />} Upload PDF</span>
-                    </Button>
-                  </label>
+              {/* ============ Parametric N-up fields ============ */}
+              {editing.kind === "parametric_nup" && (
+                <div className="col-span-2 border-t pt-4 space-y-3">
+                  <div className="text-sm font-semibold text-muted-foreground">Layout</div>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div>
+                      <Label>Columns</Label>
+                      <Input type="number" min={1} value={editing.columns} onChange={(e) => setEditing({ ...editing, columns: Math.max(1, Number(e.target.value)) })} />
+                    </div>
+                    <div>
+                      <Label>Rows</Label>
+                      <Input type="number" min={1} value={editing.rows} onChange={(e) => setEditing({ ...editing, rows: Math.max(1, Number(e.target.value)) })} />
+                    </div>
+                    <div className="col-span-2 flex items-end text-xs text-muted-foreground">
+                      = {editing.columns * editing.rows}-up per sheet
+                    </div>
+                  </div>
+
+                  <div className="text-sm font-semibold text-muted-foreground pt-2">Bleed &amp; gutter</div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <Label>Bleed (mm)</Label>
+                      <Input type="number" step={0.5} value={editing.bleed_mm} onChange={(e) => setEditing({ ...editing, bleed_mm: Number(e.target.value), has_bleed: Number(e.target.value) > 0 })} />
+                    </div>
+                    <div>
+                      <Label>Gutter (mm)</Label>
+                      <Input type="number" step={0.5} value={editing.gutter_mm} onChange={(e) => setEditing({ ...editing, gutter_mm: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                      <Label>Fallback trim inset (mm)</Label>
+                      <Input type="number" step={0.5} value={editing.fallback_trim_inset_mm} onChange={(e) => setEditing({ ...editing, fallback_trim_inset_mm: Number(e.target.value) })} />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Gutter = real gap between trim edges (cutter relief). 0 mm = gang-up: pages share their cut line and bleed bleeds into the neighbour.
+                  </p>
+
+                  <div className="text-sm font-semibold text-muted-foreground pt-2">Crop marks</div>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="flex items-center gap-3 pt-6">
+                      <Switch checked={editing.has_crop_marks} onCheckedChange={(v) => setEditing({ ...editing, has_crop_marks: v })} />
+                      <Label>Draw crop marks</Label>
+                    </div>
+                    <div>
+                      <Label>Offset (mm)</Label>
+                      <Input type="number" step={0.5} disabled={!editing.has_crop_marks} value={editing.crop_mark_offset_mm} onChange={(e) => setEditing({ ...editing, crop_mark_offset_mm: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                      <Label>Length (mm)</Label>
+                      <Input type="number" step={0.5} disabled={!editing.has_crop_marks} value={editing.crop_mark_length_mm} onChange={(e) => setEditing({ ...editing, crop_mark_length_mm: Number(e.target.value) })} />
+                    </div>
+                    <div className="flex items-center gap-3 pt-6">
+                      <Switch checked={editing.show_registration} onCheckedChange={(v) => setEditing({ ...editing, show_registration: v })} />
+                      <Label>Registration crosshairs</Label>
+                    </div>
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  {editing.template_pdf_path ?? (editing.id ? "No PDF uploaded yet." : "Save the template first, then upload.")}
-                </p>
-              </div>
+              )}
 
-              <div className="col-span-2 border-t pt-4">
-                <div className="flex items-center justify-between mb-2">
-                  <Label>Slots ({editing.slots.length})</Label>
-                  <Button type="button" variant="outline" size="sm" onClick={addSlot}><Plus className="h-3 w-3 mr-1" /> Add slot</Button>
+              {/* ============ Parametric Booklet fields ============ */}
+              {editing.kind === "parametric_booklet" && (
+                <div className="col-span-2 border-t pt-4 space-y-3">
+                  <div className="text-sm font-semibold text-muted-foreground">Booklet parameters</div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <Label>Bleed (mm)</Label>
+                      <Input type="number" step={0.5} value={editing.bleed_mm} onChange={(e) => setEditing({ ...editing, bleed_mm: Number(e.target.value), has_bleed: Number(e.target.value) > 0 })} />
+                    </div>
+                    <div>
+                      <Label>Creep per sheet (mm)</Label>
+                      <Input type="number" step={0.05} value={editing.creep_per_sheet_mm} onChange={(e) => setEditing({ ...editing, creep_per_sheet_mm: Number(e.target.value) })} />
+                    </div>
+                    <div className="flex items-center gap-3 pt-6">
+                      <Switch checked={editing.has_crop_marks} onCheckedChange={(v) => setEditing({ ...editing, has_crop_marks: v })} />
+                      <Label>Crop marks &amp; fold mark</Label>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Pages are imposed in saddle-stitch signature order, with creep compensation applied — outermost sheet zero shift, innermost gets the largest.
+                  </p>
                 </div>
+              )}
 
-                <SlotPreview
-                  outputW={editing.output_width_mm}
-                  outputH={editing.output_height_mm}
-                  slots={editing.slots}
-                />
+              {/* ============ Template PDF fields ============ */}
+              {editing.kind === "template_pdf" && (
+                <>
+                  <div className="col-span-2 border-t pt-4 grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>n-up</Label>
+                      <Input type="number" min={1} value={editing.n_up} onChange={(e) => setEditing({ ...editing, n_up: Math.max(1, Number(e.target.value)) })} />
+                    </div>
+                    <div className="flex items-center gap-3 pt-6">
+                      <Switch checked={editing.has_bleed} onCheckedChange={(v) => setEditing({ ...editing, has_bleed: v })} />
+                      <Label>Has bleed</Label>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Switch checked={editing.has_crop_marks} onCheckedChange={(v) => setEditing({ ...editing, has_crop_marks: v })} />
+                      <Label>Has crop marks</Label>
+                    </div>
+                  </div>
 
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>#</TableHead>
-                      <TableHead>X (mm)</TableHead>
-                      <TableHead>Y (mm)</TableHead>
-                      <TableHead>W (mm)</TableHead>
-                      <TableHead>H (mm)</TableHead>
-                      <TableHead>Rot°</TableHead>
-                      <TableHead></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {editing.slots.map((s, i) => (
-                      <TableRow key={i}>
-                        <TableCell>{s.index + 1}</TableCell>
-                        <TableCell><Input type="number" value={s.x_mm} onChange={(e) => updateSlot(i, { x_mm: Number(e.target.value) })} /></TableCell>
-                        <TableCell><Input type="number" value={s.y_mm} onChange={(e) => updateSlot(i, { y_mm: Number(e.target.value) })} /></TableCell>
-                        <TableCell><Input type="number" value={s.width_mm} onChange={(e) => updateSlot(i, { width_mm: Number(e.target.value) })} /></TableCell>
-                        <TableCell><Input type="number" value={s.height_mm} onChange={(e) => updateSlot(i, { height_mm: Number(e.target.value) })} /></TableCell>
-                        <TableCell><Input type="number" value={s.rotation_deg} onChange={(e) => updateSlot(i, { rotation_deg: Number(e.target.value) })} /></TableCell>
-                        <TableCell><Button variant="ghost" size="sm" onClick={() => removeSlot(i)}><Trash2 className="h-3 w-3" /></Button></TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Coordinates from bottom-left of the output sheet. Slot order = page order on the sheet.
-                </p>
-              </div>
+                  <div className="col-span-2 border-t pt-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <Label>Template artwork PDF</Label>
+                      <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
+                        <input type="file" accept="application/pdf" className="hidden"
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} />
+                        <Button type="button" variant="outline" size="sm" disabled={uploading || !editing.id} asChild>
+                          <span>{uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />} Upload PDF</span>
+                        </Button>
+                      </label>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {editing.template_pdf_path ?? (editing.id ? "No PDF uploaded yet." : "Save the template first, then upload.")}
+                    </p>
+                  </div>
+
+                  <div className="col-span-2 border-t pt-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <Label>Slots ({editing.slots.length})</Label>
+                      <Button type="button" variant="outline" size="sm" onClick={addSlot}><Plus className="h-3 w-3 mr-1" /> Add slot</Button>
+                    </div>
+
+                    <SlotPreview
+                      outputW={editing.output_width_mm}
+                      outputH={editing.output_height_mm}
+                      slots={editing.slots}
+                    />
+
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>#</TableHead>
+                          <TableHead>X (mm)</TableHead>
+                          <TableHead>Y (mm)</TableHead>
+                          <TableHead>W (mm)</TableHead>
+                          <TableHead>H (mm)</TableHead>
+                          <TableHead>Rot°</TableHead>
+                          <TableHead></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {editing.slots.map((s, i) => (
+                          <TableRow key={i}>
+                            <TableCell>{s.index + 1}</TableCell>
+                            <TableCell><Input type="number" value={s.x_mm} onChange={(e) => updateSlot(i, { x_mm: Number(e.target.value) })} /></TableCell>
+                            <TableCell><Input type="number" value={s.y_mm} onChange={(e) => updateSlot(i, { y_mm: Number(e.target.value) })} /></TableCell>
+                            <TableCell><Input type="number" value={s.width_mm} onChange={(e) => updateSlot(i, { width_mm: Number(e.target.value) })} /></TableCell>
+                            <TableCell><Input type="number" value={s.height_mm} onChange={(e) => updateSlot(i, { height_mm: Number(e.target.value) })} /></TableCell>
+                            <TableCell><Input type="number" value={s.rotation_deg} onChange={(e) => updateSlot(i, { rotation_deg: Number(e.target.value) })} /></TableCell>
+                            <TableCell><Button variant="ghost" size="sm" onClick={() => removeSlot(i)}><Trash2 className="h-3 w-3" /></Button></TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Coordinates from bottom-left of the output sheet. Slot order = page order on the sheet.
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
 
             <DialogFooter>
@@ -475,11 +648,13 @@ function AssignmentDialog({ templates, onClose }: { templates: ImpositionTemplat
                 <div className="space-y-1 mt-1 max-h-64 overflow-y-auto">
                   {templates.filter(t => t.is_active).map(t => {
                     const assigned = assignments.find(a => a.imposition_template_id === t.id);
+                    const k = ((t as any).kind as TemplateKind) || "template_pdf";
                     return (
                       <div key={t.id} className="flex items-center justify-between border rounded p-2">
                         <div className="text-sm">
                           <span className="font-medium">{t.name}</span>
-                          <span className="text-muted-foreground ml-2">{t.input_size} → {t.output_size} ({t.n_up}-up)</span>
+                          <Badge variant="outline" className="ml-2">{KIND_LABEL[k]}</Badge>
+                          <span className="text-muted-foreground ml-2">{t.input_size} → {t.output_size}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           {assigned?.is_primary && <Badge>primary</Badge>}
