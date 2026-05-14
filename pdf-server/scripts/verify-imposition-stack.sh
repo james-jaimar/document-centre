@@ -101,11 +101,23 @@ section "ICC PROFILES"
 if [[ ! -d "$ICC_DIR" ]]; then
   row_fail "icc dir" "missing $ICC_DIR  (bash ${APP_DIR}/scripts/install-icc-profiles.sh)"
 else
-  srgb="$(find "$ICC_DIR" -type f \( -iname '*srgb*.icc' -o -iname '*srgb*.icm' \) 2>/dev/null | head -1)"
-  if [[ -n "$srgb" ]]; then row_pass "sRGB" "$srgb"; else row_fail "sRGB" "no sRGB profile found"; fi
+  # Canonical filenames must match app/services/icc_profiles.py PROFILE_MAP and
+  # scripts/install-icc-profiles.sh. Update all three together if a profile is
+  # added/renamed.
+  check_icc() {
+    local label="$1" filename="$2"
+    local target="$ICC_DIR/$filename"
+    if [[ -e "$target" ]]; then
+      row_pass "$label" "$target"
+    else
+      row_fail "$label" "missing $filename  (bash ${APP_DIR}/scripts/install-icc-profiles.sh)"
+    fi
+  }
 
-  cmyk="$(find "$ICC_DIR" -type f \( -iname '*fogra*.icc' -o -iname '*fogra*.icm' -o -iname '*cmyk*.icc' \) 2>/dev/null | head -1)"
-  if [[ -n "$cmyk" ]]; then row_pass "CMYK (FOGRA)" "$cmyk"; else row_fail "CMYK (FOGRA)" "no CMYK/FOGRA profile found"; fi
+  check_icc "sRGB"               "sRGB_v4_ICC_preference.icc"
+  check_icc "ISOcoated v2"       "ISOcoated_v2_eci.icc"
+  check_icc "ISOcoated v2 (300)" "ISOcoated_v2_300_eci.icc"
+  check_icc "PSOcoated v3"       "PSOcoated_v3.icc"
 
   total="$(find "$ICC_DIR" -type f \( -iname '*.icc' -o -iname '*.icm' \) 2>/dev/null | wc -l | tr -d ' ')"
   printf "        (total ICC files: %s)\n" "$total"
