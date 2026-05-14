@@ -186,6 +186,9 @@ export default function ProductPricingTab({
     }
   }
 
+  const isRateCardDriven =
+    !!productFamilySlug && RATE_CARD_DRIVEN_FAMILIES.has(productFamilySlug);
+
   return (
     <div className="space-y-6">
       {/* Section 1: Applicable Pricing Rules */}
@@ -193,50 +196,63 @@ export default function ProductPricingTab({
         <h4 className="text-sm font-semibold text-foreground mb-2">
           Base Pricing Rules
         </h4>
-        <p className="text-xs text-muted-foreground mb-2">
-          Rules from the global Pricing page that apply to{" "}
-          <strong>{productFamilyName}</strong>.
-        </p>
-        {familyRules.length === 0 ? (
-          <p className="text-xs text-muted-foreground italic">
-            No pricing rules configured for this product family.
-          </p>
+        {isRateCardDriven ? (
+          <div className="rounded-md border border-dashed bg-muted/30 p-3">
+            <p className="text-xs text-muted-foreground">
+              <strong>{productFamilyName}</strong> prices are managed on the{" "}
+              <strong>Pricing → Photo Prints</strong> tab (Rate Card). Add or
+              remove sizes there — they will appear automatically in the customer
+              builder.
+            </p>
+          </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Rule</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Price</TableHead>
-                <TableHead>Conditions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {familyRules.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell className="text-xs font-medium">
-                    {r.name}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="text-[10px]">
-                      {RULE_TYPE_LABELS[r.rule_type] || r.rule_type}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {formatPrice(Number(r.price_value), "ZAR")}
-                  </TableCell>
-                  <TableCell className="text-[10px] text-muted-foreground max-w-[160px] truncate">
-                    {r.conditions &&
-                    Object.keys(r.conditions as object).length > 0
-                      ? Object.entries(r.conditions as Record<string, unknown>)
-                          .map(([k, v]) => `${k}: ${v}`)
-                          .join(", ")
-                      : "—"}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <>
+            <p className="text-xs text-muted-foreground mb-2">
+              Rules from the global Pricing page that apply to{" "}
+              <strong>{productFamilyName}</strong>.
+            </p>
+            {familyRules.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">
+                No pricing rules configured for this product family.
+              </p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Rule</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Price</TableHead>
+                    <TableHead>Conditions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {familyRules.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="text-xs font-medium">
+                        {r.name}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-[10px]">
+                          {RULE_TYPE_LABELS[r.rule_type] || r.rule_type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {formatPrice(Number(r.price_value), "ZAR")}
+                      </TableCell>
+                      <TableCell className="text-[10px] text-muted-foreground max-w-[160px] truncate">
+                        {r.conditions &&
+                        Object.keys(r.conditions as object).length > 0
+                          ? Object.entries(r.conditions as Record<string, unknown>)
+                              .map(([k, v]) => `${k}: ${v}`)
+                              .join(", ")
+                          : "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </>
         )}
       </div>
 
