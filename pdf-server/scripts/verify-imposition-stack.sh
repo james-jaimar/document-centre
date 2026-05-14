@@ -59,10 +59,23 @@ else
   check_pkg() {
     local pkg="$1" import_name="$2" hint="${3:-}"
     local out
-    out="$("$VENV_PY" -c "import importlib,sys
+    out="$("$VENV_PY" -c "
+import importlib, sys
+try:
+    from importlib.metadata import version as _md_version, PackageNotFoundError
+except Exception:
+    _md_version = None
+    PackageNotFoundError = Exception
 m = importlib.import_module('$import_name')
-v = getattr(m, '__version__', None) or getattr(m, 'VERSION', None) or '?'
-print(v)" 2>&1)"
+v = getattr(m, '__version__', None) or getattr(m, 'VERSION', None)
+if not v and _md_version is not None:
+    for name in ('$pkg', '$import_name'):
+        try:
+            v = _md_version(name); break
+        except PackageNotFoundError:
+            continue
+print(v or '?')
+" 2>&1)"
     if [[ $? -eq 0 ]]; then
       row_pass "$pkg" "$out"
     else
