@@ -191,8 +191,13 @@ class JobArtefactRequest(BaseModel):
     The pdf-server resolves all inputs (source PDFs, product spec, tenant
     branding) directly from Supabase using its service-role credentials,
     so the caller only needs to supply the job id.
+
+    `imposition_template_id` is optional and only used by the impose endpoint;
+    when present, the template-driven imposition path runs instead of the
+    legacy product-aware strategy.
     """
     job_id: UUID
+    imposition_template_id: UUID | None = None
 
 
 class PadPagesRequest(BaseModel):
