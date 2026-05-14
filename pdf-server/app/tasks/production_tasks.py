@@ -178,22 +178,35 @@ def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str):
                 return result
 
             sheet_w, sheet_h = _press_sheet_size_mm(bundle)
+            spec = bundle.job.get("production_specs") or {}
+            bleed_mm = float(spec.get("bleed_mm") or 3.0)
+            gutter_mm = float(spec.get("gutter_mm") or 0.0)
+            creep_mm = float(spec.get("creep_per_sheet_mm") or 0.0)
 
             if strategy == "booklet":
-                pdf_ops.booklet(src, out_pdf, sheet_width_mm=sheet_w, sheet_height_mm=sheet_h)
+                stats = pdf_ops.booklet_saddle_stitch(
+                    src, out_pdf,
+                    sheet_width_mm=sheet_w,
+                    sheet_height_mm=sheet_h,
+                    bleed_mm=bleed_mm,
+                    creep_per_sheet_mm=creep_mm,
+                )
             else:
                 # n-up: figure out columns/rows from finished size vs sheet size
                 snap = bundle.job.get("product_snapshot") or {}
                 fw = float(snap.get("width_mm") or 100)
                 fh = float(snap.get("height_mm") or 150)
-                cols = max(1, int(sheet_w // (fw + 5)))
-                rows = max(1, int(sheet_h // (fh + 5)))
-                pdf_ops.impose_sheet_with_bleed(
+                pitch_w = fw + gutter_mm
+                pitch_h = fh + gutter_mm
+                cols = max(1, int((sheet_w - 2 * bleed_mm + gutter_mm) // pitch_w))
+                rows = max(1, int((sheet_h - 2 * bleed_mm + gutter_mm) // pitch_h))
+                stats = pdf_ops.impose_nup_trimbox(
                     src, out_pdf,
                     columns=cols, rows=rows,
                     sheet_width_mm=sheet_w, sheet_height_mm=sheet_h,
-                    bleed_mm=3, gap_mm=2, outer_margin_mm=8,
-                    show_crop_marks=True, show_bleed_outline=False,
+                    bleed_mm=bleed_mm,
+                    gutter_mm=gutter_mm,
+                    fallback_trim_inset_mm=bleed_mm,
                 )
 
             job_number = _safe(bundle.job.get("job_number"), pdf_job_id[:8])
@@ -201,7 +214,12 @@ def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str):
             storage.upload(out_pdf, storage_path, "application/pdf")
 
         write_artefact_path(job_id, "imposed_pdf_path", storage_path)
-        result = {"storage_path": storage_path, "strategy": strategy, "sheet_mm": [sheet_w, sheet_h]}
+        result = {
+            "storage_path": storage_path,
+            "strategy": strategy,
+            "sheet_mm": [sheet_w, sheet_h],
+            "stats": stats,
+        }
         job_repo.mark_done(db, pdf_job_id, result)
         return result
     except Exception as exc:

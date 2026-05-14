@@ -1145,7 +1145,401 @@ class PdfOps:
             output.save(str(out_pdf))
             return sheets
 
+    # ------------------------------------------------------------------ #
+    # TrimBox-aware n-up imposition (industry-standard, replaces the old
+    # MediaBox-only impose_sheet_with_bleed for new callers)
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _resolve_trim_box(page, fallback_inset_pt: float = 0.0) -> list[float]:
+        """Return [x0,y0,x1,y1] of the page's TrimBox, with the standard
+        printing-industry fallback ladder: TrimBox → BleedBox shrunk by
+        fallback_inset → MediaBox shrunk by fallback_inset.
+
+        `fallback_inset_pt` is the assumed bleed (in PDF points) when the
+        producer didn't declare a TrimBox. 0 means "treat the whole box as
+        trim" (no inset).
+        """
+        for attr in ("TrimBox", "BleedBox", "MediaBox"):
+            b = page.get(f"/{attr}", None)
+            if b is None and attr == "MediaBox":
+                b = page.MediaBox
+            if b is None:
+                continue
+            try:
+                box = [float(b[0]), float(b[1]), float(b[2]), float(b[3])]
+            except Exception:
+                continue
+            if attr == "TrimBox":
+                return box
+            if fallback_inset_pt > 0:
+                return [
+                    box[0] + fallback_inset_pt,
+                    box[1] + fallback_inset_pt,
+                    box[2] - fallback_inset_pt,
+                    box[3] - fallback_inset_pt,
+                ]
+            return box
+        raise ValueError("Page has no TrimBox/BleedBox/MediaBox")
+
+    def impose_nup_trimbox(
+        self,
+        src: Path,
+        out_pdf: Path,
+        *,
+        columns: int,
+        rows: int,
+        sheet_width_mm: float,
+        sheet_height_mm: float,
+        bleed_mm: float = 3.0,
+        gutter_mm: float = 0.0,
+        crop_mark_offset_mm: float = 3.0,
+        crop_mark_length_mm: float = 5.0,
+        show_registration: bool = True,
+        fallback_trim_inset_mm: float = 0.0,
+    ) -> dict:
+        """Industry-standard n-up imposition that honours each source
+        page's TrimBox.
+
+        Layout:
+          - Trim sizes are read from the source pages' TrimBox (with the
+            standard fallback ladder). The first page's trim defines the
+            slot pitch — mixed-trim documents get clipped to slot 1.
+          - `gutter_mm = 0` → "gang up" mode: trim edges of adjacent slots
+            butt against each other. Bleed from one slot extends visually
+            into its neighbour but the cut line is shared.
+          - `gutter_mm > 0` → real gap between trim edges (typical when the
+            press needs cutter relief or each slot needs its own bleed).
+          - Crop marks are drawn at every slot's TrimBox corners, with a
+            configurable offset gap and length.
+          - Registration crosshairs are placed in the four sheet-margin
+            corners when `show_registration` is true.
+
+        Output:
+          - MediaBox = full press sheet.
+          - TrimBox  = bounding rect of the live block (slot grid).
+          - BleedBox = TrimBox grown by `bleed_mm`, clamped to MediaBox.
+
+        Returns a stats dict (sheet_count, n_up, slot_size, etc).
+        """
+        from io import BytesIO
+
+        if columns < 1 or rows < 1:
+            raise ValueError("columns and rows must be >= 1")
+
+        MM = 2.83464567  # PDF points per millimetre
+        sheet_w = sheet_width_mm * MM
+        sheet_h = sheet_height_mm * MM
+        bleed = bleed_mm * MM
+        gutter = gutter_mm * MM
+        cm_off = crop_mark_offset_mm * MM
+        cm_len = crop_mark_length_mm * MM
+        fallback_inset = fallback_trim_inset_mm * MM
+
+        out_pdf.parent.mkdir(parents=True, exist_ok=True)
+
+        with pikepdf.open(str(src)) as src_pdf:
+            customer_pages = list(src_pdf.pages)
+            if not customer_pages:
+                raise ValueError("Source PDF has no pages")
+
+            trim0 = self._resolve_trim_box(customer_pages[0], fallback_inset)
+            trim_w = trim0[2] - trim0[0]
+            trim_h = trim0[3] - trim0[1]
+            if trim_w <= 0 or trim_h <= 0:
+                raise ValueError("First page has invalid TrimBox dimensions")
+
+            slot_pitch_w = trim_w + gutter
+            slot_pitch_h = trim_h + gutter
+            block_w = columns * trim_w + max(0, columns - 1) * gutter
+            block_h = rows * trim_h + max(0, rows - 1) * gutter
+
+            if block_w + 2 * bleed > sheet_w or block_h + 2 * bleed > sheet_h:
+                raise ValueError(
+                    f"Imposed block ({block_w/MM:.1f}×{block_h/MM:.1f}mm + bleed) "
+                    f"does not fit on press sheet ({sheet_width_mm}×{sheet_height_mm}mm)."
+                )
+
+            origin_x = (sheet_w - block_w) / 2
+            origin_y = (sheet_h - block_h) / 2
+
+            per_sheet = columns * rows
+            output = pikepdf.Pdf.new()
+            sheet_count = 0
+
+            for chunk_start in range(0, len(customer_pages), per_sheet):
+                output.add_blank_page(page_size=(sheet_w, sheet_h))
+                sheet = output.pages[-1]
+
+                slot_rects: list[tuple[float, float, float, float]] = []
+                for i in range(per_sheet):
+                    col = i % columns
+                    row = i // columns
+                    tx0 = origin_x + col * slot_pitch_w
+                    # Row 0 at top
+                    ty0 = origin_y + (rows - 1 - row) * slot_pitch_h
+                    slot_rects.append((tx0, ty0, tx0 + trim_w, ty0 + trim_h))
+
+                for slot_idx in range(per_sheet):
+                    src_idx = chunk_start + slot_idx
+                    if src_idx >= len(customer_pages):
+                        break
+                    cust = customer_pages[src_idx]
+                    trim = self._resolve_trim_box(cust, fallback_inset)
+
+                    # The "bleed rectangle" we want to land into the slot-
+                    # plus-bleed area on the press sheet. Clamp to the
+                    # source MediaBox so we don't reference content the
+                    # producer never drew.
+                    mb = cust.MediaBox
+                    mb_box = [float(mb[0]), float(mb[1]), float(mb[2]), float(mb[3])]
+                    cust_bleed = [
+                        max(mb_box[0], trim[0] - bleed),
+                        max(mb_box[1], trim[1] - bleed),
+                        min(mb_box[2], trim[2] + bleed),
+                        min(mb_box[3], trim[3] + bleed),
+                    ]
+
+                    tx0, ty0, tx1, ty1 = slot_rects[slot_idx]
+                    tgt_rect = pikepdf.Rectangle(
+                        tx0 - bleed, ty0 - bleed,
+                        tx1 + bleed, ty1 + bleed,
+                    )
+
+                    # Temporarily set MediaBox = the source bleed rectangle
+                    # so add_overlay maps that exact area into our slot.
+                    original_mb = list(mb_box)
+                    cust.MediaBox = pikepdf.Array(cust_bleed)
+                    try:
+                        sheet.add_overlay(cust, tgt_rect)
+                    finally:
+                        cust.MediaBox = pikepdf.Array(original_mb)
+
+                # Crop marks + registration overlay (reportlab → pikepdf)
+                ov_buf = BytesIO()
+                c = canvas.Canvas(ov_buf, pagesize=(sheet_w, sheet_h))
+                c.setLineWidth(0.25)
+                c.setStrokeColor(Color(0, 0, 0, alpha=1))
+                for slot_idx in range(per_sheet):
+                    src_idx = chunk_start + slot_idx
+                    if src_idx >= len(customer_pages):
+                        break
+                    tx0, ty0, tx1, ty1 = slot_rects[slot_idx]
+                    # Marks are drawn AT the trim corners with a `cm_off`
+                    # gap, extending OUTWARD into the bleed/waste area.
+                    # bottom-left
+                    c.line(tx0 - cm_off - cm_len, ty0, tx0 - cm_off, ty0)
+                    c.line(tx0, ty0 - cm_off - cm_len, tx0, ty0 - cm_off)
+                    # bottom-right
+                    c.line(tx1 + cm_off, ty0, tx1 + cm_off + cm_len, ty0)
+                    c.line(tx1, ty0 - cm_off - cm_len, tx1, ty0 - cm_off)
+                    # top-left
+                    c.line(tx0 - cm_off - cm_len, ty1, tx0 - cm_off, ty1)
+                    c.line(tx0, ty1 + cm_off, tx0, ty1 + cm_off + cm_len)
+                    # top-right
+                    c.line(tx1 + cm_off, ty1, tx1 + cm_off + cm_len, ty1)
+                    c.line(tx1, ty1 + cm_off, tx1, ty1 + cm_off + cm_len)
+
+                if show_registration:
+                    r = 3 * MM
+                    margin_x = max(8 * MM, (sheet_w - block_w) / 4)
+                    margin_y = max(8 * MM, (sheet_h - block_h) / 4)
+                    for cx, cy in [
+                        (margin_x, margin_y),
+                        (sheet_w - margin_x, margin_y),
+                        (margin_x, sheet_h - margin_y),
+                        (sheet_w - margin_x, sheet_h - margin_y),
+                    ]:
+                        c.circle(cx, cy, r, stroke=1, fill=0)
+                        c.line(cx - r - 1 * MM, cy, cx + r + 1 * MM, cy)
+                        c.line(cx, cy - r - 1 * MM, cx, cy + r + 1 * MM)
+
+                c.showPage()
+                c.save()
+                ov_buf.seek(0)
+                with pikepdf.open(ov_buf) as ov_pdf:
+                    sheet.add_overlay(
+                        ov_pdf.pages[0],
+                        pikepdf.Rectangle(0, 0, sheet_w, sheet_h),
+                    )
+
+                # Stamp output boxes so downstream tools know live area.
+                sheet.TrimBox = pikepdf.Array([
+                    origin_x, origin_y,
+                    origin_x + block_w, origin_y + block_h,
+                ])
+                sheet.BleedBox = pikepdf.Array([
+                    max(0, origin_x - bleed),
+                    max(0, origin_y - bleed),
+                    min(sheet_w, origin_x + block_w + bleed),
+                    min(sheet_h, origin_y + block_h + bleed),
+                ])
+
+                sheet_count += 1
+
+            output.save(str(out_pdf))
+
+        return {
+            "sheet_count": sheet_count,
+            "n_up": per_sheet,
+            "columns": columns,
+            "rows": rows,
+            "slot_size_mm": [trim_w / MM, trim_h / MM],
+            "bleed_mm": bleed_mm,
+            "gutter_mm": gutter_mm,
+            "press_sheet_mm": [sheet_width_mm, sheet_height_mm],
+        }
+
+    # ------------------------------------------------------------------ #
+    # Saddle-stitch booklet imposition (with creep compensation)
+    # ------------------------------------------------------------------ #
+    def booklet_saddle_stitch(
+        self,
+        src: Path,
+        out_pdf: Path,
+        *,
+        sheet_width_mm: float,
+        sheet_height_mm: float,
+        bleed_mm: float = 3.0,
+        creep_per_sheet_mm: float = 0.0,
+        crop_marks: bool = True,
+        fold_mark: bool = True,
+        fallback_trim_inset_mm: float = 0.0,
+    ) -> dict:
+        """Saddle-stitch booklet imposition.
+
+        Pads source to a multiple of 4 with blank pages, then lays out
+        2-up reader spreads on each side of every printed sheet using the
+        standard signature ordering:
+
+            sheet 1 front:  [N,    1]
+            sheet 1 back:   [2,    N-1]
+            sheet 2 front:  [N-2,  3]
+            sheet 2 back:   [4,    N-3]
+            …
+
+        Creep compensation: each printed sheet shifts content TOWARD the
+        spine by `creep_per_sheet_mm × sheet_index`. The outermost sheet
+        (s=0) gets zero shift; the innermost gets the largest.
+
+        Source page TrimBox (with fallback) is the unit that gets fitted
+        into each half-sheet — anything outside trim is treated as bleed
+        and clipped at the half-sheet boundary.
+        """
+        from io import BytesIO
+
+        MM = 2.83464567
+        sheet_w = sheet_width_mm * MM
+        sheet_h = sheet_height_mm * MM
+        half_w = sheet_w / 2
+        creep = creep_per_sheet_mm * MM
+        fallback_inset = fallback_trim_inset_mm * MM
+
+        out_pdf.parent.mkdir(parents=True, exist_ok=True)
+
+        with pikepdf.open(str(src)) as src_pdf:
+            real_pages = list(src_pdf.pages)
+            original_n = len(real_pages)
+            if original_n == 0:
+                raise ValueError("Source PDF has no pages")
+
+            # Pad by repeating None markers (handled as blanks below).
+            padded: list = list(real_pages)
+            while len(padded) % 4 != 0:
+                padded.append(None)
+            n = len(padded)
+            sheet_count = n // 4
+
+            output = pikepdf.Pdf.new()
+
+            def _place(sheet_page, page, side: str, sheet_index: int) -> None:
+                if page is None:
+                    return
+                trim = self._resolve_trim_box(page, fallback_inset)
+                tw = trim[2] - trim[0]
+                th = trim[3] - trim[1]
+                if tw <= 0 or th <= 0:
+                    return
+                scale = min(half_w / tw, sheet_h / th)
+                draw_w = tw * scale
+                draw_h = th * scale
+                y = (sheet_h - draw_h) / 2
+                creep_shift = creep * sheet_index
+
+                if side == "left":
+                    x = (half_w - draw_w) / 2 + creep_shift
+                else:
+                    x = half_w + (half_w - draw_w) / 2 - creep_shift
+
+                tgt = pikepdf.Rectangle(x, y, x + draw_w, y + draw_h)
+
+                original_mb = list(map(float, page.MediaBox))
+                page.MediaBox = pikepdf.Array(trim)
+                try:
+                    sheet_page.add_overlay(page, tgt)
+                finally:
+                    page.MediaBox = pikepdf.Array(original_mb)
+
+            for s in range(sheet_count):
+                output.add_blank_page(page_size=(sheet_w, sheet_h))
+                front = output.pages[-1]
+                output.add_blank_page(page_size=(sheet_w, sheet_h))
+                back = output.pages[-1]
+
+                # Standard saddle-stitch signature for sheet s (0-indexed):
+                _place(front, padded[n - 1 - 2 * s], "left",  s)
+                _place(front, padded[2 * s],         "right", s)
+                _place(back,  padded[2 * s + 1],     "left",  s)
+                _place(back,  padded[n - 2 - 2 * s], "right", s)
+
+                if crop_marks or fold_mark:
+                    ov = BytesIO()
+                    c = canvas.Canvas(ov, pagesize=(sheet_w, sheet_h))
+                    c.setLineWidth(0.25)
+                    c.setStrokeColor(Color(0, 0, 0, alpha=1))
+                    cm_len = 5 * MM
+                    cm_off = 3 * MM
+                    if crop_marks:
+                        for (cx, cy) in [
+                            (0, 0), (sheet_w, 0),
+                            (0, sheet_h), (sheet_w, sheet_h),
+                        ]:
+                            sx = -1 if cx == 0 else 1
+                            sy = -1 if cy == 0 else 1
+                            c.line(cx + sx * cm_off, cy,
+                                   cx + sx * (cm_off + cm_len), cy)
+                            c.line(cx, cy + sy * cm_off,
+                                   cx, cy + sy * (cm_off + cm_len))
+                    if fold_mark:
+                        c.setDash(2, 2)
+                        c.line(half_w, cm_off, half_w, cm_off + cm_len)
+                        c.line(half_w, sheet_h - cm_off - cm_len,
+                               half_w, sheet_h - cm_off)
+                        c.setDash()
+                    c.showPage()
+                    c.save()
+                    ov.seek(0)
+                    with pikepdf.open(ov) as ov_pdf:
+                        front.add_overlay(
+                            ov_pdf.pages[0],
+                            pikepdf.Rectangle(0, 0, sheet_w, sheet_h),
+                        )
+                        back.add_overlay(
+                            ov_pdf.pages[0],
+                            pikepdf.Rectangle(0, 0, sheet_w, sheet_h),
+                        )
+
+            output.save(str(out_pdf))
+
+        return {
+            "sheet_count": sheet_count,
+            "original_page_count": original_n,
+            "padded_page_count": n,
+            "creep_per_sheet_mm": creep_per_sheet_mm,
+            "press_sheet_mm": [sheet_width_mm, sheet_height_mm],
+        }
+
     def booklet(self, src: Path, out_pdf: Path, sheet_width_mm: float, sheet_height_mm: float) -> Path:
+
         reader = PdfReader(str(src))
         pages = list(reader.pages)
         writer = PdfWriter()

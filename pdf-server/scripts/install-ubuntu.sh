@@ -12,8 +12,15 @@ apt-get update
 apt-get install -y --no-install-recommends \
   python3 python3-venv python3-pip python3-dev \
   build-essential pkg-config libqpdf-dev libjpeg-dev zlib1g-dev libffi-dev \
-  ghostscript libreoffice qpdf poppler-utils redis-server nginx \
+  ghostscript libreoffice qpdf poppler-utils mupdf-tools redis-server nginx \
   curl unzip xz-utils git fonts-dejavu-core ca-certificates
+
+# Install pdfcpu (used as a fallback / sanity-check imposer alongside the
+# in-house pikepdf engine).
+if [[ -x /opt/document-centre-api/scripts/install-pdfcpu.sh ]]; then
+  echo ">> Installing pdfcpu (idempotent)…"
+  bash /opt/document-centre-api/scripts/install-pdfcpu.sh || true
+fi
 
 systemctl enable redis-server
 systemctl restart redis-server
