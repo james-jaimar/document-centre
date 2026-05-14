@@ -95,10 +95,18 @@ Deno.serve(async (req) => {
     const apiKey = Deno.env.get("VPS_PDF_API_KEY");
     if (!apiUrl || !apiKey) return json({ error: "PDF API not configured" }, 500);
 
+    // Persist the chosen template on the job so the worker can read it.
+    if (action === "impose" && imposition_template_id) {
+      await admin
+        .from("order_jobs")
+        .update({ imposition_template_id })
+        .eq("id", job_id);
+    }
+
     const dispatchRes = await fetch(`${apiUrl}${ENDPOINTS[action]}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": apiKey },
-      body: JSON.stringify({ job_id }),
+      body: JSON.stringify({ job_id, imposition_template_id: imposition_template_id ?? null }),
     });
     if (!dispatchRes.ok) {
       const txt = await dispatchRes.text();
