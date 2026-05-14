@@ -129,6 +129,26 @@ function CustomerLayoutInner() {
   }, [branding]);
 
 
+  // Branded splash while tenant CSS variables / logo are still loading,
+  // so customers never see the default Document Centre theme flash.
+  if (!brandingReady) {
+    const splashLogo = tenant?.logo_url || null;
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-6">
+          {splashLogo ? (
+            <img
+              src={splashLogo}
+              alt={tenant?.name ?? ""}
+              className="h-14 w-auto max-w-[220px] object-contain opacity-90"
+            />
+          ) : null}
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground/80" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen w-full flex-col" style={tenantStyle}>
       <BranchPicker />
