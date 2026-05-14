@@ -1,78 +1,72 @@
-## Add `pdf-server/scripts/verify-imposition-stack.sh`
+## Goal
 
-A single idempotent, read-only script that prints a pass/fail table for everything the imposition pipeline depends on. Safe to run on the VPS any time (no installs, no mutations).
+Resolve the two failures from `verify-imposition-stack.sh` so the stack is fully green before we move on to imposition UI/backend work. Both are easy wins.
 
-### What it checks
+---
 
-**1. System binaries** (via `command -v` + `--version`)
-- `gs` (ghostscript)
-- `qpdf`
-- `pdftoppm`, `pdfinfo` (poppler-utils)
-- `mutool` (mupdf-tools) — flags as MISSING if absent, with hint `apt-get install -y mupdf-tools`
-- `pdfcpu` — flags as MISSING with hint `bash scripts/install-pdfcpu.sh`
-- `libreoffice` (soffice)
+## 1. Fix CMYK profile detection in the verify script (false negative)
 
-**2. Python packages** (inside `/opt/document-centre-api/.venv`)
-Imports each and prints version:
-- pikepdf, pypdf, reportlab, PIL (Pillow), fastapi, celery, redis, supabase, boto3, qrcode
-- Specifically flags `qrcode` since it's missing from the VPS `requirements.txt` snapshot the user pasted.
-
-**3. ICC profiles** (under `/opt/document-centre-api/icc`)
-- sRGB profile present
-- FOGRA39 (or configured CMYK) profile present
-- Lists any other `.icc`/`.icm` found
-
-**4. Imposition engine self-test** (pikepdf round-trip)
-- Builds a tiny 1-page PDF in `/tmp`, opens with pikepdf, reads MediaBox/TrimBox, writes back. Confirms the in-house engine's core dependency is wired.
-
-**5. Redis ping** (`redis-cli ping` → expect `PONG`)
-
-**6. Systemd units** (status only, no restart)
-- `document-centre-api`, `document-centre-worker-heavy`, `document-centre-worker-light`, `document-centre-beat`, `redis-server`
-
-### Output format
-
-```text
-== Document Centre — Imposition Stack Verification ==
-
-[BINARIES]
-  PASS  ghostscript      10.02.1
-  PASS  qpdf             11.6.3
-  PASS  pdfcpu           v0.6.0
-  FAIL  mutool           not found  (apt-get install -y mupdf-tools)
-  ...
-
-[PYTHON PACKAGES]
-  PASS  pikepdf          9.4.2
-  FAIL  qrcode           not installed  (pip install 'qrcode[pil]==7.4.2')
-  ...
-
-[ICC PROFILES]
-  PASS  sRGB             /opt/.../sRGB.icc
-  PASS  FOGRA39          /opt/.../CoatedFOGRA39.icc
-
-[ENGINE SELF-TEST]
-  PASS  pikepdf round-trip + box read
-
-[SERVICES]
-  PASS  redis-server     active
-  PASS  document-centre-api  active (running)
-  ...
-
-== Summary: 14 PASS, 1 FAIL ==
-Exit code: 1
-```
-
-Exit non-zero if any FAIL so it's CI-friendly.
-
-### Usage
+`pdf-server/scripts/verify-imposition-stack.sh` currently looks for CMYK profiles with:
 
 ```bash
-sudo bash /opt/document-centre-api/scripts/verify-imposition-stack.sh
+find "$ICC_DIR" -type f \( -iname '*fogra*.icc' -o -iname '*fogra*.icm' -o -iname '*cmyk*.icc' \)
 ```
 
-### File created
+The ECI/PSO profiles are installed but their filenames are `ISOcoated_v2_eci.icc`, `ISOcoated_v2_300_eci.icc`, `PSOcoated_v3.icc` — none contain `fogra` or `cmyk`. Verified on the VPS:
 
-- `pdf-server/scripts/verify-imposition-stack.sh` (executable, bash, ~120 lines)
+```
+ISOcoated_v2_300_eci.icc  ISOcoated_v2_eci.icc  PSOcoated_v3.icc  sRGB_v4_ICC_preference.icc
+```
 
-No other files touched. No memory changes. No UI changes.
+These are exactly the four canonical names that `install-icc-profiles.sh` and `app/services/icc_profiles.py` (`PROFILE_MAP`) already reference — so the source of truth should be those filenames, not a fuzzy grep.
+
+**Change:** replace the fuzzy `find` with explicit checks for the four canonical filenames defined in `PROFILE_MAP` (sRGB, ISOcoated v2, ISOcoated v2 300, PSOcoated v3). Each shows PASS/FAIL with the exact path. Keep the "total ICC files" line for context.
+
+While there, also fix the `qrcode` version probe — `qrcode` exposes `qrcode.__version__` in newer releases but the package's top-level may not in 7.4.2; fall back to `importlib.metadata.version("qrcode")` so we get `7.4.2` instead of `?`. Apply the same fallback to every package check (cleaner across the board).
+
+## 2. Install the missing `document-centre-worker-light.service` on the VPS
+
+The unit file exists in the repo at `pdf-server/deploy/systemd/document-centre-worker-light.service` but was never copied into `/etc/systemd/system` on `srv1516161`. Heavy is running, light is absent — meaning thumbnail / default-queue jobs are currently NOT being consumed by a dedicated worker.
+
+The repo already ships an idempotent migrator that does exactly this: `pdf-server/scripts/migrate-to-split-workers.sh`. It:
+
+1. Stops + disables the legacy single-pool `document-centre-worker.service` if present.
+2. Copies both heavy + light unit files from `deploy/systemd/` into `/etc/systemd/system/`.
+3. `daemon-reload`, then `enable --now` both units.
+4. Runs `celery inspect active_queues` to prove both workers are alive.
+
+**Action:** no code change needed — user runs on the VPS:
+
+```bash
+sudo bash /opt/document-centre-api/scripts/migrate-to-split-workers.sh
+```
+
+then re-runs `verify-imposition-stack.sh`.
+
+## 3. Re-verify
+
+Expected result after both fixes:
+
+```
+[ICC PROFILES]
+  PASS  sRGB                 .../sRGB_v4_ICC_preference.icc
+  PASS  ISOcoated v2         .../ISOcoated_v2_eci.icc
+  PASS  ISOcoated v2 (300)   .../ISOcoated_v2_300_eci.icc
+  PASS  PSOcoated v3         .../PSOcoated_v3.icc
+
+[PYTHON PACKAGES]
+  ... PASS  qrcode  7.4.2
+
+[SYSTEMD UNITS]
+  PASS  document-centre-worker-light.service  active (running)
+
+== Summary: 27/27 PASS, 0 FAIL ==
+```
+
+---
+
+## Files touched
+
+- `pdf-server/scripts/verify-imposition-stack.sh` — replace ICC section with explicit canonical-filename checks; add `importlib.metadata.version()` fallback in `check_pkg`.
+
+No other files change. After this, the stack is fully verified and we can return to the imposition admin UI / per-product defaults work.
