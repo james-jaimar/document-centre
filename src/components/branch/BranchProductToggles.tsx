@@ -130,7 +130,7 @@ export default function BranchProductToggles({ branchId, readOnly = false }: Pro
                       variant="outline"
                       size="sm"
                       className="h-8"
-                      onClick={() => setPricingFamily({ id: cap.product_family_id!, name: cap.product_families!.name })}
+                      onClick={() => setPricingFamily({ id: cap.product_family_id!, name: cap.product_families!.name, slug: cap.product_families!.slug })}
                     >
                       <Tag size={12} className="mr-1.5" /> Pricing
                     </Button>
