@@ -54,6 +54,52 @@ export function TenantProvider({ children }: { children: ReactNode }) {
 
   const isPlatformAdmin = roles.includes("platform_admin");
 
+  // -----------------------------------------------------------------
+  // URL-slug tenant resolution (customer portal: /t/:slug/...)
+  // -----------------------------------------------------------------
+  // Derive the slug directly from the pathname so this works regardless
+  // of where TenantProvider sits in the React Router tree.
+  const urlSlugMatch = location.pathname.match(/^\/t\/([^/]+)/);
+  const urlSlug = urlSlugMatch ? urlSlugMatch[1] : null;
+
+  const [slugTenant, setSlugTenant] = useState<{
+    id: string;
+    app_id: string;
+    name: string;
+    slug: string;
+  } | null>(null);
+  const [slugLoading, setSlugLoading] = useState(false);
+
+  useEffect(() => {
+    if (!urlSlug) {
+      setSlugTenant(null);
+      setSlugLoading(false);
+      return;
+    }
+    // If we already resolved this slug, skip
+    if (slugTenant && slugTenant.slug === urlSlug) return;
+    setSlugLoading(true);
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("tenants")
+        .select("id, app_id, name, slug")
+        .eq("slug", urlSlug)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error || !data) {
+        setSlugTenant(null);
+      } else {
+        setSlugTenant(data as { id: string; app_id: string; name: string; slug: string });
+      }
+      setSlugLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [urlSlug, slugTenant]);
+
   // Pick up ?tenant= param when navigating to /admin
   useEffect(() => {
     if (!isPlatformAdmin) return;
@@ -145,16 +191,53 @@ export function TenantProvider({ children }: { children: ReactNode }) {
 
   const isOverriding = isPlatformAdmin && !!overrideTenantId;
 
-  // When overriding, use override values; otherwise use membership values
-  const effectiveTenantId = isOverriding ? overrideTenantId : (activeMembership?.tenant_id ?? null);
-  const effectiveAppId = isOverriding ? overrideAppId : (activeMembership?.app_id ?? null);
-  const effectiveTenantName = isOverriding ? overrideTenantName : tenantName;
+  // -----------------------------------------------------------------
+  // Effective tenant resolution priority:
+  //   1. URL slug (customer portal /t/:slug)  — ALWAYS wins to prevent
+  //      cross-tenant leakage when a signed-in user has memberships in
+  //      another tenant.
+  //   2. Platform admin override (?tenant=...)
+  //   3. Active membership
+  // -----------------------------------------------------------------
+  const slugMembership = slugTenant
+    ? memberships.find((m) => m.tenant_id === slugTenant.id && m.is_active) ?? null
+    : null;
+
+  const effectiveTenantId = slugTenant
+    ? slugTenant.id
+    : isOverriding
+    ? overrideTenantId
+    : activeMembership?.tenant_id ?? null;
+
+  const effectiveAppId = slugTenant
+    ? slugTenant.app_id
+    : isOverriding
+    ? overrideAppId
+    : activeMembership?.app_id ?? null;
+
+  const effectiveTenantName = slugTenant
+    ? slugTenant.name
+    : isOverriding
+    ? overrideTenantName
+    : tenantName;
+
+  // Branch + role: only meaningful when the user has a membership in the
+  // *effective* tenant. On a foreign storefront they have no role.
+  const effectiveBranchId = slugTenant
+    ? slugMembership?.branch_id ?? null
+    : activeMembership?.branch_id ?? null;
+  const effectiveRole = slugTenant
+    ? slugMembership?.role ?? null
+    : activeMembership?.role ?? null;
+
+  const effectiveLoading = loading || (!!urlSlug && slugLoading);
 
   // Forward tenant + app context to the Document Centre client so
   // every backend op (print-ready, inspect, …) is attributed in JobEvents.
   useEffect(() => {
     setDocumentCentreContext({ tenantId: effectiveTenantId, appId: effectiveAppId });
   }, [effectiveTenantId, effectiveAppId]);
+
 
   return (
     <TenantContext.Provider
@@ -163,10 +246,10 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         activeMembership,
         appId: effectiveAppId,
         tenantId: effectiveTenantId,
-        branchId: activeMembership?.branch_id ?? null,
-        membershipRole: activeMembership?.role ?? null,
+        branchId: effectiveBranchId,
+        membershipRole: effectiveRole,
         tenantName: effectiveTenantName,
-        loading,
+        loading: effectiveLoading,
         setActiveMembershipId,
         overrideTenantId,
         isOverriding,
