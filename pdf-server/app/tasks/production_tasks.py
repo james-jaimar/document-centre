@@ -23,10 +23,12 @@ from app.db.session import SessionLocal
 from app.services.files import Workspace, unique_name
 from app.services.jobs import job_repo
 from app.services.pdf_ops import pdf_ops
+from app.services.imposition_templates import load_imposition_template
 from app.services.production_orchestrator import (
     JobBundle,
     load_job_bundle,
     write_artefact_path,
+    write_job_field,
 )
 from app.services.storage import StorageService
 
@@ -129,21 +131,53 @@ def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str):
         if not source_path:
             raise ValueError("Print-ready PDF must be assembled before imposition.")
 
-        strategy = _imposition_strategy(bundle)
-        if strategy == "none":
-            # No-op imposition: copy the print-ready PDF into the imposed slot
-            # so the workflow stays consistent for operators.
-            write_artefact_path(job_id, "imposed_pdf_path", source_path)
-            result = {"storage_path": source_path, "strategy": "none", "note": "1-up"}
-            job_repo.mark_done(db, pdf_job_id, result)
-            return result
-
-        sheet_w, sheet_h = _press_sheet_size_mm(bundle)
+        template_id = bundle.job.get("imposition_template_id")
 
         with Workspace() as ws:
             src = ws.path("source.pdf")
             storage.download(source_path, src)
             out_pdf = ws.path("imposed.pdf")
+
+            # ---------- Template-driven imposition (preferred) ----------
+            if template_id:
+                template = load_imposition_template(str(template_id), ws.path("template"))
+                sheets = pdf_ops.impose_with_template(
+                    source_pdf=src,
+                    template_pdf=template.local_pdf,
+                    slots=template.slots,
+                    n_up=template.n_up,
+                    out_pdf=out_pdf,
+                )
+
+                job_number = _safe(bundle.job.get("job_number"), pdf_job_id[:8])
+                storage_path = unique_name(f"production/imposed/{job_number}", ".pdf")
+                storage.upload(out_pdf, storage_path, "application/pdf")
+
+                write_artefact_path(job_id, "imposed_pdf_path", storage_path)
+                write_job_field(job_id, "imposition_n_up", template.n_up)
+
+                result = {
+                    "storage_path": storage_path,
+                    "strategy": "template",
+                    "template_id": str(template_id),
+                    "template_name": template.name,
+                    "n_up": template.n_up,
+                    "sheets": sheets,
+                }
+                job_repo.mark_done(db, pdf_job_id, result)
+                return result
+
+            # ---------- Legacy product-aware fallback ----------
+            strategy = _imposition_strategy(bundle)
+            if strategy == "none":
+                # No-op imposition: copy the print-ready PDF into the imposed slot
+                # so the workflow stays consistent for operators.
+                write_artefact_path(job_id, "imposed_pdf_path", source_path)
+                result = {"storage_path": source_path, "strategy": "none", "note": "1-up"}
+                job_repo.mark_done(db, pdf_job_id, result)
+                return result
+
+            sheet_w, sheet_h = _press_sheet_size_mm(bundle)
 
             if strategy == "booklet":
                 pdf_ops.booklet(src, out_pdf, sheet_width_mm=sheet_w, sheet_height_mm=sheet_h)
