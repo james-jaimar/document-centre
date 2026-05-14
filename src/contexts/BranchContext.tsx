@@ -194,7 +194,7 @@ export function BranchProvider({
         activeBranch,
         isMultiBranch,
         loading,
-        showPicker: pickerOpen && isMultiBranch && !urlBranchSlug,
+        showPicker: pickerOpen && isMultiBranch,
         selectBranch,
         openPicker,
         closePicker,
