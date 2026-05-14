@@ -361,13 +361,13 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <AuthProvider>
-          <TenantProvider>
-          <SubdomainWrapper>
-            <AppRoutes />
-          </SubdomainWrapper>
-          </TenantProvider>
-        </AuthProvider>
+        <SubdomainWrapper>
+          <AuthProvider>
+            <TenantProvider>
+              <AppRoutes />
+            </TenantProvider>
+          </AuthProvider>
+        </SubdomainWrapper>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
