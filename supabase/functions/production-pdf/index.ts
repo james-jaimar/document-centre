@@ -56,8 +56,11 @@ Deno.serve(async (req) => {
     const userId = userData.user.id;
 
     const body = await req.json();
-    const { action, job_id } = body ?? {};
+    const { action, job_id, imposition_template_id } = body ?? {};
     if (!job_id || !ENDPOINTS[action]) return json({ error: "Invalid request" }, 400);
+    if (action === "impose" && !imposition_template_id) {
+      return json({ error: "imposition_template_id is required for impose action" }, 400);
+    }
 
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
