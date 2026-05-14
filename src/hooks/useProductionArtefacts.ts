@@ -7,12 +7,14 @@ export interface ProductionArtefacts {
   print_ready_pdf_path: string | null;
   imposed_pdf_path: string | null;
   job_ticket_pdf_path: string | null;
+  imposition_template_id: string | null;
+  product_category: string | null;
 }
 
 /**
  * Reads + mutates the three production-PDF paths on `order_jobs`.
  * The actual PDF generation is delegated to the `production-pdf` edge
- * function (assemble) and the existing pdf-api proxy (impose / ticket).
+ * function (assemble / impose / ticket).
  */
 export function useProductionArtefacts(jobId: string | null) {
   const qc = useQueryClient();
@@ -25,7 +27,7 @@ export function useProductionArtefacts(jobId: string | null) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("order_jobs")
-        .select("print_ready_pdf_path, imposed_pdf_path, job_ticket_pdf_path")
+        .select("print_ready_pdf_path, imposed_pdf_path, job_ticket_pdf_path, imposition_template_id, product_category")
         .eq("id", jobId!)
         .single();
       if (error) throw error;
@@ -55,12 +57,12 @@ export function useProductionArtefacts(jobId: string | null) {
     }
   }, [jobId, qc, toast]);
 
-  const generateImposition = useCallback(async () => {
+  const generateImposition = useCallback(async (impositionTemplateId?: string | null) => {
     if (!jobId) return;
     setGenerating("impose");
     try {
       const { data, error } = await supabase.functions.invoke("production-pdf", {
-        body: { action: "impose", job_id: jobId },
+        body: { action: "impose", job_id: jobId, imposition_template_id: impositionTemplateId ?? null },
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);

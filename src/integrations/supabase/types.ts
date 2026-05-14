@@ -1050,6 +1050,72 @@ export type Database = {
           },
         ]
       }
+      imposition_templates: {
+        Row: {
+          created_at: string
+          description: string | null
+          has_bleed: boolean
+          has_crop_marks: boolean
+          id: string
+          input_height_mm: number
+          input_size: string
+          input_width_mm: number
+          is_active: boolean
+          n_up: number
+          name: string
+          output_height_mm: number
+          output_size: string
+          output_width_mm: number
+          slots: Json
+          sort_order: number
+          template_pdf_path: string | null
+          updated_at: string
+          work_style: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          has_bleed?: boolean
+          has_crop_marks?: boolean
+          id?: string
+          input_height_mm: number
+          input_size: string
+          input_width_mm: number
+          is_active?: boolean
+          n_up: number
+          name: string
+          output_height_mm: number
+          output_size: string
+          output_width_mm: number
+          slots?: Json
+          sort_order?: number
+          template_pdf_path?: string | null
+          updated_at?: string
+          work_style?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          has_bleed?: boolean
+          has_crop_marks?: boolean
+          id?: string
+          input_height_mm?: number
+          input_size?: string
+          input_width_mm?: number
+          is_active?: boolean
+          n_up?: number
+          name?: string
+          output_height_mm?: number
+          output_size?: string
+          output_width_mm?: number
+          slots?: Json
+          sort_order?: number
+          template_pdf_path?: string | null
+          updated_at?: string
+          work_style?: string
+        }
+        Relationships: []
+      }
       job_events: {
         Row: {
           app_id: string | null
@@ -1773,6 +1839,8 @@ export type Database = {
           gross_price: number
           id: string
           imposed_pdf_path: string | null
+          imposition_n_up: number | null
+          imposition_template_id: string | null
           integration_payload: Json
           job_name: string | null
           job_number: string
@@ -1815,6 +1883,8 @@ export type Database = {
           gross_price?: number
           id?: string
           imposed_pdf_path?: string | null
+          imposition_n_up?: number | null
+          imposition_template_id?: string | null
           integration_payload?: Json
           job_name?: string | null
           job_number: string
@@ -1857,6 +1927,8 @@ export type Database = {
           gross_price?: number
           id?: string
           imposed_pdf_path?: string | null
+          imposition_n_up?: number | null
+          imposition_template_id?: string | null
           integration_payload?: Json
           job_name?: string | null
           job_number?: string
@@ -1903,6 +1975,13 @@ export type Database = {
             columns: ["branch_id"]
             isOneToOne: false
             referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_jobs_imposition_template_id_fkey"
+            columns: ["imposition_template_id"]
+            isOneToOne: false
+            referencedRelation: "imposition_templates"
             referencedColumns: ["id"]
           },
           {
@@ -2565,6 +2644,51 @@ export type Database = {
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_imposition_defaults: {
+        Row: {
+          created_at: string
+          id: string
+          imposition_template_id: string
+          is_primary: boolean
+          product_family_id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          imposition_template_id: string
+          is_primary?: boolean
+          product_family_id: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          imposition_template_id?: string
+          is_primary?: boolean
+          product_family_id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_imposition_defaults_imposition_template_id_fkey"
+            columns: ["imposition_template_id"]
+            isOneToOne: false
+            referencedRelation: "imposition_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_imposition_defaults_product_family_id_fkey"
+            columns: ["product_family_id"]
+            isOneToOne: false
+            referencedRelation: "product_families"
             referencedColumns: ["id"]
           },
         ]

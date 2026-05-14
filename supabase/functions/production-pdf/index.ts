@@ -56,8 +56,11 @@ Deno.serve(async (req) => {
     const userId = userData.user.id;
 
     const body = await req.json();
-    const { action, job_id } = body ?? {};
+    const { action, job_id, imposition_template_id } = body ?? {};
     if (!job_id || !ENDPOINTS[action]) return json({ error: "Invalid request" }, 400);
+    if (action === "impose" && !imposition_template_id) {
+      return json({ error: "imposition_template_id is required for impose action" }, 400);
+    }
 
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -92,10 +95,18 @@ Deno.serve(async (req) => {
     const apiKey = Deno.env.get("VPS_PDF_API_KEY");
     if (!apiUrl || !apiKey) return json({ error: "PDF API not configured" }, 500);
 
+    // Persist the chosen template on the job so the worker can read it.
+    if (action === "impose" && imposition_template_id) {
+      await admin
+        .from("order_jobs")
+        .update({ imposition_template_id })
+        .eq("id", job_id);
+    }
+
     const dispatchRes = await fetch(`${apiUrl}${ENDPOINTS[action]}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": apiKey },
-      body: JSON.stringify({ job_id }),
+      body: JSON.stringify({ job_id, imposition_template_id: imposition_template_id ?? null }),
     });
     if (!dispatchRes.ok) {
       const txt = await dispatchRes.text();
