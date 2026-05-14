@@ -1,132 +1,139 @@
-
-# Imposition Templates — Build Plan
+# Plan: Template-driven imposition in pdf-server
 
 ## Goal
-Give platform admins a library of imposition templates (uploaded PDFs + slot definitions). Each product can declare a **default template per output paper**. Operators see a "Print size → Output size" picker on the Impose step and can override before generating the imposed PDF.
 
-This round covers everything **except booklets / saddle-stitched** (page reordering needs its own engine — deferred).
+Wire the platform-managed imposition templates (already created in Lovable + Supabase) into the actual VPS worker so that when an operator picks a template and clicks **Impose**, the print-ready PDF gets overlaid onto the admin's uploaded press-sheet template (with bleed + crops baked in by the artwork) and saved as `order_jobs.imposed_pdf_path`.
 
----
+The Edge Function `production-pdf` and admin UI are already done. This round only changes `pdf-server/`.
 
-## 1. Data model (Supabase migration)
+## What's already in place (do not touch)
 
-### `imposition_templates` (platform-owned)
-| field | notes |
-|---|---|
-| `id`, `created_at`, `updated_at` | standard |
-| `name` | e.g. "A4 → SRA3 — 2-up, double cut, bleed + crops" |
-| `description` | free text |
-| `input_size` | enum slug: `A6`, `A5`, `A4`, `A3`, `BC`, `DL`, `custom` |
-| `input_width_mm`, `input_height_mm` | numeric (for `custom`) |
-| `output_size` | `A4`, `A3`, `SRA3`, `B2`, `custom` |
-| `output_width_mm`, `output_height_mm` | numeric |
-| `n_up` | integer (1, 2, 4, 8…) |
-| `has_bleed` | boolean |
-| `has_crop_marks` | boolean |
-| `work_style` | `cut_sheet` \| `work_and_turn` \| `sheetwise` |
-| `template_pdf_path` | storage key in `assets` bucket |
-| `slots` | jsonb: `[{index, x_mm, y_mm, width_mm, height_mm, rotation_deg}]` — coordinates from bottom-left of output sheet |
-| `is_active`, `sort_order` | |
+- `JobArtefactRequest` schema (`job_id: UUID`) — extend, don't replace
+- Endpoint `/v1/operations/assemble-imposed-sheet` and Celery task `assemble_imposed_sheet_for_job` — extend, don't replace
+- Legacy strategy logic (`_imposition_strategy`, `pdf_ops.impose_sheet_with_bleed`, `pdf_ops.booklet`) — keep as fallback when no template id is supplied
+- `production_orchestrator.write_artefact_path` / `load_job_bundle` — reuse
+- `StorageService` (handles Supabase storage download/upload via service-role)
+- The DB column `order_jobs.imposition_template_id` — already populated by the edge function before the worker runs
 
-RLS: read = anyone authenticated; write = `has_role(auth.uid(),'platform_admin')`.
+## Changes
 
-### `product_imposition_defaults`
-Maps a `product_family` (or product) to one or more templates, with a `is_primary` flag per template.
-| field | notes |
-|---|---|
-| `product_family_id` | fk |
-| `imposition_template_id` | fk |
-| `is_primary` | boolean — exactly one true per family enforced by partial unique index |
-| `sort_order` | for the operator picker |
+### 1. Schema (`pdf-server/app/schemas/assets.py`)
 
-RLS: same as above (platform-owned).
+Extend `JobArtefactRequest`:
 
-### `order_jobs` additions
-Add columns:
-- `imposition_template_id uuid null` — operator's choice (or default at impose time)
-- `imposition_n_up int null` — convenience copy
-- `imposed_pdf_path text` already exists.
-
-### Storage
-New bucket: **`imposition-templates`** (private). Platform admins read/write; service-role reads from pdf-server.
-
----
-
-## 2. Platform admin UI
-
-New page: **`/platform/imposition`** (linked from Platform sidebar under "Production").
-
-- List of all templates: name, input → output, n-up, bleed, work style, active toggle.
-- Create / edit modal:
-  - Metadata fields (name, sizes, n-up, bleed, crops, work style).
-  - **PDF upload** (the press sheet template — gripper marks, colour bars, registration, slot guides).
-  - **Slot editor**: visual canvas showing the uploaded PDF as background, admin draws/positions N rectangles representing where customer pages are stamped. Each rect editable (x/y/w/h/rotation in mm). Live preview of a sample A4 stamped into each slot.
-  - Save → uploads PDF, writes row.
-- Soft delete via `is_active=false`.
-
-New page: **`/platform/products/:id/imposition`** (or a tab on the existing product editor) — assign templates to product families, mark one primary per family.
-
----
-
-## 3. Operator UI (`ProductionPanel`)
-
-Replace the current single "Impose" button with a small **Imposition** sub-section:
-
-```text
-Print size: A4   →   Output:  [ A4 cut sheet         ▼ ]   [ Impose ]
-                              · A4 cut sheet (default)
-                              · A3 — 2-up, no bleed
-                              · SRA3 — 2-up, bleed + crops
+```python
+class JobArtefactRequest(BaseModel):
+    job_id: UUID
+    imposition_template_id: UUID | None = None
 ```
 
-- Dropdown is populated from `product_imposition_defaults` filtered by the job's input size.
-- Default selection = `is_primary` row.
-- "Impose" calls `production-pdf` with `{ action: 'impose', job_id, imposition_template_id }`.
-- After completion, shows the imposed PDF link as today.
+The edge function already sends this field; making it optional keeps the print-ready and ticket endpoints unaffected.
 
----
+### 2. New service (`pdf-server/app/services/imposition_templates.py`)
 
-## 4. pdf-server changes
+Single module that:
 
-`/v1/operations/assemble-imposed-sheet` currently a stub — replace with real implementation:
+- Loads `imposition_templates` row from Supabase by id (uses the same `_client()` pattern as `production_orchestrator`)
+- Returns a typed `ImpositionTemplate` dataclass with: `template_pdf_path`, `n_up`, `slots: list[Slot]`, `output_width_mm`, `output_height_mm`, `has_crop_marks`, `work_style`
+- `Slot` = `(index, x_mm, y_mm, width_mm, height_mm, rotation_deg)`
+- Validates: `n_up == len(slots)`, `n_up >= 1`, all numeric fields present
+- Downloads the template PDF from the private `imposition-templates` bucket to a local `Path` (caller passes the `Workspace`)
 
-1. Look up `order_jobs` → get `print_ready_pdf_path` and `imposition_template_id` (passed from edge fn).
-2. Fetch template row → download `template_pdf_path` and read `slots` JSON.
-3. Open print-ready PDF with `pikepdf`. For each customer page:
-   - Group into chunks of `n_up`.
-   - For each chunk: clone the template page, then **stamp** each customer page onto the slot rectangle (scale to fit, rotate per slot).
-   - If `has_crop_marks` and template doesn't already include them, the template PDF is the source of truth — admin draws marks into the template artwork itself. (No procedural mark generation in this round; keeps slot-editor simple.)
-4. Write composite PDF, upload to `documents/imposed/{job_id}.pdf`, update `order_jobs.imposed_pdf_path` and `imposition_template_id`/`imposition_n_up`.
+### 3. New worker helper (`pdf-server/app/services/pdf_ops.py`)
 
-Library: `pikepdf` (already in requirements.txt) — use `Page.add_overlay` with a transformation matrix for placement + rotation.
+Add one method on `pdf_ops`:
 
-Edge fn `production-pdf` change: forward `imposition_template_id` from request body to the pdf-server payload.
+```python
+def impose_with_template(
+    self,
+    source_pdf: Path,
+    template_pdf: Path,
+    slots: list[Slot],
+    n_up: int,
+    output_pdf: Path,
+) -> int:
+    """Stamp customer pages onto a press-sheet template.
 
----
+    Returns the number of composite sheets produced.
+    """
+```
 
-## 5. Hard size enforcement (your point #3)
+Implementation outline (pikepdf):
 
-Out of scope for this round — you said you'd double-check it. Once you confirm, we can:
-- Add `allowed_sizes jsonb` to `product_families` (already partly done via `product_options` — needs audit).
-- Block configurator from offering sizes the family can't produce.
+1. Open `source_pdf` (customer pages) and `template_pdf` (single-page artwork containing crop marks, colour bars, registration).
+2. Iterate customer pages in chunks of `n_up`. For each chunk:
+   - Clone the template page into a fresh `pikepdf.Pdf` output.
+   - For each customer page in the chunk, look up `slot = slots[i % n_up]`.
+   - Call `Page.add_overlay(customer_page, pikepdf.Rectangle(x0, y0, x1, y1))` where the rectangle is the slot in **PDF points** (mm × 2.83465), origin bottom-left of the press sheet.
+   - For `rotation_deg`, build a `pikepdf.Matrix` that rotates around the slot centre and pre-applies it via the `add_overlay` `transform=` argument (pikepdf 9 supports this).
+3. Save composite to `output_pdf`. Return composite page count.
 
-I'll flag this as a follow-up after you've reviewed.
+If the final chunk is partial (customer page count not divisible by `n_up`), leave unused slots blank — do not auto-rotate or auto-tile. (We can revisit work-and-turn later; this round is `cut_sheet` only.)
 
----
+### 4. Wire into the existing Celery task (`pdf-server/app/tasks/production_tasks.py`)
 
-## 6. Verification checklist
-- Platform admin can create "A4 → SRA3 — 2-up bleed/crops" template, upload artwork PDF, draw 2 slots.
-- Bound document product family lists three templates; one marked primary.
-- Operator on a bound-doc job sees dropdown defaulted to primary; can switch.
-- Click Impose → pdf-server stamps body pages 2-up onto SRA3 sheets → imposed PDF opens, slots correctly placed, crop marks visible.
-- Switching template and re-imposing replaces the file.
-- Non-platform users get 403 on template CRUD.
+In `assemble_imposed_sheet_for_job`, after loading the bundle, branch:
 
----
+```python
+template_id = (bundle.job.get("imposition_template_id"))
+if template_id:
+    template = load_imposition_template(template_id, ws)
+    pdf_ops.impose_with_template(src, template.local_pdf, template.slots, template.n_up, out_pdf)
+    result = {
+        "storage_path": storage_path,
+        "strategy": "template",
+        "template_id": str(template_id),
+        "n_up": template.n_up,
+    }
+    # also persist imposition_n_up on the job via write_artefact_path-equivalent
+else:
+    # … existing legacy nup / booklet / none branch unchanged
+```
 
-## 7. Out of scope (next rounds)
-- Booklets (saddle-stitched) — needs page-order shuffling (1+last on one sheet, 2+second-last, etc.).
-- Auto-pick template from branch press capability.
-- Procedural crop-mark/colour-bar generation.
-- Tenant-specific template overrides.
-- Hard size enforcement audit.
+Add a new orchestrator helper `write_job_field(job_id, column, value)` constrained to a small allow-list (`imposition_template_id`, `imposition_n_up`) to avoid open-ended writes.
+
+### 5. Endpoint passthrough (`pdf-server/app/web/routes.py`)
+
+The endpoint signature already takes `JobArtefactRequest`. With the schema change above, FastAPI will accept the new optional field automatically. We persist it on the job before kicking off the task so the worker can read it from `order_jobs` on reload (the edge function also writes it — defence in depth):
+
+```python
+if payload.imposition_template_id:
+    sb.table("order_jobs").update(
+        {"imposition_template_id": str(payload.imposition_template_id)}
+    ).eq("id", str(payload.job_id)).execute()
+```
+
+### 6. No DB migration on the VPS side
+
+Schema lives in Supabase; pdf-server reads it via the service-role client. Nothing to install.
+
+## Out of scope (next round)
+
+- Saddle-stitch booklet imposition with template (still uses legacy `pdf_ops.booklet`)
+- `work_and_turn` / `sheetwise` page-ordering rules (treated as `cut_sheet` for now)
+- Procedural crop marks / colour bars (template artwork is the source of truth)
+- Auto-pick template from branch press
+
+## Verification
+
+After `git pull` + `systemctl restart document-centre-worker-heavy`:
+
+1. Upload a 2-up A4-on-SRA3 template via `/platform/imposition` with two slots at `(8, 8, 210, 297)` and `(218, 8, 210, 297)`.
+2. Assign it as primary to the "Flyers A4" product family.
+3. As an operator, open a flyer job with 4 customer pages, click **Assemble Print-Ready**, then **Impose** with the template selected.
+4. Confirm:
+   - `order_jobs.imposed_pdf_path` populated, `imposition_n_up = 2`
+   - Downloaded PDF is 2 SRA3 pages, each containing 2 A4 customer pages on top of the template's crop marks
+   - Visual QA: convert with `pdftoppm -r 150` and inspect for slot alignment, no clipping, marks visible
+
+## Files to touch
+
+- `pdf-server/app/schemas/assets.py` (1 field)
+- `pdf-server/app/services/imposition_templates.py` (new, ~80 lines)
+- `pdf-server/app/services/pdf_ops.py` (1 new method, ~60 lines)
+- `pdf-server/app/services/production_orchestrator.py` (extend write helper allow-list)
+- `pdf-server/app/tasks/production_tasks.py` (template branch in existing task)
+- `pdf-server/app/web/routes.py` (defensive job update — optional)
+- `pdf-server/docs/IMPOSITION_WORKER_SPEC.md` → mark as **implemented**, link to code
+
+No `requirements.txt` change — `pikepdf 9.4.2` already pinned and supports `Page.add_overlay(..., transform=...)`.

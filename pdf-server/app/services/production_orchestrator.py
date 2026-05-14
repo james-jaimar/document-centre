@@ -141,3 +141,16 @@ def write_artefact_path(job_id: str, column: str, storage_path: str) -> None:
         raise ValueError(f"Refusing to write to unexpected column {column!r}")
     sb = _client()
     sb.table("order_jobs").update({column: storage_path}).eq("id", job_id).execute()
+
+
+def write_job_field(job_id: str, column: str, value) -> None:
+    """Persist a metadata field back onto the order_jobs row.
+
+    Allow-listed to imposition-related columns to keep this function from
+    becoming a generic open-ended writer.
+    """
+    if column not in {"imposition_template_id", "imposition_n_up"}:
+        raise ValueError(f"Refusing to write to unexpected column {column!r}")
+    sb = _client()
+    sb.table("order_jobs").update({column: value}).eq("id", job_id).execute()
+

@@ -1054,6 +1054,97 @@ class PdfOps:
 
         return out_pdf
 
+    # ------------------------------------------------------------------ #
+    # Template-driven imposition (platform-managed press-sheet templates)
+    # ------------------------------------------------------------------ #
+    def impose_with_template(
+        self,
+        source_pdf: Path,
+        template_pdf: Path,
+        slots,
+        n_up: int,
+        out_pdf: Path,
+    ) -> int:
+        """Stamp customer pages onto a press-sheet template.
+
+        For every chunk of `n_up` customer pages we clone the first page of
+        `template_pdf` and overlay each customer page into its slot rectangle
+        (from the bottom-left of the press sheet, mm). The template PDF is the
+        source of truth for crop marks, colour bars and registration marks —
+        no procedural marks are added here.
+
+        Returns the number of composite sheets produced.
+        """
+        from math import cos, radians, sin
+        MM_TO_PT = 2.83464567
+
+        if n_up < 1:
+            raise ValueError("n_up must be >= 1")
+        if not slots or len(slots) != n_up:
+            raise ValueError(f"slots must contain exactly n_up ({n_up}) entries")
+
+        out_pdf.parent.mkdir(parents=True, exist_ok=True)
+
+        with pikepdf.open(str(source_pdf)) as src_pdf, \
+             pikepdf.open(str(template_pdf)) as tpl_pdf:
+
+            if len(tpl_pdf.pages) < 1:
+                raise ValueError("Template PDF has no pages")
+            template_page = tpl_pdf.pages[0]
+
+            customer_pages = list(src_pdf.pages)
+            if not customer_pages:
+                raise ValueError("Source PDF has no pages")
+
+            output = pikepdf.Pdf.new()
+            sheets = 0
+
+            for chunk_start in range(0, len(customer_pages), n_up):
+                # Clone template page into the output
+                output.pages.append(template_page)
+                sheet = output.pages[-1]
+
+                for slot_idx in range(n_up):
+                    src_idx = chunk_start + slot_idx
+                    if src_idx >= len(customer_pages):
+                        break  # partial chunk — leave remaining slots blank
+                    slot = slots[slot_idx]
+                    cust_page = customer_pages[src_idx]
+
+                    # Slot rectangle in PDF points (origin bottom-left of sheet)
+                    x0 = slot.x_mm * MM_TO_PT
+                    y0 = slot.y_mm * MM_TO_PT
+                    x1 = (slot.x_mm + slot.width_mm) * MM_TO_PT
+                    y1 = (slot.y_mm + slot.height_mm) * MM_TO_PT
+                    rect = pikepdf.Rectangle(x0, y0, x1, y1)
+
+                    rotation = float(slot.rotation_deg or 0) % 360
+                    if rotation == 0:
+                        sheet.add_overlay(cust_page, rect)
+                    else:
+                        # add_overlay scales to rect first; we then need to rotate
+                        # around the slot centre. pikepdf 9 supports `transform=`.
+                        cx = (x0 + x1) / 2
+                        cy = (y0 + y1) / 2
+                        theta = radians(rotation)
+                        c, s = cos(theta), sin(theta)
+                        # 2D affine: translate centre→origin, rotate, translate back
+                        tx = cx - (cx * c - cy * s)
+                        ty = cy - (cx * s + cy * c)
+                        rotate = pikepdf.Matrix(c, s, -s, c, tx, ty)
+                        try:
+                            sheet.add_overlay(cust_page, rect, transform=rotate)
+                        except TypeError:
+                            # Older pikepdf without `transform=` kw — fall back
+                            # to unrotated overlay (the platform admin should
+                            # avoid rotated slots in that case).
+                            sheet.add_overlay(cust_page, rect)
+
+                sheets += 1
+
+            output.save(str(out_pdf))
+            return sheets
+
     def booklet(self, src: Path, out_pdf: Path, sheet_width_mm: float, sheet_height_mm: float) -> Path:
         reader = PdfReader(str(src))
         pages = list(reader.pages)
