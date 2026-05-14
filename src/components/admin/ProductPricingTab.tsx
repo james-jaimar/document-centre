@@ -43,6 +43,8 @@ import { formatPrice } from "@/lib/formatCurrency";
 interface Props {
   productFamilyId: string;
   productFamilyName: string;
+  /** Family slug — used to detect rate-card-managed families (e.g. photo-prints). */
+  productFamilySlug?: string | null;
   /** When provided, overrides are scoped to this branch instead of the tenant. */
   branchId?: string | null;
 }
@@ -55,9 +57,13 @@ const RULE_TYPE_LABELS: Record<string, string> = {
   setup_fee: "Setup Fee",
 };
 
+/** Product families whose base prices live in the Rate Card, not pricing_rules. */
+const RATE_CARD_DRIVEN_FAMILIES = new Set(["photo-prints"]);
+
 export default function ProductPricingTab({
   productFamilyId,
   productFamilyName,
+  productFamilySlug = null,
   branchId = null,
 }: Props) {
   const { tenantId } = useTenantContext();
