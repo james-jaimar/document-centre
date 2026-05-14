@@ -296,6 +296,16 @@ export default function PhotoPrintsBuilder() {
   const [editorPhotoId, setEditorPhotoId] = useState<string | null>(null);
   const editorPhoto = photoSpec.photos.find((p) => p.id === editorPhotoId) ?? null;
 
+  // Auto-correct stale size selections (e.g. admin removed the size from rate card)
+  useEffect(() => {
+    if (availableSizes.length === 0) return;
+    if (availableSizes.some((s) => s.slug === photoSpec.print_size_slug)) return;
+    const fallback = availableSizes[0].slug;
+    toast.info(`Print size updated — previous size is no longer available`);
+    handlePrintSizeChange(fallback);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableSizes, photoSpec.print_size_slug]);
+
   const totals = useMemo(() => {
     const size = getPhotoPrintSize(photoSpec.print_size_slug, availableSizes);
     const totalPhotos = photoSpec.photos.length;
