@@ -1,5 +1,4 @@
 import type { RateCardPhotoPrint } from "@/hooks/useRateCard";
-import { PHOTO_PRINT_SIZES } from "./sizes";
 
 export interface PhotoPrintPriceQuery {
   size_slug: string;
@@ -9,10 +8,7 @@ export interface PhotoPrintPriceQuery {
 
 /**
  * Resolve the unit price for a photo print configuration.
- *
- * Prefers a rate-card row matching size + finish + border.
- * Falls back to the static PHOTO_PRINT_SIZES catalogue (dev safety net so the
- * builder keeps working before a tenant has cloned the master rate card).
+ * Rate-card driven only — if no row matches, returns 0.
  */
 export function resolvePhotoPrintPrice(
   rows: RateCardPhotoPrint[],
@@ -27,18 +23,13 @@ export function resolvePhotoPrintPrice(
   );
   if (exact) return Number(exact.sell_price);
 
-  // Same size + finish, ignore border
   const sizeFinish = rows.find(
-    (r) =>
-      r.is_active && r.size_slug === q.size_slug && r.finish === q.finish,
+    (r) => r.is_active && r.size_slug === q.size_slug && r.finish === q.finish,
   );
   if (sizeFinish) return Number(sizeFinish.sell_price);
 
-  // Same size, any finish
   const sizeOnly = rows.find((r) => r.is_active && r.size_slug === q.size_slug);
   if (sizeOnly) return Number(sizeOnly.sell_price);
 
-  // Static fallback
-  const fallback = PHOTO_PRINT_SIZES.find((s) => s.slug === q.size_slug);
-  return fallback?.unit_price ?? 0;
+  return 0;
 }

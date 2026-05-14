@@ -12,11 +12,10 @@ import { useTenantContext } from "@/hooks/useTenantContext";
 import { resolveUrls } from "@/lib/thumbnailUtils";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import {
-  PHOTO_PRINT_SIZES,
   PHOTO_FINISH_OPTIONS,
   PHOTO_BORDER_OPTIONS,
-  DEFAULT_PHOTO_PRINT_SIZE_SLUG,
   getPhotoPrintSize,
+  derivePhotoPrintSizesFromRateCard,
 } from "@/lib/photoPrints/sizes";
 import { resolvePhotoPrintPrice } from "@/lib/photoPrints/pricing";
 import { useRateCardPhotoPrints } from "@/hooks/useRateCard";
@@ -128,14 +127,25 @@ export default function PhotoPrintsBuilder() {
 
   const { uploads, uploadPhotos, clearUploads } = usePhotoUpload(orderItem?.id);
 
+  const { data: photoRateCard = [] } = useRateCardPhotoPrints({
+    scope: "tenant",
+    tenantId: tenantId ?? undefined,
+  });
+
+  const availableSizes = useMemo(
+    () => derivePhotoPrintSizesFromRateCard(photoRateCard),
+    [photoRateCard],
+  );
+  const defaultSizeSlug = availableSizes[0]?.slug ?? "4x6";
+
   const initialSpec: PhotoPrintsSpec = useMemo(
     () => ({
-      print_size_slug: DEFAULT_PHOTO_PRINT_SIZE_SLUG,
+      print_size_slug: defaultSizeSlug,
       finish_slug: PHOTO_FINISH_OPTIONS.find((o) => o.is_default)!.slug,
       border_slug: PHOTO_BORDER_OPTIONS.find((o) => o.is_default)!.slug,
       photos: [],
     }),
-    [],
+    [defaultSizeSlug],
   );
   const [photoSpec, setPhotoSpec] = useState<PhotoPrintsSpec>(initialSpec);
 
@@ -145,7 +155,7 @@ export default function PhotoPrintsBuilder() {
     const spec = orderItem?.spec as any;
     if (spec?.photo_prints?.photos) {
       setPhotoSpec({
-        print_size_slug: spec.photo_prints.print_size_slug || DEFAULT_PHOTO_PRINT_SIZE_SLUG,
+        print_size_slug: spec.photo_prints.print_size_slug || defaultSizeSlug,
         finish_slug: spec.photo_prints.finish_slug || initialSpec.finish_slug,
         border_slug: spec.photo_prints.border_slug || initialSpec.border_slug,
         photos: spec.photo_prints.photos as PhotoPrintEntry[],
@@ -286,13 +296,18 @@ export default function PhotoPrintsBuilder() {
   const [editorPhotoId, setEditorPhotoId] = useState<string | null>(null);
   const editorPhoto = photoSpec.photos.find((p) => p.id === editorPhotoId) ?? null;
 
-  const { data: photoRateCard = [] } = useRateCardPhotoPrints({
-    scope: "tenant",
-    tenantId: tenantId ?? undefined,
-  });
+  // Auto-correct stale size selections (e.g. admin removed the size from rate card)
+  useEffect(() => {
+    if (availableSizes.length === 0) return;
+    if (availableSizes.some((s) => s.slug === photoSpec.print_size_slug)) return;
+    const fallback = availableSizes[0].slug;
+    toast.info(`Print size updated — previous size is no longer available`);
+    handlePrintSizeChange(fallback);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableSizes, photoSpec.print_size_slug]);
 
   const totals = useMemo(() => {
-    const size = getPhotoPrintSize(photoSpec.print_size_slug);
+    const size = getPhotoPrintSize(photoSpec.print_size_slug, availableSizes);
     const totalPhotos = photoSpec.photos.length;
     const totalPrints = photoSpec.photos.reduce((s, p) => s + p.quantity, 0);
     const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === photoSpec.border_slug);
@@ -424,7 +439,7 @@ export default function PhotoPrintsBuilder() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {PHOTO_PRINT_SIZES.map((s) => {
+              {availableSizes.map((s) => {
                 const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === photoSpec.border_slug);
                 const price = resolvePhotoPrintPrice(photoRateCard, {
                   size_slug: s.slug,

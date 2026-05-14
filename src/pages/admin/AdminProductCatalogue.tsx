@@ -45,6 +45,7 @@ const AdminProductCatalogue = () => {
   const disabled = buildDisabledFamilySet(toggles);
   const [openFamilyId, setOpenFamilyId] = useState<string | null>(null);
   const [openFamilyName, setOpenFamilyName] = useState<string>("");
+  const [openFamilySlug, setOpenFamilySlug] = useState<string>("");
 
   async function handleToggle(familyId: string, next: boolean) {
     if (!tenantId) return;
@@ -130,6 +131,7 @@ const AdminProductCatalogue = () => {
                         onClick={() => {
                           setOpenFamilyId(f.id);
                           setOpenFamilyName(f.name);
+                          setOpenFamilySlug(f.slug);
                         }}
                       >
                         <Settings2 className="h-3 w-3 mr-1" />
@@ -158,6 +160,7 @@ const AdminProductCatalogue = () => {
             <ProductPricingTab
               productFamilyId={openFamilyId}
               productFamilyName={openFamilyName}
+              productFamilySlug={openFamilySlug}
             />
           )}
         </DialogContent>
