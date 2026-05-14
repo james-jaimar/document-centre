@@ -45,6 +45,7 @@ const AdminProductCatalogue = () => {
   const disabled = buildDisabledFamilySet(toggles);
   const [openFamilyId, setOpenFamilyId] = useState<string | null>(null);
   const [openFamilyName, setOpenFamilyName] = useState<string>("");
+  const [openFamilySlug, setOpenFamilySlug] = useState<string>("");
 
   async function handleToggle(familyId: string, next: boolean) {
     if (!tenantId) return;
