@@ -80,6 +80,7 @@ import PlatformProducts from "@/pages/platform/PlatformProducts";
 import PlatformMasterPricing from "@/pages/platform/PlatformMasterPricing";
 import PlatformSubscriptions from "@/pages/platform/PlatformSubscriptions";
 import PlatformDemoPrintPricing from "@/pages/platform/PlatformDemoPrintPricing";
+import PlatformImposition from "@/pages/platform/PlatformImposition";
 import DocumentCentreLayout from "@/components/platform/DocumentCentreLayout";
 import PlatformDocumentCentreOverview from "@/pages/platform/PlatformDocumentCentreOverview";
 import PlatformDocumentCentreQueues from "@/pages/platform/PlatformDocumentCentreQueues";
