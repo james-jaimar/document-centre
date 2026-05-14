@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Download, FileCog, Layers, Ticket, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useProductionArtefacts } from "@/hooks/useProductionArtefacts";
+import { useImpositionTemplates } from "@/hooks/useImpositionTemplates";
 
 interface Props {
   jobId: string;
@@ -19,7 +21,17 @@ export function ProductionPanel({ jobId, jobStatus }: Props) {
     generateJobTicket,
     signedUrl,
   } = useProductionArtefacts(jobId);
+  const { data: templates = [] } = useImpositionTemplates({ activeOnly: true });
   const [openingPath, setOpeningPath] = useState<string | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+
+  // Default the picker to the existing job template, otherwise leave null
+  // (operator must explicitly pick before imposing).
+  useEffect(() => {
+    if (artefacts?.imposition_template_id) {
+      setSelectedTemplateId(artefacts.imposition_template_id);
+    }
+  }, [artefacts?.imposition_template_id]);
 
   const open = async (path: string | null) => {
     if (!path) return;
@@ -31,6 +43,8 @@ export function ProductionPanel({ jobId, jobStatus }: Props) {
       setOpeningPath(null);
     }
   };
+
+  const selectedTemplate = templates.find((t) => t.id === selectedTemplateId) ?? null;
 
   return (
     <div className="rounded-lg border bg-card p-3 space-y-3">
@@ -56,17 +70,46 @@ export function ProductionPanel({ jobId, jobStatus }: Props) {
 
       <Separator />
 
-      <Row
-        icon={<Layers className="h-3.5 w-3.5" />}
-        label="Imposed sheet"
-        path={artefacts?.imposed_pdf_path ?? null}
-        loading={isLoading || generating === "impose"}
-        opening={openingPath === artefacts?.imposed_pdf_path}
-        onGenerate={generateImposition}
-        onOpen={() => open(artefacts?.imposed_pdf_path ?? null)}
-        generateLabel="Impose"
-        disabledReason={!artefacts?.print_ready_pdf_path ? "Assemble print-ready first" : undefined}
-      />
+      {/* Imposition picker */}
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2">
+          <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-xs font-medium">Imposition</span>
+        </div>
+        <Select value={selectedTemplateId ?? ""} onValueChange={(v) => setSelectedTemplateId(v || null)}>
+          <SelectTrigger className="h-7 text-[11px]">
+            <SelectValue placeholder="Choose output sheet…" />
+          </SelectTrigger>
+          <SelectContent>
+            {templates.length === 0 && (
+              <div className="text-[11px] text-muted-foreground px-2 py-1.5">No templates configured</div>
+            )}
+            {templates.map((t) => (
+              <SelectItem key={t.id} value={t.id} className="text-[11px]">
+                {t.input_size} → {t.output_size} · {t.n_up}-up{t.has_bleed ? " · bleed" : ""}{t.has_crop_marks ? " · crops" : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Row
+          icon={<Layers className="h-3.5 w-3.5" />}
+          label="Imposed sheet"
+          path={artefacts?.imposed_pdf_path ?? null}
+          loading={isLoading || generating === "impose"}
+          opening={openingPath === artefacts?.imposed_pdf_path}
+          onGenerate={() => generateImposition(selectedTemplateId)}
+          onOpen={() => open(artefacts?.imposed_pdf_path ?? null)}
+          generateLabel="Impose"
+          disabledReason={
+            !artefacts?.print_ready_pdf_path
+              ? "Assemble print-ready first"
+              : !selectedTemplate
+              ? "Pick a template above"
+              : undefined
+          }
+        />
+      </div>
 
       <Separator />
 
