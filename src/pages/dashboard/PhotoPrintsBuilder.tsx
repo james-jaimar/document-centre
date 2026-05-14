@@ -429,7 +429,7 @@ export default function PhotoPrintsBuilder() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {PHOTO_PRINT_SIZES.map((s) => {
+              {availableSizes.map((s) => {
                 const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === photoSpec.border_slug);
                 const price = resolvePhotoPrintPrice(photoRateCard, {
                   size_slug: s.slug,
