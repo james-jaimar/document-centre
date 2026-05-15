@@ -2900,6 +2900,68 @@ export type Database = {
           },
         ]
       }
+      rate_card_business_cards: {
+        Row: {
+          code: string
+          cost_price: number
+          created_at: string
+          finish: string
+          id: string
+          is_active: boolean
+          label: string
+          paper: string
+          quantity: number
+          scope_type: string
+          sell_price: number
+          sides: string
+          sort_order: number
+          tenant_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          cost_price?: number
+          created_at?: string
+          finish?: string
+          id?: string
+          is_active?: boolean
+          label: string
+          paper?: string
+          quantity: number
+          scope_type: string
+          sell_price?: number
+          sides?: string
+          sort_order?: number
+          tenant_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          cost_price?: number
+          created_at?: string
+          finish?: string
+          id?: string
+          is_active?: boolean
+          label?: string
+          paper?: string
+          quantity?: number
+          scope_type?: string
+          sell_price?: number
+          sides?: string
+          sort_order?: number
+          tenant_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rate_card_business_cards_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rate_card_clicks: {
         Row: {
           colour: Database["public"]["Enums"]["click_colour"]
