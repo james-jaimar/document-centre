@@ -275,7 +275,12 @@ function buildPageSequence(
       // EXCEPT at document boundaries / end-of-body (parity for back covers and
       // dividers is handled separately below / by tryFlush()).
       if (!section.is_duplex && !forceDuplex) {
-        const skipBlankBack = (nextIsDifferentDoc || isFinalBodyPage) && !hasPendingDivider;
+        // Ring binders: never skip the trailing blank_back — each body page
+        // is a real physical sheet with a genuinely blank reverse, and there
+        // is no back-cover sheet to absorb the parity.
+        const skipBlankBack =
+          productType !== "ring_binder" &&
+          (nextIsDifferentDoc || isFinalBodyPage) && !hasPendingDivider;
         if (!skipBlankBack) {
           result.push({
             thumbnailUrl: "", pageIndex: -1, isColor: section.is_color, section,
