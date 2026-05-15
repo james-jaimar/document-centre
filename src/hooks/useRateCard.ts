@@ -56,6 +56,24 @@ export interface RateCardFinishing {
   is_active: boolean;
 }
 
+export type BusinessCardSides = "single" | "double";
+
+export interface RateCardBusinessCard {
+  id: string;
+  scope_type: RateCardScope;
+  tenant_id: string | null;
+  code: string;
+  label: string;
+  quantity: number;
+  sides: BusinessCardSides;
+  paper: string;
+  finish: string;
+  sell_price: number;
+  cost_price: number;
+  sort_order: number;
+  is_active: boolean;
+}
+
 export interface RateCardPhotoPrint {
   id: string;
   scope_type: RateCardScope;
