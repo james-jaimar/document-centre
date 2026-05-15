@@ -105,10 +105,11 @@ export default function RateCardEditor({
   const { data: papers = [], isLoading: papersLoading } = useRateCardPapers(args);
   const { data: finishing = [], isLoading: finLoading } = useRateCardFinishing(args);
   const { data: photoPrints = [], isLoading: ppLoading } = useRateCardPhotoPrints(args);
+  const { data: businessCards = [], isLoading: bcLoading } = useRateCardBusinessCards(args);
 
   const cloneMaster = useCloneMasterRateCard();
-  const empty = !clicksLoading && !papersLoading && !finLoading && !ppLoading &&
-    clicks.length === 0 && papers.length === 0 && finishing.length === 0 && photoPrints.length === 0;
+  const empty = !clicksLoading && !papersLoading && !finLoading && !ppLoading && !bcLoading &&
+    clicks.length === 0 && papers.length === 0 && finishing.length === 0 && photoPrints.length === 0 && businessCards.length === 0;
 
   return (
     <div className="space-y-4">
