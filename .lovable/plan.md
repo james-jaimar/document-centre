@@ -1,87 +1,47 @@
-## Goal — Option B: admin-managed imposition presets
+# Ring binder simplex: blank back of last sheet is missing
 
-You define a small library of imposition templates ahead of time (e.g. "1-up A4 cut sheet", "2-up SRA3 with 5 mm gap, bleed, crop marks"). Per product family, you whitelist which templates are allowed. Operators on the Production panel just pick from that short list — no parameters to tweak.
+## What's happening
 
-Today's `imposition_templates` table only supports **press-sheet PDF artwork** (admin uploads a sheet with marks/bars baked in, worker stamps slot rectangles). That's overkill for most cut-sheet jobs and means producing a PDF for every preset. We extend the same table with a **parametric mode** so most presets are just rows of numbers — no PDF needed.
+In a ring binder, every body page is its own physical sheet — the front carries content, the back is genuinely blank (simplex). The viewer's sheet-flip model expects the sequence to contain that final blank face so the last turn shows:
 
-## Architecture
+```
+left = blank (back of sheet 8)   right = hardware (back cover panel)
+```
 
-`imposition_templates.kind` decides which engine runs on the VPS:
+Right now the last turn shows page 8's *content* on the left instead of a blank. The label still says "Page 8 (8 pages)" — see screenshot 2.
 
-| `kind` | Engine | Required fields | Use case |
-|---|---|---|---|
-| `template_pdf` (existing) | `impose_with_template` | `template_pdf_path`, `slots`, `n_up` | Branded press sheets with colour bars |
-| `parametric_nup` (new) | `impose_nup_trimbox` | `columns`, `rows`, output sheet, bleed, gutter, crop-mark params | Cut-sheet n-up (the common case) |
-| `parametric_booklet` (new) | `booklet_saddle_stitch` | output sheet, bleed, `creep_per_sheet_mm` | Saddle-stitched booklets |
+## Why
 
-Per-product whitelist already exists: `product_imposition_defaults(product_family_id, imposition_template_id, is_primary, sort_order)`. We're keeping that.
+The simplex reverse-face injector in `buildPageSequence` (in both `src/components/order/PreviewPanel.tsx` and `src/lib/orders/buildPreviewSnapshot.ts`) deliberately skips the trailing `blank_back` when:
 
-## Steps
+- it's the final body page, and
+- there is no pending divider.
 
-### 1. DB migration (needs your approval)
+That rule was written for saddle / wire / comb / perfect bound where the final body page is immediately followed by a back-cover sheet — adding a blank there would shift parity and produce a phantom face. Ring binders have no back-cover sheet (the "back cover" is hardware), so the suppression incorrectly drops the genuine blank reverse of the last sheet.
 
-Add to `imposition_templates`:
-- `kind text not null default 'template_pdf'` with check constraint
-- `columns int`, `rows int` — parametric n-up grid
-- `bleed_mm numeric default 3`
-- `gutter_mm numeric default 0`
-- `crop_mark_offset_mm numeric default 3`, `crop_mark_length_mm numeric default 5`
-- `show_registration boolean default true`
-- `creep_per_sheet_mm numeric default 0` — booklet only
-- `fallback_trim_inset_mm numeric default 0`
-- Make `template_pdf_path`, `slots` legitimately nullable (n_up stays required, defaulted from columns × rows for parametric)
+The same logic also suppresses the blank between two different documents. For ring binders that's wrong too — sheet N's back stays blank regardless of what document sheet N+1 belongs to.
 
-No data loss — existing template_pdf rows get `kind='template_pdf'` and keep working.
+## Fix
 
-### 2. pdf-server worker (`assemble_imposed_sheet_for_job`)
+In both `buildPageSequence` functions, exempt ring binders from `skipBlankBack`:
 
-In `pdf-server/app/tasks/production_tasks.py`, when `imposition_template_id` is set:
-- Fetch the row first (cheap), branch on `kind`.
-- `template_pdf` → existing `impose_with_template` flow (unchanged).
-- `parametric_nup` → call `impose_nup_trimbox(columns, rows, sheet_w, sheet_h, bleed_mm, gutter_mm, crop_mark_offset_mm, crop_mark_length_mm, show_registration, fallback_trim_inset_mm)`.
-- `parametric_booklet` → call `booklet_saddle_stitch(sheet_w, sheet_h, bleed_mm, creep_per_sheet_mm)`.
+```ts
+const skipBlankBack =
+  productType !== "ring_binder" &&
+  (nextIsDifferentDoc || isFinalBodyPage) &&
+  !hasPendingDivider;
+```
 
-`load_imposition_template` already lives in `app/services/imposition_templates.py` — extend its `ImpositionTemplate` dataclass with the new fields and skip the `template_pdf` download for parametric kinds.
+Files:
 
-### 3. Admin UI — `PlatformImposition.tsx`
+- `src/components/order/PreviewPanel.tsx` (around line 246)
+- `src/lib/orders/buildPreviewSnapshot.ts` (around line 278)
 
-Add a "Kind" radio group at the top of the create/edit dialog:
-- **Template PDF** → existing form (PDF upload + slot editor).
-- **Parametric N-up** → fields: input size, output size (with paper-size presets), columns, rows, bleed mm, gutter mm, crop-mark offset/length, show registration, fallback trim inset.
-- **Parametric Booklet** → fields: input size, output size, bleed mm, creep-per-sheet mm.
-
-Show/hide fields per kind. Existing rows keep their UI.
-
-### 4. Operator picker — `ProductionPanel.tsx`
-
-Right now the Imposition Select shows **all** active templates via `useImpositionTemplates({ activeOnly: true })`. Switch to the per-product whitelist:
-
-- New hook `useTemplatesForProductFamily(productFamilyId)` → reads `product_imposition_defaults` joined to `imposition_templates`, ordered by `is_primary DESC, sort_order ASC`.
-- `ProductionPanel` resolves the product family from the job (already in props chain via `bundle.product_family_id`), defaults selection to the `is_primary` template, falls back to first.
-- If no templates are assigned for the product family, show "No imposition templates configured for this product — ask an admin." (no free-pick fallback — that's the whole point of Option B).
-
-### 5. Edge function — `production-pdf`
-
-No code changes needed. It already forwards `imposition_template_id` straight to the VPS dispatch endpoint.
-
-## Out of scope
-
-- Per-job overrides on `production_specs` (Option C). All knobs live on the template row.
-- New imposition strategies (work-and-turn, perfect-bound signatures).
-- Auto-pick-template-for-job (operator always picks; we just narrow the list).
+No changes needed in `ringBinderModel.ts` — once the sequence ends with the trailing blank, the existing view math already lands `[blank, hardware-right]` on the final view.
 
 ## Verification
 
-After deploy:
-1. Create one parametric `1-up A4 cut sheet` template, assign to Bound Documents → operator should see only that, generate imposed PDF identical to print-ready.
-2. Create `2-up SRA3 with 5 mm gap + bleed + crop marks`, assign to Bound Documents (alongside #1) → operator picks it, imposed PDF shows two A4s gang-up on SRA3 with marks.
-3. Create `Booklet on SRA3 with 0.1 mm creep`, assign to a saddle-stitched product → check signature ordering.
-
-## Files touched
-
-- migration (1 SQL statement — additive)
-- `pdf-server/app/services/imposition_templates.py` — extend dataclass + loader
-- `pdf-server/app/tasks/production_tasks.py` — branch on `kind`
-- `src/hooks/useImpositionTemplates.ts` — add `useTemplatesForProductFamily`, types for new fields
-- `src/pages/platform/PlatformImposition.tsx` — kind selector + conditional fields
-- `src/components/orders/detail/ProductionPanel.tsx` — restrict picker to assigned templates
+- Open a simplex 8-page ring binder order, page through to the end: final view should show a blank sheet on the left and the hardware back panel on the right.
+- The "Blank (Back) – Page 8" view (screenshot 1) stays correct — it now means "back of sheet 7, front of sheet 8" → blank + p8, label refers to right-hand face.
+- Duplex ring binders unaffected (the simplex branch never runs).
+- Saddle / wire / comb / perfect bound unaffected (still skip the trailing blank, as before).
