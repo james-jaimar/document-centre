@@ -1130,3 +1130,303 @@ function PhotoPrintsTab({
     </Card>
   );
 }
+
+// ============================================================================
+// Business Cards tab — quantity tier × sides × paper × finish → price
+// ============================================================================
+
+const BC_PAPER_PRESETS = [
+  "350gsm Silk",
+  "350gsm Matt",
+  "350gsm Gloss",
+  "400gsm Uncoated",
+  "450gsm Silk",
+  "Recycled 350gsm",
+];
+const BC_FINISH_PRESETS = [
+  "none",
+  "matt lamination",
+  "gloss lamination",
+  "soft-touch lamination",
+  "spot UV",
+  "foil",
+  "rounded corners",
+  "embossed",
+];
+const BC_QTY_PRESETS = [50, 100, 250, 500, 1000, 2500, 5000];
+
+function BusinessCardsTab({
+  items,
+  scope,
+  tenantId,
+}: {
+  items: RateCardBusinessCard[];
+  scope: RateCardScope;
+  tenantId: string | null;
+}) {
+  const upsert = useUpsertRateCardBusinessCard();
+  const del = useDeleteRateCardBusinessCard();
+  const [editing, setEditing] = useState<Partial<RateCardBusinessCard> | null>(null);
+
+  function openNew() {
+    setEditing({
+      scope_type: scope,
+      tenant_id: scope === "tenant" ? tenantId : null,
+      code: "",
+      label: "",
+      quantity: 250,
+      sides: "double",
+      paper: "350gsm Silk",
+      finish: "none",
+      sell_price: 0,
+      cost_price: 0,
+      sort_order: items.length,
+      is_active: true,
+    });
+  }
+
+  async function save() {
+    if (!editing?.code || !editing?.label) {
+      toast({ title: "Code and label are required", variant: "destructive" });
+      return;
+    }
+    if (!editing.quantity || editing.quantity < 1) {
+      toast({ title: "Quantity must be at least 1", variant: "destructive" });
+      return;
+    }
+    try {
+      await upsert.mutateAsync(editing as any);
+      toast({ title: editing.id ? "Updated" : "Added" });
+      setEditing(null);
+    } catch (e: any) {
+      toast({ title: "Save failed", description: e.message, variant: "destructive" });
+    }
+  }
+
+  async function remove(id: string) {
+    if (!confirm("Delete this business card price?")) return;
+    try {
+      await del.mutateAsync(id);
+      toast({ title: "Deleted" });
+    } catch (e: any) {
+      toast({ title: "Delete failed", description: e.message, variant: "destructive" });
+    }
+  }
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs text-muted-foreground">
+          Business card prices. Add one row per quantity × sides × paper × finish combination.
+          Pricing is ad-hoc — there is no formula, each row stands alone.
+        </p>
+        <Button size="sm" onClick={openNew}>
+          <Plus className="h-3.5 w-3.5 mr-1.5" /> Add business card price
+        </Button>
+      </div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Code</TableHead>
+            <TableHead>Label</TableHead>
+            <TableHead>Qty</TableHead>
+            <TableHead>Sides</TableHead>
+            <TableHead>Paper</TableHead>
+            <TableHead>Finish</TableHead>
+            <TableHead>Price</TableHead>
+            <TableHead>Active</TableHead>
+            <TableHead className="w-10"></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((b) => (
+            <TableRow
+              key={b.id}
+              className="cursor-pointer hover:bg-muted/40"
+              onClick={() => setEditing(b)}
+            >
+              <TableCell className="font-mono text-[11px]">{b.code}</TableCell>
+              <TableCell className="text-sm">{b.label}</TableCell>
+              <TableCell className="font-mono text-xs">{b.quantity}</TableCell>
+              <TableCell className="capitalize text-xs">{b.sides === "double" ? "Double-sided" : "Single-sided"}</TableCell>
+              <TableCell className="text-xs">{b.paper}</TableCell>
+              <TableCell className="text-xs capitalize">{b.finish}</TableCell>
+              <TableCell className="font-mono text-xs">
+                {formatPrice(b.sell_price, "ZAR")}
+              </TableCell>
+              <TableCell>
+                {b.is_active ? (
+                  <Badge variant="outline" className="text-[10px]">Active</Badge>
+                ) : (
+                  <Badge variant="secondary" className="text-[10px]">Off</Badge>
+                )}
+              </TableCell>
+              <TableCell>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    remove(b.id);
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+          {items.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={9} className="text-center text-sm text-muted-foreground py-6">
+                No business card prices configured.
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
+
+      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editing?.id ? "Edit business card price" : "Add business card price"}</DialogTitle>
+          </DialogHeader>
+          {editing && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Code</Label>
+                <Input
+                  value={editing.code ?? ""}
+                  onChange={(e) => setEditing({ ...editing, code: e.target.value.toLowerCase().replace(/\s+/g, "-") })}
+                  placeholder="e.g. bc-250-double-silk"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Label</Label>
+                <Input
+                  value={editing.label ?? ""}
+                  onChange={(e) => setEditing({ ...editing, label: e.target.value })}
+                  placeholder="e.g. 250 × Double-sided 350gsm Silk"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Quantity</Label>
+                <Select
+                  value={String(editing.quantity ?? 250)}
+                  onValueChange={(v) => setEditing({ ...editing, quantity: parseInt(v) || 0 })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {BC_QTY_PRESETS.map((q) => (
+                      <SelectItem key={q} value={String(q)}>{q}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Custom quantity</Label>
+                <Input
+                  type="number"
+                  value={editing.quantity ?? 0}
+                  onChange={(e) => setEditing({ ...editing, quantity: parseInt(e.target.value) || 0 })}
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Sides</Label>
+                <Select
+                  value={editing.sides ?? "double"}
+                  onValueChange={(v) => setEditing({ ...editing, sides: v as any })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="single">Single-sided</SelectItem>
+                    <SelectItem value="double">Double-sided</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Paper</Label>
+                <Select
+                  value={editing.paper ?? "350gsm Silk"}
+                  onValueChange={(v) => setEditing({ ...editing, paper: v })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {BC_PAPER_PRESETS.map((p) => (
+                      <SelectItem key={p} value={p}>{p}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-2">
+                <Label className="text-xs">Custom paper (optional override)</Label>
+                <Input
+                  value={editing.paper ?? ""}
+                  onChange={(e) => setEditing({ ...editing, paper: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Finish</Label>
+                <Select
+                  value={editing.finish ?? "none"}
+                  onValueChange={(v) => setEditing({ ...editing, finish: v })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {BC_FINISH_PRESETS.map((f) => (
+                      <SelectItem key={f} value={f} className="capitalize">{f}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Custom finish (optional override)</Label>
+                <Input
+                  value={editing.finish ?? ""}
+                  onChange={(e) => setEditing({ ...editing, finish: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Sell price (ZAR)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={editing.sell_price ?? 0}
+                  onChange={(e) => setEditing({ ...editing, sell_price: parseFloat(e.target.value) || 0 })}
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Cost price (ZAR)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={editing.cost_price ?? 0}
+                  onChange={(e) => setEditing({ ...editing, cost_price: parseFloat(e.target.value) || 0 })}
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Sort order</Label>
+                <Input
+                  type="number"
+                  value={editing.sort_order ?? 0}
+                  onChange={(e) => setEditing({ ...editing, sort_order: parseInt(e.target.value) || 0 })}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={editing.is_active ?? true}
+                  onCheckedChange={(v) => setEditing({ ...editing, is_active: v })}
+                />
+                <Label className="text-xs">Active</Label>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
+            <Button onClick={save} disabled={upsert.isPending}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
