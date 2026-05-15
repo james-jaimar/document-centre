@@ -151,6 +151,7 @@ export default function RateCardEditor({
           <TabsTrigger value="papers">Paper Stocks</TabsTrigger>
           <TabsTrigger value="finishing">Finishing</TabsTrigger>
           <TabsTrigger value="photo">Photo Prints</TabsTrigger>
+          <TabsTrigger value="business_cards">Business Cards</TabsTrigger>
         </TabsList>
 
         <TabsContent value="clicks" className="mt-4">
@@ -164,6 +165,9 @@ export default function RateCardEditor({
         </TabsContent>
         <TabsContent value="photo" className="mt-4">
           <PhotoPrintsTab items={photoPrints} scope={scope} tenantId={tenantId ?? null} />
+        </TabsContent>
+        <TabsContent value="business_cards" className="mt-4">
+          <BusinessCardsTab items={businessCards} scope={scope} tenantId={tenantId ?? null} />
         </TabsContent>
       </Tabs>
     </div>
