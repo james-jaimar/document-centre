@@ -4,6 +4,7 @@ import {
   useRateCardPapers,
   useRateCardFinishing,
   useRateCardPhotoPrints,
+  useRateCardBusinessCards,
   useUpdateRateCardClick,
   useInsertRateCardClick,
   useDeleteRateCardClick,
@@ -13,12 +14,15 @@ import {
   useDeleteRateCardFinishing,
   useUpsertRateCardPhotoPrint,
   useDeleteRateCardPhotoPrint,
+  useUpsertRateCardBusinessCard,
+  useDeleteRateCardBusinessCard,
   useCloneMasterRateCard,
   type RateCardScope,
   type RateCardClick,
   type RateCardPaper,
   type RateCardFinishing,
   type RateCardPhotoPrint,
+  type RateCardBusinessCard,
   type FinishingBasis,
 } from "@/hooks/useRateCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
