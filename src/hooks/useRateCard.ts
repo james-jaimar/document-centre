@@ -56,6 +56,24 @@ export interface RateCardFinishing {
   is_active: boolean;
 }
 
+export type BusinessCardSides = "single" | "double";
+
+export interface RateCardBusinessCard {
+  id: string;
+  scope_type: RateCardScope;
+  tenant_id: string | null;
+  code: string;
+  label: string;
+  quantity: number;
+  sides: BusinessCardSides;
+  paper: string;
+  finish: string;
+  sell_price: number;
+  cost_price: number;
+  sort_order: number;
+  is_active: boolean;
+}
+
 export interface RateCardPhotoPrint {
   id: string;
   scope_type: RateCardScope;
@@ -312,5 +330,57 @@ export function useCloneMasterRateCard() {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card"] }),
+  });
+}
+
+// ----- Business Cards -----
+
+export function useRateCardBusinessCards(args: ScopeArgs) {
+  return useQuery({
+    queryKey: KEY("business_cards", args),
+    enabled: args.scope === "master" || !!args.tenantId,
+    queryFn: async () => {
+      const q = scopeFilter(
+        supabase.from("rate_card_business_cards" as any).select("*"),
+        args,
+      );
+      const { data, error } = await q.order("sort_order").order("quantity");
+      if (error) throw error;
+      return (data ?? []) as unknown as RateCardBusinessCard[];
+    },
+  });
+}
+
+export function useUpsertRateCardBusinessCard() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: Partial<RateCardBusinessCard> & { scope_type: RateCardScope }) => {
+      if (input.id) {
+        const { id, ...rest } = input;
+        const { error } = await supabase
+          .from("rate_card_business_cards" as any)
+          .update(rest)
+          .eq("id", id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("rate_card_business_cards" as any).insert(input);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "business_cards"] }),
+  });
+}
+
+export function useDeleteRateCardBusinessCard() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("rate_card_business_cards" as any)
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "business_cards"] }),
   });
 }
