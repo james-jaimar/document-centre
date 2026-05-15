@@ -332,3 +332,55 @@ export function useCloneMasterRateCard() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card"] }),
   });
 }
+
+// ----- Business Cards -----
+
+export function useRateCardBusinessCards(args: ScopeArgs) {
+  return useQuery({
+    queryKey: KEY("business_cards", args),
+    enabled: args.scope === "master" || !!args.tenantId,
+    queryFn: async () => {
+      const q = scopeFilter(
+        supabase.from("rate_card_business_cards" as any).select("*"),
+        args,
+      );
+      const { data, error } = await q.order("sort_order").order("quantity");
+      if (error) throw error;
+      return (data ?? []) as unknown as RateCardBusinessCard[];
+    },
+  });
+}
+
+export function useUpsertRateCardBusinessCard() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: Partial<RateCardBusinessCard> & { scope_type: RateCardScope }) => {
+      if (input.id) {
+        const { id, ...rest } = input;
+        const { error } = await supabase
+          .from("rate_card_business_cards" as any)
+          .update(rest)
+          .eq("id", id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("rate_card_business_cards" as any).insert(input);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "business_cards"] }),
+  });
+}
+
+export function useDeleteRateCardBusinessCard() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("rate_card_business_cards" as any)
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "business_cards"] }),
+  });
+}
