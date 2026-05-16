@@ -1,54 +1,35 @@
-# Make PVC covers honour the B&W print-colour choice
-
 ## Problem
 
-When the customer chooses **Black & White** for a bound document and then picks a **PVC front cover** (clear / frosted / matte), the body pages render in greyscale correctly, but the cover sheet renders in full colour. The cover is unaware of the print-colour choice the customer made in the previous step.
+The previous fix only patched `src/lib/orders/buildPreviewSnapshot.ts`, which is the snapshot used by the **placed-order** detail page. The screenshot you sent is the **live configurator** (`/t/:slug/new-order` → Bound Documents step 2), which renders via a different module: `src/components/order/PreviewPanel.tsx`. That file has its own PVC cover injection that still hardcodes `isColor: true`, so it ignores the B&W choice no matter which PVC cover variant is picked.
 
-## Root cause
+## Root cause (single line)
 
-In `src/lib/orders/buildPreviewSnapshot.ts` (line 371), when a PVC cover sheet is injected, its `isColor` flag is hardcoded:
+`src/components/order/PreviewPanel.tsx` line 450:
 
 ```ts
-fp.unshift({ thumbnailUrl: frontThumb, pageIndex: 0, isColor: true });
+fp.unshift({ thumbnailUrl: frontThumb, pageIndex: 0, documentName: "PVC Cover", section: undefined, isColor: true });
 ```
 
-The PVC cover artwork is just a re-display of the first body page's thumbnail (`fp[0].thumbnailUrl`). That body page already carries the correct `isColor` value (derived from `section.is_color`), but the cover slot ignores it.
-
-Downstream renderers (`FlipBook`, `LooseSheetsPreview`, `RingBinderOpenSpread`) all read `colorFlags[i]` and apply `filter: grayscale(100%)` correctly — so fixing the snapshot fixes every preview type at once.
+The body page that supplies `frontThumb` already carries the correct `isColor` (derived from `section.is_color`, which reflects the user's Print Colour choice). The unshift just throws it away.
 
 ## Fix
 
-Single-line change in `buildPreviewSnapshot.ts`:
+In `src/components/order/PreviewPanel.tsx`, inside the `if (isPvc && fp.length > 0)` block (~lines 448–452):
 
-```ts
-const frontSource = fp[0];
-fp.unshift({
-  thumbnailUrl: frontSource?.thumbnailUrl ?? "",
-  pageIndex: 0,
-  isColor: frontSource?.isColor ?? true,
-});
-```
+1. Capture the source page before unshifting: `const frontSource = fp[0];`
+2. Use `frontSource?.isColor ?? true` for the PVC front face.
+3. Leave the PVC back face as `isColor: true` (it's a translucent reverse with no artwork — greyscale conversion doesn't apply).
 
-The PVC back face stays `isColor: true` (it's a translucent reverse with no artwork).
-
-## Scope check (app-wide?)
-
-- **Real `front_cover` sections** (uploaded cover artwork, not PVC): already correct — `isColor` flows from `section.is_color` via `buildPageSequence` (line 250).
-- **Card back covers** (`back_cover_card`, `inside_back_cover_card`): solid colour material, no artwork, `isColor` irrelevant.
-- **Tabs / inserts / blanks**: no artwork, `isColor` irrelevant.
-- **All three preview engines** (flip book, loose sheets, ring binder) consume the same `colorFlags` array, so this one fix propagates everywhere.
-
-No other surfaces need touching.
+That's the only edit. Covers all three PVC variants (clear / frosted / matte) and all bound product types (wire, comb, spiral, perfect, saddle) because they share this single injection point.
 
 ## Verification
 
-1. Bound document → choose **Black & White**, upload a colour PDF, pick **Matte PVC** cover → cover should now render greyscale, matching the body.
-2. Repeat with **Frosted PVC** and **Clear PVC** — all greyscale.
-3. Switch back to **Full Colour** → cover renders in colour as before.
-4. Sanity-check ring-binder and saddle-stitch previews — no regression.
+1. Configurator → Bound Document → choose **Black & White** → upload colour PDF → pick **Frosted Front + Black Card Back** (the exact case in your screenshot). Cover should now render greyscale.
+2. Repeat with **Matte Front** and **Clear PVC** variants — all greyscale.
+3. Switch Print Colour back to **Full Colour** → cover renders in colour.
+4. Real (non-PVC) front cover uploads, card back covers, tabs, inserts, ring binder body pages — no change.
 
 ## Out of scope
 
-- Print-ready assembly pipeline (already converts to greyscale at paid-order time — unaffected).
-- Cover artwork upload flow.
-- Any pricing logic.
+- Print-ready PDF pipeline (server already greyscales at paid-order time).
+- Cover artwork upload flow, pricing, anything outside this single injection.
