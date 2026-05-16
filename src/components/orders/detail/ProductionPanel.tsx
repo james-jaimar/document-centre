@@ -90,11 +90,39 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId }: Props) {
         path={artefacts?.print_ready_pdf_path ?? null}
         loading={isLoading || generating === "print_ready"}
         opening={openingPath === artefacts?.print_ready_pdf_path}
-        onGenerate={generatePrintReady}
+        onGenerate={() => generatePrintReady()}
         onOpen={() => open(artefacts?.print_ready_pdf_path ?? null)}
         generateLabel="Assemble"
+        extraAction={
+          artefacts?.print_ready_pdf_path
+            ? {
+                label: "Force rebuild",
+                onClick: () => generatePrintReady({ force: true }),
+                disabled: generating === "print_ready",
+              }
+            : undefined
+        }
       />
 
+      {artefacts?.assembly_report && (
+        <div className="rounded border border-border/60 bg-muted/30 px-2 py-1.5 text-[10px] space-y-0.5">
+          {artefacts.assembly_report.reused_source && (
+            <div className="text-muted-foreground">Reused uploaded PDF — no work needed.</div>
+          )}
+          {artefacts.assembly_report.reused_cache && (
+            <div className="text-muted-foreground">Served from cache (spec unchanged).</div>
+          )}
+          {!!artefacts.assembly_report.steps?.length && (
+            <div>
+              <span className="font-medium">Steps:</span>{" "}
+              {artefacts.assembly_report.steps.join(" → ")}
+            </div>
+          )}
+          {artefacts.assembly_report.warnings?.map((w, i) => (
+            <div key={i} className="text-amber-600 dark:text-amber-500">⚠ {w}</div>
+          ))}
+        </div>
+      )}
       <Separator />
 
       {/* Imposition picker — scoped to templates assigned to this product family */}
