@@ -109,7 +109,11 @@ Deno.serve(async (req) => {
     const dispatchRes = await fetch(`${apiUrl}${ENDPOINTS[action]}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": apiKey },
-      body: JSON.stringify({ job_id, imposition_template_id: imposition_template_id ?? null }),
+      body: JSON.stringify({
+        job_id,
+        imposition_template_id: imposition_template_id ?? null,
+        force: !!force,
+      }),
     });
     if (!dispatchRes.ok) {
       const txt = await dispatchRes.text();
