@@ -93,16 +93,20 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId }: Props) {
         onGenerate={() => generatePrintReady()}
         onOpen={() => open(artefacts?.print_ready_pdf_path ?? null)}
         generateLabel="Assemble"
-        extraAction={
-          artefacts?.print_ready_pdf_path
-            ? {
-                label: "Force rebuild",
-                onClick: () => generatePrintReady({ force: true }),
-                disabled: generating === "print_ready",
-              }
-            : undefined
-        }
       />
+      {artefacts?.print_ready_pdf_path && (
+        <div className="flex justify-end">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-[10px]"
+            onClick={() => generatePrintReady({ force: true })}
+            disabled={generating === "print_ready"}
+          >
+            Force rebuild
+          </Button>
+        </div>
+      )}
 
       {artefacts?.assembly_report && (
         <div className="rounded border border-border/60 bg-muted/30 px-2 py-1.5 text-[10px] space-y-0.5">
