@@ -58,6 +58,15 @@ def ops_system():
     return ops_service.system()
 
 
+# ─── compact "task manager" live snapshot ─────────────────────────
+# Designed for 1-2s polling from the Ops Overview page. One round trip
+# returns host CPU/mem, total broker queue depth and per-worker live
+# CPU/RSS — no DB hits, cached Celery inspect.
+@ops_router.get("/live")
+def ops_live():
+    return ops_service.live()
+
+
 @ops_router.get("/system/processes")
 def ops_processes(limit: int = Query(default=15, ge=1, le=100)):
     return ops_service.processes(limit=limit)

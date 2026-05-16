@@ -59,6 +59,7 @@ export interface OpsQueue {
 
 export interface OpsWorker {
   name: string;
+  short_name?: string;
   status: string;
   /** Active task count (mapped from server `active_tasks`). */
   active: number;
@@ -67,6 +68,30 @@ export interface OpsWorker {
   queues: string[];
   load?: number[];
   uptime_s?: number;
+  /** Live (host-process) total CPU% across master + children. */
+  live_cpu_percent?: number | null;
+  /** Live (host-process) total RSS bytes across master + children. */
+  live_rss_bytes?: number | null;
+  /** Per-child process stats from psutil. */
+  live_children?: Array<{ pid: number; cpu_percent: number; rss_bytes: number; status: string }>;
+}
+
+/** Compact poll-friendly snapshot from /v1/ops/live. */
+export interface OpsLiveSnapshot {
+  captured_at?: number;
+  cpu: { percent: number; per_core?: number[]; core_count?: number };
+  memory: { total: number; used: number; available: number; percent: number };
+  queue_depth_total: number;
+  queue_depths: Record<string, number>;
+  workers: Array<{
+    name: string;
+    pid: number;
+    cpu_percent: number;
+    rss_bytes: number;
+    child_count: number;
+    active_tasks: number;
+    children: Array<{ pid: number; cpu_percent: number; rss_bytes: number; status: string }>;
+  }>;
 }
 
 export interface OpsJob {
@@ -192,18 +217,19 @@ export const opsApi = {
   health: () => call<OpsHealth>("v1/ops/health"),
   healthFull: () => call<OpsHealthFull>("v1/ops/health/full"),
   system: () => call<OpsSystem>("v1/ops/system"),
+  live: () => call<OpsLiveSnapshot>("v1/ops/live"),
 
   processes: async (limit = 15): Promise<OpsProcess[]> => {
     const res = await call<Dict>("v1/ops/system/processes", "GET", undefined, { limit });
     return asArray<OpsProcess>(res.processes);
   },
 
-  // Queues — server returns { queues: [{name, active, reserved, scheduled}] }
+  // Queues — server returns { queues: [{name, depth, active, reserved, scheduled}] }
   queues: async (): Promise<OpsQueue[]> => {
     const res = await call<Dict>("v1/ops/queues");
     return asArray<Dict>(res.queues).map((q) => ({
       name: String(q.name ?? ""),
-      depth: Number(q.reserved ?? 0) + Number(q.scheduled ?? 0),
+      depth: Number(q.depth ?? Number(q.reserved ?? 0) + Number(q.scheduled ?? 0)),
       consumers: Number(q.active ?? 0),
       rate_per_min: undefined,
       oldest_age_s: undefined,
@@ -227,10 +253,16 @@ export const opsApi = {
         : Number(pool.max_concurrency ?? 0);
       return {
         name: String(w.name ?? ""),
+        short_name: w.short_name ? String(w.short_name) : undefined,
         status: String(w.status ?? "online"),
         active: Number(w.active_tasks ?? 0),
         pool_size: poolSize,
         queues: Array.isArray(w.queues) ? (w.queues as string[]) : [],
+        live_cpu_percent: (w.live_cpu_percent as number | null | undefined) ?? null,
+        live_rss_bytes: (w.live_rss_bytes as number | null | undefined) ?? null,
+        live_children: Array.isArray(w.live_children)
+          ? (w.live_children as OpsWorker["live_children"])
+          : [],
       };
     });
   },
