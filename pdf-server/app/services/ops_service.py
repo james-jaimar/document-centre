@@ -78,13 +78,34 @@ class OpsService:
         return {"processes": top_processes(limit=limit)}
 
     # ─── queues ───────────────────────────────────────────────────
+    def _broker_depths(self, queue_names: list[str]) -> dict[str, int]:
+        """Read pending depth straight from the Redis broker via LLEN.
+
+        Celery enqueues each task as a JSON message on a Redis list named
+        after the routing key. `inspect()` only sees what's *checked out*
+        by a worker (active/reserved), so for true "waiting in the queue"
+        depth we have to talk to the broker directly.
+        """
+        depths: dict[str, int] = {q: 0 for q in queue_names}
+        try:
+            with celery_app.connection_for_read() as conn:
+                client = conn.default_channel.client  # redis.Redis instance
+                for q in queue_names:
+                    try:
+                        depths[q] = int(client.llen(q))
+                    except Exception:
+                        depths[q] = 0
+        except Exception:
+            pass
+        return depths
+
     def queues(self) -> dict:
         inspect = celery_app.control.inspect(timeout=1.0)
-        active = inspect.active() or {}
-        reserved = inspect.reserved() or {}
-        scheduled = inspect.scheduled() or {}
+        active = _cached_inspect("active", inspect.active)
+        reserved = _cached_inspect("reserved", inspect.reserved)
+        scheduled = _cached_inspect("scheduled", inspect.scheduled)
 
-        queue_names: set[str] = set()
+        queue_names: set[str] = set(_KNOWN_QUEUES)
         for bag in (active, reserved):
             for tasks in bag.values():
                 for t in tasks or []:
@@ -97,11 +118,14 @@ class OpsService:
                 if rk:
                     queue_names.add(rk)
 
+        depths = self._broker_depths(sorted(queue_names))
+
         rows = []
         for q in sorted(queue_names):
             rows.append(
                 {
                     "name": q,
+                    "depth": depths.get(q, 0),
                     "active": sum(
                         1 for tasks in active.values() for t in (tasks or [])
                         if ((t.get("delivery_info") or {}).get("routing_key") == q)
@@ -116,21 +140,30 @@ class OpsService:
                     ),
                 }
             )
-        return {"queues": rows}
+        total_depth = sum(depths.values())
+        return {"queues": rows, "total_depth": total_depth}
 
     # ─── workers ──────────────────────────────────────────────────
     def workers(self) -> dict:
         inspect = celery_app.control.inspect(timeout=1.0)
-        stats = inspect.stats() or {}
-        active = inspect.active() or {}
-        registered = inspect.registered() or {}
+        stats = _cached_inspect("stats", inspect.stats)
+        active = _cached_inspect("active", inspect.active)
+        registered = _cached_inspect("registered", inspect.registered)
+
+        # Build live host-process map keyed by short worker name (e.g. "heavy").
+        live_by_name: dict[str, dict] = {}
+        for w in celery_workers_live():
+            live_by_name[w["name"]] = w
 
         workers = []
         for name, stat in stats.items():
             pool = stat.get("pool") or {}
+            short = name.split("@", 1)[0]
+            live = live_by_name.get(short, {})
             workers.append(
                 {
                     "name": name,
+                    "short_name": short,
                     "status": "busy" if len(active.get(name, []) or []) else "idle",
                     "active_tasks": len(active.get(name, []) or []),
                     "pool": {
@@ -142,9 +175,81 @@ class OpsService:
                     "total": stat.get("total", {}),
                     "rusage": stat.get("rusage", {}),
                     "broker": stat.get("broker", {}),
+                    # Live per-process — the "task manager" view.
+                    "live_cpu_percent": live.get("cpu_percent"),
+                    "live_rss_bytes": live.get("rss_bytes"),
+                    "live_children": live.get("children", []),
+                }
+            )
+
+        # Also include any workers psutil saw on this host but Celery inspect
+        # missed (e.g. broker connectivity hiccup) so we never lie about
+        # "no workers running".
+        seen = {w["short_name"] for w in workers}
+        for short, live in live_by_name.items():
+            if short in seen:
+                continue
+            workers.append(
+                {
+                    "name": f"{short}@unknown",
+                    "short_name": short,
+                    "status": "host-only",
+                    "active_tasks": None,
+                    "pool": {"processes": None, "max_concurrency": live.get("child_count")},
+                    "registered_tasks_count": None,
+                    "prefetch_count": None,
+                    "total": {},
+                    "rusage": {},
+                    "broker": {},
+                    "live_cpu_percent": live.get("cpu_percent"),
+                    "live_rss_bytes": live.get("rss_bytes"),
+                    "live_children": live.get("children", []),
                 }
             )
         return {"workers": workers}
+
+    # ─── compact live snapshot (for 1-2s polling) ─────────────────
+    def live(self) -> dict:
+        """One cheap call: host CPU/mem, queue depth total, per-worker live
+        stats and active task counts. Designed for the Ops Overview tile
+        refresh — uses the cached inspect + cached CPU sample so it can be
+        polled at 1Hz without overloading the broker."""
+        snap = system_snapshot()
+        depths = self._broker_depths(list(_KNOWN_QUEUES))
+        total_depth = sum(depths.values())
+
+        inspect = celery_app.control.inspect(timeout=1.0)
+        active = _cached_inspect("active", inspect.active)
+
+        workers_live = celery_workers_live()
+        # Attach active-task counts where the short name matches.
+        active_by_short: dict[str, int] = {}
+        for name, tasks in active.items():
+            short = name.split("@", 1)[0]
+            active_by_short[short] = active_by_short.get(short, 0) + len(tasks or [])
+
+        workers_out = []
+        for w in workers_live:
+            workers_out.append(
+                {
+                    "name": w["name"],
+                    "pid": w["pid"],
+                    "cpu_percent": w["cpu_percent"],
+                    "rss_bytes": w["rss_bytes"],
+                    "child_count": w["child_count"],
+                    "active_tasks": active_by_short.get(w["name"], 0),
+                    "children": w["children"],
+                }
+            )
+
+        return {
+            "captured_at": snap.get("captured_at"),
+            "cpu": snap.get("cpu", {}),
+            "memory": snap.get("memory", {}),
+            "queue_depth_total": total_depth,
+            "queue_depths": depths,
+            "workers": workers_out,
+        }
 
     # ─── jobs (DB-backed JobEvent stream) ─────────────────────────
     def _serialize_event(self, e: JobEvent) -> dict:
