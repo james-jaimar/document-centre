@@ -7,7 +7,7 @@ import { useProductOptions } from "@/hooks/useProductOptions";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { ItemSpec } from "@/lib/calculatePrice";
-import { calculateItemPrice } from "@/lib/calculatePrice";
+import { calculateItemPrice, calculatePriceFromRateCard } from "@/lib/calculatePrice";
 import { isStructuredValues, type StructuredOptionValue } from "@/lib/productOptionTypes";
 import type { ProductPreviewType, PreviewEffects } from "@/components/preview/previewTypes";
 import { DEFAULT_PREVIEW_EFFECTS } from "@/components/preview/previewTypes";
@@ -560,6 +560,12 @@ export default function OrderBuild() {
 
   const canAddToCart = !!order && !!orderItem && sections.length > 0 && (spec?.page_count ?? 0) > 0;
 
+  const computeBreakdown = useCallback(() => {
+    return useNewEngine && recipe && rateCard
+      ? calculatePriceFromRateCard(spec, recipe, rateCard)
+      : calculateItemPrice(spec, options, pricingRules, activeCurrency, cascadedOverrides);
+  }, [useNewEngine, recipe, rateCard, spec, options, pricingRules, activeCurrency, cascadedOverrides]);
+
   const handleAddToCartClick = useCallback(() => {
     if (!orderItem || !order) {
       toast.error("Order data is still loading. Please wait.");
@@ -570,7 +576,7 @@ export default function OrderBuild() {
       return;
     }
     try {
-      const breakdown = calculateItemPrice(spec, options, pricingRules, activeCurrency, cascadedOverrides);
+      const breakdown = computeBreakdown();
       if (breakdown.lines.length === 0) {
         toast.error("No pricing rules configured", {
           description: "Please contact the administrator to set up pricing for this product.",
@@ -584,7 +590,7 @@ export default function OrderBuild() {
       console.error("add_to_cart_failed", { orderId: order.id, orderItemId: orderItem.id, sections, spec, err });
       toast.error("Unable to calculate price", { description: err.message });
     }
-  }, [orderItem, order, spec, options, pricingRules, reference, productFamily, sections]);
+  }, [orderItem, order, spec, reference, productFamily, sections, computeBreakdown]);
 
   const handleConfirmAddToCart = useCallback(async () => {
     if (!orderItem || !order || isSubmitting) return;
@@ -595,7 +601,7 @@ export default function OrderBuild() {
     }
     setIsSubmitting(true);
     try {
-      const breakdown = calculateItemPrice(spec, options, pricingRules, activeCurrency, cascadedOverrides);
+      const breakdown = computeBreakdown();
       // Check if this draft was created by editing a cart item
       const replacesCartItemId = (order.metadata as any)?.replaces_cart_item_id;
       await addItemToCart.mutateAsync({
