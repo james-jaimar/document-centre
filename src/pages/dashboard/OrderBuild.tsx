@@ -560,6 +560,12 @@ export default function OrderBuild() {
 
   const canAddToCart = !!order && !!orderItem && sections.length > 0 && (spec?.page_count ?? 0) > 0;
 
+  const computeBreakdown = useCallback(() => {
+    return useNewEngine && recipe && rateCard
+      ? calculatePriceFromRateCard(spec, recipe, rateCard)
+      : calculateItemPrice(spec, options, pricingRules, activeCurrency, cascadedOverrides);
+  }, [useNewEngine, recipe, rateCard, spec, options, pricingRules, activeCurrency, cascadedOverrides]);
+
   const handleAddToCartClick = useCallback(() => {
     if (!orderItem || !order) {
       toast.error("Order data is still loading. Please wait.");
