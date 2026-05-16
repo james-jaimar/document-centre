@@ -217,18 +217,19 @@ export const opsApi = {
   health: () => call<OpsHealth>("v1/ops/health"),
   healthFull: () => call<OpsHealthFull>("v1/ops/health/full"),
   system: () => call<OpsSystem>("v1/ops/system"),
+  live: () => call<OpsLiveSnapshot>("v1/ops/live"),
 
   processes: async (limit = 15): Promise<OpsProcess[]> => {
     const res = await call<Dict>("v1/ops/system/processes", "GET", undefined, { limit });
     return asArray<OpsProcess>(res.processes);
   },
 
-  // Queues — server returns { queues: [{name, active, reserved, scheduled}] }
+  // Queues — server returns { queues: [{name, depth, active, reserved, scheduled}] }
   queues: async (): Promise<OpsQueue[]> => {
     const res = await call<Dict>("v1/ops/queues");
     return asArray<Dict>(res.queues).map((q) => ({
       name: String(q.name ?? ""),
-      depth: Number(q.reserved ?? 0) + Number(q.scheduled ?? 0),
+      depth: Number(q.depth ?? Number(q.reserved ?? 0) + Number(q.scheduled ?? 0)),
       consumers: Number(q.active ?? 0),
       rate_per_min: undefined,
       oldest_age_s: undefined,
