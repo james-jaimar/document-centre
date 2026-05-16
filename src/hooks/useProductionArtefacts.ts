@@ -9,6 +9,25 @@ export interface ProductionArtefacts {
   job_ticket_pdf_path: string | null;
   imposition_template_id: string | null;
   product_category: string | null;
+  assembly_report: AssemblyReport | null;
+  print_ready_assembled_at: string | null;
+  print_ready_spec_hash: string | null;
+}
+
+export interface AssemblyReport {
+  reused_source?: boolean;
+  reused_cache?: boolean;
+  steps?: string[];
+  warnings?: string[];
+  source_count?: number;
+  target?: {
+    width_mm?: number | null;
+    height_mm?: number | null;
+    orientation?: string | null;
+    colour_mode?: string | null;
+    print_to_edge?: boolean;
+  };
+  detected_size_mm?: number[] | null;
 }
 
 /**
@@ -27,20 +46,22 @@ export function useProductionArtefacts(jobId: string | null) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("order_jobs")
-        .select("print_ready_pdf_path, imposed_pdf_path, job_ticket_pdf_path, imposition_template_id, product_category")
+        .select(
+          "print_ready_pdf_path, imposed_pdf_path, job_ticket_pdf_path, imposition_template_id, product_category, assembly_report, print_ready_assembled_at, print_ready_spec_hash",
+        )
         .eq("id", jobId!)
         .single();
       if (error) throw error;
-      return data as ProductionArtefacts;
+      return data as unknown as ProductionArtefacts;
     },
   });
 
-  const generatePrintReady = useCallback(async () => {
+  const generatePrintReady = useCallback(async (opts?: { force?: boolean }) => {
     if (!jobId) return;
     setGenerating("print_ready");
     try {
       const { data, error } = await supabase.functions.invoke("production-pdf", {
-        body: { action: "assemble", job_id: jobId },
+        body: { action: "assemble", job_id: jobId, force: !!opts?.force },
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);

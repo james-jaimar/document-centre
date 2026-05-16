@@ -45,27 +45,18 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) return json({ error: "Unauthorized" }, 401);
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const token = authHeader.slice("Bearer ".length).trim();
+    const isInternal = token === serviceRoleKey;
 
-    const { data: userData, error: userErr } = await supabase.auth.getUser();
-    if (userErr || !userData?.user) return json({ error: "Unauthorized" }, 401);
-    const userId = userData.user.id;
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, serviceRoleKey);
 
     const body = await req.json();
-    const { action, job_id, imposition_template_id } = body ?? {};
+    const { action, job_id, imposition_template_id, force } = body ?? {};
     if (!job_id || !ENDPOINTS[action]) return json({ error: "Invalid request" }, 400);
     if (action === "impose" && !imposition_template_id) {
       return json({ error: "imposition_template_id is required for impose action" }, 400);
     }
-
-    const admin = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
 
     const { data: job, error: jobErr } = await admin
       .from("order_jobs")
@@ -74,21 +65,33 @@ Deno.serve(async (req) => {
       .single();
     if (jobErr || !job) return json({ error: "Job not found" }, 404);
 
-    const { data: membership } = await admin
-      .from("tenant_memberships")
-      .select("role")
-      .eq("profile_id", userId)
-      .eq("tenant_id", job.tenant_id)
-      .eq("is_active", true)
-      .maybeSingle();
+    if (!isInternal) {
+      // User-initiated call (operator clicking a button) — verify staff role.
+      const supabase = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        serviceRoleKey,
+        { global: { headers: { Authorization: authHeader } } }
+      );
+      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      if (userErr || !userData?.user) return json({ error: "Unauthorized" }, 401);
+      const userId = userData.user.id;
 
-    if (!membership || !["owner", "admin", "production", "sales"].includes(membership.role)) {
-      const { data: roles } = await admin
-        .from("user_roles")
+      const { data: membership } = await admin
+        .from("tenant_memberships")
         .select("role")
-        .eq("user_id", userId);
-      const isPlatformAdmin = (roles ?? []).some((r: any) => r.role === "platform_admin");
-      if (!isPlatformAdmin) return json({ error: "Forbidden" }, 403);
+        .eq("profile_id", userId)
+        .eq("tenant_id", job.tenant_id)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (!membership || !["owner", "admin", "production", "sales"].includes(membership.role)) {
+        const { data: roles } = await admin
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", userId);
+        const isPlatformAdmin = (roles ?? []).some((r: any) => r.role === "platform_admin");
+        if (!isPlatformAdmin) return json({ error: "Forbidden" }, 403);
+      }
     }
 
     const apiUrl = Deno.env.get("VPS_PDF_API_URL");
@@ -106,7 +109,11 @@ Deno.serve(async (req) => {
     const dispatchRes = await fetch(`${apiUrl}${ENDPOINTS[action]}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": apiKey },
-      body: JSON.stringify({ job_id, imposition_template_id: imposition_template_id ?? null }),
+      body: JSON.stringify({
+        job_id,
+        imposition_template_id: imposition_template_id ?? null,
+        force: !!force,
+      }),
     });
     if (!dispatchRes.ok) {
       const txt = await dispatchRes.text();

@@ -2060,4 +2060,115 @@ class PdfOps:
         return stats
 
 
+    # ------------------------------------------------------------------
+    # Smart-assembly helpers (size detect, bleed detect / expand, spec hash)
+    # ------------------------------------------------------------------
+    def page_trim_size_mm(self, src: Path) -> tuple[float, float] | None:
+        """Return the (width_mm, height_mm) of the first page's TrimBox
+        (falling back to MediaBox honouring /Rotate). None on failure."""
+        try:
+            with pikepdf.open(str(src)) as pdf:
+                if not pdf.pages:
+                    return None
+                page = pdf.pages[0]
+                box = None
+                for k in ("/TrimBox", "/CropBox", "/MediaBox"):
+                    if k in page:
+                        box = page[k]
+                        break
+                if box is None:
+                    return None
+                llx, lly, urx, ury = (float(box[i]) for i in range(4))
+                w_pt, h_pt = urx - llx, ury - lly
+                rotate = int(page.get("/Rotate", 0)) % 360
+                if rotate in (90, 270):
+                    w_pt, h_pt = h_pt, w_pt
+                return (w_pt / mm, h_pt / mm)
+        except Exception as exc:
+            logger.warning("page_trim_size_mm failed: %s", exc)
+            return None
+
+    def detect_bleed(self, src: Path, min_bleed_mm: float = 1.0) -> bool:
+        """Heuristic: True if the first page's MediaBox extends at least
+        ``min_bleed_mm`` beyond its TrimBox on every side."""
+        try:
+            with pikepdf.open(str(src)) as pdf:
+                if not pdf.pages:
+                    return False
+                page = pdf.pages[0]
+                if "/TrimBox" not in page or "/MediaBox" not in page:
+                    return False
+                t = [float(x) for x in page["/TrimBox"]]
+                m = [float(x) for x in page["/MediaBox"]]
+                # [llx, lly, urx, ury]
+                inset_pt = min_bleed_mm * mm
+                return (
+                    (t[0] - m[0]) >= inset_pt
+                    and (t[1] - m[1]) >= inset_pt
+                    and (m[2] - t[2]) >= inset_pt
+                    and (m[3] - t[3]) >= inset_pt
+                )
+        except Exception:
+            return False
+
+    def expand_for_bleed(
+        self,
+        src: Path,
+        out_pdf: Path,
+        bleed_mm: float = 3.0,
+    ) -> Path:
+        """Manufacture bleed by uniformly scaling each page's content up so
+        the visible area extends `bleed_mm` beyond the original trim on every
+        side. The MediaBox grows by 2*bleed in each dimension; the original
+        trim is recorded as the new TrimBox so downstream imposition still
+        knows where the cut line is.
+
+        Edge content is stretched slightly — operator should know this was
+        fabricated bleed (caller records a warning)."""
+        bleed_pt = bleed_mm * mm
+        with pikepdf.open(str(src)) as pdf:
+            for page in pdf.pages:
+                # Use current MediaBox as the "trim" reference (we assume no
+                # real bleed — detect_bleed gated this call).
+                m = [float(x) for x in page.MediaBox]
+                w = m[2] - m[0]
+                h = m[3] - m[1]
+                if w <= 0 or h <= 0:
+                    continue
+                sx = (w + 2 * bleed_pt) / w
+                sy = (h + 2 * bleed_pt) / h
+                # Scale uniformly by the smaller axis to avoid distortion,
+                # then re-centre.
+                s = min(sx, sy)
+                tx = (w - w * s) / 2 - bleed_pt
+                ty = (h - h * s) / 2 - bleed_pt
+                # Wrap existing content in a save/scale/restore matrix
+                cm = f"q\n{s} 0 0 {s} {tx} {ty} cm\n".encode()
+                end = b"\nQ\n"
+                page.contents_add(cm, prepend=True)
+                page.contents_add(end, prepend=False)
+                # Update boxes
+                new_media = [
+                    m[0] - bleed_pt, m[1] - bleed_pt,
+                    m[2] + bleed_pt, m[3] + bleed_pt,
+                ]
+                page.MediaBox = new_media
+                page.TrimBox = m  # original size is the trim
+                if "/BleedBox" in page:
+                    del page["/BleedBox"]
+                page.BleedBox = new_media
+            pdf.save(str(out_pdf))
+        return out_pdf
+
+    @staticmethod
+    def spec_hash(inputs: dict) -> str:
+        """Stable hash of the inputs that produced a print-ready PDF.
+        Used as a cache key so re-clicking 'Assemble' is instant when
+        nothing material has changed."""
+        import hashlib, json
+        canonical = json.dumps(inputs, sort_keys=True, default=str, separators=(",", ":"))
+        return hashlib.sha256(canonical.encode()).hexdigest()[:32]
+
+
 pdf_ops = PdfOps()
+
