@@ -590,7 +590,7 @@ export default function OrderBuild() {
       console.error("add_to_cart_failed", { orderId: order.id, orderItemId: orderItem.id, sections, spec, err });
       toast.error("Unable to calculate price", { description: err.message });
     }
-  }, [orderItem, order, spec, options, pricingRules, reference, productFamily, sections]);
+  }, [orderItem, order, spec, reference, productFamily, sections, computeBreakdown]);
 
   const handleConfirmAddToCart = useCallback(async () => {
     if (!orderItem || !order || isSubmitting) return;
