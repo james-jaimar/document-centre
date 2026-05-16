@@ -253,10 +253,16 @@ export const opsApi = {
         : Number(pool.max_concurrency ?? 0);
       return {
         name: String(w.name ?? ""),
+        short_name: w.short_name ? String(w.short_name) : undefined,
         status: String(w.status ?? "online"),
         active: Number(w.active_tasks ?? 0),
         pool_size: poolSize,
         queues: Array.isArray(w.queues) ? (w.queues as string[]) : [],
+        live_cpu_percent: (w.live_cpu_percent as number | null | undefined) ?? null,
+        live_rss_bytes: (w.live_rss_bytes as number | null | undefined) ?? null,
+        live_children: Array.isArray(w.live_children)
+          ? (w.live_children as OpsWorker["live_children"])
+          : [],
       };
     });
   },
