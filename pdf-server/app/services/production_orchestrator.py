@@ -18,6 +18,17 @@ from app.core.config import settings
 
 
 @dataclass
+class TargetSpec:
+    """Customer-chosen print spec, distilled from product_snapshot/configuration."""
+    width_mm: float | None = None
+    height_mm: float | None = None
+    orientation: str | None = None  # "portrait" | "landscape"
+    colour_mode: str = "colour"     # "colour" | "bw"
+    print_to_edge: bool = False
+    bleed_mm: float = 3.0
+
+
+@dataclass
 class JobBundle:
     job: dict[str, Any]
     order: dict[str, Any] | None
@@ -26,6 +37,7 @@ class JobBundle:
     asset_paths: list[tuple[str, str]]  # (filename, normalized_storage_path)
     tenant: dict[str, Any] | None
     customer: dict[str, Any] | None
+    target: TargetSpec = None  # type: ignore[assignment]
 
 
 def _client() -> Client:
