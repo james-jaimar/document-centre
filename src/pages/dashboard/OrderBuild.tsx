@@ -7,7 +7,7 @@ import { useProductOptions } from "@/hooks/useProductOptions";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { ItemSpec } from "@/lib/calculatePrice";
-import { calculateItemPrice } from "@/lib/calculatePrice";
+import { calculateItemPrice, calculatePriceFromRateCard } from "@/lib/calculatePrice";
 import { isStructuredValues, type StructuredOptionValue } from "@/lib/productOptionTypes";
 import type { ProductPreviewType, PreviewEffects } from "@/components/preview/previewTypes";
 import { DEFAULT_PREVIEW_EFFECTS } from "@/components/preview/previewTypes";
