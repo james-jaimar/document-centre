@@ -576,7 +576,7 @@ export default function OrderBuild() {
       return;
     }
     try {
-      const breakdown = calculateItemPrice(spec, options, pricingRules, activeCurrency, cascadedOverrides);
+      const breakdown = computeBreakdown();
       if (breakdown.lines.length === 0) {
         toast.error("No pricing rules configured", {
           description: "Please contact the administrator to set up pricing for this product.",
