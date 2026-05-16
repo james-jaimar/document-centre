@@ -59,6 +59,7 @@ export interface OpsQueue {
 
 export interface OpsWorker {
   name: string;
+  short_name?: string;
   status: string;
   /** Active task count (mapped from server `active_tasks`). */
   active: number;
@@ -67,6 +68,30 @@ export interface OpsWorker {
   queues: string[];
   load?: number[];
   uptime_s?: number;
+  /** Live (host-process) total CPU% across master + children. */
+  live_cpu_percent?: number | null;
+  /** Live (host-process) total RSS bytes across master + children. */
+  live_rss_bytes?: number | null;
+  /** Per-child process stats from psutil. */
+  live_children?: Array<{ pid: number; cpu_percent: number; rss_bytes: number; status: string }>;
+}
+
+/** Compact poll-friendly snapshot from /v1/ops/live. */
+export interface OpsLiveSnapshot {
+  captured_at?: number;
+  cpu: { percent: number; per_core?: number[]; core_count?: number };
+  memory: { total: number; used: number; available: number; percent: number };
+  queue_depth_total: number;
+  queue_depths: Record<string, number>;
+  workers: Array<{
+    name: string;
+    pid: number;
+    cpu_percent: number;
+    rss_bytes: number;
+    child_count: number;
+    active_tasks: number;
+    children: Array<{ pid: number; cpu_percent: number; rss_bytes: number; status: string }>;
+  }>;
 }
 
 export interface OpsJob {
