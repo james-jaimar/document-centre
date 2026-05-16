@@ -198,6 +198,7 @@ class JobArtefactRequest(BaseModel):
     """
     job_id: UUID
     imposition_template_id: UUID | None = None
+    force: bool = False
 
 
 class PadPagesRequest(BaseModel):
