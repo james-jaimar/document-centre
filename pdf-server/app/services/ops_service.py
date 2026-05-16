@@ -20,8 +20,30 @@ from app.db.models.ops_storage_snapshot import OpsStorageSnapshot
 from app.services.health_probes import all_probes
 from app.services.job_event_repo import job_event_repo
 from app.services.storage_metrics import storage_snapshot
-from app.services.system_metrics import system_snapshot, top_processes
+from app.services.system_metrics import system_snapshot, top_processes, celery_workers_live
 from app.worker import celery_app
+
+import time as _time
+
+# Queues we always want to surface even when Celery inspect returns nothing
+# (e.g. all workers idle). Mirrors the routing keys defined in
+# scripts/start-worker-{heavy,light}.sh and the systemd units.
+_KNOWN_QUEUES = ("documents", "imposition", "pdf", "default", "thumbnails")
+
+# Tiny in-process cache for the expensive Celery inspect calls so the new
+# /v1/ops/live endpoint can be polled every 1-2s without melting the broker.
+_INSPECT_TTL_S = 2.0
+_inspect_cache: dict[str, tuple[float, dict]] = {}
+
+
+def _cached_inspect(name: str, fn):
+    now = _time.time()
+    hit = _inspect_cache.get(name)
+    if hit and (now - hit[0]) < _INSPECT_TTL_S:
+        return hit[1]
+    val = fn() or {}
+    _inspect_cache[name] = (now, val)
+    return val
 
 
 def _utcnow() -> datetime:
