@@ -446,8 +446,10 @@ export default function PreviewPanel({
     const isPvcOption = effects?.frontCover && ["clear_pvc", "frosted_pvc", "matte_pvc"].includes(effects.frontCover);
     const isPvc = isBound && isPvcOption && fp.length > 0;
     if (isPvc && fp.length > 0) {
-      const frontThumb = fp[0]?.thumbnailUrl ?? "";
-      fp.unshift({ thumbnailUrl: frontThumb, pageIndex: 0, documentName: "PVC Cover", section: undefined, isColor: true });
+      const frontSource = fp[0];
+      const frontThumb = frontSource?.thumbnailUrl ?? "";
+      const frontIsColor = frontSource?.isColor ?? true;
+      fp.unshift({ thumbnailUrl: frontThumb, pageIndex: 0, documentName: "PVC Cover", section: undefined, isColor: frontIsColor });
       roles.unshift("pvc_cover_front");
       fp.splice(1, 0, { thumbnailUrl: "", pageIndex: 0, documentName: "PVC Cover Inside", section: undefined, isColor: true });
       roles.splice(1, 0, "pvc_cover_back");
