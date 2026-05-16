@@ -245,10 +245,13 @@ export default function PageEffects({ effects, pageIndex, totalPages, children, 
   // ── 5. Standard paper page (front_cover, body, etc.) ──
   const paperBg = PAPER_COLORS[effects.paperColor] ?? "#ffffff";
 
-  // Content inset: absolute positioning instead of padding.
-  // This ensures react-pageflip's measurement container (the outer div)
-  // is always exactly pageWidth × pageHeight with no box-model interference.
-  const inset = allowBleed ? 0 : bleedInsetPx;
+  // Render artwork at 100% of the page rectangle. The unprintable cut-sheet
+  // margin is a physical printer artifact; uploaded files already contain
+  // their own margins, so simulating one here doubles up the white border.
+  // `allowBleed` / `bleedInsetPx` are kept in the prop signature for now in
+  // case other effects depend on the flag.
+  void allowBleed; void bleedInsetPx;
+  const inset = 0;
 
   // Lamination sheen on front cover only (not PVC — that's a separate material)
   const showLamination = role === "front_cover" && effects.coverLamination !== "none";
