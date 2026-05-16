@@ -601,7 +601,7 @@ export default function OrderBuild() {
     }
     setIsSubmitting(true);
     try {
-      const breakdown = calculateItemPrice(spec, options, pricingRules, activeCurrency, cascadedOverrides);
+      const breakdown = computeBreakdown();
       // Check if this draft was created by editing a cart item
       const replacesCartItemId = (order.metadata as any)?.replaces_cart_item_id;
       await addItemToCart.mutateAsync({
