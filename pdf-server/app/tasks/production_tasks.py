@@ -47,11 +47,19 @@ def _safe(value, fallback="—"):
 
 
 # ---------------------------------------------------------------------------
-# 1. Smart assembly
+# 1. Smart print-ready assembly
 # ---------------------------------------------------------------------------
+# Diff-driven: compare the customer-chosen spec (size, orientation, colour
+# mode, print-to-edge) to what's already in their uploaded PDF(s) and only
+# do the work that's actually needed. If nothing's needed and there's just
+# one document, reuse the source path verbatim (no new bytes uploaded).
+#
+# Triggered on order payment via the `enqueue-print-ready` edge function;
+# operators can also re-run manually from the production panel. Passing
+# ``force=True`` bypasses the spec-hash cache.
 @shared_task(bind=True, queue="documents")
-def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str):
-    """Merge the job's source PDFs (in document order) into one print-ready PDF."""
+def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool = False):
+    """Build the canonical print-ready PDF for a job, doing only the work needed."""
     db = _db()
     try:
         job_repo.mark_running(db, pdf_job_id)
@@ -62,22 +70,126 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str):
                 "No source PDFs available for this job. The customer hasn't uploaded files yet."
             )
 
+        target = bundle.target
+        # Spec hash short-circuits repeat work.
+        spec_inputs = {
+            "sources": [p for _, p in bundle.asset_paths],
+            "target_w": target.width_mm,
+            "target_h": target.height_mm,
+            "orientation": target.orientation,
+            "colour_mode": target.colour_mode,
+            "print_to_edge": target.print_to_edge,
+            "bleed_mm": target.bleed_mm,
+        }
+        new_hash = pdf_ops.spec_hash(spec_inputs)
+        existing_hash = bundle.job.get("print_ready_spec_hash")
+        existing_path = bundle.job.get("print_ready_pdf_path")
+        if (not force) and existing_hash == new_hash and existing_path:
+            result = {
+                "storage_path": existing_path,
+                "reused_cache": True,
+                "spec_hash": new_hash,
+            }
+            job_repo.mark_done(db, pdf_job_id, result)
+            return result
+
+        warnings: list[str] = []
+        steps: list[str] = []
+
         with Workspace() as ws:
+            # ── Download all sources ────────────────────────────────────
             files: list[Path] = []
             for idx, (fname, path) in enumerate(bundle.asset_paths):
                 local = ws.path(f"{idx:03d}-{Path(fname).stem}.pdf")
                 storage.download(path, local)
                 files.append(local)
 
-            out_pdf = ws.path("print-ready.pdf")
-            pdf_ops.merge(files, out_pdf)
+            # ── Step 1: merge (only when >1 doc) ────────────────────────
+            if len(files) > 1:
+                merged = ws.path("merged.pdf")
+                pdf_ops.merge(files, merged)
+                current = merged
+                steps.append(f"merge:{len(files)}")
+            else:
+                current = files[0]
 
-            job_number = _safe(bundle.job.get("job_number"), pdf_job_id[:8])
-            storage_path = unique_name(f"production/print-ready/{job_number}", ".pdf")
-            storage.upload(out_pdf, storage_path, "application/pdf")
+            # ── Step 2: detect what work the spec actually requires ─────
+            actual_size = pdf_ops.page_trim_size_mm(current)
+            needs_resize = False
+            if target.width_mm and target.height_mm and actual_size:
+                aw, ah = actual_size
+                tw, th = target.width_mm, target.height_mm
+                # Tolerance: 2mm in either dimension
+                if abs(aw - tw) > 2 or abs(ah - th) > 2:
+                    needs_resize = True
 
+            needs_bleed = target.print_to_edge and not pdf_ops.detect_bleed(current)
+            needs_greyscale = target.colour_mode == "bw"
+
+            # ── Step 3: resize / re-orient ──────────────────────────────
+            if needs_resize and target.width_mm and target.height_mm:
+                resized = ws.path("resized.pdf")
+                pdf_ops.resize_pages(
+                    current, resized,
+                    width_mm=target.width_mm,
+                    height_mm=target.height_mm,
+                    fit_mode="fit",
+                    dominant_orientation=target.orientation,
+                )
+                current = resized
+                steps.append(f"resize:{target.width_mm:.0f}x{target.height_mm:.0f}")
+
+            # ── Step 4: expand for bleed (only if missing) ──────────────
+            if needs_bleed:
+                bled = ws.path("bled.pdf")
+                pdf_ops.expand_for_bleed(current, bled, bleed_mm=target.bleed_mm)
+                current = bled
+                steps.append(f"bleed:{target.bleed_mm}mm")
+                warnings.append(
+                    "Bleed was auto-fabricated by scaling content up — edge content may clip."
+                )
+
+            # ── Step 5: greyscale (B&W jobs) ────────────────────────────
+            if needs_greyscale:
+                grey = ws.path("grey.pdf")
+                pdf_ops.grayscale(current, grey)
+                current = grey
+                steps.append("greyscale")
+
+            # ── Decide where the result lives ───────────────────────────
+            if not steps and len(files) == 1:
+                # Nothing changed — reuse the uploaded path verbatim, no upload.
+                storage_path = bundle.asset_paths[0][1]
+                reused_source = True
+            else:
+                job_number = _safe(bundle.job.get("job_number"), pdf_job_id[:8])
+                storage_path = unique_name(f"production/print-ready/{job_number}", ".pdf")
+                storage.upload(current, storage_path, "application/pdf")
+                reused_source = False
+
+        # ── Persist artefact + report ───────────────────────────────────
+        from datetime import datetime, timezone
+        report = {
+            "reused_source": reused_source,
+            "reused_cache": False,
+            "steps": steps,
+            "warnings": warnings,
+            "source_count": len(bundle.asset_paths),
+            "target": {
+                "width_mm": target.width_mm,
+                "height_mm": target.height_mm,
+                "orientation": target.orientation,
+                "colour_mode": target.colour_mode,
+                "print_to_edge": target.print_to_edge,
+            },
+            "detected_size_mm": list(actual_size) if actual_size else None,
+        }
         write_artefact_path(job_id, "print_ready_pdf_path", storage_path)
-        result = {"storage_path": storage_path, "asset_count": len(bundle.asset_paths)}
+        write_job_field(job_id, "assembly_report", report)
+        write_job_field(job_id, "print_ready_spec_hash", new_hash)
+        write_job_field(job_id, "print_ready_assembled_at", datetime.now(timezone.utc).isoformat())
+
+        result = {"storage_path": storage_path, **report, "spec_hash": new_hash}
         job_repo.mark_done(db, pdf_job_id, result)
         return result
     except Exception as exc:
