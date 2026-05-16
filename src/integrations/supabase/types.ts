@@ -1855,6 +1855,7 @@ export type Database = {
       order_jobs: {
         Row: {
           app_id: string
+          assembly_report: Json | null
           assigned_supplier_id: string | null
           assigned_to_profile_id: string | null
           branch_id: string | null
@@ -1878,7 +1879,9 @@ export type Database = {
           job_ticket_pdf_path: string | null
           net_price: number
           order_id: string
+          print_ready_assembled_at: string | null
           print_ready_pdf_path: string | null
+          print_ready_spec_hash: string | null
           product_category: string | null
           product_name: string
           product_snapshot: Json
@@ -1899,6 +1902,7 @@ export type Database = {
         }
         Insert: {
           app_id: string
+          assembly_report?: Json | null
           assigned_supplier_id?: string | null
           assigned_to_profile_id?: string | null
           branch_id?: string | null
@@ -1922,7 +1926,9 @@ export type Database = {
           job_ticket_pdf_path?: string | null
           net_price?: number
           order_id: string
+          print_ready_assembled_at?: string | null
           print_ready_pdf_path?: string | null
+          print_ready_spec_hash?: string | null
           product_category?: string | null
           product_name: string
           product_snapshot?: Json
@@ -1943,6 +1949,7 @@ export type Database = {
         }
         Update: {
           app_id?: string
+          assembly_report?: Json | null
           assigned_supplier_id?: string | null
           assigned_to_profile_id?: string | null
           branch_id?: string | null
@@ -1966,7 +1973,9 @@ export type Database = {
           job_ticket_pdf_path?: string | null
           net_price?: number
           order_id?: string
+          print_ready_assembled_at?: string | null
           print_ready_pdf_path?: string | null
+          print_ready_spec_hash?: string | null
           product_category?: string | null
           product_name?: string
           product_snapshot?: Json
