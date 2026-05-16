@@ -46,20 +46,22 @@ export function useProductionArtefacts(jobId: string | null) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("order_jobs")
-        .select("print_ready_pdf_path, imposed_pdf_path, job_ticket_pdf_path, imposition_template_id, product_category")
+        .select(
+          "print_ready_pdf_path, imposed_pdf_path, job_ticket_pdf_path, imposition_template_id, product_category, assembly_report, print_ready_assembled_at, print_ready_spec_hash",
+        )
         .eq("id", jobId!)
         .single();
       if (error) throw error;
-      return data as ProductionArtefacts;
+      return data as unknown as ProductionArtefacts;
     },
   });
 
-  const generatePrintReady = useCallback(async () => {
+  const generatePrintReady = useCallback(async (opts?: { force?: boolean }) => {
     if (!jobId) return;
     setGenerating("print_ready");
     try {
       const { data, error } = await supabase.functions.invoke("production-pdf", {
-        body: { action: "assemble", job_id: jobId },
+        body: { action: "assemble", job_id: jobId, force: !!opts?.force },
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
