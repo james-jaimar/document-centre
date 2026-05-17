@@ -180,5 +180,6 @@ export async function fetchOrderDetail(orderId: string) {
     messages: messagesRes.data || [],
     payments: paymentsRes.data || [],
     documents: docsRes.data || [],
+    adjustments: (adjustmentsRes as any).data || [],
   };
 }
