@@ -1,64 +1,64 @@
-## Goal
+## What I found
 
-For **booklets** (and any bound product) when the customer uploads a **1-page front cover** and/or a **1-page back cover**, the system must treat the unseen face of each cover sheet as a real blank page — both visually in the preview and physically in the merged print-ready PDF that goes to the press.
+The previous fix aimed in the right direction, but it does not match how the current upload data is actually shaped.
 
-Right now:
-- Cover sections already get `is_duplex = false` for 1-page uploads (good).
-- `buildJobSnapshot` emits a `{ kind: "blank_page", reason: "simplex_cover_back" }` directive in `configuration.merge_directives`, but it's always inserted **after** every simplex cover — wrong for the back cover, and the pdf-server doesn't read these directives anyway.
-- Preview already injects a `blank_back` after a simplex front cover, but does **not** inject a blank face **before** a simplex back cover in saddle-stitched / bound layouts.
+For the latest booklet test, the live database shows:
 
-This plan wires up all three layers (frontend snapshot, preview, pdf-server merge) so a 1-page cover and a 1-page back cover always produce a physical 4-face sheet pattern: `[front | blank][...body...][blank | back]`.
-
-## Changes
-
-### 1. `src/lib/orders/buildJobSnapshot.ts` — fix directive position
-
-`buildMergeDirectives` currently appends the blank directive after every cover. Split the rule by section type:
-
-- `front_cover` simplex → emit `section` then `blank_page` (back face of front).
-- `back_cover` simplex → emit `blank_page` then `section` (face preceding back).
-
-Rename the reason to two values for clarity:
-```ts
-type MergeDirective =
-  | { kind: "section"; section_id: string; section_type: string }
-  | { kind: "blank_page"; reason: "simplex_cover_back" | "simplex_back_cover_front" };
+```text
+front_cover -> 1-page PDF, simplex
+body        -> 8-page PDF, duplex
+back_cover  -> 1-page PDF, simplex
 ```
 
-### 2. `src/components/order/PreviewPanel.tsx` — show blank face before simplex back cover
+The failure is in the preview/sequence logic:
 
-Inside the `buildPageSequence` / role-assignment block (around lines 423–488), after assembling `fp`/`roles`, if the last user section is a `back_cover` whose document is a single page (i.e. simplex), insert a `blank_back` face immediately before it so the booklet preview shows the inside of the back cover as a real blank. Apply only for `isBound` products to avoid affecting flyers/business cards/posters.
+- `PreviewPanel` and `buildPreviewSnapshot` are currently using the whole linked document for each section.
+- They also force saddle-stitched booklets to behave as duplex globally, so the existing simplex-cover blank insertion is too weak and easy to bypass.
+- The “two pages at the end to make it a 12-pager” is the booklet padding rule working, but it is not specifically representing `[front][blank]` and `[blank][back]`.
+- On the server side, the print-ready assembler honours `merge_directives` only if it can resolve section IDs to document paths. That path is fragile because the production job currently looks up documents by `job_id`, while the uploaded docs are attached to `order_item_id` at checkout time.
 
-Mirror the same change in `src/lib/orders/buildPreviewSnapshot.ts` so the placed-order viewer (admin/customer order detail) matches.
+## Plan
 
-No new role is needed — `blank_back` already participates in `BLANK_PAPER_ROLES` and renders correctly.
+1. **Fix the live preview page sequence**
+   - Update `src/components/order/PreviewPanel.tsx` so cover sections are handled explicitly:
+     - `front_cover` with a 1-page/simplex PDF emits: cover page, then blank page.
+     - `back_cover` with a 1-page/simplex PDF emits: blank page, then back cover page.
+   - Keep the existing 4-page multiple padding, but only after the cover blanks are in their correct physical positions.
+   - Avoid adding normal simplex `blank_back` pages to saddle-stitched body pages, so the body remains correctly duplexed.
 
-### 3. `pdf-server/app/tasks/production_tasks.py` — honour merge_directives during assembly
+2. **Fix the placed-order preview snapshot**
+   - Apply the same explicit cover-face sequence in `src/lib/orders/buildPreviewSnapshot.ts` so admin/customer order detail previews match the live builder.
 
-Extend `assemble_print_ready_for_job` to consume `configuration.merge_directives` if present:
+3. **Make print-ready assembly resolve the real uploaded documents**
+   - Update `pdf-server/app/services/production_orchestrator.py` so `load_job_bundle()` does not rely only on `documents.job_id`.
+   - Resolve source documents via the job’s source `order_item_id` / matching order item, using `document_sections.document_id` as the authoritative map.
+   - This ensures `configuration.merge_directives` can actually map `front_cover`, `body`, and `back_cover` sections to their PDFs.
 
-- Resolve each `section` directive's `section_id` → its source document via `document_sections.document_id` (already joinable from the bundle).
-- For `blank_page` directives, generate a single blank PDF page sized to the resolved target spec (`bundle.target.width_mm/height_mm`, falling back to the previous section's actual trim size).
-- Build `files` in directive order and feed into `pdf_ops.merge(...)` exactly as today.
-- Keep current behaviour as a fallback when `merge_directives` is absent (legacy orders, photo prints, etc.).
+4. **Keep merge directives as the production contract**
+   - Leave `src/lib/orders/buildJobSnapshot.ts`’s directive order as the source of truth:
+     - front cover section
+     - blank page
+     - body section
+     - blank page
+     - back cover section
+   - Tighten comments/tests around that behaviour rather than inventing a second mechanism.
 
-Add a tiny helper in `pdf_ops` (or inline) that emits a one-page blank PDF at a given mm size — pikepdf/pypdf both already support `add_blank_page(width, height)` in points.
+5. **Add focused regression coverage**
+   - Add/adjust a lightweight test around the TypeScript sequence logic for a saddle-stitched booklet with:
+     - 1-page front cover
+     - 8-page body
+     - 1-page back cover
+   - Expected physical sequence:
 
-### 4. `src/lib/orders/buildJobSnapshot.ts` — include section→document lookup for the server
+```text
+front_cover, blank_back, body x8, blank_back, back_cover
+```
 
-`merge_directives` already carry `section_id`. Confirm the orchestrator can resolve that to a `document_sections` row + `documents.storage_path` (or asset path) via `load_job_bundle`. If `document_sections` aren't currently loaded in the bundle, extend `load_job_bundle` to fetch them by `order_item_id` for the job's items, so the worker can map directive → source PDF.
+   - Final page count should be 12 without moving those cover blanks to the end.
 
 ## Out of scope
 
-- Imposition (`assemble_imposed_sheet_for_job`) — it consumes the print-ready PDF that this plan fixes, so no separate change needed.
-- Cover *duplex* uploads (2-page cover PDFs) — already handled correctly (face A = outside, face B = inside).
-- Other product families' cover physics (brochures/flyers/business cards/posters) — already locked in by earlier passes.
-- Pricing — sheet count is driven by `is_duplex` per section, which is already correct.
-
-## Verification
-
-1. Booklet (saddle-stitched) → upload single-page front cover PDF + single-page back cover PDF + multi-page body.
-2. Preview shows: `[front | blank][body 1 | body 2]…[blank | back]`.
-3. Place the order → admin opens the print-ready PDF artefact → it contains: page 1 = front cover, page 2 = blank, pages 3..N = body, page N+1 = blank, page N+2 = back cover.
-4. Re-uploading a 2-page cover PDF still produces the duplex (no extra blanks) behaviour.
-5. Existing brochures/flyers/business cards orders unaffected (no `isBound` change applies).
+- Changing pricing.
+- Changing imposition logic itself.
+- Changing how two-page/duplex cover PDFs work.
+- Changing brochures/flyers/business cards.
