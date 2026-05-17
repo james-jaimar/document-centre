@@ -238,23 +238,28 @@ function buildPageSequence(
       typeof t === "string" ? t : (t?.path || t?.url || ""),
     );
     const pageCount = doc.page_count ?? thumbnails.length;
+    const rangeStart = section.page_range_start ?? 0;
+    const rangeEnd = section.page_range_end ?? (pageCount - 1);
+    const boundedEnd = Math.min(rangeEnd, pageCount - 1);
+    const selectedPageCount = Math.max(0, boundedEnd - rangeStart + 1);
     const nextSection = bodySections[bIdx + 1];
+    const isCoverSection = section.section_type === "front_cover" || section.section_type === "back_cover";
+    const isSimplexCover =
+      isBound &&
+      isCoverSection &&
+      !section.is_duplex &&
+      selectedPageCount === 1;
 
     // ── Simplex back cover gets a blank face PRECEDING it ──
     // A 1-page back-cover upload is one physical sheet whose inside
     // (the face the customer sees right before the cover) is a real blank.
-    const isSimplexBackCover =
-      isBound &&
-      section.section_type === "back_cover" &&
-      !section.is_duplex &&
-      (doc.page_count ?? 0) === 1;
-    if (isSimplexBackCover) {
+    if (isSimplexCover && section.section_type === "back_cover") {
       result.push({
         thumbnailUrl: "", pageIndex: -1, isColor: true, section,
       });
     }
 
-    for (let i = 0; i < pageCount; i++) {
+    for (let i = rangeStart; i <= boundedEnd; i++) {
       pageNum++;
       tryFlush();
 
@@ -268,7 +273,7 @@ function buildPageSequence(
       // Determine document boundary so we can suppress the synthetic
       // simplex blank_back face between two different documents. See
       // the matching comment in PreviewPanel.tsx#buildPageSequence.
-      const isLastPageOfDoc = i === pageCount - 1;
+      const isLastPageOfDoc = i === boundedEnd || i === pageCount - 1;
       let nextDoc: DocLike | undefined;
       if (nextSection) {
         nextDoc = nextSection.document_id
@@ -288,7 +293,7 @@ function buildPageSequence(
       // Simplex: push natural reverse face for ALL bound types including ring binders,
       // EXCEPT at document boundaries / end-of-body (parity for back covers and
       // dividers is handled separately below / by tryFlush()).
-      if (!section.is_duplex && !forceDuplex) {
+      if (!section.is_duplex && !forceDuplex && !isCoverSection) {
         // Ring binders: never skip the trailing blank_back — each body page
         // is a real physical sheet with a genuinely blank reverse, and there
         // is no back-cover sheet to absorb the parity.
@@ -303,6 +308,13 @@ function buildPageSequence(
       }
 
       tryFlush();
+    }
+
+    // ── Simplex front cover gets a blank face FOLLOWING it ──
+    if (isSimplexCover && section.section_type === "front_cover") {
+      result.push({
+        thumbnailUrl: "", pageIndex: -1, isColor: true, section,
+      });
     }
   }
 
