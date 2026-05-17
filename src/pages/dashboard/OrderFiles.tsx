@@ -26,6 +26,7 @@ import ImageSizeDialog, { type ImageSizeSelection } from "@/components/order/Ima
 import PosterImageEditor, { type PosterEditorResult } from "@/components/order/PosterImageEditor";
 import PageCountWarningDialog from "@/components/order/PageCountWarningDialog";
 import FlyerPageChoiceDialog, { type FlyerPageChoiceItem } from "@/components/order/FlyerPageChoiceDialog";
+import BrochurePageChoiceDialog, { type BrochurePageChoiceItem } from "@/components/order/BrochurePageChoiceDialog";
 import { isImageFile } from "@/lib/imageToPage";
 import { imageToPosterPdf } from "@/lib/imageToPage";
 import { getPageCountRule, validateDocumentPages } from "@/lib/pageCountRules";
@@ -311,6 +312,11 @@ export default function OrderFiles() {
   const [flyerChoiceBusy, setFlyerChoiceBusy] = useState(false);
   const dismissedFlyerDocIds = useRef<Set<string>>(new Set());
 
+  // Brochure multi-page choice dialog state
+  const [brochureChoiceItem, setBrochureChoiceItem] = useState<BrochurePageChoiceItem | null>(null);
+  const [brochureChoiceBusy, setBrochureChoiceBusy] = useState(false);
+  const dismissedBrochureDocIds = useRef<Set<string>>(new Set());
+
   // Check for near-ISO bleed documents after upload completes
   useEffect(() => {
     if (uploadModalOpen || advisoryDoc || bleedDoc || orientationDoc) return;
@@ -385,6 +391,31 @@ export default function OrderFiles() {
       });
     }
   }, [documents, productFamily?.slug, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, pageCountWarning, flyerChoiceItem]);
+
+  // Brochure multi-page detection: prompt for flat-sheet brochures with 3+ pages
+  // (skip 4 and 6 — those are panel layouts handled by handleAutoAssignPanels).
+  useEffect(() => {
+    if (uploadModalOpen || advisoryDoc || bleedDoc || orientationDoc || pageCountWarning || brochureChoiceItem) return;
+    const fSlug = productFamily?.slug;
+    if (fSlug !== "brochures" && fSlug !== "folded-leaflets" && fSlug !== "leaflets") return;
+
+    const multiPageDoc = documents.find((d) => {
+      if (dismissedBrochureDocIds.current.has(d.id)) return false;
+      if (d.document_status !== "ready") return false;
+      const pc = d.page_count ?? 0;
+      if (pc < 3) return false;
+      // Let the panel auto-assign handle exact bi-fold/tri-fold layouts.
+      if (pc === 4 || pc === 6) return false;
+      return true;
+    });
+    if (multiPageDoc) {
+      setBrochureChoiceItem({
+        docId: multiPageDoc.id,
+        fileName: multiPageDoc.file_name,
+        pageCount: multiPageDoc.page_count ?? 0,
+      });
+    }
+  }, [documents, productFamily?.slug, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, pageCountWarning, brochureChoiceItem]);
 
   // Check for orientation mismatches via the shared policy module — single
   // source of truth for which products require which orientation.
@@ -1895,6 +1926,83 @@ export default function OrderFiles() {
     [documents, reprocessDocument, refetchDocuments, orderItem, addSection, sections.length],
   );
 
+  // ── Brochure multi-page choice handlers ───────────────────────────
+  const handleBrochureDoubleSided = useCallback(
+    async (item: BrochurePageChoiceItem) => {
+      setBrochureChoiceBusy(true);
+      try {
+        const doc = documents.find((d) => d.id === item.docId);
+        if (!doc) return;
+        await trimDocumentToFirstPages(doc.id, doc.file_path, doc.file_name, 2);
+        await reprocessDocument({ id: doc.id, file_path: doc.file_path, file_name: doc.file_name });
+        dismissedBrochureDocIds.current.add(doc.id);
+        await refetchDocuments();
+        if (orderItem) {
+          await addSection.mutateAsync({
+            order_item_id: orderItem.id,
+            document_id: doc.id,
+            section_type: "front_cover" as any,
+            sort_order: sections.length,
+            page_range_start: 0,
+            page_range_end: 0,
+            is_duplex: true,
+            is_color: true,
+          });
+          await addSection.mutateAsync({
+            order_item_id: orderItem.id,
+            document_id: doc.id,
+            section_type: "back_cover" as any,
+            sort_order: sections.length + 1,
+            page_range_start: 1,
+            page_range_end: 1,
+            is_duplex: true,
+            is_color: true,
+          });
+        }
+        toast.success("Trimmed to 2 pages and assigned as Outside + Inside");
+        setBrochureChoiceItem(null);
+      } catch (err: any) {
+        toast.error("Failed to process", { description: err?.message });
+      } finally {
+        setBrochureChoiceBusy(false);
+      }
+    },
+    [documents, reprocessDocument, refetchDocuments, orderItem, addSection, sections.length],
+  );
+
+  const handleBrochureSingleSided = useCallback(
+    async (item: BrochurePageChoiceItem) => {
+      setBrochureChoiceBusy(true);
+      try {
+        const doc = documents.find((d) => d.id === item.docId);
+        if (!doc) return;
+        await trimDocumentToFirstPages(doc.id, doc.file_path, doc.file_name, 1);
+        await reprocessDocument({ id: doc.id, file_path: doc.file_path, file_name: doc.file_name });
+        dismissedBrochureDocIds.current.add(doc.id);
+        await refetchDocuments();
+        if (orderItem) {
+          await addSection.mutateAsync({
+            order_item_id: orderItem.id,
+            document_id: doc.id,
+            section_type: "front_cover" as any,
+            sort_order: sections.length,
+            page_range_start: 0,
+            page_range_end: 0,
+            is_duplex: false,
+            is_color: true,
+          });
+        }
+        toast.success("Trimmed to 1 page and assigned as Outside");
+        setBrochureChoiceItem(null);
+      } catch (err: any) {
+        toast.error("Failed to process", { description: err?.message });
+      } finally {
+        setBrochureChoiceBusy(false);
+      }
+    },
+    [documents, reprocessDocument, refetchDocuments, orderItem, addSection, sections.length],
+  );
+
   const handleRerenderGaps = useCallback(
     async (doc: { id: string; backend_asset_id: string | null; preflight_data: unknown }) => {
       if (!doc.backend_asset_id) {
@@ -2239,6 +2347,15 @@ export default function OrderFiles() {
         busy={flyerChoiceBusy}
         onDoubleSided={handleFlyerDoubleSided}
         onSingleSided={handleFlyerSingleSided}
+      />
+
+      {/* Brochure multi-page choice dialog */}
+      <BrochurePageChoiceDialog
+        open={!!brochureChoiceItem}
+        item={brochureChoiceItem}
+        busy={brochureChoiceBusy}
+        onDoubleSided={handleBrochureDoubleSided}
+        onSingleSided={handleBrochureSingleSided}
       />
     </div>
   );
