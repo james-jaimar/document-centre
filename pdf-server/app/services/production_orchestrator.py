@@ -38,6 +38,12 @@ class JobBundle:
     tenant: dict[str, Any] | None
     customer: dict[str, Any] | None
     target: TargetSpec = None  # type: ignore[assignment]
+    # Map of document_sections.id → (filename, storage_path) for honouring
+    # configuration.merge_directives during print-ready assembly.
+    section_paths: dict[str, tuple[str, str]] = None  # type: ignore[assignment]
+    # Raw configuration JSON from the matching order_item (carries
+    # merge_directives emitted by buildJobSnapshot).
+    configuration: dict[str, Any] | None = None
 
 
 def _client() -> Client:
