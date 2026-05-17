@@ -1,6 +1,27 @@
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, PDFName, PDFArray } from "pdf-lib";
 import { supabase } from "@/integrations/supabase/client";
 import { uploadToS3, getDownloadUrls } from "@/lib/s3Storage";
+
+/**
+ * pdf-lib's copyPages() only carries MediaBox across. We need TrimBox /
+ * BleedBox / CropBox / ArtBox preserved so downstream rendering and
+ * imposition can crop out the customer's crop marks. Read the raw box
+ * entries off the source page dict and copy them verbatim to the dest
+ * page dict — only when actually declared, so we don't promote MediaBox
+ * to TrimBox and mislead the explicit-trim detection.
+ */
+const BOX_KEYS = ["TrimBox", "BleedBox", "CropBox", "ArtBox"] as const;
+function copyPageBoxes(sourcePage: any, destPage: any) {
+  const srcNode = sourcePage.node;
+  const dstNode = destPage.node;
+  for (const key of BOX_KEYS) {
+    const name = PDFName.of(key);
+    const entry = srcNode.get(name);
+    if (entry instanceof PDFArray) {
+      dstNode.set(name, entry.clone());
+    }
+  }
+}
 
 /**
  * Download a PDF from S3, keep only the first `keepPages` pages, then
