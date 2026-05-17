@@ -61,6 +61,10 @@ def load_job_bundle(job_id: str) -> JobBundle:
     if not job:
         raise ValueError(f"Job not found: {job_id}")
 
+    job_cfg = job.get("configuration")
+    configuration: dict[str, Any] | None = job_cfg if isinstance(job_cfg, dict) else None
+    source_order_item_id = configuration.get("source_order_item_id") if isinstance(configuration, dict) else None
+
     order = None
     if job.get("order_id"):
         try:
@@ -79,15 +83,23 @@ def load_job_bundle(job_id: str) -> JobBundle:
             or []
         )
 
-    # Customer-uploaded documents linked directly to this job
-    documents = (
-        sb.table("documents")
-        .select("id, file_name, storage_path, backend_asset_id, metadata")
-        .eq("job_id", job_id)
-        .execute()
-        .data
-        or []
-    )
+    item_ids = [it["id"] for it in items if it.get("id")]
+    target_item_ids = [source_order_item_id] if source_order_item_id in item_ids else item_ids
+
+    # Customer-uploaded documents are attached to order_items during checkout.
+    # Production jobs are created afterwards, so resolving by documents.job_id is
+    # not valid for this schema.
+    documents = []
+    if target_item_ids:
+        documents = (
+            sb.table("documents")
+            .select("id, order_item_id, file_name, file_path, backend_asset_id, preflight_data, sort_order")
+            .in_("order_item_id", target_item_ids)
+            .order("sort_order")
+            .execute()
+            .data
+            or []
+        )
 
     # Resolve assets → normalized PDF paths (preferred over raw storage_path).
     asset_ids = [d["backend_asset_id"] for d in documents if d.get("backend_asset_id")]
