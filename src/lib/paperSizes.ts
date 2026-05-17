@@ -19,14 +19,22 @@ export const ISO_SIZES: PaperSize[] = [
   { name: "A2", widthMm: 420, heightMm: 594 },
 ];
 
-// Common non-ISO sizes (US / ANSI)
+// Common non-ISO sizes (US / ANSI + presentation defaults)
 export const NON_ISO_SIZES: PaperSize[] = [
   { name: "US Letter", widthMm: 216, heightMm: 279 },
   { name: "US Legal", widthMm: 216, heightMm: 356 },
   { name: "US Tabloid", widthMm: 279, heightMm: 432 },
   { name: "US Executive", widthMm: 184, heightMm: 267 },
   { name: "US Statement", widthMm: 140, heightMm: 216 },
+  // PowerPoint / Keynote defaults — these are slide-deck sizes, not paper
+  // sizes, but PPTX uploads land at these dimensions and need scaling to A4/A3.
+  { name: "PowerPoint Widescreen (16:9)", widthMm: 339, heightMm: 191 },
+  { name: "PowerPoint Standard (4:3)", widthMm: 254, heightMm: 191 },
+  { name: "PowerPoint On-screen Show (16:10)", widthMm: 339, heightMm: 212 },
 ];
+
+/** Label used in the advisory when a page matches no known size at all. */
+export const UNKNOWN_SIZE_LABEL = "Custom size";
 
 const TOLERANCE_MM = 3;
 
