@@ -62,7 +62,7 @@ export default function AdminOrderDetail() {
     );
   }
 
-  const { order, jobs, addresses, timeline, messages, payments, documents, orderedByProfile } = data;
+  const { order, jobs, addresses, timeline, messages, payments, documents, orderedByProfile, adjustments } = data as any;
   const selectedJob = selectedJobId
     ? jobs.find((j: any) => j.id === selectedJobId)
     : jobs[0] || null;
