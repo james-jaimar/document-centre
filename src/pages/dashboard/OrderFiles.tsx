@@ -26,6 +26,7 @@ import ImageSizeDialog, { type ImageSizeSelection } from "@/components/order/Ima
 import PosterImageEditor, { type PosterEditorResult } from "@/components/order/PosterImageEditor";
 import PageCountWarningDialog from "@/components/order/PageCountWarningDialog";
 import FlyerPageChoiceDialog, { type FlyerPageChoiceItem } from "@/components/order/FlyerPageChoiceDialog";
+import BrochurePageChoiceDialog, { type BrochurePageChoiceItem } from "@/components/order/BrochurePageChoiceDialog";
 import { isImageFile } from "@/lib/imageToPage";
 import { imageToPosterPdf } from "@/lib/imageToPage";
 import { getPageCountRule, validateDocumentPages } from "@/lib/pageCountRules";
