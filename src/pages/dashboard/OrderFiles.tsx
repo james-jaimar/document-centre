@@ -1578,7 +1578,10 @@ export default function OrderFiles() {
       if (type === "front_cover" || type === "back_cover") {
         const coverDoc = documents.find((d) => d.id === selectedDocId);
         const coverPages = coverDoc?.page_count ?? 1;
-        extraFields.is_duplex = coverPages >= 2;
+        const isRingBinderCover =
+          (familySlug === "ring_binders" || familySlug === "ring-binders") &&
+          type === "front_cover";
+        extraFields.is_duplex = isRingBinderCover ? false : coverPages >= 2;
       }
       try {
         await addSection.mutateAsync({
