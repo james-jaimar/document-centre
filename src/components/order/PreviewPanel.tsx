@@ -259,7 +259,7 @@ function buildPageSequence(
       //     parity still matters for the divider to land on a right page)
       //   - AND we're not at the very end of the body (final blank parity
       //     is handled by the back-cover logic in buildPreviewSnapshot)
-      if (!section.is_duplex && !forceDuplex && isBound) {
+      if (!section.is_duplex && !forceDuplex && isBound && !isCoverSection) {
         // Ring binders have no back-cover sheet — every body page is its own
         // physical sheet whose reverse is genuinely blank. Never skip the
         // trailing blank_back for ring binders, otherwise the final sheet-flip
