@@ -240,6 +240,20 @@ function buildPageSequence(
     const pageCount = doc.page_count ?? thumbnails.length;
     const nextSection = bodySections[bIdx + 1];
 
+    // ── Simplex back cover gets a blank face PRECEDING it ──
+    // A 1-page back-cover upload is one physical sheet whose inside
+    // (the face the customer sees right before the cover) is a real blank.
+    const isSimplexBackCover =
+      isBound &&
+      section.section_type === "back_cover" &&
+      !section.is_duplex &&
+      (doc.page_count ?? 0) === 1;
+    if (isSimplexBackCover) {
+      result.push({
+        thumbnailUrl: "", pageIndex: -1, isColor: true, section,
+      });
+    }
+
     for (let i = 0; i < pageCount; i++) {
       pageNum++;
       tryFlush();
