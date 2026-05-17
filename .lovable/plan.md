@@ -1,60 +1,61 @@
-# Brochures: multi-page detection + auto-assign parity with Flyers
+# Honor document orientation in the upload-step preview lightbox
 
 ## Problem
 
-When a multi-page PDF (e.g. the 12-page `Binder1.pdf`) is uploaded under **Brochures / Folded Leaflets**, the system silently keeps all 12 pages and only offers the manual "Outside (front of sheet)" / "Inside (back of sheet)" buttons. Flyers, by contrast, detect ≥3-page uploads, prompt the user to pick *single-sided* vs *double-sided*, trim the PDF, and auto-assign the sections.
+On the **Upload & Organise Files** step (e.g. Business Cards), clicking the small thumbnail to open the full-screen preview shows the page rendered inside a hard-coded **A4 portrait** white window. A landscape document (business card, landscape flyer, etc.) sits awkwardly inside that portrait frame.
 
-Additionally, when a 2-page PDF is uploaded for brochures, the sidebar should auto-offer **Auto-assign Outside + Inside** (the equivalent of the flyer Front+Back shortcut) — it currently doesn't because the relevant gate only fires on flat 2–3-page uploads but the auto-assign callback is missing.
+The small middle-column thumbnail is already correct — it uses the real document dimensions.
 
-## Scope
+## Root cause
 
-Frontend only. No backend, no pricing, no preview engine changes. Reuse the existing `trimPdfPages` + `reprocessDocument` pipeline that flyers already use (which now preserves TrimBox/BleedBox per the prior fix).
+`src/pages/dashboard/OrderFiles.tsx` opens `PreviewLightbox` passing only `thumbnailPaths`:
 
-## Changes
+```tsx
+<PreviewLightbox
+  thumbnailPaths={lightboxThumbnails}
+  onClose={() => setLightboxOpen(false)}
+/>
+```
 
-### 1. New dialog component — `src/components/order/BrochurePageChoiceDialog.tsx`
+With no `pageAspectRatio`, `pdfSizeMm`, or `canvasSizeMm`, `LooseSheetsPreview` falls back to `ratio = 0.707` (A4 portrait) and renders the white sheet in portrait regardless of the actual file.
 
-Near-copy of `FlyerPageChoiceDialog.tsx`, re-labelled for the brochure vocabulary:
+Everywhere else (`PreviewPanel`, `JobDetailPanel`, `CustomerOrderDetail`) already passes these props — only this upload-step entry point is missing them.
 
-- Title: "Multi-page document detected"
-- Body: "{filename} has {N} pages. A flat-sheet brochure uses 1 or 2 pages (Outside / Inside). How would you like to use this file?"
-- Option A — **Double-sided brochure** → "Use pages 1 & 2 as Outside + Inside"
-- Option B — **Outside only** → "Use page 1 as the Outside"
+## Fix
 
-Exports `BrochurePageChoiceItem { docId, fileName, pageCount }` and props `onDoubleSided` / `onSingleSided`.
+Compute and pass the real document shape from `previewDoc` (which already exposes `page_width_mm` / `page_height_mm`) into the lightbox.
 
-### 2. `src/pages/dashboard/OrderFiles.tsx`
+### Changes — `src/pages/dashboard/OrderFiles.tsx` only
 
-a. **Detection effect** — add a second `useEffect` mirroring the flyer block (lines ~369–387) but gated on `productFamily?.slug === "brochures"` and triggered when `page_count >= 3` AND the page count is **not** a recognised panel layout (skip when `pc === 4 || pc === 6` so the existing panel auto-assign keeps priority). Uses its own `dismissedBrochureDocIds` ref and `brochureChoiceItem` state.
+1. Near `lightboxThumbnails` (≈ line 1135), derive:
+   - `lightboxPdfSizeMm`: `{ widthMm: previewDoc.page_width_mm, heightMm: previewDoc.page_height_mm }` when both are positive numbers, else `undefined`.
+   - `lightboxAspect`: `widthMm / heightMm` when available, else `undefined`.
 
-b. **Handlers** — add `handleBrochureDoubleSided` and `handleBrochureSingleSided`, modelled on `handleFlyerDoubleSided` / `handleFlyerSingleSided` (lines 1821–1896). They:
-   1. Call `trimDocumentToFirstPages(doc, 2 | 1)`
-   2. `reprocessDocument(...)` (preserves boxes via the prior `trimPdfPages` fix)
-   3. `refetchDocuments()`
-   4. Add `front_cover` section (page 0) and, for double-sided, `back_cover` section (page 1)
-   5. Mark doc id dismissed; close dialog; toast success
+2. Update the lightbox render (≈ line 2256) to pass those through:
 
-c. **Auto-assign for 2-page brochures** — add `handleAutoAssignBrochureFrontBack` (clone of `handleAutoAssignFlyer`) that creates Outside + Inside sections from pages 0 and 1. Wire it through to `SectionActions` via a new prop (e.g. `onAutoAssignBrochureFrontBack`).
+```tsx
+<PreviewLightbox
+  thumbnailPaths={lightboxThumbnails}
+  pageAspectRatio={lightboxAspect}
+  pdfSizeMm={lightboxPdfSizeMm}
+  canvasSizeMm={lightboxPdfSizeMm}
+  onClose={() => setLightboxOpen(false)}
+/>
+```
 
-d. **Mount the dialog** next to `<FlyerPageChoiceDialog ... />` (line 2236) with the new state + handlers.
+Using `pdfSizeMm` as the `canvasSizeMm` makes the white sheet match the document exactly — which is the right behaviour at the upload step (no separate "selected paper size" is in play yet, unlike the configure step where `PreviewPanel` already supplies a real `canvasSizeMm`).
 
-### 3. `src/components/order/SectionActions.tsx`
-
-- Add new optional prop `onAutoAssignBrochureFrontBack?: () => void`.
-- Replace/extend the existing `showAutoAssign` gate so it offers **"Auto-assign Outside + Inside"** when `familySlug === "brochures" && selectedFilePageCount === 2 && !!onAutoAssignBrochureFrontBack`. Today's gate (`pc >= 2 && pc < 4` calling `onAutoAssignBrochure`) currently has no implementation wired in `OrderFiles.tsx`, so this both lights up the existing UI and makes the 2-page case work without extra clicks.
-
-No changes to `BROCHURE_ACTIONS` list or panel auto-assign behaviour for 4-/6-page layouts.
-
-## Out of scope
-
-- Panel layouts (4-page Z-fold, 6-page roll-fold) — already handled by `showPanelAssign`.
-- Backend / preflight / preview engine.
-- `trimPdfPages.ts` — already fixed in the prior turn to preserve TrimBox/BleedBox.
+`PreviewLightbox` already spreads extra props into `DocumentPreview`, and `LooseSheetsPreview` already handles `pdfSizeMm` / `canvasSizeMm` / `pageAspectRatio` correctly, so no changes are needed in the preview components themselves.
 
 ## Verification
 
-1. Upload a 12-page A4 PDF under Brochures → dialog opens, choose *Double-sided* → first 2 pages remain, auto-assigned as Outside + Inside.
-2. Upload a 12-page A4 PDF, choose *Outside only* → trimmed to 1 page, assigned as Outside.
-3. Upload a 2-page brochure PDF → sidebar shows "Auto-assign Outside + Inside" shortcut, click → both sections appear.
-4. Upload a 4-page or 6-page PDF → existing panel auto-assign still wins, no new dialog.
-5. Upload a 1-page PDF → existing manual Outside/Inside buttons unchanged.
+1. Business Cards: upload a 90×50 mm landscape PDF → click middle thumbnail → lightbox white sheet renders in landscape, matching the document.
+2. A4 portrait document (e.g. flyer): lightbox renders portrait as before — no regression.
+3. A4 landscape flyer / landscape poster: lightbox renders landscape.
+4. Multi-page document: navigation arrows still work; aspect stays correct across pages.
+
+## Out of scope
+
+- `JobDetailPanel` and `CustomerOrderDetail` lightboxes (already pass the right props; user reported only the upload step).
+- Any change to `LooseSheetsPreview` / `PreviewLightbox` internals.
+- Configure-step preview behaviour (already correct).

@@ -1137,6 +1137,17 @@ export default function OrderFiles() {
     return Array.isArray(previewDoc.thumbnail_urls) ? (previewDoc.thumbnail_urls as string[]) : [];
   }, [previewDoc]);
 
+  const lightboxPdfSizeMm = useMemo(() => {
+    const w = Number(previewDoc?.page_width_mm);
+    const h = Number(previewDoc?.page_height_mm);
+    if (!w || !h || w <= 0 || h <= 0) return undefined;
+    return { widthMm: w, heightMm: h };
+  }, [previewDoc]);
+
+  const lightboxAspect = lightboxPdfSizeMm
+    ? lightboxPdfSizeMm.widthMm / lightboxPdfSizeMm.heightMm
+    : undefined;
+
   const ensuredItemIdRef = useRef<string | null>(null);
 
   const handleFiles = useCallback(
