@@ -385,7 +385,7 @@ export interface JobSnapshot {
  */
 export type MergeDirective =
   | { kind: "section"; section_id: string; section_type: string }
-  | { kind: "blank_page"; reason: "simplex_cover_back" };
+  | { kind: "blank_page"; reason: "simplex_cover_back" | "simplex_back_cover_front" };
 
 function buildMergeDirectives(
   sections: DocumentSectionRow[],
@@ -398,16 +398,23 @@ function buildMergeDirectives(
   // (tabs/inserts emit their own physical sheets via existing logic — kept
   // out of v1 of merge_directives to avoid scope creep.)
   for (const s of ordered) {
-    directives.push({ kind: "section", section_id: s.id, section_type: s.section_type });
-
     const isCover = s.section_type === "front_cover" || s.section_type === "back_cover";
-    if (!isCover) continue;
     const doc = s.document_id ? documents.find((d) => d.id === s.document_id) : undefined;
     const docPages = doc?.page_count ?? 0;
-    // A 1-page cover is physically simplex — its back is a real blank sheet.
-    // (We honour the section's actual is_duplex flag in case future cover
-    // workflows mark a multi-page cover as simplex.)
-    if (docPages === 1 && !s.is_duplex) {
+    // A 1-page cover is physically simplex — the unseen face is a real blank sheet.
+    const isSimplexCover = isCover && docPages === 1 && !s.is_duplex;
+
+    // Back cover: the blank is the page PRECEDING the back cover (the
+    // inside face the customer sees when flipping to the last page).
+    if (isSimplexCover && s.section_type === "back_cover") {
+      directives.push({ kind: "blank_page", reason: "simplex_back_cover_front" });
+    }
+
+    directives.push({ kind: "section", section_id: s.id, section_type: s.section_type });
+
+    // Front cover: the blank is the page FOLLOWING the front cover (the
+    // inside face of the cover sheet).
+    if (isSimplexCover && s.section_type === "front_cover") {
       directives.push({ kind: "blank_page", reason: "simplex_cover_back" });
     }
   }
