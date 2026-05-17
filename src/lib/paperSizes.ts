@@ -121,12 +121,23 @@ export function getSuggestedIsoSizes(
   heightMm: number
 ): PaperSize[] {
   const area = widthMm * heightMm;
-  // Return ISO sizes within 2× area difference
-  return ISO_SIZES.filter((s) => {
+  const within = ISO_SIZES.filter((s) => {
     const isoArea = s.widthMm * s.heightMm;
     const ratio = area / isoArea;
     return ratio > 0.5 && ratio < 2.0;
   });
+  // Always make sure A4 and A3 are offered — for very wide (presentation)
+  // or very tall pages the area-ratio filter can return an empty list and
+  // the advisory would render with no scale options.
+  const ensure = ["A4", "A3"];
+  for (const name of ensure) {
+    if (!within.some((s) => s.name === name)) {
+      const iso = ISO_SIZES.find((s) => s.name === name);
+      if (iso) within.push(iso);
+    }
+  }
+  // Preserve canonical ISO ordering (A5 → A2)
+  return ISO_SIZES.filter((s) => within.some((w) => w.name === s.name));
 }
 
 /**
