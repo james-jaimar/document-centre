@@ -1926,6 +1926,83 @@ export default function OrderFiles() {
     [documents, reprocessDocument, refetchDocuments, orderItem, addSection, sections.length],
   );
 
+  // ── Brochure multi-page choice handlers ───────────────────────────
+  const handleBrochureDoubleSided = useCallback(
+    async (item: BrochurePageChoiceItem) => {
+      setBrochureChoiceBusy(true);
+      try {
+        const doc = documents.find((d) => d.id === item.docId);
+        if (!doc) return;
+        await trimDocumentToFirstPages(doc.id, doc.file_path, doc.file_name, 2);
+        await reprocessDocument({ id: doc.id, file_path: doc.file_path, file_name: doc.file_name });
+        dismissedBrochureDocIds.current.add(doc.id);
+        await refetchDocuments();
+        if (orderItem) {
+          await addSection.mutateAsync({
+            order_item_id: orderItem.id,
+            document_id: doc.id,
+            section_type: "front_cover" as any,
+            sort_order: sections.length,
+            page_range_start: 0,
+            page_range_end: 0,
+            is_duplex: true,
+            is_color: true,
+          });
+          await addSection.mutateAsync({
+            order_item_id: orderItem.id,
+            document_id: doc.id,
+            section_type: "back_cover" as any,
+            sort_order: sections.length + 1,
+            page_range_start: 1,
+            page_range_end: 1,
+            is_duplex: true,
+            is_color: true,
+          });
+        }
+        toast.success("Trimmed to 2 pages and assigned as Outside + Inside");
+        setBrochureChoiceItem(null);
+      } catch (err: any) {
+        toast.error("Failed to process", { description: err?.message });
+      } finally {
+        setBrochureChoiceBusy(false);
+      }
+    },
+    [documents, reprocessDocument, refetchDocuments, orderItem, addSection, sections.length],
+  );
+
+  const handleBrochureSingleSided = useCallback(
+    async (item: BrochurePageChoiceItem) => {
+      setBrochureChoiceBusy(true);
+      try {
+        const doc = documents.find((d) => d.id === item.docId);
+        if (!doc) return;
+        await trimDocumentToFirstPages(doc.id, doc.file_path, doc.file_name, 1);
+        await reprocessDocument({ id: doc.id, file_path: doc.file_path, file_name: doc.file_name });
+        dismissedBrochureDocIds.current.add(doc.id);
+        await refetchDocuments();
+        if (orderItem) {
+          await addSection.mutateAsync({
+            order_item_id: orderItem.id,
+            document_id: doc.id,
+            section_type: "front_cover" as any,
+            sort_order: sections.length,
+            page_range_start: 0,
+            page_range_end: 0,
+            is_duplex: false,
+            is_color: true,
+          });
+        }
+        toast.success("Trimmed to 1 page and assigned as Outside");
+        setBrochureChoiceItem(null);
+      } catch (err: any) {
+        toast.error("Failed to process", { description: err?.message });
+      } finally {
+        setBrochureChoiceBusy(false);
+      }
+    },
+    [documents, reprocessDocument, refetchDocuments, orderItem, addSection, sections.length],
+  );
+
   const handleRerenderGaps = useCallback(
     async (doc: { id: string; backend_asset_id: string | null; preflight_data: unknown }) => {
       if (!doc.backend_asset_id) {
