@@ -383,6 +383,7 @@ export function buildPreviewSnapshot(input: {
     if (p.section?.section_type === "tab") return "tab";
     if (p.section?.section_type === "insert") return "insert";
     if (p.section?.section_type === "front_cover") return "front_cover";
+    if (p.section?.section_type === "back_cover") return "back_cover";
     return "body";
   });
 
