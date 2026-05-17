@@ -137,7 +137,6 @@ def load_job_bundle(job_id: str) -> JobBundle:
     # can resolve configuration.merge_directives section_ids to source PDFs.
     section_paths: dict[str, tuple[str, str]] = {}
     item_ids = [it["id"] for it in items if it.get("id")]
-    configuration: dict[str, Any] | None = None
     if item_ids:
         try:
             section_rows = (
