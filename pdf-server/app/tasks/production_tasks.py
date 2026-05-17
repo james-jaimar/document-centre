@@ -80,6 +80,9 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
             "colour_mode": target.colour_mode,
             "print_to_edge": target.print_to_edge,
             "bleed_mm": target.bleed_mm,
+            # Include merge directives so simplex-cover blank insertion
+            # invalidates the cached artefact when directives change.
+            "merge_directives": (bundle.configuration or {}).get("merge_directives") if isinstance(bundle.configuration, dict) else None,
         }
         new_hash = pdf_ops.spec_hash(spec_inputs)
         existing_hash = bundle.job.get("print_ready_spec_hash")
