@@ -184,7 +184,7 @@ export default function AdminOrderDetail() {
             </TabsContent>
 
             <TabsContent value="pricing" className="mt-3 space-y-3">
-              <OrderPricingTab order={order} jobs={jobs} payments={payments} addresses={addresses} />
+              <OrderPricingTab order={order} jobs={jobs} payments={payments} addresses={addresses} adjustments={adjustments} editable />
               <OrderInvoicesList orderId={order.id} />
             </TabsContent>
 
