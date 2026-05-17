@@ -560,11 +560,15 @@ export function useDocumentUpload(
         const pageWidthMm = (widthPt * 25.4) / 72;
         const pageHeightMm = (heightPt * 25.4) / 72;
 
-        // Detect non-ISO size or near-ISO bleed for the advisory
-        const detectedSize = detectNonIsoSize(pageWidthMm, pageHeightMm);
-        const nearIsoMatch = !detectedSize
+        // Detect non-ISO size or near-ISO bleed for the advisory.
+        // Order: exact ISO match → known non-ISO/presentation size → near-ISO+bleed → unknown.
+        const isoMatch = matchIsoSize(pageWidthMm, pageHeightMm);
+        const knownNonIso = !isoMatch ? detectNonIsoSize(pageWidthMm, pageHeightMm) : null;
+        const nearIsoMatch = !isoMatch && !knownNonIso
           ? detectNearIsoWithBleed(pageWidthMm, pageHeightMm)
           : null;
+        const isUnknownSize = !isoMatch && !knownNonIso && !nearIsoMatch;
+        const detectedSize = knownNonIso ?? (isUnknownSize ? UNKNOWN_SIZE_LABEL : null);
 
         // TrimBox differs from MediaBox? Treat it as an explicit author intent
         // (no advisory needed — render to TrimBox directly).
