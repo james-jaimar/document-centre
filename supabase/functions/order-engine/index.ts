@@ -1257,6 +1257,64 @@ Deno.serve(async (req) => {
         }
         break;
       }
+      case "updateOrderPricing": {
+        response = await updateOrderPricing(admin, userId, payload);
+        if (response.ok) {
+          const data = await response.clone().json();
+          if (data?.prev_payment_status) {
+            sideEffects = async () => {
+              await recomputeAndNotify(admin, authHeader, payload.order_id, data.prev_payment_status);
+            };
+          }
+        }
+        break;
+      }
+      case "updateJobNetPrice": {
+        response = await updateJobNetPrice(admin, userId, payload);
+        if (response.ok) {
+          const data = await response.clone().json();
+          if (data?.prev_payment_status) {
+            const { data: j } = await admin.from("order_jobs").select("order_id").eq("id", payload.job_id).single();
+            const oid = (j as any)?.order_id;
+            if (oid) {
+              sideEffects = async () => { await recomputeAndNotify(admin, authHeader, oid, data.prev_payment_status); };
+            }
+          }
+        }
+        break;
+      }
+      case "addOrderAdjustment": {
+        response = await addOrderAdjustment(admin, userId, payload);
+        if (response.ok) {
+          const data = await response.clone().json();
+          if (data?.prev_payment_status) {
+            sideEffects = async () => {
+              await recomputeAndNotify(admin, authHeader, payload.order_id, data.prev_payment_status);
+            };
+          }
+        }
+        break;
+      }
+      case "removeOrderAdjustment": {
+        // Capture order_id BEFORE delete (handler deletes the row)
+        const { data: preAdj } = await admin
+          .from("order_adjustments")
+          .select("order_id")
+          .eq("id", payload.adjustment_id)
+          .maybeSingle();
+        const oid = (preAdj as any)?.order_id;
+        response = await removeOrderAdjustment(admin, userId, payload);
+        if (response.ok && oid) {
+          const data = await response.clone().json();
+          if (data?.prev_payment_status) {
+            sideEffects = async () => { await recomputeAndNotify(admin, authHeader, oid, data.prev_payment_status); };
+          }
+        }
+        break;
+      }
+      case "updateOrderAddress":
+        response = await updateOrderAddress(admin, userId, payload);
+        break;
       default:
         return err(`Unknown action: ${action}`, 400);
     }
