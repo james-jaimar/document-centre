@@ -57,7 +57,10 @@ export async function trimDocumentToFirstPages(
   const out = await PDFDocument.create();
   const indices = Array.from({ length: take }, (_, i) => i);
   const copied = await out.copyPages(sourcePdf, indices);
-  for (const p of copied) out.addPage(p);
+  for (let i = 0; i < copied.length; i++) {
+    copyPageBoxes(sourcePdf.getPage(indices[i]), copied[i]);
+    out.addPage(copied[i]);
+  }
   const outBytes = await out.save();
 
   // 3. Overwrite the same S3 key.
