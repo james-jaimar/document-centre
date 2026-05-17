@@ -2266,6 +2266,9 @@ export default function OrderFiles() {
       {lightboxOpen && lightboxThumbnails.length > 0 && (
         <PreviewLightbox
           thumbnailPaths={lightboxThumbnails}
+          pageAspectRatio={lightboxAspect}
+          pdfSizeMm={lightboxPdfSizeMm}
+          canvasSizeMm={lightboxPdfSizeMm}
           onClose={() => setLightboxOpen(false)}
         />
       )}
