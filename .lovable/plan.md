@@ -1,64 +1,89 @@
-## What I found
 
-The previous fix aimed in the right direction, but it does not match how the current upload data is actually shaped.
+# Admin Order Editing + Customer Impersonation
 
-For the latest booklet test, the live database shows:
+Three improvements to the tenant admin portal, scoped to match the reference system from Mark's other business.
 
-```text
-front_cover -> 1-page PDF, simplex
-body        -> 8-page PDF, duplex
-back_cover  -> 1-page PDF, simplex
-```
+---
 
-The failure is in the preview/sequence logic:
+## 1. Editable Pricing tab (admin)
 
-- `PreviewPanel` and `buildPreviewSnapshot` are currently using the whole linked document for each section.
-- They also force saddle-stitched booklets to behave as duplex globally, so the existing simplex-cover blank insertion is too weak and easy to bypass.
-- The “two pages at the end to make it a 12-pager” is the booklet padding rule working, but it is not specifically representing `[front][blank]` and `[blank][back]`.
-- On the server side, the print-ready assembler honours `merge_directives` only if it can resolve section IDs to document paths. That path is fragile because the production job currently looks up documents by `job_id`, while the uploaded docs are attached to `order_item_id` at checkout time.
+Today the Pricing tab is read-only. Allow Owner/Admin to adjust prices on a submitted order, with everything downstream re-syncing automatically.
 
-## Plan
+**Editable controls:**
+- **Fulfilment toggle** — switch between Collection and Delivery; when Delivery is selected, edit the delivery amount and description (free-form text).
+- **Delivery amount** — direct edit (rand value), even when fulfilment is already Delivery.
+- **Discount amount** — direct edit.
+- **Per-job net price** — small pencil icon next to each job line; edits override the engine-calculated price.
+- **Manual line items** — add/remove ad-hoc adjustments (description + amount, positive only — e.g. "Rework fee", "Extra binding"). Stored as new rows on a small `order_adjustments` table.
 
-1. **Fix the live preview page sequence**
-   - Update `src/components/order/PreviewPanel.tsx` so cover sections are handled explicitly:
-     - `front_cover` with a 1-page/simplex PDF emits: cover page, then blank page.
-     - `back_cover` with a 1-page/simplex PDF emits: blank page, then back cover page.
-   - Keep the existing 4-page multiple padding, but only after the cover blanks are in their correct physical positions.
-   - Avoid adding normal simplex `blank_back` pages to saddle-stitched body pages, so the body remains correctly duplexed.
+**Recalculation:**
+- On any save: server-side function recomputes `subtotal`, `vat_amount` (15%), `total_amount`, and `amount_due = total - amount_paid`.
+- Existing `sync_order_amounts` DB function is extended to include manual adjustments + delivery edits.
 
-2. **Fix the placed-order preview snapshot**
-   - Apply the same explicit cover-face sequence in `src/lib/orders/buildPreviewSnapshot.ts` so admin/customer order detail previews match the live builder.
+**Audit:**
+- Every edit writes a `timeline_events` entry (internal-visible only) showing what changed, old → new, and which admin did it.
 
-3. **Make print-ready assembly resolve the real uploaded documents**
-   - Update `pdf-server/app/services/production_orchestrator.py` so `load_job_bundle()` does not rely only on `documents.job_id`.
-   - Resolve source documents via the job’s source `order_item_id` / matching order item, using `document_sections.document_id` as the authoritative map.
-   - This ensures `configuration.merge_directives` can actually map `front_cover`, `body`, and `back_cover` sections to their PDFs.
+---
 
-4. **Keep merge directives as the production contract**
-   - Leave `src/lib/orders/buildJobSnapshot.ts`’s directive order as the source of truth:
-     - front cover section
-     - blank page
-     - body section
-     - blank page
-     - back cover section
-   - Tighten comments/tests around that behaviour rather than inventing a second mechanism.
+## 2. Underpaid order → customer payment request
 
-5. **Add focused regression coverage**
-   - Add/adjust a lightweight test around the TypeScript sequence logic for a saddle-stitched booklet with:
-     - 1-page front cover
-     - 8-page body
-     - 1-page back cover
-   - Expected physical sequence:
+When an admin edit increases `total_amount` so that `amount_due > 0` on a previously-paid order:
 
-```text
-front_cover, blank_back, body x8, blank_back, back_cover
-```
+- **DB**: `payment_status` flips back to `partial` (existing enum value); `customer_status` rolls up to `awaiting_payment` via existing `rollup_order_status`.
+- **Customer portal**: the order detail page already renders amount due — add a prominent "Pay outstanding balance" banner + button when `amount_due > 0` on a submitted order. Reuses the existing checkout/payment flow scoped to the delta.
+- **Email**: trigger the existing `request-payment` email path automatically on this transition (idempotent — once per balance-change event, not on every edit). Includes the new total, the delta, and a deep link to the order.
 
-   - Final page count should be 12 without moving those cover blanks to the end.
+No new payment gateway work — leverages existing Stripe + EFT flows.
 
-## Out of scope
+---
 
-- Changing pricing.
-- Changing imposition logic itself.
-- Changing how two-page/duplex cover PDFs work.
-- Changing brochures/flyers/business cards.
+## 3. Delivery address editing
+
+Already partially present (pencil icon on the Delivery Address tab) but verify and finalise:
+- Allow Owner/Admin/Sales to edit the shipping address on a submitted order.
+- Writes to `order_addresses` (existing table) and logs a timeline event.
+- No impact on pricing unless the user also changes the delivery amount in the Pricing tab.
+
+---
+
+## 4. "Log in as customer" (cart-building impersonation)
+
+A safer, scoped version of full impersonation: admin stays signed in as themselves, but can build a draft cart on the customer's behalf. Customer sees the cart on their next login and just pays.
+
+**Where it lives:**
+- New "Start order for customer" button on the Admin Customer Detail page (`AdminCustomerDetail.tsx`), and on the Ordered-by panel of an existing order.
+
+**How it works:**
+- Admin clicks → modal confirms the target customer.
+- New edge function `start-customer-order` (uses service-role internally, validates caller is Owner/Admin via `user_is_tenant_admin`) creates a new `orders` row with status `cart`, `ordered_by_profile_id = customer.id`, `created_by_admin_profile_id = admin.id` (new column for audit).
+- Admin is redirected into the existing `/admin/orders/:id/new` order-builder flow with the new cart pre-selected — they use the normal product configurator, file uploads, etc.
+- When admin is done, they click "Send to customer" → order stays in `cart` status; an email goes to the customer ("Your printer has prepared an order for your review — log in to pay") with a deep link.
+- On the customer's next login, the cart appears in their portal with a "Prepared by [tenant] on your behalf" badge. They can edit, remove items, or proceed to checkout normally.
+
+**Permissions:**
+- Restricted to tenant Owner + Admin only (enforced both in UI and in the edge function).
+- Every action on the impersonated cart writes a timeline event tagged with the acting admin's profile id, so there's a full audit trail.
+- Admin **cannot** complete payment on the customer's behalf — payment always requires the customer to log in. This avoids any liability around stored payment methods.
+
+---
+
+## Technical Details
+
+**Schema changes (one migration):**
+- `order_adjustments` — `id`, `order_id`, `description`, `amount`, `created_by`, `created_at`. RLS: tenant staff can CRUD for their tenant's orders.
+- `orders.created_by_admin_profile_id` — nullable uuid, references `profiles(id)`. Indicates an admin-prepared cart.
+- Extend `sync_order_amounts` to include `sum(order_adjustments.amount)` in subtotal.
+
+**Files to add / edit:**
+- `src/components/orders/detail/OrderPricingTab.tsx` — convert read-only rows to editable controls, wire mutations.
+- `src/components/orders/detail/AddressEditDialog.tsx` (new) — modal for delivery-address edits.
+- `src/lib/orders/mutations.ts` — `updateOrderPricing`, `addOrderAdjustment`, `removeOrderAdjustment`, `updateJobNetPrice`, `updateOrderAddress`, `startCustomerOrder`.
+- `supabase/functions/start-customer-order/index.ts` (new edge function).
+- `supabase/functions/order-engine/index.ts` — extend to handle admin pricing overrides and re-trigger payment request email.
+- `src/pages/admin/AdminCustomerDetail.tsx` — "Start order for customer" button.
+- `src/pages/dashboard/Cart.tsx` and order detail — surface "Prepared by [tenant]" badge + "Pay outstanding balance" banner.
+
+**Out of scope (explicitly):**
+- Full session impersonation (rejected in favour of cart-building only).
+- Negative manual line items / promo codes (handled by existing discount field).
+- Refund flow for overpaid orders (no edits will ever produce a negative `amount_due` — overpayments are kept as credit, surfaced separately later).
