@@ -191,16 +191,18 @@ function buildPageSequence(
     const rangeStart = section.page_range_start ?? 0;
     const rangeEnd = section.page_range_end ?? (fullPageCount - 1);
     const nextSection = bodySections[bIdx + 1];
+    const isCoverSection = section.section_type === "front_cover" || section.section_type === "back_cover";
+    const selectedPageCount = Math.max(0, Math.min(rangeEnd, fullPageCount - 1) - rangeStart + 1);
+    const isSimplexCover =
+      isBound &&
+      isCoverSection &&
+      !section.is_duplex &&
+      selectedPageCount === 1;
 
     // ── Simplex back cover gets a blank face PRECEDING it ──
     // A 1-page back-cover upload is one physical sheet whose inside
     // (the face the customer sees right before the cover) is a real blank.
-    const isSimplexBackCover =
-      isBound &&
-      section.section_type === "back_cover" &&
-      !section.is_duplex &&
-      (doc.page_count ?? 0) === 1;
-    if (isSimplexBackCover) {
+    if (isSimplexCover && section.section_type === "back_cover") {
       result.push({
         thumbnailUrl: "", pageIndex: -1, documentName: "",
         section, isColor: true,
@@ -257,7 +259,7 @@ function buildPageSequence(
       //     parity still matters for the divider to land on a right page)
       //   - AND we're not at the very end of the body (final blank parity
       //     is handled by the back-cover logic in buildPreviewSnapshot)
-      if (!section.is_duplex && !forceDuplex && isBound) {
+      if (!section.is_duplex && !forceDuplex && isBound && !isCoverSection) {
         // Ring binders have no back-cover sheet — every body page is its own
         // physical sheet whose reverse is genuinely blank. Never skip the
         // trailing blank_back for ring binders, otherwise the final sheet-flip
@@ -275,6 +277,16 @@ function buildPageSequence(
 
       // Try to flush immediately (if parity is already correct)
       tryFlush();
+    }
+
+    // ── Simplex front cover gets a blank face FOLLOWING it ──
+    // Saddle-stitched body pages are forced duplex, but cover sheets remain
+    // physical simplex sheets when the upload is one page.
+    if (isSimplexCover && section.section_type === "front_cover") {
+      result.push({
+        thumbnailUrl: "", pageIndex: -1, documentName: "",
+        section, isColor: true,
+      });
     }
   }
 
@@ -450,6 +462,7 @@ export default function PreviewPanel({
       if (p.section?.section_type === "tab") return "tab";
       if (p.section?.section_type === "insert") return "insert";
       if (p.section?.section_type === "front_cover") return "front_cover";
+      if (p.section?.section_type === "back_cover") return "back_cover";
       return "body";
     });
 

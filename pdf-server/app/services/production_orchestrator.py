@@ -61,6 +61,10 @@ def load_job_bundle(job_id: str) -> JobBundle:
     if not job:
         raise ValueError(f"Job not found: {job_id}")
 
+    job_cfg = job.get("configuration")
+    configuration: dict[str, Any] | None = job_cfg if isinstance(job_cfg, dict) else None
+    source_order_item_id = configuration.get("source_order_item_id") if isinstance(configuration, dict) else None
+
     order = None
     if job.get("order_id"):
         try:
@@ -79,15 +83,23 @@ def load_job_bundle(job_id: str) -> JobBundle:
             or []
         )
 
-    # Customer-uploaded documents linked directly to this job
-    documents = (
-        sb.table("documents")
-        .select("id, file_name, storage_path, backend_asset_id, metadata")
-        .eq("job_id", job_id)
-        .execute()
-        .data
-        or []
-    )
+    item_ids = [it["id"] for it in items if it.get("id")]
+    target_item_ids = [source_order_item_id] if source_order_item_id in item_ids else item_ids
+
+    # Customer-uploaded documents are attached to order_items during checkout.
+    # Production jobs are created afterwards, so resolving by documents.job_id is
+    # not valid for this schema.
+    documents = []
+    if target_item_ids:
+        documents = (
+            sb.table("documents")
+            .select("id, order_item_id, file_name, file_path, backend_asset_id, preflight_data, sort_order")
+            .in_("order_item_id", target_item_ids)
+            .order("sort_order")
+            .execute()
+            .data
+            or []
+        )
 
     # Resolve assets → normalized PDF paths (preferred over raw storage_path).
     asset_ids = [d["backend_asset_id"] for d in documents if d.get("backend_asset_id")]
@@ -111,8 +123,11 @@ def load_job_bundle(job_id: str) -> JobBundle:
             path = row.get("normalized_storage_path") or row.get("source_storage_path")
             if path:
                 asset_paths.append((row.get("original_filename") or doc.get("file_name") or "doc.pdf", path))
-        elif doc.get("storage_path"):
-            asset_paths.append((doc.get("file_name") or "doc.pdf", doc["storage_path"]))
+        else:
+            preflight = doc.get("preflight_data") if isinstance(doc.get("preflight_data"), dict) else {}
+            path = preflight.get("processed_file_path") or doc.get("file_path")
+            if path:
+                asset_paths.append((doc.get("file_name") or "doc.pdf", path))
 
     # Document → resolved (filename, storage_path) lookup, used to build
     # the section_id → path map below.
@@ -128,21 +143,23 @@ def load_job_bundle(job_id: str) -> JobBundle:
                     row.get("original_filename") or doc.get("file_name") or "doc.pdf",
                     path,
                 )
-        if resolved is None and doc.get("storage_path"):
-            resolved = (doc.get("file_name") or "doc.pdf", doc["storage_path"])
+        if resolved is None:
+            preflight = doc.get("preflight_data") if isinstance(doc.get("preflight_data"), dict) else {}
+            path = preflight.get("processed_file_path") or doc.get("file_path")
+            if path:
+                resolved = (doc.get("file_name") or "doc.pdf", path)
         if resolved:
             doc_path_by_id[doc["id"]] = resolved
 
     # document_sections for this job's order_items — needed so the worker
     # can resolve configuration.merge_directives section_ids to source PDFs.
     section_paths: dict[str, tuple[str, str]] = {}
-    item_ids = [it["id"] for it in items if it.get("id")]
-    if item_ids:
+    if target_item_ids:
         try:
             section_rows = (
                 sb.table("document_sections")
                 .select("id, document_id, section_type, sort_order, order_item_id")
-                .in_("order_item_id", item_ids)
+                .in_("order_item_id", target_item_ids)
                 .execute()
                 .data
                 or []
@@ -153,11 +170,6 @@ def load_job_bundle(job_id: str) -> JobBundle:
                     section_paths[srow["id"]] = doc_path_by_id[did]
         except Exception:
             section_paths = {}
-
-    # merge_directives are persisted on order_jobs.configuration (set when
-    # the order is placed — see src/hooks/useCart.ts).
-    job_cfg = job.get("configuration")
-    configuration: dict[str, Any] | None = job_cfg if isinstance(job_cfg, dict) else None
 
     tenant = None
     if job.get("tenant_id"):
