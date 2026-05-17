@@ -312,6 +312,11 @@ export default function OrderFiles() {
   const [flyerChoiceBusy, setFlyerChoiceBusy] = useState(false);
   const dismissedFlyerDocIds = useRef<Set<string>>(new Set());
 
+  // Brochure multi-page choice dialog state
+  const [brochureChoiceItem, setBrochureChoiceItem] = useState<BrochurePageChoiceItem | null>(null);
+  const [brochureChoiceBusy, setBrochureChoiceBusy] = useState(false);
+  const dismissedBrochureDocIds = useRef<Set<string>>(new Set());
+
   // Check for near-ISO bleed documents after upload completes
   useEffect(() => {
     if (uploadModalOpen || advisoryDoc || bleedDoc || orientationDoc) return;
