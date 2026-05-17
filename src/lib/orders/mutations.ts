@@ -179,7 +179,38 @@ export async function requestPayment(orderId: string) {
   return data;
 }
 
-// ── Production document processing ──────────────────────────
+// ── Admin order editing ─────────────────────────────────────
+
+export async function updateOrderPricing(payload: {
+  order_id: string;
+  fulfillment_type?: "delivery" | "collection";
+  delivery_amount?: number;
+  discount_amount?: number;
+  vat_amount?: number;
+  delivery_description?: string;
+}) {
+  return invokeOrderEngine<{ success: boolean }>("updateOrderPricing", payload as any);
+}
+
+export async function updateJobNetPrice(payload: { job_id: string; net_price: number }) {
+  return invokeOrderEngine<{ success: boolean }>("updateJobNetPrice", payload as any);
+}
+
+export async function addOrderAdjustment(payload: { order_id: string; description: string; amount: number }) {
+  return invokeOrderEngine<{ success: boolean; adjustment_id: string }>("addOrderAdjustment", payload as any);
+}
+
+export async function removeOrderAdjustment(payload: { adjustment_id: string }) {
+  return invokeOrderEngine<{ success: boolean }>("removeOrderAdjustment", payload as any);
+}
+
+export async function updateOrderAddress(payload: {
+  order_id: string;
+  address_type: "delivery" | "billing";
+  address: Record<string, string | null | undefined>;
+}) {
+  return invokeOrderEngine<{ success: boolean }>("updateOrderAddress", payload as any);
+}
 
 export interface ProcessDocumentResult {
   assetId: string;

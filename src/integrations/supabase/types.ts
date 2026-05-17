@@ -1617,6 +1617,48 @@ export type Database = {
           },
         ]
       }
+      order_adjustments: {
+        Row: {
+          amount: number
+          created_at: string
+          created_by: string | null
+          description: string
+          id: string
+          order_id: string
+        }
+        Insert: {
+          amount?: number
+          created_at?: string
+          created_by?: string | null
+          description: string
+          id?: string
+          order_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          created_by?: string | null
+          description?: string
+          id?: string
+          order_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_adjustments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_adjustments_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_documents: {
         Row: {
           app_id: string
@@ -2164,6 +2206,7 @@ export type Database = {
           company_name: string | null
           completed_at: string | null
           created_at: string
+          created_by_admin_profile_id: string | null
           currency: string
           customer_email: string | null
           customer_name: string | null
@@ -2208,6 +2251,7 @@ export type Database = {
           company_name?: string | null
           completed_at?: string | null
           created_at?: string
+          created_by_admin_profile_id?: string | null
           currency?: string
           customer_email?: string | null
           customer_name?: string | null
@@ -2252,6 +2296,7 @@ export type Database = {
           company_name?: string | null
           completed_at?: string | null
           created_at?: string
+          created_by_admin_profile_id?: string | null
           currency?: string
           customer_email?: string | null
           customer_name?: string | null
@@ -2300,6 +2345,13 @@ export type Database = {
             columns: ["branch_id"]
             isOneToOne: false
             referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_created_by_admin_profile_id_fkey"
+            columns: ["created_by_admin_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {

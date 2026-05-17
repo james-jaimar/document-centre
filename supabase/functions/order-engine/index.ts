@@ -813,6 +813,330 @@ async function cancelOrder(
   return json({ success: true, refund_pending: refundPending });
 }
 
+// ── Admin-only order editing ────────────────────────────────
+
+async function requireTenantAdmin(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  tenant_id: string,
+): Promise<string | null> {
+  const { data } = await admin
+    .from("tenant_memberships")
+    .select("role")
+    .eq("profile_id", userId)
+    .eq("tenant_id", tenant_id)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (!data || !["owner", "admin"].includes((data as any).role)) {
+    return "Only tenant owners or admins can perform this action";
+  }
+  return null;
+}
+
+async function fetchOrderForAdmin(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  order_id: string,
+) {
+  const { data: order, error } = await admin
+    .from("orders")
+    .select("id, app_id, tenant_id, branch_id, order_number, payment_status, amount_paid, total_amount, amount_due, customer_email, ordered_by_profile_id, fulfillment_type, delivery_amount, discount_amount, vat_amount, subtotal, currency, metadata")
+    .eq("id", order_id)
+    .maybeSingle();
+  if (error || !order) return { error: "Order not found", order: null };
+  const denied = await requireTenantAdmin(admin, userId, order.tenant_id as string);
+  if (denied) return { error: denied, order: null };
+  return { error: null, order };
+}
+
+async function logTimeline(
+  admin: ReturnType<typeof createClient>,
+  o: any,
+  userId: string,
+  event_type: string,
+  description: string,
+  metadata: Record<string, unknown> = {},
+  visibility: "admin" | "customer" | "both" = "admin",
+) {
+  await admin.from("timeline_events").insert({
+    app_id: o.app_id,
+    tenant_id: o.tenant_id,
+    branch_id: o.branch_id,
+    order_id: o.id,
+    event_type,
+    visibility,
+    actor_type: "admin",
+    actor_profile_id: userId,
+    description,
+    metadata,
+  });
+}
+
+/**
+ * After any pricing mutation, call sync_order_amounts (SECURITY DEFINER RPC
+ * in DB) — but it's not exposed. We re-read totals, then if the total
+ * increased above amount_paid on a previously-paid order, notify customer.
+ */
+async function recomputeAndNotify(
+  admin: ReturnType<typeof createClient>,
+  authHeader: string,
+  order_id: string,
+  prevPaymentStatus: string,
+) {
+  // Trigger DB recompute by calling the function via direct SQL (no RPC wrapper exists)
+  // Workaround: bump updated_at via an UPDATE that re-derives nothing — we instead
+  // rely on the fact that our edge function already updated the relevant columns,
+  // then re-derive subtotal/total/amount_due/payment_status from current values.
+  const { data: jobs } = await admin
+    .from("order_jobs")
+    .select("net_price")
+    .eq("order_id", order_id);
+  const { data: adjs } = await admin
+    .from("order_adjustments")
+    .select("amount")
+    .eq("order_id", order_id);
+  const { data: o } = await admin
+    .from("orders")
+    .select("discount_amount, delivery_amount, vat_amount, amount_paid")
+    .eq("id", order_id)
+    .single();
+
+  const jobsTotal = (jobs ?? []).reduce((s, j: any) => s + Number(j.net_price || 0), 0);
+  const adjTotal = (adjs ?? []).reduce((s, a: any) => s + Number(a.amount || 0), 0);
+  const subtotal = jobsTotal + adjTotal;
+  const total = Math.round((subtotal - Number((o as any).discount_amount || 0) + Number((o as any).delivery_amount || 0) + Number((o as any).vat_amount || 0)) * 100) / 100;
+  const paid = Number((o as any).amount_paid || 0);
+  const due = Math.round((total - paid) * 100) / 100;
+  const payment_status = paid <= 0 ? "unpaid" : paid >= total ? "paid" : "partial";
+
+  await admin
+    .from("orders")
+    .update({ subtotal, total_amount: total, amount_due: due, payment_status, updated_at: new Date().toISOString() })
+    .eq("id", order_id);
+
+  // If order was paid and now has a positive due amount, trigger payment request email
+  if (prevPaymentStatus === "paid" && due > 0.005) {
+    try {
+      const url = Deno.env.get("SUPABASE_URL")!;
+      await fetch(`${url}/functions/v1/send-order-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: authHeader },
+        body: JSON.stringify({ order_id, event_key: "payment_request", force: true }),
+      });
+    } catch (e) {
+      console.error("payment_request email failed:", e);
+    }
+  }
+}
+
+async function updateOrderPricing(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { order_id, fulfillment_type, delivery_amount, discount_amount, vat_amount, delivery_description } = payload;
+  if (!order_id) return err("order_id required");
+
+  const { error: denied, order } = await fetchOrderForAdmin(admin, userId, order_id);
+  if (denied) return err(denied, 403);
+
+  const o = order as any;
+  const updates: Record<string, unknown> = {};
+  const changes: string[] = [];
+
+  if (typeof fulfillment_type === "string" && fulfillment_type !== o.fulfillment_type) {
+    updates.fulfillment_type = fulfillment_type;
+    changes.push(`fulfillment ${o.fulfillment_type ?? "—"} → ${fulfillment_type}`);
+  }
+  if (delivery_amount !== undefined && Number(delivery_amount) !== Number(o.delivery_amount)) {
+    updates.delivery_amount = Number(delivery_amount);
+    changes.push(`delivery R${Number(o.delivery_amount).toFixed(2)} → R${Number(delivery_amount).toFixed(2)}`);
+  }
+  if (discount_amount !== undefined && Number(discount_amount) !== Number(o.discount_amount)) {
+    updates.discount_amount = Number(discount_amount);
+    changes.push(`discount R${Number(o.discount_amount).toFixed(2)} → R${Number(discount_amount).toFixed(2)}`);
+  }
+  if (vat_amount !== undefined && Number(vat_amount) !== Number(o.vat_amount)) {
+    updates.vat_amount = Number(vat_amount);
+    changes.push(`VAT R${Number(o.vat_amount).toFixed(2)} → R${Number(vat_amount).toFixed(2)}`);
+  }
+  if (typeof delivery_description === "string") {
+    const meta = (o.metadata as any) ?? {};
+    meta.delivery_description = delivery_description;
+    updates.metadata = meta;
+  }
+
+  if (Object.keys(updates).length === 0) return json({ success: true, unchanged: true });
+
+  const { error: upErr } = await admin.from("orders").update(updates).eq("id", order_id);
+  if (upErr) return err(`Failed to update order: ${upErr.message}`);
+
+  await logTimeline(admin, o, userId, "pricing_updated", `Admin updated pricing: ${changes.join(", ")}`, { changes, updates });
+
+  return json({ success: true, prev_payment_status: o.payment_status });
+}
+
+async function updateJobNetPrice(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { job_id, net_price } = payload;
+  if (!job_id || net_price === undefined) return err("job_id and net_price required");
+
+  const { data: job } = await admin
+    .from("order_jobs")
+    .select("id, order_id, net_price, job_number, app_id, tenant_id, branch_id, quantity, gross_price")
+    .eq("id", job_id)
+    .maybeSingle();
+  if (!job) return err("Job not found", 404);
+
+  const { error: denied, order } = await fetchOrderForAdmin(admin, userId, (job as any).order_id);
+  if (denied) return err(denied, 403);
+
+  const newPrice = Number(net_price);
+  const oldPrice = Number((job as any).net_price);
+  if (newPrice === oldPrice) return json({ success: true, unchanged: true });
+
+  // Update net + gross (preserve any per-unit interpretation by recomputing simply as net)
+  const { error: upErr } = await admin
+    .from("order_jobs")
+    .update({ net_price: newPrice, gross_price: newPrice })
+    .eq("id", job_id);
+  if (upErr) return err(`Failed to update job price: ${upErr.message}`);
+
+  await logTimeline(
+    admin,
+    order,
+    userId,
+    "job_price_updated",
+    `Admin overrode price for ${(job as any).job_number}: R${oldPrice.toFixed(2)} → R${newPrice.toFixed(2)}`,
+    { job_id, old_price: oldPrice, new_price: newPrice },
+  );
+
+  return json({ success: true, prev_payment_status: (order as any).payment_status });
+}
+
+async function addOrderAdjustment(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { order_id, description, amount } = payload;
+  if (!order_id || !description || amount === undefined) return err("order_id, description, amount required");
+
+  const { error: denied, order } = await fetchOrderForAdmin(admin, userId, order_id);
+  if (denied) return err(denied, 403);
+
+  const { data: adj, error: insErr } = await admin
+    .from("order_adjustments")
+    .insert({ order_id, description: String(description).trim(), amount: Number(amount), created_by: userId })
+    .select("id")
+    .single();
+  if (insErr) return err(`Failed to add adjustment: ${insErr.message}`);
+
+  await logTimeline(
+    admin,
+    order,
+    userId,
+    "adjustment_added",
+    `Admin added line item "${description}" (R${Number(amount).toFixed(2)})`,
+    { adjustment_id: adj?.id, description, amount },
+  );
+
+  return json({ success: true, adjustment_id: adj?.id, prev_payment_status: (order as any).payment_status }, 201);
+}
+
+async function removeOrderAdjustment(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { adjustment_id } = payload;
+  if (!adjustment_id) return err("adjustment_id required");
+
+  const { data: adj } = await admin
+    .from("order_adjustments")
+    .select("id, order_id, description, amount")
+    .eq("id", adjustment_id)
+    .maybeSingle();
+  if (!adj) return err("Adjustment not found", 404);
+
+  const { error: denied, order } = await fetchOrderForAdmin(admin, userId, (adj as any).order_id);
+  if (denied) return err(denied, 403);
+
+  const { error: delErr } = await admin.from("order_adjustments").delete().eq("id", adjustment_id);
+  if (delErr) return err(`Failed to remove adjustment: ${delErr.message}`);
+
+  await logTimeline(
+    admin,
+    order,
+    userId,
+    "adjustment_removed",
+    `Admin removed line item "${(adj as any).description}" (R${Number((adj as any).amount).toFixed(2)})`,
+    { adjustment_id, description: (adj as any).description, amount: (adj as any).amount },
+  );
+
+  return json({ success: true, prev_payment_status: (order as any).payment_status });
+}
+
+async function updateOrderAddress(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { order_id, address_type, address } = payload;
+  if (!order_id || !address_type || !address) return err("order_id, address_type, address required");
+  if (!["delivery", "billing"].includes(address_type)) return err("address_type must be delivery or billing");
+
+  const { error: denied, order } = await fetchOrderForAdmin(admin, userId, order_id);
+  if (denied) return err(denied, 403);
+
+  // Upsert: if a row of this type exists, update; otherwise insert
+  const { data: existing } = await admin
+    .from("order_addresses")
+    .select("id")
+    .eq("order_id", order_id)
+    .eq("address_type", address_type)
+    .maybeSingle();
+
+  const fields = {
+    company_name: address.company_name ?? null,
+    contact_name: address.contact_name ?? null,
+    line1: address.line1 ?? null,
+    line2: address.line2 ?? null,
+    suburb: address.suburb ?? null,
+    city: address.city ?? null,
+    province: address.province ?? null,
+    postal_code: address.postal_code ?? null,
+    country: address.country ?? null,
+    phone: address.phone ?? null,
+    email: address.email ?? null,
+    instructions: address.instructions ?? null,
+  };
+
+  if (existing) {
+    const { error: upErr } = await admin.from("order_addresses").update(fields).eq("id", (existing as any).id);
+    if (upErr) return err(`Failed to update address: ${upErr.message}`);
+  } else {
+    const { error: insErr } = await admin
+      .from("order_addresses")
+      .insert({ order_id, address_type, ...fields });
+    if (insErr) return err(`Failed to insert address: ${insErr.message}`);
+  }
+
+  await logTimeline(
+    admin,
+    order,
+    userId,
+    "address_updated",
+    `Admin updated ${address_type} address`,
+    { address_type, fields },
+  );
+
+  return json({ success: true });
+}
+
 // ── Main handler ────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -933,6 +1257,64 @@ Deno.serve(async (req) => {
         }
         break;
       }
+      case "updateOrderPricing": {
+        response = await updateOrderPricing(admin, userId, payload);
+        if (response.ok) {
+          const data = await response.clone().json();
+          if (data?.prev_payment_status) {
+            sideEffects = async () => {
+              await recomputeAndNotify(admin, authHeader, payload.order_id, data.prev_payment_status);
+            };
+          }
+        }
+        break;
+      }
+      case "updateJobNetPrice": {
+        response = await updateJobNetPrice(admin, userId, payload);
+        if (response.ok) {
+          const data = await response.clone().json();
+          if (data?.prev_payment_status) {
+            const { data: j } = await admin.from("order_jobs").select("order_id").eq("id", payload.job_id).single();
+            const oid = (j as any)?.order_id;
+            if (oid) {
+              sideEffects = async () => { await recomputeAndNotify(admin, authHeader, oid, data.prev_payment_status); };
+            }
+          }
+        }
+        break;
+      }
+      case "addOrderAdjustment": {
+        response = await addOrderAdjustment(admin, userId, payload);
+        if (response.ok) {
+          const data = await response.clone().json();
+          if (data?.prev_payment_status) {
+            sideEffects = async () => {
+              await recomputeAndNotify(admin, authHeader, payload.order_id, data.prev_payment_status);
+            };
+          }
+        }
+        break;
+      }
+      case "removeOrderAdjustment": {
+        // Capture order_id BEFORE delete (handler deletes the row)
+        const { data: preAdj } = await admin
+          .from("order_adjustments")
+          .select("order_id")
+          .eq("id", payload.adjustment_id)
+          .maybeSingle();
+        const oid = (preAdj as any)?.order_id;
+        response = await removeOrderAdjustment(admin, userId, payload);
+        if (response.ok && oid) {
+          const data = await response.clone().json();
+          if (data?.prev_payment_status) {
+            sideEffects = async () => { await recomputeAndNotify(admin, authHeader, oid, data.prev_payment_status); };
+          }
+        }
+        break;
+      }
+      case "updateOrderAddress":
+        response = await updateOrderAddress(admin, userId, payload);
+        break;
       default:
         return err(`Unknown action: ${action}`, 400);
     }

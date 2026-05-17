@@ -62,7 +62,7 @@ export default function AdminOrderDetail() {
     );
   }
 
-  const { order, jobs, addresses, timeline, messages, payments, documents, orderedByProfile } = data;
+  const { order, jobs, addresses, timeline, messages, payments, documents, orderedByProfile, adjustments } = data as any;
   const selectedJob = selectedJobId
     ? jobs.find((j: any) => j.id === selectedJobId)
     : jobs[0] || null;
@@ -184,12 +184,12 @@ export default function AdminOrderDetail() {
             </TabsContent>
 
             <TabsContent value="pricing" className="mt-3 space-y-3">
-              <OrderPricingTab order={order} jobs={jobs} payments={payments} addresses={addresses} />
+              <OrderPricingTab order={order} jobs={jobs} payments={payments} addresses={addresses} adjustments={adjustments} editable />
               <OrderInvoicesList orderId={order.id} />
             </TabsContent>
 
             <TabsContent value="delivery" className="mt-3">
-              <OrderDeliveryTab addresses={addresses} order={order} />
+              <OrderDeliveryTab addresses={addresses} order={order} editable />
             </TabsContent>
 
             <TabsContent value="ordered_by" className="mt-3">

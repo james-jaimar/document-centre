@@ -98,7 +98,7 @@ export async function fetchCustomerOrders(filters: ClientOrderListFilters = {}) 
  * to avoid PostgREST relationship-resolution failures taking down the whole page.
  */
 export async function fetchOrderDetail(orderId: string) {
-  const [orderRes, jobsRes, addressesRes, timelineRes, statusHistoryRes, messagesRes, paymentsRes, docsRes] =
+  const [orderRes, jobsRes, addressesRes, timelineRes, statusHistoryRes, messagesRes, paymentsRes, docsRes, adjustmentsRes] =
     await Promise.all([
       supabase
         .from("orders")
@@ -139,6 +139,11 @@ export async function fetchOrderDetail(orderId: string) {
         .select("*")
         .eq("order_id", orderId)
         .order("created_at", { ascending: false }),
+      supabase
+        .from("order_adjustments" as any)
+        .select("*")
+        .eq("order_id", orderId)
+        .order("created_at", { ascending: true }),
     ]);
 
   if (orderRes.error) {
@@ -175,5 +180,6 @@ export async function fetchOrderDetail(orderId: string) {
     messages: messagesRes.data || [],
     payments: paymentsRes.data || [],
     documents: docsRes.data || [],
+    adjustments: (adjustmentsRes as any).data || [],
   };
 }
