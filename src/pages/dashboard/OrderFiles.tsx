@@ -392,6 +392,31 @@ export default function OrderFiles() {
     }
   }, [documents, productFamily?.slug, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, pageCountWarning, flyerChoiceItem]);
 
+  // Brochure multi-page detection: prompt for flat-sheet brochures with 3+ pages
+  // (skip 4 and 6 — those are panel layouts handled by handleAutoAssignPanels).
+  useEffect(() => {
+    if (uploadModalOpen || advisoryDoc || bleedDoc || orientationDoc || pageCountWarning || brochureChoiceItem) return;
+    const fSlug = productFamily?.slug;
+    if (fSlug !== "brochures" && fSlug !== "folded-leaflets" && fSlug !== "leaflets") return;
+
+    const multiPageDoc = documents.find((d) => {
+      if (dismissedBrochureDocIds.current.has(d.id)) return false;
+      if (d.document_status !== "ready") return false;
+      const pc = d.page_count ?? 0;
+      if (pc < 3) return false;
+      // Let the panel auto-assign handle exact bi-fold/tri-fold layouts.
+      if (pc === 4 || pc === 6) return false;
+      return true;
+    });
+    if (multiPageDoc) {
+      setBrochureChoiceItem({
+        docId: multiPageDoc.id,
+        fileName: multiPageDoc.file_name,
+        pageCount: multiPageDoc.page_count ?? 0,
+      });
+    }
+  }, [documents, productFamily?.slug, uploadModalOpen, advisoryDoc, bleedDoc, orientationDoc, pageCountWarning, brochureChoiceItem]);
+
   // Check for orientation mismatches via the shared policy module — single
   // source of truth for which products require which orientation.
   useEffect(() => {
