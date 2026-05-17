@@ -97,12 +97,71 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
         steps: list[str] = []
 
         with Workspace() as ws:
-            # ── Download all sources ────────────────────────────────────
+            # ── Resolve source order ─────────────────────────────────────
+            # If the order placed merge_directives, honour them so simplex
+            # covers receive real blank pages in the merged output. Falls
+            # back to plain document order when no directives are present.
+            directives = []
+            cfg = bundle.configuration or {}
+            if isinstance(cfg, dict):
+                raw = cfg.get("merge_directives") or []
+                if isinstance(raw, list):
+                    directives = raw
+
             files: list[Path] = []
-            for idx, (fname, path) in enumerate(bundle.asset_paths):
-                local = ws.path(f"{idx:03d}-{Path(fname).stem}.pdf")
-                storage.download(path, local)
-                files.append(local)
+            section_used_any = False
+
+            if directives and bundle.section_paths:
+                from pypdf import PdfWriter
+
+                # Helper: build a blank one-page PDF sized to the target spec
+                # (or A4 fallback in points: 1 mm = 2.83465 pt).
+                def _make_blank(idx: int) -> Path:
+                    tw_mm = target.width_mm or 210.0
+                    th_mm = target.height_mm or 297.0
+                    w_pt = float(tw_mm) * 2.83464567
+                    h_pt = float(th_mm) * 2.83464567
+                    if target.orientation == "landscape" and w_pt < h_pt:
+                        w_pt, h_pt = h_pt, w_pt
+                    elif target.orientation == "portrait" and w_pt > h_pt:
+                        w_pt, h_pt = h_pt, w_pt
+                    out = ws.path(f"{idx:03d}-blank.pdf")
+                    writer = PdfWriter()
+                    writer.add_blank_page(width=w_pt, height=h_pt)
+                    with open(out, "wb") as f:
+                        writer.write(f)
+                    return out
+
+                downloaded: dict[str, Path] = {}
+                for idx, d in enumerate(directives):
+                    if not isinstance(d, dict):
+                        continue
+                    kind = d.get("kind")
+                    if kind == "section":
+                        sid = d.get("section_id")
+                        resolved = bundle.section_paths.get(sid) if sid else None
+                        if not resolved:
+                            continue
+                        fname, path = resolved
+                        if path in downloaded:
+                            files.append(downloaded[path])
+                        else:
+                            local = ws.path(f"{idx:03d}-{Path(fname).stem}.pdf")
+                            storage.download(path, local)
+                            downloaded[path] = local
+                            files.append(local)
+                        section_used_any = True
+                    elif kind == "blank_page":
+                        files.append(_make_blank(idx))
+                        steps.append(f"blank:{d.get('reason') or 'unknown'}")
+
+            if not section_used_any:
+                # ── Fallback: download all sources in document order ─────
+                files = []
+                for idx, (fname, path) in enumerate(bundle.asset_paths):
+                    local = ws.path(f"{idx:03d}-{Path(fname).stem}.pdf")
+                    storage.download(path, local)
+                    files.append(local)
 
             # ── Step 1: merge (only when >1 doc) ────────────────────────
             if len(files) > 1:
@@ -110,8 +169,10 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                 pdf_ops.merge(files, merged)
                 current = merged
                 steps.append(f"merge:{len(files)}")
-            else:
+            elif len(files) == 1:
                 current = files[0]
+            else:
+                raise ValueError("No source files resolved from merge directives or asset paths.")
 
             # ── Step 2: detect what work the spec actually requires ─────
             actual_size = pdf_ops.page_trim_size_mm(current)
