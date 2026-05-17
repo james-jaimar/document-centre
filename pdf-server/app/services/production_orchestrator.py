@@ -114,6 +114,55 @@ def load_job_bundle(job_id: str) -> JobBundle:
         elif doc.get("storage_path"):
             asset_paths.append((doc.get("file_name") or "doc.pdf", doc["storage_path"]))
 
+    # Document → resolved (filename, storage_path) lookup, used to build
+    # the section_id → path map below.
+    doc_path_by_id: dict[str, tuple[str, str]] = {}
+    for doc in documents:
+        aid = doc.get("backend_asset_id")
+        resolved: tuple[str, str] | None = None
+        if aid and aid in asset_rows:
+            row = asset_rows[aid]
+            path = row.get("normalized_storage_path") or row.get("source_storage_path")
+            if path:
+                resolved = (
+                    row.get("original_filename") or doc.get("file_name") or "doc.pdf",
+                    path,
+                )
+        if resolved is None and doc.get("storage_path"):
+            resolved = (doc.get("file_name") or "doc.pdf", doc["storage_path"])
+        if resolved:
+            doc_path_by_id[doc["id"]] = resolved
+
+    # document_sections for this job's order_items — needed so the worker
+    # can resolve configuration.merge_directives section_ids to source PDFs.
+    section_paths: dict[str, tuple[str, str]] = {}
+    item_ids = [it["id"] for it in items if it.get("id")]
+    configuration: dict[str, Any] | None = None
+    if item_ids:
+        try:
+            section_rows = (
+                sb.table("document_sections")
+                .select("id, document_id, section_type, sort_order, order_item_id")
+                .in_("order_item_id", item_ids)
+                .execute()
+                .data
+                or []
+            )
+            for srow in section_rows:
+                did = srow.get("document_id")
+                if did and did in doc_path_by_id:
+                    section_paths[srow["id"]] = doc_path_by_id[did]
+        except Exception:
+            section_paths = {}
+
+        # Pick the first item with a configuration carrying merge_directives.
+        for it in items:
+            spec = it.get("spec") or {}
+            cfg = spec.get("configuration") if isinstance(spec, dict) else None
+            if isinstance(cfg, dict) and cfg.get("merge_directives"):
+                configuration = cfg
+                break
+
     tenant = None
     if job.get("tenant_id"):
         try:
@@ -151,6 +200,8 @@ def load_job_bundle(job_id: str) -> JobBundle:
         tenant=tenant,
         customer=customer,
         target=_extract_target_spec(job),
+        section_paths=section_paths,
+        configuration=configuration,
     )
 
 
