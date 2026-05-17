@@ -57,6 +57,16 @@ export default function PaperSizeAdvisory({
   );
 
   const isLocked = !!lockedSize;
+  const isUnknown = detectedSize === UNKNOWN_SIZE_LABEL;
+  const isPresentation = /powerpoint|keynote|slide/i.test(detectedSize);
+
+  const title = isLocked
+    ? "Different size from your other files"
+    : isUnknown
+      ? "Unrecognised Paper Size"
+      : isPresentation
+        ? "Presentation Slide Size Detected"
+        : "Non-Standard Paper Size Detected";
 
   return (
     <Dialog open={open} onOpenChange={() => {}}>
@@ -73,9 +83,7 @@ export default function PaperSizeAdvisory({
             ) : (
               <AlertTriangle className="h-5 w-5 shrink-0" />
             )}
-            <DialogTitle className="text-base">
-              {isLocked ? "Different size from your other files" : "Non-Standard Paper Size Detected"}
-            </DialogTitle>
+            <DialogTitle className="text-base">{title}</DialogTitle>
           </div>
           <DialogDescription className="pt-2 text-sm leading-relaxed">
             {isLocked ? (
@@ -88,6 +96,25 @@ export default function PaperSizeAdvisory({
                 . Your earlier files in this upload are{" "}
                 <span className="font-semibold text-foreground">{lockedSize.name}</span>.
                 A single print job needs one paper size — mixing won't print correctly.
+              </>
+            ) : isPresentation ? (
+              <>
+                <span className="font-medium text-foreground">{fileName}</span> is{" "}
+                <span className="font-semibold text-foreground">
+                  {detectedSize} ({Math.round(widthMm)} × {Math.round(heightMm)}mm)
+                </span>
+                . Presentation slide sizes don't match standard printable paper. We
+                recommend scaling onto A4 or A3 so it prints correctly.
+              </>
+            ) : isUnknown ? (
+              <>
+                <span className="font-medium text-foreground">{fileName}</span> is{" "}
+                <span className="font-semibold text-foreground">
+                  {Math.round(widthMm)} × {Math.round(heightMm)}mm
+                </span>
+                , which isn't a standard ISO paper size. We recommend scaling onto
+                A4 or A3 before printing — keeping the original may require custom
+                cutting and could incur a surcharge.
               </>
             ) : (
               <>
