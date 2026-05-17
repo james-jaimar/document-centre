@@ -189,7 +189,7 @@ export default function AdminOrderDetail() {
             </TabsContent>
 
             <TabsContent value="delivery" className="mt-3">
-              <OrderDeliveryTab addresses={addresses} order={order} />
+              <OrderDeliveryTab addresses={addresses} order={order} editable />
             </TabsContent>
 
             <TabsContent value="ordered_by" className="mt-3">
