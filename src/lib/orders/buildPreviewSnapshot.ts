@@ -20,6 +20,7 @@ import {
   type StructuredOptionValue,
 } from "@/lib/productOptionTypes";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
+import { sortSectionsByRole } from "@/lib/orders/sectionOrdering";
 
 interface DocLike {
   id: string;
@@ -369,7 +370,7 @@ export function buildPreviewSnapshot(input: {
   const bindingEdge = resolveBindingEdge(selectedOptions, productOptions, documents);
   const bindingArt = selectedBindingArt(selectedOptions, productOptions);
 
-  const sortedSections = [...sections].sort((a, b) => a.sort_order - b.sort_order);
+  const sortedSections = sortSectionsByRole(sections);
   const pages = buildPageSequence(sortedSections, documents, isBound, productType);
 
 
