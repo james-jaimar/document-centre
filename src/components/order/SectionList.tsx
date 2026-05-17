@@ -276,7 +276,9 @@ export default function SectionList({
             )}
             {lockDuplex && (
               <p className="text-[10px] text-muted-foreground/80 mt-1.5 leading-snug">
-                Single-page cover — back is blank. Upload a 2-page PDF for a printed inside.
+                {isRingBinderCover
+                  ? "Cover sheets print single-sided only."
+                  : "Single-page cover — back is blank. Upload a 2-page PDF for a printed inside."}
               </p>
             )}
           </div>
