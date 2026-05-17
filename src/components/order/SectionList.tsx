@@ -132,9 +132,12 @@ export default function SectionList({
         // 1-page covers are physically simplex (the back is a real blank sheet).
         // Lock the toggle so customers can't flip it back to duplex against physics.
         const isSinglePageCover = isCover && pageCount === 1 && familySlug !== "posters";
+        const isRingBinderCover =
+          (familySlug === "ring_binders" || familySlug === "ring-binders") &&
+          section.section_type === "front_cover";
         const showColourToggle = !isInsertOrTab && !hideColour;
         const showDuplexToggle = !isInsertOrTab && !hideDuplex;
-        const lockDuplex = isSinglePageCover;
+        const lockDuplex = isSinglePageCover || isRingBinderCover;
 
         return (
           <div
@@ -273,7 +276,9 @@ export default function SectionList({
             )}
             {lockDuplex && (
               <p className="text-[10px] text-muted-foreground/80 mt-1.5 leading-snug">
-                Single-page cover — back is blank. Upload a 2-page PDF for a printed inside.
+                {isRingBinderCover
+                  ? "Cover sheets print single-sided only."
+                  : "Single-page cover — back is blank. Upload a 2-page PDF for a printed inside."}
               </p>
             )}
           </div>
