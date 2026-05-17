@@ -155,13 +155,10 @@ def load_job_bundle(job_id: str) -> JobBundle:
         except Exception:
             section_paths = {}
 
-        # Pick the first item with a configuration carrying merge_directives.
-        for it in items:
-            spec = it.get("spec") or {}
-            cfg = spec.get("configuration") if isinstance(spec, dict) else None
-            if isinstance(cfg, dict) and cfg.get("merge_directives"):
-                configuration = cfg
-                break
+    # merge_directives are persisted on order_jobs.configuration (set when
+    # the order is placed — see src/hooks/useCart.ts).
+    job_cfg = job.get("configuration")
+    configuration: dict[str, Any] | None = job_cfg if isinstance(job_cfg, dict) else None
 
     tenant = None
     if job.get("tenant_id"):
