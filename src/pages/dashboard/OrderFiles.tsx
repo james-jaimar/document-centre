@@ -2348,6 +2348,15 @@ export default function OrderFiles() {
         onDoubleSided={handleFlyerDoubleSided}
         onSingleSided={handleFlyerSingleSided}
       />
+
+      {/* Brochure multi-page choice dialog */}
+      <BrochurePageChoiceDialog
+        open={!!brochureChoiceItem}
+        item={brochureChoiceItem}
+        busy={brochureChoiceBusy}
+        onDoubleSided={handleBrochureDoubleSided}
+        onSingleSided={handleBrochureSingleSided}
+      />
     </div>
   );
 }
