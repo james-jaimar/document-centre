@@ -510,7 +510,55 @@ export default function PhotoPrintsBuilder() {
         </div>
       </div>
 
-      {photoSpec.photos.length === 0 ? (
+      {isMobile ? (
+        <section className="space-y-3">
+          <input
+            ref={libraryInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+            multiple
+            className="sr-only"
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              if (files.length) handleFiles(files);
+              e.target.value = "";
+            }}
+          />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="sr-only"
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              if (files.length) handleFiles(files);
+              e.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            disabled={createOrder.isPending}
+            onClick={() => libraryInputRef.current?.click()}
+            className="flex w-full h-14 items-center justify-center gap-2 rounded-xl bg-primary text-primary-foreground text-base font-bold shadow-lg shadow-primary/25 disabled:opacity-60"
+          >
+            <ImagePlus className="size-5" /> Choose photos
+          </button>
+          <button
+            type="button"
+            disabled={createOrder.isPending}
+            onClick={() => cameraInputRef.current?.click()}
+            className="flex w-full h-14 items-center justify-center gap-2 rounded-xl border border-border bg-card text-base font-semibold text-foreground disabled:opacity-60"
+          >
+            <Camera className="size-5" /> Take a photo
+          </button>
+          {photoSpec.photos.length > 0 && (
+            <p className="text-xs text-muted-foreground text-center">
+              {photoSpec.photos.length} photo{photoSpec.photos.length === 1 ? "" : "s"} added — tap a button above to add more.
+            </p>
+          )}
+        </section>
+      ) : photoSpec.photos.length === 0 ? (
         <PhotoUploader
           onFiles={handleFiles}
           disabled={createOrder.isPending}
