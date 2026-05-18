@@ -133,7 +133,7 @@ Deno.serve(async (req) => {
     for (let i = 0; i < 45; i++) {
       await new Promise((r) => setTimeout(r, 2000));
       const statusRes = await fetch(`${apiUrl}/v1/jobs/${pdfJobId}`, {
-        headers: { "x-api-key": apiKey },
+        headers: apiKey ? { "x-api-key": apiKey } : {},
       });
       if (!statusRes.ok) continue;
       const statusData = await statusRes.json();
