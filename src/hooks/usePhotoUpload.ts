@@ -27,7 +27,7 @@ const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 /** Read an image file's natural pixel dimensions client-side. */
 async function readImageDimensions(file: File): Promise<{ width: number; height: number }> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
@@ -37,11 +37,29 @@ async function readImageDimensions(file: File): Promise<{ width: number; height:
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      // HEIC and similar may not load in browser — return 0/0 so we skip the warning.
       resolve({ width: 0, height: 0 });
     };
     img.src = url;
   });
+}
+
+/** Convert HEIC/HEIF (iPhone) to JPEG so browsers can render & S3 can serve. */
+async function maybeConvertHeic(file: File): Promise<File> {
+  const isHeic =
+    file.type === "image/heic" ||
+    file.type === "image/heif" ||
+    /\.(heic|heif)$/i.test(file.name);
+  if (!isHeic) return file;
+  try {
+    const heic2any = (await import("heic2any")).default;
+    const blob = (await heic2any({ blob: file, toType: "image/jpeg", quality: 0.92 })) as Blob;
+    return new File([blob], file.name.replace(/\.(heic|heif)$/i, ".jpg"), {
+      type: "image/jpeg",
+    });
+  } catch (err) {
+    console.warn("[photo-upload] HEIC conversion failed, uploading original:", err);
+    return file;
+  }
 }
 
 /**
