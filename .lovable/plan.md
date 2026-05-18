@@ -1,68 +1,49 @@
-# Clean up console errors
+# Phase 3 — Storage bucket path-based ownership
 
-Three independent issues showed up in the console. Two are quick code fixes; one needs an AWS console action you'll have to do (not something I can do from Lovable).
+Tightens the three remaining buckets that currently have blanket policies. No frontend changes; all enforcement moves into RLS on `storage.objects`.
 
-## 1. `tenant=…/orderId` causing 400s on `tenants` and `orders`
+## Buckets in scope
 
-**Root cause.** `src/pages/platform/PlatformDemoActivity.tsx:142` builds the link as:
+| Bucket | Public | Current real usage | New rule |
+|---|---|---|---|
+| `documents` | private | 55 objects under `invoices/{tenant_id}/…` | Read = tenant members + platform admin; Write = platform admin + service role |
+| `document-uploads` | private | 0 objects (real customer files live in S3) | Path `{user_id}/…` enforced for SELECT/INSERT/UPDATE/DELETE; platform admin override stays |
+| `assets` | public | 0 objects | Public SELECT stays; INSERT/UPDATE/DELETE restricted to platform admin |
 
-```ts
-`${buildAdminPath("/admin/orders", demoTenant.id)}/${o.id}`
-```
+## Migration
 
-`buildAdminPath` already returns `/admin/orders?tenant=<tenantId>`, so the `/${o.id}` gets appended **after the query string**, producing URLs like `/admin/orders?tenant=<tenantId>/<orderId>`. React Router then reads the `tenant` param as `<tenantId>/<orderId>`, which is what gets sent to PostgREST → 400 on both `tenants` and `orders`.
+Drop these existing storage.objects policies (they're too broad):
+- `Authenticated users can read documents`
+- `Users can view own documents` / `Users can upload own documents` / `Users can delete own documents`
+- `Authenticated users can upload assets`
 
-**Fix.** Compose the path first, then call `buildAdminPath`:
+Add new policies on `storage.objects`:
 
-```ts
-buildAdminPath(`/admin/orders/${o.id}`, demoTenant.id)
-```
+**documents bucket** — only `invoices/{tenant_id}/…` paths are used today, so policies key off `(storage.foldername(name))[2]::uuid` as the tenant id, with `(storage.foldername(name))[1] = 'invoices'` as the prefix check:
+- SELECT: `bucket_id = 'documents' AND (storage.foldername(name))[1] = 'invoices' AND EXISTS(tenant_memberships where profile_id = auth.uid() and tenant_id = ((storage.foldername(name))[2])::uuid and is_active)` OR `has_role(auth.uid(), 'platform_admin')`
+- INSERT/UPDATE/DELETE: `has_role(auth.uid(), 'platform_admin')` only (invoices are system-generated)
 
-## 2. Missing `autocomplete` on password inputs
+**document-uploads bucket** — empty, so we can pick the canonical scheme now:
+- SELECT/INSERT/UPDATE/DELETE: `bucket_id = 'document-uploads' AND (auth.uid()::text = (storage.foldername(name))[1] OR has_role(auth.uid(), 'platform_admin'))`
 
-Affected files:
-- `src/pages/Auth.tsx` (sign-in / sign-up password field)
-- `src/pages/ResetPassword.tsx` (two password fields)
+**assets bucket** — keep `Anyone can view assets` (intentional CDN), add:
+- INSERT/UPDATE/DELETE: `bucket_id = 'assets' AND has_role(auth.uid(), 'platform_admin')`
 
-Add `autoComplete` props:
-- Sign-in: `autoComplete="current-password"`
-- Sign-up + reset (new + confirm): `autoComplete="new-password"`
-- Any email field nearby gets `autoComplete="email"` for consistency.
+`pdf-server` (service role) bypasses RLS, so worker writes to any bucket continue to work.
 
-Silences the DOM warning and improves password-manager UX.
+## Verification after migration
 
-## 3. S3 CORS blocking image previews on `document-centre.com`
+1. Platform admin opens an invoice PDF from Admin → Billing → still loads.
+2. Tenant Owner/Admin opens their own invoice → still loads.
+3. Customer from a different tenant tries the same signed URL → 403.
+4. Storefront landing + photo prints + product pages on `/t/demo/…` → still render (none use these buckets, but worth a click-through).
+5. Platform → Document Centre ops dashboards → still load (uses service role).
 
-The `[photo-prints-admin-gallery] crop render skipped` errors and the `net::ERR_FAILED` lines on `s3.af-south-1.amazonaws.com/jaimar-dev-…` are all CORS rejections. The signed URLs themselves are valid — `<img>` tags load them fine — but the canvas-based crop renderer fetches them with `crossOrigin="anonymous"`, which requires the bucket to return `Access-Control-Allow-Origin`.
+## Out of scope (kept for Phase 4)
 
-**This is a bucket-level config you have to apply in AWS — I can't change it from here.** In the S3 console for `jaimar-dev-600743178200-af-south-1-an` → Permissions → CORS, set:
+- `tenants` column-restricted public view
+- Realtime channel authorisation
+- `SECURITY DEFINER` function audit (`current_storefront_tenant_id`, vault wrappers, etc.)
+- Frontend changes
 
-```json
-[
-  {
-    "AllowedOrigins": [
-      "https://document-centre.com",
-      "https://www.document-centre.com",
-      "https://document-centre.jaimar.dev",
-      "https://document-centre.lovable.app",
-      "https://*.lovable.app",
-      "http://localhost:5173"
-    ],
-    "AllowedMethods": ["GET", "PUT", "HEAD"],
-    "AllowedHeaders": ["*"],
-    "ExposeHeaders": ["ETag"],
-    "MaxAgeSeconds": 3000
-  }
-]
-```
-
-Once that's in, the crop previews on the admin order detail page will render instead of falling back to the plain signed `<img>`.
-
-## Scope
-
-Code changes are limited to:
-- `src/pages/platform/PlatformDemoActivity.tsx` (1 line)
-- `src/pages/Auth.tsx` (autocomplete attrs)
-- `src/pages/ResetPassword.tsx` (autocomplete attrs)
-
-No backend, RLS, or storage migration needed.
+After Phase 3 ships and you've sanity-checked, we move to Phase 4.
