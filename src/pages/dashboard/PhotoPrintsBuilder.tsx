@@ -23,6 +23,8 @@ import type { PhotoPrintEntry, PhotoPrintsSpec } from "@/lib/photoPrints/types";
 import PhotoUploader from "@/components/photo/PhotoUploader";
 import QRUploadModal from "@/components/order/QRUploadModal";
 import PhotoTile from "@/components/photo/PhotoTile";
+import { MobileUploadBanner } from "@/components/photo/MobileUploadBanner";
+import { useDeviceKind } from "@/hooks/useDeviceKind";
 import PhotoEditorModal from "@/components/photo/PhotoEditorModal";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
