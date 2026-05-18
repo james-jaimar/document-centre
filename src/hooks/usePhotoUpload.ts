@@ -82,16 +82,22 @@ export function usePhotoUpload(orderItemId: string | undefined) {
   );
 
   const uploadPhoto = useCallback(
-    async (file: File, overrideOrderItemId?: string): Promise<UploadedPhoto | null> => {
+    async (rawFile: File, overrideOrderItemId?: string): Promise<UploadedPhoto | null> => {
       const effectiveId = overrideOrderItemId || orderItemId;
       if (!effectiveId || !user || !tenantId) return null;
 
+      const originalName = rawFile.name;
+
+      updateUpload(originalName, { fileName: originalName, status: "uploading", progress: 3, statusText: "Preparing…" });
+
+      // Convert HEIC/HEIF (iPhone) to JPEG before sizing/uploading.
+      const file = await maybeConvertHeic(rawFile);
       const fileName = file.name;
 
       if (file.size > MAX_FILE_SIZE_BYTES) {
         const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-        updateUpload(fileName, {
-          fileName,
+        updateUpload(originalName, {
+          fileName: originalName,
           status: "error",
           progress: 0,
           error: `File is ${sizeMb} MB — maximum allowed is ${MAX_FILE_SIZE_MB} MB`,
@@ -99,17 +105,15 @@ export function usePhotoUpload(orderItemId: string | undefined) {
         return null;
       }
 
-      updateUpload(fileName, { fileName, status: "uploading", progress: 5 });
-
       try {
         const dims = await readImageDimensions(file);
-        updateUpload(fileName, { progress: 15, statusText: "Uploading…" });
+        updateUpload(originalName, { progress: 15, statusText: "Uploading…" });
 
         const safeFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
         const storagePath = `tenants/${tenantId}/uploads/${user.id}/${effectiveId}/photos/${crypto.randomUUID()}_${safeFileName}`;
 
         await uploadToS3(storagePath, file);
-        updateUpload(fileName, { progress: 70, statusText: "Saving…" });
+        updateUpload(originalName, { progress: 70, statusText: "Saving…" });
 
         // Approximate dimensions in mm at 72 DPI (only used as a metadata stub)
         const widthMm = dims.width ? (dims.width * 25.4) / 72 : null;
