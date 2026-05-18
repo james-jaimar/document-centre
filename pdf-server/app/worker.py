@@ -10,6 +10,10 @@ celery_app = Celery(
         "app.tasks.document_tasks",
         "app.tasks.operation_tasks",
         "app.tasks.ops_tasks",
+        # Production-pipeline tasks (assemble print-ready, impose, render job ticket).
+        # Without this include, the API queues the jobs but no worker registers them
+        # and they sit forever in `queued`.
+        "app.tasks.production_tasks",
     ],
 )
 
