@@ -217,10 +217,22 @@ export default function PhotoPrintsBuilder() {
     };
   }, [photoSpec.photos, signedUrls]);
 
+  const device = useDeviceKind();
+  const isMobile = device === "mobile";
+  const libraryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const [uploadBatch, setUploadBatch] = useState({ uploading: 0, total: 0 });
+
   const handleFiles = useCallback(
     async (files: File[]) => {
+      if (files.length === 0) return;
+      setUploadBatch({ uploading: files.length, total: files.length });
       const targetItemId = await ensureOrder();
       const uploaded = await uploadPhotos(files, targetItemId);
+      setUploadBatch((b) => ({ ...b, uploading: 0 }));
+      // Reset the banner shortly after the success state plays.
+      setTimeout(() => setUploadBatch({ uploading: 0, total: 0 }), 1600);
+
       if (uploaded.length === 0) return;
 
       const currentSize = photoSpec.print_size_slug;
