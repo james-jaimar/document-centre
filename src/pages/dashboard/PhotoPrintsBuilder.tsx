@@ -426,7 +426,8 @@ export default function PhotoPrintsBuilder() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto pb-32 space-y-6">
+    <div className="max-w-6xl mx-auto pb-32 space-y-6 px-4 md:px-0">
+      <MobileUploadBanner uploadingCount={uploadBatch.uploading} totalCount={uploadBatch.total} />
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Button
