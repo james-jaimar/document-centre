@@ -142,7 +142,7 @@ export function usePhotoUpload(orderItemId: string | undefined) {
 
         if (docError) throw docError;
 
-        updateUpload(fileName, { status: "done", progress: 100, statusText: "Ready" });
+        updateUpload(originalName, { status: "done", progress: 100, statusText: "Ready" });
 
         return {
           documentId: doc.id,
@@ -154,11 +154,11 @@ export function usePhotoUpload(orderItemId: string | undefined) {
         };
       } catch (err: any) {
         console.error("[photo-upload] failed:", err);
-        updateUpload(fileName, {
+        updateUpload(originalName, {
           status: "error",
           error: err?.message || "Upload failed",
         });
-        toast.error(`Failed to upload ${fileName}`, {
+        toast.error(`Failed to upload ${originalName}`, {
           description: err?.message,
         });
         return null;
