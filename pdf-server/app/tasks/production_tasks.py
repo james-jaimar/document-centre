@@ -66,8 +66,13 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
         bundle = load_job_bundle(job_id)
 
         if not bundle.asset_paths:
+            cfg = bundle.configuration or {}
+            src_item = cfg.get("source_order_item_id") if isinstance(cfg, dict) else None
             raise ValueError(
-                "No source PDFs available for this job. The customer hasn't uploaded files yet."
+                "No source PDFs resolved for this job. Tried snapshot "
+                "(merge_directives / source_assets), cart tables "
+                "(order_items → documents → assets) and upload-path heuristic. "
+                f"job_id={job_id}, source_order_item_id={src_item}"
             )
 
         target = bundle.target
