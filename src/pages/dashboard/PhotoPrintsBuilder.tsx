@@ -659,7 +659,7 @@ export default function PhotoPrintsBuilder() {
 
       {photoSpec.photos.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+          <div className="max-w-6xl mx-auto px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-center justify-between gap-4">
             <div className="text-sm">
               <p className="font-semibold text-foreground">
                 {totals.totalPhotos} photo{totals.totalPhotos === 1 ? "" : "s"} · {totals.totalPrints} print{totals.totalPrints === 1 ? "" : "s"}
