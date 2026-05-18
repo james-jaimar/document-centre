@@ -41,6 +41,9 @@ export interface DocumentRow {
   file_size: number | null;
   page_width_mm: number | null;
   page_height_mm: number | null;
+  /** Resolved source PDF path so the worker is self-contained. */
+  asset_id?: string | null;
+  storage_path?: string | null;
 }
 
 export interface BuildSnapshotInput {
