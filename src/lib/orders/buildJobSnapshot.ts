@@ -501,6 +501,7 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
   // Build merge directives for the eventual server-side PDF concatenation.
   // Photo prints have their own merge path (PhotoPrintsAdminGallery) — skip.
   const mergeDirectives = isPhotoPrints ? [] : buildMergeDirectives(sections, documents);
+  const sourceAssets = isPhotoPrints ? [] : buildSourceAssets(documents);
 
   return {
     configuration: {
@@ -514,6 +515,9 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
       // Ordered instructions for the print-shop merge worker.
       // See `MergeDirective` for the contract.
       ...(mergeDirectives.length > 0 ? { merge_directives: mergeDirectives } : {}),
+      // Flat de-duped list of source PDFs (resolved at snapshot time) so the
+      // worker can assemble without depending on the cart tables.
+      ...(sourceAssets.length > 0 ? { source_assets: sourceAssets } : {}),
       // Source order_item_id — used by the admin gallery to poll for the
       // merged PDF if the background render hasn't completed yet.
       source_order_item_id: item.id,
