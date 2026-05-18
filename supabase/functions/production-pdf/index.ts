@@ -94,9 +94,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    const apiUrl = Deno.env.get("VPS_PDF_API_URL");
+    // Use the same base URL as the pdf-api proxy (single source of truth).
+    // Falls back to the legacy VPS_PDF_API_URL secret if DOCUMENT_CENTRE_API_URL is unset.
+    const apiUrl = (Deno.env.get("DOCUMENT_CENTRE_API_URL") ?? Deno.env.get("VPS_PDF_API_URL") ?? "").replace(/\/+$/, "");
     const apiKey = Deno.env.get("VPS_PDF_API_KEY");
-    if (!apiUrl || !apiKey) return json({ error: "PDF API not configured" }, 500);
+    if (!apiUrl) return json({ error: "PDF API not configured (DOCUMENT_CENTRE_API_URL missing)" }, 500);
 
     // Persist the chosen template on the job so the worker can read it.
     if (action === "impose" && imposition_template_id) {
@@ -106,9 +108,12 @@ Deno.serve(async (req) => {
         .eq("id", job_id);
     }
 
+    const upstreamHeaders: Record<string, string> = { "Content-Type": "application/json" };
+    if (apiKey) upstreamHeaders["x-api-key"] = apiKey;
+
     const dispatchRes = await fetch(`${apiUrl}${ENDPOINTS[action]}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+      headers: upstreamHeaders,
       body: JSON.stringify({
         job_id,
         imposition_template_id: imposition_template_id ?? null,
@@ -128,7 +133,7 @@ Deno.serve(async (req) => {
     for (let i = 0; i < 45; i++) {
       await new Promise((r) => setTimeout(r, 2000));
       const statusRes = await fetch(`${apiUrl}/v1/jobs/${pdfJobId}`, {
-        headers: { "x-api-key": apiKey },
+        headers: apiKey ? { "x-api-key": apiKey } : {},
       });
       if (!statusRes.ok) continue;
       const statusData = await statusRes.json();
