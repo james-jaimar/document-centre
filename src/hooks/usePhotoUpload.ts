@@ -27,7 +27,7 @@ const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 /** Read an image file's natural pixel dimensions client-side. */
 async function readImageDimensions(file: File): Promise<{ width: number; height: number }> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
@@ -37,11 +37,29 @@ async function readImageDimensions(file: File): Promise<{ width: number; height:
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      // HEIC and similar may not load in browser — return 0/0 so we skip the warning.
       resolve({ width: 0, height: 0 });
     };
     img.src = url;
   });
+}
+
+/** Convert HEIC/HEIF (iPhone) to JPEG so browsers can render & S3 can serve. */
+async function maybeConvertHeic(file: File): Promise<File> {
+  const isHeic =
+    file.type === "image/heic" ||
+    file.type === "image/heif" ||
+    /\.(heic|heif)$/i.test(file.name);
+  if (!isHeic) return file;
+  try {
+    const heic2any = (await import("heic2any")).default;
+    const blob = (await heic2any({ blob: file, toType: "image/jpeg", quality: 0.92 })) as Blob;
+    return new File([blob], file.name.replace(/\.(heic|heif)$/i, ".jpg"), {
+      type: "image/jpeg",
+    });
+  } catch (err) {
+    console.warn("[photo-upload] HEIC conversion failed, uploading original:", err);
+    return file;
+  }
 }
 
 /**
@@ -64,16 +82,22 @@ export function usePhotoUpload(orderItemId: string | undefined) {
   );
 
   const uploadPhoto = useCallback(
-    async (file: File, overrideOrderItemId?: string): Promise<UploadedPhoto | null> => {
+    async (rawFile: File, overrideOrderItemId?: string): Promise<UploadedPhoto | null> => {
       const effectiveId = overrideOrderItemId || orderItemId;
       if (!effectiveId || !user || !tenantId) return null;
 
+      const originalName = rawFile.name;
+
+      updateUpload(originalName, { fileName: originalName, status: "uploading", progress: 3, statusText: "Preparing…" });
+
+      // Convert HEIC/HEIF (iPhone) to JPEG before sizing/uploading.
+      const file = await maybeConvertHeic(rawFile);
       const fileName = file.name;
 
       if (file.size > MAX_FILE_SIZE_BYTES) {
         const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-        updateUpload(fileName, {
-          fileName,
+        updateUpload(originalName, {
+          fileName: originalName,
           status: "error",
           progress: 0,
           error: `File is ${sizeMb} MB — maximum allowed is ${MAX_FILE_SIZE_MB} MB`,
@@ -81,17 +105,15 @@ export function usePhotoUpload(orderItemId: string | undefined) {
         return null;
       }
 
-      updateUpload(fileName, { fileName, status: "uploading", progress: 5 });
-
       try {
         const dims = await readImageDimensions(file);
-        updateUpload(fileName, { progress: 15, statusText: "Uploading…" });
+        updateUpload(originalName, { progress: 15, statusText: "Uploading…" });
 
         const safeFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
         const storagePath = `tenants/${tenantId}/uploads/${user.id}/${effectiveId}/photos/${crypto.randomUUID()}_${safeFileName}`;
 
         await uploadToS3(storagePath, file);
-        updateUpload(fileName, { progress: 70, statusText: "Saving…" });
+        updateUpload(originalName, { progress: 70, statusText: "Saving…" });
 
         // Approximate dimensions in mm at 72 DPI (only used as a metadata stub)
         const widthMm = dims.width ? (dims.width * 25.4) / 72 : null;
@@ -120,7 +142,7 @@ export function usePhotoUpload(orderItemId: string | undefined) {
 
         if (docError) throw docError;
 
-        updateUpload(fileName, { status: "done", progress: 100, statusText: "Ready" });
+        updateUpload(originalName, { status: "done", progress: 100, statusText: "Ready" });
 
         return {
           documentId: doc.id,
@@ -132,11 +154,11 @@ export function usePhotoUpload(orderItemId: string | undefined) {
         };
       } catch (err: any) {
         console.error("[photo-upload] failed:", err);
-        updateUpload(fileName, {
+        updateUpload(originalName, {
           status: "error",
           error: err?.message || "Upload failed",
         });
-        toast.error(`Failed to upload ${fileName}`, {
+        toast.error(`Failed to upload ${originalName}`, {
           description: err?.message,
         });
         return null;

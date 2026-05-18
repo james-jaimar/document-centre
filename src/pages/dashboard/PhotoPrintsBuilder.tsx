@@ -23,6 +23,8 @@ import type { PhotoPrintEntry, PhotoPrintsSpec } from "@/lib/photoPrints/types";
 import PhotoUploader from "@/components/photo/PhotoUploader";
 import QRUploadModal from "@/components/order/QRUploadModal";
 import PhotoTile from "@/components/photo/PhotoTile";
+import { MobileUploadBanner } from "@/components/photo/MobileUploadBanner";
+import { useDeviceKind } from "@/hooks/useDeviceKind";
 import PhotoEditorModal from "@/components/photo/PhotoEditorModal";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -44,7 +46,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
-import { ArrowLeft, ImagePlus, Loader2, ShoppingCart, Smartphone } from "lucide-react";
+import { ArrowLeft, Camera, ImagePlus, Loader2, ShoppingCart, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
@@ -215,10 +217,22 @@ export default function PhotoPrintsBuilder() {
     };
   }, [photoSpec.photos, signedUrls]);
 
+  const device = useDeviceKind();
+  const isMobile = device === "mobile";
+  const libraryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const [uploadBatch, setUploadBatch] = useState({ uploading: 0, total: 0 });
+
   const handleFiles = useCallback(
     async (files: File[]) => {
+      if (files.length === 0) return;
+      setUploadBatch({ uploading: files.length, total: files.length });
       const targetItemId = await ensureOrder();
       const uploaded = await uploadPhotos(files, targetItemId);
+      setUploadBatch((b) => ({ ...b, uploading: 0 }));
+      // Reset the banner shortly after the success state plays.
+      setTimeout(() => setUploadBatch({ uploading: 0, total: 0 }), 1600);
+
       if (uploaded.length === 0) return;
 
       const currentSize = photoSpec.print_size_slug;
@@ -412,7 +426,8 @@ export default function PhotoPrintsBuilder() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto pb-32 space-y-6">
+    <div className="max-w-6xl mx-auto pb-32 space-y-6 px-4 md:px-0">
+      <MobileUploadBanner uploadingCount={uploadBatch.uploading} totalCount={uploadBatch.total} />
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Button
@@ -495,7 +510,55 @@ export default function PhotoPrintsBuilder() {
         </div>
       </div>
 
-      {photoSpec.photos.length === 0 ? (
+      {isMobile ? (
+        <section className="space-y-3">
+          <input
+            ref={libraryInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+            multiple
+            className="sr-only"
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              if (files.length) handleFiles(files);
+              e.target.value = "";
+            }}
+          />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="sr-only"
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              if (files.length) handleFiles(files);
+              e.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            disabled={createOrder.isPending}
+            onClick={() => libraryInputRef.current?.click()}
+            className="flex w-full h-14 items-center justify-center gap-2 rounded-xl bg-primary text-primary-foreground text-base font-bold shadow-lg shadow-primary/25 disabled:opacity-60"
+          >
+            <ImagePlus className="size-5" /> Choose photos
+          </button>
+          <button
+            type="button"
+            disabled={createOrder.isPending}
+            onClick={() => cameraInputRef.current?.click()}
+            className="flex w-full h-14 items-center justify-center gap-2 rounded-xl border border-border bg-card text-base font-semibold text-foreground disabled:opacity-60"
+          >
+            <Camera className="size-5" /> Take a photo
+          </button>
+          {photoSpec.photos.length > 0 && (
+            <p className="text-xs text-muted-foreground text-center">
+              {photoSpec.photos.length} photo{photoSpec.photos.length === 1 ? "" : "s"} added — tap a button above to add more.
+            </p>
+          )}
+        </section>
+      ) : photoSpec.photos.length === 0 ? (
         <PhotoUploader
           onFiles={handleFiles}
           disabled={createOrder.isPending}
@@ -596,7 +659,7 @@ export default function PhotoPrintsBuilder() {
 
       {photoSpec.photos.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+          <div className="max-w-6xl mx-auto px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-center justify-between gap-4">
             <div className="text-sm">
               <p className="font-semibold text-foreground">
                 {totals.totalPhotos} photo{totals.totalPhotos === 1 ? "" : "s"} · {totals.totalPrints} print{totals.totalPrints === 1 ? "" : "s"}
