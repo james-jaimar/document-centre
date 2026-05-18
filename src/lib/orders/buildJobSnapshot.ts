@@ -387,7 +387,20 @@ export interface JobSnapshot {
  * Inter-document `blank_back` faces are PREVIEW-ONLY and do NOT appear here.
  */
 export type MergeDirective =
-  | { kind: "section"; section_id: string; section_type: string }
+  | {
+      kind: "section";
+      section_id: string;
+      section_type: string;
+      // Concrete source — resolved at snapshot time so the worker never
+      // depends on the transient cart tables (order_items, documents,
+      // document_sections) which may be gone by the time it runs.
+      asset_id?: string | null;
+      file_name?: string | null;
+      storage_path?: string | null;
+      page_count?: number | null;
+      page_range_start?: number | null;
+      page_range_end?: number | null;
+    }
   | { kind: "blank_page"; reason: "simplex_cover_back" | "simplex_back_cover_front" };
 
 function buildMergeDirectives(
@@ -398,30 +411,56 @@ function buildMergeDirectives(
   const ordered = sortSectionsByRole(
     sections.filter((s) => s.section_type !== "tab" && s.section_type !== "insert"),
   );
-  // (tabs/inserts emit their own physical sheets via existing logic — kept
-  // out of v1 of merge_directives to avoid scope creep.)
   for (const s of ordered) {
     const isCover = s.section_type === "front_cover" || s.section_type === "back_cover";
     const doc = s.document_id ? documents.find((d) => d.id === s.document_id) : undefined;
     const docPages = doc?.page_count ?? 0;
-    // A 1-page cover is physically simplex — the unseen face is a real blank sheet.
     const isSimplexCover = isCover && docPages === 1 && !s.is_duplex;
 
-    // Back cover: the blank is the page PRECEDING the back cover (the
-    // inside face the customer sees when flipping to the last page).
     if (isSimplexCover && s.section_type === "back_cover") {
       directives.push({ kind: "blank_page", reason: "simplex_back_cover_front" });
     }
 
-    directives.push({ kind: "section", section_id: s.id, section_type: s.section_type });
+    directives.push({
+      kind: "section",
+      section_id: s.id,
+      section_type: s.section_type,
+      asset_id: doc?.asset_id ?? null,
+      file_name: doc?.file_name ?? null,
+      storage_path: doc?.storage_path ?? null,
+      page_count: doc?.page_count ?? null,
+      page_range_start: s.page_range_start,
+      page_range_end: s.page_range_end,
+    });
 
-    // Front cover: the blank is the page FOLLOWING the front cover (the
-    // inside face of the cover sheet).
     if (isSimplexCover && s.section_type === "front_cover") {
       directives.push({ kind: "blank_page", reason: "simplex_cover_back" });
     }
   }
   return directives;
+}
+
+function buildSourceAssets(documents: DocumentRow[]) {
+  const seen = new Set<string>();
+  const out: Array<{
+    asset_id: string | null;
+    file_name: string;
+    storage_path: string;
+    page_count: number | null;
+  }> = [];
+  for (const d of documents) {
+    if (!d.storage_path) continue;
+    const key = d.storage_path;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      asset_id: d.asset_id ?? null,
+      file_name: d.file_name,
+      storage_path: d.storage_path,
+      page_count: d.page_count,
+    });
+  }
+  return out;
 }
 
 // Options whose values come exclusively from per-section data (document_sections).
