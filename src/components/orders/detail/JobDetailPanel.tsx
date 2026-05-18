@@ -196,10 +196,12 @@ export function JobDetailPanel({ job, documents, currency = "ZAR" }: Props) {
         jobId={job.id}
         jobStatus={job.job_status}
         productFamilyId={
-          ((job as any).product_snapshot?.product_family_id
+          ((job as any).product_snapshot?.product_family?.id
+            ?? (job as any).product_snapshot?.product_family_id
             ?? (job as any).product_snapshot?.family_id
             ?? null) as string | null
         }
+
       />
 
       {previewOpen && (
