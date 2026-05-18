@@ -468,6 +468,30 @@ export function usePlaceOrder() {
             : Promise.resolve({ data: [] as any[] }),
         ]);
 
+      // Resolve backend asset rows for every document so the job snapshot can
+      // capture concrete source PDF storage paths. Without this, the worker
+      // is forced to re-traverse cart tables that may be gone post-checkout.
+      const assetIds = Array.from(
+        new Set(
+          ((documentsData ?? []) as any[])
+            .map((d: any) => d.backend_asset_id)
+            .filter(Boolean)
+        )
+      ) as string[];
+      const assetById = new Map<string, { normalized_storage_path: string | null; source_storage_path: string | null }>();
+      if (assetIds.length) {
+        const { data: assetRows } = await supabase
+          .from("assets")
+          .select("id, normalized_storage_path, source_storage_path")
+          .in("id", assetIds);
+        for (const a of (assetRows ?? []) as any[]) {
+          assetById.set(a.id, {
+            normalized_storage_path: a.normalized_storage_path ?? null,
+            source_storage_path: a.source_storage_path ?? null,
+          });
+        }
+      }
+
       // Preview enrichment is best-effort. Order placement must NEVER fail
       // because the preview helpers throw or because a future lazy chunk fails
       // to load — they are imported statically above to avoid that exact risk.
@@ -479,9 +503,18 @@ export function usePlaceOrder() {
         const itemSections = ((sectionsData ?? []) as any[]).filter(
           (s) => s.order_item_id === item.id
         );
-        const itemDocs = ((documentsData ?? []) as any[]).filter(
-          (d) => d.order_item_id === item.id
-        );
+        const itemDocs = ((documentsData ?? []) as any[])
+          .filter((d) => d.order_item_id === item.id)
+          .map((d: any) => {
+            const asset = d.backend_asset_id ? assetById.get(d.backend_asset_id) : null;
+            const storagePath =
+              asset?.normalized_storage_path || asset?.source_storage_path || null;
+            return {
+              ...d,
+              asset_id: d.backend_asset_id ?? null,
+              storage_path: storagePath,
+            };
+          });
 
         const { configuration, product_snapshot } = buildJobSnapshot({
           item,

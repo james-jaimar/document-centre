@@ -53,7 +53,15 @@ def _client() -> Client:
 
 
 def load_job_bundle(job_id: str) -> JobBundle:
-    """Fetch everything needed to render production artefacts for one job."""
+    """Fetch everything needed to render production artefacts for one job.
+
+    Resolution order for source PDFs:
+      1. configuration.merge_directives[*].storage_path  (snapshot-first)
+      2. configuration.source_assets[*]                  (flat fallback)
+      3. order_items → documents → assets                (legacy cart path)
+      4. assets.source_storage_path LIKE '%/<source_order_item_id>/%'
+         (best-effort recovery for older snapshots whose cart rows are gone)
+    """
     sb = _client()
 
     job_res = sb.table("order_jobs").select("*").eq("id", job_id).single().execute()
@@ -86,11 +94,40 @@ def load_job_bundle(job_id: str) -> JobBundle:
     item_ids = [it["id"] for it in items if it.get("id")]
     target_item_ids = [source_order_item_id] if source_order_item_id in item_ids else item_ids
 
-    # Customer-uploaded documents are attached to order_items during checkout.
-    # Production jobs are created afterwards, so resolving by documents.job_id is
-    # not valid for this schema.
-    documents = []
-    if target_item_ids:
+    asset_paths: list[tuple[str, str]] = []
+    section_paths: dict[str, tuple[str, str]] = {}
+    documents: list[dict[str, Any]] = []
+
+    # ---- 1. Snapshot-first: merge_directives carry concrete storage paths ----
+    if isinstance(configuration, dict):
+        directives = configuration.get("merge_directives") or []
+        if isinstance(directives, list):
+            for d in directives:
+                if not isinstance(d, dict) or d.get("kind") != "section":
+                    continue
+                path = d.get("storage_path")
+                if not path:
+                    continue
+                fname = d.get("file_name") or "doc.pdf"
+                asset_paths.append((fname, path))
+                sid = d.get("section_id")
+                if sid:
+                    section_paths[sid] = (fname, path)
+
+        # ---- 2. Flat source_assets fallback ----
+        if not asset_paths:
+            src = configuration.get("source_assets") or []
+            if isinstance(src, list):
+                for a in src:
+                    if not isinstance(a, dict):
+                        continue
+                    path = a.get("storage_path")
+                    if not path:
+                        continue
+                    asset_paths.append((a.get("file_name") or "doc.pdf", path))
+
+    # ---- 3. Legacy: traverse order_items → documents → assets ----
+    if not asset_paths and target_item_ids:
         documents = (
             sb.table("documents")
             .select("id, order_item_id, file_name, file_path, backend_asset_id, preflight_data, sort_order")
@@ -101,75 +138,75 @@ def load_job_bundle(job_id: str) -> JobBundle:
             or []
         )
 
-    # Resolve assets → normalized PDF paths (preferred over raw storage_path).
-    asset_ids = [d["backend_asset_id"] for d in documents if d.get("backend_asset_id")]
-    asset_rows: dict[str, dict] = {}
-    if asset_ids:
-        rows = (
-            sb.table("assets")
-            .select("id, original_filename, normalized_storage_path, source_storage_path")
-            .in_("id", asset_ids)
-            .execute()
-            .data
-            or []
-        )
-        asset_rows = {r["id"]: r for r in rows}
-
-    asset_paths: list[tuple[str, str]] = []
-    for doc in documents:
-        aid = doc.get("backend_asset_id")
-        if aid and aid in asset_rows:
-            row = asset_rows[aid]
-            path = row.get("normalized_storage_path") or row.get("source_storage_path")
-            if path:
-                asset_paths.append((row.get("original_filename") or doc.get("file_name") or "doc.pdf", path))
-        else:
-            preflight = doc.get("preflight_data") if isinstance(doc.get("preflight_data"), dict) else {}
-            path = preflight.get("processed_file_path") or doc.get("file_path")
-            if path:
-                asset_paths.append((doc.get("file_name") or "doc.pdf", path))
-
-    # Document → resolved (filename, storage_path) lookup, used to build
-    # the section_id → path map below.
-    doc_path_by_id: dict[str, tuple[str, str]] = {}
-    for doc in documents:
-        aid = doc.get("backend_asset_id")
-        resolved: tuple[str, str] | None = None
-        if aid and aid in asset_rows:
-            row = asset_rows[aid]
-            path = row.get("normalized_storage_path") or row.get("source_storage_path")
-            if path:
-                resolved = (
-                    row.get("original_filename") or doc.get("file_name") or "doc.pdf",
-                    path,
-                )
-        if resolved is None:
-            preflight = doc.get("preflight_data") if isinstance(doc.get("preflight_data"), dict) else {}
-            path = preflight.get("processed_file_path") or doc.get("file_path")
-            if path:
-                resolved = (doc.get("file_name") or "doc.pdf", path)
-        if resolved:
-            doc_path_by_id[doc["id"]] = resolved
-
-    # document_sections for this job's order_items — needed so the worker
-    # can resolve configuration.merge_directives section_ids to source PDFs.
-    section_paths: dict[str, tuple[str, str]] = {}
-    if target_item_ids:
-        try:
-            section_rows = (
-                sb.table("document_sections")
-                .select("id, document_id, section_type, sort_order, order_item_id")
-                .in_("order_item_id", target_item_ids)
+        asset_ids = [d["backend_asset_id"] for d in documents if d.get("backend_asset_id")]
+        asset_rows: dict[str, dict] = {}
+        if asset_ids:
+            rows = (
+                sb.table("assets")
+                .select("id, original_filename, normalized_storage_path, source_storage_path")
+                .in_("id", asset_ids)
                 .execute()
                 .data
                 or []
             )
-            for srow in section_rows:
-                did = srow.get("document_id")
-                if did and did in doc_path_by_id:
-                    section_paths[srow["id"]] = doc_path_by_id[did]
+            asset_rows = {r["id"]: r for r in rows}
+
+        doc_path_by_id: dict[str, tuple[str, str]] = {}
+        for doc in documents:
+            aid = doc.get("backend_asset_id")
+            resolved: tuple[str, str] | None = None
+            if aid and aid in asset_rows:
+                row = asset_rows[aid]
+                path = row.get("normalized_storage_path") or row.get("source_storage_path")
+                if path:
+                    resolved = (
+                        row.get("original_filename") or doc.get("file_name") or "doc.pdf",
+                        path,
+                    )
+            if resolved is None:
+                preflight = doc.get("preflight_data") if isinstance(doc.get("preflight_data"), dict) else {}
+                path = preflight.get("processed_file_path") or doc.get("file_path")
+                if path:
+                    resolved = (doc.get("file_name") or "doc.pdf", path)
+            if resolved:
+                asset_paths.append(resolved)
+                doc_path_by_id[doc["id"]] = resolved
+
+        if target_item_ids:
+            try:
+                section_rows = (
+                    sb.table("document_sections")
+                    .select("id, document_id, section_type, sort_order, order_item_id")
+                    .in_("order_item_id", target_item_ids)
+                    .execute()
+                    .data
+                    or []
+                )
+                for srow in section_rows:
+                    did = srow.get("document_id")
+                    if did and did in doc_path_by_id:
+                        section_paths[srow["id"]] = doc_path_by_id[did]
+            except Exception:
+                pass
+
+    # ---- 4. Best-effort recovery via upload-path heuristic ----
+    if not asset_paths and source_order_item_id:
+        try:
+            rows = (
+                sb.table("assets")
+                .select("id, original_filename, normalized_storage_path, source_storage_path, created_at")
+                .like("source_storage_path", f"%/{source_order_item_id}/%")
+                .order("created_at")
+                .execute()
+                .data
+                or []
+            )
+            for row in rows:
+                path = row.get("normalized_storage_path") or row.get("source_storage_path")
+                if path:
+                    asset_paths.append((row.get("original_filename") or "doc.pdf", path))
         except Exception:
-            section_paths = {}
+            pass
 
     tenant = None
     if job.get("tenant_id"):
