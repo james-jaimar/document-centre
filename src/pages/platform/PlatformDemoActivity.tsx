@@ -139,7 +139,7 @@ export default function PlatformDemoActivity() {
                     .map((j) => `${j.product_name}${j.quantity ? ` ×${j.quantity}` : ""}`)
                     .join(", ");
                   const adminUrl = demoTenant?.id
-                    ? `${buildAdminPath("/admin/orders", demoTenant.id)}/${o.id}`
+                    ? buildAdminPath(`/admin/orders/${o.id}`, demoTenant.id)
                     : `/admin/orders/${o.id}`;
                   return (
                     <tr key={o.id} className="hover:bg-muted/20">
