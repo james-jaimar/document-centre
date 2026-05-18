@@ -98,7 +98,37 @@ def load_job_bundle(job_id: str) -> JobBundle:
     section_paths: dict[str, tuple[str, str]] = {}
     documents: list[dict[str, Any]] = []
 
-    # ---- 1. Snapshot-first: merge_directives carry concrete storage paths ----
+    # Pre-resolve asset_id → (filename, path) using service-role so we can
+    # honour snapshots that carry only asset_id (the client cannot read the
+    # `assets` table under RLS, so storage_path in the snapshot is often null).
+    asset_lookup: dict[str, tuple[str, str]] = {}
+    if isinstance(configuration, dict):
+        ids: set[str] = set()
+        for d in (configuration.get("merge_directives") or []):
+            if isinstance(d, dict) and d.get("asset_id"):
+                ids.add(d["asset_id"])
+        for a in (configuration.get("source_assets") or []):
+            if isinstance(a, dict) and a.get("asset_id"):
+                ids.add(a["asset_id"])
+        if ids:
+            try:
+                rows = (
+                    sb.table("assets")
+                    .select("id, original_filename, normalized_storage_path, source_storage_path")
+                    .in_("id", list(ids))
+                    .execute()
+                    .data
+                    or []
+                )
+                for r in rows:
+                    p = r.get("normalized_storage_path") or r.get("source_storage_path")
+                    if p:
+                        asset_lookup[r["id"]] = (r.get("original_filename") or "doc.pdf", p)
+            except Exception:
+                pass
+
+    # ---- 1. Snapshot-first: merge_directives carry concrete storage paths
+    #          (falling back to asset_id resolution from `assets`) ----
     if isinstance(configuration, dict):
         directives = configuration.get("merge_directives") or []
         if isinstance(directives, list):
@@ -106,9 +136,14 @@ def load_job_bundle(job_id: str) -> JobBundle:
                 if not isinstance(d, dict) or d.get("kind") != "section":
                     continue
                 path = d.get("storage_path")
+                fname = d.get("file_name") or "doc.pdf"
+                if not path:
+                    aid = d.get("asset_id")
+                    if aid and aid in asset_lookup:
+                        fname2, path = asset_lookup[aid]
+                        fname = d.get("file_name") or fname2
                 if not path:
                     continue
-                fname = d.get("file_name") or "doc.pdf"
                 asset_paths.append((fname, path))
                 sid = d.get("section_id")
                 if sid:
@@ -122,9 +157,15 @@ def load_job_bundle(job_id: str) -> JobBundle:
                     if not isinstance(a, dict):
                         continue
                     path = a.get("storage_path")
+                    fname = a.get("file_name") or "doc.pdf"
+                    if not path:
+                        aid = a.get("asset_id")
+                        if aid and aid in asset_lookup:
+                            fname2, path = asset_lookup[aid]
+                            fname = a.get("file_name") or fname2
                     if not path:
                         continue
-                    asset_paths.append((a.get("file_name") or "doc.pdf", path))
+                    asset_paths.append((fname, path))
 
     # ---- 3. Legacy: traverse order_items → documents → assets ----
     if not asset_paths and target_item_ids:
