@@ -298,6 +298,7 @@ const Auth = () => {
                 <Input
                   id="email"
                   type="email"
+                  autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
@@ -311,6 +312,7 @@ const Auth = () => {
                   <Input
                     id="password"
                     type="password"
+                    autoComplete={mode === "register" ? "new-password" : "current-password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
