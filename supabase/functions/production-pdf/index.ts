@@ -108,9 +108,12 @@ Deno.serve(async (req) => {
         .eq("id", job_id);
     }
 
+    const upstreamHeaders: Record<string, string> = { "Content-Type": "application/json" };
+    if (apiKey) upstreamHeaders["x-api-key"] = apiKey;
+
     const dispatchRes = await fetch(`${apiUrl}${ENDPOINTS[action]}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+      headers: upstreamHeaders,
       body: JSON.stringify({
         job_id,
         imposition_template_id: imposition_template_id ?? null,
