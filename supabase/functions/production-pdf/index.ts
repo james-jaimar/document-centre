@@ -94,9 +94,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    const apiUrl = Deno.env.get("VPS_PDF_API_URL");
+    // Use the same base URL as the pdf-api proxy (single source of truth).
+    // Falls back to the legacy VPS_PDF_API_URL secret if DOCUMENT_CENTRE_API_URL is unset.
+    const apiUrl = (Deno.env.get("DOCUMENT_CENTRE_API_URL") ?? Deno.env.get("VPS_PDF_API_URL") ?? "").replace(/\/+$/, "");
     const apiKey = Deno.env.get("VPS_PDF_API_KEY");
-    if (!apiUrl || !apiKey) return json({ error: "PDF API not configured" }, 500);
+    if (!apiUrl) return json({ error: "PDF API not configured (DOCUMENT_CENTRE_API_URL missing)" }, 500);
 
     // Persist the chosen template on the job so the worker can read it.
     if (action === "impose" && imposition_template_id) {
