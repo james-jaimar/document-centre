@@ -124,18 +124,18 @@ export function useProductionArtefacts(jobId: string | null) {
     }
   }, [jobId, qc, toast]);
 
-  /** Sign a storage path so the operator can download it. */
+  /** Sign a storage path (S3) so the operator can download it. */
   const signedUrl = useCallback(async (path: string | null): Promise<string | null> => {
     if (!path) return null;
-    const { data, error } = await supabase.storage
-      .from("documents")
-      .createSignedUrl(path, 60 * 10);
-    if (error) {
-      console.error("[production-artefacts] sign failed", error);
+    try {
+      const urls = await getDownloadUrls([path]);
+      return urls[path] ?? null;
+    } catch (e) {
+      console.error("[production-artefacts] sign failed", e);
       return null;
     }
-    return data?.signedUrl ?? null;
   }, []);
+
 
   return {
     artefacts: query.data,
