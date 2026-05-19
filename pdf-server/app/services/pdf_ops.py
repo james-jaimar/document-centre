@@ -1030,7 +1030,7 @@ class PdfOps:
                     "near_black_pixels": near_black,
                     "min_k_pct": min_k_pct,
                     "max_cmy_pct": max_cmy_pct,
-                    "pure_k_ok": (min_k_pct >= 95.0 and max_cmy_pct <= 5.0),
+                    "pure_k_ok": (min_k_pct >= 99.0 and max_cmy_pct <= 2.0),
                 }
             except Exception as exc:
                 return {"checked": False, "reason": f"pillow_raised: {exc}"}
