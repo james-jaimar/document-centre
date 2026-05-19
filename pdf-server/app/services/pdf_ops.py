@@ -589,10 +589,15 @@ class PdfOps:
         candidates: list[tuple[str, Path]] = []
         attempts: list[dict] = []
 
+        # Order matters: prefer strategies that re-encode raster images so a
+        # full-colour figure on (say) page 24 actually loses its colour. The
+        # mutool-first path is demoted because `mutool convert -O colorspace=gray`
+        # is not a reliable image converter for PDF output.
         for strategy_name, runner in (
-            ("gray_to_kchannel", self._grayscale_via_gray_then_k),
-            ("gs_cmyk_no_icc", self._grayscale_via_gs_cmyk_no_icc),
             ("gs_two_pass", self._grayscale_via_gs_two_pass),
+            ("gs_cmyk_no_icc", self._grayscale_via_gs_cmyk_no_icc),
+            ("gs_single_pass_then_k", self._grayscale_via_gs_then_k),
+            ("gray_to_kchannel", self._grayscale_via_gray_then_k),
             ("gs_single_pass", self._grayscale_via_gs_single_pass),
         ):
             candidate = out_pdf.with_suffix(f".candidate.{strategy_name}.pdf")
@@ -606,48 +611,70 @@ class PdfOps:
                 attempts.append({"strategy": strategy_name, "ok": False, "error": "no_output"})
                 continue
 
-            metrics = self.verify_pure_black_text(candidate)
-            attempts.append({"strategy": strategy_name, "metrics": metrics})
+            black_text = self.verify_pure_black_text(candidate)
+            colour_leak = self.verify_no_colour_leak(candidate)
+            attempts.append({
+                "strategy": strategy_name,
+                "black_text_check": black_text,
+                "colour_leak_check": colour_leak,
+            })
             candidates.append((strategy_name, candidate))
 
-            if metrics.get("pure_k_ok"):
-                logger.info("grayscale[%s]: pure-K verified (%s)", strategy_name, metrics)
+            text_ok = black_text.get("pure_k_ok") or black_text.get("near_black_pixels") == 0
+            leak_ok = colour_leak.get("no_leak") is True
+            if text_ok and leak_ok:
+                logger.info(
+                    "grayscale[%s]: both gates passed (text=%s leak=%s)",
+                    strategy_name, black_text, colour_leak,
+                )
                 candidate.replace(out_pdf)
                 self._cleanup_candidates(candidates, keep=out_pdf)
                 self.last_grayscale_report = {
                     "strategy": strategy_name,
-                    "metrics": metrics,
+                    "black_text_check": black_text,
+                    "colour_leak_check": colour_leak,
                     "attempts": attempts,
                 }
                 return out_pdf
 
             logger.warning(
-                "grayscale[%s]: failed verifier — min_k=%s max_cmy=%s",
-                strategy_name, metrics.get("min_k_pct"), metrics.get("max_cmy_pct"),
+                "grayscale[%s]: gate failed — text_ok=%s leak_ok=%s colour_pages=%s",
+                strategy_name, text_ok, leak_ok, colour_leak.get("colour_pages"),
             )
 
-        # No strategy passed verifier — keep best (highest min_k) candidate.
+        # No strategy passed both gates — pick the candidate with the fewest
+        # colour-leaking pages (primary) and best K (secondary).
         if candidates:
             def _score(name_path):
-                # Pull metrics from attempts for this name.
                 for a in attempts:
-                    if a.get("strategy") == name_path[0] and "metrics" in a:
-                        m = a["metrics"]
-                        return (float(m.get("min_k_pct") or 0), -float(m.get("max_cmy_pct") or 100))
-                return (0.0, -100.0)
+                    if a.get("strategy") == name_path[0] and "colour_leak_check" in a:
+                        leak = a["colour_leak_check"] or {}
+                        text = a["black_text_check"] or {}
+                        n_leak = len(leak.get("colour_pages") or [])
+                        min_k = float(text.get("min_k_pct") or 0)
+                        max_cmy = float(text.get("max_cmy_pct") or 100)
+                        # Lower n_leak is better → negate for descending sort.
+                        return (-n_leak, min_k, -max_cmy)
+                return (-9999, 0.0, -100.0)
             candidates.sort(key=_score, reverse=True)
             best_name, best_path = candidates[0]
             best_path.replace(out_pdf)
             self._cleanup_candidates(candidates, keep=out_pdf)
+            best_attempt = next(
+                (a for a in attempts if a.get("strategy") == best_name and "colour_leak_check" in a),
+                {},
+            )
             self.last_grayscale_report = {
-                "strategy": f"{best_name} (verifier_failed)",
-                "metrics": next(
-                    (a["metrics"] for a in attempts if a.get("strategy") == best_name and "metrics" in a),
-                    {"checked": False},
-                ),
+                "strategy": f"{best_name} (gate_failed)",
+                "black_text_check": best_attempt.get("black_text_check"),
+                "colour_leak_check": best_attempt.get("colour_leak_check"),
                 "attempts": attempts,
             }
-            logger.error("grayscale: no strategy passed verifier; kept %s", best_name)
+            logger.error(
+                "grayscale: no strategy passed both gates; kept %s (colour_pages=%s)",
+                best_name,
+                (best_attempt.get("colour_leak_check") or {}).get("colour_pages"),
+            )
             return out_pdf
 
         raise RuntimeError(f"grayscale: all strategies failed: {attempts}")
