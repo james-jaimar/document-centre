@@ -560,21 +560,112 @@ class PdfOps:
         }
 
     def grayscale(self, src: Path, out_pdf: Path) -> Path:
-        subprocess.run(
-            [
-                settings.ghostscript_bin,
-                "-dBATCH",
-                "-dNOPAUSE",
-                "-dAutoRotatePages=/None",
-                "-sDEVICE=pdfwrite",
-                "-sColorConversionStrategy=Gray",
-                "-dProcessColorModel=/DeviceGray",
-                "-o",
-                str(out_pdf),
-                str(src),
-            ],
-            check=True,
-        )
+        """
+        Industry-grade greyscale conversion for the pdfwrite device.
+
+        Key flags (all required for "pure K text"):
+          -dBlackText=true          → force text painted with black ink only
+                                       (RGB(0,0,0) and CMYK rich-black both
+                                       collapse to DeviceGray 0 / K 100%).
+          -dBlackVector=true         → same treatment for vector line art.
+          -dKPreserve=2              → keep CMYK K-only objects K-only;
+                                       prevents colorimetric "98%" drift
+                                       from rich-black sources.
+          -dBlackPtComp=true         → black-point compensation on remap.
+          -dRenderIntent=1           → RelativeColorimetric (correct for
+                                       text & vector; images are mostly
+                                       perceptual but greyscale collapses
+                                       all object types anyway).
+          -dPreserveOverprintSettings=true,
+          -dOverprint=/simulate      → respect overprint flags in source.
+          -dHaveTransparency=true    → keep transparency groups intact.
+          -dAutoFilterGrayImages=false,
+          -dGrayImageFilter=/FlateEncode,
+          -dDownsampleGrayImages=false → lossless gray image preservation.
+
+        We attempt the rich invocation first; if Ghostscript on this host
+        refuses (older builds occasionally reject the K-preserve combo),
+        we fall back to the minimal invocation that always worked.
+        """
+        from app.services.icc_profiles import resolve_profile
+
+        icc_dir = str(ICC_DIR)
+        src_dir = str(src.parent)
+        out_dir = str(out_pdf.parent)
+
+        common = [
+            settings.ghostscript_bin,
+            "-dSAFER",
+            f"--permit-file-read={icc_dir}",
+            f"--permit-file-read={src_dir}",
+            f"--permit-file-write={out_dir}",
+            "-dBATCH",
+            "-dNOPAUSE",
+            "-dAutoRotatePages=/None",
+            "-dNumRenderingThreads=4",
+            "-sDEVICE=pdfwrite",
+            "-dCompatibilityLevel=1.7",
+            "-sColorConversionStrategy=Gray",
+            "-dProcessColorModel=/DeviceGray",
+        ]
+
+        # Pull in source-profile hints so RGB(0,0,0) and CMYK rich-black
+        # both resolve to pure K. Missing profiles are non-fatal — we just
+        # drop those flags from the rich attempt.
+        profile_flags: list[str] = []
+        try:
+            rgb_path = resolve_profile("srgb")
+            profile_flags.append(f"-sDefaultRGBProfile={rgb_path}")
+        except (FileNotFoundError, ValueError):
+            pass
+        try:
+            cmyk_path = resolve_profile("fogra39")
+            profile_flags.append(f"-sDefaultCMYKProfile={cmyk_path}")
+        except (FileNotFoundError, ValueError):
+            pass
+        if profile_flags:
+            profile_flags.append("-dOverrideICC=true")
+
+        rich_cmd = [
+            *common,
+            *profile_flags,
+            "-dRenderIntent=1",                  # RelativeColorimetric
+            "-dBlackPtComp=true",
+            "-dKPreserve=2",                     # preserve K-only objects
+            "-dBlackText=true",                  # FORCE pure K for text
+            "-dBlackVector=true",                # FORCE pure K for line art
+            "-dPreserveOverprintSettings=true",
+            "-dOverprint=/simulate",
+            "-dHaveTransparency=true",
+            "-dAutoFilterGrayImages=false",
+            "-dGrayImageFilter=/FlateEncode",
+            "-dDownsampleGrayImages=false",
+            "-o", str(out_pdf), str(src),
+        ]
+
+        minimal_cmd = [
+            *common,
+            "-o", str(out_pdf), str(src),
+        ]
+
+        for attempt_name, cmd in (("rich_gray", rich_cmd), ("minimal_gray", minimal_cmd)):
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True)
+                if proc.returncode == 0 and out_pdf.exists() and out_pdf.stat().st_size > 0:
+                    if attempt_name != "rich_gray":
+                        logger.warning(
+                            "grayscale: rich attempt failed, used fallback %s", attempt_name
+                        )
+                    return out_pdf
+                logger.warning(
+                    "grayscale: attempt %s failed rc=%s stderr=%r",
+                    attempt_name, proc.returncode, (proc.stderr or "")[-400:],
+                )
+            except Exception as exc:
+                logger.warning("grayscale: attempt %s raised %s", attempt_name, exc)
+
+        # Last resort — surface the original failure.
+        subprocess.run(minimal_cmd, check=True)
         return out_pdf
 
 
@@ -1863,10 +1954,25 @@ class PdfOps:
                 f"-sDefaultCMYKProfile={dest_path}",
                 f"-dRenderIntent={intent_value}",
                 "-dBlackPtComp=true",
+                # Always preserve K so RGB(0,0,0) text and CMYK rich-black
+                # text both collapse to pure 0/0/0/100. Without these the
+                # converter happily emits 4-colour rich black for body copy.
+                "-dKPreserve=2",
+                "-dBlackText=true",
+                "-dBlackVector=true",
                 "-dPreserveOverprintSettings=true",
+                "-dOverprint=/simulate",
+                "-dHaveTransparency=true",
             ]
-            if preserve_black:
-                rich_cmd.append("-dKPreserve=2")
+            # Legacy switch kept for callers that explicitly opt out — but
+            # the default is now "always preserve" because no print shop
+            # wants rich-black body text.
+            if not preserve_black:
+                # Drop the K-preserve trio so the call site can request a
+                # colorimetric-only conversion if they really need it.
+                rich_cmd = [f for f in rich_cmd if f not in (
+                    "-dKPreserve=2", "-dBlackText=true", "-dBlackVector=true"
+                )]
             rich_cmd.extend(["-o", str(out_pdf), str(src)])
             attempts.append(("rich_icc", rich_cmd))
 
