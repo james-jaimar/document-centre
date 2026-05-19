@@ -77,6 +77,18 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
 
         target = bundle.target
         # Spec hash short-circuits repeat work.
+        # Per-section colour/duplex flags feed the cache hash so existing
+        # cached artefacts re-invalidate when the colour-mode fix is deployed
+        # (or when a customer edits a section's is_color/is_duplex).
+        snap_sections = (bundle.job.get("product_snapshot") or {}).get("sections") or []
+        section_flags = [
+            {
+                "section_type": s.get("section_type"),
+                "is_color": s.get("is_color"),
+                "is_duplex": s.get("is_duplex"),
+            }
+            for s in snap_sections if isinstance(s, dict)
+        ]
         spec_inputs = {
             "sources": [p for _, p in bundle.asset_paths],
             "target_w": target.width_mm,
@@ -88,6 +100,7 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
             # Include merge directives so simplex-cover blank insertion
             # invalidates the cached artefact when directives change.
             "merge_directives": (bundle.configuration or {}).get("merge_directives") if isinstance(bundle.configuration, dict) else None,
+            "section_flags": section_flags,
         }
         new_hash = pdf_ops.spec_hash(spec_inputs)
         existing_hash = bundle.job.get("print_ready_spec_hash")
