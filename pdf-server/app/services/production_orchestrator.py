@@ -23,9 +23,11 @@ class TargetSpec:
     width_mm: float | None = None
     height_mm: float | None = None
     orientation: str | None = None  # "portrait" | "landscape"
-    colour_mode: str = "colour"     # "colour" | "bw"
+    colour_mode: str = "colour"     # "colour" | "bw" | "mixed"
     print_to_edge: bool = False
     bleed_mm: float = 3.0
+    duplex_mode: str | None = None  # "simplex" | "duplex" | "mixed" | None
+
 
 
 @dataclass
