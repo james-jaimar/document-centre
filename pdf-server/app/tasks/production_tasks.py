@@ -235,11 +235,16 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                 )
 
             # ── Step 5: greyscale (B&W jobs) ────────────────────────────
+            colour_check: dict | None = None
             if needs_greyscale:
                 grey = ws.path("grey.pdf")
                 pdf_ops.grayscale(current, grey)
                 current = grey
                 steps.append("greyscale")
+                try:
+                    colour_check = pdf_ops.verify_pure_black_text(grey)
+                except Exception as exc:
+                    colour_check = {"checked": False, "reason": f"verify_raised: {exc}"}
 
             # ── Decide where the result lives ───────────────────────────
             if not steps and len(files) == 1:
