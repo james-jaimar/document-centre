@@ -385,19 +385,39 @@ def _extract_target_spec(job: dict[str, Any]) -> TargetSpec:
         elif spec.orientation == "portrait" and is_landscape_canvas:
             spec.width_mm, spec.height_mm = spec.height_mm, spec.width_mm
 
-    if any(k in slugs for k in ("bw", "black-and-white", "black_and_white", "greyscale", "grayscale", "mono")) \
-       or "black and white" in blob or "black & white" in blob:
-        spec.colour_mode = "bw"
+    # ── Colour mode resolution ──────────────────────────────────────────
+    # Authoritative source is product_snapshot.sections[].is_color, because
+    # buildJobSnapshot.ts strips "Print Colour" / "Print Sides" from
+    # selected_options (they're section-controlled). Fall back to slug/label
+    # sniffing only when no section data is present.
+    sections = snap.get("sections") or []
+    printable_sections = [
+        s for s in sections
+        if isinstance(s, dict)
+        and s.get("section_type") not in ("tab", "insert")
+        and s.get("is_color") is not None
+    ]
+    if printable_sections:
+        if all(s.get("is_color") is False for s in printable_sections):
+            spec.colour_mode = "bw"
+        else:
+            # Mixed or all-colour → keep the whole document colour-capable.
+            # Per-section greyscale before merge is a planned follow-up.
+            spec.colour_mode = "colour"
     else:
-        spec.colour_mode = "colour"
+        if any(k in slugs for k in ("bw", "black-and-white", "black_and_white", "greyscale", "grayscale", "mono")) \
+           or "black and white" in blob or "black & white" in blob:
+            spec.colour_mode = "bw"
+        else:
+            spec.colour_mode = "colour"
 
-    cfg_colour = ""
-    if isinstance(cfg, dict):
-        cfg_colour = str(cfg.get("colour") or cfg.get("color") or "").lower()
-    if cfg_colour in ("bw", "mono", "black", "black & white", "black and white", "greyscale", "grayscale"):
-        spec.colour_mode = "bw"
-    elif cfg_colour in ("colour", "color", "full colour", "full color"):
-        spec.colour_mode = "colour"
+        cfg_colour = ""
+        if isinstance(cfg, dict):
+            cfg_colour = str(cfg.get("colour") or cfg.get("color") or "").lower()
+        if cfg_colour in ("bw", "mono", "black", "black & white", "black and white", "greyscale", "grayscale"):
+            spec.colour_mode = "bw"
+        elif cfg_colour in ("colour", "color", "full colour", "full color"):
+            spec.colour_mode = "colour"
 
     if any(k in blob for k in ("print-to-edge", "print_to_edge", "edge-to-edge", "bleed")):
         spec.print_to_edge = True
