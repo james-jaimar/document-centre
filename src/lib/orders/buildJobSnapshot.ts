@@ -400,8 +400,13 @@ export type MergeDirective =
       page_count?: number | null;
       page_range_start?: number | null;
       page_range_end?: number | null;
+      // Per-section production flags so the worker can apply colour/duplex
+      // decisions per-file without joining back to the snapshot sections[].
+      is_color?: boolean | null;
+      is_duplex?: boolean | null;
     }
   | { kind: "blank_page"; reason: "simplex_cover_back" | "simplex_back_cover_front" };
+
 
 function buildMergeDirectives(
   sections: DocumentSectionRow[],
@@ -431,7 +436,10 @@ function buildMergeDirectives(
       page_count: doc?.page_count ?? null,
       page_range_start: s.page_range_start,
       page_range_end: s.page_range_end,
+      is_color: s.is_color ?? null,
+      is_duplex: s.is_duplex ?? null,
     });
+
 
     if (isSimplexCover && s.section_type === "front_cover") {
       directives.push({ kind: "blank_page", reason: "simplex_cover_back" });

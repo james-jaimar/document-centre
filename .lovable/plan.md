@@ -1,45 +1,61 @@
-## Problem
+## Goal
 
-Page 24 is still full colour because the current B&W pipeline is only proving **page 1 near-black text**, not the whole document. The likely leak is the large page-24 figure/image: it bypasses the current content-stream rewrite, and `mutool convert -O colorspace=gray` is not reliable proof that embedded images/XObjects were converted for PDF output.
+Colour leak is fixed. Now do an end-to-end audit of every other spec the customer can set so each one flows correctly from the cart → `product_snapshot`/`configuration` → `TargetSpec` → print-ready PDF (and job ticket). Fix any params that are read but not applied, or applied but not cached.
 
-Do I know what the issue is? Yes: the verifier is too narrow, and the conversion strategy can accept a candidate even when later pages still contain colour raster/vector content.
+## Parameters in scope
+
+| Param | Source of truth | Currently wired? |
+|---|---|---|
+| Paper size (width/height_mm) | `snap.width_mm/height_mm` + size slugs | Yes — but slug table is small (A3–A6, Letter, Legal, Tabloid, DL, biz card, square A4/A5). SRA, custom, photo sizes missing. |
+| Orientation | slug/label sniffing + canvas-derived | Yes |
+| Colour mode (document-wide) | `sections[].is_color` then slug fallback | Yes |
+| Per-section colour (e.g. B&W body + colour cover) | `sections[].is_color` | **Not applied** — flagged as "planned follow-up" |
+| Sides / duplex | `sections[].is_duplex` | **Read into cache hash only, never acted on** (no simplex→duplex page expansion, no duplex flag on `TargetSpec`) |
+| Print-to-edge / bleed | slug/label + `cfg.print_to_edge` + `target.bleed_mm` | Yes (auto-expand if missing) |
+| Paper type/weight | `snap.paper_weight_gsm`, `cfg.paper` | Job ticket only — no effect on PDF (correct, paper is a press attribute) |
+| Cover / finishing / lamination | `cfg.cover`, `cfg.finishing` | Job ticket only (correct, post-press) |
+| Binding | `snap.binding` | Drives imposition strategy only |
 
 ## Plan
 
-1. **Add a whole-document colour leak verifier**
-   - In `pdf-server/app/services/pdf_ops.py`, add a verifier that samples every page, not only page 1.
-   - It will rasterise pages to CMYK at a modest DPI and detect any meaningful C/M/Y content, including images, charts, shadings and XObjects.
-   - Report `pages_checked`, `colour_pages`, `worst_page`, `max_cmy_pct`, and a page list such as `[24]`.
+1. **Audit harness (one-off script, no behaviour change)**
+   - Add `pdf-server/scripts/audit-print-spec.py <job_id>` that loads a bundle, prints the resolved `TargetSpec`, the section flags, what `assemble_print_ready_for_job` would do (`needs_resize`, `needs_bleed`, `needs_greyscale`), and the resulting `assembly_report.steps` from the last run.
+   - Lets us spot mismatches per job without re-running production.
 
-2. **Split the B&W checks into two gates**
-   - Keep the pure black text gate: black text must still land as 100% K.
-   - Add the new page-colour gate: B&W jobs must have no colour-bearing pages.
-   - A strategy only passes if both are true.
+2. **Expand paper-size slug table** in `production_orchestrator.py::_PAPER_SIZES_MM`
+   - Add SRA3/SRA4, A2, custom photo sizes the catalogue actually offers (4R, 5R, 6R, 8R, etc.), and the "square_*" / portrait/landscape variants used by the storefront.
+   - Add a fallback: if no slug matches, but `snap.selected_options` carries a `{width_mm,height_mm}` option payload, honour it.
 
-3. **Replace the primary B&W strategy with full-page K-only conversion**
-   - Use Ghostscript to force all content, including raster images, into a monochrome/K-only PDF path.
-   - Keep the pikepdf black-text rewrite afterwards so black vector text remains Acrobat-visible `0 0 0 1 K/k`.
-   - Keep the existing mutool/GS methods as fallbacks, but do not accept them unless the whole-document colour verifier passes.
+3. **Wire per-section colour mode** (replaces the "planned follow-up" note)
+   - In `assemble_print_ready_for_job`, when `printable_sections` is mixed colour/B&W:
+     - Greyscale each B&W section's source PDF before merge, leave colour sections untouched.
+     - Use the existing `pdf_ops.grayscale()` ladder per file.
+   - When `merge_directives` are present, walk them by `section_id` and apply per-section greyscale based on `sections[section_id].is_color`.
+   - Surface per-section outcomes in `assembly_report.colour_check.sections[]`.
 
-4. **Improve `assembly_report.colour_check`**
-   - Include both `black_text_check` and `colour_leak_check`.
-   - Include per-strategy attempts so failures show exactly which page leaked colour.
-   - This will make page 24-style failures visible in the admin report instead of silently passing.
+4. **Wire duplex / sides into the print-ready pipeline**
+   - Add `duplex_mode: "simplex" | "duplex" | "mixed"` to `TargetSpec`, resolved from `sections[].is_duplex` the same way colour is.
+   - If a section is `simplex` but its source PDF has odd-then-even content, insert blank back pages so the press doesn't accidentally print on the back of the previous sheet (mirrors the existing simplex-cover blank insertion in `merge_directives`).
+   - Add `duplex_mode` to `assembly_report.target` and to the spec-hash inputs (separately from the existing section_flags so duplex changes invalidate cache cleanly).
 
-5. **Invalidate cached print-ready PDFs**
-   - In `pdf-server/app/tasks/production_tasks.py`, bump `colour_pipeline_version` from `4` to `5` so INV-00057-3 and similar jobs regenerate.
+5. **Tighten resize/orientation guard**
+   - `needs_resize` currently uses a 2 mm tolerance — keep it, but also re-evaluate orientation: if `target.orientation` differs from actual page orientation, force `resize_pages(..., dominant_orientation=target.orientation)` even when dimensions match transposed.
 
-## Verification after deploy
+6. **Job ticket completeness**
+   - `_render_ticket_pdf` reads `snap.size`, `snap.paper`, `snap.colour`, etc. — confirm these survive `buildJobSnapshot.ts`. If any are stripped (we know "Print Colour" / "Print Sides" are), resolve them from `sections[]` instead so the operator ticket shows the same truth the worker used.
+   - Add a "Colour mode (resolved)" and "Duplex (resolved)" row sourced from `TargetSpec`, not raw snapshot, so the ticket reflects what was actually produced.
 
-1. Pull the changes and restart the API/workers.
-2. Force re-assemble INV-00057-3.
-3. Confirm `assembly_report.colour_check.colour_leak_check.colour_pages` is empty.
-4. Open page 24 in Acrobat Output Preview and confirm the figure is B&W/K-only, while black text remains Process Black 100%.
+7. **Cache invalidation**
+   - Bump `colour_pipeline_version` (or rename to `pipeline_version`) to `6` so per-section colour + duplex changes regenerate existing artefacts.
 
-<presentation-actions>
-  <presentation-open-history>View History</presentation-open-history>
-</presentation-actions>
+## Verification
 
-<presentation-actions>
-<presentation-link url="https://docs.lovable.dev/tips-tricks/troubleshooting">Troubleshooting docs</presentation-link>
-</presentation-actions>
+1. Run the audit script against a handful of jobs that exercise: pure colour, pure B&W, mixed colour cover + B&W body, simplex flyer, duplex booklet, non-A-series sizes.
+2. Re-assemble each in production; confirm `assembly_report.target` matches the customer spec, `colour_check.sections` shows per-section outcomes, and the job ticket prints the resolved values.
+3. Spot-check the actual PDFs in Acrobat (page sizes, simplex blanks, mixed colour pages).
+
+## Technical notes
+
+- All work stays in `pdf-server/app/services/production_orchestrator.py`, `pdf-server/app/services/pdf_ops.py`, `pdf-server/app/tasks/production_tasks.py`, plus the new audit script. No DB schema changes; no edge-function changes.
+- `TargetSpec` gains `duplex_mode` (optional, defaults to `None` = unknown / no-op).
+- Cache invalidation is the only behaviour change for unaffected jobs — they'll regenerate once, then resume cache hits.

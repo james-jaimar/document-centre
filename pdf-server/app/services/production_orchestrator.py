@@ -23,9 +23,11 @@ class TargetSpec:
     width_mm: float | None = None
     height_mm: float | None = None
     orientation: str | None = None  # "portrait" | "landscape"
-    colour_mode: str = "colour"     # "colour" | "bw"
+    colour_mode: str = "colour"     # "colour" | "bw" | "mixed"
     print_to_edge: bool = False
     bleed_mm: float = 3.0
+    duplex_mode: str | None = None  # "simplex" | "duplex" | "mixed" | None
+
 
 
 @dataclass
@@ -325,20 +327,62 @@ def write_job_field(job_id: str, column: str, value) -> None:
 # slugs/labels heuristically; the worker treats every value as optional.
 
 _PAPER_SIZES_MM: dict[str, tuple[float, float]] = {
+    # ISO A series
+    "a2": (420.0, 594.0),
     "a3": (297.0, 420.0),
     "a4": (210.0, 297.0),
     "a5": (148.0, 210.0),
     "a6": (105.0, 148.0),
+    "a7": (74.0, 105.0),
+    # ISO B series
+    "b4": (250.0, 353.0),
     "b5": (176.0, 250.0),
+    "b6": (125.0, 176.0),
+    # SRA (untrimmed press sheets occasionally chosen as finished size)
+    "sra3": (320.0, 450.0),
+    "sra4": (225.0, 320.0),
+    # US sizes
     "letter": (215.9, 279.4),
     "legal": (215.9, 355.6),
     "tabloid": (279.4, 431.8),
+    "executive": (184.0, 267.0),
+    # Envelopes / cards
     "dl": (99.0, 210.0),
+    "c5": (162.0, 229.0),
+    "c6": (114.0, 162.0),
     "business_card": (90.0, 55.0),
     "business-card": (90.0, 55.0),
+    "compliment_slip": (210.0, 99.0),
+    # Squares
     "square_a4": (210.0, 210.0),
     "square_a5": (148.0, 148.0),
+    "square_a6": (105.0, 105.0),
+    # Photo print sizes (Imperial → metric, finished trimmed sizes)
+    "4r": (102.0, 152.0),       # 4×6"
+    "5r": (127.0, 178.0),       # 5×7"
+    "6r": (152.0, 203.0),       # 6×8"
+    "8r": (203.0, 254.0),       # 8×10"
+    "10r": (254.0, 305.0),      # 10×12"
+    "a4_photo": (210.0, 297.0),
+    # Posters (common SA market sizes)
+    "a1": (594.0, 841.0),
+    "a0": (841.0, 1189.0),
 }
+
+
+def _size_from_metadata(opt: dict) -> tuple[float, float] | None:
+    """Pull explicit width/height (mm) from a selected_option metadata payload."""
+    meta = opt.get("metadata") if isinstance(opt, dict) else None
+    if not isinstance(meta, dict):
+        return None
+    w = meta.get("width_mm") or meta.get("widthMm")
+    h = meta.get("height_mm") or meta.get("heightMm")
+    try:
+        if w and h:
+            return float(w), float(h)
+    except (TypeError, ValueError):
+        pass
+    return None
 
 
 def _extract_target_spec(job: dict[str, Any]) -> TargetSpec:
@@ -355,7 +399,8 @@ def _extract_target_spec(job: dict[str, Any]) -> TargetSpec:
 
     slugs: list[str] = []
     labels: list[str] = []
-    for opt in (snap.get("selected_options") or []):
+    selected = snap.get("selected_options") or []
+    for opt in selected:
         s = (opt.get("slug") or "").lower()
         l = (opt.get("label") or "").lower()
         if s:
@@ -369,6 +414,15 @@ def _extract_target_spec(job: dict[str, Any]) -> TargetSpec:
         for key, (w, h) in _PAPER_SIZES_MM.items():
             if key in slugs or key.replace("_", "-") in slugs:
                 spec.width_mm, spec.height_mm = w, h
+                break
+
+    # Final size fallback: any selected_option whose metadata declares dimensions
+    # (e.g. custom photo sizes, admin-configured paper presets).
+    if spec.width_mm is None:
+        for opt in selected:
+            sz = _size_from_metadata(opt)
+            if sz:
+                spec.width_mm, spec.height_mm = sz
                 break
 
     if "landscape" in blob:
@@ -400,10 +454,11 @@ def _extract_target_spec(job: dict[str, Any]) -> TargetSpec:
     if printable_sections:
         if all(s.get("is_color") is False for s in printable_sections):
             spec.colour_mode = "bw"
-        else:
-            # Mixed or all-colour → keep the whole document colour-capable.
-            # Per-section greyscale before merge is a planned follow-up.
+        elif all(s.get("is_color") is True for s in printable_sections):
             spec.colour_mode = "colour"
+        else:
+            # Mixed colour + B&W sections — worker greyscales per-file before merge.
+            spec.colour_mode = "mixed"
     else:
         if any(k in slugs for k in ("bw", "black-and-white", "black_and_white", "greyscale", "grayscale", "mono")) \
            or "black and white" in blob or "black & white" in blob:
@@ -419,10 +474,26 @@ def _extract_target_spec(job: dict[str, Any]) -> TargetSpec:
         elif cfg_colour in ("colour", "color", "full colour", "full color"):
             spec.colour_mode = "colour"
 
+    # ── Duplex resolution (mirrors colour) ──────────────────────────────
+    duplex_sections = [
+        s for s in sections
+        if isinstance(s, dict)
+        and s.get("section_type") not in ("tab", "insert")
+        and s.get("is_duplex") is not None
+    ]
+    if duplex_sections:
+        if all(s.get("is_duplex") is True for s in duplex_sections):
+            spec.duplex_mode = "duplex"
+        elif all(s.get("is_duplex") is False for s in duplex_sections):
+            spec.duplex_mode = "simplex"
+        else:
+            spec.duplex_mode = "mixed"
+
     if any(k in blob for k in ("print-to-edge", "print_to_edge", "edge-to-edge", "bleed")):
         spec.print_to_edge = True
     if isinstance(cfg, dict) and cfg.get("print_to_edge") is True:
         spec.print_to_edge = True
 
     return spec
+
 
