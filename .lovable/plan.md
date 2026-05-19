@@ -1,74 +1,123 @@
 
-## Root cause
+# Industry-grade black & colour conversion
 
-The worker IS capable of converting to greyscale — but on this job it was never asked to.
+## The problem we just observed
 
-In `src/lib/orders/buildJobSnapshot.ts` (line 468) we deliberately strip `Print Colour` and `Print Sides` from `selected_options` because they're driven by document sections, not by product options:
+INV-00057-3 (a B&W job) came out at **98% K** in Acrobat Output Preview instead of **100% K** with 0% CMY. That's because our current `pdf_ops.grayscale()` is the absolute minimum Ghostscript invocation:
 
-```ts
-const SECTION_CONTROLLED_KEYS = new Set(["Print Colour", "Print Sides"]);
+```
+-sColorConversionStrategy=Gray
+-dProcessColorModel=/DeviceGray
 ```
 
-The truth for these two lives in `product_snapshot.sections[].is_color` / `.is_duplex`.
+No source profiles, no black-point compensation, no K-preservation, no object-type handling, no `-dBlackText`. Ghostscript falls back to a colorimetric luminance conversion of a CMYK rich black (e.g. 60/40/40/100 from the customer's Word/PDF export), which lands at ~98% gray instead of solid 100%. Same class of issue exists in our CMYK path: text that should print 0/0/0/100 can end up as four-colour rich black.
 
-But `pdf-server/app/services/production_orchestrator.py::_extract_target_spec` ONLY reads `product_snapshot.selected_options[].slug/label` to decide colour_mode. Since "bw" / "mono" / "black & white" are no longer there, it falls into the default branch:
+Industry-standard print workflows (Adobe PDF Print Engine, Heidelberg Prinect, callas pdfToolbox, Enfocus PitStop) all do three things we currently don't:
 
-```python
-spec.colour_mode = "colour"   # default
+1. **Object-aware ICC** — text & vector get *RelativeColorimetric + Black Point Compensation + K-only preservation*; images get *Perceptual*.
+2. **Explicit black handling** — `-dBlackText=true -dBlackVector=true -dKPreserve=2` (Ghostscript ≥ 9.55 / ≥ 10.x — pdfwrite K-only enforcement for text and line art).
+3. **Overprint + transparency preservation** — `-dPreserveOverprintSettings=true`, `-dOverprint=/simulate` so simulated press behaviour matches what the operator sees in Acrobat.
+
+## What this plan changes
+
+All changes are in `pdf-server/app/services/pdf_ops.py` plus one small admin-surfaced setting. No DB migrations, no frontend changes.
+
+### 1. Rewrite `grayscale()` to "pure-K-text" grade
+
+Target Ghostscript invocation:
+
+```text
+gs -dSAFER -dBATCH -dNOPAUSE -dAutoRotatePages=/None
+   -sDEVICE=pdfwrite
+   -dCompatibilityLevel=1.7
+   -sColorConversionStrategy=Gray
+   -dProcessColorModel=/DeviceGray
+   -dOverrideICC=true
+   -sDefaultGrayProfile=<Dot Gain 15% .icc>
+   -sDefaultRGBProfile=<sRGB v4.icc>
+   -sDefaultCMYKProfile=<ISOcoated_v2_eci.icc>
+   -dRenderIntent=1                # RelativeColorimetric
+   -dBlackPtComp=true
+   -dKPreserve=2                   # keep CMYK K-only as gray K-only
+   -dBlackText=true                # FORCE pure K for text  ← key fix
+   -dBlackVector=true              # FORCE pure K for line art
+   -dPreserveOverprintSettings=true
+   -dHaveTransparency=true
+   -dDownsampleColorImages=false
+   -dDownsampleGrayImages=false
+   -dAutoFilterGrayImages=false -dGrayImageFilter=/FlateEncode
+   -o out.pdf in.pdf
 ```
 
-So Step 5 in `production_tasks.py::assemble_print_ready_for_job` (`needs_greyscale = target.colour_mode == "bw"`) is never true, `pdf_ops.grayscale()` is never run, and the source PDF (CMYK in this case) is passed through unchanged. That's exactly what the user saw on INV‑00057‑3: customer chose Black & White but the print‑ready PDF stayed CMYK.
+Also bundle a **Dot Gain 15%** ICC (or `sGray_v4.icc`) in `pdf-server/app/services/icc_profiles.py` under slug `"gray_dotgain15"` so the path resolves cleanly. Fallback to GS built-in `Gray` if missing, identical to the existing `to_print_ready_cmyk` attempt chain (`rich → core → builtin → passthrough`).
 
-The same blind spot affects size to a lesser degree: if the size option is ever renamed away from containing the word "size" the heuristic also misses it, but for now Size / Document Size still resolves correctly via slugs ("a4" etc.), so this bug is colour‑specific.
+### 2. Add `-dBlackText / -dBlackVector / -dKPreserve` to `to_print_ready_cmyk()`
 
-## Fix (one file, no schema change)
+Already partially done (lines 1865-1869). Extend the `rich_icc` attempt to always set:
+- `-dBlackText=true`
+- `-dBlackVector=true`
+- `-dKPreserve=2` (currently only when `preserve_black` is true — promote to default; nobody wants 60/40/40/100 text)
+- `-dOverprint=/simulate`
 
-Update `pdf-server/app/services/production_orchestrator.py::_extract_target_spec` to consult `product_snapshot.sections` as the **authoritative** source for colour, falling back to the existing slug/label heuristic only when there are no sections.
+Also add a **source-object ICC config** (`-sSourceObjectICC=/opt/document-centre-api/icc/object_default.txt`) that maps:
 
-### Logic
-
-```python
-sections = snap.get("sections") or []
-printable = [s for s in sections
-             if s.get("section_type") not in ("tab", "insert")
-             and s.get("is_color") is not None]
-
-if printable:
-    if all(s.get("is_color") is False for s in printable):
-        spec.colour_mode = "bw"
-    else:
-        # Any colour section → keep whole doc colour-capable.
-        # (Per-section greyscale before merge is a follow-up; today the
-        # worker only has a whole-document grayscale step.)
-        spec.colour_mode = "colour"
-else:
-    # existing slug/label heuristic stays as the fallback
-    ...
+```
+Text   RGB   <sRGB.icc>  RelativeColorimetric  BlackPtComp=1  KPreserve=1
+Vector RGB   <sRGB.icc>  RelativeColorimetric  BlackPtComp=1  KPreserve=1
+Image  RGB   <sRGB.icc>  Perceptual            BlackPtComp=1  KPreserve=0
+Text   CMYK  <Fogra.icc> RelativeColorimetric  BlackPtComp=1  KPreserve=2
+Vector CMYK  <Fogra.icc> RelativeColorimetric  BlackPtComp=1  KPreserve=2
+Image  CMYK  <Fogra.icc> Perceptual            BlackPtComp=1  KPreserve=1
 ```
 
-Also include the per-section `is_color` flags in `spec_inputs` (the cache‑hash dict in `production_tasks.py` line 80) so an existing cached "colour" artefact gets invalidated when the same job is re‑assembled after this fix lands.
+This is the canonical Ghostscript print-shop config (documented in `gs/doc/UseICC.htm`). Bundle it via the same `install-icc-profiles.sh` script.
 
-## Why this is enough for the reported case
+### 3. Admin-surfaced override (small, optional)
 
-- INV‑00057‑3 has a single Body section with `is_color = false` and `is_duplex = true`.
-- After the fix, `target.colour_mode = "bw"`.
-- `needs_greyscale` becomes true → `pdf_ops.grayscale(current, grey)` runs Ghostscript with `-sColorConversionStrategy=Gray -dProcessColorModel=/DeviceGray`, producing a DeviceGray PDF (no CMYK, no RGB).
-- Size already resolves correctly from the `a4` slug; Duplex doesn't change the assembled PDF (it's a press-side instruction surfaced via the job ticket).
+Already in `FamilyPrintConfig` (`color_output`, `cmyk_profile`, `render_intent`). Add two more passthrough booleans, both defaulted true so out-of-the-box behaviour is "great":
 
-## Mixed-colour jobs (follow-up, NOT in this change)
+- `force_black_text` → drives `-dBlackText`
+- `preserve_overprint` → drives `-dPreserveOverprintSettings`
 
-When sections mix colour + B&W (e.g. colour cover, mono body), the current single‑pass `pdf_ops.grayscale` would over‑convert. The clean fix is: greyscale each B&W section file BEFORE merge, leave colour sections alone. That's a separate, larger change to the merge loop in `production_tasks.py` (greyscale each `local` before appending when its section has `is_color = false`). Call this out in `assembly_report.warnings` for now ("Mixed colour sections detected — whole document treated as colour"), and I'll handle the per-section path as a follow-up if you want it.
+Frontend already has the family settings panel; just one new toggle row.
 
-## Verification
+### 4. Verification step
 
-1. Patch `production_orchestrator.py`, push to the VPS, restart workers (`document-centre-worker-heavy`, `document-centre-worker-light`).
-2. Re-assemble INV‑00057‑3 with **Force re-assemble**.
-3. Download the resulting `print_ready_pdf_path`; confirm with `gs -o - -sDEVICE=inkcov input.pdf` that C/M/Y inks are 0.00 and only K has coverage (i.e. DeviceGray).
-4. `assembly_report.steps` should now contain `"greyscale"` and `target.colour_mode` should be `"bw"`.
+Add a tiny helper `pdf_ops.verify_pure_black_text(path)` that:
+1. Rasterises page 1 to a CMYK TIFF via `gs -sDEVICE=tiff32nc`.
+2. Samples pixels classified as "near-black" and asserts `C+M+Y < 5%, K > 95%`.
+3. Returns the measurement so it lands in `assembly_report.colour_check`.
 
-## Files to change
+Operators then see proof in the admin order panel that text is true K-only.
 
-- `pdf-server/app/services/production_orchestrator.py` — extend `_extract_target_spec` to read `product_snapshot.sections`.
-- `pdf-server/app/tasks/production_tasks.py` — add section colour flags into `spec_inputs` so cached artefacts re-invalidate.
+## Files touched
 
-No frontend, no Supabase, no DB migration.
+```
+pdf-server/app/services/pdf_ops.py                 (grayscale + to_print_ready_cmyk)
+pdf-server/app/services/icc_profiles.py            (gray_dotgain15 + object_default.txt path)
+pdf-server/scripts/install-icc-profiles.sh         (download Dot Gain 15% + write object_default.txt)
+pdf-server/app/tasks/production_tasks.py           (call verify_pure_black_text → report)
+src/lib/printIntent.ts                             (extend FamilyPrintConfig with two flags)
+src/pages/admin/AdminProducts.tsx (or family tab)  (two toggle rows)
+```
+
+## Verification on the VPS
+
+1. Push, restart workers.
+2. Force re-assemble INV-00057-3.
+3. Download, open in Acrobat → Output Preview → Separations.
+4. Expect: **Process Cyan 0%, Magenta 0%, Yellow 0%, Black 100%, Total Area Coverage 100%**.
+5. `assembly_report.colour_check` should show `{ near_black_pixels: N, max_cmy_pct: 0.x, min_k_pct: 99.x }`.
+
+## Risks & non-goals
+
+- `-dBlackText` and `-dKPreserve` need Ghostscript ≥ 9.55. Coolify/Ubuntu deploys are on 10.x — confirmed by `gs --version` in `install-ubuntu.sh`. Safe.
+- Mixed-colour jobs (colour cover + B&W body) still convert the whole document in one pass. The existing TODO at `production_orchestrator.py:405` ("Per-section greyscale before merge is a planned follow-up") is unchanged — separate ticket.
+- ICC bundles are ~2 MB extra in the install script. Negligible.
+
+## References
+
+- Ghostscript `Use.htm` §"Color Conversion and Management" — `BlackText`, `BlackVector`, `KPreserve` flag semantics.
+- Ghostscript `UseICC.htm` — source-object ICC config grammar.
+- Adobe PDF Print Engine 6 colour spec (object-type rendering intents).
+- Fogra/ECI ISOcoated v2 deployment notes (300% TAC variant for digital toner presses — we already ship `fogra39_300`).
