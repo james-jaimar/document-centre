@@ -561,36 +561,126 @@ class PdfOps:
 
     def grayscale(self, src: Path, out_pdf: Path) -> Path:
         """
-        Two-pass "pure-K text" greyscale conversion.
+        Strategy ladder for pure-K text greyscale conversion.
 
-        Why two passes? Going straight to ``-sColorConversionStrategy=Gray``
-        routes RGB(0,0,0) text through Ghostscript's DefaultGray profile,
-        which has a tone curve. The result lands at DeviceGray ≈ 0xE6
-        (≈ 98 % K in Acrobat's separation preview) instead of 0x00 (100 %).
-        ``-dBlackText`` / ``-dKPreserve`` flags are no-ops when the target
-        is DeviceGray — they only fire on the CMYK conversion path.
+        Order:
+          1. mutool convert -O colorspace=gray   (MuPDF colour engine,
+             no ICC tone-curve round-trip — RGB(0,0,0) → DeviceGray 0).
+          2. Ghostscript two-pass CMYK→Gray with -dBlackText/-dKPreserve=2.
+          3. Ghostscript single-pass Gray (legacy last resort).
 
-        Industry-standard workflows (PDF Print Engine, callas, PitStop)
-        therefore handle B&W like this:
-
-          Stage A: convert RGB → CMYK with -dBlackText=true / -dKPreserve=2
-                   so all black text/vectors become DeviceCMYK 0,0,0,1.
-          Stage B: convert that CMYK file → DeviceGray. Because every
-                   text/vector glyph is already pure K, Ghostscript's
-                   CMYK→Gray formula (gray = 1 − k for c=m=y=0) maps
-                   them exactly to gray 0x00. No tone-curve drift.
-
-        End result: a DeviceGray PDF where Acrobat Output Preview shows
-        Process Black 100 % / CMY 0 % on text. Images (true greyscale
-        photos) come along for the ride at full fidelity.
+        Each candidate is verified with ``verify_pure_black_text``; if
+        ``pure_k_ok`` (min K ≥ 95%, max C+M+Y ≤ 5%) we accept and stop.
+        Otherwise we escalate. The winning strategy + metrics are stashed
+        on the instance as ``self.last_grayscale_report`` so the caller
+        (production task) can attach them to ``assembly_report.colour_check``.
         """
+        candidates: list[tuple[str, Path]] = []
+        attempts: list[dict] = []
+
+        for strategy_name, runner in (
+            ("mutool", self._grayscale_via_mutool),
+            ("gs_two_pass", self._grayscale_via_gs_two_pass),
+            ("gs_single_pass", self._grayscale_via_gs_single_pass),
+        ):
+            candidate = out_pdf.with_suffix(f".candidate.{strategy_name}.pdf")
+            try:
+                ok = runner(src, candidate)
+            except Exception as exc:
+                logger.warning("grayscale[%s] raised: %s", strategy_name, exc)
+                attempts.append({"strategy": strategy_name, "ok": False, "error": str(exc)})
+                continue
+            if not ok or not candidate.exists() or candidate.stat().st_size == 0:
+                attempts.append({"strategy": strategy_name, "ok": False, "error": "no_output"})
+                continue
+
+            metrics = self.verify_pure_black_text(candidate)
+            attempts.append({"strategy": strategy_name, "metrics": metrics})
+            candidates.append((strategy_name, candidate))
+
+            if metrics.get("pure_k_ok"):
+                logger.info("grayscale[%s]: pure-K verified (%s)", strategy_name, metrics)
+                candidate.replace(out_pdf)
+                self._cleanup_candidates(candidates, keep=out_pdf)
+                self.last_grayscale_report = {
+                    "strategy": strategy_name,
+                    "metrics": metrics,
+                    "attempts": attempts,
+                }
+                return out_pdf
+
+            logger.warning(
+                "grayscale[%s]: failed verifier — min_k=%s max_cmy=%s",
+                strategy_name, metrics.get("min_k_pct"), metrics.get("max_cmy_pct"),
+            )
+
+        # No strategy passed verifier — keep best (last) candidate so the
+        # operator at least gets a file, and surface the failure in report.
+        if candidates:
+            best_name, best_path = candidates[-1]
+            best_path.replace(out_pdf)
+            self._cleanup_candidates(candidates, keep=out_pdf)
+            self.last_grayscale_report = {
+                "strategy": f"{best_name} (verifier_failed)",
+                "metrics": next(
+                    (a["metrics"] for a in reversed(attempts) if "metrics" in a),
+                    {"checked": False},
+                ),
+                "attempts": attempts,
+            }
+            logger.error("grayscale: no strategy passed verifier; kept %s", best_name)
+            return out_pdf
+
+        raise RuntimeError(f"grayscale: all strategies failed: {attempts}")
+
+    def _cleanup_candidates(self, candidates: list[tuple[str, Path]], keep: Path) -> None:
+        for _, p in candidates:
+            try:
+                if p.exists() and p.resolve() != keep.resolve():
+                    p.unlink()
+            except Exception:
+                pass
+
+    def _grayscale_via_mutool(self, src: Path, out_pdf: Path) -> bool:
+        """Primary: MuPDF's colour engine — literal DeviceGray, no tone curve."""
+        import shutil as _shutil
+        mutool = _shutil.which(settings.mutool_bin)
+        if not mutool:
+            logger.info("grayscale[mutool]: binary not found, skipping")
+            return False
+        cmd = [
+            mutool, "convert",
+            "-F", "pdf",
+            "-O", "colorspace=gray,compression=flate,garbage=compact",
+            "-o", str(out_pdf), str(src),
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            logger.warning("grayscale[mutool] rc=%s stderr=%r", proc.returncode, (proc.stderr or "")[-300:])
+            return False
+        # Normalise / garbage-collect for a tidy output.
+        try:
+            cleaned = out_pdf.with_suffix(".cleaned.pdf")
+            clean_proc = subprocess.run(
+                [mutool, "clean", "-ggg", str(out_pdf), str(cleaned)],
+                capture_output=True, text=True,
+            )
+            if clean_proc.returncode == 0 and cleaned.exists() and cleaned.stat().st_size > 0:
+                cleaned.replace(out_pdf)
+            else:
+                cleaned.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return out_pdf.exists() and out_pdf.stat().st_size > 0
+
+    def _grayscale_via_gs_two_pass(self, src: Path, out_pdf: Path) -> bool:
+        """Ghostscript: RGB→CMYK (K-only forced) → DeviceGray."""
         from app.services.icc_profiles import resolve_profile
 
         icc_dir = str(ICC_DIR)
         src_dir = str(src.parent)
         out_dir = str(out_pdf.parent)
 
-        # Resolve source/dest ICC profiles (non-fatal if missing).
         profile_flags: list[str] = []
         try:
             profile_flags.append(f"-sDefaultRGBProfile={resolve_profile('srgb')}")
@@ -609,15 +699,13 @@ class PdfOps:
             f"--permit-file-read={icc_dir}",
             f"--permit-file-read={src_dir}",
             f"--permit-file-write={out_dir}",
-            "-dBATCH",
-            "-dNOPAUSE",
+            "-dBATCH", "-dNOPAUSE",
             "-dAutoRotatePages=/None",
             "-dNumRenderingThreads=4",
             "-sDEVICE=pdfwrite",
             "-dCompatibilityLevel=1.7",
         ]
 
-        # ── Stage A: → CMYK with forced K-only text/vectors ──────────
         stage_a = out_pdf.with_suffix(".stageA.pdf")
         stage_a_cmd = [
             *common,
@@ -626,15 +714,19 @@ class PdfOps:
             *profile_flags,
             "-dRenderIntent=1",
             "-dBlackPtComp=true",
-            "-dKPreserve=2",                 # K-only stays K-only
-            "-dBlackText=true",              # RGB(0,0,0) text → 0/0/0/100
-            "-dBlackVector=true",            # same for line art
+            "-dKPreserve=2",
+            "-dBlackText=true",
+            "-dBlackVector=true",
             "-dPreserveOverprintSettings=true",
             "-dHaveTransparency=true",
             "-o", str(stage_a), str(src),
         ]
+        proc_a = subprocess.run(stage_a_cmd, capture_output=True, text=True)
+        if proc_a.returncode != 0 or not stage_a.exists() or stage_a.stat().st_size == 0:
+            logger.warning("grayscale[gs_two_pass] stage A rc=%s stderr=%r",
+                           proc_a.returncode, (proc_a.stderr or "")[-300:])
+            return False
 
-        # ── Stage B: CMYK → DeviceGray (lossless for K-only objects) ──
         stage_b_cmd = [
             *common,
             "-sColorConversionStrategy=Gray",
@@ -647,48 +739,36 @@ class PdfOps:
             "-dDownsampleGrayImages=false",
             "-o", str(out_pdf), str(stage_a),
         ]
+        proc_b = subprocess.run(stage_b_cmd, capture_output=True, text=True)
+        try:
+            stage_a.unlink()
+        except Exception:
+            pass
+        if proc_b.returncode != 0 or not out_pdf.exists() or out_pdf.stat().st_size == 0:
+            logger.warning("grayscale[gs_two_pass] stage B rc=%s stderr=%r",
+                           proc_b.returncode, (proc_b.stderr or "")[-300:])
+            return False
+        return True
 
-        # ── Single-pass fallback (legacy behaviour) ──────────────────
-        fallback_cmd = [
-            *common,
+    def _grayscale_via_gs_single_pass(self, src: Path, out_pdf: Path) -> bool:
+        """Legacy single-pass Ghostscript Gray (last-resort fallback)."""
+        cmd = [
+            settings.ghostscript_bin,
+            "-dSAFER", "-dBATCH", "-dNOPAUSE",
+            "-sDEVICE=pdfwrite",
+            "-dCompatibilityLevel=1.7",
             "-sColorConversionStrategy=Gray",
             "-dProcessColorModel=/DeviceGray",
             "-o", str(out_pdf), str(src),
         ]
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            logger.warning("grayscale[gs_single_pass] rc=%s stderr=%r",
+                           proc.returncode, (proc.stderr or "")[-300:])
+            return False
+        return out_pdf.exists() and out_pdf.stat().st_size > 0
 
-        try:
-            proc_a = subprocess.run(stage_a_cmd, capture_output=True, text=True)
-            if proc_a.returncode != 0 or not stage_a.exists() or stage_a.stat().st_size == 0:
-                logger.warning(
-                    "grayscale: stage A (CMYK k-only) failed rc=%s stderr=%r — falling back to single-pass gray",
-                    proc_a.returncode, (proc_a.stderr or "")[-400:],
-                )
-                raise RuntimeError("stage_a_failed")
 
-            proc_b = subprocess.run(stage_b_cmd, capture_output=True, text=True)
-            if proc_b.returncode == 0 and out_pdf.exists() and out_pdf.stat().st_size > 0:
-                logger.info("grayscale: two-pass CMYK→Gray succeeded")
-                try:
-                    stage_a.unlink()
-                except Exception:
-                    pass
-                return out_pdf
-
-            logger.warning(
-                "grayscale: stage B (CMYK→Gray) failed rc=%s stderr=%r — falling back to single-pass gray",
-                proc_b.returncode, (proc_b.stderr or "")[-400:],
-            )
-        except Exception as exc:
-            logger.warning("grayscale: two-pass pipeline raised %s — falling back", exc)
-
-        try:
-            if stage_a.exists():
-                stage_a.unlink()
-        except Exception:
-            pass
-
-        subprocess.run(fallback_cmd, check=True)
-        return out_pdf
 
     def verify_pure_black_text(self, src: Path) -> dict:
         """

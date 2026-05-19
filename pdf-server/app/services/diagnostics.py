@@ -75,6 +75,7 @@ def get_diagnostics() -> dict:
             "ghostscript": check_binary(settings.ghostscript_bin),
             "libreoffice": check_binary(settings.libreoffice_bin),
             "qpdf": check_binary(settings.qpdf_bin),
+            "mutool": check_binary(settings.mutool_bin),
         },
         "versions": {
             "ghostscript": get_ghostscript_version(),

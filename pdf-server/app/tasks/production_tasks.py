@@ -102,8 +102,8 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
             "merge_directives": (bundle.configuration or {}).get("merge_directives") if isinstance(bundle.configuration, dict) else None,
             "section_flags": section_flags,
             # Bump to invalidate caches when the colour pipeline changes.
-            # v2: two-pass CMYK-with-BlackText → DeviceGray for true 100% K text.
-            "colour_pipeline_version": 2,
+            # v3: mutool-first grayscale ladder with verifier-gated escalation.
+            "colour_pipeline_version": 3,
         }
         new_hash = pdf_ops.spec_hash(spec_inputs)
         existing_hash = bundle.job.get("print_ready_spec_hash")
@@ -241,10 +241,16 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                 pdf_ops.grayscale(current, grey)
                 current = grey
                 steps.append("greyscale")
-                try:
-                    colour_check = pdf_ops.verify_pure_black_text(grey)
-                except Exception as exc:
-                    colour_check = {"checked": False, "reason": f"verify_raised: {exc}"}
+                # grayscale() runs the verifier-gated ladder and stashes its
+                # report (winning strategy + per-attempt metrics) on the
+                # PdfOps instance. Surface that to the operator.
+                colour_check = getattr(pdf_ops, "last_grayscale_report", None)
+                if colour_check is None:
+                    try:
+                        colour_check = pdf_ops.verify_pure_black_text(grey)
+                    except Exception as exc:
+                        colour_check = {"checked": False, "reason": f"verify_raised: {exc}"}
+
 
             # ── Decide where the result lives ───────────────────────────
             if not steps and len(files) == 1:

@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     ghostscript_bin: str = Field(alias='GHOSTSCRIPT_BIN', default='gs')
     pdfcpu_bin: str = Field(alias='PDFCPU_BIN', default='pdfcpu')
     qpdf_bin: str = Field(alias='QPDF_BIN', default='qpdf')
+    mutool_bin: str = Field(alias='MUTOOL_BIN', default='mutool')
 
     thumbnail_dpi: int = Field(alias='THUMBNAIL_DPI', default=120)
     preview_dpi: int = Field(alias='PREVIEW_DPI', default=130)
