@@ -1,123 +1,82 @@
+## Why it's still 98 % K (root cause)
 
-# Industry-grade black & colour conversion
+Our `grayscale()` runs Ghostscript with `-sColorConversionStrategy=Gray -dProcessColorModel=/DeviceGray`. That produces a **DeviceGray** PDF. The RGB(0,0,0) text in the customer's Word/PDF source is colour-managed through sRGB → Ghostscript's default Gray profile, which has a tone curve, so it lands at DeviceGray ≈ 0xE6, **not** 0x00. Acrobat's Output Preview is then showing that gray value mapped into SWOP separations and reporting **Process Black 98 %, C/M/Y 0 %**.
 
-## The problem we just observed
+The `-dBlackText=true / -dBlackVector=true / -dKPreserve=2` flags we added **only take effect when the destination colour space is CMYK**. They're no-ops for `Gray` strategy. That's why the git pull + restart changed nothing visible — the rich command ran successfully and still gave us 98 %.
 
-INV-00057-3 (a B&W job) came out at **98% K** in Acrobat Output Preview instead of **100% K** with 0% CMY. That's because our current `pdf_ops.grayscale()` is the absolute minimum Ghostscript invocation:
+Every professional B&W print workflow (Prinect, PitStop, callas, Adobe PDF Print Engine) handles "black & white" by producing **CMYK with 0/0/0/100 K**, not DeviceGray. That's what gives true pure-black text in Acrobat separations and on press.
+
+## The fix
+
+Change `grayscale()` so that, for B&W jobs, we convert to **CMYK** through a real Fogra profile with `-dBlackText / -dBlackVector / -dKPreserve=2`, then strip the (now-empty) C/M/Y plates. End result: a file that is visually identical to grey but stores text as DeviceCMYK 0,0,0,1 (= 100 % K, 0 % CMY).
+
+### Step 1 — rewrite `pdf_ops.grayscale()`
+
+Replace the single `Gray`-strategy Ghostscript call with a two-stage pipeline:
+
+**Stage A — CMYK conversion with forced K-only text/vectors**
 
 ```
--sColorConversionStrategy=Gray
--dProcessColorModel=/DeviceGray
-```
-
-No source profiles, no black-point compensation, no K-preservation, no object-type handling, no `-dBlackText`. Ghostscript falls back to a colorimetric luminance conversion of a CMYK rich black (e.g. 60/40/40/100 from the customer's Word/PDF export), which lands at ~98% gray instead of solid 100%. Same class of issue exists in our CMYK path: text that should print 0/0/0/100 can end up as four-colour rich black.
-
-Industry-standard print workflows (Adobe PDF Print Engine, Heidelberg Prinect, callas pdfToolbox, Enfocus PitStop) all do three things we currently don't:
-
-1. **Object-aware ICC** — text & vector get *RelativeColorimetric + Black Point Compensation + K-only preservation*; images get *Perceptual*.
-2. **Explicit black handling** — `-dBlackText=true -dBlackVector=true -dKPreserve=2` (Ghostscript ≥ 9.55 / ≥ 10.x — pdfwrite K-only enforcement for text and line art).
-3. **Overprint + transparency preservation** — `-dPreserveOverprintSettings=true`, `-dOverprint=/simulate` so simulated press behaviour matches what the operator sees in Acrobat.
-
-## What this plan changes
-
-All changes are in `pdf-server/app/services/pdf_ops.py` plus one small admin-surfaced setting. No DB migrations, no frontend changes.
-
-### 1. Rewrite `grayscale()` to "pure-K-text" grade
-
-Target Ghostscript invocation:
-
-```text
 gs -dSAFER -dBATCH -dNOPAUSE -dAutoRotatePages=/None
-   -sDEVICE=pdfwrite
-   -dCompatibilityLevel=1.7
-   -sColorConversionStrategy=Gray
-   -dProcessColorModel=/DeviceGray
+   -sDEVICE=pdfwrite -dCompatibilityLevel=1.7
+   -sColorConversionStrategy=CMYK
+   -dProcessColorModel=/DeviceCMYK
    -dOverrideICC=true
-   -sDefaultGrayProfile=<Dot Gain 15% .icc>
-   -sDefaultRGBProfile=<sRGB v4.icc>
+   -sDefaultRGBProfile=<sRGB.icc>
    -sDefaultCMYKProfile=<ISOcoated_v2_eci.icc>
-   -dRenderIntent=1                # RelativeColorimetric
+   -dRenderIntent=1
    -dBlackPtComp=true
-   -dKPreserve=2                   # keep CMYK K-only as gray K-only
-   -dBlackText=true                # FORCE pure K for text  ← key fix
-   -dBlackVector=true              # FORCE pure K for line art
+   -dKPreserve=2          # K-only stays K-only
+   -dBlackText=true       # RGB(0,0,0) text → DeviceCMYK 0,0,0,1
+   -dBlackVector=true     # same for lines/fills
    -dPreserveOverprintSettings=true
    -dHaveTransparency=true
-   -dDownsampleColorImages=false
-   -dDownsampleGrayImages=false
-   -dAutoFilterGrayImages=false -dGrayImageFilter=/FlateEncode
-   -o out.pdf in.pdf
+   -o cmyk_k_only.pdf in.pdf
 ```
 
-Also bundle a **Dot Gain 15%** ICC (or `sGray_v4.icc`) in `pdf-server/app/services/icc_profiles.py` under slug `"gray_dotgain15"` so the path resolves cleanly. Fallback to GS built-in `Gray` if missing, identical to the existing `to_print_ready_cmyk` attempt chain (`rich → core → builtin → passthrough`).
+After Stage A, every glyph the customer typed in black is stored as `0 0 0 1 k` — guaranteed 100 % K in Acrobat.
 
-### 2. Add `-dBlackText / -dBlackVector / -dKPreserve` to `to_print_ready_cmyk()`
+**Stage B — drop C/M/Y plates so the file is mathematically gray**
 
-Already partially done (lines 1865-1869). Extend the `rich_icc` attempt to always set:
-- `-dBlackText=true`
-- `-dBlackVector=true`
-- `-dKPreserve=2` (currently only when `preserve_black` is true — promote to default; nobody wants 60/40/40/100 text)
-- `-dOverprint=/simulate`
+Use `pikepdf` to walk the content streams and:
+- Replace any `r g b a k` operator where `c==m==y==0` with `0 0 0 k` (no-op, already pure K).
+- For images that happened to remain CMYK with non-zero C/M/Y (e.g. greyscale photos that converted to four-colour), run a second Ghostscript pass with `-sColorConversionStrategy=Gray -dProcessColorModel=/DeviceGray` *just on the image XObjects*. Text/vector are already pure K so they survive untouched.
 
-Also add a **source-object ICC config** (`-sSourceObjectICC=/opt/document-centre-api/icc/object_default.txt`) that maps:
+A simpler equivalent that needs no AST surgery: re-run `-sColorConversionStrategy=Gray` over the Stage A output. Because every text/vector is already DeviceCMYK(0,0,0,K), the K plate maps 1:1 to DeviceGray with **no tone curve drift** (Ghostscript treats DeviceCMYK→DeviceGray as `gray = 1 − min(1, 0.3 c + 0.59 m + 0.11 y + k)`, which for c=m=y=0 simplifies to `gray = 1 − k`, exact). End result is DeviceGray with text at 0x00, which Acrobat then shows as Process Black 100 %, CMY 0 %.
 
-```
-Text   RGB   <sRGB.icc>  RelativeColorimetric  BlackPtComp=1  KPreserve=1
-Vector RGB   <sRGB.icc>  RelativeColorimetric  BlackPtComp=1  KPreserve=1
-Image  RGB   <sRGB.icc>  Perceptual            BlackPtComp=1  KPreserve=0
-Text   CMYK  <Fogra.icc> RelativeColorimetric  BlackPtComp=1  KPreserve=2
-Vector CMYK  <Fogra.icc> RelativeColorimetric  BlackPtComp=1  KPreserve=2
-Image  CMYK  <Fogra.icc> Perceptual            BlackPtComp=1  KPreserve=1
-```
+We'll ship the two-pass variant — fewer moving parts, no pikepdf content-stream rewriting.
 
-This is the canonical Ghostscript print-shop config (documented in `gs/doc/UseICC.htm`). Bundle it via the same `install-icc-profiles.sh` script.
+### Step 2 — verification helper
 
-### 3. Admin-surfaced override (small, optional)
+Add `pdf_ops.verify_pure_black_text(path)`:
+1. `gs -sDEVICE=tiff32nc -r150 -dLastPage=1` rasterise page 1 to CMYK TIFF.
+2. Pillow scan: pixels with `gray < 50` → assert `K ≥ 250` and `C+M+Y ≤ 12`.
+3. Return `{ near_black_pixels, min_k_pct, max_cmy_pct }` so it lands in `assembly_report.colour_check` and the operator sees proof.
 
-Already in `FamilyPrintConfig` (`color_output`, `cmyk_profile`, `render_intent`). Add two more passthrough booleans, both defaulted true so out-of-the-box behaviour is "great":
+### Step 3 — wire the report
 
-- `force_black_text` → drives `-dBlackText`
-- `preserve_overprint` → drives `-dPreserveOverprintSettings`
+`production_tasks.py` line 254 — after `pdf_ops.grayscale(...)`, call `verify_pure_black_text` on `grey` and attach result to `report["colour_check"]`.
 
-Frontend already has the family settings panel; just one new toggle row.
+### Step 4 — invalidate the cache
 
-### 4. Verification step
-
-Add a tiny helper `pdf_ops.verify_pure_black_text(path)` that:
-1. Rasterises page 1 to a CMYK TIFF via `gs -sDEVICE=tiff32nc`.
-2. Samples pixels classified as "near-black" and asserts `C+M+Y < 5%, K > 95%`.
-3. Returns the measurement so it lands in `assembly_report.colour_check`.
-
-Operators then see proof in the admin order panel that text is true K-only.
+Bump `spec_inputs` in `production_tasks.py` with `"colour_pipeline_version": 2` so the existing INV-00057-3 artefact re-assembles automatically (its `print_ready_spec_hash` will no longer match).
 
 ## Files touched
 
-```
-pdf-server/app/services/pdf_ops.py                 (grayscale + to_print_ready_cmyk)
-pdf-server/app/services/icc_profiles.py            (gray_dotgain15 + object_default.txt path)
-pdf-server/scripts/install-icc-profiles.sh         (download Dot Gain 15% + write object_default.txt)
-pdf-server/app/tasks/production_tasks.py           (call verify_pure_black_text → report)
-src/lib/printIntent.ts                             (extend FamilyPrintConfig with two flags)
-src/pages/admin/AdminProducts.tsx (or family tab)  (two toggle rows)
-```
+- `pdf-server/app/services/pdf_ops.py` — `grayscale()` two-pass; new `verify_pure_black_text()`.
+- `pdf-server/app/tasks/production_tasks.py` — call verifier; bump `colour_pipeline_version`.
+
+No frontend, no DB, no admin-setting changes (the existing `force_black_text` / `preserve_overprint` toggles in the plan are dropped — defaults are now correct out of the box).
 
 ## Verification on the VPS
 
 1. Push, restart workers.
-2. Force re-assemble INV-00057-3.
-3. Download, open in Acrobat → Output Preview → Separations.
-4. Expect: **Process Cyan 0%, Magenta 0%, Yellow 0%, Black 100%, Total Area Coverage 100%**.
-5. `assembly_report.colour_check` should show `{ near_black_pixels: N, max_cmy_pct: 0.x, min_k_pct: 99.x }`.
+2. Open INV-00057-3 → cache miss auto-reassembles (or click Force re-assemble).
+3. Download the print-ready PDF → Acrobat → Output Preview → SWOP simulation.
+4. Expect: **Process Cyan 0 %, Magenta 0 %, Yellow 0 %, Black 100 %, TAC 100 %**.
+5. Admin panel `assembly_report.colour_check` shows `{ min_k_pct: 100, max_cmy_pct: 0, near_black_pixels: ~N }`.
 
-## Risks & non-goals
+## Risks
 
-- `-dBlackText` and `-dKPreserve` need Ghostscript ≥ 9.55. Coolify/Ubuntu deploys are on 10.x — confirmed by `gs --version` in `install-ubuntu.sh`. Safe.
-- Mixed-colour jobs (colour cover + B&W body) still convert the whole document in one pass. The existing TODO at `production_orchestrator.py:405` ("Per-section greyscale before merge is a planned follow-up") is unchanged — separate ticket.
-- ICC bundles are ~2 MB extra in the install script. Negligible.
-
-## References
-
-- Ghostscript `Use.htm` §"Color Conversion and Management" — `BlackText`, `BlackVector`, `KPreserve` flag semantics.
-- Ghostscript `UseICC.htm` — source-object ICC config grammar.
-- Adobe PDF Print Engine 6 colour spec (object-type rendering intents).
-- Fogra/ECI ISOcoated v2 deployment notes (300% TAC variant for digital toner presses — we already ship `fogra39_300`).
+- Two GS passes ≈ +1.5 s on a 20-page job. Acceptable for the quality gain; cached after first run.
+- DeviceGray output is what large-format / digital toner shops expect anyway — single-plate, smaller file, no separation surprises.
