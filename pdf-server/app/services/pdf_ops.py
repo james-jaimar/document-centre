@@ -563,23 +563,35 @@ class PdfOps:
         """
         Strategy ladder for pure-K text greyscale conversion.
 
-        Order:
-          1. mutool convert -O colorspace=gray   (MuPDF colour engine,
-             no ICC tone-curve round-trip — RGB(0,0,0) → DeviceGray 0).
-          2. Ghostscript two-pass CMYK→Gray with -dBlackText/-dKPreserve=2.
-          3. Ghostscript single-pass Gray (legacy last resort).
+        Acrobat's Output Preview (SWOP simulation) is the ground truth the
+        operator sees. DeviceGray content is rendered through a tone curve
+        in Acrobat — that's the "98% Black" we kept seeing. To force a
+        true 100% K reading we have to write the text as DeviceCMYK with
+        operands ``0 0 0 1`` (k operator) in the page content stream.
 
-        Each candidate is verified with ``verify_pure_black_text``; if
-        ``pure_k_ok`` (min K ≥ 95%, max C+M+Y ≤ 5%) we accept and stop.
-        Otherwise we escalate. The winning strategy + metrics are stashed
-        on the instance as ``self.last_grayscale_report`` so the caller
-        (production task) can attach them to ``assembly_report.colour_check``.
+        Order:
+          1. ``gray_to_kchannel``  → first flatten everything to DeviceGray
+             via mutool (or GS as backup), THEN walk each page content
+             stream with pikepdf and rewrite every near-black ``g``/``G``
+             /``rg``/``RG`` operator to its DeviceCMYK ``0 0 0 1 k``/``K``
+             equivalent. Acrobat now samples Process Black 100%.
+          2. ``gs_cmyk_no_icc``    → Ghostscript pdfwrite CMYK with NO
+             ICC profile (Ghostscript maps DeviceGray to K directly when
+             ICC tagging is absent).
+          3. ``gs_two_pass``       → previous two-pass CMYK→Gray (legacy
+             fallback — produces DeviceGray output).
+          4. ``gs_single_pass``    → single-pass Gray (last resort).
+
+        Each candidate is verified with ``verify_pure_black_text``. Gate
+        is tightened to ``min_k_pct >= 99`` and ``max_cmy_pct <= 2`` so a
+        98% K result no longer slips through.
         """
         candidates: list[tuple[str, Path]] = []
         attempts: list[dict] = []
 
         for strategy_name, runner in (
-            ("mutool", self._grayscale_via_mutool),
+            ("gray_to_kchannel", self._grayscale_via_gray_then_k),
+            ("gs_cmyk_no_icc", self._grayscale_via_gs_cmyk_no_icc),
             ("gs_two_pass", self._grayscale_via_gs_two_pass),
             ("gs_single_pass", self._grayscale_via_gs_single_pass),
         ):
@@ -614,16 +626,23 @@ class PdfOps:
                 strategy_name, metrics.get("min_k_pct"), metrics.get("max_cmy_pct"),
             )
 
-        # No strategy passed verifier — keep best (last) candidate so the
-        # operator at least gets a file, and surface the failure in report.
+        # No strategy passed verifier — keep best (highest min_k) candidate.
         if candidates:
-            best_name, best_path = candidates[-1]
+            def _score(name_path):
+                # Pull metrics from attempts for this name.
+                for a in attempts:
+                    if a.get("strategy") == name_path[0] and "metrics" in a:
+                        m = a["metrics"]
+                        return (float(m.get("min_k_pct") or 0), -float(m.get("max_cmy_pct") or 100))
+                return (0.0, -100.0)
+            candidates.sort(key=_score, reverse=True)
+            best_name, best_path = candidates[0]
             best_path.replace(out_pdf)
             self._cleanup_candidates(candidates, keep=out_pdf)
             self.last_grayscale_report = {
                 "strategy": f"{best_name} (verifier_failed)",
                 "metrics": next(
-                    (a["metrics"] for a in reversed(attempts) if "metrics" in a),
+                    (a["metrics"] for a in attempts if a.get("strategy") == best_name and "metrics" in a),
                     {"checked": False},
                 ),
                 "attempts": attempts,
@@ -641,12 +660,48 @@ class PdfOps:
             except Exception:
                 pass
 
-    def _grayscale_via_mutool(self, src: Path, out_pdf: Path) -> bool:
-        """Primary: MuPDF's colour engine — literal DeviceGray, no tone curve."""
+    # ------------------------------------------------------------------
+    # Strategy 1: gray flatten + pikepdf content-stream K-channel rewrite
+    # ------------------------------------------------------------------
+    def _grayscale_via_gray_then_k(self, src: Path, out_pdf: Path) -> bool:
+        """Flatten to DeviceGray, then rewrite near-black operators to
+        DeviceCMYK ``0 0 0 1 k``. Acrobat reads this as Process Black 100%.
+        """
+        # Step A: flatten to DeviceGray. Prefer mutool (no ICC tone curve);
+        # fall back to single-pass GS if mutool is missing.
+        gray_intermediate = out_pdf.with_suffix(".gray-stage.pdf")
+        flattened = self._mutool_to_gray(src, gray_intermediate)
+        if not flattened:
+            if not self._grayscale_via_gs_single_pass(src, gray_intermediate):
+                return False
+
+        # Step B: walk content streams, replace near-black g/G/rg/RG with
+        # explicit DeviceCMYK k/K (0 0 0 1).
+        try:
+            n_pages, n_rewrites = self._rewrite_black_to_k(gray_intermediate, out_pdf)
+            logger.info(
+                "grayscale[gray_to_kchannel]: rewrote %d operators across %d pages",
+                n_rewrites, n_pages,
+            )
+        except Exception as exc:
+            logger.warning("grayscale[gray_to_kchannel] pikepdf rewrite failed: %s", exc)
+            # Even without rewrite, the gray intermediate is a valid output
+            # — let it through so the verifier can score it honestly.
+            try:
+                gray_intermediate.replace(out_pdf)
+            except Exception:
+                return False
+        finally:
+            try:
+                gray_intermediate.unlink(missing_ok=True)
+            except Exception:
+                pass
+        return out_pdf.exists() and out_pdf.stat().st_size > 0
+
+    def _mutool_to_gray(self, src: Path, out_pdf: Path) -> bool:
         import shutil as _shutil
         mutool = _shutil.which(settings.mutool_bin)
         if not mutool:
-            logger.info("grayscale[mutool]: binary not found, skipping")
             return False
         cmd = [
             mutool, "convert",
@@ -656,21 +711,140 @@ class PdfOps:
         ]
         proc = subprocess.run(cmd, capture_output=True, text=True)
         if proc.returncode != 0:
-            logger.warning("grayscale[mutool] rc=%s stderr=%r", proc.returncode, (proc.stderr or "")[-300:])
+            logger.warning("mutool gray rc=%s stderr=%r", proc.returncode, (proc.stderr or "")[-300:])
             return False
-        # Normalise / garbage-collect for a tidy output.
         try:
             cleaned = out_pdf.with_suffix(".cleaned.pdf")
-            clean_proc = subprocess.run(
-                [mutool, "clean", "-ggg", str(out_pdf), str(cleaned)],
-                capture_output=True, text=True,
-            )
-            if clean_proc.returncode == 0 and cleaned.exists() and cleaned.stat().st_size > 0:
+            r = subprocess.run([mutool, "clean", "-ggg", str(out_pdf), str(cleaned)],
+                               capture_output=True, text=True)
+            if r.returncode == 0 and cleaned.exists() and cleaned.stat().st_size > 0:
                 cleaned.replace(out_pdf)
             else:
                 cleaned.unlink(missing_ok=True)
         except Exception:
             pass
+        return out_pdf.exists() and out_pdf.stat().st_size > 0
+
+    def _rewrite_black_to_k(self, src: Path, out_pdf: Path) -> tuple[int, int]:
+        """Rewrite content-stream colour operators so near-black fills/strokes
+        become explicit DeviceCMYK ``0 0 0 1 k`` / ``K``.
+
+        Handles:
+          - ``g``  (non-stroke gray)   → ``k`` when operand <= threshold
+          - ``G``  (stroke gray)        → ``K`` when operand <= threshold
+          - ``rg`` (non-stroke RGB)     → ``k`` when r,g,b all <= threshold
+          - ``RG`` (stroke RGB)         → ``K`` when r,g,b all <= threshold
+        """
+        from pikepdf import (
+            Pdf,
+            Operator,
+            ContentStreamInstruction,
+            parse_content_stream,
+            unparse_content_stream,
+        )
+
+        BLACK_THRESHOLD = 0.06  # ≈ 15/255; covers "near black" tone curve drift.
+        op_g = Operator("g")
+        op_G = Operator("G")
+        op_rg = Operator("rg")
+        op_RG = Operator("RG")
+        op_k = Operator("k")
+        op_K = Operator("K")
+
+        def _as_float(x) -> float | None:
+            try:
+                return float(x)
+            except Exception:
+                return None
+
+        def _is_near_black(values: list[float]) -> bool:
+            return all(v is not None and v <= BLACK_THRESHOLD for v in values)
+
+        n_pages = 0
+        n_rewrites = 0
+        with pikepdf.open(src) as pdf:
+            for page in pdf.pages:
+                n_pages += 1
+                try:
+                    instructions = list(parse_content_stream(page))
+                except Exception as exc:
+                    logger.debug("rewrite: parse failed on page, skipping: %s", exc)
+                    continue
+                changed = False
+                new_instructions: list[ContentStreamInstruction] = []
+                for inst in instructions:
+                    op = inst.operator
+                    operands = list(inst.operands)
+                    replaced = None
+                    if op == op_g and len(operands) == 1:
+                        v = _as_float(operands[0])
+                        if v is not None and v <= BLACK_THRESHOLD:
+                            replaced = ContentStreamInstruction([0, 0, 0, 1], op_k)
+                    elif op == op_G and len(operands) == 1:
+                        v = _as_float(operands[0])
+                        if v is not None and v <= BLACK_THRESHOLD:
+                            replaced = ContentStreamInstruction([0, 0, 0, 1], op_K)
+                    elif op == op_rg and len(operands) == 3:
+                        vs = [_as_float(o) for o in operands]
+                        if _is_near_black(vs):
+                            replaced = ContentStreamInstruction([0, 0, 0, 1], op_k)
+                    elif op == op_RG and len(operands) == 3:
+                        vs = [_as_float(o) for o in operands]
+                        if _is_near_black(vs):
+                            replaced = ContentStreamInstruction([0, 0, 0, 1], op_K)
+                    if replaced is not None:
+                        new_instructions.append(replaced)
+                        n_rewrites += 1
+                        changed = True
+                    else:
+                        new_instructions.append(inst)
+                if changed:
+                    try:
+                        page.Contents = pdf.make_stream(unparse_content_stream(new_instructions))
+                    except Exception as exc:
+                        logger.debug("rewrite: write-back failed on page: %s", exc)
+            pdf.save(out_pdf)
+        return n_pages, n_rewrites
+
+    # ------------------------------------------------------------------
+    # Strategy 2: Ghostscript CMYK without ICC profile
+    # ------------------------------------------------------------------
+    def _grayscale_via_gs_cmyk_no_icc(self, src: Path, out_pdf: Path) -> bool:
+        """Ghostscript pdfwrite to CMYK with no Default*Profile overrides.
+        Without an ICC tagging round-trip, pdfwrite maps DeviceGray to the
+        K channel directly (its documented optimisation), and RGB(0,0,0)
+        through the device-CMYK conversion lands at K=1, C=M=Y=0.
+        """
+        # Pre-flatten to gray first so colour content also lands K-only.
+        gray = out_pdf.with_suffix(".gray-pre.pdf")
+        if not self._mutool_to_gray(src, gray):
+            if not self._grayscale_via_gs_single_pass(src, gray):
+                return False
+        try:
+            cmd = [
+                settings.ghostscript_bin,
+                "-dSAFER", "-dBATCH", "-dNOPAUSE",
+                "-dAutoRotatePages=/None",
+                "-sDEVICE=pdfwrite",
+                "-dCompatibilityLevel=1.7",
+                "-sColorConversionStrategy=CMYK",
+                "-dProcessColorModel=/DeviceCMYK",
+                "-dKPreserve=2",
+                "-dBlackText=true",
+                "-dBlackVector=true",
+                "-dPreserveOverprintSettings=true",
+                "-o", str(out_pdf), str(gray),
+            ]
+            proc = subprocess.run(cmd, capture_output=True, text=True)
+            if proc.returncode != 0:
+                logger.warning("grayscale[gs_cmyk_no_icc] rc=%s stderr=%r",
+                               proc.returncode, (proc.stderr or "")[-300:])
+                return False
+        finally:
+            try:
+                gray.unlink(missing_ok=True)
+            except Exception:
+                pass
         return out_pdf.exists() and out_pdf.stat().st_size > 0
 
     def _grayscale_via_gs_two_pass(self, src: Path, out_pdf: Path) -> bool:
