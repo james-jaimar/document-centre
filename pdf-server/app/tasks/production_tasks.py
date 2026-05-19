@@ -612,16 +612,29 @@ def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
 
     # --- Production specs ------------------------------------------------------
     flow.append(Paragraph("Production specs", h2))
+    # Resolved colour/duplex/size from the worker's last assembly run (the
+    # "Print Colour"/"Print Sides" rows are section-controlled and stripped
+    # from selected_options, so the raw snapshot keys are usually empty).
+    report = job.get("assembly_report") or {}
+    resolved = report.get("target") if isinstance(report, dict) else {}
+    if not isinstance(resolved, dict):
+        resolved = {}
+    resolved_size = None
+    if resolved.get("width_mm") and resolved.get("height_mm"):
+        resolved_size = f"{resolved['width_mm']:.0f}×{resolved['height_mm']:.0f}mm"
     spec_keys = [
-        ("Size", snap.get("size") or (f"{snap.get('width_mm')}×{snap.get('height_mm')}mm" if snap.get("width_mm") else None)),
+        ("Size", resolved_size or snap.get("size") or (f"{snap.get('width_mm')}×{snap.get('height_mm')}mm" if snap.get("width_mm") else None)),
+        ("Orientation", resolved.get("orientation")),
         ("Paper", cfg.get("paper") or snap.get("paper")),
         ("Weight", f"{snap.get('paper_weight_gsm')}gsm" if snap.get("paper_weight_gsm") else None),
-        ("Colour", cfg.get("colour") or snap.get("colour")),
-        ("Sides", cfg.get("sides") or snap.get("sides")),
+        ("Colour", (resolved.get("colour_mode") or "").upper() or cfg.get("colour") or snap.get("colour")),
+        ("Sides", (resolved.get("duplex_mode") or "").title() or cfg.get("sides") or snap.get("sides")),
+        ("Print to edge", "Yes" if resolved.get("print_to_edge") else None),
         ("Binding", cfg.get("binding") or snap.get("binding")),
         ("Cover", cfg.get("cover") or snap.get("cover")),
         ("Finishing", cfg.get("finishing") or snap.get("finishing")),
     ]
+
     spec_rows = [[Paragraph(f"<b>{k}</b>", body), Paragraph(_safe(v), body)] for k, v in spec_keys if v]
     if spec_rows:
         spec_table = Table(spec_rows, colWidths=[35 * mm, 150 * mm])
