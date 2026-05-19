@@ -436,7 +436,10 @@ function buildMergeDirectives(
       page_count: doc?.page_count ?? null,
       page_range_start: s.page_range_start,
       page_range_end: s.page_range_end,
+      is_color: s.is_color ?? null,
+      is_duplex: s.is_duplex ?? null,
     });
+
 
     if (isSimplexCover && s.section_type === "front_cover") {
       directives.push({ kind: "blank_page", reason: "simplex_cover_back" });
