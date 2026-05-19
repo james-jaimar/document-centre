@@ -248,7 +248,10 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                 colour_check = getattr(pdf_ops, "last_grayscale_report", None)
                 if colour_check is None:
                     try:
-                        colour_check = pdf_ops.verify_pure_black_text(grey)
+                        colour_check = {
+                            "black_text_check": pdf_ops.verify_pure_black_text(grey),
+                            "colour_leak_check": pdf_ops.verify_no_colour_leak(grey),
+                        }
                     except Exception as exc:
                         colour_check = {"checked": False, "reason": f"verify_raised: {exc}"}
 
