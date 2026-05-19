@@ -589,10 +589,15 @@ class PdfOps:
         candidates: list[tuple[str, Path]] = []
         attempts: list[dict] = []
 
+        # Order matters: prefer strategies that re-encode raster images so a
+        # full-colour figure on (say) page 24 actually loses its colour. The
+        # mutool-first path is demoted because `mutool convert -O colorspace=gray`
+        # is not a reliable image converter for PDF output.
         for strategy_name, runner in (
-            ("gray_to_kchannel", self._grayscale_via_gray_then_k),
-            ("gs_cmyk_no_icc", self._grayscale_via_gs_cmyk_no_icc),
             ("gs_two_pass", self._grayscale_via_gs_two_pass),
+            ("gs_cmyk_no_icc", self._grayscale_via_gs_cmyk_no_icc),
+            ("gs_single_pass_then_k", self._grayscale_via_gs_then_k),
+            ("gray_to_kchannel", self._grayscale_via_gray_then_k),
             ("gs_single_pass", self._grayscale_via_gs_single_pass),
         ):
             candidate = out_pdf.with_suffix(f".candidate.{strategy_name}.pdf")
@@ -606,48 +611,70 @@ class PdfOps:
                 attempts.append({"strategy": strategy_name, "ok": False, "error": "no_output"})
                 continue
 
-            metrics = self.verify_pure_black_text(candidate)
-            attempts.append({"strategy": strategy_name, "metrics": metrics})
+            black_text = self.verify_pure_black_text(candidate)
+            colour_leak = self.verify_no_colour_leak(candidate)
+            attempts.append({
+                "strategy": strategy_name,
+                "black_text_check": black_text,
+                "colour_leak_check": colour_leak,
+            })
             candidates.append((strategy_name, candidate))
 
-            if metrics.get("pure_k_ok"):
-                logger.info("grayscale[%s]: pure-K verified (%s)", strategy_name, metrics)
+            text_ok = black_text.get("pure_k_ok") or black_text.get("near_black_pixels") == 0
+            leak_ok = colour_leak.get("no_leak") is True
+            if text_ok and leak_ok:
+                logger.info(
+                    "grayscale[%s]: both gates passed (text=%s leak=%s)",
+                    strategy_name, black_text, colour_leak,
+                )
                 candidate.replace(out_pdf)
                 self._cleanup_candidates(candidates, keep=out_pdf)
                 self.last_grayscale_report = {
                     "strategy": strategy_name,
-                    "metrics": metrics,
+                    "black_text_check": black_text,
+                    "colour_leak_check": colour_leak,
                     "attempts": attempts,
                 }
                 return out_pdf
 
             logger.warning(
-                "grayscale[%s]: failed verifier — min_k=%s max_cmy=%s",
-                strategy_name, metrics.get("min_k_pct"), metrics.get("max_cmy_pct"),
+                "grayscale[%s]: gate failed — text_ok=%s leak_ok=%s colour_pages=%s",
+                strategy_name, text_ok, leak_ok, colour_leak.get("colour_pages"),
             )
 
-        # No strategy passed verifier — keep best (highest min_k) candidate.
+        # No strategy passed both gates — pick the candidate with the fewest
+        # colour-leaking pages (primary) and best K (secondary).
         if candidates:
             def _score(name_path):
-                # Pull metrics from attempts for this name.
                 for a in attempts:
-                    if a.get("strategy") == name_path[0] and "metrics" in a:
-                        m = a["metrics"]
-                        return (float(m.get("min_k_pct") or 0), -float(m.get("max_cmy_pct") or 100))
-                return (0.0, -100.0)
+                    if a.get("strategy") == name_path[0] and "colour_leak_check" in a:
+                        leak = a["colour_leak_check"] or {}
+                        text = a["black_text_check"] or {}
+                        n_leak = len(leak.get("colour_pages") or [])
+                        min_k = float(text.get("min_k_pct") or 0)
+                        max_cmy = float(text.get("max_cmy_pct") or 100)
+                        # Lower n_leak is better → negate for descending sort.
+                        return (-n_leak, min_k, -max_cmy)
+                return (-9999, 0.0, -100.0)
             candidates.sort(key=_score, reverse=True)
             best_name, best_path = candidates[0]
             best_path.replace(out_pdf)
             self._cleanup_candidates(candidates, keep=out_pdf)
+            best_attempt = next(
+                (a for a in attempts if a.get("strategy") == best_name and "colour_leak_check" in a),
+                {},
+            )
             self.last_grayscale_report = {
-                "strategy": f"{best_name} (verifier_failed)",
-                "metrics": next(
-                    (a["metrics"] for a in attempts if a.get("strategy") == best_name and "metrics" in a),
-                    {"checked": False},
-                ),
+                "strategy": f"{best_name} (gate_failed)",
+                "black_text_check": best_attempt.get("black_text_check"),
+                "colour_leak_check": best_attempt.get("colour_leak_check"),
                 "attempts": attempts,
             }
-            logger.error("grayscale: no strategy passed verifier; kept %s", best_name)
+            logger.error(
+                "grayscale: no strategy passed both gates; kept %s (colour_pages=%s)",
+                best_name,
+                (best_attempt.get("colour_leak_check") or {}).get("colour_pages"),
+            )
             return out_pdf
 
         raise RuntimeError(f"grayscale: all strategies failed: {attempts}")
@@ -687,6 +714,35 @@ class PdfOps:
             logger.warning("grayscale[gray_to_kchannel] pikepdf rewrite failed: %s", exc)
             # Even without rewrite, the gray intermediate is a valid output
             # — let it through so the verifier can score it honestly.
+            try:
+                gray_intermediate.replace(out_pdf)
+            except Exception:
+                return False
+        finally:
+            try:
+                gray_intermediate.unlink(missing_ok=True)
+            except Exception:
+                pass
+        return out_pdf.exists() and out_pdf.stat().st_size > 0
+
+    def _grayscale_via_gs_then_k(self, src: Path, out_pdf: Path) -> bool:
+        """Same as gray_to_kchannel but uses Ghostscript (single-pass Gray)
+        as the flatten step instead of mutool. GS re-encodes raster images
+        through the DeviceGray ProcessColorModel, so a colour figure on
+        page 24 actually becomes B&W (whereas mutool's PDF-output gray
+        option leaves embedded images unchanged).
+        """
+        gray_intermediate = out_pdf.with_suffix(".gs-gray-stage.pdf")
+        if not self._grayscale_via_gs_single_pass(src, gray_intermediate):
+            return False
+        try:
+            n_pages, n_rewrites = self._rewrite_black_to_k(gray_intermediate, out_pdf)
+            logger.info(
+                "grayscale[gs_single_pass_then_k]: rewrote %d operators across %d pages",
+                n_rewrites, n_pages,
+            )
+        except Exception as exc:
+            logger.warning("grayscale[gs_single_pass_then_k] rewrite failed: %s", exc)
             try:
                 gray_intermediate.replace(out_pdf)
             except Exception:
@@ -1034,6 +1090,128 @@ class PdfOps:
                 }
             except Exception as exc:
                 return {"checked": False, "reason": f"pillow_raised: {exc}"}
+
+
+    def verify_no_colour_leak(self, src: Path, dpi: int = 72) -> dict:
+        """Rasterise EVERY page to CMYK and report any page that still has
+        meaningful C/M/Y content (i.e. colour images/vectors that survived
+        greyscale conversion).
+
+        A pixel is considered "coloured" when any of C, M, Y exceeds a
+        small threshold AND it isn't essentially white. Pages are flagged
+        when their coloured-pixel ratio exceeds ``page_threshold`` of the
+        sampled area.
+
+        Returns:
+            {
+              "checked": True,
+              "pages_checked": N,
+              "colour_pages": [24, ...],   # 1-based page numbers
+              "worst_page": 24,
+              "worst_pct": 38.2,           # % of pixels with colour
+              "no_leak": False,
+            }
+        """
+        try:
+            import tempfile
+            from PIL import Image  # type: ignore
+        except Exception as exc:
+            return {"checked": False, "reason": f"pillow_unavailable: {exc}"}
+
+        if not src.exists() or src.stat().st_size == 0:
+            return {"checked": False, "reason": "missing_input"}
+
+        # Per-pixel: any CMY channel > this (out of 255) counts as colour.
+        PIXEL_CMY_THRESHOLD = 12      # ≈ 5%
+        # Per-page: more than this fraction of coloured pixels = leak.
+        PAGE_LEAK_RATIO = 0.005       # 0.5% of the page
+
+        with tempfile.TemporaryDirectory() as td:
+            out_pattern = Path(td) / "page-%04d.tif"
+            cmd = [
+                settings.ghostscript_bin,
+                "-dSAFER",
+                f"--permit-file-read={src.parent}",
+                f"--permit-file-write={td}",
+                "-dBATCH", "-dNOPAUSE",
+                "-sDEVICE=tiff32nc",
+                f"-r{dpi}",
+                "-o", str(out_pattern), str(src),
+            ]
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            except Exception as exc:
+                return {"checked": False, "reason": f"gs_raised: {exc}"}
+            if proc.returncode != 0:
+                return {
+                    "checked": False,
+                    "reason": f"gs_rc={proc.returncode}",
+                    "stderr": (proc.stderr or "")[-200:],
+                }
+
+            tiffs = sorted(Path(td).glob("page-*.tif"))
+            if not tiffs:
+                return {"checked": False, "reason": "no_pages_rasterised"}
+
+            colour_pages: list[int] = []
+            worst_page = 0
+            worst_pct = 0.0
+
+            for tif in tiffs:
+                try:
+                    page_num = int(tif.stem.split("-")[-1])
+                except Exception:
+                    continue
+                try:
+                    im = Image.open(tif)
+                    if im.mode != "CMYK":
+                        im = im.convert("CMYK")
+                    # Downsample for speed; preserves any meaningful colour patch.
+                    w, h = im.size
+                    scale = max(1, max(w, h) // 400)
+                    if scale > 1:
+                        im = im.resize((w // scale, h // scale), Image.NEAREST)
+                    W, H = im.size
+                    total = W * H
+                    if total == 0:
+                        continue
+                    # Use channel extrema so we can short-circuit fully-K pages
+                    # without iterating every pixel.
+                    c_band, m_band, y_band, _k_band = im.split()
+                    c_max = c_band.getextrema()[1]
+                    m_max = m_band.getextrema()[1]
+                    y_max = y_band.getextrema()[1]
+                    if max(c_max, m_max, y_max) <= PIXEL_CMY_THRESHOLD:
+                        continue  # zero CMY content on this page
+                    # Count pixels with any CMY > threshold.
+                    px = im.load()
+                    coloured = 0
+                    for yy in range(H):
+                        for xx in range(W):
+                            c, m, yv, _k = px[xx, yy]
+                            if c > PIXEL_CMY_THRESHOLD or m > PIXEL_CMY_THRESHOLD or yv > PIXEL_CMY_THRESHOLD:
+                                coloured += 1
+                    pct = (coloured / total) * 100.0
+                    if (coloured / total) >= PAGE_LEAK_RATIO:
+                        colour_pages.append(page_num)
+                        if pct > worst_pct:
+                            worst_pct = pct
+                            worst_page = page_num
+                except Exception as exc:
+                    logger.debug("colour-leak verify: page %s raised: %s", page_num, exc)
+                    continue
+
+            return {
+                "checked": True,
+                "pages_checked": len(tiffs),
+                "colour_pages": colour_pages,
+                "worst_page": worst_page,
+                "worst_pct": round(worst_pct, 2),
+                "no_leak": len(colour_pages) == 0,
+            }
+
+
+
 
 
     def rgb_to_cmyk(self, src: Path, out_pdf: Path, icc_profile: str | None = None) -> Path:

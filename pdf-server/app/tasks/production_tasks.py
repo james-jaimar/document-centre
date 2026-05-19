@@ -102,8 +102,9 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
             "merge_directives": (bundle.configuration or {}).get("merge_directives") if isinstance(bundle.configuration, dict) else None,
             "section_flags": section_flags,
             # Bump to invalidate caches when the colour pipeline changes.
-            # v4: gray-to-K-channel content-stream rewrite (Acrobat 100% K).
-            "colour_pipeline_version": 4,
+            # v5: full-document colour-leak verifier + GS-flatten K-rewrite
+            # (catches page-level colour images that survived greyscale).
+            "colour_pipeline_version": 5,
         }
         new_hash = pdf_ops.spec_hash(spec_inputs)
         existing_hash = bundle.job.get("print_ready_spec_hash")
@@ -247,7 +248,10 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                 colour_check = getattr(pdf_ops, "last_grayscale_report", None)
                 if colour_check is None:
                     try:
-                        colour_check = pdf_ops.verify_pure_black_text(grey)
+                        colour_check = {
+                            "black_text_check": pdf_ops.verify_pure_black_text(grey),
+                            "colour_leak_check": pdf_ops.verify_no_colour_leak(grey),
+                        }
                     except Exception as exc:
                         colour_check = {"checked": False, "reason": f"verify_raised: {exc}"}
 
