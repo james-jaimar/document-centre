@@ -725,6 +725,35 @@ class PdfOps:
                 pass
         return out_pdf.exists() and out_pdf.stat().st_size > 0
 
+    def _grayscale_via_gs_then_k(self, src: Path, out_pdf: Path) -> bool:
+        """Same as gray_to_kchannel but uses Ghostscript (single-pass Gray)
+        as the flatten step instead of mutool. GS re-encodes raster images
+        through the DeviceGray ProcessColorModel, so a colour figure on
+        page 24 actually becomes B&W (whereas mutool's PDF-output gray
+        option leaves embedded images unchanged).
+        """
+        gray_intermediate = out_pdf.with_suffix(".gs-gray-stage.pdf")
+        if not self._grayscale_via_gs_single_pass(src, gray_intermediate):
+            return False
+        try:
+            n_pages, n_rewrites = self._rewrite_black_to_k(gray_intermediate, out_pdf)
+            logger.info(
+                "grayscale[gs_single_pass_then_k]: rewrote %d operators across %d pages",
+                n_rewrites, n_pages,
+            )
+        except Exception as exc:
+            logger.warning("grayscale[gs_single_pass_then_k] rewrite failed: %s", exc)
+            try:
+                gray_intermediate.replace(out_pdf)
+            except Exception:
+                return False
+        finally:
+            try:
+                gray_intermediate.unlink(missing_ok=True)
+            except Exception:
+                pass
+        return out_pdf.exists() and out_pdf.stat().st_size > 0
+
     def _mutool_to_gray(self, src: Path, out_pdf: Path) -> bool:
         import shutil as _shutil
         mutool = _shutil.which(settings.mutool_bin)
