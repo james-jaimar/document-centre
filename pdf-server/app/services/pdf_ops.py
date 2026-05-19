@@ -1092,6 +1092,128 @@ class PdfOps:
                 return {"checked": False, "reason": f"pillow_raised: {exc}"}
 
 
+    def verify_no_colour_leak(self, src: Path, dpi: int = 72) -> dict:
+        """Rasterise EVERY page to CMYK and report any page that still has
+        meaningful C/M/Y content (i.e. colour images/vectors that survived
+        greyscale conversion).
+
+        A pixel is considered "coloured" when any of C, M, Y exceeds a
+        small threshold AND it isn't essentially white. Pages are flagged
+        when their coloured-pixel ratio exceeds ``page_threshold`` of the
+        sampled area.
+
+        Returns:
+            {
+              "checked": True,
+              "pages_checked": N,
+              "colour_pages": [24, ...],   # 1-based page numbers
+              "worst_page": 24,
+              "worst_pct": 38.2,           # % of pixels with colour
+              "no_leak": False,
+            }
+        """
+        try:
+            import tempfile
+            from PIL import Image  # type: ignore
+        except Exception as exc:
+            return {"checked": False, "reason": f"pillow_unavailable: {exc}"}
+
+        if not src.exists() or src.stat().st_size == 0:
+            return {"checked": False, "reason": "missing_input"}
+
+        # Per-pixel: any CMY channel > this (out of 255) counts as colour.
+        PIXEL_CMY_THRESHOLD = 12      # ≈ 5%
+        # Per-page: more than this fraction of coloured pixels = leak.
+        PAGE_LEAK_RATIO = 0.005       # 0.5% of the page
+
+        with tempfile.TemporaryDirectory() as td:
+            out_pattern = Path(td) / "page-%04d.tif"
+            cmd = [
+                settings.ghostscript_bin,
+                "-dSAFER",
+                f"--permit-file-read={src.parent}",
+                f"--permit-file-write={td}",
+                "-dBATCH", "-dNOPAUSE",
+                "-sDEVICE=tiff32nc",
+                f"-r{dpi}",
+                "-o", str(out_pattern), str(src),
+            ]
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            except Exception as exc:
+                return {"checked": False, "reason": f"gs_raised: {exc}"}
+            if proc.returncode != 0:
+                return {
+                    "checked": False,
+                    "reason": f"gs_rc={proc.returncode}",
+                    "stderr": (proc.stderr or "")[-200:],
+                }
+
+            tiffs = sorted(Path(td).glob("page-*.tif"))
+            if not tiffs:
+                return {"checked": False, "reason": "no_pages_rasterised"}
+
+            colour_pages: list[int] = []
+            worst_page = 0
+            worst_pct = 0.0
+
+            for tif in tiffs:
+                try:
+                    page_num = int(tif.stem.split("-")[-1])
+                except Exception:
+                    continue
+                try:
+                    im = Image.open(tif)
+                    if im.mode != "CMYK":
+                        im = im.convert("CMYK")
+                    # Downsample for speed; preserves any meaningful colour patch.
+                    w, h = im.size
+                    scale = max(1, max(w, h) // 400)
+                    if scale > 1:
+                        im = im.resize((w // scale, h // scale), Image.NEAREST)
+                    W, H = im.size
+                    total = W * H
+                    if total == 0:
+                        continue
+                    # Use channel extrema so we can short-circuit fully-K pages
+                    # without iterating every pixel.
+                    c_band, m_band, y_band, _k_band = im.split()
+                    c_max = c_band.getextrema()[1]
+                    m_max = m_band.getextrema()[1]
+                    y_max = y_band.getextrema()[1]
+                    if max(c_max, m_max, y_max) <= PIXEL_CMY_THRESHOLD:
+                        continue  # zero CMY content on this page
+                    # Count pixels with any CMY > threshold.
+                    px = im.load()
+                    coloured = 0
+                    for yy in range(H):
+                        for xx in range(W):
+                            c, m, yv, _k = px[xx, yy]
+                            if c > PIXEL_CMY_THRESHOLD or m > PIXEL_CMY_THRESHOLD or yv > PIXEL_CMY_THRESHOLD:
+                                coloured += 1
+                    pct = (coloured / total) * 100.0
+                    if (coloured / total) >= PAGE_LEAK_RATIO:
+                        colour_pages.append(page_num)
+                        if pct > worst_pct:
+                            worst_pct = pct
+                            worst_page = page_num
+                except Exception as exc:
+                    logger.debug("colour-leak verify: page %s raised: %s", page_num, exc)
+                    continue
+
+            return {
+                "checked": True,
+                "pages_checked": len(tiffs),
+                "colour_pages": colour_pages,
+                "worst_page": worst_page,
+                "worst_pct": round(worst_pct, 2),
+                "no_leak": len(colour_pages) == 0,
+            }
+
+
+
+
+
     def rgb_to_cmyk(self, src: Path, out_pdf: Path, icc_profile: str | None = None) -> Path:
         resolved_icc = resolve_icc_profile(icc_profile)
 
