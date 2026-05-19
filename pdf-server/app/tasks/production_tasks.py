@@ -273,6 +273,7 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                 "print_to_edge": target.print_to_edge,
             },
             "detected_size_mm": list(actual_size) if actual_size else None,
+            "colour_check": colour_check,
         }
         write_artefact_path(job_id, "print_ready_pdf_path", storage_path)
         write_job_field(job_id, "assembly_report", report)
