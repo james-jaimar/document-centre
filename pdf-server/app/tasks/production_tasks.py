@@ -95,6 +95,7 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
             "target_h": target.height_mm,
             "orientation": target.orientation,
             "colour_mode": target.colour_mode,
+            "duplex_mode": target.duplex_mode,
             "print_to_edge": target.print_to_edge,
             "bleed_mm": target.bleed_mm,
             # Include merge directives so simplex-cover blank insertion
@@ -102,10 +103,11 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
             "merge_directives": (bundle.configuration or {}).get("merge_directives") if isinstance(bundle.configuration, dict) else None,
             "section_flags": section_flags,
             # Bump to invalidate caches when the colour pipeline changes.
-            # v5: full-document colour-leak verifier + GS-flatten K-rewrite
-            # (catches page-level colour images that survived greyscale).
-            "colour_pipeline_version": 5,
+            # v6: per-section greyscale for mixed colour jobs + duplex_mode
+            # wired into TargetSpec + orientation-transpose resize guard.
+            "colour_pipeline_version": 6,
         }
+
         new_hash = pdf_ops.spec_hash(spec_inputs)
         existing_hash = bundle.job.get("print_ready_spec_hash")
         existing_path = bundle.job.get("print_ready_pdf_path")
