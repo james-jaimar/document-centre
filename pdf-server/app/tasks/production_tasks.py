@@ -137,6 +137,17 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
 
             files: list[Path] = []
             section_used_any = False
+            per_section_colour: list[dict] = []
+
+            # Pre-greyscale a single source file (used for mixed-colour jobs
+            # so colour sections stay colour and B&W sections get the full
+            # verifier-gated grayscale ladder before merge).
+            def _greyscale_file(idx: int, src_local: Path, label: str) -> Path:
+                grey_local = ws.path(f"{idx:03d}-{label}-grey.pdf")
+                pdf_ops.grayscale(src_local, grey_local)
+                rep = getattr(pdf_ops, "last_grayscale_report", None)
+                per_section_colour.append({"label": label, "report": rep})
+                return grey_local
 
             if directives and bundle.section_paths:
                 from pypdf import PdfWriter
@@ -160,6 +171,12 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                     return out
 
                 downloaded: dict[str, Path] = {}
+                # For "mixed" colour jobs we want to greyscale only the
+                # sections flagged is_color=False; the rest stay colour.
+                # For whole-doc "bw" jobs we let the downstream step handle
+                # greyscale (single pass over the merged file).
+                mixed_colour = target.colour_mode == "mixed"
+
                 for idx, d in enumerate(directives):
                     if not isinstance(d, dict):
                         continue
@@ -170,13 +187,42 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                         if not resolved:
                             continue
                         fname, path = resolved
+                        # Download once per source path (covers reused assets).
                         if path in downloaded:
-                            files.append(downloaded[path])
+                            local = downloaded[path]
                         else:
                             local = ws.path(f"{idx:03d}-{Path(fname).stem}.pdf")
                             storage.download(path, local)
                             downloaded[path] = local
-                            files.append(local)
+
+                        section_is_color = d.get("is_color")
+                        # Per-section greyscale (mixed jobs only). If the
+                        # directive doesn't carry the flag (older snapshot),
+                        # leave the file colour and let the whole-doc step
+                        # decide based on TargetSpec.
+                        if mixed_colour and section_is_color is False:
+                            label = (d.get("section_type") or "section").replace(" ", "_")
+                            local = _greyscale_file(idx, local, label)
+                            steps.append(f"greyscale_section:{label}")
+
+                        files.append(local)
+
+                        # Simplex section with odd page count → insert real
+                        # blank back page so the press doesn't print on the
+                        # back of the next section. Covers already handled
+                        # at snapshot time via blank_page directives.
+                        if d.get("is_duplex") is False:
+                            section_type = d.get("section_type") or ""
+                            if section_type not in ("front_cover", "back_cover"):
+                                try:
+                                    from pypdf import PdfReader as _R
+                                    pc = len(_R(str(local)).pages)
+                                except Exception:
+                                    pc = d.get("page_count") or 0
+                                if pc and pc % 2 == 1:
+                                    files.append(_make_blank(idx))
+                                    steps.append(f"blank:simplex_back:{section_type or 'section'}")
+
                         section_used_any = True
                     elif kind == "blank_page":
                         files.append(_make_blank(idx))
@@ -210,8 +256,19 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                 # Tolerance: 2mm in either dimension
                 if abs(aw - tw) > 2 or abs(ah - th) > 2:
                     needs_resize = True
+                # Orientation mismatch: target is portrait but page is
+                # landscape (or vice-versa) even when dimensions transpose
+                # to the same paper — force a resize so resize_pages can
+                # rotate to the dominant orientation.
+                elif target.orientation:
+                    page_is_landscape = aw > ah
+                    target_is_landscape = target.orientation == "landscape"
+                    if page_is_landscape != target_is_landscape:
+                        needs_resize = True
 
             needs_bleed = target.print_to_edge and not pdf_ops.detect_bleed(current)
+            # Whole-doc greyscale only when *every* printable section is B&W.
+            # Mixed jobs are handled per-file above the merge.
             needs_greyscale = target.colour_mode == "bw"
 
             # ── Step 3: resize / re-orient ──────────────────────────────
@@ -237,7 +294,7 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                     "Bleed was auto-fabricated by scaling content up — edge content may clip."
                 )
 
-            # ── Step 5: greyscale (B&W jobs) ────────────────────────────
+            # ── Step 5: greyscale (whole-doc B&W jobs) ──────────────────
             colour_check: dict | None = None
             if needs_greyscale:
                 grey = ws.path("grey.pdf")
@@ -256,6 +313,11 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                         }
                     except Exception as exc:
                         colour_check = {"checked": False, "reason": f"verify_raised: {exc}"}
+            elif per_section_colour:
+                # Mixed-colour job: report per-section greyscale outcomes.
+                colour_check = {"mode": "mixed", "sections": per_section_colour}
+
+
 
 
             # ── Decide where the result lives ───────────────────────────
