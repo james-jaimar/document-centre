@@ -1,77 +1,71 @@
-# Pure-K text: add mutool-first conversion with verifier-gated escalation
+## Diagnosis
 
-## Why the current two-pass still gives 98 % K
+The current output screenshot still says **PDF Producer: GPL Ghostscript 10.02.1** and Acrobat Output Preview still samples **Process Black 98%**. That strongly suggests the mutool-first path is either not being used, failing verifier, or the verifier is incorrectly accepting a Ghostscript candidate that still appears as 98% in Acrobat.
 
-The two-pass Ghostscript pipeline we shipped is theoretically correct (CMYK with `-dBlackText/-dKPreserve=2`, then CMYK→Gray), but Ghostscript's `pdfwrite` device re-tags converted text objects with its **DefaultGray** ICC profile on the second pass. That profile has a tone curve, so even text that entered Stage B as `DeviceCMYK 0,0,0,1` re-emerges as DeviceGray ≈ 0xE6 in some source PDFs (notably anything LibreOffice/Word-exported via sRGB tags). That's the 98 % we're seeing in Acrobat.
+I found two likely causes in the current implementation:
 
-mutool 1.23.10 (now confirmed installed on the VPS) uses MuPDF's colour engine, which honours `colorspace=gray` literally — RGB(0,0,0) text becomes `DeviceGray 0` with **no profile round-trip**. Industry experience (and the MuPDF source) confirms this is the cleanest path for the customer-uploaded-Word-PDF case we care about.
+1. **`mutool convert -O colorspace=gray` is probably not doing what we assumed for PDF output.** In MuPDF docs, `colorspace=gray` is documented under raster-output options, while PDF output options are mainly compression/cleanup options. So for vector PDF output, this may be ignored or may not guarantee Acrobat-visible 100% K.
+2. **The verifier is not matching the customer-facing Acrobat result.** It rasterises through Ghostscript `tiff32nc`, and Ghostscript can treat DeviceGray specially as K internally. That can report acceptable K even when Acrobat’s SWOP Output Preview still displays 98% because of a gray tone/profile interpretation.
 
-## The plan
+## Plan
 
-Make `grayscale()` a strategy ladder with a hard verifier gate. Each strategy runs, then `verify_pure_black_text()` must report `min_k_pct >= 95` and `max_cmy_pct <= 5` for the result to be accepted. If it fails, we escalate to the next strategy. We log which strategy won into the assembly report.
+### 1. Replace the primary greyscale strategy with a true K-only CMYK PDF path
 
-### Strategy ladder (in order)
+In `pdf-server/app/services/pdf_ops.py`, change the first strategy from “PDF-to-PDF mutool gray” to a CMYK-focused path designed for Acrobat separations:
 
-1. **mutool convert → gray**
-   `mutool convert -F pdf -O colorspace=gray,compression=flate,garbage=compact -o out.pdf in.pdf`
-   Followed by `mutool clean -ggg out.pdf out.pdf` to normalise/garbage-collect.
-   Fast, single process, preserves pure K for text/vector.
+- Generate a grayscale intermediate only as needed.
+- Convert the result to **DeviceCMYK** using Ghostscript with settings that keep DeviceGray mapped to the K channel.
+- Avoid outputting final DeviceGray for B&W print-ready PDFs, because Acrobat’s SWOP simulation can show DeviceGray black as 98%.
+- The final B&W production PDF should sample as:
+  - Cyan 0%
+  - Magenta 0%
+  - Yellow 0%
+  - Black 100%
 
-2. **Two-pass Ghostscript CMYK → Gray** (current code, kept as fallback)
-   Existing Stage A + Stage B.
+### 2. Add a stricter Acrobat-style verifier
 
-3. **Single-pass Ghostscript Gray** (legacy last-resort fallback, current code)
+Update `verify_pure_black_text()` so the acceptance gate is based on the final PDF’s separation behaviour, not just a Ghostscript raster shortcut that can mask the 98% issue.
 
-### Verifier becomes a gate, not just a report
+The verifier will:
 
-`verify_pure_black_text()` currently returns metrics into the report. We promote it to a gate inside `grayscale()`:
+- Render page 1 through a CMYK separation path that better matches the final production intent.
+- Treat 98% K as failure for “pure black text” when CMY is 0 but K is under the acceptance target.
+- Keep reporting `min_k_pct`, `max_cmy_pct`, `near_black_pixels`, and `pure_k_ok`, but tighten the gate to catch the exact failure shown in the screenshot.
 
-```text
-for strategy in [mutool, gs_two_pass, gs_single_pass]:
-    run(strategy) → candidate.pdf
-    metrics = verify_pure_black_text(candidate)
-    if metrics.pure_k_ok:   # min_k_pct >= 95 and max_cmy_pct <= 5
-        promote candidate → out_pdf
-        return {strategy, metrics}
-    else:
-        log warning, try next
-# if nothing passes, return last candidate with metrics so operator sees it
-```
+### 3. Keep mutool, but demote it to normalisation/support only
 
-The selected strategy + its metrics get attached to `report["colour_check"]` in `production_tasks.py` (already wired — we just enrich the payload).
+Keep `mutool` in diagnostics and available for cleanup/fallback, but don’t rely on `mutool convert -O colorspace=gray` as proof of final print separations unless the stricter verifier passes.
 
-### Config
+### 4. Improve reporting so we can see why it failed next time
 
-Add to `app/core/config.py`:
-- `mutool_bin: str = "mutool"` (alias `MUTOOL_BIN`).
+In `assembly_report.colour_check`, include:
 
-Verify with `shutil.which`; if missing, the strategy is skipped and we fall straight to GS.
+- selected `strategy`
+- each attempted command family
+- verifier metrics per attempt
+- whether the final file is `DeviceCMYK`-targeted or `DeviceGray`-targeted
+- any stderr snippets when a strategy fails
 
-### Cache invalidation
+### 5. Bump cache version again
 
-Bump `colour_pipeline_version` from `2` → `3` in `production_tasks.py` so the existing INV-00057-3 artefact re-assembles.
+In `pdf-server/app/tasks/production_tasks.py`, bump `colour_pipeline_version` from `3` to `4` so existing INV-00057-3 artefacts are forced to regenerate.
 
-## Files touched
+## Verification after deploy
 
-- `pdf-server/app/core/config.py` — add `mutool_bin`.
-- `pdf-server/app/services/pdf_ops.py` — add `_grayscale_via_mutool()`; rewrite `grayscale()` as a verifier-gated ladder; keep existing GS code as `_grayscale_via_gs_two_pass()` + `_grayscale_via_gs_single_pass()`.
-- `pdf-server/app/services/diagnostics.py` — add mutool to the binaries check.
-- `pdf-server/app/tasks/production_tasks.py` — bump `colour_pipeline_version` to 3; record `strategy` in `colour_check`.
+1. Git pull on the VPS and restart API + workers.
+2. Force regenerate/re-assemble INV-00057-3.
+3. Check the new `assembly_report.colour_check`:
+   - expected `strategy`: `cmyk_k_only` or equivalent
+   - expected `min_k_pct`: 100
+   - expected `max_cmy_pct`: 0
+4. Download the new print-ready PDF and check Acrobat Output Preview with U.S. Web Coated SWOP v2:
+   - Process Cyan: 0%
+   - Process Magenta: 0%
+   - Process Yellow: 0%
+   - Process Black: 100%
 
-No frontend, DB, or admin-setting changes.
+## Files to update
 
-## Verification on the VPS
-
-1. `git pull` and restart workers (heavy + light).
-2. Re-assemble INV-00057-3 (cache miss is automatic from the version bump).
-3. Acrobat → Output Preview → SWOP simulation should show **Process Black 100 %, C/M/Y 0 %** on text.
-4. Admin panel → `assembly_report.colour_check` shows e.g.:
-   ```text
-   { strategy: "mutool", min_k_pct: 100, max_cmy_pct: 0, near_black_pixels: 18420, pure_k_ok: true }
-   ```
-5. If mutool ever fails the verifier on a weird source, the report will show `strategy: "gs_two_pass"` with its own metrics — full audit trail.
-
-## Risks
-
-- mutool's `colorspace=gray` re-encodes embedded fonts; on rare PDFs with broken font dicts it may warn. The verifier-gated ladder catches that automatically and falls back to GS, so a failure here is not a customer-facing regression.
-- Adds at most one extra rasterised page-1 verify per attempt (~0.3 s). Cached after first run.
+- `pdf-server/app/services/pdf_ops.py`
+- `pdf-server/app/tasks/production_tasks.py`
+- `.lovable/plan.md`
