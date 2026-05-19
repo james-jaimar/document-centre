@@ -101,6 +101,9 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
             # invalidates the cached artefact when directives change.
             "merge_directives": (bundle.configuration or {}).get("merge_directives") if isinstance(bundle.configuration, dict) else None,
             "section_flags": section_flags,
+            # Bump to invalidate caches when the colour pipeline changes.
+            # v2: two-pass CMYK-with-BlackText → DeviceGray for true 100% K text.
+            "colour_pipeline_version": 2,
         }
         new_hash = pdf_ops.spec_hash(spec_inputs)
         existing_hash = bundle.job.get("print_ready_spec_hash")
