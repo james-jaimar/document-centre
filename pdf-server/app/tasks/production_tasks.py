@@ -101,6 +101,9 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
             # invalidates the cached artefact when directives change.
             "merge_directives": (bundle.configuration or {}).get("merge_directives") if isinstance(bundle.configuration, dict) else None,
             "section_flags": section_flags,
+            # Bump to invalidate caches when the colour pipeline changes.
+            # v2: two-pass CMYK-with-BlackText → DeviceGray for true 100% K text.
+            "colour_pipeline_version": 2,
         }
         new_hash = pdf_ops.spec_hash(spec_inputs)
         existing_hash = bundle.job.get("print_ready_spec_hash")
@@ -232,11 +235,16 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                 )
 
             # ── Step 5: greyscale (B&W jobs) ────────────────────────────
+            colour_check: dict | None = None
             if needs_greyscale:
                 grey = ws.path("grey.pdf")
                 pdf_ops.grayscale(current, grey)
                 current = grey
                 steps.append("greyscale")
+                try:
+                    colour_check = pdf_ops.verify_pure_black_text(grey)
+                except Exception as exc:
+                    colour_check = {"checked": False, "reason": f"verify_raised: {exc}"}
 
             # ── Decide where the result lives ───────────────────────────
             if not steps and len(files) == 1:
@@ -265,6 +273,7 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                 "print_to_edge": target.print_to_edge,
             },
             "detected_size_mm": list(actual_size) if actual_size else None,
+            "colour_check": colour_check,
         }
         write_artefact_path(job_id, "print_ready_pdf_path", storage_path)
         write_job_field(job_id, "assembly_report", report)

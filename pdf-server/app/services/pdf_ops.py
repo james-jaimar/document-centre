@@ -561,37 +561,47 @@ class PdfOps:
 
     def grayscale(self, src: Path, out_pdf: Path) -> Path:
         """
-        Industry-grade greyscale conversion for the pdfwrite device.
+        Two-pass "pure-K text" greyscale conversion.
 
-        Key flags (all required for "pure K text"):
-          -dBlackText=true          → force text painted with black ink only
-                                       (RGB(0,0,0) and CMYK rich-black both
-                                       collapse to DeviceGray 0 / K 100%).
-          -dBlackVector=true         → same treatment for vector line art.
-          -dKPreserve=2              → keep CMYK K-only objects K-only;
-                                       prevents colorimetric "98%" drift
-                                       from rich-black sources.
-          -dBlackPtComp=true         → black-point compensation on remap.
-          -dRenderIntent=1           → RelativeColorimetric (correct for
-                                       text & vector; images are mostly
-                                       perceptual but greyscale collapses
-                                       all object types anyway).
-          -dPreserveOverprintSettings=true,
-          -dOverprint=/simulate      → respect overprint flags in source.
-          -dHaveTransparency=true    → keep transparency groups intact.
-          -dAutoFilterGrayImages=false,
-          -dGrayImageFilter=/FlateEncode,
-          -dDownsampleGrayImages=false → lossless gray image preservation.
+        Why two passes? Going straight to ``-sColorConversionStrategy=Gray``
+        routes RGB(0,0,0) text through Ghostscript's DefaultGray profile,
+        which has a tone curve. The result lands at DeviceGray ≈ 0xE6
+        (≈ 98 % K in Acrobat's separation preview) instead of 0x00 (100 %).
+        ``-dBlackText`` / ``-dKPreserve`` flags are no-ops when the target
+        is DeviceGray — they only fire on the CMYK conversion path.
 
-        We attempt the rich invocation first; if Ghostscript on this host
-        refuses (older builds occasionally reject the K-preserve combo),
-        we fall back to the minimal invocation that always worked.
+        Industry-standard workflows (PDF Print Engine, callas, PitStop)
+        therefore handle B&W like this:
+
+          Stage A: convert RGB → CMYK with -dBlackText=true / -dKPreserve=2
+                   so all black text/vectors become DeviceCMYK 0,0,0,1.
+          Stage B: convert that CMYK file → DeviceGray. Because every
+                   text/vector glyph is already pure K, Ghostscript's
+                   CMYK→Gray formula (gray = 1 − k for c=m=y=0) maps
+                   them exactly to gray 0x00. No tone-curve drift.
+
+        End result: a DeviceGray PDF where Acrobat Output Preview shows
+        Process Black 100 % / CMY 0 % on text. Images (true greyscale
+        photos) come along for the ride at full fidelity.
         """
         from app.services.icc_profiles import resolve_profile
 
         icc_dir = str(ICC_DIR)
         src_dir = str(src.parent)
         out_dir = str(out_pdf.parent)
+
+        # Resolve source/dest ICC profiles (non-fatal if missing).
+        profile_flags: list[str] = []
+        try:
+            profile_flags.append(f"-sDefaultRGBProfile={resolve_profile('srgb')}")
+        except (FileNotFoundError, ValueError):
+            pass
+        try:
+            profile_flags.append(f"-sDefaultCMYKProfile={resolve_profile('fogra39')}")
+        except (FileNotFoundError, ValueError):
+            pass
+        if profile_flags:
+            profile_flags.append("-dOverrideICC=true")
 
         common = [
             settings.ghostscript_bin,
@@ -605,68 +615,171 @@ class PdfOps:
             "-dNumRenderingThreads=4",
             "-sDEVICE=pdfwrite",
             "-dCompatibilityLevel=1.7",
-            "-sColorConversionStrategy=Gray",
-            "-dProcessColorModel=/DeviceGray",
         ]
 
-        # Pull in source-profile hints so RGB(0,0,0) and CMYK rich-black
-        # both resolve to pure K. Missing profiles are non-fatal — we just
-        # drop those flags from the rich attempt.
-        profile_flags: list[str] = []
-        try:
-            rgb_path = resolve_profile("srgb")
-            profile_flags.append(f"-sDefaultRGBProfile={rgb_path}")
-        except (FileNotFoundError, ValueError):
-            pass
-        try:
-            cmyk_path = resolve_profile("fogra39")
-            profile_flags.append(f"-sDefaultCMYKProfile={cmyk_path}")
-        except (FileNotFoundError, ValueError):
-            pass
-        if profile_flags:
-            profile_flags.append("-dOverrideICC=true")
-
-        rich_cmd = [
+        # ── Stage A: → CMYK with forced K-only text/vectors ──────────
+        stage_a = out_pdf.with_suffix(".stageA.pdf")
+        stage_a_cmd = [
             *common,
+            "-sColorConversionStrategy=CMYK",
+            "-dProcessColorModel=/DeviceCMYK",
             *profile_flags,
-            "-dRenderIntent=1",                  # RelativeColorimetric
+            "-dRenderIntent=1",
             "-dBlackPtComp=true",
-            "-dKPreserve=2",                     # preserve K-only objects
-            "-dBlackText=true",                  # FORCE pure K for text
-            "-dBlackVector=true",                # FORCE pure K for line art
+            "-dKPreserve=2",                 # K-only stays K-only
+            "-dBlackText=true",              # RGB(0,0,0) text → 0/0/0/100
+            "-dBlackVector=true",            # same for line art
             "-dPreserveOverprintSettings=true",
-            "-dOverprint=/simulate",
             "-dHaveTransparency=true",
+            "-o", str(stage_a), str(src),
+        ]
+
+        # ── Stage B: CMYK → DeviceGray (lossless for K-only objects) ──
+        stage_b_cmd = [
+            *common,
+            "-sColorConversionStrategy=Gray",
+            "-dProcessColorModel=/DeviceGray",
+            *profile_flags,
+            "-dRenderIntent=1",
+            "-dBlackPtComp=true",
             "-dAutoFilterGrayImages=false",
             "-dGrayImageFilter=/FlateEncode",
             "-dDownsampleGrayImages=false",
-            "-o", str(out_pdf), str(src),
+            "-o", str(out_pdf), str(stage_a),
         ]
 
-        minimal_cmd = [
+        # ── Single-pass fallback (legacy behaviour) ──────────────────
+        fallback_cmd = [
             *common,
+            "-sColorConversionStrategy=Gray",
+            "-dProcessColorModel=/DeviceGray",
             "-o", str(out_pdf), str(src),
         ]
 
-        for attempt_name, cmd in (("rich_gray", rich_cmd), ("minimal_gray", minimal_cmd)):
+        try:
+            proc_a = subprocess.run(stage_a_cmd, capture_output=True, text=True)
+            if proc_a.returncode != 0 or not stage_a.exists() or stage_a.stat().st_size == 0:
+                logger.warning(
+                    "grayscale: stage A (CMYK k-only) failed rc=%s stderr=%r — falling back to single-pass gray",
+                    proc_a.returncode, (proc_a.stderr or "")[-400:],
+                )
+                raise RuntimeError("stage_a_failed")
+
+            proc_b = subprocess.run(stage_b_cmd, capture_output=True, text=True)
+            if proc_b.returncode == 0 and out_pdf.exists() and out_pdf.stat().st_size > 0:
+                logger.info("grayscale: two-pass CMYK→Gray succeeded")
+                try:
+                    stage_a.unlink()
+                except Exception:
+                    pass
+                return out_pdf
+
+            logger.warning(
+                "grayscale: stage B (CMYK→Gray) failed rc=%s stderr=%r — falling back to single-pass gray",
+                proc_b.returncode, (proc_b.stderr or "")[-400:],
+            )
+        except Exception as exc:
+            logger.warning("grayscale: two-pass pipeline raised %s — falling back", exc)
+
+        try:
+            if stage_a.exists():
+                stage_a.unlink()
+        except Exception:
+            pass
+
+        subprocess.run(fallback_cmd, check=True)
+        return out_pdf
+
+    def verify_pure_black_text(self, src: Path) -> dict:
+        """
+        Rasterise page 1 to a CMYK TIFF and report the K/CMY distribution of
+        near-black pixels. Result lands in ``assembly_report.colour_check``
+        so the operator has proof that text is true K-only.
+
+        Returns a dict like:
+            {
+              "checked": True,
+              "near_black_pixels": 12345,
+              "min_k_pct": 100.0,        # smallest K among near-black px
+              "max_cmy_pct": 0.0,        # largest C+M+Y sum among same
+              "pure_k_ok": True,         # min_k >= 95 and max_cmy <= 5
+            }
+
+        Failures (missing PIL, GS error, no page) are non-fatal — we just
+        return ``{"checked": False, "reason": "..."}``.
+        """
+        try:
+            import tempfile
+            from PIL import Image  # type: ignore
+        except Exception as exc:
+            return {"checked": False, "reason": f"pillow_unavailable: {exc}"}
+
+        if not src.exists() or src.stat().st_size == 0:
+            return {"checked": False, "reason": "missing_input"}
+
+        with tempfile.TemporaryDirectory() as td:
+            out_tiff = Path(td) / "page1.tif"
+            cmd = [
+                settings.ghostscript_bin,
+                "-dSAFER",
+                f"--permit-file-read={src.parent}",
+                f"--permit-file-write={td}",
+                "-dBATCH", "-dNOPAUSE",
+                "-sDEVICE=tiff32nc",     # 32-bit CMYK
+                "-r150",
+                "-dFirstPage=1", "-dLastPage=1",
+                "-o", str(out_tiff), str(src),
+            ]
             try:
                 proc = subprocess.run(cmd, capture_output=True, text=True)
-                if proc.returncode == 0 and out_pdf.exists() and out_pdf.stat().st_size > 0:
-                    if attempt_name != "rich_gray":
-                        logger.warning(
-                            "grayscale: rich attempt failed, used fallback %s", attempt_name
-                        )
-                    return out_pdf
-                logger.warning(
-                    "grayscale: attempt %s failed rc=%s stderr=%r",
-                    attempt_name, proc.returncode, (proc.stderr or "")[-400:],
-                )
             except Exception as exc:
-                logger.warning("grayscale: attempt %s raised %s", attempt_name, exc)
+                return {"checked": False, "reason": f"gs_raised: {exc}"}
+            if proc.returncode != 0 or not out_tiff.exists():
+                return {
+                    "checked": False,
+                    "reason": f"gs_rc={proc.returncode}",
+                    "stderr": (proc.stderr or "")[-200:],
+                }
 
-        # Last resort — surface the original failure.
-        subprocess.run(minimal_cmd, check=True)
-        return out_pdf
+            try:
+                im = Image.open(out_tiff)
+                if im.mode != "CMYK":
+                    im = im.convert("CMYK")
+                # Downsample to keep this fast on multi-MP rasters.
+                w, h = im.size
+                scale = max(1, max(w, h) // 800)
+                if scale > 1:
+                    im = im.resize((w // scale, h // scale), Image.NEAREST)
+                px = im.load()
+                W, H = im.size
+                near_black = 0
+                min_k = 256
+                max_cmy = 0
+                for y in range(H):
+                    for x in range(W):
+                        c, m, yv, k = px[x, y]
+                        cmy = c + m + yv
+                        # Near-black classification: high K and low CMY,
+                        # OR very dark composite (k+cmy/3 > 200).
+                        if k >= 200 or (k + cmy // 3) >= 220:
+                            near_black += 1
+                            if k < min_k:
+                                min_k = k
+                            if cmy > max_cmy:
+                                max_cmy = cmy
+                if near_black == 0:
+                    return {"checked": True, "near_black_pixels": 0, "reason": "no_near_black_text"}
+                min_k_pct = round((min_k / 255.0) * 100.0, 2)
+                max_cmy_pct = round((max_cmy / (3 * 255.0)) * 100.0, 2)
+                return {
+                    "checked": True,
+                    "near_black_pixels": near_black,
+                    "min_k_pct": min_k_pct,
+                    "max_cmy_pct": max_cmy_pct,
+                    "pure_k_ok": (min_k_pct >= 95.0 and max_cmy_pct <= 5.0),
+                }
+            except Exception as exc:
+                return {"checked": False, "reason": f"pillow_raised: {exc}"}
 
 
     def rgb_to_cmyk(self, src: Path, out_pdf: Path, icc_profile: str | None = None) -> Path:
