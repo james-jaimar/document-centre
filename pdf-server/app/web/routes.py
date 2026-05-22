@@ -589,3 +589,32 @@ def op_render_job_ticket(payload: JobArtefactRequest, db: Session = Depends(get_
     task = render_job_ticket_for_job.delay(str(payload.job_id), job_id)
     job_repo.set_celery_task_id(db, job_id, task.id)
     return {"job_id": job_id}
+
+
+@api_router.post(
+    "/operations/cloudprinter-render",
+    response_model=CloudprinterRenderResponse,
+    tags=["operations"],
+    summary="PMP Cloudprinter render offload",
+)
+def op_cloudprinter_render(
+    payload: CloudprinterRenderRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Queue a Cloudprinter render job for the printmypics (PMP) project.
+
+    Auth: Bearer token matching the ``PMP_CLOUDPRINTER_API_KEY`` env var
+    (separate from the main ``API_AUTH_TOKEN`` so PMP can be rotated
+    independently of document-centre clients).
+    """
+    expected = os.getenv("PMP_CLOUDPRINTER_API_KEY", "")
+    if not expected:
+        raise HTTPException(503, "PMP Cloudprinter integration not configured")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Missing bearer token")
+    token = authorization.removeprefix("Bearer ").strip()
+    if not hmac.compare_digest(token, expected):
+        raise HTTPException(401, "Invalid token")
+
+    task = cloudprinter_render.delay(payload.model_dump(mode="json"))
+    return CloudprinterRenderResponse(render_job_id=task.id, status="queued")

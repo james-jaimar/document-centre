@@ -1,61 +1,81 @@
-## Goal
+## Root cause
 
-Colour leak is fixed. Now do an end-to-end audit of every other spec the customer can set so each one flows correctly from the cart → `product_snapshot`/`configuration` → `TargetSpec` → print-ready PDF (and job ticket). Fix any params that are read but not applied, or applied but not cached.
+`/openapi.json` doesn't list `/v1/operations/cloudprinter-render` because the **handler function was never added to `pdf-server/app/web/routes.py`**. The previous turn only added the import line:
 
-## Parameters in scope
+```py
+from app.tasks.cloudprinter_tasks import cloudprinter_render
+```
 
-| Param | Source of truth | Currently wired? |
-|---|---|---|
-| Paper size (width/height_mm) | `snap.width_mm/height_mm` + size slugs | Yes — but slug table is small (A3–A6, Letter, Legal, Tabloid, DL, biz card, square A4/A5). SRA, custom, photo sizes missing. |
-| Orientation | slug/label sniffing + canvas-derived | Yes |
-| Colour mode (document-wide) | `sections[].is_color` then slug fallback | Yes |
-| Per-section colour (e.g. B&W body + colour cover) | `sections[].is_color` | **Not applied** — flagged as "planned follow-up" |
-| Sides / duplex | `sections[].is_duplex` | **Read into cache hash only, never acted on** (no simplex→duplex page expansion, no duplex flag on `TargetSpec`) |
-| Print-to-edge / bleed | slug/label + `cfg.print_to_edge` + `target.bleed_mm` | Yes (auto-expand if missing) |
-| Paper type/weight | `snap.paper_weight_gsm`, `cfg.paper` | Job ticket only — no effect on PDF (correct, paper is a press attribute) |
-| Cover / finishing / lamination | `cfg.cover`, `cfg.finishing` | Job ticket only (correct, post-press) |
-| Binding | `snap.binding` | Drives imposition strategy only |
+…and the Pydantic schemas, but no `@api_router.post("/operations/cloudprinter-render")` block. FastAPI generates OpenAPI from registered routes, so without the decorator the path simply doesn't exist — restarting uvicorn won't change that.
 
-## Plan
+Verified during exploration:
+- `app.main` already mounts `api_router` at `/v1` (rotate, convert-office, etc. show up the same way).
+- Worker `include=` already lists `app.tasks.cloudprinter_tasks` → Celery autodiscovery is fine.
+- `PMP_CLOUDPRINTER_API_KEY` only exists in `.env.example`; it is NOT in `app.core.config.settings`, so the auth check needs to read it directly via `os.getenv` (or we add a settings field).
 
-1. **Audit harness (one-off script, no behaviour change)**
-   - Add `pdf-server/scripts/audit-print-spec.py <job_id>` that loads a bundle, prints the resolved `TargetSpec`, the section flags, what `assemble_print_ready_for_job` would do (`needs_resize`, `needs_bleed`, `needs_greyscale`), and the resulting `assembly_report.steps` from the last run.
-   - Lets us spot mismatches per job without re-running production.
+## Fix
 
-2. **Expand paper-size slug table** in `production_orchestrator.py::_PAPER_SIZES_MM`
-   - Add SRA3/SRA4, A2, custom photo sizes the catalogue actually offers (4R, 5R, 6R, 8R, etc.), and the "square_*" / portrait/landscape variants used by the storefront.
-   - Add a fallback: if no slug matches, but `snap.selected_options` carries a `{width_mm,height_mm}` option payload, honour it.
+### 1. Add the missing handler to `pdf-server/app/web/routes.py`
 
-3. **Wire per-section colour mode** (replaces the "planned follow-up" note)
-   - In `assemble_print_ready_for_job`, when `printable_sections` is mixed colour/B&W:
-     - Greyscale each B&W section's source PDF before merge, leave colour sections untouched.
-     - Use the existing `pdf_ops.grayscale()` ladder per file.
-   - When `merge_directives` are present, walk them by `section_id` and apply per-section greyscale based on `sections[section_id].is_color`.
-   - Surface per-section outcomes in `assembly_report.colour_check.sections[]`.
+Append at the bottom (after `render-job-ticket`):
 
-4. **Wire duplex / sides into the print-ready pipeline**
-   - Add `duplex_mode: "simplex" | "duplex" | "mixed"` to `TargetSpec`, resolved from `sections[].is_duplex` the same way colour is.
-   - If a section is `simplex` but its source PDF has odd-then-even content, insert blank back pages so the press doesn't accidentally print on the back of the previous sheet (mirrors the existing simplex-cover blank insertion in `merge_directives`).
-   - Add `duplex_mode` to `assembly_report.target` and to the spec-hash inputs (separately from the existing section_flags so duplex changes invalidate cache cleanly).
+```py
+import os, hmac
+from fastapi import Request
 
-5. **Tighten resize/orientation guard**
-   - `needs_resize` currently uses a 2 mm tolerance — keep it, but also re-evaluate orientation: if `target.orientation` differs from actual page orientation, force `resize_pages(..., dominant_orientation=target.orientation)` even when dimensions match transposed.
+@api_router.post(
+    "/operations/cloudprinter-render",
+    response_model=CloudprinterRenderResponse,
+    tags=["operations"],
+    summary="PMP Cloudprinter render offload",
+)
+def op_cloudprinter_render(
+    payload: CloudprinterRenderRequest,
+    authorization: str | None = Header(default=None),
+):
+    expected = os.getenv("PMP_CLOUDPRINTER_API_KEY", "")
+    if not expected:
+        raise HTTPException(503, "PMP Cloudprinter integration not configured")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Missing bearer token")
+    token = authorization.removeprefix("Bearer ").strip()
+    if not hmac.compare_digest(token, expected):
+        raise HTTPException(401, "Invalid token")
 
-6. **Job ticket completeness**
-   - `_render_ticket_pdf` reads `snap.size`, `snap.paper`, `snap.colour`, etc. — confirm these survive `buildJobSnapshot.ts`. If any are stripped (we know "Print Colour" / "Print Sides" are), resolve them from `sections[]` instead so the operator ticket shows the same truth the worker used.
-   - Add a "Colour mode (resolved)" and "Duplex (resolved)" row sourced from `TargetSpec`, not raw snapshot, so the ticket reflects what was actually produced.
+    task = cloudprinter_render.delay(payload.model_dump(mode="json"))
+    return CloudprinterRenderResponse(render_job_id=task.id, status="queued")
+```
 
-7. **Cache invalidation**
-   - Bump `colour_pipeline_version` (or rename to `pipeline_version`) to `6` so per-section colour + duplex changes regenerate existing artefacts.
+(Move the `import os, hmac` to the top of the file with the other imports; shown inline here only for clarity.)
 
-## Verification
+### 2. Confirm the env var is set on the VPS
 
-1. Run the audit script against a handful of jobs that exercise: pure colour, pure B&W, mixed colour cover + B&W body, simplex flyer, duplex booklet, non-A-series sizes.
-2. Re-assemble each in production; confirm `assembly_report.target` matches the customer spec, `colour_check.sections` shows per-section outcomes, and the job ticket prints the resolved values.
-3. Spot-check the actual PDFs in Acrobat (page sizes, simplex blanks, mixed colour pages).
+`PMP_CLOUDPRINTER_API_KEY=...` must be in `/opt/document-centre-api/.env` on **both** the API host and the worker host. Without it the endpoint will 503.
 
-## Technical notes
+### 3. Deploy + restart on the VPS
 
-- All work stays in `pdf-server/app/services/production_orchestrator.py`, `pdf-server/app/services/pdf_ops.py`, `pdf-server/app/tasks/production_tasks.py`, plus the new audit script. No DB schema changes; no edge-function changes.
-- `TargetSpec` gains `duplex_mode` (optional, defaults to `None` = unknown / no-op).
-- Cache invalidation is the only behaviour change for unaffected jobs — they'll regenerate once, then resume cache hits.
+```bash
+cd /opt/document-centre-api
+git pull
+sudo systemctl restart document-centre-api
+sudo systemctl restart document-centre-worker-light    # owns the 'thumbnails' queue
+```
+
+### 4. Verify
+
+```bash
+curl -s https://document-centre-api.jaimar.dev/openapi.json \
+  | python3 -c "import sys,json; p=json.load(sys.stdin)['paths']; print([k for k in p if 'cloudprinter' in k])"
+# expect: ['/v1/operations/cloudprinter-render']
+
+curl -i -X POST https://document-centre-api.jaimar.dev/v1/operations/cloudprinter-render \
+  -H "Authorization: Bearer $PMP_CLOUDPRINTER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"order_id":"test","callback_url":"https://example.com","callback_token":"x","jobs":[]}'
+# expect: 200 with {"render_job_id":"...","status":"queued"}
+```
+
+## Files changed
+- `pdf-server/app/web/routes.py` — add `os`/`hmac`/`Request` imports (Header already imported) and append the `op_cloudprinter_render` handler.
+
+No other changes needed — schemas, task, and worker `include` are already correct.
