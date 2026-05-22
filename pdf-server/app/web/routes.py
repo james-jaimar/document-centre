@@ -1,6 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+import hmac
+import os
+
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+
+from app.schemas.cloudprinter import CloudprinterRenderRequest, CloudprinterRenderResponse
+from app.tasks.cloudprinter_tasks import cloudprinter_render
 
 from app.db.session import get_db
 from app.schemas.assets import (
