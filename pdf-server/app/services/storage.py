@@ -11,8 +11,14 @@ except ImportError:
     boto3 = None  # type: ignore
 
 import boto3
+from botocore.config import Config
 
-s3_client = boto3.client('s3', region_name='af-south-1')
+s3_client = boto3.client(
+    's3',
+    region_name='af-south-1',
+    endpoint_url='https://s3.af-south-1.amazonaws.com',
+    config=Config(signature_version='s3v4', s3={'addressing_style': 'virtual'}),
+)
 S3_BUCKET = 'jaimar-dev-600743178200-af-south-1-an'
 
 
