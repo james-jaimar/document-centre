@@ -1,81 +1,29 @@
-## Root cause
+# Fix S3 presigned URL region for Cloudprinter renders
 
-`/openapi.json` doesn't list `/v1/operations/cloudprinter-render` because the **handler function was never added to `pdf-server/app/web/routes.py`**. The previous turn only added the import line:
+## Problem
+The module-level `s3_client` in `pdf-server/app/services/storage.py` is built without an explicit endpoint or SigV4 config. Because the bucket `jaimar-dev-600743178200-af-south-1-an` lives in `af-south-1` (an opt-in region), the presigned URLs it generates target the global S3 endpoint and fail with `IllegalLocationConstraintException` when Cloudprinter fetches them.
 
-```py
-from app.tasks.cloudprinter_tasks import cloudprinter_render
-```
+## Change
+Single, surgical edit to `pdf-server/app/services/storage.py`:
 
-…and the Pydantic schemas, but no `@api_router.post("/operations/cloudprinter-render")` block. FastAPI generates OpenAPI from registered routes, so without the decorator the path simply doesn't exist — restarting uvicorn won't change that.
+- Add `from botocore.config import Config` to the imports.
+- Replace the existing `s3_client = boto3.client('s3', region_name='af-south-1')` with:
 
-Verified during exploration:
-- `app.main` already mounts `api_router` at `/v1` (rotate, convert-office, etc. show up the same way).
-- Worker `include=` already lists `app.tasks.cloudprinter_tasks` → Celery autodiscovery is fine.
-- `PMP_CLOUDPRINTER_API_KEY` only exists in `.env.example`; it is NOT in `app.core.config.settings`, so the auth check needs to read it directly via `os.getenv` (or we add a settings field).
-
-## Fix
-
-### 1. Add the missing handler to `pdf-server/app/web/routes.py`
-
-Append at the bottom (after `render-job-ticket`):
-
-```py
-import os, hmac
-from fastapi import Request
-
-@api_router.post(
-    "/operations/cloudprinter-render",
-    response_model=CloudprinterRenderResponse,
-    tags=["operations"],
-    summary="PMP Cloudprinter render offload",
+```python
+s3_client = boto3.client(
+    's3',
+    region_name='af-south-1',
+    endpoint_url='https://s3.af-south-1.amazonaws.com',
+    config=Config(signature_version='s3v4', s3={'addressing_style': 'virtual'}),
 )
-def op_cloudprinter_render(
-    payload: CloudprinterRenderRequest,
-    authorization: str | None = Header(default=None),
-):
-    expected = os.getenv("PMP_CLOUDPRINTER_API_KEY", "")
-    if not expected:
-        raise HTTPException(503, "PMP Cloudprinter integration not configured")
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(401, "Missing bearer token")
-    token = authorization.removeprefix("Bearer ").strip()
-    if not hmac.compare_digest(token, expected):
-        raise HTTPException(401, "Invalid token")
-
-    task = cloudprinter_render.delay(payload.model_dump(mode="json"))
-    return CloudprinterRenderResponse(render_job_id=task.id, status="queued")
 ```
 
-(Move the `import os, hmac` to the top of the file with the other imports; shown inline here only for clarity.)
+Nothing else changes:
+- `S3_BUCKET` constant untouched.
+- `StorageService` class and its internal `self._s3` client untouched.
+- No task / route / schema changes.
 
-### 2. Confirm the env var is set on the VPS
-
-`PMP_CLOUDPRINTER_API_KEY=...` must be in `/opt/document-centre-api/.env` on **both** the API host and the worker host. Without it the endpoint will 503.
-
-### 3. Deploy + restart on the VPS
-
-```bash
-cd /opt/document-centre-api
-git pull
-sudo systemctl restart document-centre-api
-sudo systemctl restart document-centre-worker-light    # owns the 'thumbnails' queue
-```
-
-### 4. Verify
-
-```bash
-curl -s https://document-centre-api.jaimar.dev/openapi.json \
-  | python3 -c "import sys,json; p=json.load(sys.stdin)['paths']; print([k for k in p if 'cloudprinter' in k])"
-# expect: ['/v1/operations/cloudprinter-render']
-
-curl -i -X POST https://document-centre-api.jaimar.dev/v1/operations/cloudprinter-render \
-  -H "Authorization: Bearer $PMP_CLOUDPRINTER_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"order_id":"test","callback_url":"https://example.com","callback_token":"x","jobs":[]}'
-# expect: 200 with {"render_job_id":"...","status":"queued"}
-```
-
-## Files changed
-- `pdf-server/app/web/routes.py` — add `os`/`hmac`/`Request` imports (Header already imported) and append the `op_cloudprinter_render` handler.
-
-No other changes needed — schemas, task, and worker `include` are already correct.
+## Verify after `git pull` + restart
+1. Restart `document-centre-api` and `document-centre-worker-light` on the VPS.
+2. Trigger a Cloudprinter render (or call `s3_client.generate_presigned_url(...)` from a shell) and confirm the URL host is `jaimar-dev-600743178200-af-south-1-an.s3.af-south-1.amazonaws.com` (virtual-hosted, regional).
+3. Confirm Cloudprinter download no longer returns `IllegalLocationConstraintException`.
