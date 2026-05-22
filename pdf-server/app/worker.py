@@ -14,6 +14,8 @@ celery_app = Celery(
         # Without this include, the API queues the jobs but no worker registers them
         # and they sit forever in `queued`.
         "app.tasks.production_tasks",
+        # PMP (printmypics) Cloudprinter render offload.
+        "app.tasks.cloudprinter_tasks",
     ],
 )
 
