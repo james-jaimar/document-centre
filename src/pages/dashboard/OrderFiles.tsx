@@ -1593,6 +1593,7 @@ export default function OrderFiles() {
           (familySlug === "ring_binders" || familySlug === "ring-binders") &&
           type === "front_cover";
         extraFields.is_duplex = isRingBinderCover ? false : coverPages >= 2;
+      }
       // Cover page-limit guard: physical covers are one sheet (max 2 pages).
       // If the user picked a multi-page doc as a cover, prompt to use only the
       // first two pages. Abort the immediate assignment — the dialog will
