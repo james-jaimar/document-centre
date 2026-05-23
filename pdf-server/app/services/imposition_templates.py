@@ -158,6 +158,19 @@ def load_imposition_template(template_id: str, workspace_dir: Path) -> Impositio
             local_pdf=local_pdf,
         )
 
+    def _num(key: str, default: float) -> float:
+        """Preserve explicit 0 values; only fall back to `default` when the
+        DB value is NULL or missing. Plain `row.get(k) or default` turns a
+        legitimate 0.0 (e.g. a no-bleed template) into the default and was
+        the cause of the 'A4 2up A3 No bleed' overflow bug."""
+        v = row.get(key)
+        if v is None:
+            return float(default)
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return float(default)
+
     if kind == "parametric_nup":
         cols = int(row.get("columns") or 0)
         rows_n = int(row.get("rows") or 0)
@@ -178,12 +191,12 @@ def load_imposition_template(template_id: str, workspace_dir: Path) -> Impositio
             template_pdf_path=None,
             columns=cols,
             rows=rows_n,
-            bleed_mm=float(row.get("bleed_mm") or 3.0),
-            gutter_mm=float(row.get("gutter_mm") or 0.0),
-            crop_mark_offset_mm=float(row.get("crop_mark_offset_mm") or 3.0),
-            crop_mark_length_mm=float(row.get("crop_mark_length_mm") or 5.0),
+            bleed_mm=_num("bleed_mm", 3.0),
+            gutter_mm=_num("gutter_mm", 0.0),
+            crop_mark_offset_mm=_num("crop_mark_offset_mm", 3.0),
+            crop_mark_length_mm=_num("crop_mark_length_mm", 5.0),
             show_registration=bool(row.get("show_registration")),
-            fallback_trim_inset_mm=float(row.get("fallback_trim_inset_mm") or 0.0),
+            fallback_trim_inset_mm=_num("fallback_trim_inset_mm", 0.0),
         )
 
     if kind == "parametric_booklet":
@@ -197,8 +210,8 @@ def load_imposition_template(template_id: str, workspace_dir: Path) -> Impositio
             has_crop_marks=bool(row.get("has_crop_marks")),
             work_style=str(row.get("work_style") or "sheetwise"),
             template_pdf_path=None,
-            bleed_mm=float(row.get("bleed_mm") or 3.0),
-            creep_per_sheet_mm=float(row.get("creep_per_sheet_mm") or 0.0),
+            bleed_mm=_num("bleed_mm", 3.0),
+            creep_per_sheet_mm=_num("creep_per_sheet_mm", 0.0),
         )
 
     raise ValueError(f"Unknown imposition template kind: {kind!r}")
