@@ -678,8 +678,9 @@ export default function OrderBuild() {
     const val = (tabOpt.values as StructuredOptionValue[]).find((v) => v.slug === slug);
     if (!val) return null;
     const count = (val.metadata as any)?.tab_count ?? 0;
+    const packCount = (val.metadata as any)?.pack_count ?? Math.ceil(count / 10);
     const multiColor = (val.metadata as any)?.color === "multi";
-    return count > 0 ? { count, multiColor } : null;
+    return count > 0 ? { count, packCount, multiColor } : null;
   }, [options, spec.selected_options]);
 
   // ── Derive insert info from product options ──
@@ -749,6 +750,10 @@ export default function OrderBuild() {
 
   const handleUpdateTabLabel = useCallback(async (sectionId: string, label: string) => {
     await updateSectionMut.mutateAsync({ id: sectionId, label } as any);
+  }, [updateSectionMut]);
+
+  const handleUpdateTabBankPosition = useCallback(async (sectionId: string, bankPosition: number) => {
+    await updateSectionMut.mutateAsync({ id: sectionId, bank_position: bankPosition } as any);
   }, [updateSectionMut]);
 
   const handleAddInsert = useCallback(async (afterPage: number, color: string) => {
@@ -904,11 +909,13 @@ export default function OrderBuild() {
         isDuplex={spec.is_duplex}
         tabEnabled={!!tabInfo}
         tabCount={tabInfo?.count ?? 0}
+        packCount={tabInfo?.packCount ?? 0}
         isMultiColor={tabInfo?.multiColor ?? false}
         onAddTab={handleAddTab}
         onDeleteTab={handleDeleteTab}
         onMoveTab={handleMoveTab}
         onUpdateTabLabel={handleUpdateTabLabel}
+        onUpdateTabBankPosition={handleUpdateTabBankPosition}
         insertEnabled={insertEnabled}
         onAddInsert={handleAddInsert}
         onDeleteInsert={handleDeleteInsert}
