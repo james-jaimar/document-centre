@@ -108,6 +108,24 @@ export default function TabInsertDrawer({
     return item.page_range_start ?? 1;
   };
 
+  /** Set of bank slots already occupied across placed tabs */
+  const usedSlots = useMemo(() => {
+    const s = new Set<number>();
+    for (const t of tabSections) {
+      const p = (t as any).bank_position as number | null | undefined;
+      if (typeof p === "number") s.add(p);
+    }
+    return s;
+  }, [tabSections]);
+
+  /** Find the next free physical slot (1..tabCount), preferring sequential order */
+  const nextFreeSlot = useCallback((): number | undefined => {
+    for (let i = 1; i <= tabCount; i++) {
+      if (!usedSlots.has(i)) return i;
+    }
+    return undefined;
+  }, [usedSlots, tabCount]);
+
   const handleAutoInsert = useCallback(async () => {
     // Delete existing tabs first
     for (const tab of tabSections) {
@@ -118,10 +136,12 @@ export default function TabInsertDrawer({
     const interval = totalBodyPages / (tabCount + 1);
     for (let i = 1; i <= tabCount; i++) {
       const targetPage = Math.round(interval * i);
-      await onAddTab(targetPage, `Tab ${i}`);
+      // Auto-distribute assigns slot 1..N in order so banks fill sequentially
+      await onAddTab(targetPage, `Tab ${i}`, i);
     }
     toast.success(`${tabCount} tab dividers auto-inserted`);
   }, [tabSections, bodyPages, tabCount, onAddTab, onDeleteTab]);
+
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
