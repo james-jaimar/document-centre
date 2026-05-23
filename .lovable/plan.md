@@ -1,41 +1,60 @@
-# Imposition fixes: copies mode + honour crop-marks toggle
+# Suppress interior crop marks at gutter join lines
 
-Two small, focused fixes in the pdf-server imposition path. No DB changes, no UI changes.
+## Background
 
-## 1. Copies-per-sheet (not sequential pages)
+Crop marks are drawn entirely by our own code in `impose_nup_trimbox` (ReportLab `canvas.line`) — there is no third-party imposition library whose parameters we could tweak. Each slot currently gets all 8 mark segments (2 at each corner) drawn unconditionally. When two slots meet across a gutter, the marks pointing inward end up sitting on or right next to the shared cut line — which is exactly what the user is flagging in Acrobat.
 
-Today `impose_nup_trimbox` walks the source pages and drops them into slots in order — so a 2-up A3 of a 2-page document produces one sheet with page 1 on the left and page 2 on the right.
+Standard prepress practice is to only draw crop marks for **cuts that land on the outer edge of the press sheet**. Marks at interior slot edges (i.e. inside the gutter between two slots) must be suppressed.
 
-You want: **each source page becomes its own sheet, repeated N times** (N = `columns × rows`). So:
-- 1-page document, 2-up A3 → 1 sheet, page 1 ×2
-- 2-page document, 2-up A3 → 2 sheets (sheet A: page 1 ×2, sheet B: page 2 ×2)
-- 4-page document, 4-up A3 → 4 sheets, one per page, each page ×4
+## Change
 
-This matches the standard print-shop meaning of "n-up imposition" for run-length copies.
+Single, narrow edit in `pdf-server/app/services/pdf_ops.py`, inside the `if show_crop_marks:` block of `impose_nup_trimbox` (around lines 1978–1994).
 
-**Change** in `pdf-server/app/services/pdf_ops.py › impose_nup_trimbox`:
-- Replace the `for chunk_start in range(0, len(customer_pages), per_sheet)` loop with `for src_idx, cust in enumerate(customer_pages)`.
-- For each source page, create one sheet and stamp the same page into all `per_sheet` slot rectangles.
-- Stats `sheet_count` then equals `len(customer_pages)`.
+For each slot, compute:
 
-## 2. Honour the "crop marks" toggle from the template
+```
+col = slot_idx % columns
+row = slot_idx // columns
+is_left   = (col == 0)
+is_right  = (col == columns - 1)
+is_top    = (row == 0)            # row 0 is the TOP row (ty0 uses rows-1-row)
+is_bottom = (row == rows - 1)
+```
 
-The `has_crop_marks` flag is loaded from the template row and stored on `ImpositionTemplate`, but it is never passed into `impose_nup_trimbox`, which unconditionally draws crop marks at every slot's trim corners. That's why your "A4 2up A3 No bleed" template still shows marks.
+Then gate each of the 8 line segments by which slot edge it belongs to:
 
-**Changes**:
-- `pdf-server/app/services/pdf_ops.py › impose_nup_trimbox`: add `show_crop_marks: bool = True` kwarg; wrap the crop-mark drawing block (lines ~1976–1994) in `if show_crop_marks:`. Registration marks stay gated on the existing `show_registration` flag.
-- `pdf-server/app/tasks/production_tasks.py` (line ~435 call site): pass `show_crop_marks=template.has_crop_marks`.
+- **bottom-left corner**
+  - horizontal segment (extends left of `tx0` at `y=ty0`) → draw only if `is_bottom`
+  - vertical segment   (extends below `ty0` at `x=tx0`) → draw only if `is_left`
+- **bottom-right corner**
+  - horizontal (extends right of `tx1` at `y=ty0`) → draw only if `is_bottom`
+  - vertical   (extends below `ty0` at `x=tx1`) → draw only if `is_right`
+- **top-left corner**
+  - horizontal (extends left of `tx0` at `y=ty1`) → draw only if `is_top`
+  - vertical   (extends above `ty1` at `x=tx0`) → draw only if `is_left`
+- **top-right corner**
+  - horizontal (extends right of `tx1` at `y=ty1`) → draw only if `is_top`
+  - vertical   (extends above `ty1` at `x=tx1`) → draw only if `is_right`
+
+Net effect:
+- 1-up: unchanged (all four corners are outer).
+- 2-up A3 (your `INV-00059-1` case, 2 cols × 1 row): the two vertical marks pointing *into* the gutter at the inner edges of each slot disappear; outer L/R verticals and all top/bottom horizontals stay.
+- 4-up (2×2): horizontals along the central horizontal cut and verticals along the central vertical cut are both suppressed; only the marks around the outside of the 2×2 block remain.
 
 ## Out of scope
 
-- No change to `impose_with_template` (slot-PDF templates) or `booklet_saddle_stitch` — booklet imposition genuinely needs sequential pages.
-- No DB / schema / admin-UI change. The existing `has_crop_marks` column and the slider that drives it already exist; we are just wiring them through.
+- No DB / schema / UI changes. This is industry-standard prepress behaviour, not a per-template toggle. The existing `has_crop_marks` flag on `imposition_templates` continues to gate the whole block.
+- No change to `impose_with_template` (admin-uploaded press-sheet PDFs already bake marks in) or `booklet_saddle_stitch`.
+- No change to `show_registration` / colour-bar logic.
 
-## Deploy
+## Deployment
+
+After merging on the API host:
 
 ```
-cd /opt/document-centre-api && git pull
+cd /opt/document-centre-api
+git pull
 sudo systemctl restart document-centre-worker-heavy
 ```
 
-Then re-impose `INV-00059-1` and confirm: 1 sheet output, 2 copies of page 1, no crop marks.
+Then re-impose `INV-00059-1` (A4 2-up A3 No bleed) and confirm in Acrobat that the two crop marks previously sitting next to the central gutter are gone, while the outer marks at the four corners of each slot remain.
