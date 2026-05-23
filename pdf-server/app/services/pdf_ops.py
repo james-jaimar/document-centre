@@ -1889,9 +1889,13 @@ class PdfOps:
             block_w = columns * trim_w + max(0, columns - 1) * gutter
             block_h = rows * trim_h + max(0, rows - 1) * gutter
 
-            if block_w + 2 * bleed > sheet_w or block_h + 2 * bleed > sheet_h:
+            # 0.5 mm tolerance for sub-mm rounding in PDF box ladders
+            # (e.g. A4 expressed as 595.275591pt round-trips to 210.00156mm).
+            fit_tol = 0.5 * MM
+            if (block_w + 2 * bleed) > (sheet_w + fit_tol) \
+               or (block_h + 2 * bleed) > (sheet_h + fit_tol):
                 raise ValueError(
-                    f"Imposed block ({block_w/MM:.1f}×{block_h/MM:.1f}mm + bleed) "
+                    f"Imposed block ({block_w/MM:.2f}×{block_h/MM:.2f}mm + bleed) "
                     f"does not fit on press sheet ({sheet_width_mm}×{sheet_height_mm}mm)."
                 )
 
