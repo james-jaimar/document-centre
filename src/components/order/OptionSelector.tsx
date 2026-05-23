@@ -2,6 +2,7 @@ import type { Tables } from "@/integrations/supabase/types";
 import {
   isStructuredValues,
   groupOptionValues,
+  isValueActive,
   type StructuredOptionValue,
 } from "@/lib/productOptionTypes";
 import {
@@ -52,8 +53,10 @@ export default function OptionSelector({
     );
   }
 
-  // Structured values — group them
-  const groups = groupOptionValues(values);
+  // Structured values — hide inactive ones but keep the currently-selected value visible
+  // so previously-saved orders still display their label.
+  const visibleValues = values.filter((v) => isValueActive(v) || v.slug === value);
+  const groups = groupOptionValues(visibleValues);
   const groupNames = Object.keys(groups);
   const selectedValue = values.find((v) => v.slug === value);
 
