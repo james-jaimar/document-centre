@@ -214,29 +214,60 @@ export default function TabInsertDrawer({
                             onBlur={(e) => onUpdateTabLabel(tab.id, e.target.value)}
                             className="h-7 text-xs flex-1 min-w-0"
                           />
-                        <Select
-                          value={String(anchor)}
-                          onValueChange={(val) => onMoveTab(tab.id, Number(val))}
-                        >
-                          <SelectTrigger className="h-7 w-[130px] text-xs shrink-0">
-                            <SelectValue>After Page {anchor}</SelectValue>
-                          </SelectTrigger>
-                          <SelectContent>
-                            {validPages.map((page) => (
-                              <SelectItem key={page.pageNumber} value={String(page.pageNumber)} className="text-xs">
-                                After {page.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-                          onClick={() => onDeleteTab(tab.id)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                          <Select
+                            value={String(anchor)}
+                            onValueChange={(val) => onMoveTab(tab.id, Number(val))}
+                          >
+                            <SelectTrigger className="h-7 w-[130px] text-xs shrink-0">
+                              <SelectValue>After Page {anchor}</SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              {validPages.map((page) => (
+                                <SelectItem key={page.pageNumber} value={String(page.pageNumber)} className="text-xs">
+                                  After {page.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                            onClick={() => onDeleteTab(tab.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                        {/* ── Physical slot picker (1..tabCount within pack of 10) ── */}
+                        {onUpdateTabBankPosition && tabCount > 0 && (
+                          <div className="flex items-center gap-1 pl-6 flex-wrap">
+                            <span className="text-[10px] text-muted-foreground mr-1">Physical slot:</span>
+                            {Array.from({ length: tabCount }, (_, i) => i + 1).map((slot) => {
+                              const isSelected = bankPos === slot;
+                              const isUsedByOther = usedSlots.has(slot) && !isSelected;
+                              const slotColor = isMultiColor ? TAB_COLORS[(slot - 1) % TAB_COLORS.length] : undefined;
+                              return (
+                                <button
+                                  key={slot}
+                                  type="button"
+                                  disabled={isUsedByOther}
+                                  onClick={() => onUpdateTabBankPosition(tab.id, slot)}
+                                  title={isUsedByOther ? `Slot ${slot} used by another tab` : `Slot ${slot}${slot % 10 === 0 ? ` (end of pack ${slot / 10})` : ""}`}
+                                  className={`h-5 min-w-[20px] px-1 rounded text-[10px] font-medium border transition-all ${
+                                    isSelected
+                                      ? "border-primary bg-primary/10 text-foreground"
+                                      : isUsedByOther
+                                        ? "border-border/40 text-muted-foreground/40 cursor-not-allowed"
+                                        : "border-border/60 text-muted-foreground hover:border-primary/50"
+                                  }`}
+                                  style={isSelected && slotColor ? { backgroundColor: slotColor, color: "#000" } : undefined}
+                                >
+                                  {slot}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
