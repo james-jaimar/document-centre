@@ -2415,6 +2415,17 @@ export default function OrderFiles() {
         onKeep={handlePageCountKeep}
       />
 
+      {/* Cover page-limit prompt — bound-style products: covers max 2 pages */}
+      <CoverPageLimitDialog
+        open={!!coverLimitPrompt}
+        type={coverLimitPrompt?.type ?? null}
+        fileName={coverLimitPrompt?.fileName ?? null}
+        pageCount={coverLimitPrompt?.pageCount ?? 0}
+        busy={coverLimitBusy}
+        onConfirm={commitCoverAssignment}
+        onCancel={() => { if (!coverLimitBusy) setCoverLimitPrompt(null); }}
+      />
+
       {/* Flyer multi-page choice dialog */}
       <FlyerPageChoiceDialog
         open={!!flyerChoiceItem}
