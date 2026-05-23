@@ -678,8 +678,9 @@ export default function OrderBuild() {
     const val = (tabOpt.values as StructuredOptionValue[]).find((v) => v.slug === slug);
     if (!val) return null;
     const count = (val.metadata as any)?.tab_count ?? 0;
+    const packCount = (val.metadata as any)?.pack_count ?? Math.ceil(count / 10);
     const multiColor = (val.metadata as any)?.color === "multi";
-    return count > 0 ? { count, multiColor } : null;
+    return count > 0 ? { count, packCount, multiColor } : null;
   }, [options, spec.selected_options]);
 
   // ── Derive insert info from product options ──
