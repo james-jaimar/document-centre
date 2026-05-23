@@ -32,6 +32,8 @@ export interface DocumentSectionRow {
   color: string | null;
   sort_order: number;
   document_id?: string | null;
+  /** Physical slot (1..N) within a pre-cut tab divider pack of 10. Tabs only. */
+  bank_position?: number | null;
 }
 
 export interface DocumentRow {
