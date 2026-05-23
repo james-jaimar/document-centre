@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useProductOptions, useCreateProductOption, useUpdateProductOption, useDeleteProductOption } from "@/hooks/useProductOptions";
 import type { ProductOption } from "@/hooks/useProductOptions";
 import type { StructuredOptionValue } from "@/lib/productOptionTypes";
-import { isStructuredValues, slugify, groupOptionValues } from "@/lib/productOptionTypes";
+import { isStructuredValues, slugify, groupOptionValues, isValueActive } from "@/lib/productOptionTypes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -46,6 +46,7 @@ interface ValueFormData {
   price_impact: number;
   price_type: "fixed" | "per_document" | "per_page";
   is_default: boolean;
+  is_active: boolean;
   metadata: Record<string, string | number | boolean>;
 }
 
@@ -56,6 +57,7 @@ const emptyValueForm: ValueFormData = {
   price_impact: 0,
   price_type: "per_document",
   is_default: false,
+  is_active: true,
   metadata: {},
 };
 
@@ -70,9 +72,10 @@ function ValueEditorRow({
   onRemove: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const active = isValueActive(value);
 
   return (
-    <div className="border rounded-md p-2 space-y-2 bg-background">
+    <div className={`border rounded-md p-2 space-y-2 bg-background transition-opacity ${active ? "" : "opacity-50"}`}>
       <div className="flex items-center gap-2">
         <Input
           className="flex-1 h-8 text-sm"
@@ -104,6 +107,13 @@ function ValueEditorRow({
             ))}
           </SelectContent>
         </Select>
+        <div className="flex items-center gap-1" title="Show this value to customers">
+          <Switch
+            checked={active}
+            onCheckedChange={(v) => onUpdate({ ...value, is_active: v })}
+          />
+          <span className="text-xs text-muted-foreground">On</span>
+        </div>
         <div className="flex items-center gap-1">
           <Switch
             checked={value.is_default}
@@ -111,6 +121,9 @@ function ValueEditorRow({
           />
           <span className="text-xs text-muted-foreground">Def</span>
         </div>
+        {!active && (
+          <Badge variant="outline" className="text-[10px] uppercase">Hidden</Badge>
+        )}
         <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setExpanded(!expanded)}>
           <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`} />
         </Button>
@@ -184,12 +197,15 @@ function GroupedValuesPreview({ values }: { values: StructuredOptionValue[] }) {
   const groups = groupOptionValues(values);
   return (
     <div className="flex flex-wrap gap-1">
-      {Object.entries(groups).map(([group, items]) => (
-        <div key={group} className="flex items-center gap-0.5">
-          <Badge variant="outline" className="text-xs font-semibold">{group}</Badge>
-          <span className="text-xs text-muted-foreground">({items.length})</span>
-        </div>
-      ))}
+      {Object.entries(groups).map(([group, items]) => {
+        const activeCount = items.filter(isValueActive).length;
+        return (
+          <div key={group} className="flex items-center gap-0.5">
+            <Badge variant="outline" className="text-xs font-semibold">{group}</Badge>
+            <span className="text-xs text-muted-foreground">({activeCount}/{items.length})</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -238,6 +254,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
           price_impact: 0,
           price_type: "per_document" as const,
           is_default: false,
+          is_active: true,
           metadata: {},
         }))
       );
