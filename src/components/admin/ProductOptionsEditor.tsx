@@ -75,61 +75,73 @@ function ValueEditorRow({
   const active = isValueActive(value);
 
   return (
-    <div className={`border rounded-md p-2 space-y-2 bg-background transition-opacity ${active ? "" : "opacity-50"}`}>
-      <div className="flex items-center gap-2">
-        <Input
-          className="flex-1 h-8 text-sm"
-          value={value.label}
-          onChange={(e) => onUpdate({ ...value, label: e.target.value, slug: slugify(e.target.value) })}
-          placeholder="Label"
-        />
-        <Input
-          className="w-24 h-8 text-xs font-mono"
-          value={value.group}
-          onChange={(e) => onUpdate({ ...value, group: e.target.value })}
-          placeholder="Group"
-        />
-        <Input
-          className="w-20 h-8 text-sm"
-          type="number"
-          step="0.01"
-          value={value.price_impact}
-          onChange={(e) => onUpdate({ ...value, price_impact: parseFloat(e.target.value) || 0 })}
-          placeholder="Price"
-        />
-        <Select value={value.price_type} onValueChange={(v) => onUpdate({ ...value, price_type: v as ValueFormData["price_type"] })}>
-          <SelectTrigger className="w-32 h-8 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PRICE_TYPES.map((t) => (
-              <SelectItem key={t} value={t}>{t.replace("_", "/")}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="flex items-center gap-1" title="Show this value to customers">
-          <Switch
-            checked={active}
-            onCheckedChange={(v) => onUpdate({ ...value, is_active: v })}
+    <div className={`border rounded-md p-2 space-y-2 bg-background transition-opacity ${active ? "" : "opacity-60"}`}>
+      <div className="grid grid-cols-12 gap-2 items-center min-w-0">
+        <div className="col-span-12 md:col-span-4 flex items-center gap-2 min-w-0">
+          <Input
+            className="h-8 text-sm flex-1 min-w-0"
+            value={value.label}
+            onChange={(e) => onUpdate({ ...value, label: e.target.value, slug: slugify(e.target.value) })}
+            placeholder="Label"
           />
-          <span className="text-xs text-muted-foreground">On</span>
+          {!active && (
+            <Badge variant="outline" className="text-[10px] uppercase shrink-0">Hidden</Badge>
+          )}
         </div>
-        <div className="flex items-center gap-1">
-          <Switch
-            checked={value.is_default}
-            onCheckedChange={(v) => onUpdate({ ...value, is_default: v })}
+        <div className="col-span-6 md:col-span-2 min-w-0">
+          <Input
+            className="h-8 text-xs font-mono w-full"
+            value={value.group}
+            onChange={(e) => onUpdate({ ...value, group: e.target.value })}
+            placeholder="Group"
           />
-          <span className="text-xs text-muted-foreground">Def</span>
         </div>
-        {!active && (
-          <Badge variant="outline" className="text-[10px] uppercase">Hidden</Badge>
-        )}
-        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setExpanded(!expanded)}>
-          <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`} />
-        </Button>
-        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onRemove}>
-          <X className="h-3 w-3 text-destructive" />
-        </Button>
+        <div className="col-span-6 md:col-span-3 grid grid-cols-5 gap-1 min-w-0">
+          <Input
+            className="h-8 text-sm col-span-2 min-w-0"
+            type="number"
+            step="0.01"
+            value={value.price_impact}
+            onChange={(e) => onUpdate({ ...value, price_impact: parseFloat(e.target.value) || 0 })}
+            placeholder="Price"
+          />
+          <div className="col-span-3 min-w-0">
+            <Select value={value.price_type} onValueChange={(v) => onUpdate({ ...value, price_type: v as ValueFormData["price_type"] })}>
+              <SelectTrigger className="h-8 text-xs w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PRICE_TYPES.map((t) => (
+                  <SelectItem key={t} value={t}>{t.replace("_", "/")}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="col-span-8 md:col-span-2 flex items-center gap-3">
+          <div className="flex items-center gap-1" title="Show this value to customers">
+            <Switch
+              checked={active}
+              onCheckedChange={(v) => onUpdate({ ...value, is_active: v })}
+            />
+            <span className="text-xs text-muted-foreground">On</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Switch
+              checked={value.is_default}
+              onCheckedChange={(v) => onUpdate({ ...value, is_default: v })}
+            />
+            <span className="text-xs text-muted-foreground">Def</span>
+          </div>
+        </div>
+        <div className="col-span-4 md:col-span-1 flex items-center justify-end gap-1">
+          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setExpanded(!expanded)}>
+            <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`} />
+          </Button>
+          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onRemove}>
+            <X className="h-3 w-3 text-destructive" />
+          </Button>
+        </div>
       </div>
       {expanded && (
         <div className="pl-2 space-y-1 text-xs text-muted-foreground">
