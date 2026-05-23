@@ -318,6 +318,16 @@ export default function OrderFiles() {
   const [brochureChoiceBusy, setBrochureChoiceBusy] = useState(false);
   const dismissedBrochureDocIds = useRef<Set<string>>(new Set());
 
+  // Cover page-limit prompt (bound-style products: max 2 pages per cover)
+  const [coverLimitPrompt, setCoverLimitPrompt] = useState<{
+    type: "front_cover" | "back_cover";
+    docId: string;
+    pageCount: number;
+    fileName: string;
+  } | null>(null);
+  const [coverLimitBusy, setCoverLimitBusy] = useState(false);
+
+
   // Check for near-ISO bleed documents after upload completes
   useEffect(() => {
     if (uploadModalOpen || advisoryDoc || bleedDoc || orientationDoc) return;
