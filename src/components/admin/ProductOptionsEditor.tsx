@@ -390,7 +390,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
 
       {/* Option Edit Dialog */}
       <Dialog open={optionDialogOpen} onOpenChange={setOptionDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-[min(1100px,95vw)] max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
             <DialogTitle>{editingOption ? "Edit Option" : "New Option"}</DialogTitle>
           </DialogHeader>
