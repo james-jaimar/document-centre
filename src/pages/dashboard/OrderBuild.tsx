@@ -909,11 +909,13 @@ export default function OrderBuild() {
         isDuplex={spec.is_duplex}
         tabEnabled={!!tabInfo}
         tabCount={tabInfo?.count ?? 0}
+        packCount={tabInfo?.packCount ?? 0}
         isMultiColor={tabInfo?.multiColor ?? false}
         onAddTab={handleAddTab}
         onDeleteTab={handleDeleteTab}
         onMoveTab={handleMoveTab}
         onUpdateTabLabel={handleUpdateTabLabel}
+        onUpdateTabBankPosition={handleUpdateTabBankPosition}
         insertEnabled={insertEnabled}
         onAddInsert={handleAddInsert}
         onDeleteInsert={handleDeleteInsert}
