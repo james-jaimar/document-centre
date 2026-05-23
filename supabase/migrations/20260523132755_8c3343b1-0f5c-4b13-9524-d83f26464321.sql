@@ -1,0 +1,2 @@
+ALTER TABLE public.document_sections ADD COLUMN IF NOT EXISTS bank_position smallint;
+COMMENT ON COLUMN public.document_sections.bank_position IS 'For section_type=tab: physical pre-cut slot (1-10) within its pack of 10 coloured dividers. NULL = legacy/auto-distributed.';
