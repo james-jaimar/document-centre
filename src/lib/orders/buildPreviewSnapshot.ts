@@ -42,6 +42,8 @@ interface SectionLike {
   label: string | null;
   color: string | null;
   sort_order: number;
+  /** Physical slot 1..10 within a pre-cut tab pack. Only set for section_type='tab'. */
+  bank_position?: number | null;
 }
 
 interface OptionLike {
