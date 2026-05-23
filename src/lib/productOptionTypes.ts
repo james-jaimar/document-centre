@@ -9,7 +9,14 @@ export interface StructuredOptionValue {
   price_impact: number;
   price_type: "fixed" | "per_document" | "per_page";
   is_default: boolean;
+  /** Whether this value is shown to customers. Defaults to true when absent (legacy rows). */
+  is_active?: boolean;
   metadata: Record<string, string | number | boolean>;
+}
+
+/** Treat missing is_active as active (legacy rows). */
+export function isValueActive(v: Pick<StructuredOptionValue, "is_active">): boolean {
+  return v.is_active !== false;
 }
 
 /** Helper to generate a slug from a label */
@@ -33,6 +40,7 @@ export function createOptionValue(
     price_impact: 0,
     price_type: "per_document",
     is_default: false,
+    is_active: true,
     metadata: {},
     ...overrides,
   };
