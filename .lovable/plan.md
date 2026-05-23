@@ -1,58 +1,46 @@
-## What's happening
+## What I found
 
-INV-00059-1 (Bound Documents, A4) is being imposed with your template **"A4 2up A3 No bleed"** (kind `parametric_nup`, 2×1, 420×297mm, bleed 0, gutter 0).
+The latest attempt is still failing for the same fit check:
 
-Print-ready assembly succeeded. Imposition failed on the pdf-server worker with:
-
-```
-ValueError: Imposed block (420.0×297.0mm + bleed) does not fit on
-press sheet (420.0×297.0mm).
+```text
+ValueError: Imposed block (420.00×297.00mm + bleed) does not fit on press sheet (420.0×297.0mm).
 ```
 
-### Root cause
+For `INV-00059-1`, the selected template is:
 
-In `pdf-server/app/services/pdf_ops.py::impose_nup_trimbox` (line 1892) the fit check is a strict `>`:
-
-```python
-if block_w + 2 * bleed > sheet_w or block_h + 2 * bleed > sheet_h:
-    raise ValueError(...)
+```text
+A4 2up A3 No bleed
+columns=2, rows=1
+input=210×297mm
+output=420×297mm
+bleed=0, gutter=0
 ```
 
-The prepared PDF's reported page size is `210.0015555×297.0000833 mm` (logged from the `assemble_print_ready` result for this job — almost certainly originating from A4 expressed as 595.275591pt, round-tripped through the box ladder). Two columns at that trim width give a block width of ~420.003mm, which is greater than the 420mm sheet by 3 µm and trips the strict comparison. The print message rounds to `420.0×297.0` so it looks identical.
+The source PDF reports its A4 TrimBox as `210.0015555 × 297.0000833mm`, so the block becomes about `420.0031mm` wide. The code in the repo already has the intended `0.5mm` tolerance, but the production stack trace proves the deployed VPS is either still running the previous code or the tolerance has not been picked up by the heavy worker process.
 
-This will break **any** "exact-fit" template (A4→A3 2-up, A5→A4 2-up, A3→SRA3 with 0 bleed, etc.) — exactly the templates you'd most expect to work.
+## Plan
 
-## Fix
+1. **Confirm the local code is correct**
+   - Keep the `0.5mm` tolerance in `pdf-server/app/services/pdf_ops.py`.
+   - Make one small hardening tweak if needed: clamp near-exact blocks back to the sheet size after the tolerance check, so the output sheet geometry cannot drift by a few microns.
 
-One small change in `pdf-server/app/services/pdf_ops.py` only. No DB, no edge function, no frontend changes.
+2. **Make the failure easier to diagnose next time**
+   - Improve the error message to include the actual overflow amount in mm.
+   - This prevents future “420.00 vs 420.0” misleading messages.
 
-Add a 0.5 mm tolerance to the fit check (industry-standard rounding allowance, well below any cutter precision):
+3. **Deployment action required on the VPS**
+   - Pull the latest code to `/opt/document-centre-api`.
+   - Restart the heavy worker service, because this imposition code runs in Celery, not in the Supabase Edge Function:
 
-```python
-TOL = 0.5 * MM  # 0.5 mm tolerance for sub-mm box rounding
-if (block_w + 2 * bleed) > (sheet_w + TOL) \
-   or (block_h + 2 * bleed) > (sheet_h + TOL):
-    raise ValueError(
-        f"Imposed block ({block_w/MM:.2f}×{block_h/MM:.2f}mm + bleed) "
-        f"does not fit on press sheet ({sheet_width_mm}×{sheet_height_mm}mm)."
-    )
+```bash
+sudo systemctl restart document-centre-worker-heavy
 ```
 
-Also bump the error message precision from `.1f` to `.2f` so the next time someone hits a genuine overflow, the µm-level cause is visible instead of two identical-looking numbers.
+4. **Verify the fix**
+   - Re-run imposition for job `3266f54a-55b9-495d-9ed3-fee4061ad9ee` / `INV-00059-1`.
+   - Confirm the newest `jobs` row for `assemble_imposed_sheet` is `completed` and `order_jobs.imposed_pdf_path` is populated.
+   - Sanity-check that genuinely oversized layouts still fail, using the new overflow-specific message.
 
-`origin_x` / `origin_y` centring math is unchanged — a 3 µm overage centres at `-1.5 µm`, which clips invisibly off the sheet edge and is fine.
+## Why this plan
 
-## Out of scope (deliberately)
-
-- No template edits, no schema migrations.
-- No change to the legacy fallback path (it uses computed `cols/rows` from sheet, so it can never overflow).
-- No change to `booklet_saddle_stitch` (different code path, not affected).
-
-## Verification after `git pull` + worker restart
-
-1. Re-trigger imposition on INV-00059-1 — should produce an `imposed_pdf_path` on the A3 sheet.
-2. Sanity check a deliberately oversized template (e.g. A4 2-up on A4) — must still raise `ValueError` with the new `.2f` message.
-
-## You apply on the VPS
-
-I'll only edit `pdf-server/app/services/pdf_ops.py`. You then `git pull` and restart the heavy worker (`document-centre-worker-heavy`) — the FastAPI process does not need to restart for this change.
+The database shows the failed job was created at `2026-05-23 07:15:04`, after the code change was made locally, but the deployed worker still raised from the exact fit check. Since `assemble_imposed_sheet_for_job` runs inside `document-centre-worker-heavy`, the Edge Function returning 502 is only reporting the worker failure; the Edge Function itself is not the root cause.
