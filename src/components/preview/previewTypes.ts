@@ -116,12 +116,20 @@ export interface TabPosition {
   pageIndex: number;
   /** User-defined label for this tab */
   label: string;
-  /** 0-based index within the set of tabs */
+  /** 0-based index within the set of tabs (placement order) */
   tabIndex: number;
   /** Total number of tabs in the document */
   tabTotal: number;
   /** Color for this tab */
   color: string;
+  /**
+   * Physical slot within a pre-cut bank (1..bankSize). When set, drives
+   * vertical position + colour cycling so the preview matches the actual
+   * pre-made pack. NULL/undefined = legacy auto-distribute fallback.
+   */
+  bankPosition?: number;
+  /** Slots per physical bank (default 10 for pre-made coloured packs). */
+  bankSize?: number;
 }
 
 export interface FlipBookProps extends PreviewComponentProps {
