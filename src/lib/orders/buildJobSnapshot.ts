@@ -545,6 +545,9 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
     const perSection = buildPerSectionDetail(sections);
     if (perSection) groupedSections.push(perSection);
 
+    const tabsSection = buildTabDividersSection(sections);
+    if (tabsSection) groupedSections.push(tabsSection);
+
     const filesSection = buildFilesSection(documents);
     if (filesSection) groupedSections.push(filesSection);
   }
