@@ -1,46 +1,56 @@
-## What I found
+## What is failing now
 
-The latest attempt is still failing for the same fit check:
+The latest production failure is no longer the old deployment/tolerance issue. The worker picked up the new code and now reports the real overflow:
 
 ```text
-ValueError: Imposed block (420.00×297.00mm + bleed) does not fit on press sheet (420.0×297.0mm).
+Imposed block (420.003×297.000mm + 3.0mm bleed) does not fit on press sheet (420.0×297.0mm).
+Overflow: width=6.003mm, height=6.000mm
 ```
 
-For `INV-00059-1`, the selected template is:
+For `INV-00059-1`, the assigned template is:
 
 ```text
 A4 2up A3 No bleed
+kind=parametric_nup
 columns=2, rows=1
-input=210×297mm
 output=420×297mm
-bleed=0, gutter=0
+bleed_mm=0.00
+crop_mark_offset_mm=3.00
 ```
 
-The source PDF reports its A4 TrimBox as `210.0015555 × 297.0000833mm`, so the block becomes about `420.0031mm` wide. The code in the repo already has the intended `0.5mm` tolerance, but the production stack trace proves the deployed VPS is either still running the previous code or the tolerance has not been picked up by the heavy worker process.
+The bug is in `load_imposition_template()`: it loads numeric fields using `row.get("bleed_mm") or 3.0`. Because `0.00` is falsy in Python, a valid no-bleed template becomes `bleed_mm=3.0`, adding 3mm around the block and causing a 6mm overflow.
 
 ## Plan
 
-1. **Confirm the local code is correct**
-   - Keep the `0.5mm` tolerance in `pdf-server/app/services/pdf_ops.py`.
-   - Make one small hardening tweak if needed: clamp near-exact blocks back to the sheet size after the tolerance check, so the output sheet geometry cannot drift by a few microns.
+1. Fix numeric default handling in `pdf-server/app/services/imposition_templates.py`
+   - Preserve explicit `0` values for:
+     - `bleed_mm`
+     - `gutter_mm`
+     - `crop_mark_offset_mm`
+     - `crop_mark_length_mm`
+     - `creep_per_sheet_mm`
+     - `fallback_trim_inset_mm`
+   - Only use defaults when the database value is actually `NULL` or missing.
 
-2. **Make the failure easier to diagnose next time**
-   - Improve the error message to include the actual overflow amount in mm.
-   - This prevents future “420.00 vs 420.0” misleading messages.
+2. Add a small local helper in the loader
+   - Something like `num(row, "bleed_mm", 3.0)` so this class of bug does not recur.
+   - Apply it consistently to both `parametric_nup` and `parametric_booklet` paths.
 
-3. **Deployment action required on the VPS**
-   - Pull the latest code to `/opt/document-centre-api`.
-   - Restart the heavy worker service, because this imposition code runs in Celery, not in the Supabase Edge Function:
+3. Keep the existing fit tolerance/clamping in `pdf_ops.py`
+   - It is still needed for the remaining `420.003mm` micro-overflow from PDF A4 rounding.
+   - With `bleed_mm=0`, the current tolerance should allow `INV-00059-1` to impose.
+
+4. Verify after deployment/retry
+   - Re-run imposition for `INV-00059-1` / job `3266f54a-55b9-495d-9ed3-fee4061ad9ee`.
+   - Confirm the newest `assemble_imposed_sheet` job is `completed` and `order_jobs.imposed_pdf_path` is populated.
+
+## Deployment note
+
+This is VPS worker code, so after merging it needs:
 
 ```bash
+cd /opt/document-centre-api && git pull
 sudo systemctl restart document-centre-worker-heavy
 ```
 
-4. **Verify the fix**
-   - Re-run imposition for job `3266f54a-55b9-495d-9ed3-fee4061ad9ee` / `INV-00059-1`.
-   - Confirm the newest `jobs` row for `assemble_imposed_sheet` is `completed` and `order_jobs.imposed_pdf_path` is populated.
-   - Sanity-check that genuinely oversized layouts still fail, using the new overflow-specific message.
-
-## Why this plan
-
-The database shows the failed job was created at `2026-05-23 07:15:04`, after the code change was made locally, but the deployed worker still raised from the exact fit check. Since `assemble_imposed_sheet_for_job` runs inside `document-centre-worker-heavy`, the Edge Function returning 502 is only reporting the worker failure; the Edge Function itself is not the root cause.
+Then retry imposition from the admin order screen.
