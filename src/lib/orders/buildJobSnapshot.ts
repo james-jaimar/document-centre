@@ -604,6 +604,7 @@ export function buildJobSnapshot(input: BuildSnapshotInput): JobSnapshot {
         is_duplex: s.is_duplex,
         lamination: s.lamination,
         color: s.color,
+        bank_position: s.bank_position ?? null,
       })),
       documents: documents.map((d) => ({
         file_name: d.file_name,
