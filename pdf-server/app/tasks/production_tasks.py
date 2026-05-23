@@ -442,6 +442,7 @@ def assemble_imposed_sheet_for_job(self, job_id: str, pdf_job_id: str):
                         gutter_mm=template.gutter_mm,
                         crop_mark_offset_mm=template.crop_mark_offset_mm,
                         crop_mark_length_mm=template.crop_mark_length_mm,
+                        show_crop_marks=template.has_crop_marks,
                         show_registration=template.show_registration,
                         fallback_trim_inset_mm=template.fallback_trim_inset_mm,
                     )

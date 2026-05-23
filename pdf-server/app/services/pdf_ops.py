@@ -1830,6 +1830,7 @@ class PdfOps:
         gutter_mm: float = 0.0,
         crop_mark_offset_mm: float = 3.0,
         crop_mark_length_mm: float = 5.0,
+        show_crop_marks: bool = True,
         show_registration: bool = True,
         fallback_trim_inset_mm: float = 0.0,
     ) -> dict:
@@ -1920,7 +1921,12 @@ class PdfOps:
             output = pikepdf.Pdf.new()
             sheet_count = 0
 
-            for chunk_start in range(0, len(customer_pages), per_sheet):
+            # Copies-per-sheet mode: each source page becomes its own press
+            # sheet, repeated `per_sheet` times across the slot grid. This is
+            # the standard print-shop meaning of n-up imposition for
+            # run-length copies (e.g. 2-up A3 of a 1-page A4 = 1 sheet
+            # holding 2 copies of that page).
+            for src_idx, cust in enumerate(customer_pages):
                 output.add_blank_page(page_size=(sheet_w, sheet_h))
                 sheet = output.pages[-1]
 
@@ -1933,65 +1939,59 @@ class PdfOps:
                     ty0 = origin_y + (rows - 1 - row) * slot_pitch_h
                     slot_rects.append((tx0, ty0, tx0 + trim_w, ty0 + trim_h))
 
-                for slot_idx in range(per_sheet):
-                    src_idx = chunk_start + slot_idx
-                    if src_idx >= len(customer_pages):
-                        break
-                    cust = customer_pages[src_idx]
-                    trim = self._resolve_trim_box(cust, fallback_inset)
+                trim = self._resolve_trim_box(cust, fallback_inset)
 
-                    # The "bleed rectangle" we want to land into the slot-
-                    # plus-bleed area on the press sheet. Clamp to the
-                    # source MediaBox so we don't reference content the
-                    # producer never drew.
-                    mb = cust.MediaBox
-                    mb_box = [float(mb[0]), float(mb[1]), float(mb[2]), float(mb[3])]
-                    cust_bleed = [
-                        max(mb_box[0], trim[0] - bleed),
-                        max(mb_box[1], trim[1] - bleed),
-                        min(mb_box[2], trim[2] + bleed),
-                        min(mb_box[3], trim[3] + bleed),
-                    ]
+                # The "bleed rectangle" we want to land into the slot-
+                # plus-bleed area on the press sheet. Clamp to the
+                # source MediaBox so we don't reference content the
+                # producer never drew.
+                mb = cust.MediaBox
+                mb_box = [float(mb[0]), float(mb[1]), float(mb[2]), float(mb[3])]
+                cust_bleed = [
+                    max(mb_box[0], trim[0] - bleed),
+                    max(mb_box[1], trim[1] - bleed),
+                    min(mb_box[2], trim[2] + bleed),
+                    min(mb_box[3], trim[3] + bleed),
+                ]
 
-                    tx0, ty0, tx1, ty1 = slot_rects[slot_idx]
-                    tgt_rect = pikepdf.Rectangle(
-                        tx0 - bleed, ty0 - bleed,
-                        tx1 + bleed, ty1 + bleed,
-                    )
-
-                    # Temporarily set MediaBox = the source bleed rectangle
-                    # so add_overlay maps that exact area into our slot.
-                    original_mb = list(mb_box)
-                    cust.MediaBox = pikepdf.Array(cust_bleed)
-                    try:
+                # Temporarily set MediaBox = the source bleed rectangle
+                # so add_overlay maps that exact area into each slot.
+                original_mb = list(mb_box)
+                cust.MediaBox = pikepdf.Array(cust_bleed)
+                try:
+                    for slot_idx in range(per_sheet):
+                        tx0, ty0, tx1, ty1 = slot_rects[slot_idx]
+                        tgt_rect = pikepdf.Rectangle(
+                            tx0 - bleed, ty0 - bleed,
+                            tx1 + bleed, ty1 + bleed,
+                        )
                         sheet.add_overlay(cust, tgt_rect)
-                    finally:
-                        cust.MediaBox = pikepdf.Array(original_mb)
+                finally:
+                    cust.MediaBox = pikepdf.Array(original_mb)
+
 
                 # Crop marks + registration overlay (reportlab → pikepdf)
                 ov_buf = BytesIO()
                 c = canvas.Canvas(ov_buf, pagesize=(sheet_w, sheet_h))
                 c.setLineWidth(0.25)
                 c.setStrokeColor(Color(0, 0, 0, alpha=1))
-                for slot_idx in range(per_sheet):
-                    src_idx = chunk_start + slot_idx
-                    if src_idx >= len(customer_pages):
-                        break
-                    tx0, ty0, tx1, ty1 = slot_rects[slot_idx]
-                    # Marks are drawn AT the trim corners with a `cm_off`
-                    # gap, extending OUTWARD into the bleed/waste area.
-                    # bottom-left
-                    c.line(tx0 - cm_off - cm_len, ty0, tx0 - cm_off, ty0)
-                    c.line(tx0, ty0 - cm_off - cm_len, tx0, ty0 - cm_off)
-                    # bottom-right
-                    c.line(tx1 + cm_off, ty0, tx1 + cm_off + cm_len, ty0)
-                    c.line(tx1, ty0 - cm_off - cm_len, tx1, ty0 - cm_off)
-                    # top-left
-                    c.line(tx0 - cm_off - cm_len, ty1, tx0 - cm_off, ty1)
-                    c.line(tx0, ty1 + cm_off, tx0, ty1 + cm_off + cm_len)
-                    # top-right
-                    c.line(tx1 + cm_off, ty1, tx1 + cm_off + cm_len, ty1)
-                    c.line(tx1, ty1 + cm_off, tx1, ty1 + cm_off + cm_len)
+                if show_crop_marks:
+                    for slot_idx in range(per_sheet):
+                        tx0, ty0, tx1, ty1 = slot_rects[slot_idx]
+                        # Marks are drawn AT the trim corners with a `cm_off`
+                        # gap, extending OUTWARD into the bleed/waste area.
+                        # bottom-left
+                        c.line(tx0 - cm_off - cm_len, ty0, tx0 - cm_off, ty0)
+                        c.line(tx0, ty0 - cm_off - cm_len, tx0, ty0 - cm_off)
+                        # bottom-right
+                        c.line(tx1 + cm_off, ty0, tx1 + cm_off + cm_len, ty0)
+                        c.line(tx1, ty0 - cm_off - cm_len, tx1, ty0 - cm_off)
+                        # top-left
+                        c.line(tx0 - cm_off - cm_len, ty1, tx0 - cm_off, ty1)
+                        c.line(tx0, ty1 + cm_off, tx0, ty1 + cm_off + cm_len)
+                        # top-right
+                        c.line(tx1 + cm_off, ty1, tx1 + cm_off + cm_len, ty1)
+                        c.line(tx1, ty1 + cm_off, tx1, ty1 + cm_off + cm_len)
 
                 if show_registration:
                     r = 3 * MM
