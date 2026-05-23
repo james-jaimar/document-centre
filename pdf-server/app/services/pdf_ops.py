@@ -1975,25 +1975,23 @@ class PdfOps:
                 c = canvas.Canvas(ov_buf, pagesize=(sheet_w, sheet_h))
                 c.setLineWidth(0.25)
                 c.setStrokeColor(Color(0, 0, 0, alpha=1))
-                for slot_idx in range(per_sheet):
-                    src_idx = chunk_start + slot_idx
-                    if src_idx >= len(customer_pages):
-                        break
-                    tx0, ty0, tx1, ty1 = slot_rects[slot_idx]
-                    # Marks are drawn AT the trim corners with a `cm_off`
-                    # gap, extending OUTWARD into the bleed/waste area.
-                    # bottom-left
-                    c.line(tx0 - cm_off - cm_len, ty0, tx0 - cm_off, ty0)
-                    c.line(tx0, ty0 - cm_off - cm_len, tx0, ty0 - cm_off)
-                    # bottom-right
-                    c.line(tx1 + cm_off, ty0, tx1 + cm_off + cm_len, ty0)
-                    c.line(tx1, ty0 - cm_off - cm_len, tx1, ty0 - cm_off)
-                    # top-left
-                    c.line(tx0 - cm_off - cm_len, ty1, tx0 - cm_off, ty1)
-                    c.line(tx0, ty1 + cm_off, tx0, ty1 + cm_off + cm_len)
-                    # top-right
-                    c.line(tx1 + cm_off, ty1, tx1 + cm_off + cm_len, ty1)
-                    c.line(tx1, ty1 + cm_off, tx1, ty1 + cm_off + cm_len)
+                if show_crop_marks:
+                    for slot_idx in range(per_sheet):
+                        tx0, ty0, tx1, ty1 = slot_rects[slot_idx]
+                        # Marks are drawn AT the trim corners with a `cm_off`
+                        # gap, extending OUTWARD into the bleed/waste area.
+                        # bottom-left
+                        c.line(tx0 - cm_off - cm_len, ty0, tx0 - cm_off, ty0)
+                        c.line(tx0, ty0 - cm_off - cm_len, tx0, ty0 - cm_off)
+                        # bottom-right
+                        c.line(tx1 + cm_off, ty0, tx1 + cm_off + cm_len, ty0)
+                        c.line(tx1, ty0 - cm_off - cm_len, tx1, ty0 - cm_off)
+                        # top-left
+                        c.line(tx0 - cm_off - cm_len, ty1, tx0 - cm_off, ty1)
+                        c.line(tx0, ty1 + cm_off, tx0, ty1 + cm_off + cm_len)
+                        # top-right
+                        c.line(tx1 + cm_off, ty1, tx1 + cm_off + cm_len, ty1)
+                        c.line(tx1, ty1 + cm_off, tx1, ty1 + cm_off + cm_len)
 
                 if show_registration:
                     r = 3 * MM
