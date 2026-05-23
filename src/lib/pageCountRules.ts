@@ -23,6 +23,36 @@ export interface PageCountRule {
   allowedDescription: string;
 }
 
+/**
+ * Families where a Front/Back Cover section is a physical sheet of paper —
+ * so it can have at most 2 printed sides (page 1 outside, page 2 inside).
+ * Brochures/flyers are excluded: their "covers" are panel layouts.
+ */
+const COVER_PAGE_LIMITED_FAMILIES = new Set<string>([
+  "bound-documents",
+  "bound_documents",
+  "ring-binders",
+  "ring_binders",
+  "booklets",
+  "stapled-loose-pages",
+  "stapled_loose_pages",
+  "perfect-bound",
+  "perfect_bound",
+  "wire-bound",
+  "wire_bound",
+  "comb-bound",
+  "comb_bound",
+  "saddle-stitched",
+  "saddle_stitched",
+]);
+
+export function isCoverPageLimited(familySlug: FamilySlug): boolean {
+  if (!familySlug) return false;
+  return COVER_PAGE_LIMITED_FAMILIES.has(familySlug);
+}
+
+export const COVER_MAX_PAGES = 2;
+
 export function getPageCountRule(familySlug: FamilySlug): PageCountRule | null {
   switch (familySlug) {
     case "flyers":

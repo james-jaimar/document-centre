@@ -25,11 +25,12 @@ import OrientationAdvisory from "@/components/order/OrientationAdvisory";
 import ImageSizeDialog, { type ImageSizeSelection } from "@/components/order/ImageSizeDialog";
 import PosterImageEditor, { type PosterEditorResult } from "@/components/order/PosterImageEditor";
 import PageCountWarningDialog from "@/components/order/PageCountWarningDialog";
+import CoverPageLimitDialog from "@/components/order/CoverPageLimitDialog";
 import FlyerPageChoiceDialog, { type FlyerPageChoiceItem } from "@/components/order/FlyerPageChoiceDialog";
 import BrochurePageChoiceDialog, { type BrochurePageChoiceItem } from "@/components/order/BrochurePageChoiceDialog";
 import { isImageFile } from "@/lib/imageToPage";
 import { imageToPosterPdf } from "@/lib/imageToPage";
-import { getPageCountRule, validateDocumentPages } from "@/lib/pageCountRules";
+import { getPageCountRule, validateDocumentPages, isCoverPageLimited, COVER_MAX_PAGES } from "@/lib/pageCountRules";
 import { trimDocumentToFirstPages } from "@/lib/trimPdfPages";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, ArrowLeft } from "lucide-react";
@@ -316,6 +317,16 @@ export default function OrderFiles() {
   const [brochureChoiceItem, setBrochureChoiceItem] = useState<BrochurePageChoiceItem | null>(null);
   const [brochureChoiceBusy, setBrochureChoiceBusy] = useState(false);
   const dismissedBrochureDocIds = useRef<Set<string>>(new Set());
+
+  // Cover page-limit prompt (bound-style products: max 2 pages per cover)
+  const [coverLimitPrompt, setCoverLimitPrompt] = useState<{
+    type: "front_cover" | "back_cover";
+    docId: string;
+    pageCount: number;
+    fileName: string;
+  } | null>(null);
+  const [coverLimitBusy, setCoverLimitBusy] = useState(false);
+
 
   // Check for near-ISO bleed documents after upload completes
   useEffect(() => {
@@ -1583,6 +1594,26 @@ export default function OrderFiles() {
           type === "front_cover";
         extraFields.is_duplex = isRingBinderCover ? false : coverPages >= 2;
       }
+      // Cover page-limit guard: physical covers are one sheet (max 2 pages).
+      // If the user picked a multi-page doc as a cover, prompt to use only the
+      // first two pages. Abort the immediate assignment — the dialog will
+      // re-invoke via commitCoverAssignment on confirm.
+      if (
+        (type === "front_cover" || type === "back_cover") &&
+        isCoverPageLimited(familySlug)
+      ) {
+        const coverDoc = documents.find((d) => d.id === selectedDocId);
+        const coverPages = coverDoc?.page_count ?? 0;
+        if (coverPages > COVER_MAX_PAGES) {
+          setCoverLimitPrompt({
+            type,
+            docId: selectedDocId,
+            pageCount: coverPages,
+            fileName: coverDoc?.file_name ?? "this file",
+          });
+          return;
+        }
+      }
       try {
         await addSection.mutateAsync({
           order_item_id: orderItem.id,
@@ -1603,6 +1634,33 @@ export default function OrderFiles() {
     },
     [selectedDocId, orderItem, sections.length, addSection, familySlug, documents, activePrintSize, getDocEffectiveSize, assertOrientationOk]
   );
+
+  // Confirm handler for the cover page-limit prompt — adds the section with
+  // page_range trimmed to the first 2 pages.
+  const commitCoverAssignment = useCallback(async () => {
+    if (!coverLimitPrompt || !orderItem) return;
+    setCoverLimitBusy(true);
+    try {
+      await addSection.mutateAsync({
+        order_item_id: orderItem.id,
+        document_id: coverLimitPrompt.docId,
+        section_type: coverLimitPrompt.type,
+        sort_order: sections.length,
+        page_range_start: 0,
+        page_range_end: 1,
+        is_duplex: true,
+      } as any);
+      toast.success(
+        `Added as ${coverLimitPrompt.type === "front_cover" ? "Front Cover" : "Back Cover"} (first 2 pages)`,
+      );
+      setCoverLimitPrompt(null);
+    } catch (err: any) {
+      toast.error("Failed to add section", { description: err.message });
+    } finally {
+      setCoverLimitBusy(false);
+    }
+  }, [coverLimitPrompt, orderItem, addSection, sections.length]);
+
 
   // Auto-assign a 2-3 page document as Outside (page 1) + Inside (page 2) for brochures
   // Shared mismatch check used by all assignment paths.
@@ -2355,6 +2413,17 @@ export default function OrderFiles() {
         onTrim={handlePageCountTrim}
         onReplace={handlePageCountReplace}
         onKeep={handlePageCountKeep}
+      />
+
+      {/* Cover page-limit prompt — bound-style products: covers max 2 pages */}
+      <CoverPageLimitDialog
+        open={!!coverLimitPrompt}
+        type={coverLimitPrompt?.type ?? null}
+        fileName={coverLimitPrompt?.fileName ?? null}
+        pageCount={coverLimitPrompt?.pageCount ?? 0}
+        busy={coverLimitBusy}
+        onConfirm={commitCoverAssignment}
+        onCancel={() => { if (!coverLimitBusy) setCoverLimitPrompt(null); }}
       />
 
       {/* Flyer multi-page choice dialog */}
