@@ -272,6 +272,47 @@ function buildFilesSection(documents: DocumentRow[]): ConfigSection | null {
   };
 }
 
+/** Print-shop worksheet entry: "Use slots 1, 3, 4 from pack 1". */
+function buildTabDividersSection(sections: DocumentSectionRow[]): ConfigSection | null {
+  const tabs = sections.filter((s) => s.section_type === "tab");
+  if (!tabs.length) return null;
+
+  const items: { label: string; value: string }[] = [];
+
+  // Group used slots by pack number (slot 1-10 → pack 1, 11-20 → pack 2, …)
+  const packs = new Map<number, { slot: number; label: string; afterPage: number | null }[]>();
+  for (const t of tabs) {
+    const slot = t.bank_position ?? null;
+    if (slot == null) continue;
+    const packNo = Math.ceil(slot / 10);
+    const list = packs.get(packNo) ?? [];
+    list.push({ slot, label: t.label || `Tab`, afterPage: t.page_range_start });
+    packs.set(packNo, list);
+  }
+
+  if (packs.size === 0) {
+    // Legacy tabs with no assigned bank_position — fall back to a count line.
+    items.push({ label: "Tabs", value: `${tabs.length} placed (no physical slot assigned)` });
+  } else {
+    for (const [packNo, list] of [...packs.entries()].sort(([a], [b]) => a - b)) {
+      list.sort((a, b) => a.slot - b.slot);
+      const slotsCsv = list.map((e) => e.slot - (packNo - 1) * 10).join(", ");
+      items.push({
+        label: `Pack ${packNo}`,
+        value: `Use slots ${slotsCsv} of 10 (${list.length} tab${list.length === 1 ? "" : "s"})`,
+      });
+      for (const e of list) {
+        items.push({
+          label: `  Slot ${e.slot}`,
+          value: e.afterPage ? `${e.label} — after page ${e.afterPage}` : e.label,
+        });
+      }
+    }
+  }
+
+  return { title: "Tab Dividers", items };
+}
+
 /* ─── Photo Prints section ───────────────────────────────── */
 
 interface PhotoPrintEntryLite {
