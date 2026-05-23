@@ -433,7 +433,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
                     <Plus className="h-3 w-3 mr-1" /> Add Value
                   </Button>
                 </div>
-                <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
+                <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1">
                   {editValues.map((val, idx) => (
                     <ValueEditorRow
                       key={idx}
