@@ -143,10 +143,16 @@ function RingTabOverlay({
 }) {
   if (tabPositions.length === 0) return null;
 
+  const hasBankPositions = tabPositions.some((t) => t.bankPosition != null);
+  const MAX_PER_BANK = tabPositions[0].bankSize ?? 10;
   const tabTotal = tabPositions[0].tabTotal;
-  const MAX_PER_BANK = 10;
-  const banks = Math.ceil(tabTotal / MAX_PER_BANK);
-  const bankSize = Math.ceil(tabTotal / banks);
+  const maxBankPos = hasBankPositions
+    ? Math.max(...tabPositions.map((t) => t.bankPosition ?? 1))
+    : tabTotal;
+  const banks = hasBankPositions
+    ? Math.ceil(maxBankPos / MAX_PER_BANK)
+    : Math.ceil(tabTotal / MAX_PER_BANK);
+  const bankSize = hasBankPositions ? MAX_PER_BANK : Math.ceil(tabTotal / banks);
 
   const tabWidth = 22;
   const tabHeight = Math.max(30, Math.min(80, (pageHeight - 10) / bankSize));
@@ -163,13 +169,17 @@ function RingTabOverlay({
           side === "right" ? tab.pageIndex >= currentPage : tab.pageIndex === currentPage;
         if (!isVisible) return null;
 
-        const bankIndex = Math.floor(tab.tabIndex / bankSize);
-        const indexInBank = tab.tabIndex % bankSize;
+        const slotForLayout = hasBankPositions
+          ? ((tab.bankPosition ?? 1) - 1)
+          : tab.tabIndex;
+        const bankIndex = Math.floor(slotForLayout / bankSize);
+        const indexInBank = slotForLayout % bankSize;
         const segmentHeight = pageHeight / bankSize;
         const topOffset = segmentHeight * indexInBank + (segmentHeight - tabHeight) / 2;
         const bankOffset = bankIndex * (tabWidth + 2);
 
-        const tabColor = resolveTabColor(tab.color, tab.tabIndex);
+        const colorKey = hasBankPositions ? slotForLayout : tab.tabIndex;
+        const tabColor = resolveTabColor(tab.color, colorKey);
         const textColor = ["#e5e7eb", "#fde68a", "#ffffff"].includes(tabColor) ? "#374151" : "#ffffff";
 
         // Position: right side sticks out past the right edge; left side sticks

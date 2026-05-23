@@ -198,10 +198,23 @@ function TabOverlay({
 }) {
   if (tabPositions.length === 0) return null;
 
+  // Physical pre-cut packs (banks) are always 10 slots high. If any tab has
+  // an explicit bankPosition, lay tabs out at those fixed slot positions so
+  // the preview matches a real pack; otherwise fall back to even spacing.
+  const hasBankPositions = tabPositions.some((t) => t.bankPosition != null);
+  const MAX_PER_BANK = tabPositions[0].bankSize ?? 10;
   const tabTotal = tabPositions[0].tabTotal;
-  const MAX_PER_BANK = 10;
-  const banks = Math.ceil(tabTotal / MAX_PER_BANK);
-  const bankSize = Math.ceil(tabTotal / banks);
+
+  // Bank count: in pack mode = ceil(max placed bankPosition / size) — we
+  // need at least enough banks to hold the highest occupied slot. In legacy
+  // mode use tabTotal.
+  const maxBankPos = hasBankPositions
+    ? Math.max(...tabPositions.map((t) => t.bankPosition ?? 1))
+    : tabTotal;
+  const banks = hasBankPositions
+    ? Math.ceil(maxBankPos / MAX_PER_BANK)
+    : Math.ceil(tabTotal / MAX_PER_BANK);
+  const bankSize = hasBankPositions ? MAX_PER_BANK : Math.ceil(tabTotal / banks);
 
   const tabWidth = 22;
   const tabHeight = Math.max(30, Math.min(80, (pageHeight - 10) / bankSize));
@@ -218,13 +231,20 @@ function TabOverlay({
         const isBehind = tab.pageIndex <= currentPage;
         const isCurrent = !isAhead && !isBehind;
 
-        const bankIndex = Math.floor(tab.tabIndex / bankSize);
-        const indexInBank = tab.tabIndex % bankSize;
+        // Slot index drives both Y position and (multi) colour cycle:
+        // - pack mode: use bankPosition (1..bankSize) modulo bank
+        // - legacy:    use placement index
+        const slotForLayout = hasBankPositions
+          ? ((tab.bankPosition ?? 1) - 1)
+          : tab.tabIndex;
+        const bankIndex = Math.floor(slotForLayout / bankSize);
+        const indexInBank = slotForLayout % bankSize;
         const segmentHeight = pageHeight / bankSize;
         const topOffset = segmentHeight * indexInBank + (segmentHeight - tabHeight) / 2;
         const bankOffset = bankIndex * (tabWidth + 2);
 
-        const tabColor = resolveTabColor(tab.color, tab.tabIndex);
+        const colorKey = hasBankPositions ? slotForLayout : tab.tabIndex;
+        const tabColor = resolveTabColor(tab.color, colorKey);
         const textColor = ["#e5e7eb", "#fde68a", "#ffffff"].includes(tabColor) ? "#374151" : "#ffffff";
 
         if (isAhead || isCurrent) {

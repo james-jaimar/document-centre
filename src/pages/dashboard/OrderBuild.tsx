@@ -710,15 +710,30 @@ export default function OrderBuild() {
   const orderItemId = orderItem?.id ?? "";
 
   // ── Tab/Insert callbacks using page_range_start as anchor ──
-  const handleAddTab = useCallback(async (afterPage: number, label?: string) => {
+  const handleAddTab = useCallback(async (afterPage: number, label?: string, bankPosition?: number) => {
     if (!orderItemId) return;
     const maxSort = sections.reduce((max, s) => Math.max(max, s.sort_order), 0);
+    // Auto-assign the next free physical slot (1..10) when caller doesn't
+    // specify one, so we always honour the pre-made pack ordering.
+    const used = new Set(
+      sections
+        .filter((s) => s.section_type === "tab")
+        .map((s) => (s as any).bank_position)
+        .filter((v): v is number => typeof v === "number"),
+    );
+    let resolvedPos = bankPosition;
+    if (resolvedPos == null) {
+      for (let i = 1; i <= 50; i++) {
+        if (!used.has(i)) { resolvedPos = i; break; }
+      }
+    }
     await addSectionMut.mutateAsync({
       order_item_id: orderItemId,
       section_type: "tab",
       sort_order: maxSort + 1,
       document_id: null,
       page_range_start: afterPage,
+      bank_position: resolvedPos ?? null,
       ...(label ? { label } : {}),
     } as any);
   }, [orderItemId, addSectionMut, sections]);

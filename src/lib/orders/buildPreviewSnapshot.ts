@@ -42,6 +42,8 @@ interface SectionLike {
   label: string | null;
   color: string | null;
   sort_order: number;
+  /** Physical slot 1..10 within a pre-cut tab pack. Only set for section_type='tab'. */
+  bank_position?: number | null;
 }
 
 interface OptionLike {
@@ -434,6 +436,8 @@ export function buildPreviewSnapshot(input: {
 
   // ── Multicolor tab cycling: assign cycled hex to each tab face's `color` ──
   // so PageEffects renders the sheet body in the same hue as the protrusion.
+  // Colour is keyed by physical bank_position when set so slot 3 is always
+  // red, slot 4 always orange, etc. (matches a pre-made pack).
   const tabFaceIndices = roles
     .map((r, i) => (r === "tab" || r === "tab_back" ? i : -1))
     .filter((i) => i >= 0);
@@ -447,7 +451,9 @@ export function buildPreviewSnapshot(input: {
     const existing = (front?.color || "").trim().toLowerCase();
     const isMulti = !existing || existing === "multi" || existing === "multicolor";
     if (!isMulti) return;
-    const hex = TAB_COLORS[tabIdx % TAB_COLORS.length];
+    const bankPos = front?.section?.bank_position;
+    const slotIdx = (bankPos != null ? bankPos - 1 : tabIdx) % TAB_COLORS.length;
+    const hex = TAB_COLORS[slotIdx];
     if (fp[frontIdx]) fp[frontIdx] = { ...fp[frontIdx], color: hex };
     if (fp[backIdx]) fp[backIdx] = { ...fp[backIdx], color: hex };
   });
@@ -494,12 +500,15 @@ export function buildPreviewSnapshot(input: {
   const tabTotal = tabRoleIndices.length;
   tabRoleIndices.forEach((pageIdx, tabIdx) => {
     const page = fp[pageIdx];
+    const bankPos = page?.section?.bank_position ?? undefined;
     tabPositions.push({
       pageIndex: pageIdx,
       label: page?.label || `Tab ${tabIdx + 1}`,
       tabIndex: tabIdx,
       tabTotal,
       color: page?.color || "",
+      bankPosition: bankPos != null ? Number(bankPos) : undefined,
+      bankSize: 10,
     });
   });
 

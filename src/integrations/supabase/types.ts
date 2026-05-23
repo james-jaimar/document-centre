@@ -675,6 +675,7 @@ export type Database = {
       }
       document_sections: {
         Row: {
+          bank_position: number | null
           color: string | null
           created_at: string
           document_id: string | null
@@ -693,6 +694,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          bank_position?: number | null
           color?: string | null
           created_at?: string
           document_id?: string | null
@@ -711,6 +713,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          bank_position?: number | null
           color?: string | null
           created_at?: string
           document_id?: string | null

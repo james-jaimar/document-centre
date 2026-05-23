@@ -240,6 +240,8 @@ export function useAddSection() {
       page_range_end?: number | null;
       is_duplex?: boolean;
       is_color?: boolean;
+      bank_position?: number | null;
+      label?: string | null;
     }) => {
       const { data, error } = await supabase
         .from("document_sections")
