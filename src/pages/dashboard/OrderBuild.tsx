@@ -752,6 +752,10 @@ export default function OrderBuild() {
     await updateSectionMut.mutateAsync({ id: sectionId, label } as any);
   }, [updateSectionMut]);
 
+  const handleUpdateTabBankPosition = useCallback(async (sectionId: string, bankPosition: number) => {
+    await updateSectionMut.mutateAsync({ id: sectionId, bank_position: bankPosition } as any);
+  }, [updateSectionMut]);
+
   const handleAddInsert = useCallback(async (afterPage: number, color: string) => {
     if (!orderItemId) return;
     const maxSort = sections.reduce((max, s) => Math.max(max, s.sort_order), 0);
