@@ -1976,41 +1976,52 @@ class PdfOps:
                 c.setLineWidth(0.25)
                 c.setStrokeColor(Color(0, 0, 0, alpha=1))
                 if show_crop_marks:
-                    for slot_idx in range(per_sheet):
-                        tx0, ty0, tx1, ty1 = slot_rects[slot_idx]
-                        col = slot_idx % columns
-                        row = slot_idx // columns
-                        is_left = (col == 0)
-                        is_right = (col == columns - 1)
-                        # row 0 is the TOP row (ty0 = origin_y + (rows-1-row)*pitch)
-                        is_top = (row == 0)
-                        is_bottom = (row == rows - 1)
-                        # Marks are drawn AT the trim corners with a `cm_off`
-                        # gap, extending OUTWARD into the bleed/waste area.
-                        # Only draw marks for edges that land on the OUTER
-                        # boundary of the imposition block — marks at interior
-                        # (gutter-facing) edges sit on the shared cut line and
-                        # are suppressed per standard prepress practice.
-                        # bottom-left
-                        if is_bottom:
-                            c.line(tx0 - cm_off - cm_len, ty0, tx0 - cm_off, ty0)
-                        if is_left:
-                            c.line(tx0, ty0 - cm_off - cm_len, tx0, ty0 - cm_off)
-                        # bottom-right
-                        if is_bottom:
-                            c.line(tx1 + cm_off, ty0, tx1 + cm_off + cm_len, ty0)
-                        if is_right:
-                            c.line(tx1, ty0 - cm_off - cm_len, tx1, ty0 - cm_off)
-                        # top-left
-                        if is_top:
-                            c.line(tx0 - cm_off - cm_len, ty1, tx0 - cm_off, ty1)
-                        if is_left:
-                            c.line(tx0, ty1 + cm_off, tx0, ty1 + cm_off + cm_len)
-                        # top-right
-                        if is_top:
-                            c.line(tx1 + cm_off, ty1, tx1 + cm_off + cm_len, ty1)
-                        if is_right:
-                            c.line(tx1, ty1 + cm_off, tx1, ty1 + cm_off + cm_len)
+                    # Gutter-aware crop marks, matching the Acrobat imposition
+                    # plugin convention:
+                    #   * Ticks live in the OUTER waste area (above/below/left/
+                    #     right of the imposition block) — never inside the
+                    #     gutter or on top of artwork.
+                    #   * Each cut line gets its own perpendicular tick at both
+                    #     ends of the waste strip.
+                    #   * gutter == 0: interior cuts share a single tick at the
+                    #     guillotine line.
+                    #   * gutter > 0: each interior boundary produces TWO ticks,
+                    #     one on each side of the gutter, so the operator can
+                    #     trim each slot independently.
+                    block_left = origin_x
+                    block_right = origin_x + block_w
+                    block_bottom = origin_y
+                    block_top = origin_y + block_h
+
+                    # Vertical cut line x-positions (left to right)
+                    v_cuts: list[float] = [block_left]
+                    for col in range(columns):
+                        x_right = block_left + col * slot_pitch_w + trim_w
+                        v_cuts.append(x_right)
+                        if col < columns - 1 and gutter > 0:
+                            v_cuts.append(x_right + gutter)
+
+                    # Horizontal cut line y-positions (bottom to top)
+                    h_cuts: list[float] = [block_bottom]
+                    for r in range(rows):
+                        y_top = block_bottom + r * slot_pitch_h + trim_h
+                        h_cuts.append(y_top)
+                        if r < rows - 1 and gutter > 0:
+                            h_cuts.append(y_top + gutter)
+
+                    # Vertical ticks for each vertical cut, in top + bottom waste
+                    for x_cut in v_cuts:
+                        c.line(x_cut, block_bottom - cm_off - cm_len,
+                               x_cut, block_bottom - cm_off)
+                        c.line(x_cut, block_top + cm_off,
+                               x_cut, block_top + cm_off + cm_len)
+
+                    # Horizontal ticks for each horizontal cut, in left + right waste
+                    for y_cut in h_cuts:
+                        c.line(block_left - cm_off - cm_len, y_cut,
+                               block_left - cm_off, y_cut)
+                        c.line(block_right + cm_off, y_cut,
+                               block_right + cm_off + cm_len, y_cut)
 
                 if show_registration:
                     r = 3 * MM
