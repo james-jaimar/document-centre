@@ -1892,12 +1892,26 @@ class PdfOps:
             # 0.5 mm tolerance for sub-mm rounding in PDF box ladders
             # (e.g. A4 expressed as 595.275591pt round-trips to 210.00156mm).
             fit_tol = 0.5 * MM
-            if (block_w + 2 * bleed) > (sheet_w + fit_tol) \
-               or (block_h + 2 * bleed) > (sheet_h + fit_tol):
+            overflow_w = (block_w + 2 * bleed) - sheet_w
+            overflow_h = (block_h + 2 * bleed) - sheet_h
+            if overflow_w > fit_tol or overflow_h > fit_tol:
                 raise ValueError(
-                    f"Imposed block ({block_w/MM:.2f}×{block_h/MM:.2f}mm + bleed) "
-                    f"does not fit on press sheet ({sheet_width_mm}×{sheet_height_mm}mm)."
+                    f"Imposed block ({block_w/MM:.3f}×{block_h/MM:.3f}mm + {bleed_mm}mm bleed) "
+                    f"does not fit on press sheet ({sheet_width_mm}×{sheet_height_mm}mm). "
+                    f"Overflow: width={overflow_w/MM:.3f}mm, height={overflow_h/MM:.3f}mm "
+                    f"(tolerance={fit_tol/MM:.2f}mm)."
                 )
+            # Within tolerance: clamp block to the sheet so downstream
+            # geometry (origin, slot rects, crop marks) cannot drift past
+            # the sheet edge by a few microns.
+            if 0 < overflow_w <= fit_tol:
+                trim_w -= overflow_w / max(columns, 1)
+                slot_pitch_w = trim_w + gutter
+                block_w = columns * trim_w + max(0, columns - 1) * gutter
+            if 0 < overflow_h <= fit_tol:
+                trim_h -= overflow_h / max(rows, 1)
+                slot_pitch_h = trim_h + gutter
+                block_h = rows * trim_h + max(0, rows - 1) * gutter
 
             origin_x = (sheet_w - block_w) / 2
             origin_y = (sheet_h - block_h) / 2
