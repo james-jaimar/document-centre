@@ -453,32 +453,46 @@ export const HOLE_PUNCHING: StructuredOptionValue[] = [
 // ═══════════════════════════════════════════════════════════════════
 // TAB DIVIDERS
 // ═══════════════════════════════════════════════════════════════════
+// Coloured PVC/card tab dividers ship in pre-cut BANKS of 10. A shop must
+// open (and charge for) a full pack even if the customer only uses one tab.
+// Each value below represents one or more whole packs; tab_count = max tabs
+// available (packs × 10) and pack_count is what gets billed.
+const TAB_PACK_SIZE = 10;
+const buildPacks = (
+  packs: number,
+  color: "white" | "multi",
+  unitPrice: number,
+): StructuredOptionValue => {
+  const colorLabel = color === "multi" ? "Multi-Colour" : "White";
+  const label =
+    packs === 1
+      ? `1 pack — up to 10 tabs (${colorLabel})`
+      : `${packs} packs — up to ${packs * TAB_PACK_SIZE} tabs (${colorLabel})`;
+  return createOptionValue(label, "Tab Dividers", {
+    price_impact: +(unitPrice * packs).toFixed(2),
+    price_type: "per_document",
+    metadata: {
+      tab_count: packs * TAB_PACK_SIZE,
+      pack_count: packs,
+      pack_size: TAB_PACK_SIZE,
+      color,
+      material: "card",
+      printable: true,
+    },
+  });
+};
 export const TAB_DIVIDERS: StructuredOptionValue[] = [
   createOptionValue("No Tab Dividers", "Tab Dividers", { is_default: true }),
-  createOptionValue("5-Tab Dividers (White)", "Tab Dividers", {
-    price_impact: 8.0, price_type: "per_document",
-    metadata: { tab_count: 5, color: "white", material: "card", printable: true },
-  }),
-  createOptionValue("10-Tab Dividers (White)", "Tab Dividers", {
-    price_impact: 14.0, price_type: "per_document",
-    metadata: { tab_count: 10, color: "white", material: "card", printable: true },
-  }),
-  createOptionValue("12-Tab Dividers (White)", "Tab Dividers", {
-    price_impact: 16.0, price_type: "per_document",
-    metadata: { tab_count: 12, color: "white", material: "card", printable: true },
-  }),
-  createOptionValue("5-Tab Dividers (Multi-Colour)", "Tab Dividers", {
-    price_impact: 10.0, price_type: "per_document",
-    metadata: { tab_count: 5, color: "multi", material: "card", printable: true },
-  }),
-  createOptionValue("10-Tab Dividers (Multi-Colour)", "Tab Dividers", {
-    price_impact: 18.0, price_type: "per_document",
-    metadata: { tab_count: 10, color: "multi", material: "card", printable: true },
-  }),
-  createOptionValue("Custom Tab Dividers", "Tab Dividers", {
-    price_impact: 3.0, price_type: "per_document",
-    metadata: { tab_count: 0, is_custom: true, printable: true },
-  }),
+  buildPacks(1, "white", 14.0),
+  buildPacks(2, "white", 14.0),
+  buildPacks(3, "white", 14.0),
+  buildPacks(4, "white", 14.0),
+  buildPacks(5, "white", 14.0),
+  buildPacks(1, "multi", 18.0),
+  buildPacks(2, "multi", 18.0),
+  buildPacks(3, "multi", 18.0),
+  buildPacks(4, "multi", 18.0),
+  buildPacks(5, "multi", 18.0),
 ];
 
 // ═══════════════════════════════════════════════════════════════════
