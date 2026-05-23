@@ -45,11 +45,13 @@ interface TabInsertDrawerProps {
   isDuplex: boolean;
   tabEnabled: boolean;
   tabCount: number;
+  packCount?: number;
   isMultiColor: boolean;
-  onAddTab: (afterPage: number, label?: string) => Promise<void>;
+  onAddTab: (afterPage: number, label?: string, bankPosition?: number) => Promise<void>;
   onDeleteTab: (sectionId: string) => Promise<void>;
   onMoveTab: (sectionId: string, afterPage: number) => Promise<void>;
   onUpdateTabLabel: (sectionId: string, label: string) => Promise<void>;
+  onUpdateTabBankPosition?: (sectionId: string, bankPosition: number) => Promise<void>;
   insertEnabled: boolean;
   onAddInsert: (afterPage: number, color: string) => Promise<void>;
   onDeleteInsert: (sectionId: string) => Promise<void>;
