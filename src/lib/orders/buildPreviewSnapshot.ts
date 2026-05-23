@@ -500,12 +500,15 @@ export function buildPreviewSnapshot(input: {
   const tabTotal = tabRoleIndices.length;
   tabRoleIndices.forEach((pageIdx, tabIdx) => {
     const page = fp[pageIdx];
+    const bankPos = page?.section?.bank_position ?? undefined;
     tabPositions.push({
       pageIndex: pageIdx,
       label: page?.label || `Tab ${tabIdx + 1}`,
       tabIndex: tabIdx,
       tabTotal,
       color: page?.color || "",
+      bankPosition: bankPos != null ? Number(bankPos) : undefined,
+      bankSize: 10,
     });
   });
 
