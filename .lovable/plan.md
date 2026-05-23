@@ -1,37 +1,25 @@
-## Add per-row Active toggle to every product option value
+## Problem
 
-Add an `is_active` flag on each structured option value across all product options (not just tab dividers), so admins can hide rows without deleting them. Disabled rows stay in the master config and are simply filtered out of customer-facing selectors.
+The "Edit Option" modal for Tab Dividers (and any option with many fields) overflows horizontally. The label `Input` is squeezed so badly that only ~5 characters show ("Tab Divid…"), and the whole row triggers a horizontal scrollbar at the dialog level. Root cause: the dialog is capped at `sm:max-w-2xl` (672px), while each `ValueEditorRow` packs 8 fixed-width controls onto a single inline flex line.
 
-### Changes
+## Fix (UI-only, `src/components/admin/ProductOptionsEditor.tsx`)
 
-**1. `src/lib/productOptionTypes.ts`**
-- Add `is_active?: boolean` to `StructuredOptionValue` (optional for backward compat; treated as `true` when missing).
-- Default new values created via `createOptionValue` to `is_active: true`.
-- Add a helper `isValueActive(v)` returning `v.is_active !== false` for consistent filtering.
+1. **Widen + harden the dialog**
+   - Change `DialogContent` className from `sm:max-w-2xl max-h-[85vh] overflow-y-auto` to `max-w-[min(1100px,95vw)] max-h-[90vh] overflow-y-auto overflow-x-hidden`.
+   - Bump the values scroll area from `max-h-[40vh]` to `max-h-[55vh]`.
 
-**2. `src/components/admin/ProductOptionsEditor.tsx` (universal — used by every product family)**
-- Add an "Active" switch to `ValueEditorRow`, placed before the existing "Default" switch.
-- When `is_active === false`, render the row at reduced opacity with a subtle "Hidden" badge so admins can see it's off at a glance.
-- New rows added via "Add Value" default to active.
-- When loading legacy values without `is_active`, treat them as active.
-- `GroupedValuesPreview` shows `active/total` counts per group (e.g. `Colour (3/5)`).
+2. **Responsive `ValueEditorRow` layout**
+   - Replace the single `flex items-center gap-2` with a 12-column grid that wraps on narrow widths:
+     - Label: spans wide (e.g. `col-span-12 md:col-span-4`), so "Tab Dividers — Pack of 14" is fully readable.
+     - Group: `md:col-span-2`.
+     - Price + price-type: `md:col-span-3` (sub-grid).
+     - On / Default switches: `md:col-span-2`.
+     - Expand + delete buttons: `md:col-span-1` right-aligned.
+   - Remove the fixed `w-24 / w-32 / w-20` widths; use `w-full` inside each cell so the label and selects grow with the dialog.
+   - Keep the "Hidden" badge but move it next to the label so it doesn't push controls off-screen.
 
-**3. Customer-side filtering**
-Filter out inactive values wherever option choices are presented to the customer. The admin editor still shows all rows. Files to audit and update with `isValueActive` filtering:
-- `src/pages/dashboard/OrderBuild.tsx` and any child selector component (binding, paper, cover, lamination, tab dividers, inserts, finishing, etc.).
-- `src/hooks/useOrderBuilder.ts` if it normalises options.
-- Any product-page renderer that maps `product_options.values` into select/radio/checkbox inputs.
+3. **Prevent any future overflow**
+   - Add `min-w-0` to flex/grid children that contain inputs (standard fix for Input + truncate inside flex).
+   - Ensure the outer dialog body uses `min-w-0` so the inner grid actually shrinks instead of forcing horizontal scroll.
 
-I'll grep for `product_options` / `option.values` / `StructuredOptionValue` consumers during build and apply the filter at the render boundary only — pricing rules and snapshots are unaffected.
-
-**4. Seed data (`src/lib/productOptionValues.ts`)**
-- No functional change. Optionally add `is_active: true` explicitly for clarity in newly seeded values — existing rows in the DB remain valid because the field is optional.
-
-### Out of scope
-- No DB schema migration: `is_active` lives inside the existing `values` JSONB column.
-- No bulk "disable all of group X" action — single per-row toggle only.
-- Pricing rules, price overrides, and existing snapshots are untouched. If a customer has already selected a value that later gets disabled, their saved order keeps that selection (since it's snapshotted).
-
-### Technical notes
-- Filter uses `v.is_active !== false` so any legacy row without the flag remains visible.
-- This is purely a presentation/filter change — no data migration, no consumer-breaking change.
+No behavioural changes, no schema changes, no consumer-side changes — purely layout/responsiveness inside the editor modal.
