@@ -1,0 +1,20 @@
+ALTER TABLE public.rate_card_clicks    ADD COLUMN IF NOT EXISTS notes text;
+ALTER TABLE public.rate_card_papers    ADD COLUMN IF NOT EXISTS notes text;
+ALTER TABLE public.rate_card_finishing ADD COLUMN IF NOT EXISTS notes text;
+
+UPDATE public.rate_card_clicks SET sell_price=0.30, notes=$NOTE$derived: A4 R0.50 × 0.55 (A5 area scaling, Method A)$NOTE$ WHERE scope_type='master' AND sell_price=0 AND size='A5' AND colour='mono' AND sides='simplex';
+UPDATE public.rate_card_clicks SET sell_price=0.50, notes=$NOTE$derived: A4 R0.90 × 0.55 (A5 area scaling, Method A)$NOTE$ WHERE scope_type='master' AND sell_price=0 AND size='A5' AND colour='mono' AND sides='duplex';
+UPDATE public.rate_card_clicks SET sell_price=1.40, notes=$NOTE$derived: A4 R2.50 × 0.55 (A5 area scaling, Method A)$NOTE$ WHERE scope_type='master' AND sell_price=0 AND size='A5' AND colour='colour' AND sides='simplex';
+UPDATE public.rate_card_clicks SET sell_price=2.50, notes=$NOTE$derived: A4 R4.50 × 0.55 (A5 area scaling, Method A)$NOTE$ WHERE scope_type='master' AND sell_price=0 AND size='A5' AND colour='colour' AND sides='duplex';
+UPDATE public.rate_card_clicks SET sell_price=0.10, notes=$NOTE$derived: A4 R0.50 × 0.25 (A6 area scaling, Method A)$NOTE$ WHERE scope_type='master' AND sell_price=0 AND size='A6' AND colour='mono' AND sides='simplex';
+UPDATE public.rate_card_clicks SET sell_price=0.20, notes=$NOTE$derived: A4 R0.90 × 0.25 (A6 area scaling, Method A)$NOTE$ WHERE scope_type='master' AND sell_price=0 AND size='A6' AND colour='mono' AND sides='duplex';
+UPDATE public.rate_card_clicks SET sell_price=0.60, notes=$NOTE$derived: A4 R2.50 × 0.25 (A6 area scaling, Method A)$NOTE$ WHERE scope_type='master' AND sell_price=0 AND size='A6' AND colour='colour' AND sides='simplex';
+UPDATE public.rate_card_clicks SET sell_price=1.10, notes=$NOTE$derived: A4 R4.50 × 0.25 (A6 area scaling, Method A)$NOTE$ WHERE scope_type='master' AND sell_price=0 AND size='A6' AND colour='colour' AND sides='duplex';
+UPDATE public.rate_card_clicks SET sell_price=0.50, notes=$NOTE$derived: A4 R0.50 × 1.05 (Letter area scaling, Method A)$NOTE$ WHERE scope_type='master' AND sell_price=0 AND size='Letter' AND colour='mono' AND sides='simplex';
+UPDATE public.rate_card_clicks SET sell_price=0.95, notes=$NOTE$derived: A4 R0.90 × 1.05 (Letter area scaling, Method A)$NOTE$ WHERE scope_type='master' AND sell_price=0 AND size='Letter' AND colour='mono' AND sides='duplex';
+UPDATE public.rate_card_clicks SET sell_price=2.60, notes=$NOTE$derived: A4 R2.50 × 1.05 (Letter area scaling, Method A)$NOTE$ WHERE scope_type='master' AND sell_price=0 AND size='Letter' AND colour='colour' AND sides='simplex';
+UPDATE public.rate_card_clicks SET sell_price=4.70, notes=$NOTE$derived: A4 R4.50 × 1.05 (Letter area scaling, Method A)$NOTE$ WHERE scope_type='master' AND sell_price=0 AND size='Letter' AND colour='colour' AND sides='duplex';
+UPDATE public.rate_card_clicks SET sell_price=0.65, notes=$NOTE$derived: A4 R0.50 × 1.3 (Legal area scaling, Method A)$NOTE$ WHERE scope_type='master' AND sell_price=0 AND size='Legal' AND colour='mono' AND sides='simplex';
+UPDATE public.rate_card_clicks SET sell_price=1.15, notes=$NOTE$derived: A4 R0.90 × 1.3 (Legal area scaling, Method A)$NOTE$ WHERE scope_type='master' AND sell_price=0 AND size='Legal' AND colour='mono' AND sides='duplex';
+UPDATE public.rate_card_clicks SET sell_price=3.25, notes=$NOTE$derived: A4 R2.50 × 1.3 (Legal area scaling, Method A)$NOTE$ WHERE scope_type='master' AND sell_price=0 AND size='Legal' AND colour='colour' AND sides='simplex';
+UPDATE public.rate_card_clicks SET sell_price=5.85, notes=$NOTE$derived: A4 R4.50 × 1.3 (Legal area scaling, Method A)$NOTE$ WHERE scope_type='master' AND sell_price=0 AND size='Legal' AND colour='colour' AND sides='duplex';
