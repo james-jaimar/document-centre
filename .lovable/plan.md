@@ -1,60 +1,42 @@
-# Suppress interior crop marks at gutter join lines
+# Gutter-aware crop marks for n-up imposition
 
-## Background
+## Problem
 
-Crop marks are drawn entirely by our own code in `impose_nup_trimbox` (ReportLab `canvas.line`) — there is no third-party imposition library whose parameters we could tweak. Each slot currently gets all 8 mark segments (2 at each corner) drawn unconditionally. When two slots meet across a gutter, the marks pointing inward end up sitting on or right next to the shared cut line — which is exactly what the user is flagging in Acrobat.
+Current `impose_nup_trimbox` in `pdf-server/app/services/pdf_ops.py` suppresses **all** interior crop marks (the previous fix). That matches Acrobat's behaviour only when the gutter is 0 AND no tick is wanted. The reference Acrobat plugin actually does this:
 
-Standard prepress practice is to only draw crop marks for **cuts that land on the outer edge of the press sheet**. Marks at interior slot edges (i.e. inside the gutter between two slots) must be suppressed.
+- **Gutter = 0** — one short tick on the shared cut line (indicates where to guillotine).
+- **Gutter > 0** — two marks per interior boundary, one on each side of the gutter, indicating the trim edge of each adjacent slot.
+- **Outer edges** — full-length marks extending outward into the waste (unchanged).
 
-## Change
+Our current screenshot (image 3) shows: vertical interior marks correctly suppressed, but horizontal interior marks still present and extending outward through the gutter — because the suppression logic only kills marks on the slot's *own* interior edge for the axis where that slot has a neighbour on that side. The fix needs to be redone around gutter geometry, not just edge position.
 
-Single, narrow edit in `pdf-server/app/services/pdf_ops.py`, inside the `if show_crop_marks:` block of `impose_nup_trimbox` (around lines 1978–1994).
+## Fix
 
-For each slot, compute:
+Single edit in `pdf-server/app/services/pdf_ops.py`, inside the `if show_crop_marks:` block of `impose_nup_trimbox` (lines ~1978-2013).
 
-```
-col = slot_idx % columns
-row = slot_idx // columns
-is_left   = (col == 0)
-is_right  = (col == columns - 1)
-is_top    = (row == 0)            # row 0 is the TOP row (ty0 uses rows-1-row)
-is_bottom = (row == rows - 1)
-```
+Replace the current per-slot, per-corner unconditional draws with logic that, for each of the 4 slot edges, picks one of three modes:
 
-Then gate each of the 8 line segments by which slot edge it belongs to:
+1. **Outer edge** (no neighbour on that side): existing behaviour — mark starts at `cm_off` from the trim corner and extends `cm_len` outward.
+2. **Interior edge, gutter > 0**: mark starts at the trim corner and extends *into* the gutter. Length = `min(cm_len, gutter/2)`. No `cm_off` (the mark touches the trim corner so the operator can line up the guillotine on it). Drawn by every slot that has that interior edge — naturally produces the two-marks-per-gutter pattern in image 2.
+3. **Interior edge, gutter == 0**: a single short tick (e.g. `min(cm_len, 2mm)`) centred on the shared cut line, drawn **once per shared line** to avoid double-stroking. Deduplicate by only drawing it from the slot on the lower-col / lower-row side (i.e. `is_right` for vertical shared lines, `is_top` for horizontal shared lines, where "lower" is the slot whose `tx1`/`ty1` equals the cut line).
 
-- **bottom-left corner**
-  - horizontal segment (extends left of `tx0` at `y=ty0`) → draw only if `is_bottom`
-  - vertical segment   (extends below `ty0` at `x=tx0`) → draw only if `is_left`
-- **bottom-right corner**
-  - horizontal (extends right of `tx1` at `y=ty0`) → draw only if `is_bottom`
-  - vertical   (extends below `ty0` at `x=tx1`) → draw only if `is_right`
-- **top-left corner**
-  - horizontal (extends left of `tx0` at `y=ty1`) → draw only if `is_top`
-  - vertical   (extends above `ty1` at `x=tx0`) → draw only if `is_left`
-- **top-right corner**
-  - horizontal (extends right of `tx1` at `y=ty1`) → draw only if `is_top`
-  - vertical   (extends above `ty1` at `x=tx1`) → draw only if `is_right`
-
-Net effect:
-- 1-up: unchanged (all four corners are outer).
-- 2-up A3 (your `INV-00059-1` case, 2 cols × 1 row): the two vertical marks pointing *into* the gutter at the inner edges of each slot disappear; outer L/R verticals and all top/bottom horizontals stay.
-- 4-up (2×2): horizontals along the central horizontal cut and verticals along the central vertical cut are both suppressed; only the marks around the outside of the 2×2 block remain.
+The 8 line segments stay the same; only their start/end and the gate change. Concretely, for each slot compute `col`, `row`, `is_left`, `is_right`, `is_top`, `is_bottom` as today, then for each edge pick the mode above and emit the two corner segments along that edge.
 
 ## Out of scope
 
-- No DB / schema / UI changes. This is industry-standard prepress behaviour, not a per-template toggle. The existing `has_crop_marks` flag on `imposition_templates` continues to gate the whole block.
-- No change to `impose_with_template` (admin-uploaded press-sheet PDFs already bake marks in) or `booklet_saddle_stitch`.
-- No change to `show_registration` / colour-bar logic.
+- No DB / schema / UI changes. The `has_crop_marks` boolean on `imposition_templates` still gates the whole block.
+- No changes to `impose_with_template`, `booklet_saddle_stitch`, registration marks, or colour bars.
+- Gutter value already arrives via the template (`gutter_mm` → `gutter`) — no new field needed.
 
-## Deployment
-
-After merging on the API host:
+## Deploy & verify
 
 ```
-cd /opt/document-centre-api
-git pull
+cd /opt/document-centre-api && git pull
 sudo systemctl restart document-centre-worker-heavy
 ```
 
-Then re-impose `INV-00059-1` (A4 2-up A3 No bleed) and confirm in Acrobat that the two crop marks previously sitting next to the central gutter are gone, while the outer marks at the four corners of each slot remain.
+Then in the admin UI:
+
+1. Re-impose `INV-00059-1` with the existing "2-up A3, no bleed" template (gutter currently 0) and confirm in Acrobat we see a single short tick on the shared vertical cut line — matching image 1.
+2. Edit that template to `gutter_mm = 5`, re-impose, and confirm two short marks bracket the gutter top & bottom — matching image 2.
+3. Confirm outer marks at the 4 sheet corners are unchanged in both cases.
