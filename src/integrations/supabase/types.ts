@@ -3033,6 +3033,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          notes: string | null
           scope_type: Database["public"]["Enums"]["rate_card_scope"]
           sell_price: number
           sides: Database["public"]["Enums"]["click_sides"]
@@ -3046,6 +3047,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          notes?: string | null
           scope_type: Database["public"]["Enums"]["rate_card_scope"]
           sell_price?: number
           sides: Database["public"]["Enums"]["click_sides"]
@@ -3059,6 +3061,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          notes?: string | null
           scope_type?: Database["public"]["Enums"]["rate_card_scope"]
           sell_price?: number
           sides?: Database["public"]["Enums"]["click_sides"]
@@ -3085,6 +3088,7 @@ export type Database = {
           id: string
           is_active: boolean
           label: string
+          notes: string | null
           pricing_basis: Database["public"]["Enums"]["finishing_basis"]
           scope_type: Database["public"]["Enums"]["rate_card_scope"]
           sell_price: number
@@ -3102,6 +3106,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           label: string
+          notes?: string | null
           pricing_basis: Database["public"]["Enums"]["finishing_basis"]
           scope_type: Database["public"]["Enums"]["rate_card_scope"]
           sell_price?: number
@@ -3119,6 +3124,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           label?: string
+          notes?: string | null
           pricing_basis?: Database["public"]["Enums"]["finishing_basis"]
           scope_type?: Database["public"]["Enums"]["rate_card_scope"]
           sell_price?: number
@@ -3147,6 +3153,7 @@ export type Database = {
           id: string
           is_active: boolean
           label: string
+          notes: string | null
           scope_type: Database["public"]["Enums"]["rate_card_scope"]
           sell_price: number
           size: string
@@ -3163,6 +3170,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           label: string
+          notes?: string | null
           scope_type: Database["public"]["Enums"]["rate_card_scope"]
           sell_price?: number
           size: string
@@ -3179,6 +3187,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           label?: string
+          notes?: string | null
           scope_type?: Database["public"]["Enums"]["rate_card_scope"]
           sell_price?: number
           size?: string
