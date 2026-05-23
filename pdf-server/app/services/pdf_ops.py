@@ -1830,6 +1830,7 @@ class PdfOps:
         gutter_mm: float = 0.0,
         crop_mark_offset_mm: float = 3.0,
         crop_mark_length_mm: float = 5.0,
+        show_crop_marks: bool = True,
         show_registration: bool = True,
         fallback_trim_inset_mm: float = 0.0,
     ) -> dict:
