@@ -193,10 +193,20 @@ export default function Cart() {
           <div className="text-sm text-muted-foreground">Total</div>
           <div className="text-2xl font-bold text-foreground">{formatPrice(cartTotal, currency)}</div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap justify-end">
           <Button variant="outline" onClick={() => navigate(tenantPath("orders/new"))}>
             <Plus className="h-4 w-4 mr-1" />
             Add More Items
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleSaveAsQuote}
+            disabled={saveAsQuote.isPending}
+          >
+            {saveAsQuote.isPending
+              ? <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              : <FileText className="h-4 w-4 mr-1" />}
+            Save as Quote
           </Button>
           <Button size="lg" onClick={() => navigate(tenantPath("checkout"))}>
             Proceed to Checkout
