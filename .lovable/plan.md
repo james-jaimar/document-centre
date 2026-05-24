@@ -1,41 +1,29 @@
-## Problem
+# Fix Save as Quote — two bugs
 
-On `/t/:slug/cart`, clicking **Save as Quote** as an anonymous (guest) user:
-1. Toast: "Please sign in to save a quote"
-2. Navigates to `tenantPath("auth")` → **404** (no `/auth` route inside the tenant storefront)
+## Bug 1 — `quotes_created_via_check` violation
 
-This violates the project rule "Customer portal uses anonymous sessions; auth conversion is inline at checkout — no redirect" (mem://auth/guest-checkout-boundary). Saving a quote is a checkout-equivalent gate (it claims pricing and persists work against an identity), so it should use the same inline-auth UX the Checkout page already uses.
+The DB constraint allows only `'customer'` or `'sales'`, but `useSaveCartAsQuote` inserts `'customer_self_serve'`.
 
-## Fix
+**Fix (code only, no migration):**
+- `src/hooks/useQuotes.ts` → change `created_via: "customer_self_serve"` to `created_via: "customer"` in the `quotes` insert.
 
-Replace the broken redirect in `Cart.tsx` with the existing `CheckoutAuth` component, presented in a Dialog. After the user converts their anonymous session to a real account (or signs in), the save automatically continues.
+(If you'd rather keep the more descriptive value, the alternative is a migration to expand the check constraint — but `'customer'` is fine and matches the existing convention.)
 
-### 1. `src/pages/dashboard/Cart.tsx`
+## Bug 2 — Sign-in from cart bounces user to home
 
-- Add `authOpen` state and a `pendingSaveName` ref (so the user types the optional quote name *after* signing in, not in a `window.prompt` before).
-- New flow for `handleSaveAsQuote`:
-  - If no cart → return.
-  - If `!user || user.is_anonymous` → `setAuthOpen(true)`, do not navigate.
-  - Otherwise → prompt for optional name, call `saveAsQuote.mutateAsync`, navigate to the new quote.
-- Add a `useEffect` that watches `user`: when `authOpen` is true and `user` becomes a non-anonymous account, close the dialog and re-invoke the save handler.
-- Render a `<Dialog open={authOpen} onOpenChange={setAuthOpen}>` with title "Sign in to save your quote", subtitle "Quotes are tied to your account so you can reopen them later", and `<CheckoutAuth />` inside.
-- Drop the `useNavigate` redirect to `/auth` and the `?next=` param logic.
+In `CheckoutAuth`'s **Sign In** tab, the handler explicitly calls `supabase.auth.signOut()` before `signInWithPassword(...)`. That brief signed-out moment is what triggers the bounce (the anonymous bootstrap / route logic reacts to `user = null`).
 
-### 2. No other files need changes
+**Fix:**
+- `src/components/checkout/CheckoutAuth.tsx` → in `handleLogin`, remove the pre-emptive `signOut()`. Capture `anonUserId` first, then call `signInWithPassword` directly. Supabase replaces the anonymous session in place, so the user never transitions through `null`. Then run `claim-anonymous-orders` with the captured `anonUserId` exactly as today.
 
-- `CheckoutAuth` already handles both register-from-anonymous and sign-in flows and toasts on success — it just needs a host dialog.
-- `useSaveCartAsQuote` already requires `user.id` server-side; nothing to change there.
-- No backend / RLS / edge-function changes.
+## Verification
 
-## User-visible result
-
-Guest clicks **Save as Quote** → an inline auth dialog opens on the cart (same UI as checkout) → after they register or sign in, the dialog closes and the save proceeds, navigating to the new quote detail page. No 404, no page change before the user has authenticated.
-
-## Files touched
-
-- `src/pages/dashboard/Cart.tsx`
+1. As a guest, add an item to cart → click **Save as Quote** → inline dialog opens.
+2. Use **Sign In** with an existing account → dialog closes, page stays on the cart, the save resumes and navigates to `/t/:slug/quotes/:id` with no toast error.
+3. Repeat with **New Account** → same outcome.
+4. Confirm a row in `quotes` with `created_via = 'customer'`.
 
 ## Out of scope
 
-- The `window.prompt` for the optional quote name stays as-is for now (just runs after auth). Replacing it with a proper Dialog input is a separate UX polish — flag if you want it bundled.
-- `My Quotes` page already gates behind a signed-in user; no change needed there.
+- The earlier Letter-size modal flash investigation (deferred per your instruction).
+- Any change to the `quotes_created_via_check` constraint itself.

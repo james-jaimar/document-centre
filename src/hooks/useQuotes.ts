@@ -123,7 +123,7 @@ export function useSaveCartAsQuote() {
             [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") ||
             null,
           created_by_profile_id: user.id,
-          created_via: "customer_self_serve",
+          created_via: "customer",
           source_order_id: cart.id,
           quote_status: "active" as any,
           valid_until: validUntil,

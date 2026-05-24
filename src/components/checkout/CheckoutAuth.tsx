@@ -135,11 +135,9 @@ export default function CheckoutAuth() {
     try {
       const anonUserId = isAnonymous ? user!.id : null;
 
-      // Sign out anonymous session first, then sign in as real user
-      if (isAnonymous) {
-        await supabase.auth.signOut();
-      }
-
+      // Sign in directly — Supabase replaces the anonymous session in place,
+      // so the user never transitions through a `null` state (which would
+      // trigger the customer-portal anonymous bootstrap / route reactions).
       const { error: signInErr } = await supabase.auth.signInWithPassword({
         email: loginEmail.trim(),
         password: loginPassword,
