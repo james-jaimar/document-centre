@@ -126,7 +126,7 @@ export function useAdminCreateBlankQuote() {
           currency: "ZAR",
           subtotal,
           total_amount: subtotal,
-          notes: input.notes ?? null,
+          notes_internal: input.notes ?? null,
         } as any)
         .select("id, quote_number")
         .single();
