@@ -657,6 +657,13 @@ export async function prepareForProduct(
       | "perceptual"
       | "absolute_colorimetric"
       | "saturation";
+    /** Preserve TrimBox/BleedBox during resize. When the source PDF declares
+     * a TrimBox smaller than its MediaBox (i.e. it has bleed + crop marks),
+     * the server scales the trim area to the target size and proportionally
+     * shrinks the bleed margin around it, dropping the original crop marks
+     * from the visible canvas. When false (default) the entire MediaBox is
+     * scaled — fine for clean documents, but mangles bleed PDFs. */
+    respectTrimBox?: boolean;
   } = {},
 ): Promise<{ job_id: string }> {
   return request("v1/operations/prepare-for-product", "POST", {
@@ -667,6 +674,7 @@ export async function prepareForProduct(
     ...(options.fitMode ? { fit_mode: options.fitMode } : {}),
     ...(options.destProfile ? { dest_profile: options.destProfile } : {}),
     ...(options.intent ? { intent: options.intent } : {}),
+    ...(options.respectTrimBox ? { respect_trim_box: true } : {}),
   });
 }
 
