@@ -189,6 +189,8 @@ class PrepareForProductRequest(BaseModel):
         "absolute_colorimetric",
         "saturation",
     ] = "relative_colorimetric"
+    # See ResizeRequest.respect_trim_box.
+    respect_trim_box: bool = False
 
 
 class JobArtefactRequest(BaseModel):
