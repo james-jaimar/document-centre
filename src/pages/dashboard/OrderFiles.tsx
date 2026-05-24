@@ -101,8 +101,17 @@ export default function OrderFiles() {
     enabled: !!productFamilyId,
   });
 
+  // Session size-lock (declared early so it can be passed into useDocumentUpload).
+  type SessionSizeLock = {
+    size: PaperSize;
+    source: "user_chose" | "first_iso_upload";
+    /** Original action so we can replay it for queued non-ISO docs */
+    action: "keep" | "scale";
+  };
+  const [sessionSizeLock, setSessionSizeLock] = useState<SessionSizeLock | null>(null);
+
   const { uploads, uploadFiles, reprocessDocument, clearUploads, renderWithProgress, finalizeOrientationAndPrintReady, beginManualProgress, updateManualProgress } =
-    useDocumentUpload(orderItem?.id, productFamily?.slug ?? null, productFamily ?? null);
+    useDocumentUpload(orderItem?.id, productFamily?.slug ?? null, productFamily ?? null, sessionSizeLock?.size ?? null);
   const addSection = useAddSection();
   const updateSection = useUpdateSection();
   const deleteSection = useDeleteSection();
