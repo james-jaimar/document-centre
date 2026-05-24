@@ -77,6 +77,12 @@ class ResizeRequest(BaseModel):
     height_mm: float = Field(gt=0)
     fit_mode: Literal["fit", "fill"] = "fit"
     dominant_orientation: Literal["portrait", "landscape"] | None = None
+    # When True and the source page declares a TrimBox smaller than its
+    # MediaBox (i.e. it carries bleed + crop marks), the trim area is
+    # scaled to the target and the bleed margin is proportionally
+    # preserved around it. Source crop marks fall outside the new
+    # MediaBox and are dropped from the visible canvas.
+    respect_trim_box: bool = False
 
 
 class NupRequest(BaseModel):
