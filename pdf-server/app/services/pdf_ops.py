@@ -2861,6 +2861,12 @@ class PdfOps:
         name, proc = chosen
         is_real_cmyk = name in ("rich_icc", "core_icc", "builtin_cmyk")
         timings["ghostscript_total"] = int((time.monotonic() - t0) * 1000)
+
+        # Re-stamp the source's TrimBox/BleedBox/CropBox/ArtBox so the
+        # downstream pipeline (resize/imposition/preview) sees the original
+        # print geometry instead of Ghostscript's MediaBox-only output.
+        box_restore_stats = _restore_page_boxes(out_pdf, pre_cmyk_boxes)
+
         return {
             "dest_profile": dest_profile,
             "intent": intent,
@@ -2872,6 +2878,7 @@ class PdfOps:
             "fallback_used": name != "rich_icc",
             "diagnostics": diagnostics,
             "timings_ms": timings,
+            "boxes_restored": box_restore_stats,
         }
 
 
