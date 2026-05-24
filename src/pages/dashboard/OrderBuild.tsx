@@ -561,11 +561,36 @@ export default function OrderBuild() {
 
   const canAddToCart = !!order && !!orderItem && sections.length > 0 && (spec?.page_count ?? 0) > 0;
 
+  // Build a pricing-aware spec that includes per-section colour/sides for
+  // mixed bound documents. Only printable sections (body/cover) feed the
+  // click+paper math; tabs and inserts are priced via their own finishing
+  // recipe entries.
+  const pricingSpec = useMemo<ItemSpec>(() => {
+    const PRINTABLE = new Set(["body", "front_cover", "back_cover"]);
+    const docPages = (id: string | null | undefined) =>
+      documents.find((d) => d.id === id)?.page_count ?? 0;
+    const specSections = sections
+      .filter((s) => PRINTABLE.has(s.section_type as string))
+      .map((s) => ({
+        label:
+          s.section_type === "front_cover"
+            ? "Cover"
+            : s.section_type === "back_cover"
+            ? "Back Cover"
+            : "Body",
+        page_count: docPages(s.document_id),
+        is_color: !!s.is_color,
+        is_duplex: !!s.is_duplex,
+      }))
+      .filter((s) => s.page_count > 0);
+    return specSections.length > 0 ? { ...spec, sections: specSections } : spec;
+  }, [spec, sections, documents]);
+
   const computeBreakdown = useCallback(() => {
     return useNewEngine && recipe && rateCard
-      ? calculatePriceFromRateCard(spec, recipe, rateCard)
-      : calculateItemPrice(spec, options, pricingRules, activeCurrency, cascadedOverrides);
-  }, [useNewEngine, recipe, rateCard, spec, options, pricingRules, activeCurrency, cascadedOverrides]);
+      ? calculatePriceFromRateCard(pricingSpec, recipe, rateCard)
+      : calculateItemPrice(pricingSpec, options, pricingRules, activeCurrency, cascadedOverrides);
+  }, [useNewEngine, recipe, rateCard, pricingSpec, options, pricingRules, activeCurrency, cascadedOverrides]);
 
   const handleAddToCartClick = useCallback(() => {
     if (!orderItem || !order) {
@@ -869,7 +894,7 @@ export default function OrderBuild() {
           </div>
           <div className="p-3 shrink-0">
             <PriceSummary
-              spec={spec}
+              spec={pricingSpec}
               options={options}
               rules={pricingRules}
               overrides={cascadedOverrides}

@@ -8,6 +8,14 @@ type PricingRule = Tables<"pricing_rules">;
 type ProductOption = Tables<"product_options">;
 
 /** The spec object stored on order_items.spec — describes a configured document */
+export interface ItemSpecSection {
+  /** Section label for the breakdown popover (e.g. "Body", "Cover", "Insert") */
+  label?: string;
+  page_count: number;
+  is_color: boolean;
+  is_duplex: boolean;
+}
+
 export interface ItemSpec {
   page_count: number;
   quantity: number;
@@ -16,6 +24,14 @@ export interface ItemSpec {
   paper_stock?: string;
   /** Map of option name → selected value slug */
   selected_options: Record<string, string>;
+  /**
+   * When present, pricing iterates these sections independently — used for
+   * mixed colour/duplex bound documents. Each section is billed at its own
+   * click rate and contributes its own sheet count. When absent, the engine
+   * falls back to the spec-level is_color/is_duplex/page_count fields
+   * (correct for single-section products like flyers or posters).
+   */
+  sections?: ItemSpecSection[];
   /**
    * Optional opt-in to bind a landscape document on its LONG edge (top)
    * rather than the default short edge. Only meaningful when the selected
@@ -289,53 +305,150 @@ export function calculatePriceFromRateCard(
   }
 
   // ---- Click-charges (printed pages) branch -------------------------------
+  //
+  // Industry-standard n-up imposition: small finished sizes are imposed on a
+  // larger parent sheet (typically A3) and billed as a fraction of that
+  // parent's click. Smaller sizes don't have independent click rates — they
+  // are derived. Click + paper rows for the small sizes are deactivated in
+  // the master rate card so the editor only exposes the two real bases
+  // (A4, A3, and optionally SRA3).
+  //
+  // Convention confirmed with the user: duplex click = price per duplex
+  // sheet (two printed faces). So a 20-page duplex document = 10 duplex
+  // clicks (at the duplex rate) + 10 sheets of paper.
   const lines: PriceLineItem[] = [];
 
   const size = String(spec.selected_options.size ?? "A4");
-  const colour = spec.is_color ? "colour" : "mono";
-  const sides = spec.is_duplex ? "duplex" : "simplex";
 
-  // 1) Clicks
-  if (recipe.uses_click_charges !== false && spec.page_count > 0) {
-    const cell = rc.clicks.find(
+  const SIZE_IMPOSITION: Record<string, { parent: string; nUp: number }> = {
+    A4: { parent: "A3", nUp: 2 },
+    A5: { parent: "A3", nUp: 4 },
+    A6: { parent: "A3", nUp: 8 },
+    DL: { parent: "A3", nUp: 6 },
+  };
+
+  /**
+   * Resolve the click price for a given finished size + colour + sides.
+   * Prefers a direct active row; otherwise derives from the parent sheet.
+   * Returns price per **printed sheet at the parent size**.
+   */
+  function resolveClickRate(
+    finishedSize: string,
+    cellColour: "mono" | "colour",
+    cellSides: "simplex" | "duplex"
+  ): { unit: number; sourceSize: string; nUp: number } | null {
+    const direct = rc.clicks.find(
       (c) =>
         c.is_active &&
-        c.size === size &&
-        c.colour === colour &&
-        c.sides === sides
+        c.size === finishedSize &&
+        c.colour === cellColour &&
+        c.sides === cellSides
     );
-    if (cell) {
+    if (direct) return { unit: Number(direct.sell_price), sourceSize: finishedSize, nUp: 1 };
+    const imp = SIZE_IMPOSITION[finishedSize];
+    if (imp) {
+      const parent = rc.clicks.find(
+        (c) =>
+          c.is_active &&
+          c.size === imp.parent &&
+          c.colour === cellColour &&
+          c.sides === cellSides
+      );
+      if (parent) return { unit: Number(parent.sell_price), sourceSize: imp.parent, nUp: imp.nUp };
+    }
+    return null;
+  }
+
+  /**
+   * Resolve a paper row. If the requested code is missing but an n-up parent
+   * exists, swap the size suffix (e.g. -a5 → -a3).
+   */
+  function resolvePaper(
+    requestedCode: string,
+    finishedSize: string
+  ): { paper: typeof rc.papers[number]; nUp: number } | null {
+    const direct = rc.papers.find((p) => p.code === requestedCode && p.is_active);
+    if (direct) {
+      const imp = SIZE_IMPOSITION[finishedSize];
+      // If the matched paper IS the parent size for an imposed finished
+      // size, apply n-up. (e.g. user selected the A3 paper while making A5
+      // flyers — bill at A3 paper / 4 sheets per finished piece.)
+      if (imp && direct.size === imp.parent) return { paper: direct, nUp: imp.nUp };
+      return { paper: direct, nUp: 1 };
+    }
+    const imp = SIZE_IMPOSITION[finishedSize];
+    if (imp) {
+      const parentCode = requestedCode.replace(/-(a\d|dl|sra3|letter|legal)$/i, `-${imp.parent.toLowerCase()}`);
+      const parent = rc.papers.find((p) => p.code === parentCode && p.is_active);
+      if (parent) return { paper: parent, nUp: imp.nUp };
+    }
+    return null;
+  }
+
+  // ---- Build the section list -------------------------------------------
+  // Use spec.sections when provided (mixed-colour bound docs). Otherwise
+  // fall back to a single virtual section from the spec-level flags
+  // (flyers, posters, single-doc products).
+  const printableSections: ItemSpecSection[] =
+    spec.sections && spec.sections.length > 0
+      ? spec.sections.filter((s) => s.page_count > 0)
+      : spec.page_count > 0
+      ? [
+          {
+            label: undefined,
+            page_count: spec.page_count,
+            is_color: spec.is_color,
+            is_duplex: spec.is_duplex,
+          },
+        ]
+      : [];
+
+  // 1) Clicks — per section
+  let totalSheets = 0;
+  if (recipe.uses_click_charges !== false) {
+    for (const section of printableSections) {
+      const sectionColour = section.is_color ? "colour" : "mono";
+      const sectionSides = section.is_duplex ? "duplex" : "simplex";
+      // Clicks per section: duplex bills one click per sheet (2 faces);
+      // simplex bills one click per face.
+      const clicks = section.is_duplex
+        ? Math.ceil(section.page_count / 2)
+        : section.page_count;
+      totalSheets += clicks; // 1 sheet per click regardless of sides
+      const rate = resolveClickRate(size, sectionColour, sectionSides);
+      if (!rate || clicks === 0) continue;
+      // n-up: a single parent click prints `nUp` finished pieces. Charge
+      // the parent rate divided across the imposed pieces.
+      const unit = rate.unit / rate.nUp;
+      const sectionLabel = section.label ? `${section.label}: ` : "";
       lines.push({
-        label: `Print ${size} ${colour} ${sides}`,
+        label: `${sectionLabel}Print ${size} ${sectionColour} ${sectionSides}`,
         type: "per_page",
-        unit_amount: Number(cell.sell_price),
-        multiplier: spec.page_count,
-        total: Number(cell.sell_price) * spec.page_count,
+        unit_amount: unit,
+        multiplier: clicks,
+        total: unit * clicks,
       });
     }
   }
 
-  // 2) Paper
+  // 2) Paper — sum sheets across sections, bill once
   const paperCode =
     (spec.selected_options.paper as string | undefined) ||
     recipe.default_paper_code ||
     null;
-  if (paperCode) {
-    const paper = rc.papers.find((p) => p.code === paperCode && p.is_active);
-    if (paper) {
-      // 1 sheet per page when simplex, 1 sheet per 2 pages when duplex.
-      const sheets = spec.is_duplex
-        ? Math.ceil(spec.page_count / 2)
-        : spec.page_count;
-      if (sheets > 0) {
-        lines.push({
-          label: `Paper: ${paper.label}`,
-          type: "per_page",
-          unit_amount: Number(paper.sell_price),
-          multiplier: sheets,
-          total: Number(paper.sell_price) * sheets,
-        });
-      }
+  if (paperCode && totalSheets > 0) {
+    const resolved = resolvePaper(paperCode, size);
+    if (resolved) {
+      // n-up: small finished pieces share a parent sheet, so the effective
+      // paper cost per finished sheet is parent_price / nUp.
+      const unit = Number(resolved.paper.sell_price) / resolved.nUp;
+      lines.push({
+        label: `Paper: ${resolved.paper.label}`,
+        type: "per_page",
+        unit_amount: unit,
+        multiplier: totalSheets,
+        total: unit * totalSheets,
+      });
     }
   }
 
@@ -359,17 +472,13 @@ export function calculatePriceFromRateCard(
         multiplier = 1; // per finished book/piece, multiplied by quantity below
         break;
       case "per_sheet":
-        multiplier = spec.is_duplex
-          ? Math.ceil(spec.page_count / 2)
-          : spec.page_count;
+        multiplier = totalSheets;
         break;
       case "per_page":
-        multiplier = spec.page_count;
+        multiplier = printableSections.reduce((s, x) => s + x.page_count, 0);
         break;
       case "per_document":
       case "per_set":
-        multiplier = 1;
-        break;
       case "per_cut":
         multiplier = 1;
         break;
