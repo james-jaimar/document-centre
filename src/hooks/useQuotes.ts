@@ -119,7 +119,7 @@ export function useSaveCartAsQuote() {
           customer_profile_id: user.id,
           customer_email: profile?.email ?? user.email ?? null,
           customer_name:
-            profile?.display_name ??
+            profile?.display_name ||
             [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") ||
             null,
           created_by_profile_id: user.id,
