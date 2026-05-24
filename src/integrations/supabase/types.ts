@@ -2964,6 +2964,292 @@ export type Database = {
           },
         ]
       }
+      quote_documents: {
+        Row: {
+          created_at: string
+          file_name: string
+          file_size_bytes: number | null
+          id: string
+          metadata: Json
+          mime_type: string | null
+          quote_id: string
+          quote_item_id: string | null
+          source_order_document_id: string | null
+          storage_bucket: string
+          storage_path: string
+        }
+        Insert: {
+          created_at?: string
+          file_name: string
+          file_size_bytes?: number | null
+          id?: string
+          metadata?: Json
+          mime_type?: string | null
+          quote_id: string
+          quote_item_id?: string | null
+          source_order_document_id?: string | null
+          storage_bucket?: string
+          storage_path: string
+        }
+        Update: {
+          created_at?: string
+          file_name?: string
+          file_size_bytes?: number | null
+          id?: string
+          metadata?: Json
+          mime_type?: string | null
+          quote_id?: string
+          quote_item_id?: string | null
+          source_order_document_id?: string | null
+          storage_bucket?: string
+          storage_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quote_documents_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "quotes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quote_documents_quote_item_id_fkey"
+            columns: ["quote_item_id"]
+            isOneToOne: false
+            referencedRelation: "quote_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quote_items: {
+        Row: {
+          configuration: Json
+          created_at: string
+          external_product_key: string | null
+          gross_price: number
+          id: string
+          job_name: string | null
+          net_price: number
+          product_category: string | null
+          product_family_id: string | null
+          product_name: string
+          product_snapshot: Json
+          quantity: number
+          quote_id: string
+          sequence_no: number
+          source_job_id: string | null
+          unit_label: string | null
+          unit_price: number
+          vat_rate: number
+        }
+        Insert: {
+          configuration?: Json
+          created_at?: string
+          external_product_key?: string | null
+          gross_price?: number
+          id?: string
+          job_name?: string | null
+          net_price?: number
+          product_category?: string | null
+          product_family_id?: string | null
+          product_name: string
+          product_snapshot?: Json
+          quantity?: number
+          quote_id: string
+          sequence_no?: number
+          source_job_id?: string | null
+          unit_label?: string | null
+          unit_price?: number
+          vat_rate?: number
+        }
+        Update: {
+          configuration?: Json
+          created_at?: string
+          external_product_key?: string | null
+          gross_price?: number
+          id?: string
+          job_name?: string | null
+          net_price?: number
+          product_category?: string | null
+          product_family_id?: string | null
+          product_name?: string
+          product_snapshot?: Json
+          quantity?: number
+          quote_id?: string
+          sequence_no?: number
+          source_job_id?: string | null
+          unit_label?: string | null
+          unit_price?: number
+          vat_rate?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quote_items_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "quotes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quote_revisions: {
+        Row: {
+          change_reason: string | null
+          changed_by_profile_id: string | null
+          created_at: string
+          id: string
+          quote_id: string
+          revision_no: number
+          snapshot: Json
+          subtotal: number
+          total_amount: number
+        }
+        Insert: {
+          change_reason?: string | null
+          changed_by_profile_id?: string | null
+          created_at?: string
+          id?: string
+          quote_id: string
+          revision_no: number
+          snapshot?: Json
+          subtotal?: number
+          total_amount?: number
+        }
+        Update: {
+          change_reason?: string | null
+          changed_by_profile_id?: string | null
+          created_at?: string
+          id?: string
+          quote_id?: string
+          revision_no?: number
+          snapshot?: Json
+          subtotal?: number
+          total_amount?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quote_revisions_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "quotes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quotes: {
+        Row: {
+          app_id: string
+          approved_at: string | null
+          branch_id: string | null
+          company_name: string | null
+          converted_at: string | null
+          converted_order_id: string | null
+          created_at: string
+          created_by_profile_id: string | null
+          created_via: string
+          currency: string
+          current_revision_no: number
+          customer_email: string | null
+          customer_name: string | null
+          customer_profile_id: string
+          declined_at: string | null
+          delivery_amount: number
+          discount_amount: number
+          email_recipients: string[]
+          expired_at: string | null
+          id: string
+          metadata: Json
+          name: string | null
+          notes_for_customer: string | null
+          notes_internal: string | null
+          pdf_generated_at: string | null
+          pdf_storage_path: string | null
+          quote_number: string
+          quote_status: Database["public"]["Enums"]["quote_status"]
+          source_order_id: string | null
+          subtotal: number
+          tenant_id: string
+          total_amount: number
+          updated_at: string
+          valid_until: string
+          vat_amount: number
+        }
+        Insert: {
+          app_id: string
+          approved_at?: string | null
+          branch_id?: string | null
+          company_name?: string | null
+          converted_at?: string | null
+          converted_order_id?: string | null
+          created_at?: string
+          created_by_profile_id?: string | null
+          created_via?: string
+          currency?: string
+          current_revision_no?: number
+          customer_email?: string | null
+          customer_name?: string | null
+          customer_profile_id: string
+          declined_at?: string | null
+          delivery_amount?: number
+          discount_amount?: number
+          email_recipients?: string[]
+          expired_at?: string | null
+          id?: string
+          metadata?: Json
+          name?: string | null
+          notes_for_customer?: string | null
+          notes_internal?: string | null
+          pdf_generated_at?: string | null
+          pdf_storage_path?: string | null
+          quote_number: string
+          quote_status?: Database["public"]["Enums"]["quote_status"]
+          source_order_id?: string | null
+          subtotal?: number
+          tenant_id: string
+          total_amount?: number
+          updated_at?: string
+          valid_until: string
+          vat_amount?: number
+        }
+        Update: {
+          app_id?: string
+          approved_at?: string | null
+          branch_id?: string | null
+          company_name?: string | null
+          converted_at?: string | null
+          converted_order_id?: string | null
+          created_at?: string
+          created_by_profile_id?: string | null
+          created_via?: string
+          currency?: string
+          current_revision_no?: number
+          customer_email?: string | null
+          customer_name?: string | null
+          customer_profile_id?: string
+          declined_at?: string | null
+          delivery_amount?: number
+          discount_amount?: number
+          email_recipients?: string[]
+          expired_at?: string | null
+          id?: string
+          metadata?: Json
+          name?: string | null
+          notes_for_customer?: string | null
+          notes_internal?: string | null
+          pdf_generated_at?: string | null
+          pdf_storage_path?: string | null
+          quote_number?: string
+          quote_status?: Database["public"]["Enums"]["quote_status"]
+          source_order_id?: string | null
+          subtotal?: number
+          tenant_id?: string
+          total_amount?: number
+          updated_at?: string
+          valid_until?: string
+          vat_amount?: number
+        }
+        Relationships: []
+      }
       rate_card_business_cards: {
         Row: {
           code: string
@@ -4039,6 +4325,7 @@ export type Database = {
         Returns: string
       }
       generate_order_number: { Args: { p_app_id: string }; Returns: string }
+      generate_quote_number: { Args: { p_app_id: string }; Returns: string }
       get_user_tenant_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
@@ -4144,6 +4431,13 @@ export type Database = {
         | "dispatched"
         | "delivered"
         | "cancelled"
+      quote_status:
+        | "active"
+        | "expired"
+        | "approved"
+        | "declined"
+        | "converted"
+        | "void"
       rate_card_scope: "master" | "tenant"
       section_type: "body" | "front_cover" | "back_cover" | "insert" | "tab"
     }
@@ -4313,6 +4607,14 @@ export const Constants = {
         "dispatched",
         "delivered",
         "cancelled",
+      ],
+      quote_status: [
+        "active",
+        "expired",
+        "approved",
+        "declined",
+        "converted",
+        "void",
       ],
       rate_card_scope: ["master", "tenant"],
       section_type: ["body", "front_cover", "back_cover", "insert", "tab"],
