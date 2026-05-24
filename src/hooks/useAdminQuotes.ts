@@ -44,7 +44,7 @@ export function useAdminUpdateQuoteStatus() {
       const patch: Record<string, unknown> = { quote_status: status };
       if (status === "declined") patch.declined_at = new Date().toISOString();
       if (status === "approved") patch.approved_at = new Date().toISOString();
-      const { error } = await supabase.from("quotes").update(patch).eq("id", id);
+      const { error } = await supabase.from("quotes").update(patch as any).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
