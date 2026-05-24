@@ -173,7 +173,7 @@ def cmyk_pdf(self, asset_id: str, job_id: str, icc_profile: str | None = None):
         db.close()
 
 @shared_task(bind=True, queue='documents')
-def resize_pdf(self, asset_id: str, job_id: str, width_mm: float, height_mm: float, fit_mode: str = 'fit', dominant_orientation: str | None = None):
+def resize_pdf(self, asset_id: str, job_id: str, width_mm: float, height_mm: float, fit_mode: str = 'fit', dominant_orientation: str | None = None, respect_trim_box: bool = False):
     """
     Resize all pages onto the requested target canvas, then PROMOTE the
     output to asset.normalized_storage_path so downstream operations
@@ -189,7 +189,7 @@ def resize_pdf(self, asset_id: str, job_id: str, width_mm: float, height_mm: flo
         with Workspace() as ws:
             src = _download_asset_pdf(db, asset_id, ws)
             out_pdf = ws.path('resized.pdf')
-            pdf_ops.resize_pages(src, out_pdf, width_mm, height_mm, fit_mode, dominant_orientation=dominant_orientation)
+            pdf_ops.resize_pages(src, out_pdf, width_mm, height_mm, fit_mode, dominant_orientation=dominant_orientation, respect_trim_box=respect_trim_box)
 
             storage_path = unique_name(f'{prefix}derived/resized', '.pdf')
             storage.upload(out_pdf, storage_path, 'application/pdf')
