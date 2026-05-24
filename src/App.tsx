@@ -43,6 +43,8 @@ import OrderConfirmation from "@/pages/dashboard/OrderConfirmation";
 import CustomerOrderDetail from "@/pages/dashboard/CustomerOrderDetail";
 import PortalTerms from "@/pages/dashboard/PortalTerms";
 import PortalPrivacy from "@/pages/dashboard/PortalPrivacy";
+import CustomerQuotes from "@/pages/dashboard/CustomerQuotes";
+import CustomerQuoteDetail from "@/pages/dashboard/CustomerQuoteDetail";
 
 // Admin
 import AdminDashboard from "@/pages/admin/AdminDashboard";
@@ -132,6 +134,8 @@ function customerRoutes() {
       <Route path="orders/:id" element={<ProtectedRoute><CustomerOrderDetail /></ProtectedRoute>} />
       <Route path="orders/:id/confirmation" element={<ProtectedRoute><OrderConfirmation /></ProtectedRoute>} />
       <Route path="orders" element={<ProtectedRoute><CustomerOrders /></ProtectedRoute>} />
+      <Route path="quotes" element={<ProtectedRoute><CustomerQuotes /></ProtectedRoute>} />
+      <Route path="quotes/:id" element={<ProtectedRoute><CustomerQuoteDetail /></ProtectedRoute>} />
       <Route path="account" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
       <Route path="settings" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
     </>
