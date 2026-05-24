@@ -93,9 +93,7 @@ def _restore_page_boxes(
             for page, page_boxes in zip(pdf.pages, snapshot):
                 for key in restore_keys:
                     if key in page_boxes:
-                        page[key] = pikepdf.Array([
-                            pikepdf.Object.parse(str(v)) for v in page_boxes[key]
-                        ])
+                        page[key] = pikepdf.Array(list(page_boxes[key]))
                         stamped += 1
             pdf.save(str(target))
         return {"skipped": False, "boxes_stamped": stamped}
