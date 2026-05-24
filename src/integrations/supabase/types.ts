@@ -4078,6 +4078,10 @@ export type Database = {
         Args: { p_branch_id: string }
         Returns: undefined
       }
+      sync_master_rate_card_to_tenant: {
+        Args: { p_tenant_id: string }
+        Returns: undefined
+      }
       sync_order_amounts: { Args: { p_order_id: string }; Returns: undefined }
       user_branch_id: { Args: never; Returns: string }
       user_can_read_order: {
