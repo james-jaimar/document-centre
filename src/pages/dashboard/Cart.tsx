@@ -241,6 +241,21 @@ export default function Cart() {
           </Button>
         </div>
       </div>
+
+      <Dialog open={authOpen} onOpenChange={(open) => {
+        setAuthOpen(open);
+        if (!open) pendingSaveRef.current = false;
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Sign in to save your quote</DialogTitle>
+            <DialogDescription>
+              Quotes are tied to your account so you can reopen them later.
+            </DialogDescription>
+          </DialogHeader>
+          <CheckoutAuth />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
