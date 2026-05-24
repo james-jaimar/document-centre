@@ -40,6 +40,7 @@ import {
   useRateCardFinishing,
   useRateCardPhotoPrints,
 } from "@/hooks/useRateCard";
+import { useBindingSpecifications } from "@/hooks/useBindingSpecifications";
 import { formatPrice } from "@/lib/formatCurrency";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
 
