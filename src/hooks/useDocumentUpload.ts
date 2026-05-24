@@ -1019,13 +1019,14 @@ export function useDocumentUpload(
     [updateUpload],
   );
 
-  /** Update the status text + progress for an existing manual entry. */
+  /** Update the status text and/or progress for an existing manual entry. */
   const updateManualProgress = useCallback(
-    (fileName: string, statusText: string, progress?: number) => {
-      updateUpload(fileName, {
-        statusText,
-        ...(progress !== undefined ? { progress } : {}),
-      });
+    (fileName: string, statusText?: string | null, progress?: number) => {
+      const patch: Partial<UploadProgress> = {};
+      if (statusText !== undefined && statusText !== null) patch.statusText = statusText;
+      if (progress !== undefined) patch.progress = progress;
+      if (Object.keys(patch).length === 0) return;
+      updateUpload(fileName, patch);
     },
     [updateUpload],
   );
