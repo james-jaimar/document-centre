@@ -882,7 +882,10 @@ export default function OrderFiles() {
       const preflight = d.preflight_data as Record<string, any> | null;
       if (preflight?.detected_size && !preflight?.size_resolved) return false;
       if (preflight?.near_iso_match && !preflight?.bleed_resolved) return false;
-      if (preflight?.awaiting_review) return false;
+      // Allow docs flagged by the upload hook as locked-size-mismatch
+      // through even though awaiting_review is true — that flag IS the
+      // signal that the lock-mismatch dialog should open before render.
+      if (preflight?.awaiting_review && !preflight?.locked_size_mismatch) return false;
       const w = Number(d.page_width_mm);
       const h = Number(d.page_height_mm);
       if (!(w > 0 && h > 0)) return false;
