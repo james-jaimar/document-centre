@@ -1451,6 +1451,7 @@ class PdfOps:
         height_mm: float,
         fit_mode: str = "fit",
         dominant_orientation: str | None = None,
+        respect_trim_box: bool = False,
     ) -> Path:
         """Resize each page onto a target canvas of (width_mm × height_mm).
 
@@ -1468,11 +1469,22 @@ class PdfOps:
           3. THEN scale + centre the (now correctly oriented) content onto the
              final target canvas.
 
+        When ``respect_trim_box`` is True and a source page declares a
+        TrimBox smaller than its MediaBox (i.e. it carries bleed + crop
+        marks), the trim area is scaled to the target size and the bleed
+        margin is proportionally preserved around it. The output MediaBox
+        hugs the new BleedBox tightly, so the original crop marks
+        (which lived outside the source BleedBox) fall outside the new
+        MediaBox and are clipped from the visible canvas. Downstream
+        imposition is expected to draw fresh crop marks at print time.
+
         This replaces the fragile multi-job handoff (normalize-orientation →
         resize → print-ready) where Ghostscript's pdfwrite device could
         "repair" pypdf's merge_transformed_page output and revert pages to
         their original landscape geometry.
         """
+        from pypdf.generic import RectangleObject
+
         reader = PdfReader(str(src))
         writer = PdfWriter()
         target_w_base = width_mm * mm
@@ -1481,6 +1493,9 @@ class PdfOps:
 
         force_portrait = dominant_orientation == "portrait"
         force_landscape_mode = dominant_orientation == "landscape"
+
+        # Epsilon for "trim equals media" check, in points (~0.35 mm).
+        TRIM_EPS_PT = 1.0
 
         for page in reader.pages:
             # Step 1 — bake /Rotate into content. After this, page.mediabox
@@ -1539,6 +1554,112 @@ class PdfOps:
                 else:
                     tw, th = target_h_base, target_w_base
 
+            # ── Step 4 — trim-box-aware branch ─────────────────────────
+            # Only when the page actually has bleed (TrimBox materially
+            # smaller than MediaBox). Otherwise fall through to the
+            # original MediaBox-scaling path.
+            trim_box = page.trimbox  # pypdf returns mediabox when absent
+            media_box = page.mediabox
+            bleed_box = page.bleedbox  # also defaults to mediabox
+
+            trim_w = float(trim_box.width)
+            trim_h = float(trim_box.height)
+            has_real_trim = (
+                respect_trim_box
+                and (
+                    abs(float(media_box.width) - trim_w) > TRIM_EPS_PT
+                    or abs(float(media_box.height) - trim_h) > TRIM_EPS_PT
+                )
+            )
+
+            if has_real_trim:
+                # Per-edge bleed margins in source coords (pt). May be
+                # asymmetric if the original PDF used an off-centre bleed.
+                trim_llx = float(trim_box.left)
+                trim_lly = float(trim_box.bottom)
+                trim_urx = float(trim_box.right)
+                trim_ury = float(trim_box.top)
+                bleed_llx = float(bleed_box.left)
+                bleed_lly = float(bleed_box.bottom)
+                bleed_urx = float(bleed_box.right)
+                bleed_ury = float(bleed_box.top)
+
+                # If BleedBox wasn't declared explicitly it equals
+                # MediaBox — clamp it back to TrimBox to avoid keeping
+                # the entire original media area (which would still
+                # include the crop marks).
+                if (
+                    abs(bleed_llx - float(media_box.left)) < TRIM_EPS_PT
+                    and abs(bleed_lly - float(media_box.bottom)) < TRIM_EPS_PT
+                    and abs(bleed_urx - float(media_box.right)) < TRIM_EPS_PT
+                    and abs(bleed_ury - float(media_box.top)) < TRIM_EPS_PT
+                    and (
+                        abs(bleed_llx - trim_llx) > TRIM_EPS_PT
+                        or abs(bleed_lly - trim_lly) > TRIM_EPS_PT
+                    )
+                ):
+                    # Treat as no explicit bleed: fall back to standard scaling.
+                    has_real_trim = False
+
+            if has_real_trim:
+                # Uniform scale that makes the source trim fit the target
+                # trim (target is the full canvas).
+                sx = tw / trim_w
+                sy = th / trim_h
+                scale = min(sx, sy) if fit_mode == "fit" else max(sx, sy)
+
+                # Scaled per-edge bleed margins.
+                margin_left = (trim_llx - bleed_llx) * scale
+                margin_bottom = (trim_lly - bleed_lly) * scale
+                margin_right = (bleed_urx - trim_urx) * scale
+                margin_top = (bleed_ury - trim_ury) * scale
+
+                # New trim is the target canvas; new media/bleed hug it
+                # plus the scaled bleed margin on each edge.
+                new_trim_w = trim_w * scale
+                new_trim_h = trim_h * scale
+                new_media_w = new_trim_w + margin_left + margin_right
+                new_media_h = new_trim_h + margin_bottom + margin_top
+
+                new_page = writer.add_blank_page(width=new_media_w, height=new_media_h)
+
+                # Place the source so its BleedBox lower-left corner lands
+                # at (0, 0) of the new mediabox. After scaling by `scale`
+                # the source point (bleed_llx, bleed_lly) is at
+                # (bleed_llx*scale, bleed_lly*scale), so translate by the
+                # negative of that.
+                tx = -bleed_llx * scale
+                ty = -bleed_lly * scale
+                new_page.merge_transformed_page(
+                    page,
+                    Transformation().scale(scale).translate(tx, ty),
+                )
+
+                # Set explicit page boxes. Any source content outside the
+                # new BleedBox lands outside the MediaBox and is clipped
+                # from the visible canvas (this drops the original crop
+                # marks). TrimBox tells downstream tools where to cut.
+                new_page.mediabox = RectangleObject(
+                    [0, 0, new_media_w, new_media_h]
+                )
+                new_page.bleedbox = RectangleObject(
+                    [0, 0, new_media_w, new_media_h]
+                )
+                new_page.cropbox = RectangleObject(
+                    [0, 0, new_media_w, new_media_h]
+                )
+                new_page.trimbox = RectangleObject([
+                    margin_left,
+                    margin_bottom,
+                    margin_left + new_trim_w,
+                    margin_bottom + new_trim_h,
+                ])
+                # ArtBox tracks the trim by convention when not specified.
+                new_page.artbox = new_page.trimbox
+
+                continue
+
+            # ── Default: scale MediaBox to target canvas ──────────────
             sx = tw / src_w
             sy = th / src_h
             scale = min(sx, sy) if fit_mode == "fit" else max(sx, sy)
@@ -2683,6 +2804,7 @@ class PdfOps:
         dest_profile: str | None = None,
         intent: str = "relative_colorimetric",
         preserve_black: bool = True,
+        respect_trim_box: bool = False,
     ) -> dict:
         """One-shot PDF preparation: CMYK → orient → resize.
 
@@ -2748,6 +2870,7 @@ class PdfOps:
                 height_mm=target_height_mm,
                 fit_mode=fit_mode,
                 dominant_orientation=dominant_orientation,
+                respect_trim_box=respect_trim_box,
             )
             stats["steps"].append("resize")
             current = resize_out

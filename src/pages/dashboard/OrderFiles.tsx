@@ -101,7 +101,7 @@ export default function OrderFiles() {
     enabled: !!productFamilyId,
   });
 
-  const { uploads, uploadFiles, reprocessDocument, clearUploads, renderWithProgress, finalizeOrientationAndPrintReady } =
+  const { uploads, uploadFiles, reprocessDocument, clearUploads, renderWithProgress, finalizeOrientationAndPrintReady, beginManualProgress, updateManualProgress } =
     useDocumentUpload(orderItem?.id, productFamily?.slug ?? null, productFamily ?? null);
   const addSection = useAddSection();
   const updateSection = useUpdateSection();
@@ -490,10 +490,16 @@ export default function OrderFiles() {
 
     if (doc.backendAssetId) {
       try {
+        // ── Immediate UI feedback ──────────────────────────────────
+        // Open the upload-progress modal and push a synthetic row right
+        // away — finalize+render can take 30–60s on bleed PDFs and the
+        // user otherwise sees nothing after clicking.
         setUploadModalOpen(true);
+        beginManualProgress(doc.fileName, "Preparing your file…", 10);
 
         let workingAssetId = doc.backendAssetId;
         if (existing?.file_path) {
+          updateManualProgress(doc.fileName, "Checking source file…", 18);
           const fresh = await ensureFreshAsset({
             assetId: doc.backendAssetId,
             sourceStoragePath: existing.file_path,
@@ -508,6 +514,8 @@ export default function OrderFiles() {
               .eq("id", doc.id);
           }
         }
+
+        updateManualProgress(doc.fileName, "Finalising for print (this can take up to a minute)…", 30);
 
         // Always run finalization — even if print_ready_done was set earlier,
         // the server idempotently skips when already converted. Unconditional
@@ -574,7 +582,7 @@ export default function OrderFiles() {
     } else {
       toast.success("Keeping original size");
     }
-  }, [documents, refetchDocuments, renderWithProgress, finalizeOrientationAndPrintReady]);
+  }, [documents, refetchDocuments, renderWithProgress, finalizeOrientationAndPrintReady, beginManualProgress, updateManualProgress]);
 
   /** Core: scale the doc to a target paper size and finalise it.
    *
@@ -594,6 +602,20 @@ export default function OrderFiles() {
     resolvedDocIds.current.add(doc.id);
 
     try {
+      // ── Immediate UI feedback ──────────────────────────────────
+      // Open the modal and push a synthetic progress row BEFORE any
+      // server work. The prepareForProduct pipeline (CMYK → orient →
+      // resize) can take 30–60s on a heavy bleed PDF and the user
+      // otherwise sees nothing after clicking "Scale to A4".
+      setUploadModalOpen(true);
+      beginManualProgress(
+        doc.fileName,
+        opts?.silent
+          ? `Auto-scaling to ${target.name} to match your other files…`
+          : `Scaling to ${target.name} — preparing file…`,
+        10,
+      );
+
       if (!opts?.silent) toast.info(`Scaling to ${target.name}…`);
       const requiredOrientation = requiredOrientationFor(productFamily?.slug);
       const landscape = isLandscape(doc.widthMm, doc.heightMm);
@@ -611,6 +633,7 @@ export default function OrderFiles() {
       let workingAssetId = doc.backendAssetId;
       const docForRecovery = documents.find((d) => d.id === doc.id);
       if (docForRecovery?.file_path) {
+        updateManualProgress(doc.fileName, "Checking source file…", 18);
         const fresh = await ensureFreshAsset({
           assetId: doc.backendAssetId,
           sourceStoragePath: docForRecovery.file_path,
@@ -626,10 +649,27 @@ export default function OrderFiles() {
         }
       }
 
+      // Detect whether the source PDF carries bleed/crop marks — if so,
+      // ask the server to preserve TrimBox geometry during the resize so
+      // the trim area scales to the target (instead of the full media
+      // box, which would shrink/stretch the bleed and leave the original
+      // crop marks inside the visible canvas).
+      const preflightForBleed = (docForRecovery?.preflight_data as Record<string, any>) ?? {};
+      const respectTrimBox = !!(
+        preflightForBleed.near_iso_match ||
+        preflightForBleed.has_bleed ||
+        preflightForBleed.trim_box_pt
+      );
+
       // ── Single server call: CMYK → orient → resize ────────────────
       // The server performs all mutations in the correct deterministic
       // order. No more multi-job sequencing.
       const printPlan = (await import("@/lib/printIntent")).getPrintReadyPlan(productFamily ?? null);
+      updateManualProgress(
+        doc.fileName,
+        `Scaling pages to ${target.name} on server (this can take up to a minute)…`,
+        30,
+      );
       const { job_id } = await prepareForProduct(workingAssetId, {
         dominantOrientation: requiredOrientation,
         targetWidthMm: targetW,
@@ -637,10 +677,32 @@ export default function OrderFiles() {
         fitMode: "fit",
         destProfile: printPlan?.destProfile ?? null,
         intent: printPlan?.intent,
+        respectTrimBox,
       });
-      await pollJob(job_id);
 
-      setUploadModalOpen(true);
+      // Trickle progress while we poll the long job. pollJob blocks until
+      // completion; we run a parallel ticker that nudges the progress bar
+      // from 30 → 75 % so the user has visible motion.
+      let cancelTicker = false;
+      (async () => {
+        const start = Date.now();
+        while (!cancelTicker) {
+          await new Promise((r) => setTimeout(r, 2000));
+          if (cancelTicker) break;
+          const elapsed = (Date.now() - start) / 1000;
+          // Asymptote toward 75 % over ~60s
+          const pct = Math.min(75, 30 + Math.floor(elapsed * 0.75));
+          updateManualProgress(doc.fileName, null, pct);
+        }
+      })();
+
+      try {
+        await pollJob(job_id);
+      } finally {
+        cancelTicker = true;
+      }
+
+      updateManualProgress(doc.fileName, "Rendering scaled pages…", 80);
 
       // Render previews from the final prepared PDF
       await renderWithProgress(
@@ -693,7 +755,7 @@ export default function OrderFiles() {
     } catch (err: any) {
       toast.error("Scaling failed", { description: err.message });
     }
-  }, [documents, refetchDocuments, renderWithProgress, productFamily]);
+  }, [documents, refetchDocuments, renderWithProgress, productFamily, beginManualProgress, updateManualProgress]);
 
   const handleKeepOriginal = useCallback(async () => {
     if (!advisoryDoc) return;
