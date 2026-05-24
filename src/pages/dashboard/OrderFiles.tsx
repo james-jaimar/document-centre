@@ -101,7 +101,7 @@ export default function OrderFiles() {
     enabled: !!productFamilyId,
   });
 
-  const { uploads, uploadFiles, reprocessDocument, clearUploads, renderWithProgress, finalizeOrientationAndPrintReady } =
+  const { uploads, uploadFiles, reprocessDocument, clearUploads, renderWithProgress, finalizeOrientationAndPrintReady, beginManualProgress, updateManualProgress } =
     useDocumentUpload(orderItem?.id, productFamily?.slug ?? null, productFamily ?? null);
   const addSection = useAddSection();
   const updateSection = useUpdateSection();
