@@ -1,6 +1,8 @@
 import { useNavigate } from "react-router-dom";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useCart, useRemoveCartItem, useEditCartItem } from "@/hooks/useCart";
+import { useSaveCartAsQuote } from "@/hooks/useQuotes";
+import { useAuth } from "@/hooks/useAuth";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
 import { Button } from "@/components/ui/button";
@@ -13,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Trash2, ShoppingBag, ArrowRight, Plus, Loader2, Pencil } from "lucide-react";
+import { Trash2, ShoppingBag, ArrowRight, Plus, Loader2, Pencil, FileText } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
