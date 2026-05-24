@@ -655,11 +655,33 @@ export default function OrderFiles() {
       // box, which would shrink/stretch the bleed and leave the original
       // crop marks inside the visible canvas).
       const preflightForBleed = (docForRecovery?.preflight_data as Record<string, any>) ?? {};
-      const respectTrimBox = !!(
+      let respectTrimBox = !!(
         preflightForBleed.near_iso_match ||
         preflightForBleed.has_bleed ||
         preflightForBleed.trim_box_pt
       );
+      // Fallback: inspect the live backend asset boxes — older docs may
+      // not have `trim_box_pt` persisted in preflight_data yet.
+      if (!respectTrimBox) {
+        try {
+          const liveAsset = await getAsset(workingAssetId);
+          const liveBoxes = liveAsset.boxes as Record<string, number[]> | null;
+          const trimBox = liveBoxes?.TrimBox;
+          const mediaBox = liveBoxes?.MediaBox;
+          if (
+            trimBox && trimBox.length === 4 &&
+            mediaBox && mediaBox.length === 4 &&
+            (Math.abs(trimBox[0] - mediaBox[0]) > 0.5 ||
+              Math.abs(trimBox[1] - mediaBox[1]) > 0.5 ||
+              Math.abs(trimBox[2] - mediaBox[2]) > 0.5 ||
+              Math.abs(trimBox[3] - mediaBox[3]) > 0.5)
+          ) {
+            respectTrimBox = true;
+          }
+        } catch (probeErr) {
+          console.warn("[scale] asset box probe failed (non-fatal):", probeErr);
+        }
+      }
 
       // ── Single server call: CMYK → orient → resize ────────────────
       // The server performs all mutations in the correct deterministic

@@ -1655,21 +1655,27 @@ class PdfOps:
                 bleed_ury = float(bleed_box.top)
 
                 # If BleedBox wasn't declared explicitly it equals
-                # MediaBox — clamp it back to TrimBox to avoid keeping
-                # the entire original media area (which would still
-                # include the crop marks).
-                if (
+                # MediaBox — clamp it to TrimBox + a standard 3 mm bleed
+                # margin (industry default) so crop marks outside that
+                # margin are clipped rather than scaled with the artwork.
+                # Previously we fell back to plain MediaBox scaling here,
+                # which squashed the page+crop-mark canvas into the
+                # target — the exact A5→A4 bug being fixed.
+                bleed_equals_media = (
                     abs(bleed_llx - float(media_box.left)) < TRIM_EPS_PT
                     and abs(bleed_lly - float(media_box.bottom)) < TRIM_EPS_PT
                     and abs(bleed_urx - float(media_box.right)) < TRIM_EPS_PT
                     and abs(bleed_ury - float(media_box.top)) < TRIM_EPS_PT
-                    and (
-                        abs(bleed_llx - trim_llx) > TRIM_EPS_PT
-                        or abs(bleed_lly - trim_lly) > TRIM_EPS_PT
-                    )
+                )
+                if bleed_equals_media and (
+                    abs(bleed_llx - trim_llx) > TRIM_EPS_PT
+                    or abs(bleed_lly - trim_lly) > TRIM_EPS_PT
                 ):
-                    # Treat as no explicit bleed: fall back to standard scaling.
-                    has_real_trim = False
+                    SYNTH_BLEED_PT = 3.0 * mm  # 3 mm standard print bleed
+                    bleed_llx = max(float(media_box.left), trim_llx - SYNTH_BLEED_PT)
+                    bleed_lly = max(float(media_box.bottom), trim_lly - SYNTH_BLEED_PT)
+                    bleed_urx = min(float(media_box.right), trim_urx + SYNTH_BLEED_PT)
+                    bleed_ury = min(float(media_box.top), trim_ury + SYNTH_BLEED_PT)
 
             if has_real_trim:
                 # Uniform scale that makes the source trim fit the target
@@ -2666,6 +2672,13 @@ class PdfOps:
         timings: dict[str, int] = {}
         t0 = time.monotonic()
 
+        # Snapshot source page boxes BEFORE Ghostscript runs. pdfwrite drops
+        # /TrimBox, /BleedBox and /ArtBox by default; we re-stamp them on the
+        # output so downstream resize/imposition see the source's print
+        # geometry (the fix that makes A5-with-bleed scale correctly to A4
+        # regardless of which caller invoked us).
+        pre_cmyk_boxes = _snapshot_page_boxes(src)
+
         # ── Already-CMYK fast path ───────────────────────────────────
         if self._is_already_cmyk(src):
             try:
@@ -2848,6 +2861,12 @@ class PdfOps:
         name, proc = chosen
         is_real_cmyk = name in ("rich_icc", "core_icc", "builtin_cmyk")
         timings["ghostscript_total"] = int((time.monotonic() - t0) * 1000)
+
+        # Re-stamp the source's TrimBox/BleedBox/CropBox/ArtBox so the
+        # downstream pipeline (resize/imposition/preview) sees the original
+        # print geometry instead of Ghostscript's MediaBox-only output.
+        box_restore_stats = _restore_page_boxes(out_pdf, pre_cmyk_boxes)
+
         return {
             "dest_profile": dest_profile,
             "intent": intent,
@@ -2859,6 +2878,7 @@ class PdfOps:
             "fallback_used": name != "rich_icc",
             "diagnostics": diagnostics,
             "timings_ms": timings,
+            "boxes_restored": box_restore_stats,
         }
 
 
@@ -2903,14 +2923,11 @@ class PdfOps:
         current = src
 
         # ── Step 1: CMYK ─────────────────────────────────────────────
+        # to_print_ready_cmyk now snapshots and re-stamps TrimBox/BleedBox/
+        # CropBox/ArtBox internally, so every caller (including this one
+        # and the standalone print-ready job) gets correct geometry.
         if dest_profile:
             cmyk_out = out_pdf.parent / "prepare_cmyk.pdf"
-            # Snapshot the source page boxes BEFORE Ghostscript runs.
-            # Ghostscript's pdfwrite device drops /TrimBox, /BleedBox and
-            # /ArtBox by default, which defeats `respect_trim_box` in the
-            # downstream resize step and causes bleed/crop-mark PDFs to be
-            # scaled by their full MediaBox (squashing the artwork).
-            pre_cmyk_boxes = _snapshot_page_boxes(current)
             try:
                 cmyk_stats = self.to_print_ready_cmyk(
                     current, cmyk_out,
@@ -2921,12 +2938,6 @@ class PdfOps:
                 stats["cmyk"] = cmyk_stats
                 stats["steps"].append("cmyk")
                 current = cmyk_out
-                # Re-stamp the original TrimBox/BleedBox/ArtBox/CropBox so
-                # downstream steps (orientation, resize) see the same
-                # geometry the customer's source PDF had.
-                restored = _restore_page_boxes(current, pre_cmyk_boxes)
-                if restored is not None:
-                    stats["cmyk_boxes_restored"] = restored
             except Exception as exc:
                 # CMYK is non-fatal — continue with the un-converted PDF.
                 stats["cmyk_error"] = str(exc)

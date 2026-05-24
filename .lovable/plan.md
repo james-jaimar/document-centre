@@ -1,54 +1,108 @@
-## Plan: fix bleed/crop resize on the VPS PDF server
+## Plan: fix A5 bleed/crop PDFs being scaled by MediaBox instead of TrimBox
 
-### Confirmed root cause (verified in `pdf-server/app/services/pdf_ops.py`)
+### What the actual issue is
 
-`prepare_for_product` runs in this order:
+The current code still has two confirmed gaps that match what you are seeing:
+
+1. **The frontend does not reliably enable `respect_trim_box` for exact ISO/A-series files with real TrimBox.**
+   - On upload, `useDocumentUpload.ts` detects `TrimBox` vs `MediaBox`, but does not persist `trim_box_pt` / `has_bleed` into `preflight_data` for normal exact-size files.
+   - Later, when `OrderFiles.tsx` scales A5 to A4, it decides `respectTrimBox` mostly from `preflight_data.near_iso_match`, `has_bleed`, or `trim_box_pt`.
+   - So an A5 finished-size document with bleed/crop marks can still be sent to the server with `respect_trim_box=false`, causing the MediaBox path to run.
+
+2. **Even when `respect_trim_box=true`, the server can deliberately fall back to MediaBox scaling if the PDF has a TrimBox but no explicit BleedBox.**
+   - In `pdf-server/app/services/pdf_ops.py`, `resize_pages()` currently disables the trim-aware branch when `BleedBox` defaults to `MediaBox`.
+   - Many real print PDFs have `MediaBox + TrimBox + crop marks`, but no explicit `BleedBox`.
+   - That means the code sees the TrimBox, then rejects the trim-aware path and scales the whole MediaBox into A4 — exactly the symptom.
+
+Do I know what the issue is? **Yes: the trim-aware branch is either not being requested by the frontend, or it is being requested but rejected by the server when BleedBox is absent/equal to MediaBox.** The screenshot alone cannot prove the uploaded PDF’s actual box values, but the code paths above are enough to explain the repeated behaviour.
+
+### What I will change
+
+#### 1. Make upload preflight remember real TrimBox/bleed metadata
+
+In `src/hooks/useDocumentUpload.ts`:
+
+- When `finalExplicitTrim` is true, persist:
+  - `trim_box_pt: finalTrimBox`
+  - `has_bleed: true`
+  - refreshed `boxes`
+- This makes exact A5/A4 PDFs with real print boxes behave the same as near-ISO bleed PDFs.
+
+#### 2. Make scale-to-size inspect the actual backend asset boxes, not only stale document preflight
+
+In `src/pages/dashboard/OrderFiles.tsx` inside `applyScaleTo()`:
+
+- After `ensureFreshAsset()`, fetch the latest backend asset with `getAsset(workingAssetId)`.
+- Detect `TrimBox` materially smaller than `MediaBox` directly from `asset.boxes`.
+- Set `respectTrimBox=true` if either:
+  - document preflight says it has bleed/trim, or
+  - the current backend PDF actually has a real TrimBox.
+
+This protects both new uploads and older documents whose preflight metadata was missing `trim_box_pt`.
+
+#### 3. Fix server-side trim-aware resize fallback
+
+In `pdf-server/app/services/pdf_ops.py` `resize_pages()`:
+
+- Keep using the real `TrimBox` as the finished-page reference.
+- If a valid `BleedBox` exists, use it.
+- If `BleedBox` is absent or equal to `MediaBox`, **do not fall back to MediaBox scaling**.
+- Instead synthesize a standard bleed box around TrimBox, clamped inside MediaBox, so crop marks outside that bleed region are clipped away.
+
+Expected result:
 
 ```text
-src → to_print_ready_cmyk (Ghostscript pdfwrite) → normalize_orientation → resize_pages
+Source PDF:
+MediaBox = trim + bleed/crop/canvas
+TrimBox  = finished A5 page
+BleedBox = maybe missing
+
+Scale A5 → A4:
+TrimBox  = finished A4 page
+BleedBox = A4 + bleed
+MediaBox = A4 + bleed
+Old crop marks outside bleed are clipped
+Artwork is scaled from TrimBox, not MediaBox
 ```
 
-`to_print_ready_cmyk` invokes Ghostscript `pdfwrite` with no flags to retain `/TrimBox`, `/BleedBox`, or `/ArtBox`. Ghostscript's default behaviour is to drop those boxes and emit only MediaBox (+ CropBox). By the time `resize_pages` runs with `respect_trim_box=True`, the TrimBox no longer exists, so the "bleed-aware" branch is never taken and the whole MediaBox (page + bleed + crop marks) gets scaled into the target size — exactly the distortion you're seeing.
+#### 4. Make CMYK box preservation universal
 
-The `respect_trim_box=True` branch in `resize_pages` (lines ~1558–1641) is correct; it just never runs because the box it depends on has been stripped upstream.
+The recent fix restored boxes only inside `prepare_for_product()`. I will move/apply that protection at the `to_print_ready_cmyk()` level so every CMYK conversion path preserves `/TrimBox`, `/BleedBox`, `/CropBox`, and `/ArtBox`, including any older/direct `print-ready` call paths.
 
-### Fix (single file: `pdf-server/app/services/pdf_ops.py`)
+#### 5. Fix production assembly path too
 
-1. **Snapshot page boxes before CMYK** in `prepare_for_product`:
-   - Before calling `to_print_ready_cmyk`, open `src` with pikepdf and capture per-page `/MediaBox`, `/CropBox`, `/TrimBox`, `/BleedBox`, `/ArtBox`, and `/Rotate`.
+In `pdf-server/app/tasks/production_tasks.py`:
 
-2. **Re-stamp boxes onto the CMYK output** immediately after Ghostscript succeeds:
-   - Open `cmyk_out` with pikepdf, and for each page write back any of the four content boxes (`CropBox`, `TrimBox`, `BleedBox`, `ArtBox`) that existed on the corresponding source page. Leave MediaBox alone unless the source had a smaller CropBox that we need to honour.
-   - Save in place. This restores the trim/bleed geometry Ghostscript stripped.
+- When production assembly resizes a job to the product target, pass `respect_trim_box=True` whenever the source PDF declares a real TrimBox / bleed geometry.
+- This prevents the final production PDF from reintroducing the same MediaBox-scaling problem after the customer preview looked correct.
 
-3. **No pipeline reorder, no orientation changes.**
-   - Orientation and resize already work on the box-restored PDF, so the existing `respect_trim_box` branch in `resize_pages` finally has real data to work with and will:
-     - fit content to the TrimBox-derived trim size,
-     - keep crop marks outside the new BleedBox (so they're clipped, not scaled into the artwork).
+#### 6. Add a focused regression check
 
-4. **Safety / fallback:**
-   - Wrap the re-stamp step in try/except and log a warning on failure — never block a job. Worst case we fall back to today's behaviour.
-   - If page count changed (shouldn't, but defensive), skip the re-stamp.
+Add or update a small PDF-server regression script/test that creates two synthetic cases:
 
-### Files affected
+1. A5 TrimBox + MediaBox with crop marks, **no BleedBox**.
+2. A5 TrimBox + explicit BleedBox + larger MediaBox.
 
-- `pdf-server/app/services/pdf_ops.py` — add a small helper (`_snapshot_page_boxes`, `_restore_page_boxes`) and call them around the `to_print_ready_cmyk` step inside `prepare_for_product`.
+For both, run A5 → A4 resize and verify:
 
-No changes to:
-- `resize_pages` (already correct).
-- `normalize_orientation`.
-- Celery tasks, routes, schemas, frontend, edge functions, database.
+- output TrimBox is A4 finished size,
+- output MediaBox is not the old crop-mark canvas scaled into A4,
+- TrimBox/BleedBox survive after CMYK/prepare,
+- crop marks are clipped outside the visible prepared page.
 
-### Validation (on the VPS after `git pull`)
+### Validation after implementation
 
-Re-run an asset that has real bleed + crop marks through `prepare_for_product` and inspect the intermediate PDFs with `pikepdf`/`pdfinfo`:
+I will validate with code-level checks in the repo. After you pull to the VPS and re-upload the same 28-page file, the key signal should be:
 
-```text
-src                 → MediaBox > TrimBox (bleed present), crop marks present
-after CMYK + stamp  → MediaBox > TrimBox preserved (the fix)
-after orient        → boxes preserved by existing normalize_orientation stamp pass
-after resize        → new MediaBox = product size + bleed, TrimBox = product size,
-                      crop marks clipped, artwork not squashed
-```
+- the scaling job payload includes `respect_trim_box: true`,
+- the prepared PDF has `TrimBox` equal to finished A4,
+- the prepared PDF’s `MediaBox` is A4 plus bleed, not the original crop-mark canvas scaled down,
+- previews render the finished page edge instead of the crop-mark canvas.
 
-If you can drop a failing sample PDF into the chat (or its asset id), I can additionally tailor the regression check to it; otherwise the synthetic check above is enough to verify the deployed fix.
+<presentation-actions>
+  <presentation-open-history>View History</presentation-open-history>
+</presentation-actions>
+
+<presentation-actions>
+<presentation-link url="https://docs.lovable.dev/tips-tricks/troubleshooting">Troubleshooting docs</presentation-link>
+</presentation-actions>

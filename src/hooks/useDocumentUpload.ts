@@ -645,6 +645,13 @@ export function useDocumentUpload(
           preflight.estimated_bleed_h = nearIsoMatch.bleedH;
           preflight.near_iso_landscape = nearIsoMatch.landscape;
         }
+        // Persist explicit TrimBox / bleed signals so a later scale-to-size
+        // call (e.g. A5 → A4) knows to ask the server for trim-aware
+        // resizing even when the file is an exact ISO size with bleed.
+        if (finalExplicitTrim && finalTrimBox) {
+          preflight.trim_box_pt = finalTrimBox;
+          preflight.has_bleed = true;
+        }
         if (orientationMismatch) {
           preflight.orientation_mismatch = orientationMismatch;
         }

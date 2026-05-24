@@ -274,12 +274,17 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
             # ── Step 3: resize / re-orient ──────────────────────────────
             if needs_resize and target.width_mm and target.height_mm:
                 resized = ws.path("resized.pdf")
+                # Honour TrimBox when the merged source has real bleed —
+                # otherwise the customer-uploaded crop marks get scaled
+                # into the finished artwork.
+                source_has_trim = pdf_ops.detect_bleed(current)
                 pdf_ops.resize_pages(
                     current, resized,
                     width_mm=target.width_mm,
                     height_mm=target.height_mm,
                     fit_mode="fit",
                     dominant_orientation=target.orientation,
+                    respect_trim_box=source_has_trim,
                 )
                 current = resized
                 steps.append(f"resize:{target.width_mm:.0f}x{target.height_mm:.0f}")
