@@ -370,11 +370,19 @@ export function useDocumentUpload(
   orderItemId: string | undefined,
   productFamilySlug?: string | null,
   productFamilyPrintConfig?: FamilyPrintConfig | null,
+  sessionLockedSize?: PaperSize | null,
 ) {
   const { user } = useAuth();
   const { tenantId } = useTenantContext();
   const qc = useQueryClient();
   const [uploads, setUploads] = useState<Record<string, UploadProgress>>({});
+
+  // Ref so in-flight uploads see the latest lock without restarting closures.
+  const sessionLockedSizeRef = useRef<PaperSize | null>(sessionLockedSize ?? null);
+  useEffect(() => {
+    sessionLockedSizeRef.current = sessionLockedSize ?? null;
+  }, [sessionLockedSize]);
+
 
   const updateUpload = useCallback(
     (fileName: string, update: Partial<UploadProgress>) => {
