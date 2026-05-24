@@ -523,6 +523,14 @@ export function calculatePriceFromRateCard(
     twin_loop: "wire",
     wire: "wire",
   };
+  // Option metadata uses friendly names (twin_loop, spiral, wire) while the
+  // `binding_specifications` table uses pitch-specific keys. Map between them.
+  const methodToSpecMethod: Record<string, string> = {
+    comb: "comb",
+    spiral: "spiral_coil",
+    twin_loop: "wire_3_1",
+    wire: "wire_3_1",
+  };
 
   for (const option of options) {
     const selectedSlug = spec.selected_options[option.name];
@@ -554,15 +562,28 @@ export function calculatePriceFromRateCard(
         }
       } else {
         const prefix = methodToCodePrefix[bindingMethod];
-        const specs = (rc.bindingSpecs ?? []).filter(
-          (s) => s.binding_method === bindingMethod,
-        );
-        const matchedSpec = specs.find(
-          (s) => totalSheets >= s.min_sheets && totalSheets <= s.max_sheets_80gsm,
-        );
+        const specMethod = methodToSpecMethod[bindingMethod] ?? bindingMethod;
+        // Smallest spec that fits the sheet count
+        const matchedSpec = (rc.bindingSpecs ?? [])
+          .filter((s) => s.binding_method === specMethod)
+          .sort((a, b) => a.size_mm - b.size_mm)
+          .find((s) => totalSheets >= s.min_sheets && totalSheets <= s.max_sheets_80gsm);
         if (prefix && matchedSpec) {
-          const code = `${prefix}-${matchedSpec.size_mm}mm`;
-          const fin = rc.finishing.find((x) => x.code === code && x.is_active);
+          // Rate-card codes use integer mm. Round the spec size, then if
+          // that exact code is missing, jump to the next-larger active row.
+          const targetMm = Math.round(matchedSpec.size_mm);
+          const candidates = rc.finishing
+            .filter((x) => x.is_active && x.code.startsWith(`${prefix}-`) && x.code.endsWith("mm"))
+            .map((x) => {
+              const m = /-(\d+)mm$/.exec(x.code);
+              return m ? { row: x, mm: Number(m[1]) } : null;
+            })
+            .filter((x): x is { row: typeof rc.finishing[number]; mm: number } => !!x)
+            .sort((a, b) => a.mm - b.mm);
+          const fin =
+            candidates.find((c) => c.mm === targetMm)?.row ??
+            candidates.find((c) => c.mm >= targetMm)?.row ??
+            null;
           if (fin) {
             lines.push({
               label: `Binding: ${fin.label}`,
@@ -577,6 +598,7 @@ export function calculatePriceFromRateCard(
       }
       // Fall through to price_impact fallback below if no rate-card match
     }
+
 
     if (!selectedValue.price_impact) continue;
     let multiplier = 1;
