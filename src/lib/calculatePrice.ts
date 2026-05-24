@@ -8,6 +8,14 @@ type PricingRule = Tables<"pricing_rules">;
 type ProductOption = Tables<"product_options">;
 
 /** The spec object stored on order_items.spec — describes a configured document */
+export interface ItemSpecSection {
+  /** Section label for the breakdown popover (e.g. "Body", "Cover", "Insert") */
+  label?: string;
+  page_count: number;
+  is_color: boolean;
+  is_duplex: boolean;
+}
+
 export interface ItemSpec {
   page_count: number;
   quantity: number;
@@ -16,6 +24,14 @@ export interface ItemSpec {
   paper_stock?: string;
   /** Map of option name → selected value slug */
   selected_options: Record<string, string>;
+  /**
+   * When present, pricing iterates these sections independently — used for
+   * mixed colour/duplex bound documents. Each section is billed at its own
+   * click rate and contributes its own sheet count. When absent, the engine
+   * falls back to the spec-level is_color/is_duplex/page_count fields
+   * (correct for single-section products like flyers or posters).
+   */
+  sections?: ItemSpecSection[];
   /**
    * Optional opt-in to bind a landscape document on its LONG edge (top)
    * rather than the default short edge. Only meaningful when the selected
