@@ -16,8 +16,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Trash2, ShoppingBag, ArrowRight, Plus, Loader2, Pencil, FileText } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import CheckoutAuth from "@/components/checkout/CheckoutAuth";
 
 export default function Cart() {
   const { tenantPath } = useTenantSlug();
@@ -33,14 +41,11 @@ export default function Cart() {
   const { user } = useAuth();
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const [editingIds, setEditingIds] = useState<Set<string>>(new Set());
+  const [authOpen, setAuthOpen] = useState(false);
+  const pendingSaveRef = useRef(false);
 
-  const handleSaveAsQuote = async () => {
+  const runSaveAsQuote = async () => {
     if (!cart) return;
-    if (!user || (user as any).is_anonymous) {
-      toast.info("Please sign in to save a quote");
-      navigate(tenantPath("auth") + `?next=${encodeURIComponent(window.location.pathname)}`);
-      return;
-    }
     const name = window.prompt("Name this quote (optional, e.g. PO #1234):", "") ?? undefined;
     try {
       const q = await saveAsQuote.mutateAsync({ cartOrderId: cart.id, name: name || undefined });
@@ -50,6 +55,28 @@ export default function Cart() {
       toast.error("Couldn't save quote", { description: e.message });
     }
   };
+
+  const handleSaveAsQuote = async () => {
+    if (!cart) return;
+    if (!user || (user as any).is_anonymous) {
+      pendingSaveRef.current = true;
+      setAuthOpen(true);
+      return;
+    }
+    await runSaveAsQuote();
+  };
+
+  // When the inline auth dialog converts the anonymous user to a real account,
+  // close the dialog and resume the save.
+  useEffect(() => {
+    if (!authOpen) return;
+    if (user && !(user as any).is_anonymous && pendingSaveRef.current) {
+      pendingSaveRef.current = false;
+      setAuthOpen(false);
+      void runSaveAsQuote();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, authOpen]);
 
   const items = (cart?.order_items as any[]) ?? [];
 
@@ -214,6 +241,21 @@ export default function Cart() {
           </Button>
         </div>
       </div>
+
+      <Dialog open={authOpen} onOpenChange={(open) => {
+        setAuthOpen(open);
+        if (!open) pendingSaveRef.current = false;
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Sign in to save your quote</DialogTitle>
+            <DialogDescription>
+              Quotes are tied to your account so you can reopen them later.
+            </DialogDescription>
+          </DialogHeader>
+          <CheckoutAuth />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
