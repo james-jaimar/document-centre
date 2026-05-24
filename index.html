@@ -28,6 +28,20 @@
     <meta name="twitter:title" content="Document Centre — Web-to-Print SaaS">
     <meta name="twitter:description" content="A modern web-to-print platform for managing storefronts, orders, and production across branches.">
     <meta name="twitter:image" content="https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/b005bcbf-f11c-481d-b4cb-9d631b7c616b/id-preview-a44881ea--645dbd17-56d7-4b01-8a59-11817be20fbf.lovable.app-1774206524531.png">
+
+    <script>
+      // Rewrite canonical + og:url to the current origin so custom-domain
+      // tenants (e.g. postnetprintcentre.com) don't advertise document-centre.com.
+      (function () {
+        try {
+          var url = window.location.origin + window.location.pathname;
+          var canonical = document.querySelector('link[rel="canonical"]');
+          if (canonical) canonical.setAttribute('href', url);
+          var ogUrl = document.querySelector('meta[property="og:url"]');
+          if (ogUrl) ogUrl.setAttribute('content', url);
+        } catch (e) {}
+      })();
+    </script>
   </head>
 
   <body>

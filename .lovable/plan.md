@@ -1,55 +1,73 @@
-# Launch postnetprintcentre.com for Postnet
+# Custom Domain Audit — postnetprintcentre.com
 
-You've registered `postnetprintcentre.com`. The app already supports custom-domain tenant resolution (`useTenantFromHost` → `tenants.custom_domain`), so no fork is needed — the same codebase serves both `document-centre.com` and the new domain.
+Great news that the storefront, branches, upload, cart and checkout all worked first try on the new domain. The custom-domain plumbing (`useTenantFromHost` → `tenants.custom_domain`, storefront RLS header, branch URL builder) is doing its job.
 
-## What needs to happen
+Below is a thorough sweep of remaining hard-coded `document-centre.com` references and what to do about each. Everything is small and surgical — no architecture changes.
 
-### 1. DNS (at the registrar)
-- `A` record `@` → `185.158.133.1` (or follow Amplify's instructions if you're routing via Amplify rather than Lovable hosting — confirm which is authoritative for production)
-- `A` / `CNAME` `www` → same target
-- Add `www.postnetprintcentre.com` redirect to apex (or vice versa) — pick a primary
+## 1. Google OAuth still returns to Document Centre (highest priority)
 
-### 2. Hosting (AWS Amplify, per your prod setup)
-- Add `postnetprintcentre.com` + `www.postnetprintcentre.com` as alternate domains on the same Amplify app that serves `document-centre.com`
-- Let Amplify provision SSL for both
+This is **not a code bug** — `SocialAuthButtons` already passes `redirectTo: ${window.location.origin}/auth/callback`, which would correctly be `https://postnetprintcentre.com/auth/callback`. The reason Google bounces back to `document-centre.com` is the Supabase Auth URL config.
 
-### 3. Database
-- Set `tenants.custom_domain = 'postnetprintcentre.com'` on the Postnet tenant row (via the existing **Admin → Settings → Domains** tab — no migration needed)
+**Fix — Supabase dashboard (you, not code):**
+- Auth → URL Configuration → **Additional Redirect URLs**: add
+  - `https://postnetprintcentre.com/**`
+  - `https://www.postnetprintcentre.com/**`
+- Google Cloud Console → OAuth Client → Authorized JavaScript origins: add both as well (so Google's domain-validation step accepts the request).
+- Site URL can stay as `https://document-centre.com` (it's only a default).
 
-### 4. Supabase Auth
-- Add `https://postnetprintcentre.com/**` and `https://www.postnetprintcentre.com/**` to allowed redirect URLs
-- Add the same as allowed Site URLs for password reset / magic links
+No code change needed. After this, Google sign-in will land back on the Postnet domain.
 
-### 5. Code audit + small fixes
-There are a handful of places that assume `document-centre.com`. I'll audit and patch:
+## 2. SEO tags hard-coded to document-centre.com
 
-- **`src/hooks/useTenantFromHost.ts`** — already handles custom domains correctly. No change.
-- **`src/lib/tenantUrl.ts` / `useTenantSlug`** — on a custom domain there's no `/t/:slug` prefix, so branch URLs become `postnetprintcentre.com/sandtoncity/...`. Need to smoke-test `parseTenantPath` isn't called on these (it's only used inside `/t/` redirects, so should be fine — but I'll verify `ProtectedRoute`, `AuthCallback`, `landingRoute`).
-- **`supabase/functions/_shared/buildAuthLink.ts`** — already resolves origin from tenant `branding.portal_url`. Set Postnet's `portal_url` setting to `https://postnetprintcentre.com` so auth emails link to the right host.
-- **`supabase/functions/verify-domain/index.ts`** — hard-codes `"document-centre.com"` as the CNAME match. Either harmless (Amplify-based verification differs) or worth generalising; I'll review.
-- **Tenant facsimile header/footer scraping** — confirm Postnet's scraped header still works when served from the new origin (CORS / image URLs).
-- **Sender domain** — Postnet's transactional email "from" needs updating to use `@postnetprintcentre.com` (requires a verified email domain in the email tool; separate task).
-- **Meta tags, OG images, sitemap, robots.txt** — currently reference `document-centre.com`. Make tenant-aware on custom domains.
+`index.html` lines 19, 24 set `<link rel="canonical">` and `<meta property="og:url">` to `https://document-centre.com/`. On the Postnet domain these tell crawlers and social previewers the canonical URL is the wrong site — bad for SEO and link unfurls.
 
-### 6. Smoke tests after go-live
-- `https://postnetprintcentre.com` → Postnet landing (not Document Centre)
-- `https://postnetprintcentre.com/sandtoncity` → branch picker / branch home
-- Upload + bound-document flow end-to-end
-- Sign-up → email link points back to `postnetprintcentre.com` (not document-centre.com)
-- Password reset same
-- Checkout payment redirect returns to correct host
+**Fix:** small inline script in `index.html` `<head>` that rewrites both tags to `window.location.origin + window.location.pathname` at runtime. One-liner, runs before paint, no framework needed.
 
-## Recommended order
+## 3. CustomerFooter "Powered by Document Centre" link
 
-1. You: register DNS + add domain in Amplify (I can't do this for you)
-2. Me: audit + patch the code references above (small PR)
-3. You: set `custom_domain` + `portal_url` in Postnet admin
-4. You: add Supabase Auth redirect URLs
-5. Both: smoke test
+`src/components/CustomerFooter.tsx:97-104` shows a "Powered by Document Centre" link on every tenant portal footer. On Postnet's white-labelled domain this is probably **not** what you want customers to see.
 
-## Out of scope for this plan
-- Forking the app (explicitly not recommended)
-- Email sender domain verification — separate flow once DNS is live
-- Marketing site content for postnetprintcentre.com (currently the storefront IS the landing — confirm whether you want a separate marketing page)
+**Two options — pick one in the plan review:**
+- A. Hide it entirely when running on a custom domain (detect via `window.location.hostname !== 'document-centre.com'` and not a `*.document-centre.com` subdomain).
+- B. Keep showing it but make it a tenant setting (`branding.show_powered_by`, default false for custom domains, true for platform subdomains).
 
-Want me to proceed in build mode with step 2 (the code audit + patches)?
+I'd recommend **A** for the Postnet launch — keeps the white-label promise clean.
+
+## 4. Things that are fine as-is (documenting the audit, no action)
+
+- `useTenantFromHost.ts` — uses `document-centre.com` correctly as the platform subdomain root; custom domains fall through to the `tenants.custom_domain` lookup.
+- `verify-domain/index.ts` — already updated last round to a flexible `PLATFORM_HOSTS` list.
+- `buildAuthLink.ts` / `request-signup` / `request-password-reset` — already use `resolveAppOrigin(tenant_id, callerOrigin)`, which falls back to caller origin when no tenant `portal_url` is set. Postnet will get the right URL automatically.
+- `submit-contact`, `Contact.tsx`, `MarketingLanding.tsx`, `PrivacyPolicy.tsx`, `TermsOfService.tsx` — these are the **Document Centre marketing site** pages (not the tenant portal). They legitimately reference DC's own email addresses.
+- `branded-shell.ts` (`hello@document-centre.com`) — used for DC platform notifications, not tenant transactional email. Tenant email goes through `send-order-email` with tenant branding.
+- `PlatformTenants.tsx:299` — admin-only helper text, fine.
+- `EmailAccountsTab.tsx:263` — admin help string, fine.
+- `useCart.ts:699` — synthetic demo email domain, never sent, fine.
+- `sitemap.xml` / `robots.txt` — these are DC's own marketing-site SEO files. Tenant portals don't need their own at this stage; if you want one per tenant later, that's a separate piece of work.
+- `customer_demo: @demo.document-centre.com` — internal, fine.
+
+## 5. Operational checklist (Postnet tenant, no code)
+
+For completeness, the manual steps that go alongside the code patches:
+
+1. Admin → Settings → Domains on Postnet tenant: confirm `custom_domain = postnetprintcentre.com` is set and verified.
+2. Admin → Settings → Branding on Postnet: set `portal_url = https://postnetprintcentre.com` so password-reset / set-password emails generate links on the Postnet domain even when triggered server-side (where there's no caller origin).
+3. Supabase Auth → URL Configuration: add the two Postnet `**` redirect URLs (see §1).
+4. Google Cloud Console OAuth client: add Postnet JS origin (see §1).
+5. Sender domain for Postnet transactional email — `noreply@postnetprintcentre.com` will need DNS (SPF/DKIM/DMARC) before it'll send cleanly. Out of scope for this PR; treat as a follow-up.
+
+## Code changes summary (when you approve)
+
+- `index.html` — runtime rewrite of `canonical` + `og:url` to current origin.
+- `src/components/CustomerFooter.tsx` — hide "Powered by" link on non-platform hostnames (option A above unless you say otherwise).
+
+That's the whole code diff. Everything else is config in Supabase / Google.
+
+## Out of scope
+
+- Forking the app (we decided against)
+- Per-tenant sitemap/robots
+- Postnet sender-domain verification (separate task once you decide on the from address)
+- Migrating `PlatformTenants.tsx` admin helper text (cosmetic only)
+
+Want me to go ahead with code change §2 + option A for §3, then you handle the Supabase/Google console steps from §1 + §5?
