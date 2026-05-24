@@ -440,6 +440,7 @@ export async function resize(
   heightMm: number,
   fitMode: "fit" | "fill" = "fit",
   dominantOrientation?: "portrait" | "landscape" | null,
+  respectTrimBox?: boolean,
 ): Promise<{ job_id: string }> {
   return request("v1/operations/resize", "POST", {
     asset_id: assetId,
@@ -447,6 +448,7 @@ export async function resize(
     height_mm: heightMm,
     fit_mode: fitMode,
     ...(dominantOrientation ? { dominant_orientation: dominantOrientation } : {}),
+    ...(respectTrimBox ? { respect_trim_box: true } : {}),
   });
 }
 
