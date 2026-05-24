@@ -712,6 +712,7 @@ def prepare_for_product(
     fit_mode: str = "fit",
     dest_profile: str | None = None,
     intent: str = "relative_colorimetric",
+    respect_trim_box: bool = False,
 ):
     """Perform CMYK conversion, orientation normalisation, and optional
     resize in one deterministic pipeline. The result is promoted to the
@@ -741,6 +742,7 @@ def prepare_for_product(
                 fit_mode=fit_mode,
                 dest_profile=dest_profile,
                 intent=intent,
+                respect_trim_box=respect_trim_box,
             )
 
             storage_path = unique_name(f"{prefix}derived/prepared", ".pdf")
