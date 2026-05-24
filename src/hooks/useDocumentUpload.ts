@@ -600,7 +600,22 @@ export function useDocumentUpload(
           pageHeightMm,
         );
 
-        const hasAdvisory = !!detectedSize || !!nearIsoMatch || !!orientationMismatch;
+        // Session lock-mismatch: an exact-ISO file whose ISO size differs
+        // from the lock established by earlier uploads. Treated as an
+        // advisory so we DEFER the (potentially slow) thumbnail render
+        // until the user chooses Scale-to-lock or Keep-original.
+        const lockedSize = sessionLockedSizeRef.current;
+        const lockedSizeMismatch =
+          !!lockedSize &&
+          !!isoMatch &&
+          !sizesMatchHelper(
+            pageWidthMm,
+            pageHeightMm,
+            lockedSize.widthMm,
+            lockedSize.heightMm,
+          );
+
+        const hasAdvisory = !!detectedSize || !!nearIsoMatch || !!orientationMismatch || lockedSizeMismatch;
 
         // If no size advisory AND caller didn't ask us to skip, finalise now
         // (print-ready CMYK only — orientation is preserved as authored).
