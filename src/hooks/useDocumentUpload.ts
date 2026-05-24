@@ -1002,5 +1002,43 @@ export function useDocumentUpload(
     [updateUpload, qc, orderItemId],
   );
 
-  return { uploads, uploadFile, uploadFiles, clearUploads, reprocessDocument, renderWithProgress, finalizeOrientationAndPrintReady };
+  /** Push a synthetic progress row so the upload-progress modal has something
+   * to display BEFORE any server work starts. Used by the scale/keep
+   * advisory handlers — server jobs can take 30–60s and without this the
+   * user sees no feedback after clicking. */
+  const beginManualProgress = useCallback(
+    (fileName: string, statusText: string, progress = 8) => {
+      updateUpload(fileName, {
+        fileName,
+        status: "analyzing",
+        progress,
+        statusText,
+        error: undefined,
+      });
+    },
+    [updateUpload],
+  );
+
+  /** Update the status text + progress for an existing manual entry. */
+  const updateManualProgress = useCallback(
+    (fileName: string, statusText: string, progress?: number) => {
+      updateUpload(fileName, {
+        statusText,
+        ...(progress !== undefined ? { progress } : {}),
+      });
+    },
+    [updateUpload],
+  );
+
+  return {
+    uploads,
+    uploadFile,
+    uploadFiles,
+    clearUploads,
+    reprocessDocument,
+    renderWithProgress,
+    finalizeOrientationAndPrintReady,
+    beginManualProgress,
+    updateManualProgress,
+  };
 }
