@@ -105,6 +105,7 @@ const ADMIN_SECTIONS: NavSection[] = [
     items: [
       { to: "/admin", icon: <LayoutDashboard size={20} />, label: "Dashboard" },
       { to: "/admin/orders", icon: <ClipboardList size={20} />, label: "Order Manager" },
+      { to: "/admin/quotes", icon: <FileText size={20} />, label: "Quotes" },
       { to: "/admin/production", icon: <Factory size={20} />, label: "Production Queue" },
     ],
   },

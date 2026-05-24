@@ -65,6 +65,7 @@ export default function CustomerHeader() {
     { to: tenantPath("print-centre"), label: "Home", end: true },
     { to: tenantPath("orders/new"), label: "Create", end: false },
     { to: tenantPath("orders"), label: "Orders", end: false },
+    { to: tenantPath("quotes"), label: "Quotes", end: false },
     { to: tenantPath("cart"), label: "Cart", end: false },
     { to: tenantPath("account"), label: "My Account", end: false },
   ];

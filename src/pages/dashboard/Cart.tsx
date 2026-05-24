@@ -1,6 +1,8 @@
 import { useNavigate } from "react-router-dom";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useCart, useRemoveCartItem, useEditCartItem } from "@/hooks/useCart";
+import { useSaveCartAsQuote } from "@/hooks/useQuotes";
+import { useAuth } from "@/hooks/useAuth";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
 import { Button } from "@/components/ui/button";
@@ -13,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Trash2, ShoppingBag, ArrowRight, Plus, Loader2, Pencil } from "lucide-react";
+import { Trash2, ShoppingBag, ArrowRight, Plus, Loader2, Pencil, FileText } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -27,8 +29,27 @@ export default function Cart() {
   const currency = (cart?.currency as string | undefined) ?? region?.currency_code ?? "ZAR";
   const removeItem = useRemoveCartItem();
   const editItem = useEditCartItem();
+  const saveAsQuote = useSaveCartAsQuote();
+  const { user } = useAuth();
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const [editingIds, setEditingIds] = useState<Set<string>>(new Set());
+
+  const handleSaveAsQuote = async () => {
+    if (!cart) return;
+    if (!user || (user as any).is_anonymous) {
+      toast.info("Please sign in to save a quote");
+      navigate(tenantPath("auth") + `?next=${encodeURIComponent(window.location.pathname)}`);
+      return;
+    }
+    const name = window.prompt("Name this quote (optional, e.g. PO #1234):", "") ?? undefined;
+    try {
+      const q = await saveAsQuote.mutateAsync({ cartOrderId: cart.id, name: name || undefined });
+      toast.success(`Quote ${q.quote_number} saved`);
+      navigate(tenantPath(`quotes/${q.id}`));
+    } catch (e: any) {
+      toast.error("Couldn't save quote", { description: e.message });
+    }
+  };
 
   const items = (cart?.order_items as any[]) ?? [];
 
@@ -172,10 +193,20 @@ export default function Cart() {
           <div className="text-sm text-muted-foreground">Total</div>
           <div className="text-2xl font-bold text-foreground">{formatPrice(cartTotal, currency)}</div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap justify-end">
           <Button variant="outline" onClick={() => navigate(tenantPath("orders/new"))}>
             <Plus className="h-4 w-4 mr-1" />
             Add More Items
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleSaveAsQuote}
+            disabled={saveAsQuote.isPending}
+          >
+            {saveAsQuote.isPending
+              ? <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              : <FileText className="h-4 w-4 mr-1" />}
+            Save as Quote
           </Button>
           <Button size="lg" onClick={() => navigate(tenantPath("checkout"))}>
             Proceed to Checkout

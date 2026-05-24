@@ -43,6 +43,8 @@ import OrderConfirmation from "@/pages/dashboard/OrderConfirmation";
 import CustomerOrderDetail from "@/pages/dashboard/CustomerOrderDetail";
 import PortalTerms from "@/pages/dashboard/PortalTerms";
 import PortalPrivacy from "@/pages/dashboard/PortalPrivacy";
+import CustomerQuotes from "@/pages/dashboard/CustomerQuotes";
+import CustomerQuoteDetail from "@/pages/dashboard/CustomerQuoteDetail";
 
 // Admin
 import AdminDashboard from "@/pages/admin/AdminDashboard";
@@ -62,6 +64,8 @@ import AdminCustomerDetail from "@/pages/admin/AdminCustomerDetail";
 import AdminSentMail from "@/pages/admin/AdminSentMail";
 import AdminDocuments from "@/pages/admin/AdminDocuments";
 import AdminBindingArtworkAudit from "@/pages/admin/AdminBindingArtworkAudit";
+import AdminQuotes from "@/pages/admin/AdminQuotes";
+import AdminQuoteDetail from "@/pages/admin/AdminQuoteDetail";
 
 // Branch portal
 import BranchDashboard from "@/pages/branch/BranchDashboard";
@@ -132,6 +136,8 @@ function customerRoutes() {
       <Route path="orders/:id" element={<ProtectedRoute><CustomerOrderDetail /></ProtectedRoute>} />
       <Route path="orders/:id/confirmation" element={<ProtectedRoute><OrderConfirmation /></ProtectedRoute>} />
       <Route path="orders" element={<ProtectedRoute><CustomerOrders /></ProtectedRoute>} />
+      <Route path="quotes" element={<ProtectedRoute><CustomerQuotes /></ProtectedRoute>} />
+      <Route path="quotes/:id" element={<ProtectedRoute><CustomerQuoteDetail /></ProtectedRoute>} />
       <Route path="account" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
       <Route path="settings" element={<ProtectedRoute><CustomerAccount /></ProtectedRoute>} />
     </>
@@ -211,6 +217,16 @@ function AppRoutes() {
         <Route path="/admin/orders/:id" element={
           <ProtectedRoute allowedRoles={[...operationsRoles]} allowedMembershipRoles={operationsMembershipRoles}>
             <AdminOrderDetail />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/quotes" element={
+          <ProtectedRoute allowedRoles={[...operationsRoles]} allowedMembershipRoles={operationsMembershipRoles}>
+            <AdminQuotes />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/quotes/:id" element={
+          <ProtectedRoute allowedRoles={[...operationsRoles]} allowedMembershipRoles={operationsMembershipRoles}>
+            <AdminQuoteDetail />
           </ProtectedRoute>
         } />
         <Route path="/admin/production" element={
