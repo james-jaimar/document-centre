@@ -72,11 +72,15 @@ Deno.serve(async (req) => {
       results.a = null;
     }
 
-    // Check if CNAME points to expected target
-    const target = expected_target || `${domain}`;
-    const cnameMatch = results.cname?.some((r: string) =>
-      r.toLowerCase().includes("document-centre.com")
-    ) ?? false;
+    // Check if CNAME points to expected target (e.g. tenant's platform subdomain),
+    // or to any known platform host. Fall back to "any A record present" as a soft signal.
+    const target = (expected_target || "").toLowerCase();
+    const PLATFORM_HOSTS = ["document-centre.com", "amplifyapp.com", "lovable.app"];
+    const cnameMatch = results.cname?.some((r: string) => {
+      const v = r.toLowerCase();
+      if (target && v.includes(target)) return true;
+      return PLATFORM_HOSTS.some((h) => v.includes(h));
+    }) ?? false;
 
     const verified = cnameMatch || (results.a !== null && results.a.length > 0);
 
