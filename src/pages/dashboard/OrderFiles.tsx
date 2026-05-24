@@ -265,18 +265,7 @@ export default function OrderFiles() {
     lockedSize?: PaperSize | null;
   } | null>(null);
 
-  // ── Session paper-size lock ────────────────────────────────────
-  // Once the user picks a target size on the first non-ISO doc (or uploads a
-  // first clean ISO doc), we lock the session to that size. Subsequent uploads
-  // either auto-apply silently or, if mismatched ISO, prompt the locked-variant
-  // advisory. The lock is page-lifetime only — a reload deliberately resets it.
-  type SessionSizeLock = {
-    size: PaperSize;
-    source: "user_chose" | "first_iso_upload";
-    /** Original action so we can replay it for queued non-ISO docs */
-    action: "keep" | "scale";
-  };
-  const [sessionSizeLock, setSessionSizeLock] = useState<SessionSizeLock | null>(null);
+  // (SessionSizeLock state declared above so it can be passed into useDocumentUpload.)
   // Tracks docs we've already auto-resolved against the lock so the effect
   // doesn't re-fire while DB updates are in flight.
   const autoAppliedDocIds = useRef<Set<string>>(new Set());
