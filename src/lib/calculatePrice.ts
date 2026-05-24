@@ -250,6 +250,18 @@ export interface RateCardBundle {
   papers: RateCardPaper[];
   finishing: RateCardFinishing[];
   photoPrints?: RateCardPhotoPrint[];
+  /**
+   * Optional: binding spine specifications used to map a selected
+   * binding option (Binding: Twin Loop Wire Black, etc.) onto the
+   * correct sized rate_card_finishing row (wire-8mm, comb-10mm, ...).
+   * When absent, binding falls back to the option's flat price_impact.
+   */
+  bindingSpecs?: Array<{
+    binding_method: string;
+    size_mm: number;
+    min_sheets: number;
+    max_sheets_80gsm: number;
+  }>;
 }
 
 /**
