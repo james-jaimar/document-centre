@@ -29,8 +29,27 @@ export default function Cart() {
   const currency = (cart?.currency as string | undefined) ?? region?.currency_code ?? "ZAR";
   const removeItem = useRemoveCartItem();
   const editItem = useEditCartItem();
+  const saveAsQuote = useSaveCartAsQuote();
+  const { user } = useAuth();
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const [editingIds, setEditingIds] = useState<Set<string>>(new Set());
+
+  const handleSaveAsQuote = async () => {
+    if (!cart) return;
+    if (!user || (user as any).is_anonymous) {
+      toast.info("Please sign in to save a quote");
+      navigate(tenantPath("auth") + `?next=${encodeURIComponent(window.location.pathname)}`);
+      return;
+    }
+    const name = window.prompt("Name this quote (optional, e.g. PO #1234):", "") ?? undefined;
+    try {
+      const q = await saveAsQuote.mutateAsync({ cartOrderId: cart.id, name: name || undefined });
+      toast.success(`Quote ${q.quote_number} saved`);
+      navigate(tenantPath(`quotes/${q.id}`));
+    } catch (e: any) {
+      toast.error("Couldn't save quote", { description: e.message });
+    }
+  };
 
   const items = (cart?.order_items as any[]) ?? [];
 
