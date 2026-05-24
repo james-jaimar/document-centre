@@ -11,8 +11,9 @@ import { DeliveryTab } from "./settings/DeliveryTab";
 import { EmailAccountsTab } from "./settings/EmailAccountsTab";
 import { DomainsTab } from "./settings/DomainsTab";
 import { BillingTab } from "./settings/BillingTab";
+import { QuotesTab } from "./settings/QuotesTab";
 import { useTenantContext } from "@/hooks/useTenantContext";
-import { Building2, Palette, Workflow, Receipt, Upload, Bell, FileText, Truck, Mail, CreditCard, Globe } from "lucide-react";
+import { Building2, Palette, Workflow, Receipt, Upload, Bell, FileText, Truck, Mail, CreditCard, Globe, ScrollText } from "lucide-react";
 
 const AdminSettings = () => {
   const [searchParams] = useSearchParams();
@@ -34,6 +35,7 @@ const AdminSettings = () => {
             { value: "branding", label: "Branding", icon: Palette },
             { value: "workflow", label: "Workflow", icon: Workflow },
             { value: "financial", label: "Financial", icon: Receipt },
+            { value: "quotes", label: "Quotes", icon: ScrollText },
             { value: "uploads", label: "Uploads & Proofs", icon: Upload },
             { value: "notifications", label: "Notifications", icon: Bell },
             { value: "email", label: "Email Accounts", icon: Mail },
@@ -57,6 +59,7 @@ const AdminSettings = () => {
         <TabsContent value="branding"><BrandingTab /></TabsContent>
         <TabsContent value="workflow"><WorkflowTab /></TabsContent>
         <TabsContent value="financial"><FinancialTab /></TabsContent>
+        <TabsContent value="quotes"><QuotesTab /></TabsContent>
         <TabsContent value="uploads"><UploadsTab /></TabsContent>
         <TabsContent value="notifications"><NotificationsTab /></TabsContent>
         <TabsContent value="email"><EmailAccountsTab /></TabsContent>
