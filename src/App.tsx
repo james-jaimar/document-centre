@@ -66,6 +66,7 @@ import AdminDocuments from "@/pages/admin/AdminDocuments";
 import AdminBindingArtworkAudit from "@/pages/admin/AdminBindingArtworkAudit";
 import AdminQuotes from "@/pages/admin/AdminQuotes";
 import AdminQuoteDetail from "@/pages/admin/AdminQuoteDetail";
+import AdminQuoteCreate from "@/pages/admin/AdminQuoteCreate";
 
 // Branch portal
 import BranchDashboard from "@/pages/branch/BranchDashboard";
@@ -222,6 +223,11 @@ function AppRoutes() {
         <Route path="/admin/quotes" element={
           <ProtectedRoute allowedRoles={[...operationsRoles]} allowedMembershipRoles={operationsMembershipRoles}>
             <AdminQuotes />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/quotes/new" element={
+          <ProtectedRoute allowedRoles={[...operationsRoles]} allowedMembershipRoles={operationsMembershipRoles}>
+            <AdminQuoteCreate />
           </ProtectedRoute>
         } />
         <Route path="/admin/quotes/:id" element={

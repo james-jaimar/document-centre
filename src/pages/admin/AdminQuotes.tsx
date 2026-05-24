@@ -2,11 +2,12 @@ import { Link } from "react-router-dom";
 import { useAdminQuotes } from "@/hooks/useAdminQuotes";
 import { formatPrice } from "@/lib/formatCurrency";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { ArrowRight, FileText } from "lucide-react";
+import { ArrowRight, FileText, Plus } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -23,9 +24,14 @@ export default function AdminQuotes() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Quotes</h1>
-        <p className="text-muted-foreground">Saved quotations for customers across this tenant</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Quotes</h1>
+          <p className="text-muted-foreground">Saved quotations for customers across this tenant</p>
+        </div>
+        <Button asChild>
+          <Link to="/admin/quotes/new"><Plus className="h-4 w-4 mr-1" /> New Quote</Link>
+        </Button>
       </div>
 
       {isLoading ? (
