@@ -1,108 +1,60 @@
-## Plan: fix A5 bleed/crop PDFs being scaled by MediaBox instead of TrimBox
+## Problem
 
-### What the actual issue is
+A 28-page A5 PDF uploaded into an A4-locked session currently:
+1. Inspects boxes (fast — seconds)
+2. Runs CMYK print-ready
+3. **Renders all 28 pages of thumbnails** (slow — and for a 200-page doc, 8–10 minutes)
+4. *Only then* OrderFiles' `useEffect` notices "A5 ≠ A4 lock" and pops the "Different size from other files" dialog
 
-The current code still has two confirmed gaps that match what you are seeing:
+The lock-mismatch check needs to fire immediately after the box read, before any rasterising, so the user can pick "Scale to A4 / Keep A5" up-front.
 
-1. **The frontend does not reliably enable `respect_trim_box` for exact ISO/A-series files with real TrimBox.**
-   - On upload, `useDocumentUpload.ts` detects `TrimBox` vs `MediaBox`, but does not persist `trim_box_pt` / `has_bleed` into `preflight_data` for normal exact-size files.
-   - Later, when `OrderFiles.tsx` scales A5 to A4, it decides `respectTrimBox` mostly from `preflight_data.near_iso_match`, `has_bleed`, or `trim_box_pt`.
-   - So an A5 finished-size document with bleed/crop marks can still be sent to the server with `respect_trim_box=false`, causing the MediaBox path to run.
+## Root cause
 
-2. **Even when `respect_trim_box=true`, the server can deliberately fall back to MediaBox scaling if the PDF has a TrimBox but no explicit BleedBox.**
-   - In `pdf-server/app/services/pdf_ops.py`, `resize_pages()` currently disables the trim-aware branch when `BleedBox` defaults to `MediaBox`.
-   - Many real print PDFs have `MediaBox + TrimBox + crop marks`, but no explicit `BleedBox`.
-   - That means the code sees the TrimBox, then rejects the trim-aware path and scales the whole MediaBox into A4 — exactly the symptom.
+- `inspectExistingAsset` in `src/hooks/useDocumentUpload.ts` decides `hasAdvisory` purely from intrinsic file properties (non-ISO, near-ISO bleed, orientation). An exact-ISO file like A5 always returns `hasAdvisory = false`.
+- The session size lock lives in `OrderFiles.tsx` state and is not visible to the upload hook, so the hook can't gate Phase B render on it.
+- The lock-mismatch dialog (OrderFiles lines 877–920) only opens once preflight is fully done (`awaiting_review: false`), i.e. after rendering.
 
-Do I know what the issue is? **Yes: the trim-aware branch is either not being requested by the frontend, or it is being requested but rejected by the server when BleedBox is absent/equal to MediaBox.** The screenshot alone cannot prove the uploaded PDF’s actual box values, but the code paths above are enough to explain the repeated behaviour.
+## Plan
 
-### What I will change
+### 1. Thread the session size lock into the upload hook
 
-#### 1. Make upload preflight remember real TrimBox/bleed metadata
+`src/hooks/useDocumentUpload.ts`
+- Add an optional `sessionLockedSize?: PaperSize | null` arg to `useDocumentUpload({ ... })`.
+- Pass it through `uploadFile` → `inspectDocument` → `inspectExistingAsset` (read via ref so an in-flight upload sees the latest lock without restarting the closure).
 
-In `src/hooks/useDocumentUpload.ts`:
+`src/pages/dashboard/OrderFiles.tsx`
+- Forward `sessionSizeLock?.size ?? null` when constructing the upload hook.
 
-- When `finalExplicitTrim` is true, persist:
-  - `trim_box_pt: finalTrimBox`
-  - `has_bleed: true`
-  - refreshed `boxes`
-- This makes exact A5/A4 PDFs with real print boxes behave the same as near-ISO bleed PDFs.
+### 2. Detect lock-mismatch during Phase A inspect (before render)
 
-#### 2. Make scale-to-size inspect the actual backend asset boxes, not only stale document preflight
+In `inspectExistingAsset`, after computing `isoMatch` for the incoming file:
 
-In `src/pages/dashboard/OrderFiles.tsx` inside `applyScaleTo()`:
+- If `sessionLockedSize` is set AND the file's dimensions match an exact ISO size AND that ISO size differs from the lock:
+  - Set a new preflight flag `locked_size_mismatch: true` along with `locked_against: <lock.name>`.
+  - Treat as `hasAdvisory = true` → skip `finalizeOrientationAndPrintReady`, skip Phase B render, set `awaiting_review: true`.
+- This piggybacks on the existing "defer render until user resolves" path.
 
-- After `ensureFreshAsset()`, fetch the latest backend asset with `getAsset(workingAssetId)`.
-- Detect `TrimBox` materially smaller than `MediaBox` directly from `asset.boxes`.
-- Set `respectTrimBox=true` if either:
-  - document preflight says it has bleed/trim, or
-  - the current backend PDF actually has a real TrimBox.
+### 3. Open the dialog from the new flag instead of waiting on `awaiting_review: false`
 
-This protects both new uploads and older documents whose preflight metadata was missing `trim_box_pt`.
+`src/pages/dashboard/OrderFiles.tsx` (lock-mismatch effect ~line 877)
+- Replace the "exact-ISO + lock mismatch" detection with a check for `preflight_data.locked_size_mismatch === true` (or fall through to current ISO check for legacy docs).
+- When dialog resolves:
+  - "Scale to A4" → existing `applyScaleTo` (already runs prepare-for-product + render).
+  - "Keep A5 / override lock" → existing `applyKeepOriginal` (already runs finalize + render).
+  - Either branch clears `locked_size_mismatch` (alongside the existing `size_resolved` write).
 
-#### 3. Fix server-side trim-aware resize fallback
+### 4. No server changes
 
-In `pdf-server/app/services/pdf_ops.py` `resize_pages()`:
+The PDF-server inspect job already returns boxes synchronously — that is what the user described as "almost instantly". No `pdf-server/` changes needed for this fix.
 
-- Keep using the real `TrimBox` as the finished-page reference.
-- If a valid `BleedBox` exists, use it.
-- If `BleedBox` is absent or equal to `MediaBox`, **do not fall back to MediaBox scaling**.
-- Instead synthesize a standard bleed box around TrimBox, clamped inside MediaBox, so crop marks outside that bleed region are clipped away.
+## User-visible result
 
-Expected result:
+Upload of `28pp A5.pdf` into an A4-locked session:
+1. ~2–5 s: "Inspecting PDF…" → boxes read.
+2. Dialog opens: "Different size from your other files — Scale to A4 / Keep A5".
+3. User picks → CMYK + rasterisation runs *once* against the chosen target. No wasted render of A5 thumbnails that get thrown away when the user scales to A4.
 
-```text
-Source PDF:
-MediaBox = trim + bleed/crop/canvas
-TrimBox  = finished A5 page
-BleedBox = maybe missing
+## Files touched
 
-Scale A5 → A4:
-TrimBox  = finished A4 page
-BleedBox = A4 + bleed
-MediaBox = A4 + bleed
-Old crop marks outside bleed are clipped
-Artwork is scaled from TrimBox, not MediaBox
-```
-
-#### 4. Make CMYK box preservation universal
-
-The recent fix restored boxes only inside `prepare_for_product()`. I will move/apply that protection at the `to_print_ready_cmyk()` level so every CMYK conversion path preserves `/TrimBox`, `/BleedBox`, `/CropBox`, and `/ArtBox`, including any older/direct `print-ready` call paths.
-
-#### 5. Fix production assembly path too
-
-In `pdf-server/app/tasks/production_tasks.py`:
-
-- When production assembly resizes a job to the product target, pass `respect_trim_box=True` whenever the source PDF declares a real TrimBox / bleed geometry.
-- This prevents the final production PDF from reintroducing the same MediaBox-scaling problem after the customer preview looked correct.
-
-#### 6. Add a focused regression check
-
-Add or update a small PDF-server regression script/test that creates two synthetic cases:
-
-1. A5 TrimBox + MediaBox with crop marks, **no BleedBox**.
-2. A5 TrimBox + explicit BleedBox + larger MediaBox.
-
-For both, run A5 → A4 resize and verify:
-
-- output TrimBox is A4 finished size,
-- output MediaBox is not the old crop-mark canvas scaled into A4,
-- TrimBox/BleedBox survive after CMYK/prepare,
-- crop marks are clipped outside the visible prepared page.
-
-### Validation after implementation
-
-I will validate with code-level checks in the repo. After you pull to the VPS and re-upload the same 28-page file, the key signal should be:
-
-- the scaling job payload includes `respect_trim_box: true`,
-- the prepared PDF has `TrimBox` equal to finished A4,
-- the prepared PDF’s `MediaBox` is A4 plus bleed, not the original crop-mark canvas scaled down,
-- previews render the finished page edge instead of the crop-mark canvas.
-
-<presentation-actions>
-  <presentation-open-history>View History</presentation-open-history>
-</presentation-actions>
-
-<presentation-actions>
-<presentation-link url="https://docs.lovable.dev/tips-tricks/troubleshooting">Troubleshooting docs</presentation-link>
-</presentation-actions>
+- `src/hooks/useDocumentUpload.ts` — new arg, Phase-A lock-mismatch detection.
+- `src/pages/dashboard/OrderFiles.tsx` — pass lock into hook, key lock-mismatch effect off the new preflight flag, clear flag on resolve.
