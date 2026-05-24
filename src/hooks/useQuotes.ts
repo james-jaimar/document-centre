@@ -89,7 +89,7 @@ export function useSaveCartAsQuote() {
       // Pull profile for snapshot
       const { data: profile } = await supabase
         .from("profiles")
-        .select("email, first_name, last_name, display_name, company_name")
+        .select("email, first_name, last_name, display_name")
         .eq("id", user.id)
         .single();
 
@@ -120,9 +120,8 @@ export function useSaveCartAsQuote() {
           customer_email: profile?.email ?? user.email ?? null,
           customer_name:
             profile?.display_name ??
-            [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") ??
+            [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") ||
             null,
-          company_name: profile?.company_name ?? null,
           created_by_profile_id: user.id,
           created_via: "customer_self_serve",
           source_order_id: cart.id,
@@ -159,7 +158,11 @@ export function useSaveCartAsQuote() {
         .from("orders")
         .update({
           order_status: "quoted" as any,
-          metadata: { ...(cart.metadata ?? {}), quote_id: quote.id, is_quote_holding: true },
+          metadata: {
+            ...((cart.metadata as Record<string, unknown> | null) ?? {}),
+            quote_id: quote.id,
+            is_quote_holding: true,
+          },
         })
         .eq("id", cart.id);
 
