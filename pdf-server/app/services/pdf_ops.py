@@ -2835,6 +2835,12 @@ class PdfOps:
         # ── Step 1: CMYK ─────────────────────────────────────────────
         if dest_profile:
             cmyk_out = out_pdf.parent / "prepare_cmyk.pdf"
+            # Snapshot the source page boxes BEFORE Ghostscript runs.
+            # Ghostscript's pdfwrite device drops /TrimBox, /BleedBox and
+            # /ArtBox by default, which defeats `respect_trim_box` in the
+            # downstream resize step and causes bleed/crop-mark PDFs to be
+            # scaled by their full MediaBox (squashing the artwork).
+            pre_cmyk_boxes = _snapshot_page_boxes(current)
             try:
                 cmyk_stats = self.to_print_ready_cmyk(
                     current, cmyk_out,
@@ -2845,6 +2851,12 @@ class PdfOps:
                 stats["cmyk"] = cmyk_stats
                 stats["steps"].append("cmyk")
                 current = cmyk_out
+                # Re-stamp the original TrimBox/BleedBox/ArtBox/CropBox so
+                # downstream steps (orientation, resize) see the same
+                # geometry the customer's source PDF had.
+                restored = _restore_page_boxes(current, pre_cmyk_boxes)
+                if restored is not None:
+                    stats["cmyk_boxes_restored"] = restored
             except Exception as exc:
                 # CMYK is non-fatal — continue with the un-converted PDF.
                 stats["cmyk_error"] = str(exc)
