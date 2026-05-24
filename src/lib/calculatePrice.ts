@@ -284,6 +284,7 @@ export function calculatePriceFromRateCard(
   spec: ItemSpec,
   recipe: ProductRecipe,
   rc: RateCardBundle,
+  options: ProductOption[] = [],
 ): PriceBreakdown {
   // ---- Photo Prints branch ------------------------------------------------
   if (recipe.engine === "photo_prints") {
