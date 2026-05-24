@@ -46,11 +46,14 @@ function CustomerLayoutInner() {
   const { slug } = useTenantSlug();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { collapsed, toggle } = useSidebarCollapse();
-  const { tenant } = useTenantFromSlug();
+  const { tenant, loading: tenantLoading } = useTenantFromSlug();
   const { data: branding, isLoading: brandingLoading } = useTenantBranding(tenant?.id ?? null);
   const { settingsMap: integrations } = useTenantSettingsMap("integrations");
-  // True once branding has resolved (or there's no tenant to load for)
-  const brandingReady = !tenant?.id || !brandingLoading;
+  // True once both the tenant lookup AND branding fetch have settled. When a
+  // slug is present in the URL we must wait for BOTH — otherwise the layout
+  // paints with default Document Centre colours before the tenant record
+  // arrives, producing a visible dark-sidebar / generic-header flash.
+  const brandingReady = !slug || (!tenantLoading && !brandingLoading);
 
   // Dynamic favicon
   useEffect(() => {
