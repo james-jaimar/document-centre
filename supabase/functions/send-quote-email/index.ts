@@ -73,18 +73,25 @@ Deno.serve(async (req) => {
       </div>
     `;
 
-    // 4. Send via existing send-email function
-    const sendResp = await supa.functions.invoke("send-email", {
-      body: {
+    // 4. Send via existing send-email function (forward caller auth)
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const sendResp = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/send-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: authHeader },
+      body: JSON.stringify({
         tenant_id: q.tenant_id,
         to: q.customer_email,
         subject,
         html,
-        category: "quote",
-        reference_id: q.id,
-      },
+        category: "transactional",
+        related_type: "quote",
+        related_id: q.id,
+      }),
     });
-    if (sendResp.error) return json({ error: sendResp.error.message }, 500);
+    if (!sendResp.ok) {
+      const t = await sendResp.text();
+      return json({ error: `send-email failed: ${t}` }, 500);
+    }
 
     return json({ success: true, download_url: downloadUrl });
   } catch (e: any) {
