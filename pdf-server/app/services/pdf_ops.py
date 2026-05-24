@@ -35,6 +35,76 @@ ICC_DIR = Path("/opt/document-centre-api/icc")
 
 
 # ---------------------------------------------------------------------------
+# Page-box snapshot / restore helpers
+# ---------------------------------------------------------------------------
+# Ghostscript's pdfwrite device silently drops /TrimBox, /BleedBox and
+# /ArtBox during CMYK conversion. Snapshotting these before GS runs and
+# re-stamping them on the output preserves the source's print geometry so
+# `resize_pages(respect_trim_box=True)` can correctly fit content to trim
+# instead of scaling the full bleed/crop-mark canvas.
+_BOX_KEYS = ("/MediaBox", "/CropBox", "/TrimBox", "/BleedBox", "/ArtBox")
+
+
+def _snapshot_page_boxes(src: Path) -> list[dict] | None:
+    """Return a list of dicts (one per page) recording every declared box
+    as a 4-tuple of floats. Returns None on failure (caller treats as
+    "no snapshot available", skip restore)."""
+    try:
+        snap: list[dict] = []
+        with pikepdf.open(str(src)) as pdf:
+            for page in pdf.pages:
+                page_boxes: dict[str, tuple[float, float, float, float]] = {}
+                for key in _BOX_KEYS:
+                    if key in page:
+                        try:
+                            box = page[key]
+                            page_boxes[key] = (
+                                float(box[0]), float(box[1]),
+                                float(box[2]), float(box[3]),
+                            )
+                        except Exception:
+                            continue
+                snap.append(page_boxes)
+        return snap
+    except Exception as exc:
+        logger.warning("_snapshot_page_boxes failed: %s", exc)
+        return None
+
+
+def _restore_page_boxes(
+    target: Path, snapshot: list[dict] | None
+) -> dict | None:
+    """Re-stamp /CropBox, /TrimBox, /BleedBox, /ArtBox from `snapshot` onto
+    `target` in place. MediaBox is left alone (Ghostscript's MediaBox is
+    authoritative for the rewritten PDF). Returns a small stats dict or
+    None if the restore was skipped/failed."""
+    if not snapshot:
+        return None
+    restore_keys = ("/CropBox", "/TrimBox", "/BleedBox", "/ArtBox")
+    try:
+        stamped = 0
+        with pikepdf.open(str(target), allow_overwriting_input=True) as pdf:
+            if len(pdf.pages) != len(snapshot):
+                logger.info(
+                    "_restore_page_boxes: page count changed (%d -> %d), skipping",
+                    len(snapshot), len(pdf.pages),
+                )
+                return {"skipped": True, "reason": "page_count_mismatch"}
+            for page, page_boxes in zip(pdf.pages, snapshot):
+                for key in restore_keys:
+                    if key in page_boxes:
+                        page[key] = pikepdf.Array(list(page_boxes[key]))
+                        stamped += 1
+            pdf.save(str(target))
+        return {"skipped": False, "boxes_stamped": stamped}
+    except Exception as exc:
+        logger.warning("_restore_page_boxes failed (non-fatal): %s", exc)
+        return {"skipped": True, "reason": f"error: {exc}"}
+
+
+
+
+# ---------------------------------------------------------------------------
 # Orientation helpers
 # ---------------------------------------------------------------------------
 # CRITICAL: PDF page orientation is determined by MediaBox + /Rotate, NOT by
@@ -2835,6 +2905,12 @@ class PdfOps:
         # ── Step 1: CMYK ─────────────────────────────────────────────
         if dest_profile:
             cmyk_out = out_pdf.parent / "prepare_cmyk.pdf"
+            # Snapshot the source page boxes BEFORE Ghostscript runs.
+            # Ghostscript's pdfwrite device drops /TrimBox, /BleedBox and
+            # /ArtBox by default, which defeats `respect_trim_box` in the
+            # downstream resize step and causes bleed/crop-mark PDFs to be
+            # scaled by their full MediaBox (squashing the artwork).
+            pre_cmyk_boxes = _snapshot_page_boxes(current)
             try:
                 cmyk_stats = self.to_print_ready_cmyk(
                     current, cmyk_out,
@@ -2845,6 +2921,12 @@ class PdfOps:
                 stats["cmyk"] = cmyk_stats
                 stats["steps"].append("cmyk")
                 current = cmyk_out
+                # Re-stamp the original TrimBox/BleedBox/ArtBox/CropBox so
+                # downstream steps (orientation, resize) see the same
+                # geometry the customer's source PDF had.
+                restored = _restore_page_boxes(current, pre_cmyk_boxes)
+                if restored is not None:
+                    stats["cmyk_boxes_restored"] = restored
             except Exception as exc:
                 # CMYK is non-fatal — continue with the un-converted PDF.
                 stats["cmyk_error"] = str(exc)
