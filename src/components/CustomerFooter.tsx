@@ -93,16 +93,28 @@ export default function CustomerFooter() {
           ) : (
             <Link to={tenantPath("privacy")} className="hover:text-foreground transition-colors">Privacy</Link>
           )}
-          {!isDemo && (
-            <a
-              href="https://document-centre.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-foreground transition-colors"
-            >
-              Powered by Document Centre
-            </a>
-          )}
+          {!isDemo && (() => {
+            const host = typeof window !== "undefined" ? window.location.hostname : "";
+            const isPlatformHost =
+              host === "document-centre.com" ||
+              host.endsWith(".document-centre.com") ||
+              host.endsWith(".lovable.app") ||
+              host.endsWith(".lovable.dev") ||
+              host.endsWith(".jaimar.dev") ||
+              host === "localhost" ||
+              host === "127.0.0.1";
+            if (!isPlatformHost) return null;
+            return (
+              <a
+                href="https://document-centre.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-foreground transition-colors"
+              >
+                Powered by Document Centre
+              </a>
+            );
+          })()}
         </div>
       </div>
     </footer>
