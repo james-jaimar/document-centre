@@ -41,14 +41,11 @@ export default function Cart() {
   const { user } = useAuth();
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const [editingIds, setEditingIds] = useState<Set<string>>(new Set());
+  const [authOpen, setAuthOpen] = useState(false);
+  const pendingSaveRef = useRef(false);
 
-  const handleSaveAsQuote = async () => {
+  const runSaveAsQuote = async () => {
     if (!cart) return;
-    if (!user || (user as any).is_anonymous) {
-      toast.info("Please sign in to save a quote");
-      navigate(tenantPath("auth") + `?next=${encodeURIComponent(window.location.pathname)}`);
-      return;
-    }
     const name = window.prompt("Name this quote (optional, e.g. PO #1234):", "") ?? undefined;
     try {
       const q = await saveAsQuote.mutateAsync({ cartOrderId: cart.id, name: name || undefined });
@@ -58,6 +55,28 @@ export default function Cart() {
       toast.error("Couldn't save quote", { description: e.message });
     }
   };
+
+  const handleSaveAsQuote = async () => {
+    if (!cart) return;
+    if (!user || (user as any).is_anonymous) {
+      pendingSaveRef.current = true;
+      setAuthOpen(true);
+      return;
+    }
+    await runSaveAsQuote();
+  };
+
+  // When the inline auth dialog converts the anonymous user to a real account,
+  // close the dialog and resume the save.
+  useEffect(() => {
+    if (!authOpen) return;
+    if (user && !(user as any).is_anonymous && pendingSaveRef.current) {
+      pendingSaveRef.current = false;
+      setAuthOpen(false);
+      void runSaveAsQuote();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, authOpen]);
 
   const items = (cart?.order_items as any[]) ?? [];
 
