@@ -490,10 +490,16 @@ export default function OrderFiles() {
 
     if (doc.backendAssetId) {
       try {
+        // ── Immediate UI feedback ──────────────────────────────────
+        // Open the upload-progress modal and push a synthetic row right
+        // away — finalize+render can take 30–60s on bleed PDFs and the
+        // user otherwise sees nothing after clicking.
         setUploadModalOpen(true);
+        beginManualProgress(doc.fileName, "Preparing your file…", 10);
 
         let workingAssetId = doc.backendAssetId;
         if (existing?.file_path) {
+          updateManualProgress(doc.fileName, "Checking source file…", 18);
           const fresh = await ensureFreshAsset({
             assetId: doc.backendAssetId,
             sourceStoragePath: existing.file_path,
@@ -508,6 +514,8 @@ export default function OrderFiles() {
               .eq("id", doc.id);
           }
         }
+
+        updateManualProgress(doc.fileName, "Finalising for print (this can take up to a minute)…", 30);
 
         // Always run finalization — even if print_ready_done was set earlier,
         // the server idempotently skips when already converted. Unconditional
@@ -574,7 +582,7 @@ export default function OrderFiles() {
     } else {
       toast.success("Keeping original size");
     }
-  }, [documents, refetchDocuments, renderWithProgress, finalizeOrientationAndPrintReady]);
+  }, [documents, refetchDocuments, renderWithProgress, finalizeOrientationAndPrintReady, beginManualProgress, updateManualProgress]);
 
   /** Core: scale the doc to a target paper size and finalise it.
    *
