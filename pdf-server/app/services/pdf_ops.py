@@ -2870,6 +2870,7 @@ class PdfOps:
                 height_mm=target_height_mm,
                 fit_mode=fit_mode,
                 dominant_orientation=dominant_orientation,
+                respect_trim_box=respect_trim_box,
             )
             stats["steps"].append("resize")
             current = resize_out
