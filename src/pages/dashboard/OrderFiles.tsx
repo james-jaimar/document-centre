@@ -756,6 +756,7 @@ export default function OrderFiles() {
             awaiting_review: false,
             size_resolved: true,
             size_action: `scaled_to_${target.name}`,
+            locked_size_mismatch: false,
             original_width_mm: doc.widthMm,
             original_height_mm: doc.heightMm,
             effective_width_mm: targetW,
