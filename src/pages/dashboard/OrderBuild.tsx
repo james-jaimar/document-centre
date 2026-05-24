@@ -146,9 +146,10 @@ export default function OrderBuild() {
   const { data: rcPapers = [] } = useRateCardPapers(rcArgs);
   const { data: rcFinishing = [] } = useRateCardFinishing(rcArgs);
   const { data: rcPhotoPrints = [] } = useRateCardPhotoPrints(rcArgs);
+  const { data: bindingSpecs = [] } = useBindingSpecifications();
   const rateCard = useMemo(
-    () => ({ clicks: rcClicks, papers: rcPapers, finishing: rcFinishing, photoPrints: rcPhotoPrints }),
-    [rcClicks, rcPapers, rcFinishing, rcPhotoPrints],
+    () => ({ clicks: rcClicks, papers: rcPapers, finishing: rcFinishing, photoPrints: rcPhotoPrints, bindingSpecs }),
+    [rcClicks, rcPapers, rcFinishing, rcPhotoPrints, bindingSpecs],
   );
   const useNewEngine = !!recipe && (rcClicks.length > 0 || rcPhotoPrints.length > 0);
 
