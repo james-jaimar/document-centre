@@ -23,8 +23,8 @@ const Auth = () => {
   const { slug: tenantSlug, tenantPath } = useTenantSlug();
   const [searchParams] = useSearchParams();
   const { user, highestRole, loading: authLoading, rolesLoaded } = useAuth();
-  const { tenant: brandedTenant } = useTenantFromSlug();
-  const { data: branding } = useTenantBranding(brandedTenant?.id ?? null);
+  const { tenant: brandedTenant, loading: tenantLoading } = useTenantFromSlug();
+  const { data: branding, isLoading: brandingLoading } = useTenantBranding(brandedTenant?.id ?? null);
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
@@ -221,6 +221,26 @@ const Auth = () => {
     }
     return undefined;
   }, [isTenantPortal, branding?.primary_color]);
+
+  // Branded splash while tenant + branding load on tenant portals, so the
+  // generic Printer icon / default gradient never flashes before the tenant
+  // logo and brand colours arrive.
+  if (isTenantPortal && (tenantLoading || brandingLoading)) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background" style={bgStyle}>
+        <div className="flex flex-col items-center gap-6">
+          {brandedTenant?.logo_url ? (
+            <img
+              src={brandedTenant.logo_url}
+              alt={brandedTenant?.name ?? ""}
+              className="h-14 w-auto max-w-[220px] object-contain opacity-90"
+            />
+          ) : null}
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/30 border-t-white/80" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

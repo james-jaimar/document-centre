@@ -11,10 +11,36 @@ interface SlugTenant {
   is_demo: boolean;
 }
 
+const CACHE_PREFIX = "tenant:";
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function readCache(slug: string): SlugTenant | null {
+  try {
+    const raw = localStorage.getItem(CACHE_PREFIX + slug);
+    if (!raw) return null;
+    const { ts, data } = JSON.parse(raw);
+    if (Date.now() - ts > CACHE_TTL_MS) return null;
+    return data as SlugTenant;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(slug: string, data: SlugTenant) {
+  try {
+    localStorage.setItem(CACHE_PREFIX + slug, JSON.stringify({ ts: Date.now(), data }));
+  } catch {
+    /* ignore quota errors */
+  }
+}
+
 export function useTenantFromSlug() {
   const { slug } = useTenantSlug();
-  const [tenant, setTenant] = useState<SlugTenant | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Hydrate immediately from cache so the first paint is branded.
+  const [tenant, setTenant] = useState<SlugTenant | null>(() =>
+    slug ? readCache(slug) : null,
+  );
+  const [loading, setLoading] = useState(() => !!slug && !readCache(slug));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -23,8 +49,16 @@ export function useTenantFromSlug() {
       return;
     }
 
-    (async () => {
+    // If we already painted from cache, revalidate quietly in the background.
+    const cached = readCache(slug);
+    if (cached) {
+      setTenant(cached);
+      setLoading(false);
+    } else {
       setLoading(true);
+    }
+
+    (async () => {
       setError(null);
       const { data, error: err } = await supabase
         .from("tenants")
@@ -39,6 +73,7 @@ export function useTenantFromSlug() {
         setError("Storefront not found");
       } else {
         setTenant(data as SlugTenant);
+        writeCache(slug, data as SlugTenant);
       }
       setLoading(false);
     })();

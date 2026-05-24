@@ -44,15 +44,42 @@ const DEFAULTS: TenantBranding = {
   favicon_url: "",
 };
 
+const CACHE_PREFIX = "tenant_branding:";
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function readBrandingCache(tenantId: string): TenantBranding | null {
+  try {
+    const raw = localStorage.getItem(CACHE_PREFIX + tenantId);
+    if (!raw) return null;
+    const { ts, data } = JSON.parse(raw);
+    if (Date.now() - ts > CACHE_TTL_MS) return null;
+    return data as TenantBranding;
+  } catch {
+    return null;
+  }
+}
+
+function writeBrandingCache(tenantId: string, data: TenantBranding) {
+  try {
+    localStorage.setItem(CACHE_PREFIX + tenantId, JSON.stringify({ ts: Date.now(), data }));
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Public hook — fetches branding settings for a tenant by ID.
  * Uses the public RLS policy (category = 'branding', is_sensitive = false).
+ *
+ * Hydrates synchronously from localStorage when available so the first
+ * paint after a return visit is already branded (no default-theme flash).
  */
 export function useTenantBranding(tenantId: string | null) {
   return useQuery({
     queryKey: ["tenant_branding_public", tenantId],
     enabled: !!tenantId,
     staleTime: 5 * 60 * 1000,
+    initialData: tenantId ? readBrandingCache(tenantId) ?? undefined : undefined,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("tenant_settings")
@@ -74,12 +101,15 @@ export function useTenantBranding(tenantId: string | null) {
         map.facsimile_enabled = v === true || v === "true";
       }
 
-      return {
+      const resolved = {
         ...DEFAULTS,
         ...Object.fromEntries(
           Object.entries(map).filter(([, v]) => v !== null && v !== "")
         ),
       } as TenantBranding;
+
+      if (tenantId) writeBrandingCache(tenantId, resolved);
+      return resolved;
     },
   });
 }
