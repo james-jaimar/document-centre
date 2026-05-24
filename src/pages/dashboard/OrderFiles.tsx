@@ -692,7 +692,7 @@ export default function OrderFiles() {
           const elapsed = (Date.now() - start) / 1000;
           // Asymptote toward 75 % over ~60s
           const pct = Math.min(75, 30 + Math.floor(elapsed * 0.75));
-          updateManualProgress(doc.fileName, undefined as any, pct);
+          updateManualProgress(doc.fileName, null, pct);
         }
       })();
 
