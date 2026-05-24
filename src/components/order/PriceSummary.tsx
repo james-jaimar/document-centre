@@ -49,7 +49,7 @@ export default function PriceSummary({
   const breakdown: PriceBreakdown = useMemo(
     () =>
       recipe && rateCard
-        ? calculatePriceFromRateCard(spec, recipe, rateCard)
+        ? calculatePriceFromRateCard(spec, recipe, rateCard, options)
         : calculateItemPrice(spec, options, rules, currency, overrides),
     [spec, options, rules, currency, overrides, recipe, rateCard]
   );
