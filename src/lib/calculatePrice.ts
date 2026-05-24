@@ -546,7 +546,19 @@ export function calculatePriceFromRateCard(
       : null;
 
     // --- Binding: prefer the rate-card finishing row for the spine size
-    if (bindingMethod && totalSheets > 0) {
+    //
+    // Conservative sizing: we reduce each spec's stated capacity by 15% to
+    // leave headroom for covers, light over-stuffing, and paper-stock
+    // upgrades — exact binding is often too tight. Tab dividers add bulk
+    // far in excess of a plain sheet, so each tab section counts as
+    // 2 sheets toward the spine selection (but NOT toward click/paper
+    // billing, which already excludes zero-page sections).
+    const tabCount = (spec.sections ?? []).filter(
+      (s) => (s.label ?? "").toLowerCase() === "tab"
+    ).length;
+    const bindingSheets = totalSheets + tabCount * 2;
+    const CAPACITY_HEADROOM = 0.85;
+    if (bindingMethod && bindingSheets > 0) {
       if (bindingMethod === "saddle_stitch" || bindingMethod === "perfect_bind") {
         const code = bindingMethod === "saddle_stitch" ? "saddle-stitch" : "perfect-bind";
         const fin = rc.finishing.find((x) => x.code === code && x.is_active);
@@ -563,11 +575,18 @@ export function calculatePriceFromRateCard(
       } else {
         const prefix = methodToCodePrefix[bindingMethod];
         const specMethod = methodToSpecMethod[bindingMethod] ?? bindingMethod;
-        // Smallest spec that fits the sheet count
-        const matchedSpec = (rc.bindingSpecs ?? [])
+        // Smallest spec that fits the conservative sheet count. If nothing
+        // fits (job exceeds every spine), fall back to the largest spec so
+        // we still emit a binding charge instead of silently dropping it.
+        const ascending = (rc.bindingSpecs ?? [])
           .filter((s) => s.binding_method === specMethod)
-          .sort((a, b) => a.size_mm - b.size_mm)
-          .find((s) => totalSheets >= s.min_sheets && totalSheets <= s.max_sheets_80gsm);
+          .sort((a, b) => a.size_mm - b.size_mm);
+        const matchedSpec =
+          ascending.find(
+            (s) =>
+              bindingSheets >= s.min_sheets &&
+              bindingSheets <= Math.floor(s.max_sheets_80gsm * CAPACITY_HEADROOM)
+          ) ?? ascending[ascending.length - 1] ?? null;
         if (prefix && matchedSpec) {
           // Rate-card codes use integer mm. Round the spec size, then if
           // that exact code is missing, jump to the next-larger active row.
@@ -583,6 +602,7 @@ export function calculatePriceFromRateCard(
           const fin =
             candidates.find((c) => c.mm === targetMm)?.row ??
             candidates.find((c) => c.mm >= targetMm)?.row ??
+            candidates[candidates.length - 1]?.row ??
             null;
           if (fin) {
             lines.push({
@@ -598,6 +618,7 @@ export function calculatePriceFromRateCard(
       }
       // Fall through to price_impact fallback below if no rate-card match
     }
+
 
 
     if (!selectedValue.price_impact) continue;

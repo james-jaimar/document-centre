@@ -585,8 +585,17 @@ export default function OrderBuild() {
         is_duplex: !!s.is_duplex,
       }))
       .filter((s) => s.page_count > 0);
-    return specSections.length > 0 ? { ...spec, sections: specSections } : spec;
+    // Append tab dividers as zero-page sections labelled "Tab" so the
+    // pricing engine can count them toward binding spine selection
+    // (each tab is treated as ~2 sheets of bulk) without affecting
+    // click/paper billing (which filters out page_count === 0).
+    const tabSections = sections
+      .filter((s) => s.section_type === "tab")
+      .map(() => ({ label: "Tab", page_count: 0, is_color: false, is_duplex: false }));
+    const all = [...specSections, ...tabSections];
+    return all.length > 0 ? { ...spec, sections: all } : spec;
   }, [spec, sections, documents]);
+
 
   const computeBreakdown = useCallback(() => {
     return useNewEngine && recipe && rateCard
