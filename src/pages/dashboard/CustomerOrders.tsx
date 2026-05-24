@@ -128,6 +128,7 @@ const CustomerOrders = () => {
   // - Hide legacy abandoned drafts (no app_id, no order_number, no real items saved)
   const visibleOrders = (orders ?? []).filter((o: any) => {
     if (o.order_status === "cart") return false;
+    if (o.order_status === "quoted") return false; // parked under My Quotes
     if (!isPlaced(o)) {
       const items = o.order_items ?? [];
       if (!o.app_id && !o.order_number) {
