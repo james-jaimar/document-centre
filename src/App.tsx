@@ -225,6 +225,11 @@ function AppRoutes() {
             <AdminQuotes />
           </ProtectedRoute>
         } />
+        <Route path="/admin/quotes/new" element={
+          <ProtectedRoute allowedRoles={[...operationsRoles]} allowedMembershipRoles={operationsMembershipRoles}>
+            <AdminQuoteCreate />
+          </ProtectedRoute>
+        } />
         <Route path="/admin/quotes/:id" element={
           <ProtectedRoute allowedRoles={[...operationsRoles]} allowedMembershipRoles={operationsMembershipRoles}>
             <AdminQuoteDetail />
