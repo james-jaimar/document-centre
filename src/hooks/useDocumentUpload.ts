@@ -680,6 +680,11 @@ export function useDocumentUpload(
         if (orientationMismatch) {
           preflight.orientation_mismatch = orientationMismatch;
         }
+        if (lockedSizeMismatch && lockedSize && isoMatch) {
+          preflight.locked_size_mismatch = true;
+          preflight.locked_against = lockedSize.name;
+          preflight.detected_iso_size = isoMatch.name;
+        }
 
         await supabase
           .from("documents")
