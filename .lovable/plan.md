@@ -1,77 +1,55 @@
-## Two bugs in the "Scale to A4" flow
+# Launch postnetprintcentre.com for Postnet
 
-### Bug 1 — No feedback for ~60 s after clicking "Scale to A4"
+You've registered `postnetprintcentre.com`. The app already supports custom-domain tenant resolution (`useTenantFromHost` → `tenants.custom_domain`), so no fork is needed — the same codebase serves both `document-centre.com` and the new domain.
 
-In `src/pages/dashboard/OrderFiles.tsx` (`applyScaleTo`), the only UI feedback before the long server job is a small `toast.info("Scaling to A4…")`. The upload-progress modal (`setUploadModalOpen(true)`) is opened only **after** `pollJob(job_id)` returns — i.e. after the resize finishes. So during the slow CMYK → orient → resize round-trip on the pdf-server (≈ 60 s for a heavy A5 + bleed PDF), the user sees the dialog close and nothing else, and clicks repeatedly.
+## What needs to happen
 
-**Fix (frontend only):**
+### 1. DNS (at the registrar)
+- `A` record `@` → `185.158.133.1` (or follow Amplify's instructions if you're routing via Amplify rather than Lovable hosting — confirm which is authoritative for production)
+- `A` / `CNAME` `www` → same target
+- Add `www.postnetprintcentre.com` redirect to apex (or vice versa) — pick a primary
 
-1. In `applyScaleTo`, immediately:
-   - call `setUploadModalOpen(true)` before any server work,
-   - push a synthetic upload entry via `useDocumentUpload` (e.g. expose `beginManualProgress(fileName, "Scaling to A4 — preparing file…")`) so the progress modal has a row with a spinner and indeterminate/low % value.
-2. As we hit the server steps, update the progress text:
-   - `"Preparing source PDF…"` (while `ensureFreshAsset` runs),
-   - `"Scaling pages on server (this can take up to a minute)…"` (while `pollJob` runs; we already get `pending`/`running` events back — drive a slow trickle 30 → 80 %),
-   - then hand off to existing `renderWithProgress` which goes 50 → 100.
-3. Disable the "Keep / Scale" buttons in the advisory modal as soon as one is clicked (track `isApplying` state), so a second click can't fire.
+### 2. Hosting (AWS Amplify, per your prod setup)
+- Add `postnetprintcentre.com` + `www.postnetprintcentre.com` as alternate domains on the same Amplify app that serves `document-centre.com`
+- Let Amplify provision SSL for both
 
-Mirror the same early-open + trickle pattern in `applyKeepOriginal` for symmetry (it also calls `prepareForProduct`).
+### 3. Database
+- Set `tenants.custom_domain = 'postnetprintcentre.com'` on the Postnet tenant row (via the existing **Admin → Settings → Domains** tab — no migration needed)
 
-No backend changes for this bug.
+### 4. Supabase Auth
+- Add `https://postnetprintcentre.com/**` and `https://www.postnetprintcentre.com/**` to allowed redirect URLs
+- Add the same as allowed Site URLs for password reset / magic links
 
-### Bug 2 — Scaled file still contains bleed + crop marks at A4 size
+### 5. Code audit + small fixes
+There are a handful of places that assume `document-centre.com`. I'll audit and patch:
 
-`pdf_ops.resize_pages` in `pdf-server/app/services/pdf_ops.py` scales the **MediaBox** to the target. For an A5 PDF that ships with bleed (≈ 154 × 216 mm) plus crop marks in the MediaBox margin, the whole thing — bleed band and crop ticks — gets scaled up onto a single A4 sheet. The trim area ends up smaller than A4, and the crop marks become visible on the printable page.
+- **`src/hooks/useTenantFromHost.ts`** — already handles custom domains correctly. No change.
+- **`src/lib/tenantUrl.ts` / `useTenantSlug`** — on a custom domain there's no `/t/:slug` prefix, so branch URLs become `postnetprintcentre.com/sandtoncity/...`. Need to smoke-test `parseTenantPath` isn't called on these (it's only used inside `/t/` redirects, so should be fine — but I'll verify `ProtectedRoute`, `AuthCallback`, `landingRoute`).
+- **`supabase/functions/_shared/buildAuthLink.ts`** — already resolves origin from tenant `branding.portal_url`. Set Postnet's `portal_url` setting to `https://postnetprintcentre.com` so auth emails link to the right host.
+- **`supabase/functions/verify-domain/index.ts`** — hard-codes `"document-centre.com"` as the CNAME match. Either harmless (Amplify-based verification differs) or worth generalising; I'll review.
+- **Tenant facsimile header/footer scraping** — confirm Postnet's scraped header still works when served from the new origin (CORS / image URLs).
+- **Sender domain** — Postnet's transactional email "from" needs updating to use `@postnetprintcentre.com` (requires a verified email domain in the email tool; separate task).
+- **Meta tags, OG images, sitemap, robots.txt** — currently reference `document-centre.com`. Make tenant-aware on custom domains.
 
-The print-shop wants either (a) a clean A4 trim with no marks, or (b) a true A4 trim with proportional bleed and refreshed crop marks. Option (b) preserves the most professional workflow.
+### 6. Smoke tests after go-live
+- `https://postnetprintcentre.com` → Postnet landing (not Document Centre)
+- `https://postnetprintcentre.com/sandtoncity` → branch picker / branch home
+- Upload + bound-document flow end-to-end
+- Sign-up → email link points back to `postnetprintcentre.com` (not document-centre.com)
+- Password reset same
+- Checkout payment redirect returns to correct host
 
-**Fix (backend, with a frontend hint):**
+## Recommended order
 
-Extend `resize_pages` (and the `prepare_for_product` pipeline that wraps it) to be **trim-box aware**:
+1. You: register DNS + add domain in Amplify (I can't do this for you)
+2. Me: audit + patch the code references above (small PR)
+3. You: set `custom_domain` + `portal_url` in Postnet admin
+4. You: add Supabase Auth redirect URLs
+5. Both: smoke test
 
-For each page, before scaling:
+## Out of scope for this plan
+- Forking the app (explicitly not recommended)
+- Email sender domain verification — separate flow once DNS is live
+- Marketing site content for postnetprintcentre.com (currently the storefront IS the landing — confirm whether you want a separate marketing page)
 
-1. Read `TrimBox` (fall back to `CropBox`, then `MediaBox`). Call this `trim_src`.
-2. Read `BleedBox` (fall back to `MediaBox`). Call this `bleed_src`.
-3. Compute `bleed_margin_src = bleed_src − trim_src` (per-edge, in pt).
-4. If `trim_src` ≈ `MediaBox` (no bleed declared), keep current behaviour — just scale MediaBox to target.
-5. Otherwise:
-   - Scale factor = `min(target_trim_w / trim_src_w, target_trim_h / trim_src_h)`.
-   - New trim = target page size (e.g. A4).
-   - New bleed margins = `bleed_margin_src × scale`.
-   - New MediaBox = `target_trim + new_bleed_margin` on each side.
-   - Place the **clipped** source page so its trim corners land exactly on the new trim corners; everything outside the new BleedBox is clipped away (this drops the old crop marks).
-   - Write fresh `TrimBox`, `BleedBox`, and `MediaBox` on the output page.
-6. After the loop, regenerate **crop marks** outside the new BleedBox using the existing `pdf_ops.impose_sheet_with_bleed`-style helper (factor out a small `draw_crop_marks(page, trim_rect)` routine). This means the operator's downstream tools see a real bleed-aware A4 PDF.
-
-Edge cases:
-- Page declares TrimBox but no BleedBox → assume 0 mm bleed, treat as "no bleed" (scale MediaBox, no new marks).
-- TrimBox > MediaBox or invalid → fall back to MediaBox path.
-- Different bleed per page → handled per-page, since we compute boxes per page.
-
-**Frontend hint:** pass an explicit `respect_trim_box: true` flag from `prepareForProduct` and `resize` in `src/lib/documentCentreApi.ts` so the server can be opt-in until you've validated it across products. The advisory UI already knows whether the upload has bleed (`preflight_data.has_bleed`), so we send the flag only when bleed was detected.
-
-## Files touched
-
-Frontend:
-- `src/pages/dashboard/OrderFiles.tsx` — early modal open + progress trickle in `applyScaleTo` / `applyKeepOriginal`; disable advisory buttons while applying.
-- `src/hooks/useDocumentUpload.ts` — small `beginManualProgress(fileName, msg)` helper, or extend `renderWithProgress` to accept a `preStatus` so we can mount the modal row before render time.
-- `src/lib/documentCentreApi.ts` — add `respect_trim_box?: boolean` to `prepareForProduct` and `resize` payloads.
-
-Backend (pdf-server):
-- `pdf-server/app/services/pdf_ops.py` — trim-box aware branch in `resize_pages`; new `draw_crop_marks(page, trim_rect, mark_length_mm, offset_mm)` helper.
-- `pdf-server/app/schemas/assets.py` — add `respect_trim_box: bool = False` to `ResizeRequest` and `PrepareForProductRequest`.
-- `pdf-server/app/web/routes.py`, `pdf-server/app/tasks/operation_tasks.py` — thread the new flag through to `pdf_ops.resize_pages` / `pdf_ops.prepare_for_product`.
-
-## Test cases to verify
-
-1. A4 colour duplex bound doc + A5 bleed/crops upload → "Scale to A4":
-   - Progress modal opens within ~200 ms with "Scaling to A4 — preparing file…" status.
-   - Status text trickles while the job runs; buttons in the advisory are disabled after the first click.
-   - Resulting PDF: pages are true A4 trim, bleed band ~3 mm on all sides, crop marks just outside the bleed band; original A5 crop marks are gone; no content clipped at the trim edge.
-2. Plain A5 (no bleed/crops) upload → "Scale to A4": behaves exactly as today (no trim-box branch triggered, no marks added).
-3. A4 source already at target size: scale is a no-op visually; marks not re-added unless bleed declared.
-
-## Out of scope
-- Changing the long-running pdf-server pipeline into an async/`EdgeRuntime.waitUntil` pattern — current sync poll is fine once the user sees progress feedback. Revisit only if jobs routinely exceed 90 s.
-- Touching tab/binding sizing logic from the previous turn.
+Want me to proceed in build mode with step 2 (the code audit + patches)?
