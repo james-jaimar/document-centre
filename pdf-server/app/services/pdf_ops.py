@@ -2672,6 +2672,13 @@ class PdfOps:
         timings: dict[str, int] = {}
         t0 = time.monotonic()
 
+        # Snapshot source page boxes BEFORE Ghostscript runs. pdfwrite drops
+        # /TrimBox, /BleedBox and /ArtBox by default; we re-stamp them on the
+        # output so downstream resize/imposition see the source's print
+        # geometry (the fix that makes A5-with-bleed scale correctly to A4
+        # regardless of which caller invoked us).
+        pre_cmyk_boxes = _snapshot_page_boxes(src)
+
         # ── Already-CMYK fast path ───────────────────────────────────
         if self._is_already_cmyk(src):
             try:
