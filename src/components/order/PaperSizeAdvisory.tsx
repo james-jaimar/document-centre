@@ -55,6 +55,7 @@ export default function PaperSizeAdvisory({
   const [selectedTarget, setSelectedTarget] = useState<PaperSize | null>(
     lockedSize ?? (suggestions.length > 0 ? suggestions[0] : null),
   );
+  const [isApplying, setIsApplying] = useState(false);
 
   const isLocked = !!lockedSize;
   const isUnknown = detectedSize === UNKNOWN_SIZE_LABEL;
