@@ -23,8 +23,8 @@ const Auth = () => {
   const { slug: tenantSlug, tenantPath } = useTenantSlug();
   const [searchParams] = useSearchParams();
   const { user, highestRole, loading: authLoading, rolesLoaded } = useAuth();
-  const { tenant: brandedTenant } = useTenantFromSlug();
-  const { data: branding } = useTenantBranding(brandedTenant?.id ?? null);
+  const { tenant: brandedTenant, loading: tenantLoading } = useTenantFromSlug();
+  const { data: branding, isLoading: brandingLoading } = useTenantBranding(brandedTenant?.id ?? null);
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
