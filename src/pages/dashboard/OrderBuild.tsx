@@ -40,6 +40,7 @@ import {
   useRateCardFinishing,
   useRateCardPhotoPrints,
 } from "@/hooks/useRateCard";
+import { useBindingSpecifications } from "@/hooks/useBindingSpecifications";
 import { formatPrice } from "@/lib/formatCurrency";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
 
@@ -145,9 +146,10 @@ export default function OrderBuild() {
   const { data: rcPapers = [] } = useRateCardPapers(rcArgs);
   const { data: rcFinishing = [] } = useRateCardFinishing(rcArgs);
   const { data: rcPhotoPrints = [] } = useRateCardPhotoPrints(rcArgs);
+  const { data: bindingSpecs = [] } = useBindingSpecifications();
   const rateCard = useMemo(
-    () => ({ clicks: rcClicks, papers: rcPapers, finishing: rcFinishing, photoPrints: rcPhotoPrints }),
-    [rcClicks, rcPapers, rcFinishing, rcPhotoPrints],
+    () => ({ clicks: rcClicks, papers: rcPapers, finishing: rcFinishing, photoPrints: rcPhotoPrints, bindingSpecs }),
+    [rcClicks, rcPapers, rcFinishing, rcPhotoPrints, bindingSpecs],
   );
   const useNewEngine = !!recipe && (rcClicks.length > 0 || rcPhotoPrints.length > 0);
 
@@ -588,7 +590,7 @@ export default function OrderBuild() {
 
   const computeBreakdown = useCallback(() => {
     return useNewEngine && recipe && rateCard
-      ? calculatePriceFromRateCard(pricingSpec, recipe, rateCard)
+      ? calculatePriceFromRateCard(pricingSpec, recipe, rateCard, options)
       : calculateItemPrice(pricingSpec, options, pricingRules, activeCurrency, cascadedOverrides);
   }, [useNewEngine, recipe, rateCard, pricingSpec, options, pricingRules, activeCurrency, cascadedOverrides]);
 

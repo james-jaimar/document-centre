@@ -250,6 +250,18 @@ export interface RateCardBundle {
   papers: RateCardPaper[];
   finishing: RateCardFinishing[];
   photoPrints?: RateCardPhotoPrint[];
+  /**
+   * Optional: binding spine specifications used to map a selected
+   * binding option (Binding: Twin Loop Wire Black, etc.) onto the
+   * correct sized rate_card_finishing row (wire-8mm, comb-10mm, ...).
+   * When absent, binding falls back to the option's flat price_impact.
+   */
+  bindingSpecs?: Array<{
+    binding_method: string;
+    size_mm: number;
+    min_sheets: number;
+    max_sheets_80gsm: number;
+  }>;
 }
 
 /**
@@ -272,6 +284,7 @@ export function calculatePriceFromRateCard(
   spec: ItemSpec,
   recipe: ProductRecipe,
   rc: RateCardBundle,
+  options: ProductOption[] = [],
 ): PriceBreakdown {
   // ---- Photo Prints branch ------------------------------------------------
   if (recipe.engine === "photo_prints") {
@@ -489,6 +502,122 @@ export function calculatePriceFromRateCard(
       unit_amount: Number(fin.sell_price),
       multiplier,
       total: Number(fin.sell_price) * multiplier,
+    });
+  }
+
+  // 4) Product option price impacts (binding, cover, lamination, paper stock
+  //    upgrades, etc.). The rate-card engine had previously ignored these,
+  //    silently dropping binding / cover / lamination charges. We now mirror
+  //    the legacy `calculateItemPrice` behaviour, with one upgrade:
+  //
+  //    When a selected option value declares `metadata.binding_method`, we
+  //    prefer the live `rate_card_finishing` row sized to the document's
+  //    sheet count (e.g. `wire-8mm`) over the option's flat `price_impact`.
+  //    Mapping: comb→comb, spiral→spiral, twin_loop→wire (rate card stores
+  //    twin loop wire under the `wire-` prefix), wire→wire, saddle_stitch→
+  //    `saddle-stitch`. If no matching row is found we fall back to the
+  //    option's `price_impact` so the charge never silently disappears.
+  const methodToCodePrefix: Record<string, string> = {
+    comb: "comb",
+    spiral: "spiral",
+    twin_loop: "wire",
+    wire: "wire",
+  };
+  // Option metadata uses friendly names (twin_loop, spiral, wire) while the
+  // `binding_specifications` table uses pitch-specific keys. Map between them.
+  const methodToSpecMethod: Record<string, string> = {
+    comb: "comb",
+    spiral: "spiral_coil",
+    twin_loop: "wire_3_1",
+    wire: "wire_3_1",
+  };
+
+  for (const option of options) {
+    const selectedSlug = spec.selected_options[option.name];
+    if (!selectedSlug) continue;
+    const values = option.values;
+    if (!isStructuredValues(values)) continue;
+    const selectedValue = values.find((v) => v.slug === selectedSlug);
+    if (!selectedValue) continue;
+
+    const metadata = (selectedValue.metadata ?? {}) as Record<string, unknown>;
+    const bindingMethod = typeof metadata.binding_method === "string"
+      ? (metadata.binding_method as string)
+      : null;
+
+    // --- Binding: prefer the rate-card finishing row for the spine size
+    if (bindingMethod && totalSheets > 0) {
+      if (bindingMethod === "saddle_stitch" || bindingMethod === "perfect_bind") {
+        const code = bindingMethod === "saddle_stitch" ? "saddle-stitch" : "perfect-bind";
+        const fin = rc.finishing.find((x) => x.code === code && x.is_active);
+        if (fin) {
+          lines.push({
+            label: `Binding: ${fin.label}`,
+            type: "option",
+            unit_amount: Number(fin.sell_price),
+            multiplier: 1,
+            total: Number(fin.sell_price),
+          });
+          continue;
+        }
+      } else {
+        const prefix = methodToCodePrefix[bindingMethod];
+        const specMethod = methodToSpecMethod[bindingMethod] ?? bindingMethod;
+        // Smallest spec that fits the sheet count
+        const matchedSpec = (rc.bindingSpecs ?? [])
+          .filter((s) => s.binding_method === specMethod)
+          .sort((a, b) => a.size_mm - b.size_mm)
+          .find((s) => totalSheets >= s.min_sheets && totalSheets <= s.max_sheets_80gsm);
+        if (prefix && matchedSpec) {
+          // Rate-card codes use integer mm. Round the spec size, then if
+          // that exact code is missing, jump to the next-larger active row.
+          const targetMm = Math.round(matchedSpec.size_mm);
+          const candidates = rc.finishing
+            .filter((x) => x.is_active && x.code.startsWith(`${prefix}-`) && x.code.endsWith("mm"))
+            .map((x) => {
+              const m = /-(\d+)mm$/.exec(x.code);
+              return m ? { row: x, mm: Number(m[1]) } : null;
+            })
+            .filter((x): x is { row: typeof rc.finishing[number]; mm: number } => !!x)
+            .sort((a, b) => a.mm - b.mm);
+          const fin =
+            candidates.find((c) => c.mm === targetMm)?.row ??
+            candidates.find((c) => c.mm >= targetMm)?.row ??
+            null;
+          if (fin) {
+            lines.push({
+              label: `Binding: ${fin.label}`,
+              type: "option",
+              unit_amount: Number(fin.sell_price),
+              multiplier: 1,
+              total: Number(fin.sell_price),
+            });
+            continue;
+          }
+        }
+      }
+      // Fall through to price_impact fallback below if no rate-card match
+    }
+
+
+    if (!selectedValue.price_impact) continue;
+    let multiplier = 1;
+    switch (selectedValue.price_type) {
+      case "per_page":
+        multiplier = printableSections.reduce((s, x) => s + x.page_count, 0) || spec.page_count;
+        break;
+      case "per_document":
+      case "fixed":
+      default:
+        multiplier = 1;
+        break;
+    }
+    lines.push({
+      label: `${option.name}: ${selectedValue.label}`,
+      type: "option",
+      unit_amount: selectedValue.price_impact,
+      multiplier,
+      total: selectedValue.price_impact * multiplier,
     });
   }
 
