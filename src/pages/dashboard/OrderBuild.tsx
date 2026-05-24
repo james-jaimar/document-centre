@@ -590,7 +590,7 @@ export default function OrderBuild() {
 
   const computeBreakdown = useCallback(() => {
     return useNewEngine && recipe && rateCard
-      ? calculatePriceFromRateCard(pricingSpec, recipe, rateCard)
+      ? calculatePriceFromRateCard(pricingSpec, recipe, rateCard, options)
       : calculateItemPrice(pricingSpec, options, pricingRules, activeCurrency, cascadedOverrides);
   }, [useNewEngine, recipe, rateCard, pricingSpec, options, pricingRules, activeCurrency, cascadedOverrides]);
 
