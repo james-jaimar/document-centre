@@ -2,11 +2,12 @@ import { Link } from "react-router-dom";
 import { useAdminQuotes } from "@/hooks/useAdminQuotes";
 import { formatPrice } from "@/lib/formatCurrency";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { ArrowRight, FileText } from "lucide-react";
+import { ArrowRight, FileText, Plus } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
