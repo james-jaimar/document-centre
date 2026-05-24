@@ -219,6 +219,16 @@ function AppRoutes() {
             <AdminOrderDetail />
           </ProtectedRoute>
         } />
+        <Route path="/admin/quotes" element={
+          <ProtectedRoute allowedRoles={[...operationsRoles]} allowedMembershipRoles={operationsMembershipRoles}>
+            <AdminQuotes />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/quotes/:id" element={
+          <ProtectedRoute allowedRoles={[...operationsRoles]} allowedMembershipRoles={operationsMembershipRoles}>
+            <AdminQuoteDetail />
+          </ProtectedRoute>
+        } />
         <Route path="/admin/production" element={
           <ProtectedRoute allowedRoles={[...operationsRoles]} allowedMembershipRoles={operationsMembershipRoles}>
             <AdminProductionQueue />
