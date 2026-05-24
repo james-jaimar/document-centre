@@ -894,7 +894,7 @@ export default function OrderBuild() {
           </div>
           <div className="p-3 shrink-0">
             <PriceSummary
-              spec={spec}
+              spec={pricingSpec}
               options={options}
               rules={pricingRules}
               overrides={cascadedOverrides}
