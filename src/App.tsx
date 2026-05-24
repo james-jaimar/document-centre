@@ -64,6 +64,8 @@ import AdminCustomerDetail from "@/pages/admin/AdminCustomerDetail";
 import AdminSentMail from "@/pages/admin/AdminSentMail";
 import AdminDocuments from "@/pages/admin/AdminDocuments";
 import AdminBindingArtworkAudit from "@/pages/admin/AdminBindingArtworkAudit";
+import AdminQuotes from "@/pages/admin/AdminQuotes";
+import AdminQuoteDetail from "@/pages/admin/AdminQuoteDetail";
 
 // Branch portal
 import BranchDashboard from "@/pages/branch/BranchDashboard";
