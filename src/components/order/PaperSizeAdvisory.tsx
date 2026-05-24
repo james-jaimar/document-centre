@@ -205,7 +205,10 @@ export default function PaperSizeAdvisory({
 
         <DialogFooter>
           <Button
+            disabled={isApplying}
             onClick={() => {
+              if (isApplying) return;
+              setIsApplying(true);
               if (selectedTarget) {
                 onScaleTo(selectedTarget);
               } else {
@@ -215,7 +218,11 @@ export default function PaperSizeAdvisory({
             }}
             className="w-full sm:w-auto"
           >
-            {selectedTarget ? `Scale to ${selectedTarget.name}` : "Keep Original Size"}
+            {isApplying
+              ? "Starting…"
+              : selectedTarget
+                ? `Scale to ${selectedTarget.name}`
+                : "Keep Original Size"}
           </Button>
         </DialogFooter>
       </DialogContent>
