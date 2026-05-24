@@ -101,8 +101,17 @@ export default function OrderFiles() {
     enabled: !!productFamilyId,
   });
 
+  // Session size-lock (declared early so it can be passed into useDocumentUpload).
+  type SessionSizeLock = {
+    size: PaperSize;
+    source: "user_chose" | "first_iso_upload";
+    /** Original action so we can replay it for queued non-ISO docs */
+    action: "keep" | "scale";
+  };
+  const [sessionSizeLock, setSessionSizeLock] = useState<SessionSizeLock | null>(null);
+
   const { uploads, uploadFiles, reprocessDocument, clearUploads, renderWithProgress, finalizeOrientationAndPrintReady, beginManualProgress, updateManualProgress } =
-    useDocumentUpload(orderItem?.id, productFamily?.slug ?? null, productFamily ?? null);
+    useDocumentUpload(orderItem?.id, productFamily?.slug ?? null, productFamily ?? null, sessionSizeLock?.size ?? null);
   const addSection = useAddSection();
   const updateSection = useUpdateSection();
   const deleteSection = useDeleteSection();
@@ -256,18 +265,7 @@ export default function OrderFiles() {
     lockedSize?: PaperSize | null;
   } | null>(null);
 
-  // ── Session paper-size lock ────────────────────────────────────
-  // Once the user picks a target size on the first non-ISO doc (or uploads a
-  // first clean ISO doc), we lock the session to that size. Subsequent uploads
-  // either auto-apply silently or, if mismatched ISO, prompt the locked-variant
-  // advisory. The lock is page-lifetime only — a reload deliberately resets it.
-  type SessionSizeLock = {
-    size: PaperSize;
-    source: "user_chose" | "first_iso_upload";
-    /** Original action so we can replay it for queued non-ISO docs */
-    action: "keep" | "scale";
-  };
-  const [sessionSizeLock, setSessionSizeLock] = useState<SessionSizeLock | null>(null);
+  // (SessionSizeLock state declared above so it can be passed into useDocumentUpload.)
   // Tracks docs we've already auto-resolved against the lock so the effect
   // doesn't re-fire while DB updates are in flight.
   const autoAppliedDocIds = useRef<Set<string>>(new Set());
@@ -571,7 +569,7 @@ export default function OrderFiles() {
     await supabase
       .from("documents")
       .update({
-        preflight_data: { ...freshPreflight, awaiting_review: false, size_resolved: true, size_action: "keep" },
+        preflight_data: { ...freshPreflight, awaiting_review: false, size_resolved: true, size_action: "keep", locked_size_mismatch: false },
       })
       .eq("id", doc.id);
     resolvedDocIds.current.add(doc.id);
@@ -758,6 +756,7 @@ export default function OrderFiles() {
             awaiting_review: false,
             size_resolved: true,
             size_action: `scaled_to_${target.name}`,
+            locked_size_mismatch: false,
             original_width_mm: doc.widthMm,
             original_height_mm: doc.heightMm,
             effective_width_mm: targetW,
@@ -884,7 +883,10 @@ export default function OrderFiles() {
       const preflight = d.preflight_data as Record<string, any> | null;
       if (preflight?.detected_size && !preflight?.size_resolved) return false;
       if (preflight?.near_iso_match && !preflight?.bleed_resolved) return false;
-      if (preflight?.awaiting_review) return false;
+      // Allow docs flagged by the upload hook as locked-size-mismatch
+      // through even though awaiting_review is true — that flag IS the
+      // signal that the lock-mismatch dialog should open before render.
+      if (preflight?.awaiting_review && !preflight?.locked_size_mismatch) return false;
       const w = Number(d.page_width_mm);
       const h = Number(d.page_height_mm);
       if (!(w > 0 && h > 0)) return false;

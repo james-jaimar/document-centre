@@ -1,4 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
+import type { PaperSize } from "@/lib/paperSizes";
+import { sizesMatch as sizesMatchHelper } from "@/lib/paperSizes";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -368,11 +370,19 @@ export function useDocumentUpload(
   orderItemId: string | undefined,
   productFamilySlug?: string | null,
   productFamilyPrintConfig?: FamilyPrintConfig | null,
+  sessionLockedSize?: PaperSize | null,
 ) {
   const { user } = useAuth();
   const { tenantId } = useTenantContext();
   const qc = useQueryClient();
   const [uploads, setUploads] = useState<Record<string, UploadProgress>>({});
+
+  // Ref so in-flight uploads see the latest lock without restarting closures.
+  const sessionLockedSizeRef = useRef<PaperSize | null>(sessionLockedSize ?? null);
+  useEffect(() => {
+    sessionLockedSizeRef.current = sessionLockedSize ?? null;
+  }, [sessionLockedSize]);
+
 
   const updateUpload = useCallback(
     (fileName: string, update: Partial<UploadProgress>) => {
@@ -590,7 +600,22 @@ export function useDocumentUpload(
           pageHeightMm,
         );
 
-        const hasAdvisory = !!detectedSize || !!nearIsoMatch || !!orientationMismatch;
+        // Session lock-mismatch: an exact-ISO file whose ISO size differs
+        // from the lock established by earlier uploads. Treated as an
+        // advisory so we DEFER the (potentially slow) thumbnail render
+        // until the user chooses Scale-to-lock or Keep-original.
+        const lockedSize = sessionLockedSizeRef.current;
+        const lockedSizeMismatch =
+          !!lockedSize &&
+          !!isoMatch &&
+          !sizesMatchHelper(
+            pageWidthMm,
+            pageHeightMm,
+            lockedSize.widthMm,
+            lockedSize.heightMm,
+          );
+
+        const hasAdvisory = !!detectedSize || !!nearIsoMatch || !!orientationMismatch || lockedSizeMismatch;
 
         // If no size advisory AND caller didn't ask us to skip, finalise now
         // (print-ready CMYK only — orientation is preserved as authored).
@@ -654,6 +679,11 @@ export function useDocumentUpload(
         }
         if (orientationMismatch) {
           preflight.orientation_mismatch = orientationMismatch;
+        }
+        if (lockedSizeMismatch && lockedSize && isoMatch) {
+          preflight.locked_size_mismatch = true;
+          preflight.locked_against = lockedSize.name;
+          preflight.detected_iso_size = isoMatch.name;
         }
 
         await supabase
