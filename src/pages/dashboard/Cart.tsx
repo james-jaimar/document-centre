@@ -16,8 +16,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Trash2, ShoppingBag, ArrowRight, Plus, Loader2, Pencil, FileText } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import CheckoutAuth from "@/components/checkout/CheckoutAuth";
 
 export default function Cart() {
   const { tenantPath } = useTenantSlug();
