@@ -37,7 +37,8 @@ export default function CustomerHeader() {
     if (origin) {
       window.location.href = origin;
     } else {
-      window.location.href = "https://document-centre.com";
+      // Stay on the current host (custom domain or platform subdomain) — never kick users to document-centre.com
+      window.location.href = window.location.origin;
     }
   };
   const cartCount = useCartItemCount();
