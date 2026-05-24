@@ -2804,6 +2804,7 @@ class PdfOps:
         dest_profile: str | None = None,
         intent: str = "relative_colorimetric",
         preserve_black: bool = True,
+        respect_trim_box: bool = False,
     ) -> dict:
         """One-shot PDF preparation: CMYK → orient → resize.
 
