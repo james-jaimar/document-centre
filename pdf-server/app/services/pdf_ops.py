@@ -1655,21 +1655,27 @@ class PdfOps:
                 bleed_ury = float(bleed_box.top)
 
                 # If BleedBox wasn't declared explicitly it equals
-                # MediaBox — clamp it back to TrimBox to avoid keeping
-                # the entire original media area (which would still
-                # include the crop marks).
-                if (
+                # MediaBox — clamp it to TrimBox + a standard 3 mm bleed
+                # margin (industry default) so crop marks outside that
+                # margin are clipped rather than scaled with the artwork.
+                # Previously we fell back to plain MediaBox scaling here,
+                # which squashed the page+crop-mark canvas into the
+                # target — the exact A5→A4 bug being fixed.
+                bleed_equals_media = (
                     abs(bleed_llx - float(media_box.left)) < TRIM_EPS_PT
                     and abs(bleed_lly - float(media_box.bottom)) < TRIM_EPS_PT
                     and abs(bleed_urx - float(media_box.right)) < TRIM_EPS_PT
                     and abs(bleed_ury - float(media_box.top)) < TRIM_EPS_PT
-                    and (
-                        abs(bleed_llx - trim_llx) > TRIM_EPS_PT
-                        or abs(bleed_lly - trim_lly) > TRIM_EPS_PT
-                    )
+                )
+                if bleed_equals_media and (
+                    abs(bleed_llx - trim_llx) > TRIM_EPS_PT
+                    or abs(bleed_lly - trim_lly) > TRIM_EPS_PT
                 ):
-                    # Treat as no explicit bleed: fall back to standard scaling.
-                    has_real_trim = False
+                    SYNTH_BLEED_PT = 3.0 * mm  # 3 mm standard print bleed
+                    bleed_llx = max(float(media_box.left), trim_llx - SYNTH_BLEED_PT)
+                    bleed_lly = max(float(media_box.bottom), trim_lly - SYNTH_BLEED_PT)
+                    bleed_urx = min(float(media_box.right), trim_urx + SYNTH_BLEED_PT)
+                    bleed_ury = min(float(media_box.top), trim_ury + SYNTH_BLEED_PT)
 
             if has_real_trim:
                 # Uniform scale that makes the source trim fit the target
