@@ -567,29 +567,37 @@ Deno.serve(async (req) => {
     drawText(page, "Signature", M, yL, { size: 9, color: muted });
     page.drawLine({ start: { x: M + 50, y: yL - 1 }, end: { x: M + leftW - 4, y: yL - 1 }, thickness: 0.6, color: border });
 
-    // Right column: Totals
+    // Right column: Totals — label chip on the left half only, value sits in a
+    // clean right-aligned cell so it never gets overdrawn.
     const sub = Number(q.subtotal ?? 0);
     const vat = Number(q.vat_amount ?? 0);
     const total = Number(q.total_amount ?? 0);
     const totalsW = W - M - rightX;
+    const labelCellW = Math.min(140, Math.round(totalsW * 0.62));
     const totalRow = (label: string, value: string, opts: { bold?: boolean; size?: number; color?: RGB } = {}) => {
       const s = opts.size ?? 10;
-      const labelTint = brandSoft;
-      page.drawRectangle({ x: rightX, y: yR - 4, width: 110, height: 14, color: labelTint });
+      const rowH = s + 6;
+      page.drawRectangle({ x: rightX, y: yR - 3, width: labelCellW, height: rowH, color: brandSoft });
       drawText(page, label, rightX + 6, yR, { size: s, bold: !!opts.bold, color: opts.color ?? dark });
-      drawText(page, value, rightX + 110, yR, { size: s, bold: !!opts.bold, align: "right", width: totalsW - 110, color: opts.color ?? dark });
-      yR -= s + 8;
+      drawText(page, value, rightX + labelCellW + 6, yR, {
+        size: s,
+        bold: !!opts.bold,
+        align: "right",
+        width: totalsW - labelCellW - 6,
+        color: opts.color ?? dark,
+      });
+      yR -= rowH + 4;
     };
     totalRow("Subtotal (Exclusive)", fmtMoney(sub, currency));
-    totalRow("Vat", fmtMoney(vat, currency));
+    totalRow("VAT", fmtMoney(vat, currency));
     yR -= 4;
     totalRow("Total", fmtMoney(total, currency), { bold: true, size: 12, color: brand });
 
     // Bottom disclaimer (above page footer)
     const disclaimer = "Please note: Our quote has been calculated on the cost of stock currently on hand, which is based on exchange rates applicable at the time of importation. Should there be a major fluctuation in the Rand: Foreign Exchange rates of the currency of our suppliers, we reserve the right to amend our quoted prices accordingly. This quote is subject to Credit Status Approval.";
-    let yd = M + 46;
     const dLines = wrap(disclaimer, font, 7, W_in);
-    yd += (dLines.length - 1) * 9;
+    // Place block so its bottom line sits ~32pt above the page footer baseline.
+    let yd = 32 + (dLines.length - 1) * 9;
     for (const ln of dLines) {
       drawText(page, ln, M, yd, { size: 7, color: muted });
       yd -= 9;
@@ -598,21 +606,13 @@ Deno.serve(async (req) => {
     /* ─── Per-page footer: page numbers + created stamp ─── */
     const created = new Date();
     const createdTxt = `Created: ${created.toLocaleDateString("en-GB")} ${created.toLocaleTimeString("en-GB")}`;
+    const createdW = font.widthOfTextAtSize(createdTxt, 7);
     pages.forEach((p, i) => {
       const pageLbl = `Page ${i + 1} of ${pages.length}`;
       drawText(p, pageLbl, M, 20, { size: 7, color: muted });
-      drawText(p, createdTxt, W - M, 20, { size: 7, color: muted, align: "right", width: 0 });
-      // right-align createdTxt manually
-      const w = font.widthOfTextAtSize(createdTxt, 7);
-      p.drawText(createdTxt, { x: W - M - w, y: 20, size: 7, font, color: muted });
+      p.drawText(createdTxt, { x: W - M - createdW, y: 20, size: 7, font, color: muted });
     });
-    // Patch "Page" cell on page 1 metadata strip (already showed "1 of 1") if multi-page
-    if (pages.length > 1) {
-      const px = M + 6 * metaW + 4;
-      // overdraw with white-ish then write correct
-      pages[0].drawRectangle({ x: px - 2, y: H - M - 16 - 12, width: metaW - 4, height: 12, color: rgb(1, 1, 1) });
-      // (Best-effort; layout already shipped above)
-    }
+
 
 
     const bytes = await pdf.save();
