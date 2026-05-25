@@ -125,7 +125,7 @@ const KEY = (table: string, args: ScopeArgs) => [
 export function useRateCardClicks(args: ScopeArgs) {
   return useQuery({
     queryKey: KEY("clicks", args),
-    enabled: args.scope === "master" || !!args.tenantId,
+    enabled: args.scope === "master" || (args.scope === "branch" ? !!args.branchId : !!args.tenantId),
     queryFn: async () => {
       const q = scopeFilter(
         supabase.from("rate_card_clicks" as any).select("*"),
@@ -185,7 +185,7 @@ export function useDeleteRateCardClick() {
 export function useRateCardPapers(args: ScopeArgs) {
   return useQuery({
     queryKey: KEY("papers", args),
-    enabled: args.scope === "master" || !!args.tenantId,
+    enabled: args.scope === "master" || (args.scope === "branch" ? !!args.branchId : !!args.tenantId),
     queryFn: async () => {
       const q = scopeFilter(
         supabase.from("rate_card_papers" as any).select("*"),
@@ -231,7 +231,7 @@ export function useDeleteRateCardPaper() {
 export function useRateCardFinishing(args: ScopeArgs) {
   return useQuery({
     queryKey: KEY("finishing", args),
-    enabled: args.scope === "master" || !!args.tenantId,
+    enabled: args.scope === "master" || (args.scope === "branch" ? !!args.branchId : !!args.tenantId),
     queryFn: async () => {
       const q = scopeFilter(
         supabase.from("rate_card_finishing" as any).select("*"),
@@ -277,7 +277,7 @@ export function useDeleteRateCardFinishing() {
 export function useRateCardPhotoPrints(args: ScopeArgs) {
   return useQuery({
     queryKey: KEY("photo_prints", args),
-    enabled: args.scope === "master" || !!args.tenantId,
+    enabled: args.scope === "master" || (args.scope === "branch" ? !!args.branchId : !!args.tenantId),
     queryFn: async () => {
       const q = scopeFilter(
         supabase.from("rate_card_photo_prints" as any).select("*"),
@@ -344,7 +344,7 @@ export function useCloneMasterRateCard() {
 export function useRateCardBusinessCards(args: ScopeArgs) {
   return useQuery({
     queryKey: KEY("business_cards", args),
-    enabled: args.scope === "master" || !!args.tenantId,
+    enabled: args.scope === "master" || (args.scope === "branch" ? !!args.branchId : !!args.tenantId),
     queryFn: async () => {
       const q = scopeFilter(
         supabase.from("rate_card_business_cards" as any).select("*"),
