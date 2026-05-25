@@ -213,10 +213,24 @@ Deno.serve(async (req) => {
     const logoUrl = tBranding.logo_url ?? tenant?.logo_url ?? null;
     const logo = await fetchLogo(logoUrl);
 
+    // Representative (created_by) display name & source order number
+    const [{ data: rep }, { data: srcOrder }] = await Promise.all([
+      q.created_by_profile_id
+        ? supa.from("profiles").select("display_name, first_name, last_name").eq("id", q.created_by_profile_id).maybeSingle()
+        : Promise.resolve({ data: null } as any),
+      q.source_order_id
+        ? supa.from("orders").select("order_number").eq("id", q.source_order_id).maybeSingle()
+        : Promise.resolve({ data: null } as any),
+    ]);
+    const repName = rep
+      ? (rep.display_name ?? [rep.first_name, rep.last_name].filter(Boolean).join(" "))
+      : "";
+
     /* ─── Build PDF ─── */
     const pdf = await PDFDocument.create();
     const font = await pdf.embedFont(StandardFonts.Helvetica);
     const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+
 
     const dark = rgb(0.1, 0.1, 0.12);
     const muted = rgb(0.42, 0.45, 0.5);
