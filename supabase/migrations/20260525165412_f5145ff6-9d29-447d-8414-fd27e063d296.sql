@@ -1,0 +1,1 @@
+ALTER TYPE public.rate_card_scope ADD VALUE IF NOT EXISTS 'branch';

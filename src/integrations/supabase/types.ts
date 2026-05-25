@@ -4466,7 +4466,7 @@ export type Database = {
         | "declined"
         | "converted"
         | "void"
-      rate_card_scope: "master" | "tenant"
+      rate_card_scope: "master" | "tenant" | "branch"
       section_type: "body" | "front_cover" | "back_cover" | "insert" | "tab"
     }
     CompositeTypes: {
@@ -4644,7 +4644,7 @@ export const Constants = {
         "converted",
         "void",
       ],
-      rate_card_scope: ["master", "tenant"],
+      rate_card_scope: ["master", "tenant", "branch"],
       section_type: ["body", "front_cover", "back_cover", "insert", "tab"],
     },
   },
