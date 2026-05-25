@@ -438,13 +438,13 @@ Deno.serve(async (req) => {
 
     // Column layout (sum = W_in = 507)
     const C = {
-      code:  { x: M,         w: 55 },
-      desc:  { x: M + 55,    w: 195 },
-      qty:   { x: M + 250,   w: 50 },
-      unit:  { x: M + 300,   w: 55 },
-      disc:  { x: M + 355,   w: 33 },
-      vat:   { x: M + 388,   w: 38 },
-      total: { x: M + 426,   w: W_in - 426 },
+      code:  { x: M,         w: 50 },
+      desc:  { x: M + 50,    w: 175 },
+      qty:   { x: M + 225,   w: 50 },
+      unit:  { x: M + 275,   w: 60 },
+      disc:  { x: M + 335,   w: 38 },
+      vat:   { x: M + 373,   w: 42 },
+      total: { x: M + 415,   w: W_in - 415 },
     };
 
     const drawItemsHeader = (yy: number): number => {
@@ -452,14 +452,15 @@ Deno.serve(async (req) => {
       drawText(page, "Item Code",   C.code.x + 4,  yy - 11, { size: 8, bold: true });
       drawText(page, "Description", C.desc.x + 4,  yy - 11, { size: 8, bold: true });
       drawText(page, "Quantity",    C.qty.x,       yy - 11, { size: 8, bold: true, align: "right", width: C.qty.w - 4 });
-      drawText(page, "UnitPrice",   C.unit.x,      yy - 11, { size: 8, bold: true, align: "right", width: C.unit.w - 4 });
+      drawText(page, "Unit Price",  C.unit.x,      yy - 11, { size: 8, bold: true, align: "right", width: C.unit.w - 4 });
       drawText(page, "Disc %",      C.disc.x,      yy - 11, { size: 8, bold: true, align: "right", width: C.disc.w - 4 });
-      drawText(page, "Vat%",        C.vat.x,       yy - 11, { size: 8, bold: true, align: "right", width: C.vat.w - 4 });
+      drawText(page, "VAT %",       C.vat.x,       yy - 11, { size: 8, bold: true, align: "right", width: C.vat.w - 4 });
       drawText(page, "Line Total",  C.total.x,     yy - 11, { size: 8, bold: true, align: "right", width: C.total.w - 4 });
       // Bottom rule
       page.drawLine({ start: { x: M, y: yy - 14 }, end: { x: W - M, y: yy - 14 }, thickness: 0.6, color: border });
       return yy - 16;
     };
+
 
     // Reserve footer block height on each page (terms+totals+acceptance+disclaimer)
     const FOOTER_RESERVE = 240;
