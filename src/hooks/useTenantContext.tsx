@@ -1,9 +1,11 @@
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useState, useCallback, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { setDocumentCentreContext } from "@/lib/documentCentreApi";
 import { TenantSlugContext } from "@/contexts/TenantSlugContext";
+import { setStorefrontTenantId } from "@/lib/storefrontTenantHeader";
+
 
 export interface TenantMembership {
   id: string;
