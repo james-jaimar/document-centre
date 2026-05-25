@@ -413,36 +413,121 @@ Deno.serve(async (req) => {
 
     y = fromBoxY - 12;
 
+    // Top row: Quote From box (left) + Logo + QUOTE title (right)
+    const fromBoxW = 270;
+    const fromBoxX = M;
+    const padX = 8;
+    const innerW = fromBoxW - padX * 2;
+    const labelColW = 34; // "EMail:" column
+    const valueW = innerW - labelColW;
+
+    // Pre-compute wrapped lines for "From" so we can size the box height.
+    const fromTradingLines = wrapText(from.trading_name ?? "", bold, 11, innerW);
+    const fromAddrLines: string[] = [];
+    for (const ln of from.address_lines) {
+      for (const w of wrapText(ln, font, 9, innerW)) fromAddrLines.push(w);
+    }
+    const fromPhoneLines = wrapText(from.phone ?? "", font, 9, valueW);
+    const fromEmailLines = wrapText(from.email ?? "", font, 9, innerW - 38);
+
+    // Heights: chip(18) + trading(13*lines) + addr(11*lines) + gap(2) + tel(11*lines) + fax(11) + email(11*lines) + pad(8)
+    const fromContentH =
+      18 +
+      13 * Math.max(1, fromTradingLines.length) +
+      11 * fromAddrLines.length +
+      2 +
+      11 * Math.max(1, fromPhoneLines.length) +
+      11 +
+      11 * Math.max(1, fromEmailLines.length) +
+      8;
+    const topRowH = Math.max(110, fromContentH);
+    const fromBoxY = y - topRowH;
+    strokeBox(page, fromBoxX, fromBoxY, fromBoxW, topRowH);
+    labelChip(page, "Quote From:", fromBoxX + 6, y - 14);
+    {
+      let yy = y - 28;
+      for (const ln of fromTradingLines) {
+        drawText(page, ln, fromBoxX + padX, yy, { size: 11, bold: true }); yy -= 13;
+      }
+      for (const ln of fromAddrLines) {
+        drawText(page, ln, fromBoxX + padX, yy, { size: 9 }); yy -= 11;
+      }
+      yy -= 2;
+      drawText(page, "Tel:", fromBoxX + padX, yy, { size: 9, color: muted });
+      for (let i = 0; i < Math.max(1, fromPhoneLines.length); i++) {
+        drawText(page, fromPhoneLines[i] ?? "", fromBoxX + padX + 30, yy, { size: 9 });
+        yy -= 11;
+      }
+      drawText(page, "Fax:", fromBoxX + padX, yy, { size: 9, color: muted }); yy -= 11;
+      drawText(page, "EMail:", fromBoxX + padX, yy, { size: 9, color: muted });
+      for (let i = 0; i < Math.max(1, fromEmailLines.length); i++) {
+        drawText(page, fromEmailLines[i] ?? "", fromBoxX + padX + 34, yy, { size: 9 });
+        yy -= 11;
+      }
+    }
+
+    // Logo (top-right)
+    const logoBoxW = 180;
+    const logoBoxX = W - M - logoBoxW;
+    if (logoImg) {
+      const maxW = logoBoxW, maxH = 60;
+      const s = Math.min(maxW / logoImg.width, maxH / logoImg.height);
+      const w = logoImg.width * s, h = logoImg.height * s;
+      page.drawImage(logoImg, { x: logoBoxX + (logoBoxW - w) / 2, y: y - h - 4, width: w, height: h });
+    }
+    // QUOTE title under logo
+    drawText(page, "QUOTE", logoBoxX, y - 88, { size: 22, bold: true, color: dark, align: "center", width: logoBoxW });
+
+    y = fromBoxY - 12;
+
     // Quote To + Deliver To (two boxes)
-    const ctBoxH = 110;
     const ctBoxW = (W_in - 16) / 2;
+    const ctInnerW = ctBoxW - padX * 2;
     const billX = M;
     const shipX = M + ctBoxW + 16;
+
+    const customerName = String(q.company_name ?? q.customer_name ?? q.customer_email ?? "Walk in");
+    const billNameLines = wrapText(customerName, bold, 11, ctInnerW);
+    const billExtraLines: string[] = [];
+    if (q.customer_name && q.company_name && q.customer_name !== q.company_name) {
+      for (const w of wrapText(String(q.customer_name), font, 9, ctInnerW)) billExtraLines.push(w);
+    }
+    const billEmailLines = q.customer_email
+      ? wrapText(String(q.customer_email), font, 9, ctInnerW)
+      : [];
+    const billH = 18 + 13 * billNameLines.length + 11 * billExtraLines.length + 11 * billEmailLines.length + 8;
+
+    const shipNameLines = wrapText(customerName, bold, 11, ctInnerW);
+    const shipH = 18 + 13 * shipNameLines.length + 13 + 8;
+
+    const ctBoxH = Math.max(80, billH, shipH);
     strokeBox(page, billX, y - ctBoxH, ctBoxW, ctBoxH);
     strokeBox(page, shipX, y - ctBoxH, ctBoxW, ctBoxH);
     labelChip(page, "Quote To:", billX + 6, y - 12);
     labelChip(page, "Deliver To:", shipX + 6, y - 12);
 
-    const customerName = String(q.company_name ?? q.customer_name ?? q.customer_email ?? "Walk in");
     {
       let yy = y - 28;
-      drawText(page, customerName, billX + 8, yy, { size: 11, bold: true }); yy -= 13;
-      if (q.customer_name && q.company_name && q.customer_name !== q.company_name) {
-        drawText(page, String(q.customer_name), billX + 8, yy, { size: 9 }); yy -= 11;
+      for (const ln of billNameLines) {
+        drawText(page, ln, billX + padX, yy, { size: 11, bold: true }); yy -= 13;
       }
-      if (q.customer_email) {
-        drawText(page, String(q.customer_email), billX + 8, yy, { size: 9, color: muted });
+      for (const ln of billExtraLines) {
+        drawText(page, ln, billX + padX, yy, { size: 9 }); yy -= 11;
+      }
+      for (const ln of billEmailLines) {
+        drawText(page, ln, billX + padX, yy, { size: 9, color: muted }); yy -= 11;
       }
     }
     {
-      // Deliver To: we don't carry a per-quote delivery address yet, so reference the customer.
-      const yy = y - 28;
-      drawText(page, customerName, shipX + 8, yy, { size: 11, bold: true });
-      drawText(page, "Same as billing", shipX + 8, yy - 13, { size: 9, color: muted });
+      let yy = y - 28;
+      for (const ln of shipNameLines) {
+        drawText(page, ln, shipX + padX, yy, { size: 11, bold: true }); yy -= 13;
+      }
+      drawText(page, "Same as billing", shipX + padX, yy, { size: 9, color: muted });
     }
 
-
     y = y - ctBoxH - 14;
+
 
     // Metadata strip: Account No | VAT Reg No | Quote Date | Order Number | Representative | Quote Number
     const metaCols = [
