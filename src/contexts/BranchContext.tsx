@@ -185,7 +185,11 @@ export function BranchProvider({
         setPickerOpen(false);
         return;
       }
+      // Stale slug (branch removed / taken offline) — clear and fall through
+      // to the picker instead of silently leaving activeBranch=null.
+      localStorage.removeItem(storageKey(tenantId));
     }
+
 
     // 4. Multi-branch, no choice — show picker
     if (!activeBranch) setPickerOpen(true);
