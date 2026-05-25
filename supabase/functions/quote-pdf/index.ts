@@ -146,8 +146,11 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
+    const url = new URL(req.url);
     const body = await req.json().catch(() => ({}));
     const quoteId = body?.quote_id as string | undefined;
+    const mode = (body?.mode as string | undefined) ?? url.searchParams.get("mode") ?? "json";
+    const stream = mode === "stream" || url.searchParams.get("download") === "1";
     if (!quoteId) return json({ error: "quote_id required" }, 400);
 
     const supa = createClient(
@@ -507,6 +510,19 @@ Deno.serve(async (req) => {
         pdf_generated_at: new Date().toISOString(),
       })
       .eq("id", q.id);
+
+    if (stream) {
+      const filename = `Quote-${q.quote_number ?? q.id}.pdf`;
+      return new Response(bytes, {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `inline; filename="${filename}"`,
+          "Cache-Control": "private, no-store",
+        },
+      });
+    }
 
     const { data: signed, error: signErr } = await supa.storage
       .from("documents")

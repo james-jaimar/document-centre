@@ -382,22 +382,40 @@ export function useReactivateQuote() {
 export function useDownloadQuotePdf() {
   return useMutation({
     mutationFn: async (quoteId: string) => {
-      const { data, error } = await supabase.functions.invoke("quote-pdf", {
-        body: { quote_id: quoteId },
-      });
-      if (error) throw new Error(error.message || "Failed to generate PDF");
-      let url = (data as any)?.signed_url as string | undefined;
-      if (!url) {
-        const path = (data as any)?.storage_path as string | undefined;
-        if (!path) throw new Error("No PDF path returned");
-        const { data: signed, error: sErr } = await supabase
-          .storage
-          .from("documents")
-          .createSignedUrl(path, 300);
-        if (sErr || !signed?.signedUrl) throw sErr ?? new Error("Failed to sign URL");
-        url = signed.signedUrl;
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const anon = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/quote-pdf`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: anon,
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ quote_id: quoteId, mode: "stream" }),
+        },
+      );
+      if (!res.ok) {
+        const msg = await res.text().catch(() => "");
+        throw new Error(msg || "Failed to generate PDF");
       }
-      window.open(url, "_blank", "noopener,noreferrer");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, "_blank", "noopener,noreferrer");
+      // revoke after a delay so the new tab has time to load
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      if (!win) {
+        // Popup blocked — trigger a download instead
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `Quote-${quoteId}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
       return url;
     },
   });
