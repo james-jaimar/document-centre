@@ -336,6 +336,41 @@ Deno.serve(async (req) => {
       p.drawRectangle({ x, y: yy - 2, width: w, height: 12, color: brandSoft });
       p.drawText(txt, { x: x + 6, y: yy + 1, size: 8, font: bold, color: dark });
     };
+    const wrapText = (
+      txt: string,
+      f: typeof font,
+      size: number,
+      maxWidth: number,
+    ): string[] => {
+      const out: string[] = [];
+      const paragraphs = String(txt ?? "").split(/\r?\n/);
+      for (const para of paragraphs) {
+        if (!para) { out.push(""); continue; }
+        const words = para.split(/\s+/);
+        let line = "";
+        for (const w of words) {
+          const candidate = line ? `${line} ${w}` : w;
+          if (f.widthOfTextAtSize(candidate, size) <= maxWidth) {
+            line = candidate;
+          } else if (!line) {
+            // single word longer than maxWidth — hard break by char
+            let chunk = "";
+            for (const ch of w) {
+              const c2 = chunk + ch;
+              if (f.widthOfTextAtSize(c2, size) <= maxWidth) chunk = c2;
+              else { if (chunk) out.push(chunk); chunk = ch; }
+            }
+            line = chunk;
+          } else {
+            out.push(line);
+            line = w;
+          }
+        }
+        if (line) out.push(line);
+      }
+      return out;
+    };
+
 
 
     /* ───────────────────────── Page 1 header ───────────────────────── */
