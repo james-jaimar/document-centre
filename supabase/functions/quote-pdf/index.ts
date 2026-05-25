@@ -378,40 +378,6 @@ Deno.serve(async (req) => {
     const W_in = W - 2 * M;
     let y = H - M;
 
-    // Top row: Quote From box (left) + Logo + QUOTE title (right)
-    const topRowH = 110;
-    const fromBoxW = 270;
-    const fromBoxX = M;
-    const fromBoxY = y - topRowH;
-    strokeBox(page, fromBoxX, fromBoxY, fromBoxW, topRowH);
-    labelChip(page, "Quote From:", fromBoxX + 6, y - 14);
-    {
-      let yy = y - 28;
-      drawText(page, from.trading_name, fromBoxX + 8, yy, { size: 11, bold: true }); yy -= 13;
-      for (const ln of from.address_lines) {
-        drawText(page, ln, fromBoxX + 8, yy, { size: 9 }); yy -= 11;
-      }
-      yy -= 2;
-      drawText(page, "Tel:", fromBoxX + 8, yy, { size: 9, color: muted });
-      drawText(page, from.phone ?? "", fromBoxX + 38, yy, { size: 9 }); yy -= 11;
-      drawText(page, "Fax:", fromBoxX + 8, yy, { size: 9, color: muted }); yy -= 11;
-      drawText(page, "EMail:", fromBoxX + 8, yy, { size: 9, color: muted });
-      drawText(page, from.email ?? "", fromBoxX + 42, yy, { size: 9 });
-    }
-
-    // Logo (top-right)
-    const logoBoxW = 180;
-    const logoBoxX = W - M - logoBoxW;
-    if (logoImg) {
-      const maxW = logoBoxW, maxH = 60;
-      const s = Math.min(maxW / logoImg.width, maxH / logoImg.height);
-      const w = logoImg.width * s, h = logoImg.height * s;
-      page.drawImage(logoImg, { x: logoBoxX + (logoBoxW - w) / 2, y: y - h - 4, width: w, height: h });
-    }
-    // QUOTE title under logo
-    drawText(page, "QUOTE", logoBoxX, y - 88, { size: 22, bold: true, color: dark, align: "center", width: logoBoxW });
-
-    y = fromBoxY - 12;
 
     // Top row: Quote From box (left) + Logo + QUOTE title (right)
     const fromBoxW = 270;
