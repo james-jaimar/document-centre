@@ -382,6 +382,13 @@ export function useReactivateQuote() {
 export function useDownloadQuotePdf() {
   return useMutation({
     mutationFn: async (quoteId: string) => {
+      // Resolve a friendly filename up-front using the quote number.
+      const { data: qRow } = await supabase
+        .from("quotes")
+        .select("quote_number")
+        .eq("id", quoteId)
+        .maybeSingle();
+
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token;
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
@@ -402,20 +409,27 @@ export function useDownloadQuotePdf() {
         const msg = await res.text().catch(() => "");
         throw new Error(msg || "Failed to generate PDF");
       }
+
+      // Prefer server-supplied filename, fall back to quote_number, then id.
+      const cd = res.headers.get("Content-Disposition") ?? "";
+      const cdMatch = cd.match(/filename="?([^"]+)"?/i);
+      const filename =
+        cdMatch?.[1] ||
+        (qRow?.quote_number ? `Quote-${qRow.quote_number}.pdf` : `Quote-${quoteId}.pdf`);
+
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const win = window.open(url, "_blank", "noopener,noreferrer");
-      // revoke after a delay so the new tab has time to load
+
+      // Trigger a named download so the file lands with the right name…
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // …and also pop a viewer tab where possible.
+      window.open(url, "_blank", "noopener,noreferrer");
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      if (!win) {
-        // Popup blocked — trigger a download instead
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `Quote-${quoteId}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      }
       return url;
     },
   });
