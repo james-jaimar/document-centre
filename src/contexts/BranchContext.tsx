@@ -7,6 +7,8 @@ import {
   type ReactNode,
 } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { STOREFRONT_TENANT_EVENT } from "@/lib/storefrontTenantHeader";
+
 
 export interface Branch {
   id: string;
