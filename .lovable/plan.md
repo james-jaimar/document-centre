@@ -1,32 +1,27 @@
-# Fix address overflow in quote PDF boxes
+# Fix PDF filename + show quote number prominently
 
-## Problem
+## Problems
 
-In `Quote-Q-00003.pdf` the branch address line "Shop L38B, Ground Floor Entrance 7, Corner 5th & Rivonia Road, Sandton City" extends past the right border of the "Quote From" box. The renderer is drawing each address line as a single `drawText` call with no width constraint, so any line longer than the box wraps visually outside the border instead of onto a new line.
+1. **Filename reverts to a UUID** (e.g. `13840717-7bdd-4f39-ac29-91b79f8cc869.pdf`). Cause: `useDownloadQuotePdf` calls `window.open(blobUrl)` to pop the viewer tab. The PDF viewer in that tab cannot see the `Content-Disposition` header (blob URLs strip response headers), so the browser's "Save as" defaults to the blob's random UUID. Our auto-download `<a download>` does name the file correctly, but the user is saving from the viewer tab.
 
-The same bug will hit "Quote To" and "Deliver To" whenever a customer or delivery address line is long.
+2. **Quote number not visibly on the PDF.** It appears only inside the small metadata strip ("Quote Number" column). The reference PostNet quote shows the number as a strong header beside/under the "QUOTE" title.
 
 ## Fix
 
-In `supabase/functions/quote-pdf/index.ts`:
+### `supabase/functions/quote-pdf/index.ts`
+- Add `Access-Control-Expose-Headers: Content-Disposition` to `corsHeaders` so the client hook can read the filename header (defensive, good hygiene).
+- Under the existing "QUOTE" title (line 445), draw the quote number prominently, e.g. `Q-00003` at ~14pt bold in the brand colour, centered in the same `logoBoxW` column, a few points below the title.
 
-1. Add a small `wrapText(text, font, size, maxWidth)` helper that greedily splits on spaces (and hard-breaks any single token longer than `maxWidth`) and returns an array of lines.
-2. In the box renderers for Quote From / Quote To / Deliver To:
-   - Compute `innerWidth = boxWidth - 2 * paddingX` once per box.
-   - For every address / name / contact line, run it through `wrapText` and draw each returned line on its own row, advancing `y` by the line height each time.
-   - Track the running `y` so the box height grows to fit wrapped content instead of clipping.
-3. Make the three boxes share the same computed height (max of the three) so the row stays visually aligned, as it does today.
-4. Re-check the "Tel / Fax / EMail" rows — they use a label column plus a value column. Apply the same wrap to the value column using `innerWidth - labelColWidth`.
+### `src/hooks/useQuotes.ts` (`useDownloadQuotePdf`)
+- Stop using `window.open(blobUrl)` for the viewer pop — that's what loses the filename. Instead, after creating the blob URL, open it in a new tab by setting `a.target = "_blank"` on the same anchor used for download, OR keep two behaviours but ensure the viewer tab uses a URL the browser will name correctly. Simplest reliable path: only trigger the named `<a download>` click and skip `window.open`, since the saved file is what the user actually wants named correctly. The PDF still opens in the OS PDF viewer after download on most browsers.
+- Keep the existing `qRow.quote_number` fallback so `Quote-Q-XXXXX.pdf` is guaranteed even if the header isn't readable.
 
 ## Out of scope
 
-- No layout, totals, footer, branding, or filename changes.
-- No schema or hook changes.
-
-## Files touched
-
-- `supabase/functions/quote-pdf/index.ts` — add `wrapText`, apply it inside the three address boxes and grow box height to fit.
+No layout, totals, branding, or schema changes beyond the quote-number header line.
 
 ## Verification
 
-Redeploy `quote-pdf`, regenerate Q-00003, rasterise page 1 at 150 DPI and confirm the Sandton City address line wraps cleanly inside the Quote From border, and that Quote To / Deliver To still render correctly for short content.
+Redeploy `quote-pdf`, click Download PDF on Q-00003:
+- File saves as `Quote-Q-00003.pdf`.
+- Rasterise page 1 at 150 DPI and confirm `Q-00003` appears prominently under the "QUOTE" title.

@@ -420,15 +420,13 @@ export function useDownloadQuotePdf() {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
 
-      // Trigger a named download so the file lands with the right name…
+      // Trigger a named download so the file lands with the right name.
       const a = document.createElement("a");
       a.href = url;
       a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
-      // …and also pop a viewer tab where possible.
-      window.open(url, "_blank", "noopener,noreferrer");
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
       return url;
     },
