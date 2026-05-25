@@ -17,6 +17,7 @@ export interface RateCardClick {
   id: string;
   scope_type: RateCardScope;
   tenant_id: string | null;
+  branch_id?: string | null;
   size: ClickSize;
   colour: ClickColour;
   sides: ClickSides;
@@ -29,6 +30,7 @@ export interface RateCardPaper {
   id: string;
   scope_type: RateCardScope;
   tenant_id: string | null;
+  branch_id?: string | null;
   code: string;
   label: string;
   weight_gsm: number;
@@ -44,6 +46,7 @@ export interface RateCardFinishing {
   id: string;
   scope_type: RateCardScope;
   tenant_id: string | null;
+  branch_id?: string | null;
   code: string;
   label: string;
   category: string;
@@ -62,6 +65,7 @@ export interface RateCardBusinessCard {
   id: string;
   scope_type: RateCardScope;
   tenant_id: string | null;
+  branch_id?: string | null;
   code: string;
   label: string;
   quantity: number;
@@ -78,6 +82,7 @@ export interface RateCardPhotoPrint {
   id: string;
   scope_type: RateCardScope;
   tenant_id: string | null;
+  branch_id?: string | null;
   code: string;
   label: string;
   size_slug: string;
