@@ -16,6 +16,7 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Expose-Headers": "Content-Disposition",
 };
 
 const json = (data: unknown, status = 200) =>
