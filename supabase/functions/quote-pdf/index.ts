@@ -332,10 +332,11 @@ Deno.serve(async (req) => {
       p.drawRectangle({ x, y: yy, width: w, height: h, borderColor: border, borderWidth: 0.6 });
     };
     const labelChip = (p: PDFPage, txt: string, x: number, yy: number) => {
-      const w = bold.widthOfTextAtSize(txt, 8) + 10;
+      const w = bold.widthOfTextAtSize(txt, 8) + 12;
       p.drawRectangle({ x, y: yy - 2, width: w, height: 12, color: brandSoft });
-      p.drawText(txt, { x: x + 5, y: yy + 1, size: 8, font: bold, color: dark });
+      p.drawText(txt, { x: x + 6, y: yy + 1, size: 8, font: bold, color: dark });
     };
+
 
     /* ───────────────────────── Page 1 header ───────────────────────── */
     let page = newPage();
