@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
-export type RateCardScope = "master" | "tenant";
+export type RateCardScope = "master" | "tenant" | "branch";
 export type ClickSize = string; // free text — A4, A3, SRA3, A5, etc.
 export type ClickColour = "mono" | "colour";
 export type ClickSides = "simplex" | "duplex";
@@ -95,11 +95,16 @@ export interface RateCardPhotoPrint {
 interface ScopeArgs {
   scope: RateCardScope;
   tenantId?: string | null;
+  branchId?: string | null;
 }
 
 function scopeFilter(query: any, args: ScopeArgs) {
   query = query.eq("scope_type", args.scope);
-  if (args.scope === "tenant") {
+  if (args.scope === "branch") {
+    if (!args.branchId) return query.eq("branch_id", "00000000-0000-0000-0000-000000000000");
+    query = query.eq("branch_id", args.branchId);
+    if (args.tenantId) query = query.eq("tenant_id", args.tenantId);
+  } else if (args.scope === "tenant") {
     query = args.tenantId ? query.eq("tenant_id", args.tenantId) : query.is("tenant_id", null);
   } else {
     query = query.is("tenant_id", null);
@@ -112,6 +117,7 @@ const KEY = (table: string, args: ScopeArgs) => [
   table,
   args.scope,
   args.tenantId ?? null,
+  args.branchId ?? null,
 ];
 
 // ----- Clicks -----
