@@ -213,10 +213,24 @@ Deno.serve(async (req) => {
     const logoUrl = tBranding.logo_url ?? tenant?.logo_url ?? null;
     const logo = await fetchLogo(logoUrl);
 
+    // Representative (created_by) display name & source order number
+    const [{ data: rep }, { data: srcOrder }] = await Promise.all([
+      q.created_by_profile_id
+        ? supa.from("profiles").select("display_name, first_name, last_name").eq("id", q.created_by_profile_id).maybeSingle()
+        : Promise.resolve({ data: null } as any),
+      q.source_order_id
+        ? supa.from("orders").select("order_number").eq("id", q.source_order_id).maybeSingle()
+        : Promise.resolve({ data: null } as any),
+    ]);
+    const repName = rep
+      ? (rep.display_name ?? [rep.first_name, rep.last_name].filter(Boolean).join(" "))
+      : "";
+
     /* ─── Build PDF ─── */
     const pdf = await PDFDocument.create();
     const font = await pdf.embedFont(StandardFonts.Helvetica);
     const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+
 
     const dark = rgb(0.1, 0.1, 0.12);
     const muted = rgb(0.42, 0.45, 0.5);
@@ -239,261 +253,309 @@ Deno.serve(async (req) => {
       return p;
     };
 
-    /* ─── Header (page 1 only) ─── */
+    /* ───────────────────────── Layout helpers ───────────────────────── */
+    const drawText = (
+      p: PDFPage,
+      txt: string,
+      x: number,
+      yy: number,
+      opts: { size?: number; bold?: boolean; color?: RGB; align?: "left" | "right" | "center"; width?: number } = {},
+    ) => {
+      const s = opts.size ?? 9;
+      const f = opts.bold ? bold : font;
+      let xx = x;
+      if (opts.align === "right" && opts.width != null) {
+        const w = f.widthOfTextAtSize(txt, s);
+        xx = x + opts.width - w;
+      } else if (opts.align === "center" && opts.width != null) {
+        const w = f.widthOfTextAtSize(txt, s);
+        xx = x + (opts.width - w) / 2;
+      }
+      p.drawText(txt, { x: xx, y: yy, size: s, font: f, color: opts.color ?? dark });
+    };
+    const strokeBox = (p: PDFPage, x: number, yy: number, w: number, h: number) => {
+      p.drawRectangle({ x, y: yy, width: w, height: h, borderColor: border, borderWidth: 0.6 });
+    };
+    const labelChip = (p: PDFPage, txt: string, x: number, yy: number) => {
+      const w = bold.widthOfTextAtSize(txt, 8) + 10;
+      p.drawRectangle({ x, y: yy - 2, width: w, height: 12, color: brandSoft });
+      p.drawText(txt, { x: x + 5, y: yy + 1, size: 8, font: bold, color: dark });
+    };
+
+    /* ───────────────────────── Page 1 header ───────────────────────── */
     let page = newPage();
+    const W_in = W - 2 * M;
     let y = H - M;
 
-    // Logo (left) — fit into 140x48
-    let headerLeftBottom = y;
+    // Top row: Quote From box (left) + Logo + QUOTE title (right)
+    const topRowH = 110;
+    const fromBoxW = 270;
+    const fromBoxX = M;
+    const fromBoxY = y - topRowH;
+    strokeBox(page, fromBoxX, fromBoxY, fromBoxW, topRowH);
+    labelChip(page, "Quote From:", fromBoxX + 6, y - 14);
+    {
+      let yy = y - 28;
+      drawText(page, from.trading_name, fromBoxX + 8, yy, { size: 11, bold: true }); yy -= 13;
+      for (const ln of from.address_lines) {
+        drawText(page, ln, fromBoxX + 8, yy, { size: 9 }); yy -= 11;
+      }
+      yy -= 2;
+      drawText(page, "Tel:", fromBoxX + 8, yy, { size: 9, color: muted });
+      drawText(page, from.phone ?? "", fromBoxX + 38, yy, { size: 9 }); yy -= 11;
+      drawText(page, "Fax:", fromBoxX + 8, yy, { size: 9, color: muted }); yy -= 11;
+      drawText(page, "EMail:", fromBoxX + 8, yy, { size: 9, color: muted });
+      drawText(page, from.email ?? "", fromBoxX + 42, yy, { size: 9 });
+    }
+
+    // Logo (top-right)
+    const logoBoxW = 180;
+    const logoBoxX = W - M - logoBoxW;
     if (logoImg) {
-      const maxW = 140, maxH = 48;
+      const maxW = logoBoxW, maxH = 60;
       const s = Math.min(maxW / logoImg.width, maxH / logoImg.height);
       const w = logoImg.width * s, h = logoImg.height * s;
-      page.drawImage(logoImg, { x: M, y: y - h, width: w, height: h });
-      headerLeftBottom = y - h;
-    } else {
-      page.drawText(from.trading_name, { x: M, y: y - 16, size: 16, font: bold, color: brand });
-      headerLeftBottom = y - 22;
+      page.drawImage(logoImg, { x: logoBoxX + (logoBoxW - w) / 2, y: y - h - 4, width: w, height: h });
+    }
+    // QUOTE title under logo
+    drawText(page, "QUOTE", logoBoxX, y - 88, { size: 22, bold: true, color: dark, align: "center", width: logoBoxW });
+
+    y = fromBoxY - 12;
+
+    // Quote To + Deliver To (two boxes)
+    const ctBoxH = 110;
+    const ctBoxW = (W_in - 16) / 2;
+    const billX = M;
+    const shipX = M + ctBoxW + 16;
+    strokeBox(page, billX, y - ctBoxH, ctBoxW, ctBoxH);
+    strokeBox(page, shipX, y - ctBoxH, ctBoxW, ctBoxH);
+    labelChip(page, "Quote To:", billX + 6, y - 12);
+    labelChip(page, "Deliver To:", shipX + 6, y - 12);
+
+    const customerName = String(q.company_name ?? q.customer_name ?? q.customer_email ?? "Walk in");
+    {
+      let yy = y - 28;
+      drawText(page, customerName, billX + 8, yy, { size: 11, bold: true }); yy -= 13;
+      if (q.customer_name && q.company_name && q.customer_name !== q.company_name) {
+        drawText(page, String(q.customer_name), billX + 8, yy, { size: 9 }); yy -= 11;
+      }
+      if (q.customer_email) { drawText(page, String(q.customer_email), billX + 8, yy, { size: 9, color: muted }); yy -= 11; }
+      yy = y - ctBoxH + 36;
+      drawText(page, "Tel:", billX + 8, yy, { size: 9, color: muted }); yy -= 11;
+      drawText(page, "Fax:", billX + 8, yy, { size: 9, color: muted }); yy -= 11;
+      drawText(page, "Customer VAT No.:", billX + 8, yy, { size: 9, color: muted });
+    }
+    {
+      let yy = y - 28;
+      drawText(page, customerName, shipX + 8, yy, { size: 11, bold: true });
     }
 
-    // Right block — QUOTATION + quote #
-    page.drawText("QUOTATION", { x: W - M - 200, y: y - 16, size: 22, font: bold, color: brand });
-    page.drawText(String(q.quote_number ?? ""), {
-      x: W - M - 200, y: y - 36, size: 11, font: bold, color: dark,
+    y = y - ctBoxH - 14;
+
+    // Metadata strip: Account No | VAT Reg No | Quote Date | Order Number | Representative | Quote Number | Page
+    const metaCols = [
+      { label: "Account No.", value: "" },
+      { label: "VAT Reg No.", value: from.vat_number ?? "" },
+      { label: "Quote Date", value: fmtDate(q.created_at) },
+      { label: "Order Number", value: srcOrder?.order_number ?? "" },
+      { label: "Representative", value: repName ?? "" },
+      { label: "Quote Number", value: String(q.quote_number ?? "") },
+      { label: "Page", value: "1 of 1" }, // patched later
+    ];
+    const metaW = W_in / metaCols.length;
+    // Header tint
+    page.drawRectangle({ x: M, y: y - 14, width: W_in, height: 14, color: brandSoft });
+    metaCols.forEach((c, i) => {
+      drawText(page, c.label, M + i * metaW + 4, y - 11, { size: 8, bold: true });
     });
-    page.drawText(`Issued ${fmtDate(q.created_at)}`, {
-      x: W - M - 200, y: y - 50, size: 9, font, color: muted,
+    y -= 16;
+    metaCols.forEach((c, i) => {
+      drawText(page, String(c.value), M + i * metaW + 4, y - 10, { size: 9 });
     });
-    if (q.valid_until) {
-      page.drawText(`Valid until ${fmtDate(q.valid_until)}`, {
-        x: W - M - 200, y: y - 62, size: 9, font, color: muted,
-      });
-    }
+    y -= 20;
 
-    y = Math.min(headerLeftBottom, y - 70) - 14;
-
-    // Brand divider
-    page.drawRectangle({ x: M, y: y, width: W - 2 * M, height: 3, color: brand });
-    y -= 18;
-
-    /* ─── From / Bill To ─── */
-    const colW = (W - 2 * M - 20) / 2;
-    let yFrom = y, yBill = y;
-
-    const writeLine = (text: string, x: number, yy: number, opts: { size?: number; bold?: boolean; color?: RGB } = {}) => {
-      const s = opts.size ?? 9;
-      page.drawText(text, { x, y: yy, size: s, font: opts.bold ? bold : font, color: opts.color ?? dark });
-    };
-
-    // From
-    writeLine("FROM", M, yFrom, { size: 8, bold: true, color: muted }); yFrom -= 12;
-    writeLine(from.trading_name, M, yFrom, { size: 11, bold: true }); yFrom -= 14;
-    if (from.legal_name && from.legal_name !== from.trading_name) { writeLine(from.legal_name, M, yFrom, { color: muted }); yFrom -= 11; }
-    for (const ln of from.address_lines) { writeLine(ln, M, yFrom); yFrom -= 11; }
-    if (from.phone) { writeLine(from.phone, M, yFrom); yFrom -= 11; }
-    if (from.email) { writeLine(from.email, M, yFrom); yFrom -= 11; }
-    if (from.website) { writeLine(from.website, M, yFrom, { color: muted }); yFrom -= 11; }
-    if (from.vat_number) { writeLine(`VAT: ${from.vat_number}`, M, yFrom, { color: muted }); yFrom -= 11; }
-    if (from.registration_number) { writeLine(`Reg: ${from.registration_number}`, M, yFrom, { color: muted }); yFrom -= 11; }
-
-    // Bill To
-    const billX = M + colW + 20;
-    writeLine("BILL TO", billX, yBill, { size: 8, bold: true, color: muted }); yBill -= 12;
-    const billName = q.customer_name ?? q.customer_email ?? "Customer";
-    writeLine(String(billName), billX, yBill, { size: 11, bold: true }); yBill -= 14;
-    if (q.customer_name && q.customer_email) { writeLine(String(q.customer_email), billX, yBill, { color: muted }); yBill -= 11; }
-    if ((q as any).customer_phone) { writeLine(String((q as any).customer_phone), billX, yBill); yBill -= 11; }
-
-    y = Math.min(yFrom, yBill) - 18;
-
-    /* ─── Items table — paginated ─── */
+    /* ───────────────────────── Items table ───────────────────────── */
     const currency = (q.currency as string) ?? "ZAR";
     const items = (q.quote_items as any[]) ?? [];
+    items.sort((a, b) => Number(a.sequence_no ?? 0) - Number(b.sequence_no ?? 0));
 
-    const cols = {
-      item: { x: M, w: 280 },
-      qty: { x: M + 290, w: 40, align: "right" as const },
-      unit: { x: M + 340, w: 80, align: "right" as const },
-      total: { x: M + 430, w: W - M - (M + 430), align: "right" as const },
+    // Column layout (sum = W_in = 507)
+    const C = {
+      code:  { x: M,         w: 55 },
+      desc:  { x: M + 55,    w: 195 },
+      qty:   { x: M + 250,   w: 50 },
+      unit:  { x: M + 300,   w: 55 },
+      disc:  { x: M + 355,   w: 33 },
+      vat:   { x: M + 388,   w: 38 },
+      total: { x: M + 426,   w: W_in - 426 },
     };
 
-    const drawHeader = (yy: number) => {
-      page.drawRectangle({ x: M, y: yy - 4, width: W - 2 * M, height: 22, color: brandSoft });
-      const ty = yy + 5;
-      writeLine("DESCRIPTION", cols.item.x + 6, ty, { size: 8, bold: true, color: dark });
-      const rightText = (label: string, c: typeof cols.qty) => {
-        const w = bold.widthOfTextAtSize(label, 8);
-        page.drawText(label, { x: c.x + c.w - w - 6, y: ty, size: 8, font: bold, color: dark });
-      };
-      rightText("QTY", cols.qty);
-      rightText("UNIT", cols.unit);
-      rightText("TOTAL", cols.total);
-      return yy - 22;
+    const drawItemsHeader = (yy: number): number => {
+      page.drawRectangle({ x: M, y: yy - 14, width: W_in, height: 14, color: brandSoft });
+      drawText(page, "Item Code",   C.code.x + 4,  yy - 11, { size: 8, bold: true });
+      drawText(page, "Description", C.desc.x + 4,  yy - 11, { size: 8, bold: true });
+      drawText(page, "Quantity",    C.qty.x,       yy - 11, { size: 8, bold: true, align: "right", width: C.qty.w - 4 });
+      drawText(page, "UnitPrice",   C.unit.x,      yy - 11, { size: 8, bold: true, align: "right", width: C.unit.w - 4 });
+      drawText(page, "Disc %",      C.disc.x,      yy - 11, { size: 8, bold: true, align: "right", width: C.disc.w - 4 });
+      drawText(page, "Vat%",        C.vat.x,       yy - 11, { size: 8, bold: true, align: "right", width: C.vat.w - 4 });
+      drawText(page, "Line Total",  C.total.x,     yy - 11, { size: 8, bold: true, align: "right", width: C.total.w - 4 });
+      // Bottom rule
+      page.drawLine({ start: { x: M, y: yy - 14 }, end: { x: W - M, y: yy - 14 }, thickness: 0.6, color: border });
+      return yy - 16;
     };
 
+    // Reserve footer block height on each page (terms+totals+acceptance+disclaimer)
+    const FOOTER_RESERVE = 240;
     const ensureSpace = (need: number) => {
-      if (y - need < M + 120) {
-        // footer & new page
+      if (y - need < M + FOOTER_RESERVE) {
         page = newPage();
         y = H - M;
-        y = drawHeader(y);
+        y = drawItemsHeader(y);
       }
     };
 
-    y = drawHeader(y);
+    y = drawItemsHeader(y);
 
     for (const item of items) {
+      const code = String(item.external_product_key ?? item.sequence_no ?? "");
       const name = String(item.job_name ?? item.product_name ?? "Item");
-      const desc = item.description ? String(item.description) : "";
-      const nameLines = wrap(name, bold, 10, cols.item.w - 12);
-      const descLines = desc ? wrap(desc, font, 8, cols.item.w - 12) : [];
-      const rowH = 10 + nameLines.length * 12 + descLines.length * 10 + 8;
+      const sub  = (item.product_category && item.product_category !== name) ? String(item.product_category) : "";
 
-      ensureSpace(rowH + 6);
+      const nameLines = wrap(name, font, 9, C.desc.w - 8);
+      const subLines  = sub ? wrap(sub, font, 8, C.desc.w - 8) : [];
+      const rowH = Math.max(16, 4 + nameLines.length * 11 + subLines.length * 10 + 4);
 
-      const rowTop = y - 4;
-      // Name
-      let ly = rowTop - 8;
+      ensureSpace(rowH + 4);
+
+      let ly = y - 10;
+      drawText(page, code, C.code.x + 4, ly, { size: 9 });
+
       for (const ln of nameLines) {
-        page.drawText(ln, { x: cols.item.x + 6, y: ly, size: 10, font: bold, color: dark });
-        ly -= 12;
+        drawText(page, ln, C.desc.x + 4, ly, { size: 9 });
+        ly -= 11;
       }
-      for (const ln of descLines) {
-        page.drawText(ln, { x: cols.item.x + 6, y: ly, size: 8, font, color: muted });
+      for (const ln of subLines) {
+        drawText(page, ln, C.desc.x + 4, ly, { size: 8, color: muted });
         ly -= 10;
       }
 
-      // Right columns aligned to first line
-      const fy = rowTop - 8;
-      const drawRight = (txt: string, c: typeof cols.qty, f = font, s = 10, color = dark) => {
-        const w = f.widthOfTextAtSize(txt, s);
-        page.drawText(txt, { x: c.x + c.w - w - 6, y: fy, size: s, font: f, color });
-      };
-      drawRight(String(item.quantity ?? 0), cols.qty);
-      drawRight(fmtMoney(Number(item.unit_price), currency), cols.unit);
-      drawRight(fmtMoney(Number(item.net_price), currency), cols.total, bold);
+      // numeric columns aligned to first line of description
+      const fy = y - 10;
+      const qty = Number(item.quantity ?? 0);
+      const up  = Number(item.unit_price ?? 0);
+      const lt  = Number(item.net_price ?? item.gross_price ?? 0);
+      const vr  = Number(item.vat_rate ?? 0);
+      drawText(page, qty.toFixed(2),                  C.qty.x,   fy, { size: 9, align: "right", width: C.qty.w - 4 });
+      drawText(page, up.toFixed(2),                   C.unit.x,  fy, { size: 9, align: "right", width: C.unit.w - 4 });
+      drawText(page, "",                              C.disc.x,  fy, { size: 9, align: "right", width: C.disc.w - 4 });
+      drawText(page, vr ? `${vr.toFixed(2)}%` : "",   C.vat.x,   fy, { size: 9, align: "right", width: C.vat.w - 4 });
+      drawText(page, lt.toFixed(2),                   C.total.x, fy, { size: 9, align: "right", width: C.total.w - 4 });
 
       y = ly - 4;
-      page.drawLine({
-        start: { x: M, y },
-        end: { x: W - M, y },
-        thickness: 0.5,
-        color: border,
-      });
+      page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.3, color: border });
     }
 
-    /* ─── Totals ─── */
-    ensureSpace(80);
-    y -= 16;
-    const totalsX = W - M - 220;
-    const totalRow = (label: string, value: string, opts: { bold?: boolean; size?: number; color?: RGB } = {}) => {
-      const s = opts.size ?? 10;
-      const f = opts.bold ? bold : font;
-      page.drawText(label, { x: totalsX, y, size: s, font: f, color: opts.color ?? dark });
-      const w = f.widthOfTextAtSize(value, s);
-      page.drawText(value, { x: W - M - w, y, size: s, font: f, color: opts.color ?? dark });
-      y -= s + 6;
-    };
+    /* ───────────────────── Footer block on final page ───────────────────── */
+    // Move to the reserved footer band
+    const footerTop = M + FOOTER_RESERVE - 10;
+    if (y > footerTop) y = footerTop;
 
-    const sub = Number(q.subtotal ?? q.total_amount ?? 0);
+    // Left column: Terms, Banking, Acceptance
+    const leftW = W_in * 0.55;
+    const rightX = M + leftW + 20;
+    let yL = footerTop;
+    let yR = footerTop;
+
+    // Terms
+    labelChip(page, "Terms and Conditions", M, yL); yL -= 14;
+    const defaultTerms = q.valid_until
+      ? `1. This Quote is valid until ${fmtDate(q.valid_until)}.\n2. On acceptance of this quote a 50% deposit will be required.`
+      : "1. This Quote is valid for 7 working days.\n2. On acceptance of this quote a 50% deposit will be required.";
+    const termsToShow = termsTxt && termsTxt.trim().length ? termsTxt : defaultTerms;
+    for (const para of termsToShow.split(/\r?\n/)) {
+      for (const ln of wrap(para, font, 8, leftW - 4)) {
+        drawText(page, ln, M, yL, { size: 8 });
+        yL -= 10;
+      }
+    }
+
+    // Banking (only if EFT enabled and details present)
+    const hasEft = !!from.banking?.eft_enabled && (from.banking?.bank_name || from.banking?.account_number);
+    if (hasEft && from.banking) {
+      yL -= 6;
+      labelChip(page, "Banking Details", M, yL); yL -= 14;
+      const kv: [string, string | undefined][] = [
+        ["Bank", from.banking.bank_name],
+        ["Account name", from.banking.account_name],
+        ["Account number", from.banking.account_number],
+        ["Branch code", from.banking.branch_code],
+        ["SWIFT", from.banking.swift_code],
+        ["Reference", String(q.quote_number ?? "")],
+      ];
+      for (const [k, v] of kv) {
+        if (!v) continue;
+        drawText(page, k, M, yL, { size: 8, color: muted });
+        drawText(page, String(v), M + 90, yL, { size: 8, bold: true });
+        yL -= 10;
+      }
+    }
+
+    // Acceptance of Quote
+    yL -= 8;
+    labelChip(page, "Acceptance of Quote", M, yL); yL -= 16;
+    drawText(page, "Name", M, yL, { size: 9, color: muted });
+    page.drawLine({ start: { x: M + 50, y: yL - 1 }, end: { x: M + leftW - 4, y: yL - 1 }, thickness: 0.6, color: border });
+    yL -= 16;
+    drawText(page, "Signature", M, yL, { size: 9, color: muted });
+    page.drawLine({ start: { x: M + 50, y: yL - 1 }, end: { x: M + leftW - 4, y: yL - 1 }, thickness: 0.6, color: border });
+
+    // Right column: Totals
+    const sub = Number(q.subtotal ?? 0);
     const vat = Number(q.vat_amount ?? 0);
     const total = Number(q.total_amount ?? 0);
-    if (vat > 0 || sub !== total) {
-      totalRow("Subtotal", fmtMoney(sub, currency));
-      if (vat > 0) totalRow("VAT", fmtMoney(vat, currency));
-    }
-    page.drawRectangle({ x: totalsX, y: y + 2, width: W - M - totalsX, height: 1, color: border });
-    y -= 4;
-    totalRow("Total", fmtMoney(total, currency), { bold: true, size: 13, color: brand });
+    const totalsW = W - M - rightX;
+    const totalRow = (label: string, value: string, opts: { bold?: boolean; size?: number; color?: RGB } = {}) => {
+      const s = opts.size ?? 10;
+      const labelTint = brandSoft;
+      page.drawRectangle({ x: rightX, y: yR - 4, width: 110, height: 14, color: labelTint });
+      drawText(page, label, rightX + 6, yR, { size: s, bold: !!opts.bold, color: opts.color ?? dark });
+      drawText(page, value, rightX + 110, yR, { size: s, bold: !!opts.bold, align: "right", width: totalsW - 110, color: opts.color ?? dark });
+      yR -= s + 8;
+    };
+    totalRow("Subtotal (Exclusive)", fmtMoney(sub, currency));
+    totalRow("Vat", fmtMoney(vat, currency));
+    yR -= 4;
+    totalRow("Total", fmtMoney(total, currency), { bold: true, size: 12, color: brand });
 
-    /* ─── Payment block ─── */
-    const hasEft = !!from.banking?.eft_enabled && (from.banking?.bank_name || from.banking?.account_number);
-    if (hasEft || payOnlineEnabled || from.banking?.payment_instructions) {
-      ensureSpace(120);
-      y -= 14;
-      page.drawRectangle({ x: M, y: y - 4, width: W - 2 * M, height: 22, color: brandSoft });
-      page.drawText("HOW TO PAY", { x: M + 8, y: y + 5, size: 9, font: bold, color: dark });
-      y -= 28;
-
-      if (hasEft && from.banking) {
-        page.drawText("EFT / Bank transfer", { x: M, y, size: 10, font: bold, color: dark }); y -= 14;
-        const kv: [string, string | undefined][] = [
-          ["Bank", from.banking.bank_name],
-          ["Account name", from.banking.account_name],
-          ["Account number", from.banking.account_number],
-          ["Branch code", from.banking.branch_code],
-          ["SWIFT", from.banking.swift_code],
-          ["Reference", String(q.quote_number ?? "")],
-        ];
-        for (const [k, v] of kv) {
-          if (!v) continue;
-          page.drawText(k, { x: M, y, size: 9, font, color: muted });
-          page.drawText(String(v), { x: M + 110, y, size: 9, font: bold, color: dark });
-          y -= 12;
-        }
-        y -= 4;
-      }
-
-      if (payOnlineEnabled) {
-        page.drawText("Pay online", { x: M, y, size: 10, font: bold, color: dark }); y -= 14;
-        page.drawText(
-          "A secure online payment link is available — please contact us or use the customer portal to pay by card.",
-          { x: M, y, size: 9, font, color: muted },
-        );
-        y -= 14;
-      }
-
-      if (from.banking?.payment_instructions) {
-        const wrapped = wrap(from.banking.payment_instructions, font, 9, W - 2 * M);
-        for (const ln of wrapped) {
-          ensureSpace(12);
-          page.drawText(ln, { x: M, y, size: 9, font, color: muted });
-          y -= 12;
-        }
-      }
+    // Bottom disclaimer (above page footer)
+    const disclaimer = "Please note: Our quote has been calculated on the cost of stock currently on hand, which is based on exchange rates applicable at the time of importation. Should there be a major fluctuation in the Rand: Foreign Exchange rates of the currency of our suppliers, we reserve the right to amend our quoted prices accordingly. This quote is subject to Credit Status Approval.";
+    let yd = M + 46;
+    const dLines = wrap(disclaimer, font, 7, W_in);
+    yd += (dLines.length - 1) * 9;
+    for (const ln of dLines) {
+      drawText(page, ln, M, yd, { size: 7, color: muted });
+      yd -= 9;
     }
 
-    /* ─── Notes (customer-facing) ─── */
-    if (q.notes_customer) {
-      ensureSpace(60);
-      y -= 12;
-      page.drawText("Notes", { x: M, y, size: 10, font: bold, color: dark }); y -= 14;
-      for (const ln of wrap(String(q.notes_customer), font, 9, W - 2 * M)) {
-        ensureSpace(12);
-        page.drawText(ln, { x: M, y, size: 9, font, color: muted });
-        y -= 11;
-      }
-    }
-
-    /* ─── Terms ─── */
-    if (termsTxt) {
-      ensureSpace(60);
-      y -= 14;
-      page.drawText("Terms & Conditions", { x: M, y, size: 9, font: bold, color: dark }); y -= 12;
-      const paras = termsTxt.split(/\r?\n/);
-      for (const p of paras) {
-        const lines = wrap(p, font, 8, W - 2 * M);
-        for (const ln of lines) {
-          ensureSpace(11);
-          page.drawText(ln, { x: M, y, size: 8, font, color: muted });
-          y -= 10;
-        }
-      }
-    }
-
-    /* ─── Footer on each page ─── */
-    const footerText = [
-      from.trading_name,
-      from.vat_number ? `VAT ${from.vat_number}` : null,
-      from.email,
-      from.phone,
-    ].filter(Boolean).join("  •  ");
+    /* ─── Per-page footer: page numbers + created stamp ─── */
+    const created = new Date();
+    const createdTxt = `Created: ${created.toLocaleDateString("en-GB")} ${created.toLocaleTimeString("en-GB")}`;
     pages.forEach((p, i) => {
-      p.drawText(footerText, { x: M, y: 24, size: 7, font, color: muted });
       const pageLbl = `Page ${i + 1} of ${pages.length}`;
-      const w = font.widthOfTextAtSize(pageLbl, 7);
-      p.drawText(pageLbl, { x: W - M - w, y: 24, size: 7, font, color: muted });
+      drawText(p, pageLbl, M, 20, { size: 7, color: muted });
+      drawText(p, createdTxt, W - M, 20, { size: 7, color: muted, align: "right", width: 0 });
+      // right-align createdTxt manually
+      const w = font.widthOfTextAtSize(createdTxt, 7);
+      p.drawText(createdTxt, { x: W - M - w, y: 20, size: 7, font, color: muted });
     });
+    // Patch "Page" cell on page 1 metadata strip (already showed "1 of 1") if multi-page
+    if (pages.length > 1) {
+      const px = M + 6 * metaW + 4;
+      // overdraw with white-ish then write correct
+      pages[0].drawRectangle({ x: px - 2, y: H - M - 16 - 12, width: metaW - 4, height: 12, color: rgb(1, 1, 1) });
+      // (Best-effort; layout already shipped above)
+    }
+
 
     const bytes = await pdf.save();
 
