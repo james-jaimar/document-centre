@@ -381,13 +381,13 @@ Deno.serve(async (req) => {
 
     // Column layout (sum = W_in = 507)
     const C = {
-      code:  { x: M,                 w: 70 },
-      desc:  { x: M + 70,            w: 215 },
-      qty:   { x: M + 285,           w: 50 },
-      unit:  { x: M + 335,           w: 60 },
-      disc:  { x: M + 395,           w: 40 },
-      vat:   { x: M + 435,           w: 35 },
-      total: { x: M + 470,           w: W_in - 470 },
+      code:  { x: M,         w: 55 },
+      desc:  { x: M + 55,    w: 195 },
+      qty:   { x: M + 250,   w: 50 },
+      unit:  { x: M + 300,   w: 55 },
+      disc:  { x: M + 355,   w: 33 },
+      vat:   { x: M + 388,   w: 38 },
+      total: { x: M + 426,   w: W_in - 426 },
     };
 
     const drawItemsHeader = (yy: number): number => {
