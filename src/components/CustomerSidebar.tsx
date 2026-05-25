@@ -3,6 +3,7 @@ import {
   Home,
   Plus,
   ClipboardList,
+  FileText,
   Settings,
   PanelLeftClose,
   ShoppingCart,
@@ -54,6 +55,7 @@ export default function CustomerSidebar() {
     { to: tenantPath("print-centre"), icon: Home, label: "Home", exact: true },
     { to: tenantPath("orders/new"), icon: Plus, label: "Create", exact: false },
     { to: tenantPath("orders"), icon: ClipboardList, label: "Orders", exact: false },
+    { to: tenantPath("quotes"), icon: FileText, label: "Quotes", exact: false },
     { to: tenantPath("cart"), icon: ShoppingCart, label: "Cart", exact: false, badge: true },
     { to: tenantPath("account"), icon: Settings, label: "My Account", exact: false },
   ];

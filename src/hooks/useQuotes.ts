@@ -377,6 +377,28 @@ export function useReactivateQuote() {
   });
 }
 
+/* ── Download quote PDF ─────────────────────────────────── */
+
+export function useDownloadQuotePdf() {
+  return useMutation({
+    mutationFn: async (quoteId: string) => {
+      const { data, error } = await supabase.functions.invoke("quote-pdf", {
+        body: { quote_id: quoteId },
+      });
+      if (error) throw new Error(error.message || "Failed to generate PDF");
+      const path = (data as any)?.storage_path as string | undefined;
+      if (!path) throw new Error("No PDF path returned");
+      const { data: signed, error: sErr } = await supabase
+        .storage
+        .from("documents")
+        .createSignedUrl(path, 300);
+      if (sErr || !signed?.signedUrl) throw sErr ?? new Error("Failed to sign URL");
+      window.open(signed.signedUrl, "_blank", "noopener,noreferrer");
+      return signed.signedUrl;
+    },
+  });
+}
+
 /* ── Send quote email (PDF) ─────────────────────────────── */
 
 export function useSendQuoteEmail() {

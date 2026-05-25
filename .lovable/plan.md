@@ -1,29 +1,38 @@
-# Fix Save as Quote — two bugs
+# Quotes: sidebar link + customer PDF/email actions
 
-## Bug 1 — `quotes_created_via_check` violation
+## 1. Add "Quotes" to the customer left sidebar
+File: `src/components/CustomerSidebar.tsx`
 
-The DB constraint allows only `'customer'` or `'sales'`, but `useSaveCartAsQuote` inserts `'customer_self_serve'`.
+- Import `FileText` icon from lucide.
+- Insert a new auth-only nav entry between **Orders** and **Cart**:
+  ```
+  { to: tenantPath("quotes"), icon: FileText, label: "Quotes", exact: false }
+  ```
+- Public (anonymous) nav stays unchanged — quotes require an account.
 
-**Fix (code only, no migration):**
-- `src/hooks/useQuotes.ts` → change `created_via: "customer_self_serve"` to `created_via: "customer"` in the `quotes` insert.
+## 2. Add Download PDF + Email Me buttons on the customer quote detail page
+File: `src/pages/dashboard/CustomerQuoteDetail.tsx`
 
-(If you'd rather keep the more descriptive value, the alternative is a migration to expand the check constraint — but `'customer'` is fine and matches the existing convention.)
+Existing hooks already cover both flows:
+- `quote-pdf` Edge Function returns `{ storage_path }` for the generated PDF.
+- `useSendQuoteEmail` (in `src/hooks/useQuotes.ts`) calls `send-quote-email`, which generates the PDF and emails it with a signed download link.
 
-## Bug 2 — Sign-in from cart bounces user to home
+Changes:
+- Add a small `useDownloadQuotePdf` mutation in `src/hooks/useQuotes.ts` that:
+  1. Invokes `quote-pdf` with `{ quote_id }`.
+  2. Reads `storage_path` from the response.
+  3. Creates a 5-minute signed URL via `supabase.storage.from("documents").createSignedUrl(path, 300)`.
+  4. Opens the URL in a new tab (`window.open(url, "_blank")`).
+- In `CustomerQuoteDetail.tsx` header action row, add two new buttons next to **Decline** / **Add to Cart** (visible for all statuses, not just active):
+  - **Download PDF** — `variant="outline"`, `Download` icon, calls the new hook. Toast on error.
+  - **Email me a copy** — `variant="outline"`, `Mail` icon, calls `useSendQuoteEmail`. Success toast: "Quote emailed to {customer_email}".
+- Both buttons show a spinner / `disabled` state while pending.
 
-In `CheckoutAuth`'s **Sign In** tab, the handler explicitly calls `supabase.auth.signOut()` before `signInWithPassword(...)`. That brief signed-out moment is what triggers the bounce (the anonymous bootstrap / route logic reacts to `user = null`).
-
-**Fix:**
-- `src/components/checkout/CheckoutAuth.tsx` → in `handleLogin`, remove the pre-emptive `signOut()`. Capture `anonUserId` first, then call `signInWithPassword` directly. Supabase replaces the anonymous session in place, so the user never transitions through `null`. Then run `claim-anonymous-orders` with the captured `anonUserId` exactly as today.
-
-## Verification
-
-1. As a guest, add an item to cart → click **Save as Quote** → inline dialog opens.
-2. Use **Sign In** with an existing account → dialog closes, page stays on the cart, the save resumes and navigates to `/t/:slug/quotes/:id` with no toast error.
-3. Repeat with **New Account** → same outcome.
-4. Confirm a row in `quotes` with `created_via = 'customer'`.
+## 3. Verification
+- Sidebar: as a signed-in customer, the **Quotes** link appears between Orders and Cart, navigates to `/t/:slug/quotes`, and highlights when active.
+- Quote detail: **Download PDF** opens the generated PDF in a new tab; **Email me a copy** triggers `send-quote-email` and shows a success toast; existing **Decline** / **Add to Cart** continue to work.
 
 ## Out of scope
-
-- The earlier Letter-size modal flash investigation (deferred per your instruction).
-- Any change to the `quotes_created_via_check` constraint itself.
+- Admin-side quote actions (already have their own buttons).
+- Letter-size modal flash (deferred earlier).
+- Any changes to the PDF template itself.
