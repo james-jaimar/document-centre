@@ -64,7 +64,7 @@ Deno.serve(async (req) => {
       .maybeSingle();
     const introText = (intro?.setting_value as string) ?? "";
 
-    const tenantName = (q.tenants as any)?.name ?? "Print Centre";
+    const tenantName = tenant?.name ?? "Print Centre";
     const subject = `Your quote ${q.quote_number} from ${tenantName}`;
     const html = `
       <div style="font-family:system-ui,sans-serif;color:#1a1a1a;max-width:600px">
