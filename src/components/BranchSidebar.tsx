@@ -8,6 +8,7 @@ import {
   Printer,
   LogOut,
   DollarSign,
+  Tags,
   FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
