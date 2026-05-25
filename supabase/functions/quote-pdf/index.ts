@@ -444,6 +444,7 @@ Deno.serve(async (req) => {
     }
     // QUOTE title under logo
     drawText(page, "QUOTE", logoBoxX, y - 88, { size: 22, bold: true, color: dark, align: "center", width: logoBoxW });
+    drawText(page, String(q.quote_number ?? ""), logoBoxX, y - 108, { size: 14, bold: true, color: brand, align: "center", width: logoBoxW });
 
     y = fromBoxY - 12;
 
