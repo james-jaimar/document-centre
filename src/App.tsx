@@ -204,6 +204,7 @@ function AppRoutes() {
         <Route path="/branch/orders/:id" element={<BranchOrderDetail />} />
         <Route path="/branch/products" element={<BranchProducts />} />
         <Route path="/branch/pricing" element={<BranchPricing />} />
+        <Route path="/branch/rate-card" element={<BranchRateCard />} />
         <Route path="/branch/quotes" element={<BranchQuotes />} />
         <Route path="/branch/quotes/:id" element={<BranchQuoteDetail />} />
         <Route path="/branch/settings" element={<BranchSettings />} />
