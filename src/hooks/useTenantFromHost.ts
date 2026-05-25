@@ -24,7 +24,8 @@ export function useTenantFromHost() {
   const [matched, setMatched] = useState(false);
 
   useEffect(() => {
-    const hostname = window.location.hostname;
+    const rawHost = window.location.hostname;
+    const hostname = rawHost.replace(/^www\./, "");
 
     // Skip localhost, preview domains, and the bare platform domain
     if (
@@ -33,8 +34,7 @@ export function useTenantFromHost() {
       hostname.endsWith(".lovable.app") ||
       hostname.endsWith(".lovable.dev") ||
       hostname.endsWith(".jaimar.dev") ||
-      hostname === PLATFORM_DOMAIN ||
-      hostname === `www.${PLATFORM_DOMAIN}`
+      hostname === PLATFORM_DOMAIN
     ) {
       setLoading(false);
       return;
@@ -63,11 +63,12 @@ export function useTenantFromHost() {
         return;
       }
 
-      // Check if it's a custom domain
+      // Check if it's a custom domain (match either apex or www. form)
+      const candidates = Array.from(new Set([rawHost, hostname]));
       const { data } = await supabase
         .from("tenants")
         .select("id, slug, name, app_id")
-        .eq("custom_domain", hostname)
+        .in("custom_domain", candidates)
         .eq("is_active", true)
         .maybeSingle();
 
