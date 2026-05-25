@@ -137,7 +137,15 @@ Deno.serve(async (req) => {
       })
       .eq("id", q.id);
 
-    return json({ success: true, storage_path: storagePath });
+    const { data: signed, error: signErr } = await supa
+      .storage
+      .from("documents")
+      .createSignedUrl(storagePath, 300);
+    if (signErr || !signed?.signedUrl) {
+      return json({ error: signErr?.message ?? "Failed to sign URL" }, 500);
+    }
+
+    return json({ success: true, storage_path: storagePath, signed_url: signed.signedUrl });
   } catch (e: any) {
     return json({ error: e?.message ?? "Unknown error" }, 500);
   }
