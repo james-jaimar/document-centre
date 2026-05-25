@@ -244,13 +244,12 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   // Publish the URL-resolved storefront tenant so the global fetch
   // interceptor can attach `x-storefront-tenant` to every PostgREST
   // request. Only set when we're on a /t/:slug or subdomain route —
-  // never on /admin or /platform.
-  useEffect(() => {
-    const id = slugTenant?.id ?? null;
-    if (typeof window !== "undefined") {
-      (window as unknown as { __storefrontTenantId: string | null }).__storefrontTenantId = id;
-    }
+  // never on /admin or /platform. Use useLayoutEffect so the header
+  // is in place before child providers commit their first fetches.
+  useLayoutEffect(() => {
+    setStorefrontTenantId(slugTenant?.id ?? null);
   }, [slugTenant?.id]);
+
 
 
   return (
