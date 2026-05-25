@@ -1,38 +1,56 @@
-# Quotes: sidebar link + customer PDF/email actions
+## Root cause (now confirmed)
 
-## 1. Add "Quotes" to the customer left sidebar
-File: `src/components/CustomerSidebar.tsx`
+The chip and picker code are fine. The reason the selector vanishes for anonymous visitors but reappears after sign-in is **Row Level Security on the `branches` table**.
 
-- Import `FileText` icon from lucide.
-- Insert a new auth-only nav entry between **Orders** and **Cart**:
-  ```
-  { to: tenantPath("quotes"), icon: FileText, label: "Quotes", exact: false }
-  ```
-- Public (anonymous) nav stays unchanged — quotes require an account.
+Two relevant policies:
 
-## 2. Add Download PDF + Email Me buttons on the customer quote detail page
-File: `src/pages/dashboard/CustomerQuoteDetail.tsx`
+- `branches_select_membership` — lets signed-in tenant members read every branch in their tenant. James (signed in) hits this.
+- `branches_storefront_or_member_read` — lets anonymous storefront visitors read branches only when the request carries the `x-storefront-tenant` header. That header is attached by the global `fetch` interceptor in `src/lib/storefrontTenantHeader.ts`, which reads `window.__storefrontTenantId`.
 
-Existing hooks already cover both flows:
-- `quote-pdf` Edge Function returns `{ storage_path }` for the generated PDF.
-- `useSendQuoteEmail` (in `src/hooks/useQuotes.ts`) calls `send-quote-email`, which generates the PDF and emails it with a signed download link.
+`window.__storefrontTenantId` is set inside `TenantProvider` (`src/hooks/useTenantContext.tsx` lines 246–251) via a `useEffect` that runs **after** `slugTenant` resolves. Meanwhile `CustomerLayout` mounts `BranchProvider` using `useTenantFromSlug()` directly — independent of `TenantProvider`. `BranchProvider`'s branches query (`src/contexts/BranchContext.tsx` lines 76–110) fires the moment its `tenantId` prop becomes non-null.
 
-Changes:
-- Add a small `useDownloadQuotePdf` mutation in `src/hooks/useQuotes.ts` that:
-  1. Invokes `quote-pdf` with `{ quote_id }`.
-  2. Reads `storage_path` from the response.
-  3. Creates a 5-minute signed URL via `supabase.storage.from("documents").createSignedUrl(path, 300)`.
-  4. Opens the URL in a new tab (`window.open(url, "_blank")`).
-- In `CustomerQuoteDetail.tsx` header action row, add two new buttons next to **Decline** / **Add to Cart** (visible for all statuses, not just active):
-  - **Download PDF** — `variant="outline"`, `Download` icon, calls the new hook. Toast on error.
-  - **Email me a copy** — `variant="outline"`, `Mail` icon, calls `useSendQuoteEmail`. Success toast: "Quote emailed to {customer_email}".
-- Both buttons show a spinner / `disabled` state while pending.
+For an anonymous customer on the storefront, that means the branch query frequently fires **before** the global storefront header has been set on `window`. RLS then evaluates `current_storefront_tenant_id() = NULL`, finds no membership for the anonymous user, returns zero rows, and `BranchProvider` stays with `allBranches = []` forever (no re-fetch). After sign-in, the membership policy kicks in and rows appear immediately — which is exactly what James observed.
 
-## 3. Verification
-- Sidebar: as a signed-in customer, the **Quotes** link appears between Orders and Cart, navigates to `/t/:slug/quotes`, and highlights when active.
-- Quote detail: **Download PDF** opens the generated PDF in a new tab; **Email me a copy** triggers `send-quote-email` and shows a success toast; existing **Decline** / **Add to Cart** continue to work.
+## Plan
 
-## Out of scope
-- Admin-side quote actions (already have their own buttons).
-- Letter-size modal flash (deferred earlier).
-- Any changes to the PDF template itself.
+Make the storefront header authoritative before any tenant-scoped query fires, and make `BranchProvider` resilient if it ever does run early.
+
+### 1. `src/lib/storefrontTenantHeader.ts` — broadcast header changes
+
+Expose a small setter so callers don't have to poke `window.__storefrontTenantId` directly, and dispatch a `storefront-tenant-changed` `CustomEvent` whenever it transitions to a non-null value. This becomes the signal other providers can listen on.
+
+### 2. `src/hooks/useTenantContext.tsx` — set the header earlier and via the setter
+
+Replace the `useEffect` at lines 246–251 with the new setter call, and run it in a `useLayoutEffect` so the header is in place before any child render commits a fetch. Also fire it as soon as `slugTenant?.id` is known from cache (no need to wait for revalidation).
+
+### 3. `src/contexts/BranchContext.tsx` — wait for the header and recover from empty results
+
+In the loader (`useEffect` at lines 76–110):
+
+- If `tenantId` is set but `window.__storefrontTenantId !== tenantId` and the current user is anonymous, skip the query and subscribe to the `storefront-tenant-changed` event; re-run the loader when it fires.
+- If the query returns zero rows for a tenant we know has branches (i.e. result is empty), schedule one retry after the next `storefront-tenant-changed` event or after `auth` state changes (sign-in/out), instead of leaving the cache permanently empty.
+- Also clear the stale `localStorage` saved slug when no live branch matches it (heals branches that were taken offline).
+
+### 4. `src/components/CustomerHeader.tsx` — never-hidden entry point
+
+Replace the current chip block (lines 172–183) so the button is rendered as soon as the BranchProvider reports `isMultiBranch || loading`:
+
+- While `loading` → render a muted chip showing a small spinner and the label "Loading branches…", disabled.
+- When `isMultiBranch && activeBranch` → show `MapPin + activeBranch.name + ChevronDown` (current behaviour).
+- When `isMultiBranch && !activeBranch` → show `MapPin + "Select branch" + ChevronDown` with `border-primary/40` so it reads as a call to action, clicking it opens the picker.
+- Drop `hidden md:flex` in favour of `flex` so it's visible on mobile too.
+
+### 5. Verification
+
+- Hard-refresh `https://postnetprintcentre.com/` in an incognito window (no session, no `localStorage`):
+  - Network: the `branches?select=…&tenant_id=eq.…` request carries the `x-storefront-tenant` header.
+  - UI: `BranchPicker` opens automatically after branches load; the "Select branch" chip is visible in the header until the user picks one.
+- Pick a branch → reload → chip shows the branch name, picker does not reopen.
+- Manually set `localStorage.dc_branch_<tenantId>` to a non-existent slug → reload → stale entry is cleared and picker opens.
+- Sign in as James → chip stays visible and shows the chosen branch (no flicker).
+
+### Out of scope
+
+- No changes to `BranchPicker` modal UI/UX.
+- No changes to branch routing (`BranchSlugRoute`, URL prefixes).
+- No RLS policy changes — the existing `branches_storefront_or_member_read` policy is correct; we're fixing the client-side header race that defeats it.
