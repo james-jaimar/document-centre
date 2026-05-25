@@ -1,5 +1,5 @@
 // Generates a branded quote PDF (tenant + branch identity, banking & EFT, terms).
-// Uses pdf-lib with multi-page support; embeds logo if present and brand color from tenant.settings.
+// Uses pdf-lib; rasterises SVG logos via @resvg/resvg-wasm.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import {
   PDFDocument,
@@ -9,6 +9,8 @@ import {
   PDFPage,
   type RGB,
 } from "https://esm.sh/pdf-lib@1.17.1";
+import { Resvg, initWasm } from "https://esm.sh/@resvg/resvg-wasm@2.6.2";
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -111,21 +113,59 @@ function resolveFromParty(tenant: any, branch: any): ResolvedParty {
   };
 }
 
-/* ─── Logo loader ────────────────────────────────────────────────────────── */
+/* ─── Logo loader (PNG / JPG / SVG via resvg) ────────────────────────────── */
+let resvgReady: Promise<void> | null = null;
+function ensureResvg() {
+  if (!resvgReady) {
+    resvgReady = initWasm(
+      fetch("https://esm.sh/@resvg/resvg-wasm@2.6.2/index_bg.wasm").then((r) =>
+        r.arrayBuffer(),
+      ) as any,
+    ).catch((e) => {
+      console.error("resvg init failed", e);
+    });
+  }
+  return resvgReady;
+}
+
+const logoCache = new Map<string, { bytes: Uint8Array; kind: "png" | "jpg" }>();
+
 async function fetchLogo(url?: string | null): Promise<{ bytes: Uint8Array; kind: "png" | "jpg" } | null> {
   if (!url) return null;
+  if (logoCache.has(url)) return logoCache.get(url)!;
   try {
     const res = await fetch(url, { redirect: "follow" });
     if (!res.ok) return null;
     const ct = (res.headers.get("content-type") ?? "").toLowerCase();
     const buf = new Uint8Array(await res.arrayBuffer());
-    if (ct.includes("png") || url.toLowerCase().endsWith(".png")) return { bytes: buf, kind: "png" };
-    if (ct.includes("jpeg") || ct.includes("jpg") || /\.jpe?g$/i.test(url)) return { bytes: buf, kind: "jpg" };
-    return null; // svg/webp not supported
-  } catch {
+    const lower = url.toLowerCase();
+    let out: { bytes: Uint8Array; kind: "png" | "jpg" } | null = null;
+    if (ct.includes("png") || lower.endsWith(".png")) {
+      out = { bytes: buf, kind: "png" };
+    } else if (ct.includes("jpeg") || ct.includes("jpg") || /\.jpe?g$/i.test(lower)) {
+      out = { bytes: buf, kind: "jpg" };
+    } else if (ct.includes("svg") || lower.endsWith(".svg")) {
+      try {
+        await ensureResvg();
+        const svgText = new TextDecoder().decode(buf);
+        const resvg = new Resvg(svgText, {
+          fitTo: { mode: "width", value: 800 },
+          background: "rgba(0,0,0,0)",
+        });
+        const png = resvg.render().asPng();
+        out = { bytes: png, kind: "png" };
+      } catch (e) {
+        console.warn("svg rasterise failed", e);
+      }
+    }
+    if (out) logoCache.set(url, out);
+    return out;
+  } catch (e) {
+    console.warn("logo fetch failed", e);
     return null;
   }
 }
+
 
 /* ─── Text helpers ───────────────────────────────────────────────────────── */
 function wrap(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
@@ -175,7 +215,21 @@ Deno.serve(async (req) => {
 
     const from = resolveFromParty(tenant, branch);
     const tSettings = (tenant?.settings ?? {}) as any;
-    const tBranding = (tSettings.branding ?? {}) as any;
+    const tBrandingJson = (tSettings.branding ?? {}) as any;
+
+    // Branding actually lives in the tenant_settings table (category=branding).
+    // Pull it and merge over the JSONB fallback so existing tenants still work.
+    const { data: brandingRows } = await supa
+      .from("tenant_settings")
+      .select("setting_key, setting_value")
+      .eq("tenant_id", q.tenant_id)
+      .eq("category", "branding");
+    const tBrandingTable: Record<string, any> = {};
+    for (const row of brandingRows ?? []) {
+      tBrandingTable[row.setting_key as string] = row.setting_value;
+    }
+    const tBranding = { ...tBrandingJson, ...tBrandingTable };
+
     const brand = hexToRgb(tBranding.primary_color ?? tBranding.brand_color ?? tenant?.brand_color);
     const brandSoft = tint(brand, 0.85);
 
@@ -209,9 +263,10 @@ Deno.serve(async (req) => {
       .maybeSingle();
     const termsTxt = (terms?.setting_value as string | null) ?? "";
 
-    // Logo
+    // Logo (PNG/JPG embedded directly, SVG rasterised)
     const logoUrl = tBranding.logo_url ?? tenant?.logo_url ?? null;
     const logo = await fetchLogo(logoUrl);
+
 
     // Representative (created_by) display name & source order number
     const [{ data: rep }, { data: srcOrder }] = await Promise.all([
@@ -277,10 +332,11 @@ Deno.serve(async (req) => {
       p.drawRectangle({ x, y: yy, width: w, height: h, borderColor: border, borderWidth: 0.6 });
     };
     const labelChip = (p: PDFPage, txt: string, x: number, yy: number) => {
-      const w = bold.widthOfTextAtSize(txt, 8) + 10;
+      const w = bold.widthOfTextAtSize(txt, 8) + 12;
       p.drawRectangle({ x, y: yy - 2, width: w, height: 12, color: brandSoft });
-      p.drawText(txt, { x: x + 5, y: yy + 1, size: 8, font: bold, color: dark });
+      p.drawText(txt, { x: x + 6, y: yy + 1, size: 8, font: bold, color: dark });
     };
+
 
     /* ───────────────────────── Page 1 header ───────────────────────── */
     let page = newPage();
@@ -339,20 +395,21 @@ Deno.serve(async (req) => {
       if (q.customer_name && q.company_name && q.customer_name !== q.company_name) {
         drawText(page, String(q.customer_name), billX + 8, yy, { size: 9 }); yy -= 11;
       }
-      if (q.customer_email) { drawText(page, String(q.customer_email), billX + 8, yy, { size: 9, color: muted }); yy -= 11; }
-      yy = y - ctBoxH + 36;
-      drawText(page, "Tel:", billX + 8, yy, { size: 9, color: muted }); yy -= 11;
-      drawText(page, "Fax:", billX + 8, yy, { size: 9, color: muted }); yy -= 11;
-      drawText(page, "Customer VAT No.:", billX + 8, yy, { size: 9, color: muted });
+      if (q.customer_email) {
+        drawText(page, String(q.customer_email), billX + 8, yy, { size: 9, color: muted });
+      }
     }
     {
-      let yy = y - 28;
+      // Deliver To: we don't carry a per-quote delivery address yet, so reference the customer.
+      const yy = y - 28;
       drawText(page, customerName, shipX + 8, yy, { size: 11, bold: true });
+      drawText(page, "Same as billing", shipX + 8, yy - 13, { size: 9, color: muted });
     }
+
 
     y = y - ctBoxH - 14;
 
-    // Metadata strip: Account No | VAT Reg No | Quote Date | Order Number | Representative | Quote Number | Page
+    // Metadata strip: Account No | VAT Reg No | Quote Date | Order Number | Representative | Quote Number
     const metaCols = [
       { label: "Account No.", value: "" },
       { label: "VAT Reg No.", value: from.vat_number ?? "" },
@@ -360,8 +417,8 @@ Deno.serve(async (req) => {
       { label: "Order Number", value: srcOrder?.order_number ?? "" },
       { label: "Representative", value: repName ?? "" },
       { label: "Quote Number", value: String(q.quote_number ?? "") },
-      { label: "Page", value: "1 of 1" }, // patched later
     ];
+
     const metaW = W_in / metaCols.length;
     // Header tint
     page.drawRectangle({ x: M, y: y - 14, width: W_in, height: 14, color: brandSoft });
@@ -381,13 +438,13 @@ Deno.serve(async (req) => {
 
     // Column layout (sum = W_in = 507)
     const C = {
-      code:  { x: M,         w: 55 },
-      desc:  { x: M + 55,    w: 195 },
-      qty:   { x: M + 250,   w: 50 },
-      unit:  { x: M + 300,   w: 55 },
-      disc:  { x: M + 355,   w: 33 },
-      vat:   { x: M + 388,   w: 38 },
-      total: { x: M + 426,   w: W_in - 426 },
+      code:  { x: M,         w: 50 },
+      desc:  { x: M + 50,    w: 175 },
+      qty:   { x: M + 225,   w: 50 },
+      unit:  { x: M + 275,   w: 60 },
+      disc:  { x: M + 335,   w: 38 },
+      vat:   { x: M + 373,   w: 42 },
+      total: { x: M + 415,   w: W_in - 415 },
     };
 
     const drawItemsHeader = (yy: number): number => {
@@ -395,14 +452,15 @@ Deno.serve(async (req) => {
       drawText(page, "Item Code",   C.code.x + 4,  yy - 11, { size: 8, bold: true });
       drawText(page, "Description", C.desc.x + 4,  yy - 11, { size: 8, bold: true });
       drawText(page, "Quantity",    C.qty.x,       yy - 11, { size: 8, bold: true, align: "right", width: C.qty.w - 4 });
-      drawText(page, "UnitPrice",   C.unit.x,      yy - 11, { size: 8, bold: true, align: "right", width: C.unit.w - 4 });
+      drawText(page, "Unit Price",  C.unit.x,      yy - 11, { size: 8, bold: true, align: "right", width: C.unit.w - 4 });
       drawText(page, "Disc %",      C.disc.x,      yy - 11, { size: 8, bold: true, align: "right", width: C.disc.w - 4 });
-      drawText(page, "Vat%",        C.vat.x,       yy - 11, { size: 8, bold: true, align: "right", width: C.vat.w - 4 });
+      drawText(page, "VAT %",       C.vat.x,       yy - 11, { size: 8, bold: true, align: "right", width: C.vat.w - 4 });
       drawText(page, "Line Total",  C.total.x,     yy - 11, { size: 8, bold: true, align: "right", width: C.total.w - 4 });
       // Bottom rule
       page.drawLine({ start: { x: M, y: yy - 14 }, end: { x: W - M, y: yy - 14 }, thickness: 0.6, color: border });
       return yy - 16;
     };
+
 
     // Reserve footer block height on each page (terms+totals+acceptance+disclaimer)
     const FOOTER_RESERVE = 240;
@@ -509,29 +567,37 @@ Deno.serve(async (req) => {
     drawText(page, "Signature", M, yL, { size: 9, color: muted });
     page.drawLine({ start: { x: M + 50, y: yL - 1 }, end: { x: M + leftW - 4, y: yL - 1 }, thickness: 0.6, color: border });
 
-    // Right column: Totals
+    // Right column: Totals — label chip on the left half only, value sits in a
+    // clean right-aligned cell so it never gets overdrawn.
     const sub = Number(q.subtotal ?? 0);
     const vat = Number(q.vat_amount ?? 0);
     const total = Number(q.total_amount ?? 0);
     const totalsW = W - M - rightX;
+    const labelCellW = Math.min(140, Math.round(totalsW * 0.62));
     const totalRow = (label: string, value: string, opts: { bold?: boolean; size?: number; color?: RGB } = {}) => {
       const s = opts.size ?? 10;
-      const labelTint = brandSoft;
-      page.drawRectangle({ x: rightX, y: yR - 4, width: 110, height: 14, color: labelTint });
+      const rowH = s + 6;
+      page.drawRectangle({ x: rightX, y: yR - 3, width: labelCellW, height: rowH, color: brandSoft });
       drawText(page, label, rightX + 6, yR, { size: s, bold: !!opts.bold, color: opts.color ?? dark });
-      drawText(page, value, rightX + 110, yR, { size: s, bold: !!opts.bold, align: "right", width: totalsW - 110, color: opts.color ?? dark });
-      yR -= s + 8;
+      drawText(page, value, rightX + labelCellW + 6, yR, {
+        size: s,
+        bold: !!opts.bold,
+        align: "right",
+        width: totalsW - labelCellW - 6,
+        color: opts.color ?? dark,
+      });
+      yR -= rowH + 4;
     };
     totalRow("Subtotal (Exclusive)", fmtMoney(sub, currency));
-    totalRow("Vat", fmtMoney(vat, currency));
+    totalRow("VAT", fmtMoney(vat, currency));
     yR -= 4;
     totalRow("Total", fmtMoney(total, currency), { bold: true, size: 12, color: brand });
 
     // Bottom disclaimer (above page footer)
     const disclaimer = "Please note: Our quote has been calculated on the cost of stock currently on hand, which is based on exchange rates applicable at the time of importation. Should there be a major fluctuation in the Rand: Foreign Exchange rates of the currency of our suppliers, we reserve the right to amend our quoted prices accordingly. This quote is subject to Credit Status Approval.";
-    let yd = M + 46;
     const dLines = wrap(disclaimer, font, 7, W_in);
-    yd += (dLines.length - 1) * 9;
+    // Place block so its bottom line sits ~32pt above the page footer baseline.
+    let yd = 32 + (dLines.length - 1) * 9;
     for (const ln of dLines) {
       drawText(page, ln, M, yd, { size: 7, color: muted });
       yd -= 9;
@@ -540,21 +606,13 @@ Deno.serve(async (req) => {
     /* ─── Per-page footer: page numbers + created stamp ─── */
     const created = new Date();
     const createdTxt = `Created: ${created.toLocaleDateString("en-GB")} ${created.toLocaleTimeString("en-GB")}`;
+    const createdW = font.widthOfTextAtSize(createdTxt, 7);
     pages.forEach((p, i) => {
       const pageLbl = `Page ${i + 1} of ${pages.length}`;
       drawText(p, pageLbl, M, 20, { size: 7, color: muted });
-      drawText(p, createdTxt, W - M, 20, { size: 7, color: muted, align: "right", width: 0 });
-      // right-align createdTxt manually
-      const w = font.widthOfTextAtSize(createdTxt, 7);
-      p.drawText(createdTxt, { x: W - M - w, y: 20, size: 7, font, color: muted });
+      p.drawText(createdTxt, { x: W - M - createdW, y: 20, size: 7, font, color: muted });
     });
-    // Patch "Page" cell on page 1 metadata strip (already showed "1 of 1") if multi-page
-    if (pages.length > 1) {
-      const px = M + 6 * metaW + 4;
-      // overdraw with white-ish then write correct
-      pages[0].drawRectangle({ x: px - 2, y: H - M - 16 - 12, width: metaW - 4, height: 12, color: rgb(1, 1, 1) });
-      // (Best-effort; layout already shipped above)
-    }
+
 
 
     const bytes = await pdf.save();
