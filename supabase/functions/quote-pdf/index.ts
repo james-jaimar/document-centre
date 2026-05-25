@@ -395,16 +395,17 @@ Deno.serve(async (req) => {
       if (q.customer_name && q.company_name && q.customer_name !== q.company_name) {
         drawText(page, String(q.customer_name), billX + 8, yy, { size: 9 }); yy -= 11;
       }
-      if (q.customer_email) { drawText(page, String(q.customer_email), billX + 8, yy, { size: 9, color: muted }); yy -= 11; }
-      yy = y - ctBoxH + 36;
-      drawText(page, "Tel:", billX + 8, yy, { size: 9, color: muted }); yy -= 11;
-      drawText(page, "Fax:", billX + 8, yy, { size: 9, color: muted }); yy -= 11;
-      drawText(page, "Customer VAT No.:", billX + 8, yy, { size: 9, color: muted });
+      if (q.customer_email) {
+        drawText(page, String(q.customer_email), billX + 8, yy, { size: 9, color: muted });
+      }
     }
     {
-      let yy = y - 28;
+      // Deliver To: we don't carry a per-quote delivery address yet, so reference the customer.
+      const yy = y - 28;
       drawText(page, customerName, shipX + 8, yy, { size: 11, bold: true });
+      drawText(page, "Same as billing", shipX + 8, yy - 13, { size: 9, color: muted });
     }
+
 
     y = y - ctBoxH - 14;
 
