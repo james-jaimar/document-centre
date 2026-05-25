@@ -215,7 +215,21 @@ Deno.serve(async (req) => {
 
     const from = resolveFromParty(tenant, branch);
     const tSettings = (tenant?.settings ?? {}) as any;
-    const tBranding = (tSettings.branding ?? {}) as any;
+    const tBrandingJson = (tSettings.branding ?? {}) as any;
+
+    // Branding actually lives in the tenant_settings table (category=branding).
+    // Pull it and merge over the JSONB fallback so existing tenants still work.
+    const { data: brandingRows } = await supa
+      .from("tenant_settings")
+      .select("setting_key, setting_value")
+      .eq("tenant_id", q.tenant_id)
+      .eq("category", "branding");
+    const tBrandingTable: Record<string, any> = {};
+    for (const row of brandingRows ?? []) {
+      tBrandingTable[row.setting_key as string] = row.setting_value;
+    }
+    const tBranding = { ...tBrandingJson, ...tBrandingTable };
+
     const brand = hexToRgb(tBranding.primary_color ?? tBranding.brand_color ?? tenant?.brand_color);
     const brandSoft = tint(brand, 0.85);
 
@@ -249,9 +263,10 @@ Deno.serve(async (req) => {
       .maybeSingle();
     const termsTxt = (terms?.setting_value as string | null) ?? "";
 
-    // Logo
+    // Logo (PNG/JPG embedded directly, SVG rasterised)
     const logoUrl = tBranding.logo_url ?? tenant?.logo_url ?? null;
     const logo = await fetchLogo(logoUrl);
+
 
     // Representative (created_by) display name & source order number
     const [{ data: rep }, { data: srcOrder }] = await Promise.all([
