@@ -1,90 +1,83 @@
 ## Goal
 
-Two improvements to the quote PDF (`supabase/functions/quote-pdf/index.ts`):
+Stop using "overrides + fallback to tenant" for branch pricing. Instead, every branch gets a **full copy** of the tenant's pricing the moment it's created, and the branch manager edits their own copy line-by-line. No inheritance at read time.
 
-1. Embed the typeface so the PDF renders identically on any viewer (currently uses the base-14 `Helvetica`, which is not embedded — Acrobat falls back to a system font when missing).
-2. Render a real, itemised configuration breakdown for each line — so admins can see paper stock, binding, covers, lamination, sides, page count, etc. — instead of just "Bound Documents".
+This applies to **both** pricing surfaces shown in the screenshots:
 
----
+1. `pricing_rules` (Branch Pricing page — per-page/per-doc/surcharge rules)
+2. `rate_card_*` tables (Click Charges, Paper Stocks, Finishing, Photo Prints, Business Cards)
 
-### 1. Embed the font
+## Schema changes
 
-**Problem:** `pdf.embedFont(StandardFonts.Helvetica)` uses one of pdf‑lib's 14 standard fonts. These are *never* embedded; the document just references them by name. Your screenshot confirms this — "Helvetica" listed as Type 1, not embedded.
+### `rate_card_*` tables — add a `branch` scope
 
-**Fix:** embed a real TrueType font and subset it (so file size stays tiny — only used glyphs ship).
+Today they have `scope_type ∈ ('master','tenant')` with `tenant_id`. Extend to:
 
-- Register `@pdf-lib/fontkit` on the document so subsetted TTF embedding works:
-  ```ts
-  import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
-  pdf.registerFontkit(fontkit);
-  ```
-- Fetch two TTF files (regular + bold) on first invocation and cache the bytes in module-level `Uint8Array` variables (so warm invocations don't re-download). Use a metric-compatible, freely-licensed sans-serif so the layout doesn't shift. Recommended: **Liberation Sans** (Helvetica metrics) or **Noto Sans** (very wide glyph coverage, including the ZAR "R" and any diacritics in customer names). I suggest **Noto Sans Regular + Bold** from the jsDelivr Google Fonts mirror, e.g. `https://cdn.jsdelivr.net/npm/@fontsource/noto-sans@5.0.22/files/noto-sans-latin-400-normal.ttf` and the matching `700` file.
-- Replace the two `embedFont(StandardFonts.…)` calls with `pdf.embedFont(regularBytes, { subset: true })` and the bold equivalent. All existing `font` / `bold` references and `widthOfTextAtSize` calls keep working unchanged.
-- Fall back to `StandardFonts.Helvetica` only if the fetch fails, so a CDN outage doesn't break PDF generation.
+- `scope_type ∈ ('master','tenant','branch')`
+- Add nullable `branch_id uuid references branches(id) on delete cascade`
+- Update unique constraints to include `branch_id` (so a tenant copy and a branch copy can coexist)
+- Update RLS so branch staff can read/write rows where `branch_id = user_branch_id()` and tenant admins can manage all branch rows under their tenant
 
-Result: Acrobat's *Fonts* tab will list `NotoSans` (Embedded Subset) / `NotoSans-Bold` (Embedded Subset), and the PDF renders identically everywhere.
+Applies to all five tables: `rate_card_clicks`, `rate_card_papers`, `rate_card_finishing`, `rate_card_photo_prints`, `rate_card_business_cards`.
 
----
+### `pricing_rules`
 
-### 2. Real line-item configuration breakdown
+No schema change — it already has `branch_id`. Just change how it's used (see below).
 
-**What's already in the data:** each `quote_items` row carries a `configuration` JSONB (and `product_snapshot`). Example from the live DB:
+## New SQL functions
 
-```json
-{
-  "page_count": 84,
-  "quantity": 5,
-  "is_color": true,
-  "is_duplex": true,
-  "binding_edge_override": null,
-  "selected_options": {
-    "Binding":          "comb-binding-black",
-    "Covers":           "frosted-front-black-card-back",
-    "Cover Lamination": "no-lamination",
-    "Document Size":    "a4-210-297mm",
-    "Paper Stock":      "80gsm-white-bond",
-    "Page Lamination":  "no-lamination",
-    "Tab Dividers":     "no-tab-dividers",
-    "Inserts":          "no-inserts",
-    "Finishing":        "no-additional-finishing",
-    "Print to Edge":    "none-standard-margins"
-  }
-}
-```
+1. **`clone_tenant_pricing_to_branch(p_branch_id uuid)`** — copies every `scope_type='tenant'` rate-card row into a matching `scope_type='branch'` row for the branch (skip rows that already exist for the branch). Also copies every `pricing_rules` row where `tenant_id=<branch's tenant>` and `branch_id IS NULL` into a new row with `branch_id = p_branch_id`.
 
-So everything the admin needs is already persisted — we just don't render it.
+2. **Trigger** on `branches` AFTER INSERT → call `clone_tenant_pricing_to_branch(NEW.id)` so new branches automatically get the full pricebook.
 
-**Approach:** under each line row, draw a compact, indented "specification" sub-table.
+3. **Backfill migration** — for every existing branch, run the clone function once so the UI immediately shows a populated branch pricebook instead of an empty overrides list.
 
-a. **Resolve slug → human label.** Slugs like `80gsm-white-bond` aren't pretty. The function already loads the tenant; we'll additionally fetch the `product_options` rows for each distinct `product_family_id` in the quote (one query, one `.in()`). For each `selected_options` entry, look up the matching value in `product_options.values` (JSONB array of `{ label, slug, ... }` — see `src/lib/productOptionTypes.ts`) and use `value.label`. If no match, fall back to a title-cased version of the slug.
+4. **Manual "Re-sync from tenant" RPC** (optional but useful) — `resync_branch_pricing_from_tenant(p_branch_id)` that deletes the branch's copies and re-clones. Exposed in the Branch Pricing UI as a button for tenant admins only.
 
-b. **Derived rows.** Surface the non-`selected_options` fields too:
-   - Print Colour ← `is_color ? "Full colour" : "Black & white"`
-   - Print Sides  ← `is_duplex ? "Double sided" : "Single sided"`
-   - Pages       ← `page_count`
-   - Binding edge override (only if non-null)
+## Read-path changes
 
-c. **Hide noise.** Skip any value whose slug starts with `no-` / contains `none-` (e.g. `no-lamination`, `no-inserts`) so admins only see *applied* options, not a wall of "no-".
+### Rate-card hook (`useRateCard`)
 
-d. **Layout.** Inside the existing item-row loop:
-   - After drawing the description/qty/price line, render a two-column key/value list at 8pt in the muted grey already in use, indented to `C.desc.x + 12`.
-   - Pair them: `Document Size: A4 (210×297mm)   ·   Paper: 80gsm White Bond` etc., 2 per line, so a 10-option product fits in ~5 lines.
-   - Recompute `rowH` to include this block; the existing `ensureSpace(rowH + 4)` page-break logic handles pagination automatically.
+When a `branchId` is in context, fetch `scope_type='branch' AND branch_id=...` only. Otherwise fall back to tenant scope. No merging.
 
-e. **Customer vs admin view.** Both customer and admin currently fetch the same PDF (single `pdf_storage_path` on the quote). Two options:
-   - **(Recommended, simplest)** Always include the breakdown. It's useful for the customer too — they see exactly what they're being quoted on — and matches how the rest of the app surfaces specs.
-   - **(Alternative)** Add a `?detailed=1` mode that regenerates with the breakdown for admin-only download. Costs more (two PDFs, cache busting) and the value to the customer is real, so I'd skip it unless you specifically want a "clean" customer copy.
+### Pricing rules
 
-   I'll go with option 1 unless you say otherwise.
+- `usePricingRules` (storefront/order engine path): when called with a `branchId`, filter to `branch_id = branchId` only. Drop the current "or branch_id is null" fallback.
+- `BranchPricing.tsx`: remove the two-section layout ("overrides" + "inherited"). Show a **single editable table** of the branch's own rules with Edit / Delete / New buttons, plus a "Re-sync from tenant" action.
+- `usePricingRules` master-mode for platform admin is unchanged.
 
----
+### Order engine / quote-pdf / any other consumer of `pricing_rules` or `rate_card_*`
 
-### Files touched
+Audit and switch any tenant-fallback queries to "branch-only when a branch is resolved on the job/order; tenant-only otherwise". The list of files to touch is the rg hits from earlier: `supabase/functions/order-engine`, `quote-pdf`, plus client helpers in `src/lib/orders/` that resolve pricing.
 
-- `supabase/functions/quote-pdf/index.ts` — only file changed. Edge function auto-deploys.
+## UI changes
 
-### Out of scope
+### `src/pages/branch/BranchPricing.tsx`
 
-- No DB migrations (data is already there).
-- No frontend changes.
-- No changes to filename, quote number, or banking blocks.
+- Replace overrides+inherited layout with a single editable rules table (same look as `AdminPricing`).
+- Header gains a "Re-sync from tenant pricing" button (confirms with a destructive AlertDialog — "this will overwrite all your branch rules").
+- All create/edit calls always set `tenant_id` and `branch_id` to the current context.
+
+### New `src/pages/branch/BranchRateCard.tsx` (or extend existing)
+
+- Mirror `RateCardEditor` but pass a new `scope="branch"` with `tenantId` + `branchId`.
+- `RateCardEditor` learns the `branch` scope: queries / inserts / updates / deletes all carry `branch_id`.
+- Add the same "Re-sync from tenant" button at the top of each tab.
+
+### Branch sidebar
+
+Add a "Rate Card" entry under the branch portal nav (sibling of "Pricing") so branch managers can reach the new editor.
+
+## Migration / rollout order
+
+1. Migration: add `branch_id` + new scope to rate-card tables, RLS updates, clone + resync RPCs, and the new branch trigger.
+2. Data backfill: for every existing branch, call `clone_tenant_pricing_to_branch`.
+3. Client code: switch read paths, rewrite `BranchPricing`, add `BranchRateCard`, extend `RateCardEditor`, update sidebar nav.
+4. Edge functions: switch resolver queries to branch-only-when-branch-present.
+5. Leave the old `product_price_overrides` table alone for now — it's a separate concept (per-SKU prices) and not in scope here.
+
+## Notes / trade-offs
+
+- Storage cost goes up (every branch now has its own copy of every rule) but reads get simpler and faster — no UNION / OR queries.
+- Tenant edits no longer automatically propagate. The "Re-sync from tenant" button is the explicit way to pull tenant changes down to a branch.
+- We're not deleting the existing `branch_id`-scoped rules already in `pricing_rules`; the backfill will simply add the missing tenant-cloned rows, so any existing branch override is preserved as-is.
