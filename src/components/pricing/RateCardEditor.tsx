@@ -206,10 +206,12 @@ function ClicksTab({
   clicks,
   scope,
   tenantId,
+  branchId,
 }: {
   clicks: RateCardClick[];
   scope: RateCardScope;
   tenantId: string | null;
+  branchId: string | null;
 }) {
   const update = useUpdateRateCardClick();
   const insert = useInsertRateCardClick();
@@ -275,7 +277,8 @@ function ClicksTab({
     try {
       await insert.mutateAsync({
         scope_type: scope,
-        tenant_id: scope === "tenant" ? tenantId : null,
+        tenant_id: scope === "master" ? null : tenantId,
+        branch_id: scope === "branch" ? branchId : null,
         size: adding.size.trim(),
         colour: adding.colour,
         sides: adding.sides,
@@ -453,10 +456,12 @@ function PapersTab({
   papers,
   scope,
   tenantId,
+  branchId,
 }: {
   papers: RateCardPaper[];
   scope: RateCardScope;
   tenantId: string | null;
+  branchId: string | null;
 }) {
   const upsert = useUpsertRateCardPaper();
   const del = useDeleteRateCardPaper();
@@ -465,7 +470,8 @@ function PapersTab({
   function openNew() {
     setEditing({
       scope_type: scope,
-      tenant_id: scope === "tenant" ? tenantId ?? undefined : null,
+      tenant_id: scope === "master" ? null : (tenantId ?? undefined),
+      branch_id: scope === "branch" ? (branchId ?? undefined) : null,
       code: "",
       label: "",
       weight_gsm: 80,
@@ -663,10 +669,12 @@ function FinishingTab({
   finishing,
   scope,
   tenantId,
+  branchId,
 }: {
   finishing: RateCardFinishing[];
   scope: RateCardScope;
   tenantId: string | null;
+  branchId: string | null;
 }) {
   const upsert = useUpsertRateCardFinishing();
   const del = useDeleteRateCardFinishing();
@@ -675,7 +683,8 @@ function FinishingTab({
   function openNew() {
     setEditing({
       scope_type: scope,
-      tenant_id: scope === "tenant" ? tenantId ?? undefined : null,
+      tenant_id: scope === "master" ? null : (tenantId ?? undefined),
+      branch_id: scope === "branch" ? (branchId ?? undefined) : null,
       code: "",
       label: "",
       category: "binding",
@@ -895,10 +904,12 @@ function PhotoPrintsTab({
   items,
   scope,
   tenantId,
+  branchId,
 }: {
   items: RateCardPhotoPrint[];
   scope: RateCardScope;
   tenantId: string | null;
+  branchId: string | null;
 }) {
   const upsert = useUpsertRateCardPhotoPrint();
   const del = useDeleteRateCardPhotoPrint();
@@ -907,7 +918,8 @@ function PhotoPrintsTab({
   function openNew() {
     setEditing({
       scope_type: scope,
-      tenant_id: scope === "tenant" ? tenantId ?? undefined : null,
+      tenant_id: scope === "master" ? null : (tenantId ?? undefined),
+      branch_id: scope === "branch" ? (branchId ?? undefined) : null,
       code: "",
       label: "",
       size_slug: "4x6",
@@ -1184,10 +1196,12 @@ function BusinessCardsTab({
   items,
   scope,
   tenantId,
+  branchId,
 }: {
   items: RateCardBusinessCard[];
   scope: RateCardScope;
   tenantId: string | null;
+  branchId: string | null;
 }) {
   const upsert = useUpsertRateCardBusinessCard();
   const del = useDeleteRateCardBusinessCard();
@@ -1196,7 +1210,8 @@ function BusinessCardsTab({
   function openNew() {
     setEditing({
       scope_type: scope,
-      tenant_id: scope === "tenant" ? tenantId : null,
+      tenant_id: scope === "master" ? null : tenantId,
+        branch_id: scope === "branch" ? branchId : null,
       code: "",
       label: "",
       quantity: 250,
