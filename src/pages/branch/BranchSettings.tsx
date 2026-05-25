@@ -9,7 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Save, Clock, Truck, MapPin, Phone } from "lucide-react";
+import { Save, Clock, Truck, MapPin, Phone, IdCard, CreditCard } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import BranchIdentityBankingCard from "@/components/branch/BranchIdentityBankingCard";
+import { PaymentGatewaysCard } from "@/components/payments/PaymentGatewaysCard";
 
 interface BranchSettingsData {
   manager_name: string;
@@ -111,10 +114,28 @@ const BranchSettings = () => {
         </div>
         <Button onClick={handleSave} disabled={!dirty || updateBranch.isPending}>
           <Save size={14} className="mr-1.5" />
-          {updateBranch.isPending ? "Saving…" : "Save Changes"}
+          {updateBranch.isPending ? "Saving…" : "Save Operations"}
         </Button>
       </div>
 
+      <Tabs defaultValue="identity">
+        <TabsList>
+          <TabsTrigger value="identity" className="gap-1.5"><IdCard size={14} /> Identity & Banking</TabsTrigger>
+          <TabsTrigger value="operations" className="gap-1.5"><Clock size={14} /> Operations</TabsTrigger>
+          <TabsTrigger value="payments" className="gap-1.5"><CreditCard size={14} /> Payments</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="identity">
+          <BranchIdentityBankingCard branch={branch} />
+        </TabsContent>
+
+        <TabsContent value="payments">
+          {tenantId && (
+            <PaymentGatewaysCard scope="branch" scopeId={branch.id} tenantId={tenantId} />
+          )}
+        </TabsContent>
+
+        <TabsContent value="operations" className="space-y-6">
       {/* Contact Overrides */}
       <Card>
         <CardHeader>
@@ -238,6 +259,8 @@ const BranchSettings = () => {
           />
         </CardContent>
       </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

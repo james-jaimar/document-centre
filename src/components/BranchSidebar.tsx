@@ -8,6 +8,7 @@ import {
   Printer,
   LogOut,
   DollarSign,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -29,6 +30,7 @@ const ROLE_LABELS: Record<string, string> = {
 const BRANCH_NAV = [
   { to: "/branch", icon: <LayoutDashboard size={20} />, label: "Dashboard" },
   { to: "/branch/orders", icon: <ClipboardList size={20} />, label: "Orders" },
+  { to: "/branch/quotes", icon: <FileText size={20} />, label: "Quotes" },
   { to: "/branch/products", icon: <Store size={20} />, label: "Products" },
   { to: "/branch/pricing", icon: <DollarSign size={20} />, label: "Pricing" },
   { to: "/branch/settings", icon: <Wrench size={20} />, label: "Settings" },

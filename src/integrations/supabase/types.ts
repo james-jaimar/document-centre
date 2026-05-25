@@ -246,7 +246,10 @@ export type Database = {
       }
       branches: {
         Row: {
+          accounts_email: string | null
           address: string | null
+          banking_details: Json
+          billing_email: string | null
           city: string | null
           code: string | null
           country: string
@@ -256,18 +259,26 @@ export type Database = {
           id: string
           is_active: boolean
           is_live: boolean
+          legal_name: string | null
           name: string
           phone: string | null
           postal_code: string | null
           province: string | null
+          registration_number: string | null
           settings: Json
           slug: string
           tenant_id: string
+          trading_name: string | null
           updated_at: string
           url_slug: string | null
+          vat_number: string | null
+          website_url: string | null
         }
         Insert: {
+          accounts_email?: string | null
           address?: string | null
+          banking_details?: Json
+          billing_email?: string | null
           city?: string | null
           code?: string | null
           country?: string
@@ -277,18 +288,26 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_live?: boolean
+          legal_name?: string | null
           name: string
           phone?: string | null
           postal_code?: string | null
           province?: string | null
+          registration_number?: string | null
           settings?: Json
           slug: string
           tenant_id: string
+          trading_name?: string | null
           updated_at?: string
           url_slug?: string | null
+          vat_number?: string | null
+          website_url?: string | null
         }
         Update: {
+          accounts_email?: string | null
           address?: string | null
+          banking_details?: Json
+          billing_email?: string | null
           city?: string | null
           code?: string | null
           country?: string
@@ -298,15 +317,20 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_live?: boolean
+          legal_name?: string | null
           name?: string
           phone?: string | null
           postal_code?: string | null
           province?: string | null
+          registration_number?: string | null
           settings?: Json
           slug?: string
           tenant_id?: string
+          trading_name?: string | null
           updated_at?: string
           url_slug?: string | null
+          vat_number?: string | null
+          website_url?: string | null
         }
         Relationships: [
           {
@@ -4377,6 +4401,10 @@ export type Database = {
           p_ordered_by_profile_id: string
           p_tenant_id: string
         }
+        Returns: boolean
+      }
+      user_can_see_tenant_quote: {
+        Args: { p_branch_id: string; p_tenant_id: string }
         Returns: boolean
       }
       user_has_membership: {
