@@ -113,21 +113,59 @@ function resolveFromParty(tenant: any, branch: any): ResolvedParty {
   };
 }
 
-/* ─── Logo loader ────────────────────────────────────────────────────────── */
+/* ─── Logo loader (PNG / JPG / SVG via resvg) ────────────────────────────── */
+let resvgReady: Promise<void> | null = null;
+function ensureResvg() {
+  if (!resvgReady) {
+    resvgReady = initWasm(
+      fetch("https://esm.sh/@resvg/resvg-wasm@2.6.2/index_bg.wasm").then((r) =>
+        r.arrayBuffer(),
+      ) as any,
+    ).catch((e) => {
+      console.error("resvg init failed", e);
+    });
+  }
+  return resvgReady;
+}
+
+const logoCache = new Map<string, { bytes: Uint8Array; kind: "png" | "jpg" }>();
+
 async function fetchLogo(url?: string | null): Promise<{ bytes: Uint8Array; kind: "png" | "jpg" } | null> {
   if (!url) return null;
+  if (logoCache.has(url)) return logoCache.get(url)!;
   try {
     const res = await fetch(url, { redirect: "follow" });
     if (!res.ok) return null;
     const ct = (res.headers.get("content-type") ?? "").toLowerCase();
     const buf = new Uint8Array(await res.arrayBuffer());
-    if (ct.includes("png") || url.toLowerCase().endsWith(".png")) return { bytes: buf, kind: "png" };
-    if (ct.includes("jpeg") || ct.includes("jpg") || /\.jpe?g$/i.test(url)) return { bytes: buf, kind: "jpg" };
-    return null; // svg/webp not supported
-  } catch {
+    const lower = url.toLowerCase();
+    let out: { bytes: Uint8Array; kind: "png" | "jpg" } | null = null;
+    if (ct.includes("png") || lower.endsWith(".png")) {
+      out = { bytes: buf, kind: "png" };
+    } else if (ct.includes("jpeg") || ct.includes("jpg") || /\.jpe?g$/i.test(lower)) {
+      out = { bytes: buf, kind: "jpg" };
+    } else if (ct.includes("svg") || lower.endsWith(".svg")) {
+      try {
+        await ensureResvg();
+        const svgText = new TextDecoder().decode(buf);
+        const resvg = new Resvg(svgText, {
+          fitTo: { mode: "width", value: 800 },
+          background: "rgba(0,0,0,0)",
+        });
+        const png = resvg.render().asPng();
+        out = { bytes: png, kind: "png" };
+      } catch (e) {
+        console.warn("svg rasterise failed", e);
+      }
+    }
+    if (out) logoCache.set(url, out);
+    return out;
+  } catch (e) {
+    console.warn("logo fetch failed", e);
     return null;
   }
 }
+
 
 /* ─── Text helpers ───────────────────────────────────────────────────────── */
 function wrap(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
