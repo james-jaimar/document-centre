@@ -16,11 +16,11 @@ const QUERY_KEY = ["pricing_rules"];
 export function usePricingRules(
   tenantId?: string | null,
   currencyCode: string = "ZAR",
-  opts: { masterOnly?: boolean } = {}
+  opts: { masterOnly?: boolean; branchId?: string | null } = {}
 ) {
-  const { masterOnly = false } = opts;
+  const { masterOnly = false, branchId = null } = opts;
   return useQuery({
-    queryKey: [...QUERY_KEY, masterOnly ? "master" : tenantId ?? null, currencyCode],
+    queryKey: [...QUERY_KEY, masterOnly ? "master" : tenantId ?? null, branchId, currencyCode],
     queryFn: async () => {
       let query = supabase
         .from("pricing_rules")
@@ -30,8 +30,13 @@ export function usePricingRules(
 
       if (masterOnly) {
         query = query.is("tenant_id", null);
+      } else if (branchId) {
+        // Branch holds a full copy of pricing — read only that branch's rules.
+        query = query.eq("branch_id", branchId);
+        if (tenantId) query = query.eq("tenant_id", tenantId);
       } else if (tenantId) {
-        query = query.or(`tenant_id.eq.${tenantId},tenant_id.is.null`);
+        // Tenant-wide rules (no branch).
+        query = query.eq("tenant_id", tenantId).is("branch_id", null);
       }
 
       const { data, error } = await query;
