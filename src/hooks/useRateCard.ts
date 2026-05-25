@@ -339,6 +339,23 @@ export function useCloneMasterRateCard() {
   });
 }
 
+/** Wipe a branch's pricing and re-pull a fresh copy from the tenant. */
+export function useResyncBranchPricing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (branchId: string) => {
+      const { error } = await supabase.rpc("resync_branch_pricing_from_tenant" as any, {
+        p_branch_id: branchId,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rate_card"] });
+      qc.invalidateQueries({ queryKey: ["pricing_rules"] });
+    },
+  });
+}
+
 // ----- Business Cards -----
 
 export function useRateCardBusinessCards(args: ScopeArgs) {
