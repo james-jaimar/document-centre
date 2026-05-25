@@ -308,8 +308,14 @@ Deno.serve(async (req) => {
 
     /* ─── Build PDF ─── */
     const pdf = await PDFDocument.create();
-    const font = await pdf.embedFont(StandardFonts.Helvetica);
-    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+    pdf.registerFontkit(fontkit);
+    const { reg: fontRegBytes, bold: fontBoldBytes } = await loadFontBytes();
+    const font = fontRegBytes
+      ? await pdf.embedFont(fontRegBytes, { subset: true })
+      : await pdf.embedFont(StandardFonts.Helvetica);
+    const bold = fontBoldBytes
+      ? await pdf.embedFont(fontBoldBytes, { subset: true })
+      : await pdf.embedFont(StandardFonts.HelveticaBold);
 
 
     const dark = rgb(0.1, 0.1, 0.12);
