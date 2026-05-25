@@ -1,6 +1,6 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
-import { useQuote, useDeclineQuote, useReactivateQuote } from "@/hooks/useQuotes";
+import { useQuote, useDeclineQuote, useReactivateQuote, useDownloadQuotePdf, useSendQuoteEmail } from "@/hooks/useQuotes";
 import { formatPrice } from "@/lib/formatCurrency";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { ShoppingCart, XCircle, ArrowLeft, Loader2 } from "lucide-react";
+import { ShoppingCart, XCircle, ArrowLeft, Loader2, Download, Mail } from "lucide-react";
 import { toast } from "sonner";
 
 export default function CustomerQuoteDetail() {
@@ -18,6 +18,8 @@ export default function CustomerQuoteDetail() {
   const { data: quote, isLoading } = useQuote(id);
   const decline = useDeclineQuote();
   const reactivate = useReactivateQuote();
+  const downloadPdf = useDownloadQuotePdf();
+  const sendEmail = useSendQuoteEmail();
 
   if (isLoading) return <Skeleton className="h-64 w-full" />;
   if (!quote) return <div className="text-muted-foreground">Quote not found.</div>;
@@ -68,19 +70,46 @@ export default function CustomerQuoteDetail() {
             )}
           </div>
         </div>
-        {isActive && (
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={handleDecline} disabled={decline.isPending}>
-              <XCircle className="h-4 w-4 mr-1" /> Decline
-            </Button>
-            <Button onClick={handleAddToCart} disabled={reactivate.isPending}>
-              {reactivate.isPending
-                ? <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                : <ShoppingCart className="h-4 w-4 mr-1" />}
-              Add to Cart
-            </Button>
-          </div>
-        )}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => downloadPdf.mutate(quote.id, {
+              onError: (e: any) => toast.error("Couldn't download PDF", { description: e.message }),
+            })}
+            disabled={downloadPdf.isPending}
+          >
+            {downloadPdf.isPending
+              ? <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              : <Download className="h-4 w-4 mr-1" />}
+            Download PDF
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => sendEmail.mutate(quote.id, {
+              onSuccess: () => toast.success(quote.customer_email ? `Quote emailed to ${quote.customer_email}` : "Quote emailed"),
+              onError: (e: any) => toast.error("Couldn't email quote", { description: e.message }),
+            })}
+            disabled={sendEmail.isPending}
+          >
+            {sendEmail.isPending
+              ? <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              : <Mail className="h-4 w-4 mr-1" />}
+            Email me a copy
+          </Button>
+          {isActive && (
+            <>
+              <Button variant="outline" onClick={handleDecline} disabled={decline.isPending}>
+                <XCircle className="h-4 w-4 mr-1" /> Decline
+              </Button>
+              <Button onClick={handleAddToCart} disabled={reactivate.isPending}>
+                {reactivate.isPending
+                  ? <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  : <ShoppingCart className="h-4 w-4 mr-1" />}
+                Add to Cart
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       <Table>
