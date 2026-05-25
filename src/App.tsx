@@ -179,12 +179,16 @@ function AppRoutes() {
 
       {/* Customer portal — subdomain-based (same routes as /t/:slug but at root) — only when on a tenant subdomain */}
       {matched && (
-        <Route path="/" element={<CustomerLayout />}>
-          {customerRoutes()}
-          <Route path=":branchSlug" element={<BranchSlugRoute />}>
+        <>
+          <Route path="/:branchSlug/auth" element={<Auth />} />
+          <Route path="/:branchSlug/auth/callback" element={<AuthCallback />} />
+          <Route path="/" element={<CustomerLayout />}>
             {customerRoutes()}
+            <Route path=":branchSlug" element={<BranchSlugRoute />}>
+              {customerRoutes()}
+            </Route>
           </Route>
-        </Route>
+        </>
       )}
 
       {/* Legacy /dashboard redirects to slug-based URL */}
