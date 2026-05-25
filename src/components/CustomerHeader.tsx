@@ -169,18 +169,32 @@ export default function CustomerHeader() {
         </Link>
       )}
 
-      {/* Branch indicator — multi-branch tenants only */}
-      {isMultiBranch && activeBranch && (
+      {/* Branch indicator — always visible while loading or for multi-branch tenants */}
+      {branchesLoading ? (
+        <div
+          className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground border border-border/50 ml-2 shrink-0"
+          title="Loading branches"
+        >
+          <span className="h-3 w-3 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground/70 animate-spin" />
+          <span>Loading branches…</span>
+        </div>
+      ) : isMultiBranch ? (
         <button
           onClick={openPicker}
-          className="hidden md:flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-colors border border-border/50 ml-2 shrink-0"
-          title="Change branch"
+          className={cn(
+            "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ml-2 shrink-0 border",
+            activeBranch
+              ? "text-muted-foreground hover:text-foreground hover:bg-secondary/80 border-border/50"
+              : "text-foreground hover:bg-secondary/80 border-primary/40",
+          )}
+          title={activeBranch ? "Change branch" : "Select your branch"}
         >
           <MapPin className="h-3.5 w-3.5 shrink-0" style={{ color: "hsl(var(--tenant-primary, var(--primary)))" }} />
-          <span className="truncate max-w-[140px]">{activeBranch.name}</span>
+          <span className="truncate max-w-[140px]">{activeBranch?.name ?? "Select branch"}</span>
           <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
         </button>
-      )}
+      ) : null}
+
 
       <nav className="hidden md:flex items-center gap-7 mx-auto">
         {navItems.map((item) => (
