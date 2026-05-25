@@ -1,5 +1,5 @@
 // Generates a branded quote PDF (tenant + branch identity, banking & EFT, terms).
-// Uses pdf-lib with multi-page support; embeds logo if present and brand color from tenant.settings.
+// Uses pdf-lib; rasterises SVG logos via @resvg/resvg-wasm.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import {
   PDFDocument,
@@ -9,6 +9,8 @@ import {
   PDFPage,
   type RGB,
 } from "https://esm.sh/pdf-lib@1.17.1";
+import { Resvg, initWasm } from "https://esm.sh/@resvg/resvg-wasm@2.6.2";
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
