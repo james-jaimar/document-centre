@@ -525,7 +525,7 @@ Deno.serve(async (req) => {
     totalRow("Subtotal (Exclusive)", fmtMoney(sub, currency));
     totalRow("Vat", fmtMoney(vat, currency));
     page.drawLine({ start: { x: rightX, y: yR + 4 }, end: { x: W - M, y: yR + 4 }, thickness: 0.6, color: border });
-    yR -= 2;
+    yR -= 10;
     totalRow("Total", fmtMoney(total, currency), { bold: true, size: 12, color: brand });
 
     // Bottom disclaimer (above page footer)
