@@ -28,11 +28,17 @@ Deno.serve(async (req) => {
 
     const { data: q } = await supa
       .from("quotes")
-      .select("*, tenants:tenant_id(name, slug)")
+      .select("*")
       .eq("id", quoteId)
       .single();
     if (!q) return json({ error: "Quote not found" }, 404);
     if (!q.customer_email) return json({ error: "Quote has no customer email" }, 400);
+
+    const { data: tenant } = await supa
+      .from("tenants")
+      .select("name, slug")
+      .eq("id", q.tenant_id)
+      .maybeSingle();
 
     // 1. Generate/refresh PDF
     const pdfResp = await supa.functions.invoke("quote-pdf", { body: { quote_id: quoteId } });
