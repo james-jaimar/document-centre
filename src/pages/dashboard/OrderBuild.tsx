@@ -141,7 +141,9 @@ export default function OrderBuild() {
   // New rate-card engine: recipe + tenant rate card. If both are present,
   // PriceSummary will use the new calculator and ignore the legacy rules path.
   const { data: recipe = null } = useProductRecipe(productFamilyId);
-  const rcArgs = { scope: "tenant" as const, tenantId: tenantId ?? undefined };
+  const rcArgs = branchId
+    ? ({ scope: "branch" as const, tenantId: tenantId ?? undefined, branchId } as const)
+    : ({ scope: "tenant" as const, tenantId: tenantId ?? undefined } as const);
   const { data: rcClicks = [] } = useRateCardClicks(rcArgs);
   const { data: rcPapers = [] } = useRateCardPapers(rcArgs);
   const { data: rcFinishing = [] } = useRateCardFinishing(rcArgs);
