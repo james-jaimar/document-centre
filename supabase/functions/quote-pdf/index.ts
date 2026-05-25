@@ -554,6 +554,65 @@ Deno.serve(async (req) => {
     const items = (q.quote_items as any[]) ?? [];
     items.sort((a, b) => Number(a.sequence_no ?? 0) - Number(b.sequence_no ?? 0));
 
+    // ── Resolve product_option slug → label per family ──
+    const familyIds = Array.from(
+      new Set(items.map((i) => i.product_family_id).filter(Boolean)),
+    ) as string[];
+    // Map: familyId → optionName → (slug → label)
+    const optionLabelMap = new Map<string, Map<string, Map<string, string>>>();
+    if (familyIds.length) {
+      const { data: optRows } = await supa
+        .from("product_options")
+        .select("product_family_id, name, values")
+        .in("product_family_id", familyIds);
+      for (const row of optRows ?? []) {
+        const famMap = optionLabelMap.get(row.product_family_id) ?? new Map();
+        const slugMap = new Map<string, string>();
+        const vals = Array.isArray(row.values) ? row.values : [];
+        for (const v of vals as any[]) {
+          if (v && typeof v === "object" && v.slug) {
+            slugMap.set(String(v.slug), String(v.label ?? v.slug));
+          }
+        }
+        famMap.set(String(row.name), slugMap);
+        optionLabelMap.set(row.product_family_id, famMap);
+      }
+    }
+
+    const titleCase = (s: string) =>
+      s.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+    const isNoneSlug = (slug: string) =>
+      /^no-/i.test(slug) || /^none[-_]/i.test(slug) || slug === "none";
+
+    /** Build [label, value] spec pairs for an item, skipping "no-*" noise. */
+    const buildSpecs = (item: any): [string, string][] => {
+      const cfg = (item.configuration ?? {}) as any;
+      const sel = (cfg.selected_options ?? {}) as Record<string, string>;
+      const famMap = optionLabelMap.get(item.product_family_id) ?? new Map();
+      const out: [string, string][] = [];
+
+      for (const [optName, slug] of Object.entries(sel)) {
+        if (!slug || typeof slug !== "string") continue;
+        if (isNoneSlug(slug)) continue;
+        const slugMap = famMap.get(optName);
+        const label = slugMap?.get(slug) ?? titleCase(slug);
+        out.push([optName, label]);
+      }
+
+      if (cfg.page_count != null) out.push(["Pages", String(cfg.page_count)]);
+      if (typeof cfg.is_color === "boolean") {
+        out.push(["Print Colour", cfg.is_color ? "Full colour" : "Black & white"]);
+      }
+      if (typeof cfg.is_duplex === "boolean") {
+        out.push(["Print Sides", cfg.is_duplex ? "Double sided" : "Single sided"]);
+      }
+      if (cfg.binding_edge_override) {
+        out.push(["Binding Edge", titleCase(String(cfg.binding_edge_override))]);
+      }
+      return out;
+    };
+
     // Column layout (sum = W_in = 507)
     const C = {
       code:  { x: M,         w: 50 },
@@ -592,6 +651,12 @@ Deno.serve(async (req) => {
 
     y = drawItemsHeader(y);
 
+    // Spec block layout constants
+    const specIndentX = C.desc.x + 8;
+    const specBlockW = (W - M) - specIndentX - 4; // breakdown spans desc → right margin
+    const specColW = specBlockW / 2;
+    const specRowH = 10;
+
     for (const item of items) {
       const code = String(item.external_product_key ?? item.sequence_no ?? "");
       const name = String(item.job_name ?? item.product_name ?? "Item");
@@ -599,7 +664,12 @@ Deno.serve(async (req) => {
 
       const nameLines = wrap(name, font, 9, C.desc.w - 8);
       const subLines  = sub ? wrap(sub, font, 8, C.desc.w - 8) : [];
-      const rowH = Math.max(16, 4 + nameLines.length * 11 + subLines.length * 10 + 4);
+
+      const specs = buildSpecs(item);
+      const specRows = Math.ceil(specs.length / 2);
+      const specH = specs.length ? 4 + specRows * specRowH + 2 : 0;
+
+      const rowH = Math.max(16, 4 + nameLines.length * 11 + subLines.length * 10 + specH + 4);
 
       ensureSpace(rowH + 4);
 
@@ -626,6 +696,27 @@ Deno.serve(async (req) => {
       drawText(page, "",                              C.disc.x,  fy, { size: 9, align: "right", width: C.disc.w - 4 });
       drawText(page, vr ? `${vr.toFixed(2)}%` : "",   C.vat.x,   fy, { size: 9, align: "right", width: C.vat.w - 4 });
       drawText(page, lt.toFixed(2),                   C.total.x, fy, { size: 9, align: "right", width: C.total.w - 4 });
+
+      // Specification breakdown — two columns of "Label: Value"
+      if (specs.length) {
+        ly -= 2;
+        for (let i = 0; i < specs.length; i += 2) {
+          const left = specs[i];
+          const right = specs[i + 1];
+          const drawPair = (pair: [string, string], xx: number) => {
+            const labelTxt = `${pair[0]}: `;
+            drawText(page, labelTxt, xx, ly, { size: 8, color: muted });
+            const lw = font.widthOfTextAtSize(labelTxt, 8);
+            const valMax = specColW - lw - 8;
+            const valLines = wrap(pair[1], bold, 8, valMax);
+            drawText(page, valLines[0] ?? "", xx + lw, ly, { size: 8, bold: true });
+          };
+          drawPair(left, specIndentX);
+          if (right) drawPair(right, specIndentX + specColW);
+          ly -= specRowH;
+        }
+        ly -= 2;
+      }
 
       y = ly - 4;
       page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.3, color: border });
