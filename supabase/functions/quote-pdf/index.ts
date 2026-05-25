@@ -9,7 +9,31 @@ import {
   PDFPage,
   type RGB,
 } from "https://esm.sh/pdf-lib@1.17.1";
+import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
 import { Resvg, initWasm } from "https://esm.sh/@resvg/resvg-wasm@2.6.2";
+
+/* ─── Embedded TrueType font (cached across warm invocations) ─────────────── */
+const FONT_REG_URL =
+  "https://cdn.jsdelivr.net/npm/@fontsource/noto-sans@5.0.22/files/noto-sans-latin-400-normal.ttf";
+const FONT_BOLD_URL =
+  "https://cdn.jsdelivr.net/npm/@fontsource/noto-sans@5.0.22/files/noto-sans-latin-700-normal.ttf";
+let fontRegCache: Uint8Array | null = null;
+let fontBoldCache: Uint8Array | null = null;
+async function loadFontBytes(): Promise<{ reg: Uint8Array | null; bold: Uint8Array | null }> {
+  try {
+    if (!fontRegCache) {
+      const r = await fetch(FONT_REG_URL);
+      if (r.ok) fontRegCache = new Uint8Array(await r.arrayBuffer());
+    }
+    if (!fontBoldCache) {
+      const r = await fetch(FONT_BOLD_URL);
+      if (r.ok) fontBoldCache = new Uint8Array(await r.arrayBuffer());
+    }
+  } catch (e) {
+    console.warn("[quote-pdf] font fetch failed, falling back to Helvetica", e);
+  }
+  return { reg: fontRegCache, bold: fontBoldCache };
+}
 
 
 const corsHeaders = {
