@@ -409,7 +409,7 @@ Deno.serve(async (req) => {
 
     y = y - ctBoxH - 14;
 
-    // Metadata strip: Account No | VAT Reg No | Quote Date | Order Number | Representative | Quote Number | Page
+    // Metadata strip: Account No | VAT Reg No | Quote Date | Order Number | Representative | Quote Number
     const metaCols = [
       { label: "Account No.", value: "" },
       { label: "VAT Reg No.", value: from.vat_number ?? "" },
@@ -417,8 +417,8 @@ Deno.serve(async (req) => {
       { label: "Order Number", value: srcOrder?.order_number ?? "" },
       { label: "Representative", value: repName ?? "" },
       { label: "Quote Number", value: String(q.quote_number ?? "") },
-      { label: "Page", value: "1 of 1" }, // patched later
     ];
+
     const metaW = W_in / metaCols.length;
     // Header tint
     page.drawRectangle({ x: M, y: y - 14, width: W_in, height: 14, color: brandSoft });
