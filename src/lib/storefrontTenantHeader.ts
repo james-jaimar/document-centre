@@ -19,6 +19,27 @@ declare global {
 
 let installed = false;
 
+export const STOREFRONT_TENANT_EVENT = "storefront-tenant-changed";
+
+/**
+ * Set (or clear) the storefront tenant id used by the fetch interceptor and
+ * broadcast a CustomEvent so other providers (e.g. BranchProvider) can react
+ * by refetching tenant-scoped queries that depend on the RLS header.
+ */
+export function setStorefrontTenantId(tenantId: string | null): void {
+  if (typeof window === "undefined") return;
+  const current = window.__storefrontTenantId ?? null;
+  if (current === tenantId) return;
+  window.__storefrontTenantId = tenantId;
+  try {
+    window.dispatchEvent(
+      new CustomEvent(STOREFRONT_TENANT_EVENT, { detail: { tenantId } }),
+    );
+  } catch {
+    /* CustomEvent unsupported — ignore */
+  }
+}
+
 export function installStorefrontTenantHeader(): void {
   if (installed || typeof window === "undefined") return;
   installed = true;
@@ -51,3 +72,4 @@ export function installStorefrontTenantHeader(): void {
     return originalFetch(input as RequestInfo, { ...init, headers });
   };
 }
+

@@ -1,9 +1,11 @@
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useState, useCallback, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { setDocumentCentreContext } from "@/lib/documentCentreApi";
 import { TenantSlugContext } from "@/contexts/TenantSlugContext";
+import { setStorefrontTenantId } from "@/lib/storefrontTenantHeader";
+
 
 export interface TenantMembership {
   id: string;
@@ -242,13 +244,12 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   // Publish the URL-resolved storefront tenant so the global fetch
   // interceptor can attach `x-storefront-tenant` to every PostgREST
   // request. Only set when we're on a /t/:slug or subdomain route —
-  // never on /admin or /platform.
-  useEffect(() => {
-    const id = slugTenant?.id ?? null;
-    if (typeof window !== "undefined") {
-      (window as unknown as { __storefrontTenantId: string | null }).__storefrontTenantId = id;
-    }
+  // never on /admin or /platform. Use useLayoutEffect so the header
+  // is in place before child providers commit their first fetches.
+  useLayoutEffect(() => {
+    setStorefrontTenantId(slugTenant?.id ?? null);
   }, [slugTenant?.id]);
+
 
 
   return (

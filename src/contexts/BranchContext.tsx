@@ -7,6 +7,8 @@ import {
   type ReactNode,
 } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { STOREFRONT_TENANT_EVENT } from "@/lib/storefrontTenantHeader";
+
 
 export interface Branch {
   id: string;
@@ -70,7 +72,13 @@ export function BranchProvider({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [urlBranchSlug, setUrlBranchSlugState] = useState<string | null>(null);
 
-  // Load branches for this tenant
+  // Load branches for this tenant. The branches table is RLS-protected
+  // via either tenant membership OR the `x-storefront-tenant` header.
+  // For anonymous storefront visitors that header is set by TenantProvider
+  // — if it hasn't been published yet when this effect first runs we'd
+  // get an empty result. So we (a) wait for the header to match the
+  // requested tenant before firing, and (b) listen for the header event
+  // and auth changes to retry.
   useEffect(() => {
     if (!tenantId) {
       setAllBranches([]);
@@ -82,6 +90,10 @@ export function BranchProvider({
     }
 
     let cancelled = false;
+
+    const headerReady = () =>
+      typeof window === "undefined" ||
+      window.__storefrontTenantId === tenantId;
 
     const load = async () => {
       setLoading(true);
@@ -105,11 +117,29 @@ export function BranchProvider({
       setLoading(false);
     };
 
-    load();
+    const tryLoad = () => {
+      if (cancelled) return;
+      if (!headerReady()) return; // wait for storefront header
+      void load();
+    };
+
+    tryLoad();
+
+    // Retry when the storefront header is published / changes
+    const onHeader = () => tryLoad();
+    window.addEventListener(STOREFRONT_TENANT_EVENT, onHeader);
+
+    // Retry when auth state flips (anonymous → signed in unlocks the
+    // membership RLS policy and may return more rows)
+    const { data: sub } = supabase.auth.onAuthStateChange(() => tryLoad());
+
     return () => {
       cancelled = true;
+      window.removeEventListener(STOREFRONT_TENANT_EVENT, onHeader);
+      sub.subscription.unsubscribe();
     };
   }, [tenantId]);
+
 
   // Live branches only — used by picker
   const branches = allBranches.filter((b) => b.is_live);
@@ -155,7 +185,11 @@ export function BranchProvider({
         setPickerOpen(false);
         return;
       }
+      // Stale slug (branch removed / taken offline) — clear and fall through
+      // to the picker instead of silently leaving activeBranch=null.
+      localStorage.removeItem(storageKey(tenantId));
     }
+
 
     // 4. Multi-branch, no choice — show picker
     if (!activeBranch) setPickerOpen(true);
