@@ -26,7 +26,7 @@ export default function CustomerHeader() {
   const { data: branding } = useTenantBranding(tenant?.id ?? null);
   const queryClient = useQueryClient();
   const isAnon = isAnonymousUser(user);
-  const { activeBranch, isMultiBranch, openPicker } = useBranch();
+  const { activeBranch, isMultiBranch, openPicker, loading: branchesLoading } = useBranch();
 
   const handleSignOut = async () => {
     if (slug) setTenantSignOutFlag(slug);
