@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
 
     const { data: q, error: qErr } = await supa
       .from("quotes")
-      .select("*, quote_items(*), tenants:tenant_id(name, slug)")
+      .select("*, quote_items(*)")
       .eq("id", quoteId)
       .single();
     if (qErr || !q) return json({ error: qErr?.message ?? "Quote not found" }, 404);
