@@ -511,6 +511,19 @@ Deno.serve(async (req) => {
       })
       .eq("id", q.id);
 
+    if (stream) {
+      const filename = `Quote-${q.quote_number ?? q.id}.pdf`;
+      return new Response(bytes, {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `inline; filename="${filename}"`,
+          "Cache-Control": "private, no-store",
+        },
+      });
+    }
+
     const { data: signed, error: signErr } = await supa.storage
       .from("documents")
       .createSignedUrl(storagePath, 300);
