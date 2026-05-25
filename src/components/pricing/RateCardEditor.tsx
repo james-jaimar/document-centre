@@ -61,8 +61,12 @@ import { formatPrice } from "@/lib/formatCurrency";
 interface Props {
   scope: RateCardScope;
   tenantId?: string | null;
+  branchId?: string | null;
   title?: string;
   description?: string;
+  /** Optional resync button (rendered when scope === 'branch') */
+  onResync?: () => void | Promise<void>;
+  resyncPending?: boolean;
 }
 
 const SIZE_PRESETS = ["A4", "A3", "SRA3", "A5", "A6", "DL"];
@@ -97,10 +101,13 @@ const PHOTO_FINISH_OPTIONS = ["gloss", "matte", "lustre"];
 export default function RateCardEditor({
   scope,
   tenantId,
+  branchId,
   title = "Rate Card",
   description = "Single source of truth for print, paper and finishing prices.",
+  onResync,
+  resyncPending,
 }: Props) {
-  const args = { scope, tenantId };
+  const args = { scope, tenantId, branchId };
   const { data: clicks = [], isLoading: clicksLoading } = useRateCardClicks(args);
   const { data: papers = [], isLoading: papersLoading } = useRateCardPapers(args);
   const { data: finishing = [], isLoading: finLoading } = useRateCardFinishing(args);
@@ -136,12 +143,30 @@ export default function RateCardEditor({
             {empty ? "Initialise from master" : "Pull missing from master"}
           </Button>
         )}
+        {scope === "branch" && branchId && onResync && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onResync()}
+            disabled={!!resyncPending}
+          >
+            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+            Re-sync from tenant
+          </Button>
+        )}
       </div>
 
       {empty && scope === "tenant" && (
         <Card className="p-8 text-center text-sm text-muted-foreground">
           This tenant has no rate card yet. Click <strong>Initialise from master</strong> above
           to seed it from the platform master rate card.
+        </Card>
+      )}
+
+      {empty && scope === "branch" && (
+        <Card className="p-8 text-center text-sm text-muted-foreground">
+          This branch has no rate card yet. Click <strong>Re-sync from tenant</strong> above
+          to pull a full copy of the tenant's pricing.
         </Card>
       )}
 
@@ -155,19 +180,19 @@ export default function RateCardEditor({
         </TabsList>
 
         <TabsContent value="clicks" className="mt-4">
-          <ClicksTab clicks={clicks} scope={scope} tenantId={tenantId ?? null} />
+          <ClicksTab clicks={clicks} scope={scope} tenantId={tenantId ?? null} branchId={branchId ?? null} />
         </TabsContent>
         <TabsContent value="papers" className="mt-4">
-          <PapersTab papers={papers} scope={scope} tenantId={tenantId ?? null} />
+          <PapersTab papers={papers} scope={scope} tenantId={tenantId ?? null} branchId={branchId ?? null} />
         </TabsContent>
         <TabsContent value="finishing" className="mt-4">
-          <FinishingTab finishing={finishing} scope={scope} tenantId={tenantId ?? null} />
+          <FinishingTab finishing={finishing} scope={scope} tenantId={tenantId ?? null} branchId={branchId ?? null} />
         </TabsContent>
         <TabsContent value="photo" className="mt-4">
-          <PhotoPrintsTab items={photoPrints} scope={scope} tenantId={tenantId ?? null} />
+          <PhotoPrintsTab items={photoPrints} scope={scope} tenantId={tenantId ?? null} branchId={branchId ?? null} />
         </TabsContent>
         <TabsContent value="business_cards" className="mt-4">
-          <BusinessCardsTab items={businessCards} scope={scope} tenantId={tenantId ?? null} />
+          <BusinessCardsTab items={businessCards} scope={scope} tenantId={tenantId ?? null} branchId={branchId ?? null} />
         </TabsContent>
       </Tabs>
     </div>
@@ -181,10 +206,12 @@ function ClicksTab({
   clicks,
   scope,
   tenantId,
+  branchId,
 }: {
   clicks: RateCardClick[];
   scope: RateCardScope;
   tenantId: string | null;
+  branchId: string | null;
 }) {
   const update = useUpdateRateCardClick();
   const insert = useInsertRateCardClick();
@@ -250,7 +277,8 @@ function ClicksTab({
     try {
       await insert.mutateAsync({
         scope_type: scope,
-        tenant_id: scope === "tenant" ? tenantId : null,
+        tenant_id: scope === "master" ? null : tenantId,
+        branch_id: scope === "branch" ? branchId : null,
         size: adding.size.trim(),
         colour: adding.colour,
         sides: adding.sides,
@@ -428,10 +456,12 @@ function PapersTab({
   papers,
   scope,
   tenantId,
+  branchId,
 }: {
   papers: RateCardPaper[];
   scope: RateCardScope;
   tenantId: string | null;
+  branchId: string | null;
 }) {
   const upsert = useUpsertRateCardPaper();
   const del = useDeleteRateCardPaper();
@@ -440,7 +470,8 @@ function PapersTab({
   function openNew() {
     setEditing({
       scope_type: scope,
-      tenant_id: scope === "tenant" ? tenantId ?? undefined : null,
+      tenant_id: scope === "master" ? null : (tenantId ?? undefined),
+      branch_id: scope === "branch" ? (branchId ?? undefined) : null,
       code: "",
       label: "",
       weight_gsm: 80,
@@ -638,10 +669,12 @@ function FinishingTab({
   finishing,
   scope,
   tenantId,
+  branchId,
 }: {
   finishing: RateCardFinishing[];
   scope: RateCardScope;
   tenantId: string | null;
+  branchId: string | null;
 }) {
   const upsert = useUpsertRateCardFinishing();
   const del = useDeleteRateCardFinishing();
@@ -650,7 +683,8 @@ function FinishingTab({
   function openNew() {
     setEditing({
       scope_type: scope,
-      tenant_id: scope === "tenant" ? tenantId ?? undefined : null,
+      tenant_id: scope === "master" ? null : (tenantId ?? undefined),
+      branch_id: scope === "branch" ? (branchId ?? undefined) : null,
       code: "",
       label: "",
       category: "binding",
@@ -870,10 +904,12 @@ function PhotoPrintsTab({
   items,
   scope,
   tenantId,
+  branchId,
 }: {
   items: RateCardPhotoPrint[];
   scope: RateCardScope;
   tenantId: string | null;
+  branchId: string | null;
 }) {
   const upsert = useUpsertRateCardPhotoPrint();
   const del = useDeleteRateCardPhotoPrint();
@@ -882,7 +918,8 @@ function PhotoPrintsTab({
   function openNew() {
     setEditing({
       scope_type: scope,
-      tenant_id: scope === "tenant" ? tenantId ?? undefined : null,
+      tenant_id: scope === "master" ? null : (tenantId ?? undefined),
+      branch_id: scope === "branch" ? (branchId ?? undefined) : null,
       code: "",
       label: "",
       size_slug: "4x6",
@@ -1159,10 +1196,12 @@ function BusinessCardsTab({
   items,
   scope,
   tenantId,
+  branchId,
 }: {
   items: RateCardBusinessCard[];
   scope: RateCardScope;
   tenantId: string | null;
+  branchId: string | null;
 }) {
   const upsert = useUpsertRateCardBusinessCard();
   const del = useDeleteRateCardBusinessCard();
@@ -1171,7 +1210,8 @@ function BusinessCardsTab({
   function openNew() {
     setEditing({
       scope_type: scope,
-      tenant_id: scope === "tenant" ? tenantId : null,
+      tenant_id: scope === "master" ? null : tenantId,
+        branch_id: scope === "branch" ? branchId : null,
       code: "",
       label: "",
       quantity: 250,

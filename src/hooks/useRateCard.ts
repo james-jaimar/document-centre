@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
-export type RateCardScope = "master" | "tenant";
+export type RateCardScope = "master" | "tenant" | "branch";
 export type ClickSize = string; // free text — A4, A3, SRA3, A5, etc.
 export type ClickColour = "mono" | "colour";
 export type ClickSides = "simplex" | "duplex";
@@ -17,6 +17,7 @@ export interface RateCardClick {
   id: string;
   scope_type: RateCardScope;
   tenant_id: string | null;
+  branch_id?: string | null;
   size: ClickSize;
   colour: ClickColour;
   sides: ClickSides;
@@ -29,6 +30,7 @@ export interface RateCardPaper {
   id: string;
   scope_type: RateCardScope;
   tenant_id: string | null;
+  branch_id?: string | null;
   code: string;
   label: string;
   weight_gsm: number;
@@ -44,6 +46,7 @@ export interface RateCardFinishing {
   id: string;
   scope_type: RateCardScope;
   tenant_id: string | null;
+  branch_id?: string | null;
   code: string;
   label: string;
   category: string;
@@ -62,6 +65,7 @@ export interface RateCardBusinessCard {
   id: string;
   scope_type: RateCardScope;
   tenant_id: string | null;
+  branch_id?: string | null;
   code: string;
   label: string;
   quantity: number;
@@ -78,6 +82,7 @@ export interface RateCardPhotoPrint {
   id: string;
   scope_type: RateCardScope;
   tenant_id: string | null;
+  branch_id?: string | null;
   code: string;
   label: string;
   size_slug: string;
@@ -95,11 +100,16 @@ export interface RateCardPhotoPrint {
 interface ScopeArgs {
   scope: RateCardScope;
   tenantId?: string | null;
+  branchId?: string | null;
 }
 
 function scopeFilter(query: any, args: ScopeArgs) {
   query = query.eq("scope_type", args.scope);
-  if (args.scope === "tenant") {
+  if (args.scope === "branch") {
+    if (!args.branchId) return query.eq("branch_id", "00000000-0000-0000-0000-000000000000");
+    query = query.eq("branch_id", args.branchId);
+    if (args.tenantId) query = query.eq("tenant_id", args.tenantId);
+  } else if (args.scope === "tenant") {
     query = args.tenantId ? query.eq("tenant_id", args.tenantId) : query.is("tenant_id", null);
   } else {
     query = query.is("tenant_id", null);
@@ -112,6 +122,7 @@ const KEY = (table: string, args: ScopeArgs) => [
   table,
   args.scope,
   args.tenantId ?? null,
+  args.branchId ?? null,
 ];
 
 // ----- Clicks -----
@@ -119,7 +130,7 @@ const KEY = (table: string, args: ScopeArgs) => [
 export function useRateCardClicks(args: ScopeArgs) {
   return useQuery({
     queryKey: KEY("clicks", args),
-    enabled: args.scope === "master" || !!args.tenantId,
+    enabled: args.scope === "master" || (args.scope === "branch" ? !!args.branchId : !!args.tenantId),
     queryFn: async () => {
       const q = scopeFilter(
         supabase.from("rate_card_clicks" as any).select("*"),
@@ -179,7 +190,7 @@ export function useDeleteRateCardClick() {
 export function useRateCardPapers(args: ScopeArgs) {
   return useQuery({
     queryKey: KEY("papers", args),
-    enabled: args.scope === "master" || !!args.tenantId,
+    enabled: args.scope === "master" || (args.scope === "branch" ? !!args.branchId : !!args.tenantId),
     queryFn: async () => {
       const q = scopeFilter(
         supabase.from("rate_card_papers" as any).select("*"),
@@ -225,7 +236,7 @@ export function useDeleteRateCardPaper() {
 export function useRateCardFinishing(args: ScopeArgs) {
   return useQuery({
     queryKey: KEY("finishing", args),
-    enabled: args.scope === "master" || !!args.tenantId,
+    enabled: args.scope === "master" || (args.scope === "branch" ? !!args.branchId : !!args.tenantId),
     queryFn: async () => {
       const q = scopeFilter(
         supabase.from("rate_card_finishing" as any).select("*"),
@@ -271,7 +282,7 @@ export function useDeleteRateCardFinishing() {
 export function useRateCardPhotoPrints(args: ScopeArgs) {
   return useQuery({
     queryKey: KEY("photo_prints", args),
-    enabled: args.scope === "master" || !!args.tenantId,
+    enabled: args.scope === "master" || (args.scope === "branch" ? !!args.branchId : !!args.tenantId),
     queryFn: async () => {
       const q = scopeFilter(
         supabase.from("rate_card_photo_prints" as any).select("*"),
@@ -333,12 +344,29 @@ export function useCloneMasterRateCard() {
   });
 }
 
+/** Wipe a branch's pricing and re-pull a fresh copy from the tenant. */
+export function useResyncBranchPricing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (branchId: string) => {
+      const { error } = await supabase.rpc("resync_branch_pricing_from_tenant" as any, {
+        p_branch_id: branchId,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rate_card"] });
+      qc.invalidateQueries({ queryKey: ["pricing_rules"] });
+    },
+  });
+}
+
 // ----- Business Cards -----
 
 export function useRateCardBusinessCards(args: ScopeArgs) {
   return useQuery({
     queryKey: KEY("business_cards", args),
-    enabled: args.scope === "master" || !!args.tenantId,
+    enabled: args.scope === "master" || (args.scope === "branch" ? !!args.branchId : !!args.tenantId),
     queryFn: async () => {
       const q = scopeFilter(
         supabase.from("rate_card_business_cards" as any).select("*"),

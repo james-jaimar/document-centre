@@ -3276,6 +3276,7 @@ export type Database = {
       }
       rate_card_business_cards: {
         Row: {
+          branch_id: string | null
           code: string
           cost_price: number
           created_at: string
@@ -3293,6 +3294,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          branch_id?: string | null
           code: string
           cost_price?: number
           created_at?: string
@@ -3310,6 +3312,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          branch_id?: string | null
           code?: string
           cost_price?: number
           created_at?: string
@@ -3328,6 +3331,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "rate_card_business_cards_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "rate_card_business_cards_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
@@ -3338,6 +3348,7 @@ export type Database = {
       }
       rate_card_clicks: {
         Row: {
+          branch_id: string | null
           colour: Database["public"]["Enums"]["click_colour"]
           cost_price: number
           created_at: string
@@ -3352,6 +3363,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          branch_id?: string | null
           colour: Database["public"]["Enums"]["click_colour"]
           cost_price?: number
           created_at?: string
@@ -3366,6 +3378,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          branch_id?: string | null
           colour?: Database["public"]["Enums"]["click_colour"]
           cost_price?: number
           created_at?: string
@@ -3381,6 +3394,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "rate_card_clicks_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "rate_card_clicks_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
@@ -3391,6 +3411,7 @@ export type Database = {
       }
       rate_card_finishing: {
         Row: {
+          branch_id: string | null
           category: string
           code: string
           cost_price: number
@@ -3409,6 +3430,7 @@ export type Database = {
           variant: string | null
         }
         Insert: {
+          branch_id?: string | null
           category: string
           code: string
           cost_price?: number
@@ -3427,6 +3449,7 @@ export type Database = {
           variant?: string | null
         }
         Update: {
+          branch_id?: string | null
           category?: string
           code?: string
           cost_price?: number
@@ -3446,6 +3469,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "rate_card_finishing_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "rate_card_finishing_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
@@ -3456,6 +3486,7 @@ export type Database = {
       }
       rate_card_papers: {
         Row: {
+          branch_id: string | null
           code: string
           cost_price: number
           created_at: string
@@ -3473,6 +3504,7 @@ export type Database = {
           weight_gsm: number
         }
         Insert: {
+          branch_id?: string | null
           code: string
           cost_price?: number
           created_at?: string
@@ -3490,6 +3522,7 @@ export type Database = {
           weight_gsm: number
         }
         Update: {
+          branch_id?: string | null
           code?: string
           cost_price?: number
           created_at?: string
@@ -3508,6 +3541,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "rate_card_papers_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "rate_card_papers_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
@@ -3519,6 +3559,7 @@ export type Database = {
       rate_card_photo_prints: {
         Row: {
           border_mm: number
+          branch_id: string | null
           code: string
           cost_price: number
           created_at: string
@@ -3538,6 +3579,7 @@ export type Database = {
         }
         Insert: {
           border_mm?: number
+          branch_id?: string | null
           code: string
           cost_price?: number
           created_at?: string
@@ -3557,6 +3599,7 @@ export type Database = {
         }
         Update: {
           border_mm?: number
+          branch_id?: string | null
           code?: string
           cost_price?: number
           created_at?: string
@@ -3575,6 +3618,13 @@ export type Database = {
           width_mm?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "rate_card_photo_prints_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "rate_card_photo_prints_tenant_id_fkey"
             columns: ["tenant_id"]
@@ -4323,6 +4373,10 @@ export type Database = {
         Args: { p_tenant_id: string }
         Returns: undefined
       }
+      clone_tenant_pricing_to_branch: {
+        Args: { p_branch_id: string }
+        Returns: undefined
+      }
       create_email_account_secret: {
         Args: { p_name: string; p_secret: string }
         Returns: string
@@ -4383,6 +4437,10 @@ export type Database = {
       resolve_tenant_setting: {
         Args: { p_category: string; p_key: string; p_tenant_id: string }
         Returns: Json
+      }
+      resync_branch_pricing_from_tenant: {
+        Args: { p_branch_id: string }
+        Returns: undefined
       }
       rollup_order_status: { Args: { p_order_id: string }; Returns: undefined }
       seed_branch_capabilities: {
