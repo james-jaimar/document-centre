@@ -154,17 +154,25 @@ export default function OrderBuild() {
   const useNewEngine = !!recipe && (rcClicks.length > 0 || rcPhotoPrints.length > 0);
 
   // Fetch pricing rules for this product family in the active currency.
+  // When a branch is selected, use that branch's own pricebook; otherwise the
+  // tenant-wide rules (branch_id IS NULL).
   const { data: pricingRules = [] } = useQuery({
-    queryKey: ["pricing_rules", productFamilyId, activeCurrency],
+    queryKey: ["pricing_rules", productFamilyId, activeCurrency, branchId ?? null],
     queryFn: async () => {
       if (!productFamilyId) return [];
-      const { data, error } = await supabase
+      let q = supabase
         .from("pricing_rules")
         .select("*")
         .eq("product_family_id", productFamilyId)
         .eq("is_active", true)
         .eq("currency_code", activeCurrency)
         .order("sort_order", { ascending: true });
+      if (branchId) {
+        q = q.eq("branch_id", branchId);
+      } else {
+        q = q.is("branch_id", null);
+      }
+      const { data, error } = await q;
       if (error) throw error;
       return data;
     },
