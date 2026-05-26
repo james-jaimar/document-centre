@@ -91,8 +91,8 @@ export default function Checkout() {
 
   const handlePlaceOrder = async () => {
     if (!cart) return;
-    if (deliveryMethod === "collection" && branches && branches.length > 1 && !selectedBranchId) {
-      toast.error("Please select a collection branch");
+    if (deliveryMethod === "collection" && !collectionBranch) {
+      toast.error("No collection branch selected");
       return;
     }
     if (deliveryMethod === "delivery" && !address.line1.trim()) {
@@ -107,9 +107,7 @@ export default function Checkout() {
         deliveryMethod,
         notes: notes.trim() || undefined,
         deliveryAddress: deliveryMethod === "delivery" ? address : undefined,
-        branchId: deliveryMethod === "collection"
-          ? (selectedBranchId || branches?.[0]?.id || undefined)
-          : undefined,
+        branchId: deliveryMethod === "collection" ? collectionBranch?.id : undefined,
       });
 
       // Online payment selected — create payment session and redirect
