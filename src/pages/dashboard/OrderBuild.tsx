@@ -41,8 +41,10 @@ import {
   useRateCardPhotoPrints,
 } from "@/hooks/useRateCard";
 import { useBindingSpecifications } from "@/hooks/useBindingSpecifications";
+import { useBranch } from "@/contexts/BranchContext";
 import { formatPrice } from "@/lib/formatCurrency";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
+
 
 export default function OrderBuild() {
   const { id: orderId } = useParams<{ id: string }>();
