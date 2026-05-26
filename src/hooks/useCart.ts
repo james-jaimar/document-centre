@@ -696,30 +696,16 @@ export function usePlaceOrder() {
       // No unique constraint exists, so we check-then-insert.
       if (orderTenantId) {
         try {
-          const { data: existing } = await supabase
+          let q = supabase
             .from("tenant_memberships")
             .select("id")
             .eq("profile_id", user.id)
             .eq("tenant_id", orderTenantId)
             .eq("role", "customer")
-            .is("branch_id", orderBranchId === null ? null : orderBranchId)
-            .limit(1)
-            .maybeSingle();
-          // .is() doesn't work for non-null; do a second check if branch_id is set
-          let alreadyHasRow = !!existing;
-          if (!alreadyHasRow && orderBranchId) {
-            const { data: scoped } = await supabase
-              .from("tenant_memberships")
-              .select("id")
-              .eq("profile_id", user.id)
-              .eq("tenant_id", orderTenantId)
-              .eq("role", "customer")
-              .eq("branch_id", orderBranchId)
-              .limit(1)
-              .maybeSingle();
-            alreadyHasRow = !!scoped;
-          }
-          if (!alreadyHasRow) {
+            .limit(1);
+          q = orderBranchId ? q.eq("branch_id", orderBranchId) : q.is("branch_id", null);
+          const { data: existing } = await q.maybeSingle();
+          if (!existing) {
             await supabase.from("tenant_memberships").insert({
               profile_id: user.id,
               tenant_id: orderTenantId,
