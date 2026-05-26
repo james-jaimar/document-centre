@@ -68,7 +68,14 @@ export default function OrderBuild() {
 
   const productFamilyId = orderItem?.product_family_id ?? null;
 
-  const { data: options = [] } = useProductOptions(productFamilyId);
+  // Compute effective branch up-front so it can feed both the resolved-options
+  // hook and the pricing cascade further below.
+  const { tenantId, branchId: membershipBranchId } = useTenantContext();
+  const { activeBranch } = useBranch();
+  const effectiveBranchId = activeBranch?.id ?? membershipBranchId ?? null;
+
+  // Resolved = master options minus any value the active branch has disabled.
+  const { data: options = [] } = useResolvedProductOptions(productFamilyId, effectiveBranchId);
 
   // Fetch product family to get slug for preview type
   const { data: productFamily } = useQuery({
