@@ -8,6 +8,15 @@
  * into job.configuration.preview alongside the existing thumbnails +
  * product_type so CustomerOrderDetail/AdminOrderDetail can pass the full
  * set of props into PreviewLightbox.
+ *
+ * IMPORTANT — preview-only blank faces:
+ * For simplex bound jobs we push synthetic `blank_back` faces after each
+ * body page so the flip animation reads as physical sheets. These faces
+ * are PREVIEW-ONLY and MUST NOT appear in the merged production PDF.
+ * The production merge in `buildJobSnapshot.buildMergeDirectives` only
+ * inserts real blank pages for 1-page simplex covers — body blank-backs
+ * are never emitted as merge directives. Customer-facing page counters
+ * should filter out these synthetic faces (see `displayPageNumbers`).
  */
 import type {
   PreviewEffects,

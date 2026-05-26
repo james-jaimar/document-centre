@@ -1,81 +1,36 @@
-## Branch-level spec toggles
+## Problem
 
-Goal: let each branch enable/disable individual specs from the master catalogue — binding types, cover stocks, paper stocks, laminations, and any `product_options` value (e.g. "Frosted Clear PVC" vs "Clear PVC").
+In the customer flip-book preview, a single-sided 8‑page colour document is displayed as **16 pages** (`2 / 16` in the screenshot). That's because for simplex bound jobs we insert a synthetic `blank_back` face after every body page so the flip animation reads as physical sheets. Those blanks are preview-only — they already do **not** end up in the merged production PDF (see `buildJobSnapshot.buildMergeDirectives`, which only inserts real blank pages for 1-page simplex covers and notes "Inter-document `blank_back` faces are PREVIEW-ONLY"). But the customer-facing counters still count them, which is confusing.
 
-There are two distinct sources of "specs" today and we need to cover both.
+## Fix
 
----
+Two surgical UI changes plus a production-side audit confirmation.
 
-### Source 1 — Rate card items (papers + finishing)
+### 1. `PreviewLightbox.tsx` — show "page X of <real pages>"
 
-Tables `rate_card_papers` and `rate_card_finishing` already support `scope_type = 'branch'` rows with their own `is_active` flag. So the storage model is already in place — Sandton can keep `wire_binding_*` rows but flip `is_active=false`.
+`PreviewLightbox` currently shows `{page + 1} / {total}` where `total = thumbnailPaths.length` — the raw padded sequence including blank-backs.
 
-What's missing is a **UX for it**:
-- The existing `BranchRateCard` page lets branches edit prices, but doesn't surface an obvious "Available at this branch" toggle, and it doesn't group the rows by what they actually represent to customers (e.g. "Binding methods", "Cover stocks", "Laminations").
-- Add an "Availability" column (switch) on the Papers tab and Finishing tab inside `BranchRateCard` — backed by `is_active`.
-- Add a category filter / grouping so a branch manager can see all "Binding" rows together and quickly switch off the ones they don't offer.
-- When `is_active=false`, the storefront pricing engine should already exclude these — but we'll verify the storefront `useRateCard({ scope: "branch" })` calls actually filter on `is_active`, and that the configurator's binding/cover pickers respect the resulting list.
+- Accept an optional `displayPageNumbers: (number | null)[]` prop (same array `PreviewPanel` already computes — `null` for synthetic blanks/tabs/inserts).
+- Compute `totalContentPages = displayPageNumbers.filter(n => n !== null).length`.
+- For the bottom pill, show the **current face's real page number** (or hide the number on synthetic faces and show e.g. "Blank back" / "Tab" instead), with `of {totalContentPages}`. This matches the wording `PreviewPanel` already uses (`faceLabel(...) of n`).
+- Forward `displayPageNumbers` from callers (`PreviewPanel` already has it; pass it through when opening the lightbox).
 
-### Source 2 — Product options (JSONB values on `product_options`)
+### 2. `PreviewPanel.tsx` toolbar slider — already correct
 
-`product_options.values` is a JSONB array attached to a master `product_family` (e.g. Bound Documents has an option "Front cover" with values like `clear_pvc`, `frosted_pvc`, `leatherette_black`, etc.). Today there's no branch-level filter for these.
+`pageInfoText` already uses `totalContentPages` (the filtered count) and `faceLabel(...)` which yields e.g. "Page 2 of 8" / "Blank (Back)". No change needed there.
 
-New table:
+### 3. Production output — confirm only, no code change
 
-```
-branch_product_option_overrides
-  id, branch_id, product_option_id, value_code, is_enabled (bool, default true)
-  unique (branch_id, product_option_id, value_code)
-```
+`src/lib/orders/buildJobSnapshot.ts` already enforces the rule: production merge directives only insert a real blank page for **1-page simplex covers** (`simplex_cover_back` / `simplex_back_cover_front`). Body simplex blank-backs are preview-only and never reach the worker. I'll add a short doc comment near `buildPageSequence` in `buildPreviewSnapshot.ts` cross-referencing this so the invariant is obvious.
 
-RLS: branch staff (`branch_manager`, `store_operator`, `owner`, `admin`) and platform admins can read/write rows for branches they belong to. Customers can read for the current storefront branch (public).
+## Out of scope
 
-Resolver helper used by storefront + configurator:
-- `useResolvedProductOptions(productFamilyId, branchId)` — fetches `product_options`, then strips any value whose `(option.id, value.code)` has an override row with `is_enabled=false` for that branch.
+- Restructuring how the preview models simplex sheets (we still need the blanks to render correctly).
+- Any change to the production merge / imposition pipeline.
+- Cart / order summary "Pages" badge — already uses real `page_count`, not the padded sequence.
 
-### Source 3 — Whole product family (already done)
+## Files touched
 
-`branch_capabilities.is_enabled` already gates entire families per branch — keep as is, no change.
-
----
-
-### UI changes
-
-1. **Branch → Products** (`src/pages/branch/BranchProducts.tsx`)
-   - For each enabled family, add an "Edit specs" button → opens a drawer/dialog.
-   - Inside: list every option from `product_options` for that family with its values; a switch per value toggles `branch_product_option_overrides.is_enabled`. Defaults to "on" if no row exists.
-   - Empty state if the family has no JSONB options (then the user is directed to the Rate Card tabs for binding/paper).
-
-2. **Branch → Rate Card** (`src/pages/branch/BranchRateCard.tsx`)
-   - Add an `is_active` switch column on Papers + Finishing tables (already toggleable in master pricing — reuse the cell).
-   - Group/filter Finishing by `category` (Binding, Lamination, Cover, Trim, etc.).
-   - Header copy: "Untick anything this branch doesn't offer — it will disappear from the customer storefront."
-
-3. **Storefront** — verify two places:
-   - `useRateCard({ scope: "branch", branchId })` filters `is_active=true`.
-   - `OrderBuild` / `BoundDocumentConfigurator` resolves `product_options` via the new `useResolvedProductOptions` helper so disabled values vanish from dropdowns.
-
----
-
-### Technical notes
-
-- One small migration: create `branch_product_option_overrides` + RLS + an `updated_at` trigger.
-- One new hook: `src/hooks/useBranchProductOptionOverrides.ts` (list/upsert) and `useResolvedProductOptions` wrapper that composes `useProductOptions` + the overrides for the active branch.
-- No data backfill needed — absent row = enabled.
-- The pricing engine itself doesn't change; if a customer somehow submits a disabled value (stale tab), the cart validation will reject it because the resolved options list won't include it.
-
-### Out of scope
-
-- Per-branch *creation* of brand-new option values (branches can only switch master/tenant values on or off, not invent new ones).
-- Bulk copy "make this branch identical to that branch" — can come later.
-- Surfacing branch availability in the platform/tenant admin views (those keep showing the master/tenant superset).
-
-### Files touched
-
-- new: `supabase/migrations/<ts>_branch_product_option_overrides.sql`
-- new: `src/hooks/useBranchProductOptionOverrides.ts`
-- new: `src/components/branch/BranchProductSpecsDialog.tsx`
-- edit: `src/pages/branch/BranchProducts.tsx` (add "Edit specs" entry)
-- edit: `src/pages/branch/BranchRateCard.tsx` (Availability switches + category grouping)
-- edit: `src/hooks/useProductOptions.ts` (add `useResolvedProductOptions(familyId, branchId)`)
-- edit: `src/pages/dashboard/OrderBuild.tsx` + Bound Document configurator to consume the resolved options
+- `src/components/order/PreviewLightbox.tsx` — accept `displayPageNumbers`, change the counter pill.
+- `src/components/order/PreviewPanel.tsx` — pass `displayPageNumbers` (and `faceLabels`) into the lightbox when it opens.
+- `src/lib/orders/buildPreviewSnapshot.ts` — comment-only clarification.
