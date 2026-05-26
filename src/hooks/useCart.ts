@@ -687,13 +687,46 @@ export function usePlaceOrder() {
         isDemo = !!tRow?.is_demo;
       }
 
+      // Resolve the branch this order belongs to (locked from storefront branch).
+      const orderBranchId = input.branchId || cartOrder.branch_id || null;
+
+      // Ensure the customer has a `customer` membership row for this
+      // tenant + branch. This is the "home branch" record — one profile can
+      // hold multiple branch memberships (one per branch they've ordered at).
+      // No unique constraint exists, so we check-then-insert.
+      if (orderTenantId) {
+        try {
+          let q = supabase
+            .from("tenant_memberships")
+            .select("id")
+            .eq("profile_id", user.id)
+            .eq("tenant_id", orderTenantId)
+            .eq("role", "customer")
+            .limit(1);
+          q = orderBranchId ? q.eq("branch_id", orderBranchId) : q.is("branch_id", null);
+          const { data: existing } = await q.maybeSingle();
+          if (!existing) {
+            await supabase.from("tenant_memberships").insert({
+              profile_id: user.id,
+              tenant_id: orderTenantId,
+              branch_id: orderBranchId,
+              app_id: cartOrder.app_id || appId || null,
+              role: "customer",
+              is_active: true,
+            });
+          }
+        } catch (e) {
+          console.warn("[placeOrder] customer membership upsert failed (non-blocking):", e);
+        }
+      }
+
       // Call order-engine to create the real order
       const { data, error } = await supabase.functions.invoke("order-engine", {
         body: {
           action: "createOrderWithJobs",
           app_slug: app.slug,
           tenant_id: orderTenantId,
-          branch_id: input.branchId || cartOrder.branch_id || null,
+          branch_id: orderBranchId,
           customer: {
             profile_id: user.id,
             email: profile?.email || user.email || `demo-${user.id.slice(0, 8)}@demo.document-centre.com`,

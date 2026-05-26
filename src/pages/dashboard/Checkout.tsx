@@ -1,10 +1,11 @@
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useCart, usePlaceOrder } from "@/hooks/useCart";
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { useBranch, branchUrlSlug } from "@/contexts/BranchContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,8 +13,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Loader2, ShoppingBag } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { ArrowLeft, Loader2, MapPin, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
@@ -25,6 +29,8 @@ export default function Checkout() {
   const { user } = useAuth();
   const { data: cart, isLoading } = useCart();
   const { tenantId } = useTenantContext();
+  const { activeBranch, branches: liveBranches } = useBranch();
+  const { isSubdomain } = useTenantSlug();
   const placeOrder = usePlaceOrder();
   const { region } = useRegionalPricing();
   // Currency is locked at the cart level (set when items are added). Fall back
@@ -32,10 +38,10 @@ export default function Checkout() {
   const currency = ((cart as { currency?: string } | null)?.currency) ?? region?.currency_code ?? "ZAR";
 
   const [deliveryMethod, setDeliveryMethod] = useState<"collection" | "delivery">("collection");
-  const [selectedBranchId, setSelectedBranchId] = useState<string>("");
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<string>("offline");
+  const [showBranchSwitch, setShowBranchSwitch] = useState(false);
 
   // Fetch online payment providers enabled for this tenant
   const { data: onlineProviders } = useQuery({
@@ -57,22 +63,10 @@ export default function Checkout() {
     },
   });
 
-  // Fetch active branches for collection picker
-  const { data: branches } = useQuery({
-    queryKey: ["branches-for-checkout", tenantId],
-    queryFn: async () => {
-      if (!tenantId) return [];
-      const { data, error } = await supabase
-        .from("branches")
-        .select("id, name, city, address")
-        .eq("tenant_id", tenantId)
-        .eq("is_active", true)
-        .order("name");
-      if (error) throw error;
-      return data ?? [];
-    },
-    enabled: !!tenantId,
-  });
+  // The collection branch is locked to the active storefront branch. Pricing,
+  // stock and customer accounts are all scoped per-branch, so switching
+  // branches means re-entering the other branch's storefront.
+  const collectionBranch = activeBranch;
 
   // Delivery address fields
   const [address, setAddress] = useState({
@@ -97,8 +91,8 @@ export default function Checkout() {
 
   const handlePlaceOrder = async () => {
     if (!cart) return;
-    if (deliveryMethod === "collection" && branches && branches.length > 1 && !selectedBranchId) {
-      toast.error("Please select a collection branch");
+    if (deliveryMethod === "collection" && !collectionBranch) {
+      toast.error("No collection branch selected");
       return;
     }
     if (deliveryMethod === "delivery" && !address.line1.trim()) {
@@ -113,9 +107,7 @@ export default function Checkout() {
         deliveryMethod,
         notes: notes.trim() || undefined,
         deliveryAddress: deliveryMethod === "delivery" ? address : undefined,
-        branchId: deliveryMethod === "collection"
-          ? (selectedBranchId || branches?.[0]?.id || undefined)
-          : undefined,
+        branchId: deliveryMethod === "collection" ? collectionBranch?.id : undefined,
       });
 
       // Online payment selected — create payment session and redirect
@@ -224,30 +216,78 @@ export default function Checkout() {
               </div>
             </RadioGroup>
 
-            {/* Branch selector for collection */}
-            {deliveryMethod === "collection" && branches && branches.length > 1 && (
-              <div className="mt-3 space-y-1">
-                <Label className="text-xs">Collection Branch</Label>
-                <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a branch…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {branches.map((b) => (
-                      <SelectItem key={b.id} value={b.id}>
-                        {b.name}{b.city ? ` — ${b.city}` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            {/* Branch is locked to the active storefront branch */}
+            {deliveryMethod === "collection" && collectionBranch && (
+              <div className="mt-3 rounded-md border border-border bg-muted/30 p-3">
+                <div className="flex items-start gap-3">
+                  <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs text-muted-foreground">Collection Branch</div>
+                    <div className="text-sm font-medium text-foreground">
+                      {collectionBranch.name}
+                      {collectionBranch.city ? ` — ${collectionBranch.city}` : ""}
+                    </div>
+                    {liveBranches.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowBranchSwitch(true)}
+                        className="mt-1 text-xs text-primary hover:underline"
+                      >
+                        Change branch
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
-            {deliveryMethod === "collection" && branches && branches.length === 1 && (
-              <p className="text-sm text-muted-foreground mt-2">
-                Collect from: <strong>{branches[0].name}</strong>{branches[0].city ? ` — ${branches[0].city}` : ""}
-              </p>
-            )}
           </div>
+
+          {/* Change-branch confirmation */}
+          <AlertDialog open={showBranchSwitch} onOpenChange={setShowBranchSwitch}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Switch to a different branch?</AlertDialogTitle>
+                <AlertDialogDescription asChild>
+                  <div className="space-y-2 text-sm">
+                    <p>
+                      You're currently checking out at <strong>{collectionBranch?.name}</strong>.
+                      Each branch has its own pricing, stock and lead times, and your
+                      customer account is registered against this branch.
+                    </p>
+                    <p>
+                      If you switch branches we'll send you to that branch's storefront
+                      — your cart items may need to be re-added so they can be re-priced
+                      against the new branch's rate card.
+                    </p>
+                  </div>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <div className="grid gap-2 max-h-72 overflow-y-auto py-2">
+                {liveBranches
+                  .filter((b) => b.id !== collectionBranch?.id)
+                  .map((b) => (
+                    <button
+                      key={b.id}
+                      onClick={() => {
+                        const seg = branchUrlSlug(b);
+                        const target = isSubdomain ? `/${seg}/checkout` : `/t/${slug}/${seg}/checkout`;
+                        window.location.href = target;
+                      }}
+                      className="flex items-start gap-2 rounded-md border border-border bg-background p-3 text-left hover:border-primary/40 hover:bg-primary/5"
+                    >
+                      <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                      <div>
+                        <div className="text-sm font-medium text-foreground">{b.name}</div>
+                        {b.city && <div className="text-xs text-muted-foreground">{b.city}</div>}
+                      </div>
+                    </button>
+                  ))}
+              </div>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Stay here</AlertDialogCancel>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           {/* Delivery Address */}
           {deliveryMethod === "delivery" && (
@@ -341,7 +381,7 @@ export default function Checkout() {
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="offline" id="pm-offline" />
                 <Label htmlFor="pm-offline" className="cursor-pointer">
-                  Pay on collection / EFT (we'll send instructions)
+                  EFT — Pay by bank transfer (we'll email banking details &amp; a Pro Forma invoice)
                 </Label>
               </div>
               {(onlineProviders ?? []).map((p) => (
