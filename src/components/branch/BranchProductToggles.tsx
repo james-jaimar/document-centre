@@ -9,8 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import ProductPricingTab from "@/components/admin/ProductPricingTab";
+import BranchProductSpecsDialog from "@/components/branch/BranchProductSpecsDialog";
 import { toast } from "sonner";
-import { ChevronDown, Package, AlertTriangle, RefreshCw, ToggleLeft, ToggleRight, Tag } from "lucide-react";
+import { ChevronDown, Package, AlertTriangle, RefreshCw, ToggleLeft, ToggleRight, Tag, Sliders } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { BranchCapability } from "@/hooks/useBranchCapabilities";
 
@@ -25,6 +26,7 @@ export default function BranchProductToggles({ branchId, readOnly = false }: Pro
   const seed = useSeedBranchCapabilities();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [pricingFamily, setPricingFamily] = useState<{ id: string; name: string; slug?: string } | null>(null);
+  const [specsFamily, setSpecsFamily] = useState<{ id: string; name: string } | null>(null);
 
   const handleToggle = async (cap: BranchCapability, field: keyof BranchCapability, value: unknown) => {
     try {
@@ -126,14 +128,24 @@ export default function BranchProductToggles({ branchId, readOnly = false }: Pro
                     disabled={readOnly || update.isPending}
                   />
                   {!readOnly && cap.product_family_id && cap.product_families?.name && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8"
-                      onClick={() => setPricingFamily({ id: cap.product_family_id!, name: cap.product_families!.name, slug: cap.product_families!.slug })}
-                    >
-                      <Tag size={12} className="mr-1.5" /> Pricing
-                    </Button>
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => setSpecsFamily({ id: cap.product_family_id!, name: cap.product_families!.name })}
+                      >
+                        <Sliders size={12} className="mr-1.5" /> Specs
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => setPricingFamily({ id: cap.product_family_id!, name: cap.product_families!.name, slug: cap.product_families!.slug })}
+                      >
+                        <Tag size={12} className="mr-1.5" /> Pricing
+                      </Button>
+                    </>
                   )}
                   {!readOnly && (
                     <CollapsibleTrigger asChild>
@@ -245,6 +257,16 @@ export default function BranchProductToggles({ branchId, readOnly = false }: Pro
           )}
         </DialogContent>
       </Dialog>
+
+      {specsFamily && (
+        <BranchProductSpecsDialog
+          open={!!specsFamily}
+          onOpenChange={(o) => !o && setSpecsFamily(null)}
+          branchId={branchId}
+          productFamilyId={specsFamily.id}
+          productFamilyName={specsFamily.name}
+        />
+      )}
     </div>
   );
 }

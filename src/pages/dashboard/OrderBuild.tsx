@@ -3,7 +3,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useOrderData, useUpdateOrderItemSpec, useAddSection, useUpdateSection, useDeleteSection } from "@/hooks/useOrderBuilder";
 import { useAddItemToCart } from "@/hooks/useCart";
-import { useProductOptions } from "@/hooks/useProductOptions";
+import { useResolvedProductOptions } from "@/hooks/useBranchProductOptionOverrides";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { ItemSpec } from "@/lib/calculatePrice";
@@ -67,7 +67,14 @@ export default function OrderBuild() {
 
   const productFamilyId = orderItem?.product_family_id ?? null;
 
-  const { data: options = [] } = useProductOptions(productFamilyId);
+  // Compute effective branch up-front so it can feed both the resolved-options
+  // hook and the pricing cascade further below.
+  const { tenantId, branchId: membershipBranchId } = useTenantContext();
+  const { activeBranch } = useBranch();
+  const effectiveBranchId = activeBranch?.id ?? membershipBranchId ?? null;
+
+  // Resolved = master options minus any value the active branch has disabled.
+  const { data: options = [] } = useResolvedProductOptions(productFamilyId, effectiveBranchId);
 
   // Fetch product family to get slug for preview type
   const { data: productFamily } = useQuery({
@@ -119,14 +126,7 @@ export default function OrderBuild() {
   const { region } = useRegionalPricing();
   const activeCurrency = region?.currency_code ?? "ZAR";
 
-  // Tenant + branch context for cascaded price overrides.
-  // On a storefront (/t/:slug), the active branch comes from BranchContext
-  // (URL slug / picker), NOT the user's membership. Anonymous customers and
-  // customers without staff memberships have no membership branch — so we
-  // must prefer the storefront-active branch to pull branch-specific pricing.
-  const { tenantId, branchId: membershipBranchId } = useTenantContext();
-  const { activeBranch } = useBranch();
-  const effectiveBranchId = activeBranch?.id ?? membershipBranchId ?? null;
+  // tenantId / effectiveBranchId already computed above (needed by useResolvedProductOptions).
 
   // Layer 3 cascade: branch overrides take priority over tenant overrides.
   const { data: branchOverrides = [] } = useProductPriceOverrides(
