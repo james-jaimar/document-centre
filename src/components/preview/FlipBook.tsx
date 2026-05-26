@@ -188,6 +188,7 @@ function TabOverlay({
   pageHeight,
   isSoloPage,
   isShowingFrontCover,
+  bindingEdge = "left",
 }: {
   tabPositions: TabPosition[];
   currentPage: number;
@@ -195,19 +196,14 @@ function TabOverlay({
   pageHeight: number;
   isSoloPage: boolean;
   isShowingFrontCover: boolean;
+  bindingEdge?: "left" | "top";
 }) {
   if (tabPositions.length === 0) return null;
 
-  // Physical pre-cut packs (banks) are always 10 slots high. If any tab has
-  // an explicit bankPosition, lay tabs out at those fixed slot positions so
-  // the preview matches a real pack; otherwise fall back to even spacing.
   const hasBankPositions = tabPositions.some((t) => t.bankPosition != null);
   const MAX_PER_BANK = tabPositions[0].bankSize ?? 10;
   const tabTotal = tabPositions[0].tabTotal;
 
-  // Bank count: in pack mode = ceil(max placed bankPosition / size) — we
-  // need at least enough banks to hold the highest occupied slot. In legacy
-  // mode use tabTotal.
   const maxBankPos = hasBankPositions
     ? Math.max(...tabPositions.map((t) => t.bankPosition ?? 1))
     : tabTotal;
@@ -216,10 +212,22 @@ function TabOverlay({
     : Math.ceil(tabTotal / MAX_PER_BANK);
   const bankSize = hasBankPositions ? MAX_PER_BANK : Math.ceil(tabTotal / banks);
 
-  const tabWidth = 22;
-  const tabHeight = Math.max(30, Math.min(80, (pageHeight - 10) / bankSize));
+  // For landscape (top-bound) docs, the same physical portrait tab pack is used
+  // rotated 90° so the tab cuts protrude from the BOTTOM edge of the page.
+  // Slots lay out across the page WIDTH instead of HEIGHT.
+  const isBottomEdge = bindingEdge === "top";
+  const protrusion = 22;
+  const alongEdgeLen = isBottomEdge
+    ? Math.max(30, Math.min(80, (pageWidth - 10) / bankSize))
+    : Math.max(30, Math.min(80, (pageHeight - 10) / bankSize));
+  const tabWidth = isBottomEdge ? alongEdgeLen : protrusion;
+  const tabHeight = isBottomEdge ? protrusion : alongEdgeLen;
   const spreadWidth = isSoloPage ? pageWidth : pageWidth * 2;
   const rightEdge = spreadWidth;
+  const bottomEdge = pageHeight;
+
+  const pathD = (w: number, h: number) =>
+    `M0,0 C${w * 0.3},${h * 0.04} ${w * 0.7},${h * 0.06} ${w},${h * 0.1} L${w},${h * 0.9} C${w * 0.7},${h * 0.94} ${w * 0.3},${h * 0.96} 0,${h} Z`;
 
   return (
     <div
@@ -231,23 +239,55 @@ function TabOverlay({
         const isBehind = tab.pageIndex <= currentPage;
         const isCurrent = !isAhead && !isBehind;
 
-        // Slot index drives both Y position and (multi) colour cycle:
-        // - pack mode: use bankPosition (1..bankSize) modulo bank
-        // - legacy:    use placement index
         const slotForLayout = hasBankPositions
           ? ((tab.bankPosition ?? 1) - 1)
           : tab.tabIndex;
         const bankIndex = Math.floor(slotForLayout / bankSize);
         const indexInBank = slotForLayout % bankSize;
-        const segmentHeight = pageHeight / bankSize;
-        const topOffset = segmentHeight * indexInBank + (segmentHeight - tabHeight) / 2;
-        const bankOffset = bankIndex * (tabWidth + 2);
 
         const colorKey = hasBankPositions ? slotForLayout : tab.tabIndex;
         const tabColor = resolveTabColor(tab.color, colorKey);
         const textColor = ["#e5e7eb", "#fde68a", "#ffffff"].includes(tabColor) ? "#374151" : "#ffffff";
+        const labelText = tab.label.length > 8 ? tab.label.slice(0, 7) + "…" : tab.label;
+        const fontSize = Math.max(6, Math.min(8, alongEdgeLen * 0.12));
 
         if (isAhead || isCurrent) {
+          if (isBottomEdge) {
+            const rightPageLeft = isSoloPage ? 0 : pageWidth;
+            const segmentWidth = pageWidth / bankSize;
+            const leftOffset = rightPageLeft + segmentWidth * indexInBank + (segmentWidth - tabWidth) / 2;
+            const bankOffset = bankIndex * (tabHeight + 2);
+            return (
+              <div
+                key={`tab-r-${tab.tabIndex}`}
+                className="absolute"
+                style={{
+                  left: leftOffset,
+                  top: bottomEdge + bankOffset,
+                  width: tabWidth,
+                  height: tabHeight,
+                  zIndex: 10 + tab.tabIndex,
+                }}
+              >
+                <svg width={tabWidth} height={tabHeight} viewBox={`0 0 ${tabHeight} ${tabWidth}`}
+                  preserveAspectRatio="none"
+                  style={{ filter: "drop-shadow(1px 2px 3px rgba(0,0,0,0.2))", transform: "rotate(90deg)", transformOrigin: "center" }}>
+                  <path
+                    d={pathD(tabHeight, tabWidth)}
+                    fill={tabColor} stroke="rgba(0,0,0,0.15)" strokeWidth="0.5"
+                  />
+                  <text x={tabHeight / 2 + 1} y={tabWidth / 2} textAnchor="middle" dominantBaseline="central"
+                    fill={textColor} fontSize={fontSize} fontWeight="700"
+                    transform={`rotate(180, ${tabHeight / 2 + 1}, ${tabWidth / 2})`}>
+                    {labelText}
+                  </text>
+                </svg>
+              </div>
+            );
+          }
+          const segmentHeight = pageHeight / bankSize;
+          const topOffset = segmentHeight * indexInBank + (segmentHeight - tabHeight) / 2;
+          const bankOffset = bankIndex * (tabWidth + 2);
           return (
             <div
               key={`tab-r-${tab.tabIndex}`}
@@ -263,14 +303,14 @@ function TabOverlay({
               <svg width={tabWidth} height={tabHeight} viewBox={`0 0 ${tabWidth} ${tabHeight}`}
                 style={{ filter: "drop-shadow(2px 1px 3px rgba(0,0,0,0.2))" }}>
                 <path
-                  d={`M0,0 C${tabWidth * 0.3},${tabHeight * 0.04} ${tabWidth * 0.7},${tabHeight * 0.06} ${tabWidth},${tabHeight * 0.1} L${tabWidth},${tabHeight * 0.9} C${tabWidth * 0.7},${tabHeight * 0.94} ${tabWidth * 0.3},${tabHeight * 0.96} 0,${tabHeight} Z`}
+                  d={pathD(tabWidth, tabHeight)}
                   fill={tabColor} stroke="rgba(0,0,0,0.15)" strokeWidth="0.5"
                 />
                 <text x={tabWidth / 2 + 1} y={tabHeight / 2} textAnchor="middle" dominantBaseline="central"
-                  fill={textColor} fontSize={Math.max(6, Math.min(8, tabHeight * 0.12))} fontWeight="700"
+                  fill={textColor} fontSize={fontSize} fontWeight="700"
                   style={{ writingMode: "tb" } as any}
                   transform={`rotate(180, ${tabWidth / 2 + 1}, ${tabHeight / 2})`}>
-                  {tab.label.length > 8 ? tab.label.slice(0, 7) + "…" : tab.label}
+                  {labelText}
                 </text>
               </svg>
             </div>
@@ -278,6 +318,36 @@ function TabOverlay({
         }
 
         if (isBehind && !isShowingFrontCover) {
+          if (isBottomEdge) {
+            const segmentWidth = pageWidth / bankSize;
+            const leftOffset = segmentWidth * indexInBank + (segmentWidth - tabWidth) / 2;
+            const bankOffset = bankIndex * (tabHeight + 2);
+            return (
+              <div
+                key={`tab-l-${tab.tabIndex}`}
+                className="absolute"
+                style={{
+                  left: leftOffset,
+                  top: bottomEdge + bankOffset,
+                  width: tabWidth,
+                  height: tabHeight,
+                  zIndex: 10 + tab.tabIndex,
+                }}
+              >
+                <svg width={tabWidth} height={tabHeight} viewBox={`0 0 ${tabHeight} ${tabWidth}`}
+                  preserveAspectRatio="none"
+                  style={{ filter: "drop-shadow(1px 2px 3px rgba(0,0,0,0.15))", transform: "rotate(90deg) scaleY(-1)", transformOrigin: "center" }}>
+                  <path
+                    d={pathD(tabHeight, tabWidth)}
+                    fill={tabColor} stroke="rgba(0,0,0,0.15)" strokeWidth="0.5"
+                  />
+                </svg>
+              </div>
+            );
+          }
+          const segmentHeight = pageHeight / bankSize;
+          const topOffset = segmentHeight * indexInBank + (segmentHeight - tabHeight) / 2;
+          const bankOffset = bankIndex * (tabWidth + 2);
           return (
             <div
               key={`tab-l-${tab.tabIndex}`}
@@ -293,7 +363,7 @@ function TabOverlay({
               <svg width={tabWidth} height={tabHeight} viewBox={`0 0 ${tabWidth} ${tabHeight}`}
                 style={{ filter: "drop-shadow(-2px 1px 3px rgba(0,0,0,0.15))", transform: "scaleX(-1)" }}>
                 <path
-                  d={`M0,0 C${tabWidth * 0.3},${tabHeight * 0.04} ${tabWidth * 0.7},${tabHeight * 0.06} ${tabWidth},${tabHeight * 0.1} L${tabWidth},${tabHeight * 0.9} C${tabWidth * 0.7},${tabHeight * 0.94} ${tabWidth * 0.3},${tabHeight * 0.96} 0,${tabHeight} Z`}
+                  d={pathD(tabWidth, tabHeight)}
                   fill={tabColor} stroke="rgba(0,0,0,0.15)" strokeWidth="0.5"
                 />
               </svg>
