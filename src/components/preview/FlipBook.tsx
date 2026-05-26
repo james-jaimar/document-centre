@@ -512,8 +512,8 @@ export default function FlipBook({
       >
         <div
           style={{
-            width: displayedViewportWidth + tabGutter * 2,
-            height: displayedPageHeight,
+            width: displayedViewportWidth + sideGutter * 2,
+            height: displayedPageHeight + bottomGutter,
             position: "relative",
             overflow: "visible",
             transition: "width 0.4s ease-in-out",
@@ -522,7 +522,7 @@ export default function FlipBook({
           <div
             style={{
               position: "absolute",
-              left: tabGutter,
+              left: sideGutter,
               top: 0,
               width: displayedViewportWidth,
               height: displayedPageHeight,
@@ -559,9 +559,11 @@ export default function FlipBook({
                   pageHeight={basePageHeight}
                   isSoloPage={isSoloPage}
                   isShowingFrontCover={isShowingFrontCover}
+                  bindingEdge={bindingEdge}
                 />
               </div>
             )}
+
 
             <div
               style={{
