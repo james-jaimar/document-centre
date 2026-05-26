@@ -29,6 +29,8 @@ export default function Checkout() {
   const { user } = useAuth();
   const { data: cart, isLoading } = useCart();
   const { tenantId } = useTenantContext();
+  const { activeBranch, branches: liveBranches } = useBranch();
+  const { isSubdomain } = useTenantSlug();
   const placeOrder = usePlaceOrder();
   const { region } = useRegionalPricing();
   // Currency is locked at the cart level (set when items are added). Fall back
@@ -36,10 +38,10 @@ export default function Checkout() {
   const currency = ((cart as { currency?: string } | null)?.currency) ?? region?.currency_code ?? "ZAR";
 
   const [deliveryMethod, setDeliveryMethod] = useState<"collection" | "delivery">("collection");
-  const [selectedBranchId, setSelectedBranchId] = useState<string>("");
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<string>("offline");
+  const [showBranchSwitch, setShowBranchSwitch] = useState(false);
 
   // Fetch online payment providers enabled for this tenant
   const { data: onlineProviders } = useQuery({
