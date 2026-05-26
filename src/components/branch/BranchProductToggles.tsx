@@ -9,8 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import ProductPricingTab from "@/components/admin/ProductPricingTab";
+import BranchProductSpecsDialog from "@/components/branch/BranchProductSpecsDialog";
 import { toast } from "sonner";
-import { ChevronDown, Package, AlertTriangle, RefreshCw, ToggleLeft, ToggleRight, Tag } from "lucide-react";
+import { ChevronDown, Package, AlertTriangle, RefreshCw, ToggleLeft, ToggleRight, Tag, Sliders } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { BranchCapability } from "@/hooks/useBranchCapabilities";
 
