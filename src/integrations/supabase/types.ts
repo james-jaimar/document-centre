@@ -244,6 +244,51 @@ export type Database = {
           },
         ]
       }
+      branch_product_option_overrides: {
+        Row: {
+          branch_id: string
+          created_at: string
+          id: string
+          is_enabled: boolean
+          product_option_id: string
+          updated_at: string
+          value_slug: string
+        }
+        Insert: {
+          branch_id: string
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          product_option_id: string
+          updated_at?: string
+          value_slug: string
+        }
+        Update: {
+          branch_id?: string
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          product_option_id?: string
+          updated_at?: string
+          value_slug?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "branch_product_option_overrides_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "branch_product_option_overrides_product_option_id_fkey"
+            columns: ["product_option_id"]
+            isOneToOne: false
+            referencedRelation: "product_options"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       branches: {
         Row: {
           accounts_email: string | null
