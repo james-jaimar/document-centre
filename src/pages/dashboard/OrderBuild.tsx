@@ -41,8 +41,10 @@ import {
   useRateCardPhotoPrints,
 } from "@/hooks/useRateCard";
 import { useBindingSpecifications } from "@/hooks/useBindingSpecifications";
+import { useBranch } from "@/contexts/BranchContext";
 import { formatPrice } from "@/lib/formatCurrency";
 import { selectedBindingArt } from "@/lib/orders/selectedBindingArt";
+
 
 export default function OrderBuild() {
   const { id: orderId } = useParams<{ id: string }>();
@@ -118,14 +120,20 @@ export default function OrderBuild() {
   const activeCurrency = region?.currency_code ?? "ZAR";
 
   // Tenant + branch context for cascaded price overrides.
-  const { tenantId, branchId } = useTenantContext();
+  // On a storefront (/t/:slug), the active branch comes from BranchContext
+  // (URL slug / picker), NOT the user's membership. Anonymous customers and
+  // customers without staff memberships have no membership branch — so we
+  // must prefer the storefront-active branch to pull branch-specific pricing.
+  const { tenantId, branchId: membershipBranchId } = useTenantContext();
+  const { activeBranch } = useBranch();
+  const effectiveBranchId = activeBranch?.id ?? membershipBranchId ?? null;
 
   // Layer 3 cascade: branch overrides take priority over tenant overrides.
   const { data: branchOverrides = [] } = useProductPriceOverrides(
     tenantId,
     productFamilyId,
     activeCurrency,
-    branchId ?? null,
+    effectiveBranchId,
   );
   const { data: tenantOverrides = [] } = useProductPriceOverrides(
     tenantId,
@@ -141,8 +149,8 @@ export default function OrderBuild() {
   // New rate-card engine: recipe + tenant rate card. If both are present,
   // PriceSummary will use the new calculator and ignore the legacy rules path.
   const { data: recipe = null } = useProductRecipe(productFamilyId);
-  const rcArgs = branchId
-    ? ({ scope: "branch" as const, tenantId: tenantId ?? undefined, branchId } as const)
+  const rcArgs = effectiveBranchId
+    ? ({ scope: "branch" as const, tenantId: tenantId ?? undefined, branchId: effectiveBranchId } as const)
     : ({ scope: "tenant" as const, tenantId: tenantId ?? undefined } as const);
   const { data: rcClicks = [] } = useRateCardClicks(rcArgs);
   const { data: rcPapers = [] } = useRateCardPapers(rcArgs);
@@ -159,7 +167,7 @@ export default function OrderBuild() {
   // When a branch is selected, use that branch's own pricebook; otherwise the
   // tenant-wide rules (branch_id IS NULL).
   const { data: pricingRules = [] } = useQuery({
-    queryKey: ["pricing_rules", productFamilyId, activeCurrency, branchId ?? null],
+    queryKey: ["pricing_rules", productFamilyId, activeCurrency, effectiveBranchId ?? null],
     queryFn: async () => {
       if (!productFamilyId) return [];
       let q = supabase
@@ -169,8 +177,8 @@ export default function OrderBuild() {
         .eq("is_active", true)
         .eq("currency_code", activeCurrency)
         .order("sort_order", { ascending: true });
-      if (branchId) {
-        q = q.eq("branch_id", branchId);
+      if (effectiveBranchId) {
+        q = q.eq("branch_id", effectiveBranchId);
       } else {
         q = q.is("branch_id", null);
       }
@@ -178,6 +186,7 @@ export default function OrderBuild() {
       if (error) throw error;
       return data;
     },
+
     enabled: !!productFamilyId,
   });
 
