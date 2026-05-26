@@ -257,6 +257,16 @@ export default function BranchProductToggles({ branchId, readOnly = false }: Pro
           )}
         </DialogContent>
       </Dialog>
+
+      {specsFamily && (
+        <BranchProductSpecsDialog
+          open={!!specsFamily}
+          onOpenChange={(o) => !o && setSpecsFamily(null)}
+          branchId={branchId}
+          productFamilyId={specsFamily.id}
+          productFamilyName={specsFamily.name}
+        />
+      )}
     </div>
   );
 }
