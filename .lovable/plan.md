@@ -1,67 +1,81 @@
-# Checkout: Branch Lock-in + EFT/Pro Forma + PayFast
+## Branch-level spec toggles
 
-Three connected changes to `src/pages/dashboard/Checkout.tsx` and supporting pieces. No database schema changes required — `tenant_memberships` already carries `branch_id`, and `generate-invoice-pdf` already supports `kind = "proforma"`.
+Goal: let each branch enable/disable individual specs from the master catalogue — binding types, cover stocks, paper stocks, laminations, and any `product_options` value (e.g. "Frosted Clear PVC" vs "Clear PVC").
+
+There are two distinct sources of "specs" today and we need to cover both.
 
 ---
 
-## 1. Lock collection branch to the active storefront branch
+### Source 1 — Rate card items (papers + finishing)
 
-Today the checkout shows a generic "Select a branch…" dropdown listing every active branch in the tenant. We'll replace this with the **current storefront branch, pre-selected and locked**, plus an escape hatch.
+Tables `rate_card_papers` and `rate_card_finishing` already support `scope_type = 'branch'` rows with their own `is_active` flag. So the storage model is already in place — Sandton can keep `wire_binding_*` rows but flip `is_active=false`.
 
-Behaviour:
-- Read `activeBranch` from `useBranch()` and set it as the default + only displayed option.
-- Show as a read-only card: "Collect from: **PostNet Sandton City** — Sandton" with a small "Change branch" link.
-- Clicking **Change branch** opens a confirmation modal explaining:
-  - Prices, stock and lead times may differ at other branches.
-  - Their cart will be re-priced against the new branch's rate card.
-  - Their customer account is registered against the current branch; switching will create/link a customer record at the new branch.
-- On confirm, navigate to the other branch's storefront URL (`/<branch-slug>/checkout` or `/t/<tenant>/<branch>/checkout`) — `BranchContext` already handles the switch, and `OrderBuild` will re-price next time they edit. (We won't auto-re-price the cart silently; the user re-enters the new storefront and continues.)
+What's missing is a **UX for it**:
+- The existing `BranchRateCard` page lets branches edit prices, but doesn't surface an obvious "Available at this branch" toggle, and it doesn't group the rows by what they actually represent to customers (e.g. "Binding methods", "Cover stocks", "Laminations").
+- Add an "Availability" column (switch) on the Papers tab and Finishing tab inside `BranchRateCard` — backed by `is_active`.
+- Add a category filter / grouping so a branch manager can see all "Binding" rows together and quickly switch off the ones they don't offer.
+- When `is_active=false`, the storefront pricing engine should already exclude these — but we'll verify the storefront `useRateCard({ scope: "branch" })` calls actually filter on `is_active`, and that the configurator's binding/cover pickers respect the resulting list.
 
-Files: `src/pages/dashboard/Checkout.tsx` only.
+### Source 2 — Product options (JSONB values on `product_options`)
 
-## 2. Customer accounts vs branch
+`product_options.values` is a JSONB array attached to a master `product_family` (e.g. Bound Documents has an option "Front cover" with values like `clear_pvc`, `frosted_pvc`, `leatherette_black`, etc.). Today there's no branch-level filter for these.
 
-Confirmed model (no migration needed):
-- `profiles` is tenant-wide (one customer record per tenant).
-- `tenant_memberships` already has `branch_id` — we'll use this column to mark a customer's "home branch" (role = `Customer`, `branch_id` = the branch they first ordered from).
-- On `placeOrder`, if the signed-in user has no `Customer` membership row for the active tenant/branch, insert one (idempotent on `(profile_id, tenant_id, branch_id, role)`).
-- When the user switches branches at checkout (case above) and places an order, a second `Customer` membership row is created for the new branch — so one profile can hold accounts at multiple branches without duplicating profile data.
+New table:
 
-Files: `src/hooks/useCart.ts` (the `usePlaceOrder` mutation) — add an upsert into `tenant_memberships` before the order insert.
+```
+branch_product_option_overrides
+  id, branch_id, product_option_id, value_code, is_enabled (bool, default true)
+  unique (branch_id, product_option_id, value_code)
+```
 
-## 3. Payment methods: EFT + PayFast
+RLS: branch staff (`branch_manager`, `store_operator`, `owner`, `admin`) and platform admins can read/write rows for branches they belong to. Customers can read for the current storefront branch (public).
 
-### 3a. Rename the offline option
+Resolver helper used by storefront + configurator:
+- `useResolvedProductOptions(productFamilyId, branchId)` — fetches `product_options`, then strips any value whose `(option.id, value.code)` has an override row with `is_enabled=false` for that branch.
 
-In `Checkout.tsx`, change the label from
-"Pay on collection / EFT (we'll send instructions)"
-to **"EFT — Pay by bank transfer (we'll send banking details)"**. The underlying `paymentMethod === "offline"` value stays the same so no backend wiring changes.
+### Source 3 — Whole product family (already done)
 
-### 3b. Auto-generate a Pro Forma invoice on EFT orders
+`branch_capabilities.is_enabled` already gates entire families per branch — keep as is, no change.
 
-The Edge Function `generate-invoice-pdf` already supports `kind: "proforma"`. We'll:
-1. In `usePlaceOrder` (or right after it returns in `Checkout.tsx`), if `paymentMethod === "offline"`, invoke `generate-invoice-pdf` with `{ order_id, kind: "proforma" }`.
-2. The function already writes the PDF to storage and creates an `order_documents` row — `OrderInvoicesList` will then surface it on the order detail page, so the customer can download it from `My Account → Order detail`.
-3. Trigger `send-order-email` with a new template variant `order_placed_eft` that:
-   - Includes the bank details from `tenant_settings.payments.*` (already configured per `PaymentsTab.tsx`).
-   - Attaches/links the Pro Forma PDF (signed URL).
-   - Tells the customer to use the order number as their EFT reference.
+---
 
-### 3c. PayFast wiring
+### UI changes
 
-Backend is already in place (`payments-create-session`, `payfast-itn`, `tenant_payment_gateways`). The checkout already auto-lists any enabled+credentialed PayFast gateway. To "turn it on" for Sandton City the tenant admin enables PayFast in **Admin → Settings → Payments** (branch override available via `branch_payment_gateways`).
+1. **Branch → Products** (`src/pages/branch/BranchProducts.tsx`)
+   - For each enabled family, add an "Edit specs" button → opens a drawer/dialog.
+   - Inside: list every option from `product_options` for that family with its values; a switch per value toggles `branch_product_option_overrides.is_enabled`. Defaults to "on" if no row exists.
+   - Empty state if the family has no JSONB options (then the user is directed to the Rate Card tabs for binding/paper).
 
-No code change needed for PayFast itself — only verify branch-scoped gateway resolution works on the customer-facing checkout. Today `payments-create-session` resolves `branch_payment_gateways` from `order.branch_id`, which we now reliably set from the locked storefront branch (item 1). So PayFast credentials configured at the **branch** level will be used automatically.
+2. **Branch → Rate Card** (`src/pages/branch/BranchRateCard.tsx`)
+   - Add an `is_active` switch column on Papers + Finishing tables (already toggleable in master pricing — reuse the cell).
+   - Group/filter Finishing by `category` (Binding, Lamination, Cover, Trim, etc.).
+   - Header copy: "Untick anything this branch doesn't offer — it will disappear from the customer storefront."
 
-## Technical notes
+3. **Storefront** — verify two places:
+   - `useRateCard({ scope: "branch", branchId })` filters `is_active=true`.
+   - `OrderBuild` / `BoundDocumentConfigurator` resolves `product_options` via the new `useResolvedProductOptions` helper so disabled values vanish from dropdowns.
 
-- The "Change branch" confirmation modal uses the existing `AlertDialog` shadcn component; no new dependencies.
-- `usePlaceOrder` already accepts `branchId`; we just always pass `activeBranch.id` from `BranchContext` instead of the dropdown value.
-- For the membership upsert, use `.upsert(..., { onConflict: "profile_id,tenant_id,branch_id,role" })` — confirm or add this unique constraint in a tiny migration if it doesn't exist yet.
-- Pro Forma generation runs after the order is created but before the user is redirected to the confirmation page; we'll `await` it but show a toast and continue even if PDF generation fails (the order itself is safe).
+---
 
-## Out of scope (will confirm separately)
+### Technical notes
 
-- Re-pricing the cart in-place when switching branches.
-- Distinct EFT-paid vs collection-only payment modes.
-- Auto-converting Pro Forma → Tax Invoice on payment receipt.
+- One small migration: create `branch_product_option_overrides` + RLS + an `updated_at` trigger.
+- One new hook: `src/hooks/useBranchProductOptionOverrides.ts` (list/upsert) and `useResolvedProductOptions` wrapper that composes `useProductOptions` + the overrides for the active branch.
+- No data backfill needed — absent row = enabled.
+- The pricing engine itself doesn't change; if a customer somehow submits a disabled value (stale tab), the cart validation will reject it because the resolved options list won't include it.
+
+### Out of scope
+
+- Per-branch *creation* of brand-new option values (branches can only switch master/tenant values on or off, not invent new ones).
+- Bulk copy "make this branch identical to that branch" — can come later.
+- Surfacing branch availability in the platform/tenant admin views (those keep showing the master/tenant superset).
+
+### Files touched
+
+- new: `supabase/migrations/<ts>_branch_product_option_overrides.sql`
+- new: `src/hooks/useBranchProductOptionOverrides.ts`
+- new: `src/components/branch/BranchProductSpecsDialog.tsx`
+- edit: `src/pages/branch/BranchProducts.tsx` (add "Edit specs" entry)
+- edit: `src/pages/branch/BranchRateCard.tsx` (Availability switches + category grouping)
+- edit: `src/hooks/useProductOptions.ts` (add `useResolvedProductOptions(familyId, branchId)`)
+- edit: `src/pages/dashboard/OrderBuild.tsx` + Bound Document configurator to consume the resolved options
