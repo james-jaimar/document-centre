@@ -1,10 +1,11 @@
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useCart, usePlaceOrder } from "@/hooks/useCart";
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { useBranch, branchUrlSlug } from "@/contexts/BranchContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,8 +13,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Loader2, ShoppingBag } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { ArrowLeft, Loader2, MapPin, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
