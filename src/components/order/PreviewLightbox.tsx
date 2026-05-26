@@ -35,6 +35,22 @@ export default function PreviewLightbox({
     ? ringTotalViews(thumbnailPaths.length)
     : thumbnailPaths.length;
 
+  // Customer-facing counter: ignore synthetic blank-back / tab / insert faces
+  // (those have a null entry in displayPageNumbers). Falls back to the raw
+  // total when no displayPageNumbers were supplied.
+  const displayPageNumbers = (extraProps as any).displayPageNumbers as
+    | (number | null)[]
+    | undefined;
+  const faceLabels = (extraProps as any).faceLabels as string[] | undefined;
+  const contentTotal =
+    displayPageNumbers && !isRingBinder
+      ? displayPageNumbers.filter((n) => n !== null).length
+      : total;
+  const currentDisplayNum =
+    displayPageNumbers && !isRingBinder ? displayPageNumbers[page] ?? null : null;
+  const currentFaceLabel =
+    faceLabels && !isRingBinder ? faceLabels[page] : undefined;
+
   const step = BOUND_TYPES.has(productType) ? 2 : 1;
 
   const goNext = useCallback(() => {
