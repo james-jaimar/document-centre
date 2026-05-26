@@ -63,22 +63,10 @@ export default function Checkout() {
     },
   });
 
-  // Fetch active branches for collection picker
-  const { data: branches } = useQuery({
-    queryKey: ["branches-for-checkout", tenantId],
-    queryFn: async () => {
-      if (!tenantId) return [];
-      const { data, error } = await supabase
-        .from("branches")
-        .select("id, name, city, address")
-        .eq("tenant_id", tenantId)
-        .eq("is_active", true)
-        .order("name");
-      if (error) throw error;
-      return data ?? [];
-    },
-    enabled: !!tenantId,
-  });
+  // The collection branch is locked to the active storefront branch. Pricing,
+  // stock and customer accounts are all scoped per-branch, so switching
+  // branches means re-entering the other branch's storefront.
+  const collectionBranch = activeBranch;
 
   // Delivery address fields
   const [address, setAddress] = useState({
