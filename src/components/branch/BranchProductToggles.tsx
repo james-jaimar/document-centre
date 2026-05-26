@@ -128,14 +128,24 @@ export default function BranchProductToggles({ branchId, readOnly = false }: Pro
                     disabled={readOnly || update.isPending}
                   />
                   {!readOnly && cap.product_family_id && cap.product_families?.name && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8"
-                      onClick={() => setPricingFamily({ id: cap.product_family_id!, name: cap.product_families!.name, slug: cap.product_families!.slug })}
-                    >
-                      <Tag size={12} className="mr-1.5" /> Pricing
-                    </Button>
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => setSpecsFamily({ id: cap.product_family_id!, name: cap.product_families!.name })}
+                      >
+                        <Sliders size={12} className="mr-1.5" /> Specs
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => setPricingFamily({ id: cap.product_family_id!, name: cap.product_families!.name, slug: cap.product_families!.slug })}
+                      >
+                        <Tag size={12} className="mr-1.5" /> Pricing
+                      </Button>
+                    </>
                   )}
                   {!readOnly && (
                     <CollapsibleTrigger asChild>
