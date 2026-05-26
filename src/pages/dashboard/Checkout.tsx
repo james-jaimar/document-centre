@@ -381,7 +381,7 @@ export default function Checkout() {
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="offline" id="pm-offline" />
                 <Label htmlFor="pm-offline" className="cursor-pointer">
-                  Pay on collection / EFT (we'll send instructions)
+                  EFT — Pay by bank transfer (we'll email banking details &amp; a Pro Forma invoice)
                 </Label>
               </div>
               {(onlineProviders ?? []).map((p) => (
