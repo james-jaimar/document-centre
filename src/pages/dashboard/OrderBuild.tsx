@@ -127,14 +127,7 @@ export default function OrderBuild() {
   const { region } = useRegionalPricing();
   const activeCurrency = region?.currency_code ?? "ZAR";
 
-  // Tenant + branch context for cascaded price overrides.
-  // On a storefront (/t/:slug), the active branch comes from BranchContext
-  // (URL slug / picker), NOT the user's membership. Anonymous customers and
-  // customers without staff memberships have no membership branch — so we
-  // must prefer the storefront-active branch to pull branch-specific pricing.
-  const { tenantId, branchId: membershipBranchId } = useTenantContext();
-  const { activeBranch } = useBranch();
-  const effectiveBranchId = activeBranch?.id ?? membershipBranchId ?? null;
+  // tenantId / effectiveBranchId already computed above (needed by useResolvedProductOptions).
 
   // Layer 3 cascade: branch overrides take priority over tenant overrides.
   const { data: branchOverrides = [] } = useProductPriceOverrides(
