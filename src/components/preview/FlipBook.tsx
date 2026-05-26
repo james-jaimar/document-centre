@@ -485,10 +485,14 @@ export default function FlipBook({
 
   const displayedViewportWidth = isSoloPage ? displayedPageWidth : displayedSpreadWidth;
   const spinePosition = isShowingFrontCover ? "left" : (isShowingBackCover || isShowingLastSolo) ? "right" : "center";
-  const tabGutter = (tabPositions?.length ?? 0) > 0 ? 30 * scaleFactor : 0;
+  const hasTabs = (tabPositions?.length ?? 0) > 0;
+  const isBottomTabEdge = bindingEdge === "top";
+  const tabGutter = hasTabs ? 30 * scaleFactor : 0;
+  const sideGutter = hasTabs && !isBottomTabEdge ? tabGutter : 0;
+  const bottomGutter = hasTabs && isBottomTabEdge ? tabGutter : 0;
 
-  const wrapperWidth = displayedViewportWidth + tabGutter * 2;
-  const wrapperHeight = displayedPageHeight;
+  const wrapperWidth = displayedViewportWidth + sideGutter * 2;
+  const wrapperHeight = displayedPageHeight + bottomGutter;
 
   return (
     <div
