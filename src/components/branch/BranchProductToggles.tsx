@@ -26,6 +26,7 @@ export default function BranchProductToggles({ branchId, readOnly = false }: Pro
   const seed = useSeedBranchCapabilities();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [pricingFamily, setPricingFamily] = useState<{ id: string; name: string; slug?: string } | null>(null);
+  const [specsFamily, setSpecsFamily] = useState<{ id: string; name: string } | null>(null);
 
   const handleToggle = async (cap: BranchCapability, field: keyof BranchCapability, value: unknown) => {
     try {
