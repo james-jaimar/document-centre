@@ -216,30 +216,78 @@ export default function Checkout() {
               </div>
             </RadioGroup>
 
-            {/* Branch selector for collection */}
-            {deliveryMethod === "collection" && branches && branches.length > 1 && (
-              <div className="mt-3 space-y-1">
-                <Label className="text-xs">Collection Branch</Label>
-                <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a branch…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {branches.map((b) => (
-                      <SelectItem key={b.id} value={b.id}>
-                        {b.name}{b.city ? ` — ${b.city}` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            {/* Branch is locked to the active storefront branch */}
+            {deliveryMethod === "collection" && collectionBranch && (
+              <div className="mt-3 rounded-md border border-border bg-muted/30 p-3">
+                <div className="flex items-start gap-3">
+                  <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs text-muted-foreground">Collection Branch</div>
+                    <div className="text-sm font-medium text-foreground">
+                      {collectionBranch.name}
+                      {collectionBranch.city ? ` — ${collectionBranch.city}` : ""}
+                    </div>
+                    {liveBranches.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowBranchSwitch(true)}
+                        className="mt-1 text-xs text-primary hover:underline"
+                      >
+                        Change branch
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
-            {deliveryMethod === "collection" && branches && branches.length === 1 && (
-              <p className="text-sm text-muted-foreground mt-2">
-                Collect from: <strong>{branches[0].name}</strong>{branches[0].city ? ` — ${branches[0].city}` : ""}
-              </p>
-            )}
           </div>
+
+          {/* Change-branch confirmation */}
+          <AlertDialog open={showBranchSwitch} onOpenChange={setShowBranchSwitch}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Switch to a different branch?</AlertDialogTitle>
+                <AlertDialogDescription asChild>
+                  <div className="space-y-2 text-sm">
+                    <p>
+                      You're currently checking out at <strong>{collectionBranch?.name}</strong>.
+                      Each branch has its own pricing, stock and lead times, and your
+                      customer account is registered against this branch.
+                    </p>
+                    <p>
+                      If you switch branches we'll send you to that branch's storefront
+                      — your cart items may need to be re-added so they can be re-priced
+                      against the new branch's rate card.
+                    </p>
+                  </div>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <div className="grid gap-2 max-h-72 overflow-y-auto py-2">
+                {liveBranches
+                  .filter((b) => b.id !== collectionBranch?.id)
+                  .map((b) => (
+                    <button
+                      key={b.id}
+                      onClick={() => {
+                        const seg = branchUrlSlug(b);
+                        const target = isSubdomain ? `/${seg}/checkout` : `/t/${slug}/${seg}/checkout`;
+                        window.location.href = target;
+                      }}
+                      className="flex items-start gap-2 rounded-md border border-border bg-background p-3 text-left hover:border-primary/40 hover:bg-primary/5"
+                    >
+                      <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                      <div>
+                        <div className="text-sm font-medium text-foreground">{b.name}</div>
+                        {b.city && <div className="text-xs text-muted-foreground">{b.city}</div>}
+                      </div>
+                    </button>
+                  ))}
+              </div>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Stay here</AlertDialogCancel>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           {/* Delivery Address */}
           {deliveryMethod === "delivery" && (
