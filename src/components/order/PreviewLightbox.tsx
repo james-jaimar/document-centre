@@ -133,7 +133,11 @@ export default function PreviewLightbox({
 
       {total > 1 && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-black/50 text-white text-sm px-4 py-1.5 rounded-full">
-          {page + 1} / {total}
+          {currentDisplayNum !== null
+            ? `${currentDisplayNum} / ${contentTotal}`
+            : currentFaceLabel
+              ? `${currentFaceLabel} · ${contentTotal} pages`
+              : `${contentTotal} pages`}
         </div>
       )}
     </div>
