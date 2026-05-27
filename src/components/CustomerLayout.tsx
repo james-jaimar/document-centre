@@ -2,9 +2,9 @@ import { Outlet } from "react-router-dom";
 import CustomerSidebar from "@/components/CustomerSidebar";
 import CustomerHeader from "@/components/CustomerHeader";
 import CustomerFooter from "@/components/CustomerFooter";
-import { Menu, PanelLeftOpen } from "lucide-react";
+import { PanelLeftOpen } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useMemo, useEffect, useRef } from "react";
 import { SidebarCollapseProvider, useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { supabase } from "@/integrations/supabase/client";
 import { hasTenantSignOutFlag, clearTenantSignOutFlag } from "@/lib/tenantSignOut";
@@ -15,6 +15,8 @@ import TenantChatWidget from "@/components/TenantChatWidget";
 import { useTenantSettingsMap } from "@/hooks/useTenantSettings";
 import { BranchProvider } from "@/contexts/BranchContext";
 import BranchPicker from "@/components/BranchPicker";
+import { useDeviceKind } from "@/hooks/useDeviceKind";
+import CustomerMobileLayout from "@/components/customer/mobile/CustomerMobileLayout";
 
 // Convert a hex colour to "H S% L%" for CSS variable injection
 function hexToHslString(hex: string | undefined | null): string | null {
@@ -44,7 +46,7 @@ function hexToHslString(hex: string | undefined | null): string | null {
 function CustomerLayoutInner() {
   const { user, loading: authLoading } = useAuth();
   const { slug } = useTenantSlug();
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const device = useDeviceKind();
   const { collapsed, toggle } = useSidebarCollapse();
   const { tenant, loading: tenantLoading } = useTenantFromSlug();
   const { data: branding, isLoading: brandingLoading } = useTenantBranding(tenant?.id ?? null);
