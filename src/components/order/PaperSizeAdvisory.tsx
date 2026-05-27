@@ -28,6 +28,8 @@ interface PaperSizeAdvisoryProps {
    * size to keep the print job consistent.
    */
   lockedSize?: PaperSize | null;
+  /** Product family slug — used to tailor suggested scale targets (e.g. posters → A2/A1/A0). */
+  productFamilySlug?: string | null;
 }
 
 export default function PaperSizeAdvisory({
@@ -40,9 +42,12 @@ export default function PaperSizeAdvisory({
   onKeepOriginal,
   onScaleTo,
   lockedSize,
+  productFamilySlug,
 }: PaperSizeAdvisoryProps) {
-  const suggestions = getSuggestedIsoSizes(widthMm, heightMm);
+  const suggestions = getSuggestedIsoSizes(widthMm, heightMm, productFamilySlug);
   const landscape = isLandscape(widthMm, heightMm);
+  const isPoster = (productFamilySlug ?? "").toLowerCase().startsWith("poster");
+  const recommendedLabel = isPoster ? "A2, A1 or A0" : "A4 or A3";
 
   // In locked mode, the locked size is the primary (and pre-selected) option,
   // even if it's not in the auto-suggested list.
@@ -105,7 +110,7 @@ export default function PaperSizeAdvisory({
                   {detectedSize} ({Math.round(widthMm)} × {Math.round(heightMm)}mm)
                 </span>
                 . Presentation slide sizes don't match standard printable paper. We
-                recommend scaling onto A4 or A3 so it prints correctly.
+                recommend scaling onto {recommendedLabel} so it prints correctly.
               </>
             ) : isUnknown ? (
               <>
@@ -114,7 +119,7 @@ export default function PaperSizeAdvisory({
                   {Math.round(widthMm)} × {Math.round(heightMm)}mm
                 </span>
                 , which isn't a standard ISO paper size. We recommend scaling onto
-                A4 or A3 before printing — keeping the original may require custom
+                {" "}{recommendedLabel} before printing — keeping the original may require custom
                 cutting and could incur a surcharge.
               </>
             ) : (

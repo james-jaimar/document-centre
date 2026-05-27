@@ -17,7 +17,16 @@ export const ISO_SIZES: PaperSize[] = [
   { name: "A4", widthMm: 210, heightMm: 297 },
   { name: "A3", widthMm: 297, heightMm: 420 },
   { name: "A2", widthMm: 420, heightMm: 594 },
+  { name: "A1", widthMm: 594, heightMm: 841 },
+  { name: "A0", widthMm: 841, heightMm: 1189 },
 ];
+
+/** Product families whose ISO size suggestions should be poster-scale (A2/A1/A0). */
+const POSTER_FAMILY_SLUGS = new Set(["posters", "poster"]);
+
+function isPosterFamily(slug?: string | null): boolean {
+  return !!slug && POSTER_FAMILY_SLUGS.has(slug.toLowerCase());
+}
 
 // Common non-ISO sizes (US / ANSI + presentation defaults)
 export const NON_ISO_SIZES: PaperSize[] = [
@@ -118,8 +127,15 @@ export function detectNonIsoSize(
  */
 export function getSuggestedIsoSizes(
   widthMm: number,
-  heightMm: number
+  heightMm: number,
+  productFamilySlug?: string | null,
 ): PaperSize[] {
+  // Posters: always offer A2/A1/A0, regardless of the source dimensions.
+  if (isPosterFamily(productFamilySlug)) {
+    const posterNames = ["A2", "A1", "A0"];
+    return ISO_SIZES.filter((s) => posterNames.includes(s.name));
+  }
+
   const area = widthMm * heightMm;
   const within = ISO_SIZES.filter((s) => {
     const isoArea = s.widthMm * s.heightMm;
@@ -136,7 +152,7 @@ export function getSuggestedIsoSizes(
       if (iso) within.push(iso);
     }
   }
-  // Preserve canonical ISO ordering (A5 → A2)
+  // Preserve canonical ISO ordering (A5 → A0)
   return ISO_SIZES.filter((s) => within.some((w) => w.name === s.name));
 }
 
@@ -150,6 +166,8 @@ export function isLandscape(widthMm: number, heightMm: number): boolean {
 // ── Size lookup for production processing ────────────────────────
 
 const ALL_KNOWN_SIZES: Record<string, { widthMm: number; heightMm: number }> = {
+  a0: { widthMm: 841, heightMm: 1189 },
+  a1: { widthMm: 594, heightMm: 841 },
   a2: { widthMm: 420, heightMm: 594 },
   a3: { widthMm: 297, heightMm: 420 },
   a4: { widthMm: 210, heightMm: 297 },
