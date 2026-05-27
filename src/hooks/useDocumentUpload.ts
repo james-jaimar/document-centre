@@ -637,6 +637,16 @@ export function useDocumentUpload(
         const finalCropBox = finalBoxes?.CropBox;
         const finalMediaBox =
           finalBoxes?.MediaBox ?? [0, 0, asset.width_pt ?? 595, asset.height_pt ?? 842];
+        console.debug("[upload] asset.boxes after finalize", {
+          fileName,
+          family: productFamilySlug,
+          hasTrim: !!finalTrimBox,
+          hasCrop: !!finalCropBox,
+          MediaBox: finalMediaBox,
+          TrimBox: finalTrimBox,
+          CropBox: finalCropBox,
+          BleedBox: finalBoxes?.BleedBox,
+        });
         const finalReportingBox = finalTrimBox ?? finalCropBox ?? finalMediaBox;
         const finalWidthPt = Math.abs(finalReportingBox[2] - finalReportingBox[0]);
         const finalHeightPt = Math.abs(finalReportingBox[3] - finalReportingBox[1]);
