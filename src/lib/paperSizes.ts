@@ -166,6 +166,8 @@ export function isLandscape(widthMm: number, heightMm: number): boolean {
 // ── Size lookup for production processing ────────────────────────
 
 const ALL_KNOWN_SIZES: Record<string, { widthMm: number; heightMm: number }> = {
+  a0: { widthMm: 841, heightMm: 1189 },
+  a1: { widthMm: 594, heightMm: 841 },
   a2: { widthMm: 420, heightMm: 594 },
   a3: { widthMm: 297, heightMm: 420 },
   a4: { widthMm: 210, heightMm: 297 },
