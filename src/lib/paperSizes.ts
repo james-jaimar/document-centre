@@ -127,8 +127,15 @@ export function detectNonIsoSize(
  */
 export function getSuggestedIsoSizes(
   widthMm: number,
-  heightMm: number
+  heightMm: number,
+  productFamilySlug?: string | null,
 ): PaperSize[] {
+  // Posters: always offer A2/A1/A0, regardless of the source dimensions.
+  if (isPosterFamily(productFamilySlug)) {
+    const posterNames = ["A2", "A1", "A0"];
+    return ISO_SIZES.filter((s) => posterNames.includes(s.name));
+  }
+
   const area = widthMm * heightMm;
   const within = ISO_SIZES.filter((s) => {
     const isoArea = s.widthMm * s.heightMm;
@@ -145,7 +152,7 @@ export function getSuggestedIsoSizes(
       if (iso) within.push(iso);
     }
   }
-  // Preserve canonical ISO ordering (A5 → A2)
+  // Preserve canonical ISO ordering (A5 → A0)
   return ISO_SIZES.filter((s) => within.some((w) => w.name === s.name));
 }
 
