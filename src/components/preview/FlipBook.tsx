@@ -258,7 +258,8 @@ function TabOverlay({
             // the protrusion tip points downward.
             const rightPageLeft = isSoloPage ? 0 : pageWidth;
             const segmentWidth = pageWidth / bankSize;
-            const leftOffset = rightPageLeft + segmentWidth * indexInBank + (segmentWidth - alongEdgeLen) / 2;
+            const mirroredIndex = bankSize - 1 - indexInBank;
+            const leftOffset = rightPageLeft + segmentWidth * mirroredIndex + (segmentWidth - alongEdgeLen) / 2;
             const bankOffset = bankIndex * (protrusion + 2);
             return (
               <div
@@ -335,7 +336,8 @@ function TabOverlay({
           if (isBottomEdge) {
             // Same identical rotated portrait artwork, placed under the left page.
             const segmentWidth = pageWidth / bankSize;
-            const leftOffset = segmentWidth * indexInBank + (segmentWidth - alongEdgeLen) / 2;
+            const mirroredIndex = bankSize - 1 - indexInBank;
+            const leftOffset = segmentWidth * mirroredIndex + (segmentWidth - alongEdgeLen) / 2;
             const bankOffset = bankIndex * (protrusion + 2);
             return (
               <div
