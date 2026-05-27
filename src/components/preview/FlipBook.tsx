@@ -253,10 +253,13 @@ function TabOverlay({
 
         if (isAhead || isCurrent) {
           if (isBottomEdge) {
+            // Use IDENTICAL portrait artwork (a 22 × alongEdgeLen portrait SVG)
+            // rotated 90° CW so the glued edge sits along the page bottom and
+            // the protrusion tip points downward.
             const rightPageLeft = isSoloPage ? 0 : pageWidth;
             const segmentWidth = pageWidth / bankSize;
-            const leftOffset = rightPageLeft + segmentWidth * indexInBank + (segmentWidth - tabWidth) / 2;
-            const bankOffset = bankIndex * (tabHeight + 2);
+            const leftOffset = rightPageLeft + segmentWidth * indexInBank + (segmentWidth - alongEdgeLen) / 2;
+            const bankOffset = bankIndex * (protrusion + 2);
             return (
               <div
                 key={`tab-r-${tab.tabIndex}`}
@@ -264,21 +267,32 @@ function TabOverlay({
                 style={{
                   left: leftOffset,
                   top: bottomEdge + bankOffset,
-                  width: tabWidth,
-                  height: tabHeight,
+                  width: alongEdgeLen,
+                  height: protrusion,
                   zIndex: 10 + tab.tabIndex,
                 }}
               >
-                <svg width={tabWidth} height={tabHeight} viewBox={`0 0 ${tabHeight} ${tabWidth}`}
-                  preserveAspectRatio="none"
-                  style={{ filter: "drop-shadow(1px 2px 3px rgba(0,0,0,0.2))", transform: "rotate(90deg)", transformOrigin: "center" }}>
+                <svg
+                  width={protrusion}
+                  height={alongEdgeLen}
+                  viewBox={`0 0 ${protrusion} ${alongEdgeLen}`}
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    top: 0,
+                    transformOrigin: "0 100%",
+                    transform: `translateY(-${alongEdgeLen}px) rotate(90deg)`,
+                    filter: "drop-shadow(2px 1px 3px rgba(0,0,0,0.2))",
+                  }}
+                >
                   <path
-                    d={pathD(tabHeight, tabWidth)}
+                    d={pathD(protrusion, alongEdgeLen)}
                     fill={tabColor} stroke="rgba(0,0,0,0.15)" strokeWidth="0.5"
                   />
-                  <text x={tabHeight / 2 + 1} y={tabWidth / 2} textAnchor="middle" dominantBaseline="central"
+                  <text x={protrusion / 2 + 1} y={alongEdgeLen / 2} textAnchor="middle" dominantBaseline="central"
                     fill={textColor} fontSize={fontSize} fontWeight="700"
-                    transform={`rotate(180, ${tabHeight / 2 + 1}, ${tabWidth / 2})`}>
+                    style={{ writingMode: "tb" } as any}
+                    transform={`rotate(180, ${protrusion / 2 + 1}, ${alongEdgeLen / 2})`}>
                     {labelText}
                   </text>
                 </svg>
@@ -319,9 +333,10 @@ function TabOverlay({
 
         if (isBehind && !isShowingFrontCover) {
           if (isBottomEdge) {
+            // Same identical rotated portrait artwork, placed under the left page.
             const segmentWidth = pageWidth / bankSize;
-            const leftOffset = segmentWidth * indexInBank + (segmentWidth - tabWidth) / 2;
-            const bankOffset = bankIndex * (tabHeight + 2);
+            const leftOffset = segmentWidth * indexInBank + (segmentWidth - alongEdgeLen) / 2;
+            const bankOffset = bankIndex * (protrusion + 2);
             return (
               <div
                 key={`tab-l-${tab.tabIndex}`}
@@ -329,16 +344,26 @@ function TabOverlay({
                 style={{
                   left: leftOffset,
                   top: bottomEdge + bankOffset,
-                  width: tabWidth,
-                  height: tabHeight,
+                  width: alongEdgeLen,
+                  height: protrusion,
                   zIndex: 10 + tab.tabIndex,
                 }}
               >
-                <svg width={tabWidth} height={tabHeight} viewBox={`0 0 ${tabHeight} ${tabWidth}`}
-                  preserveAspectRatio="none"
-                  style={{ filter: "drop-shadow(1px 2px 3px rgba(0,0,0,0.15))", transform: "rotate(90deg) scaleY(-1)", transformOrigin: "center" }}>
+                <svg
+                  width={protrusion}
+                  height={alongEdgeLen}
+                  viewBox={`0 0 ${protrusion} ${alongEdgeLen}`}
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    top: 0,
+                    transformOrigin: "0 100%",
+                    transform: `translateY(-${alongEdgeLen}px) rotate(90deg)`,
+                    filter: "drop-shadow(2px 1px 3px rgba(0,0,0,0.15))",
+                  }}
+                >
                   <path
-                    d={pathD(tabHeight, tabWidth)}
+                    d={pathD(protrusion, alongEdgeLen)}
                     fill={tabColor} stroke="rgba(0,0,0,0.15)" strokeWidth="0.5"
                   />
                 </svg>
