@@ -110,7 +110,7 @@ export default function PaperSizeAdvisory({
                   {detectedSize} ({Math.round(widthMm)} × {Math.round(heightMm)}mm)
                 </span>
                 . Presentation slide sizes don't match standard printable paper. We
-                recommend scaling onto A4 or A3 so it prints correctly.
+                recommend scaling onto {recommendedLabel} so it prints correctly.
               </>
             ) : isUnknown ? (
               <>
@@ -119,7 +119,7 @@ export default function PaperSizeAdvisory({
                   {Math.round(widthMm)} × {Math.round(heightMm)}mm
                 </span>
                 , which isn't a standard ISO paper size. We recommend scaling onto
-                A4 or A3 before printing — keeping the original may require custom
+                {" "}{recommendedLabel} before printing — keeping the original may require custom
                 cutting and could incur a surcharge.
               </>
             ) : (
