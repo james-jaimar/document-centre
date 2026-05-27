@@ -575,7 +575,7 @@ export function useDocumentUpload(
         const isoMatch = matchIsoSize(pageWidthMm, pageHeightMm);
         const knownNonIso = !isoMatch ? detectNonIsoSize(pageWidthMm, pageHeightMm) : null;
         const nearIsoMatch = !isoMatch && !knownNonIso
-          ? detectNearIsoWithBleed(pageWidthMm, pageHeightMm)
+          ? detectNearIsoWithBleed(pageWidthMm, pageHeightMm, productFamilySlug)
           : null;
         const isUnknownSize = !isoMatch && !knownNonIso && !nearIsoMatch;
         const detectedSize = knownNonIso ?? (isUnknownSize ? UNKNOWN_SIZE_LABEL : null);
