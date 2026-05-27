@@ -202,15 +202,20 @@ export interface NearIsoMatch {
 
 const BLEED_MIN_MM = 3;
 const BLEED_MAX_MM = 15;
+/** Posters routinely carry 20–25 mm bleed — widen the window for that family. */
+const POSTER_BLEED_MAX_MM = 30;
+const POSTER_ISO_NAMES = new Set(["A2", "A1", "A0"]);
 
 /**
  * Detect if dimensions are close to an ISO A-series size with unset bleed.
- * Returns the best match if the excess per side falls within 3–15 mm.
+ * Returns the best match if the excess per side falls within 3–15 mm
+ * (or 3–30 mm for posters, restricted to A2/A1/A0).
  * Only fires when the document does NOT already match an ISO or US size exactly.
  */
 export function detectNearIsoWithBleed(
   widthMm: number,
-  heightMm: number
+  heightMm: number,
+  productFamilySlug?: string | null,
 ): NearIsoMatch | null {
   // Skip if already an exact ISO or US match
   for (const iso of ISO_SIZES) {
@@ -220,16 +225,22 @@ export function detectNearIsoWithBleed(
     if (matchesSize(widthMm, heightMm, us)) return null;
   }
 
+  const isPoster = isPosterFamily(productFamilySlug);
+  const bleedMax = isPoster ? POSTER_BLEED_MAX_MM : BLEED_MAX_MM;
+  const candidates = isPoster
+    ? ISO_SIZES.filter((s) => POSTER_ISO_NAMES.has(s.name))
+    : ISO_SIZES;
+
   let best: NearIsoMatch | null = null;
   let bestArea = Infinity;
 
-  for (const iso of ISO_SIZES) {
+  for (const iso of candidates) {
     // Try portrait orientation
     const bleedWP = (widthMm - iso.widthMm) / 2;
     const bleedHP = (heightMm - iso.heightMm) / 2;
     if (
-      bleedWP >= BLEED_MIN_MM && bleedWP <= BLEED_MAX_MM &&
-      bleedHP >= BLEED_MIN_MM && bleedHP <= BLEED_MAX_MM
+      bleedWP >= BLEED_MIN_MM && bleedWP <= bleedMax &&
+      bleedHP >= BLEED_MIN_MM && bleedHP <= bleedMax
     ) {
       const diff = Math.abs(bleedWP - bleedHP);
       if (!best || diff < bestArea) {
@@ -242,8 +253,8 @@ export function detectNearIsoWithBleed(
     const bleedWL = (widthMm - iso.heightMm) / 2;
     const bleedHL = (heightMm - iso.widthMm) / 2;
     if (
-      bleedWL >= BLEED_MIN_MM && bleedWL <= BLEED_MAX_MM &&
-      bleedHL >= BLEED_MIN_MM && bleedHL <= BLEED_MAX_MM
+      bleedWL >= BLEED_MIN_MM && bleedWL <= bleedMax &&
+      bleedHL >= BLEED_MIN_MM && bleedHL <= bleedMax
     ) {
       const diff = Math.abs(bleedWL - bleedHL);
       if (!best || diff < bestArea) {

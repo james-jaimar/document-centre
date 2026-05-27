@@ -575,7 +575,7 @@ export function useDocumentUpload(
         const isoMatch = matchIsoSize(pageWidthMm, pageHeightMm);
         const knownNonIso = !isoMatch ? detectNonIsoSize(pageWidthMm, pageHeightMm) : null;
         const nearIsoMatch = !isoMatch && !knownNonIso
-          ? detectNearIsoWithBleed(pageWidthMm, pageHeightMm)
+          ? detectNearIsoWithBleed(pageWidthMm, pageHeightMm, productFamilySlug)
           : null;
         const isUnknownSize = !isoMatch && !knownNonIso && !nearIsoMatch;
         const detectedSize = knownNonIso ?? (isUnknownSize ? UNKNOWN_SIZE_LABEL : null);
@@ -637,6 +637,16 @@ export function useDocumentUpload(
         const finalCropBox = finalBoxes?.CropBox;
         const finalMediaBox =
           finalBoxes?.MediaBox ?? [0, 0, asset.width_pt ?? 595, asset.height_pt ?? 842];
+        console.debug("[upload] asset.boxes after finalize", {
+          fileName,
+          family: productFamilySlug,
+          hasTrim: !!finalTrimBox,
+          hasCrop: !!finalCropBox,
+          MediaBox: finalMediaBox,
+          TrimBox: finalTrimBox,
+          CropBox: finalCropBox,
+          BleedBox: finalBoxes?.BleedBox,
+        });
         const finalReportingBox = finalTrimBox ?? finalCropBox ?? finalMediaBox;
         const finalWidthPt = Math.abs(finalReportingBox[2] - finalReportingBox[0]);
         const finalHeightPt = Math.abs(finalReportingBox[3] - finalReportingBox[1]);
