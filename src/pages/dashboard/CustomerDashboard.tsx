@@ -400,9 +400,9 @@ const CustomerDashboard = () => {
 
       {/* ── 2×2 Data Grid — only for authenticated users ── */}
       {user && (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:gap-6 xl:grid-cols-2">
           {/* Recently Uploaded Files */}
-          <div className="section-card overflow-hidden">
+          <div className="section-card overflow-x-auto">
             <div className="section-header">Recently Uploaded Files</div>
             {!recentDocs?.length ? (
               <div className="status-empty">No uploads yet</div>
@@ -459,7 +459,7 @@ const CustomerDashboard = () => {
           </div>
 
           {/* Recently Modified */}
-          <div className="section-card overflow-hidden">
+          <div className="section-card overflow-x-auto">
             <div className="section-header">Recently Modified</div>
             {!recentItems?.length ? (
               <div className="status-empty">No recent items</div>
@@ -503,7 +503,7 @@ const CustomerDashboard = () => {
           </div>
 
           {/* Frequently Ordered */}
-          <div className="section-card overflow-hidden">
+          <div className="section-card overflow-x-auto">
             <div className="section-header">Frequently Ordered</div>
             {!recentDocs?.length ? (
               <div className="status-empty">No items yet</div>
@@ -537,7 +537,7 @@ const CustomerDashboard = () => {
           </div>
 
           {/* Order Tracking */}
-          <div className="section-card overflow-hidden">
+          <div className="section-card overflow-x-auto">
             <div className="section-header">
               <span className="flex items-center gap-2">
                 <Truck className="h-4 w-4" /> Order Tracking
