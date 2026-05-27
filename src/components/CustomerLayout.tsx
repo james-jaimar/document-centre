@@ -154,6 +154,22 @@ function CustomerLayoutInner() {
     );
   }
 
+  // Mobile shell — phone-grade devices get a dedicated layout with a
+  // bottom tab bar and sheet menu instead of the desktop sidebar/topbar.
+  if (device === "mobile") {
+    return (
+      <div style={tenantStyle}>
+        <BranchPicker />
+        <CustomerMobileLayout />
+        <TenantChatWidget
+          isDemo={!!tenant?.is_demo}
+          tawkEnabled={integrations.tawk_enabled === true}
+          tawkPropertyId={String(integrations.tawk_property_id || "")}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen w-full flex-col" style={tenantStyle}>
       <BranchPicker />
@@ -182,31 +198,7 @@ function CustomerLayoutInner() {
           </button>
         )}
 
-        {/* Mobile sidebar overlay */}
-        {mobileOpen && (
-          <div
-            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
-            onClick={() => setMobileOpen(false)}
-          >
-            <div
-              className="print-sidebar w-64 h-full px-5 py-6 flex"
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-        )}
-
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-          {/* Mobile menu trigger row */}
-          <div className="lg:hidden flex items-center border-b border-border bg-white/80">
-            <button
-              className="self-stretch px-4 py-2 hover:bg-secondary"
-              onClick={() => setMobileOpen(!mobileOpen)}
-              aria-label="Toggle menu"
-            >
-              <Menu className="h-5 w-5 text-muted-foreground" />
-            </button>
-          </div>
-
           {/* Content */}
           <main className="flex-1 overflow-auto customer-body p-6 xl:p-8">
             <Outlet />
