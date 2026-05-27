@@ -124,15 +124,16 @@ export default function CustomerAccount() {
       </div>
 
       <Tabs defaultValue="profile">
-        <TabsList>
+        <TabsList className="w-full md:w-auto overflow-x-auto flex">
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="addresses">Addresses</TabsTrigger>
           <TabsTrigger value="orders">Order History</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
         </TabsList>
 
+
         <TabsContent value="profile">
-          <Card className="p-6 max-w-2xl">
+          <Card className="p-4 md:p-6 max-w-2xl">
             {isLoading ? (
               <div className="space-y-3">
                 <Skeleton className="h-10 w-full" />
@@ -189,7 +190,7 @@ export default function CustomerAccount() {
         </TabsContent>
 
         <TabsContent value="addresses">
-          <Card className="p-6">
+          <Card className="p-4 md:p-6">
             {(addresses ?? []).length === 0 ? (
               <div className="text-center text-muted-foreground py-8">
                 No saved addresses yet. Addresses will appear here after your first order.
@@ -225,7 +226,7 @@ export default function CustomerAccount() {
         </TabsContent>
 
         <TabsContent value="security">
-          <Card className="p-6 max-w-md space-y-4">
+          <Card className="p-4 md:p-6 max-w-md space-y-4">
             <h3 className="font-semibold">Change password</h3>
             <div>
               <Label htmlFor="pwd-new">New password</Label>

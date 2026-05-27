@@ -861,11 +861,11 @@ export default function OrderBuild() {
   }
 
   return (
-    <div className="-m-6 xl:-m-8 p-3 xl:p-4 h-[calc(100%+3rem)] xl:h-[calc(100%+4rem)] flex flex-col space-y-2 min-h-0">
+    <div className="md:-m-6 xl:-m-8 md:p-3 xl:p-4 md:h-[calc(100%+3rem)] xl:h-[calc(100%+4rem)] flex flex-col space-y-3 md:space-y-2 min-h-0">
       {/* Header */}
-      <div className="flex items-center justify-between shrink-0">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between shrink-0">
         <div>
-          <h1 className="text-lg font-bold text-foreground leading-tight">
+          <h1 className="text-base md:text-lg font-bold text-foreground leading-tight">
             {productFamily?.name ? `${productFamily.name} — ` : ""}Configure Your Document
           </h1>
           <p className="text-muted-foreground text-xs">
@@ -876,6 +876,7 @@ export default function OrderBuild() {
           variant="ghost"
           size="sm"
           onClick={handleBackToFiles}
+          className="self-start sm:self-auto"
         >
           <ArrowLeft className="h-4 w-4 mr-1" />
           Back to Files
@@ -884,6 +885,7 @@ export default function OrderBuild() {
 
       {/* Split panel */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[380px_1fr] xl:grid-cols-[420px_1fr] 2xl:grid-cols-[460px_1fr] gap-3 xl:gap-4 min-h-0">
+
         {/* Left: Options */}
         <div className="flex flex-col overflow-auto border border-border rounded-lg bg-card">
           <div className="p-3 border-b border-border shrink-0 space-y-2">

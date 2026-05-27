@@ -2275,22 +2275,22 @@ export default function OrderFiles() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="glass-card p-6">
-        <div className="flex items-center justify-between">
+      <div className="glass-card p-4 md:p-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">
+            <h1 className="text-lg md:text-2xl font-bold text-foreground">
               {productFamily?.name ? `${productFamily.name} — ` : ""}Upload &amp; Organise Files
             </h1>
-            <p className="text-muted-foreground mt-1 text-sm">
+            <p className="text-muted-foreground mt-1 text-xs md:text-sm">
               Step 1 of 2 — Upload your PDFs and assign them to document sections
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3">
             <button
               onClick={() => navigate(tenantPath("orders/new"))}
-              className="soft-button flex items-center gap-1.5 text-sm"
+              className="soft-button flex items-center gap-1.5 text-sm flex-1 md:flex-none justify-center"
             >
               <ArrowLeft className="h-4 w-4" />
               Back
@@ -2298,7 +2298,7 @@ export default function OrderFiles() {
             <button
               disabled={!canContinue || !effectiveOrderId}
               onClick={() => navigate(tenantPath(`orders/${effectiveOrderId}/build`))}
-              className="soft-button soft-button-primary flex items-center gap-1.5 text-sm rounded-xl disabled:opacity-40 disabled:cursor-not-allowed"
+              className="soft-button soft-button-primary flex items-center gap-1.5 text-sm rounded-xl disabled:opacity-40 disabled:cursor-not-allowed flex-1 md:flex-none justify-center"
             >
               Configure Options
               <ArrowRight className="h-4 w-4" />
@@ -2308,9 +2308,10 @@ export default function OrderFiles() {
       </div>
 
       {/* Three-column layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_auto_1fr] gap-5 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_auto_1fr] gap-4 md:gap-5 items-start">
         {/* Left: Uploaded Files */}
-        <div className="glass-card p-5 space-y-4">
+        <div className="glass-card p-4 md:p-5 space-y-4">
+
           <div className="flex items-center justify-between gap-2">
             <h2 className="section-header">Uploaded Files</h2>
             {sessionSizeLock && (

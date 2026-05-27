@@ -316,16 +316,17 @@ const CustomerOrders = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">My Orders</h1>
-          <p className="text-muted-foreground">View and manage all your print orders</p>
+          <p className="text-sm text-muted-foreground">View and manage all your print orders</p>
         </div>
-        <Button onClick={() => navigate(tenantPath("orders/new"))}>
+        <Button onClick={() => navigate(tenantPath("orders/new"))} className="w-full sm:w-auto">
           <Plus className="mr-1 h-4 w-4" />
           New Order
         </Button>
       </div>
+
 
       {isLoading ? (
         <div className="space-y-3">

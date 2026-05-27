@@ -239,8 +239,8 @@ function ProductCarousel({
 
   return (
     <div className="glass-card overflow-hidden">
-      <div className="border-b border-border bg-gradient-to-r from-secondary/90 to-secondary/40 px-6 py-5">
-        <h2 className="text-center text-xl font-semibold tracking-tight text-foreground">
+      <div className="border-b border-border bg-gradient-to-r from-secondary/90 to-secondary/40 px-4 py-3 md:px-6 md:py-5">
+        <h2 className="text-center text-base md:text-xl font-semibold tracking-tight text-foreground">
           Get started by choosing a product
         </h2>
       </div>
@@ -249,6 +249,7 @@ function ProductCarousel({
         {canScrollLeft && (
           <button
             onClick={() => scroll("left")}
+
             className="absolute left-2 top-1/2 -translate-y-1/2 z-10 hidden md:flex h-9 w-9 items-center justify-center rounded-full bg-white/80 backdrop-blur-sm border border-border/60 shadow-md hover:bg-white transition-all"
             aria-label="Scroll left"
           >
@@ -278,9 +279,10 @@ function ProductCarousel({
 
         <div
           ref={scrollRef}
-          className="overflow-x-auto px-5 py-6 hide-scrollbar"
+          className="overflow-x-auto px-3 py-4 md:px-5 md:py-6 hide-scrollbar"
         >
-          <div className="flex gap-4">
+          <div className="flex gap-3 md:gap-4">
+
             {familiesLoading
               ? Array.from({ length: 5 }).map((_, i) => (
                   <Skeleton key={i} className="h-32 w-[150px] shrink-0 rounded-3xl" />
@@ -348,10 +350,10 @@ const CustomerDashboard = () => {
   }, [navigate, slug]);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 md:space-y-8">
       {/* ── Page heading ── */}
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight text-foreground">My Print Centre</h1>
+        <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-foreground">My Print Centre</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Upload a file or pick a product to get started.
         </p>
@@ -366,9 +368,10 @@ const CustomerDashboard = () => {
 
       {/* ── Full-width Upload Zone ── */}
       <div>
-        <h1 className="mb-4 text-4xl font-semibold tracking-tight text-foreground">
+        <h1 className="mb-3 md:mb-4 text-2xl md:text-4xl font-semibold tracking-tight text-foreground">
           Get started by uploading PDFs
         </h1>
+
         <div
           className={`upload-dropzone section-card ${dragOver ? "border-primary bg-white" : ""}`}
           onDragOver={(e) => {
@@ -383,22 +386,23 @@ const CustomerDashboard = () => {
           }}
           onClick={handleUploadClick}
         >
-          <UploadCloud className="mb-4 h-14 w-14 text-muted-foreground/40" />
-          <p className="text-2xl font-medium tracking-tight text-muted-foreground">
+          <UploadCloud className="mb-3 md:mb-4 h-10 w-10 md:h-14 md:w-14 text-muted-foreground/40" />
+          <p className="text-base md:text-2xl font-medium tracking-tight text-muted-foreground text-center">
             Drag and drop files here, or{" "}
             <span className="text-primary">browse</span>
           </p>
-          <p className="mt-3 text-sm text-muted-foreground/70">
+          <p className="mt-2 md:mt-3 text-xs md:text-sm text-muted-foreground/70 text-center">
             PDF, Word, PowerPoint and image files supported
           </p>
         </div>
+
       </div>
 
       {/* ── 2×2 Data Grid — only for authenticated users ── */}
       {user && (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:gap-6 xl:grid-cols-2">
           {/* Recently Uploaded Files */}
-          <div className="section-card overflow-hidden">
+          <div className="section-card overflow-x-auto">
             <div className="section-header">Recently Uploaded Files</div>
             {!recentDocs?.length ? (
               <div className="status-empty">No uploads yet</div>
@@ -455,7 +459,7 @@ const CustomerDashboard = () => {
           </div>
 
           {/* Recently Modified */}
-          <div className="section-card overflow-hidden">
+          <div className="section-card overflow-x-auto">
             <div className="section-header">Recently Modified</div>
             {!recentItems?.length ? (
               <div className="status-empty">No recent items</div>
@@ -499,7 +503,7 @@ const CustomerDashboard = () => {
           </div>
 
           {/* Frequently Ordered */}
-          <div className="section-card overflow-hidden">
+          <div className="section-card overflow-x-auto">
             <div className="section-header">Frequently Ordered</div>
             {!recentDocs?.length ? (
               <div className="status-empty">No items yet</div>
@@ -533,7 +537,7 @@ const CustomerDashboard = () => {
           </div>
 
           {/* Order Tracking */}
-          <div className="section-card overflow-hidden">
+          <div className="section-card overflow-x-auto">
             <div className="section-header">
               <span className="flex items-center gap-2">
                 <Truck className="h-4 w-4" /> Order Tracking
