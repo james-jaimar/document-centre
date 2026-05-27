@@ -2456,6 +2456,7 @@ export default function OrderFiles() {
           fileName={advisoryDoc.fileName}
           documentId={advisoryDoc.id}
           lockedSize={advisoryDoc.lockedSize ?? null}
+          productFamilySlug={familySlug}
           onKeepOriginal={handleKeepOriginal}
           onScaleTo={handleScaleTo}
         />
