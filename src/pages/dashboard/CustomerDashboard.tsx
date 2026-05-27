@@ -386,15 +386,16 @@ const CustomerDashboard = () => {
           }}
           onClick={handleUploadClick}
         >
-          <UploadCloud className="mb-4 h-14 w-14 text-muted-foreground/40" />
-          <p className="text-2xl font-medium tracking-tight text-muted-foreground">
+          <UploadCloud className="mb-3 md:mb-4 h-10 w-10 md:h-14 md:w-14 text-muted-foreground/40" />
+          <p className="text-base md:text-2xl font-medium tracking-tight text-muted-foreground text-center">
             Drag and drop files here, or{" "}
             <span className="text-primary">browse</span>
           </p>
-          <p className="mt-3 text-sm text-muted-foreground/70">
+          <p className="mt-2 md:mt-3 text-xs md:text-sm text-muted-foreground/70 text-center">
             PDF, Word, PowerPoint and image files supported
           </p>
         </div>
+
       </div>
 
       {/* ── 2×2 Data Grid — only for authenticated users ── */}
