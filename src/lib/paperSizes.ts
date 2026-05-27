@@ -17,7 +17,16 @@ export const ISO_SIZES: PaperSize[] = [
   { name: "A4", widthMm: 210, heightMm: 297 },
   { name: "A3", widthMm: 297, heightMm: 420 },
   { name: "A2", widthMm: 420, heightMm: 594 },
+  { name: "A1", widthMm: 594, heightMm: 841 },
+  { name: "A0", widthMm: 841, heightMm: 1189 },
 ];
+
+/** Product families whose ISO size suggestions should be poster-scale (A2/A1/A0). */
+const POSTER_FAMILY_SLUGS = new Set(["posters", "poster"]);
+
+function isPosterFamily(slug?: string | null): boolean {
+  return !!slug && POSTER_FAMILY_SLUGS.has(slug.toLowerCase());
+}
 
 // Common non-ISO sizes (US / ANSI + presentation defaults)
 export const NON_ISO_SIZES: PaperSize[] = [
