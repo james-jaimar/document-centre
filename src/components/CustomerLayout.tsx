@@ -2,9 +2,9 @@ import { Outlet } from "react-router-dom";
 import CustomerSidebar from "@/components/CustomerSidebar";
 import CustomerHeader from "@/components/CustomerHeader";
 import CustomerFooter from "@/components/CustomerFooter";
-import { Menu, PanelLeftOpen } from "lucide-react";
+import { PanelLeftOpen } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useMemo, useEffect, useRef } from "react";
 import { SidebarCollapseProvider, useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { supabase } from "@/integrations/supabase/client";
 import { hasTenantSignOutFlag, clearTenantSignOutFlag } from "@/lib/tenantSignOut";
@@ -15,6 +15,8 @@ import TenantChatWidget from "@/components/TenantChatWidget";
 import { useTenantSettingsMap } from "@/hooks/useTenantSettings";
 import { BranchProvider } from "@/contexts/BranchContext";
 import BranchPicker from "@/components/BranchPicker";
+import { useDeviceKind } from "@/hooks/useDeviceKind";
+import CustomerMobileLayout from "@/components/customer/mobile/CustomerMobileLayout";
 
 // Convert a hex colour to "H S% L%" for CSS variable injection
 function hexToHslString(hex: string | undefined | null): string | null {
@@ -44,7 +46,7 @@ function hexToHslString(hex: string | undefined | null): string | null {
 function CustomerLayoutInner() {
   const { user, loading: authLoading } = useAuth();
   const { slug } = useTenantSlug();
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const device = useDeviceKind();
   const { collapsed, toggle } = useSidebarCollapse();
   const { tenant, loading: tenantLoading } = useTenantFromSlug();
   const { data: branding, isLoading: brandingLoading } = useTenantBranding(tenant?.id ?? null);
@@ -152,6 +154,22 @@ function CustomerLayoutInner() {
     );
   }
 
+  // Mobile shell — phone-grade devices get a dedicated layout with a
+  // bottom tab bar and sheet menu instead of the desktop sidebar/topbar.
+  if (device === "mobile") {
+    return (
+      <div style={tenantStyle}>
+        <BranchPicker />
+        <CustomerMobileLayout />
+        <TenantChatWidget
+          isDemo={!!tenant?.is_demo}
+          tawkEnabled={integrations.tawk_enabled === true}
+          tawkPropertyId={String(integrations.tawk_property_id || "")}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen w-full flex-col" style={tenantStyle}>
       <BranchPicker />
@@ -180,31 +198,7 @@ function CustomerLayoutInner() {
           </button>
         )}
 
-        {/* Mobile sidebar overlay */}
-        {mobileOpen && (
-          <div
-            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
-            onClick={() => setMobileOpen(false)}
-          >
-            <div
-              className="print-sidebar w-64 h-full px-5 py-6 flex"
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-        )}
-
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-          {/* Mobile menu trigger row */}
-          <div className="lg:hidden flex items-center border-b border-border bg-white/80">
-            <button
-              className="self-stretch px-4 py-2 hover:bg-secondary"
-              onClick={() => setMobileOpen(!mobileOpen)}
-              aria-label="Toggle menu"
-            >
-              <Menu className="h-5 w-5 text-muted-foreground" />
-            </button>
-          </div>
-
           {/* Content */}
           <main className="flex-1 overflow-auto customer-body p-6 xl:p-8">
             <Outlet />
