@@ -202,10 +202,14 @@ export interface NearIsoMatch {
 
 const BLEED_MIN_MM = 3;
 const BLEED_MAX_MM = 15;
+/** Posters routinely carry 20–25 mm bleed — widen the window for that family. */
+const POSTER_BLEED_MAX_MM = 30;
+const POSTER_ISO_NAMES = new Set(["A2", "A1", "A0"]);
 
 /**
  * Detect if dimensions are close to an ISO A-series size with unset bleed.
- * Returns the best match if the excess per side falls within 3–15 mm.
+ * Returns the best match if the excess per side falls within 3–15 mm
+ * (or 3–30 mm for posters, restricted to A2/A1/A0).
  * Only fires when the document does NOT already match an ISO or US size exactly.
  */
 export function detectNearIsoWithBleed(
