@@ -60,6 +60,7 @@ export default function CustomerHeader() {
   const publicNavItems = [
     { to: tenantPath("print-centre"), label: "Home", end: true },
     { to: tenantPath("orders/new"), label: "Create", end: false },
+    { to: tenantPath("cart"), label: "Cart", end: false },
   ];
   const authNavItems = [
     { to: tenantPath("print-centre"), label: "Home", end: true },
@@ -75,13 +76,30 @@ export default function CustomerHeader() {
   const renderRightControls = () => {
     if (!isAuthenticated) {
       return (
-        <Link
-          to={tenantPath("auth")}
-          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors hover:bg-secondary"
-        >
-          <LogIn className="h-4 w-4" />
-          Sign In
-        </Link>
+        <>
+          <Link
+            to={tenantPath("cart")}
+            className="relative rounded-xl p-2 hover:bg-secondary transition-colors"
+            aria-label="Cart"
+          >
+            <ShoppingCart className="h-5 w-5 text-muted-foreground" />
+            {cartCount > 0 && (
+              <span
+                className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold text-primary-foreground"
+                style={{ background: "hsl(var(--tenant-primary, var(--primary)))" }}
+              >
+                {cartCount}
+              </span>
+            )}
+          </Link>
+          <Link
+            to={tenantPath("auth")}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors hover:bg-secondary"
+          >
+            <LogIn className="h-4 w-4" />
+            Sign In
+          </Link>
+        </>
       );
     }
 
