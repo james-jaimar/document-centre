@@ -312,6 +312,18 @@ const AdminBranchDetail = () => {
             <PaymentGatewaysCard scope="branch" scopeId={id} tenantId={tenantId} />
           )}
         </TabsContent>
+
+        {/* ─── DELIVERY TAB ─── */}
+        <TabsContent value="delivery">
+          {id && tenantId && (
+            <div className="space-y-4">
+              <div className="rounded-md border bg-muted/30 p-4 text-sm">
+                Branch-level overrides for delivery zones and weight tiers. Leave empty to inherit the tenant defaults.{" "}
+                <a href={buildAdminPath(`/admin/branches/${id}/delivery`)} className="text-primary underline">Open full editor →</a>
+              </div>
+            </div>
+          )}
+        </TabsContent>
       </Tabs>
 
       {/* Assign User Dialog */}
