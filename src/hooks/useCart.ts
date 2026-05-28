@@ -389,6 +389,9 @@ export function usePlaceOrder() {
       deliveryMethod: "collection" | "delivery";
       notes?: string;
       branchId?: string;
+      deliveryAmount?: number;
+      deliveryMethodCode?: string;
+      deliveryZoneCode?: string;
       deliveryAddress?: {
         contact_name?: string;
         company_name?: string;
