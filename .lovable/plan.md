@@ -1,40 +1,68 @@
-## Why R 0,00 is showing
+# Delivery engine — three correctness fixes
 
-The order summary says "Delivery — Major Centre — R 0,00 — Collection from branch". That's the bug.
+## Problem (verified)
 
-The tenant has three delivery methods registered against the Major Centre zone:
-- Collection from branch — R 0 (flat, all weights)
-- PostNet Courier — Standard — R 95 (0–1 kg) … R 450 (20–30 kg)
-- PostNet Courier — Overnight — R 150 (0–1 kg) … higher
+For postcode **3624** with billable **1.00 kg**, checkout shows:
 
-The checkout calls `quoteShipping` without a `methodId`, so `quote_delivery_rate` returns the cheapest matching rate — which is the R 0 collection rate. That rate should never be eligible when the customer chose "Delivery — Ship to your address".
+| Method | Shown | Source |
+|---|---|---|
+| PostNet2Door — Non-Express | R 185 | Major Centre platform, 0–2 kg |
+| PostNet Courier — Standard | R 115 | Major Centre platform, 1–2 kg |
+| PostNet Courier — Overnight | R 185 | Major Centre platform, 1–2 kg |
+
+Three independent bugs explain why this disagrees with the tenant admin screenshot:
+
+1. **`3624` is hard-listed under `Major Centre` (platform zone).** The resolver picks it before ever considering the tenant's `Outlying & Remote` zone. Today scope priority only kicks in when *multiple* zones match a location — a platform match still beats a tenant fallback.
+2. **There is no tenant-level "disable method" mechanism the engine respects.** `PostNet2Door — Non-Express` is a platform-scope `delivery_methods` row with `is_active=true`. Toggling it off in admin must either be (a) deleting tenant rates (which we already do — Outlying has none) or (b) flipping a tenant override row. Neither is consulted: the engine pulls platform rates whenever the zone is platform-scope, so the method reappears.
+3. **Tier boundary excludes the upper edge** (`billable < max_weight_kg`). At exactly 1.00 kg you get the 1–2 kg row instead of the 0–1 kg row. This contradicts how the admin UI labels the tier ("0–1") and how users intuit it.
 
 ## Fix
 
-### 1. Mark methods as shipping vs collection (DB)
-Add `fulfillment_kind text not null default 'shipping'` to `public.delivery_methods` (check constraint: `'shipping' | 'collection'`). Backfill the tenant's "Collection from branch" method (code `collection`) to `'collection'`.
+### 1. Tenant zones beat platform zones, always
 
-### 2. Update `quote_delivery_rate`
-When the caller does not specify a method, only consider methods where `fulfillment_kind = 'shipping'`. When the caller does specify a method, respect it as-is. No signature change.
+Update `resolve_delivery_zone` so that **within the same `match_type` pass**, a tenant-scope zone with no matching location for the address but flagged as the tenant's default fallback should beat a platform-scope match. Concretely:
 
-### 3. Surface method choice in checkout (UI only)
-On the Checkout page, when "Delivery" is selected and the address resolves to a zone, fetch the available shipping methods + per-method price for the billable weight and render a small radio list:
+- After a platform postcode match succeeds, *also* check whether the tenant has any active zone for the country. If yes, prefer the tenant's matching zone (or its fallback) over the platform match.
+- Equivalent simpler rule: do **scope pass first** (branch → tenant → platform), and within each scope do match_type priority (postcode → city → province → fallback). Only fall through to the next scope if the current scope yields nothing.
+
+This means the demo tenant's `Outlying & Remote` (the tenant fallback) will be used for 3624 instead of Major Centre.
+
+### 2. Per-tenant method enable/disable
+
+Add a join table `tenant_delivery_method_overrides`:
 
 ```
-Delivery option
-( ) PostNet Courier — Standard ............ R 115,00
-(•) PostNet Courier — Overnight ........... R 180,00
+tenant_id uuid, method_id uuid, is_enabled boolean, PRIMARY KEY(tenant_id, method_id)
 ```
 
-Default to the cheapest shipping method. The Order Summary line updates from the selected method (label + price). Pass the chosen `methodId` into `quoteShipping`.
+- `quote_delivery_rate` and `listShippingQuotes` exclude methods where the tenant has `is_enabled = false`.
+- Admin DeliveryTab: list every active platform + tenant method with a toggle. Toggling off writes a row with `is_enabled=false`; toggling on deletes the override (inherits platform default).
+- This is the only switch the engine consults — no other hidden toggles.
 
-To power that list, add a tiny helper `listShippingQuotes({ tenantId, branchId, zoneId, billableKg, currency })` in `src/lib/delivery/quoteShipping.ts` that queries `delivery_methods` (kind = shipping, active, scope cascade) and calls `quote_delivery_rate` once per method.
+### 3. Tier boundary is inclusive on `max_weight_kg`
 
-### 4. Verification
-- Kloof / 3624 / KZN → zone resolves to Major Centre → checkout shows Standard R 115 and Overnight R 180 → Place Order persists the chosen method + fee.
-- Switching to Collection hides the delivery option list and zeros the fee.
-- No changes to billable-weight floor (1 kg) or province selector — those stay as built.
+Change the tier match in `quote_delivery_rate` from
+`p_billable_kg >= min AND (max IS NULL OR p_billable_kg < max)`
+to
+`p_billable_kg >= min AND (max IS NULL OR p_billable_kg <= max)`.
+
+This makes 1.00 kg use the 0–1 row — matching the labels in admin and what the user expects. The 1–2 row then covers (1, 2].
+
+Also clamp the displayed/used weight at the `MIN_BILLABLE_KG = 1.0` we already enforce — no change there, just documenting.
+
+## Files touched
+
+- **Migration**: alter `resolve_delivery_zone`, alter `quote_delivery_rate`, create `tenant_delivery_method_overrides` + grants + RLS (tenant admins write, anon/auth read for resolved tenant).
+- `src/lib/delivery/quoteShipping.ts` — `listShippingQuotes` joins the override table to drop disabled methods.
+- `src/pages/admin/AdminDelivery.tsx` (or the closest equivalent) — add the per-method enable/disable toggle list.
+- `src/integrations/supabase/types.ts` — regenerated.
 
 ## Out of scope
-- Admin UI to manage `fulfillment_kind` (the migration sets it correctly; admin editor work can come later).
-- Any change to zone resolver, rate seed data, or address schema.
+
+- Re-categorising `3624` (it's a small KZN postcode list issue; if 3624 should actually be Outlying, that's a data edit, not an engine fix).
+- Changing the volumetric / per-item weight estimator.
+- Free shipping threshold logic.
+
+## After this, for the user's exact case
+
+With 3624 + 1.00 kg, tenant `Outlying & Remote` resolves, Non-Express stays hidden (no tenant rate, and disabled at method level), and Courier Standard at 0–1 kg shows **R 180** (matching the admin screenshot). Overnight 0–1 kg = R 290.
