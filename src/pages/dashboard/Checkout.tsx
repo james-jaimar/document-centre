@@ -484,8 +484,34 @@ export default function Checkout() {
             </div>
           )}
 
-          {/* Payment Method */}
-          <div className="border border-border rounded-lg p-4 space-y-3">
+          {/* Delivery Options */}
+          {deliveryMethod === "delivery" && shippingOptions.length > 0 && (
+            <div className="border border-border rounded-lg p-4 space-y-3">
+              <h3 className="font-semibold text-foreground">Delivery Option</h3>
+              <RadioGroup
+                value={selectedMethodId ?? ""}
+                onValueChange={setSelectedMethodId}
+                className="space-y-2"
+              >
+                {shippingOptions.map((o) => (
+                  <div key={o.methodId} className="flex items-center justify-between gap-3 rounded-md border border-border p-3 hover:border-primary/40">
+                    <div className="flex items-start gap-2">
+                      <RadioGroupItem value={o.methodId} id={`sm-${o.methodId}`} className="mt-1" />
+                      <Label htmlFor={`sm-${o.methodId}`} className="cursor-pointer">
+                        <div className="text-sm font-medium text-foreground">{o.label}</div>
+                        {o.description && (
+                          <div className="text-xs text-muted-foreground">{o.description}</div>
+                        )}
+                      </Label>
+                    </div>
+                    <div className="font-mono text-sm text-foreground shrink-0">
+                      {o.price != null ? formatPrice(o.price, o.currency) : "—"}
+                    </div>
+                  </div>
+                ))}
+              </RadioGroup>
+            </div>
+          )}
             <h3 className="font-semibold text-foreground">Payment Method</h3>
             <RadioGroup
               value={paymentMethod}
