@@ -60,6 +60,7 @@ export default function CustomerHeader() {
   const publicNavItems = [
     { to: tenantPath("print-centre"), label: "Home", end: true },
     { to: tenantPath("orders/new"), label: "Create", end: false },
+    { to: tenantPath("cart"), label: "Cart", end: false },
   ];
   const authNavItems = [
     { to: tenantPath("print-centre"), label: "Home", end: true },
