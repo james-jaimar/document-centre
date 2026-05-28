@@ -1,5 +1,5 @@
 import { useTenantSlug } from "@/hooks/useTenantSlug";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -13,15 +13,17 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Loader2, MapPin, ShoppingBag } from "lucide-react";
+import { ArrowLeft, Loader2, MapPin, ShoppingBag, Truck } from "lucide-react";
 import { toast } from "sonner";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
 import CheckoutAuth from "@/components/checkout/CheckoutAuth";
+import { quoteShipping, type ShippingQuoteResult } from "@/lib/delivery/quoteShipping";
 
 export default function Checkout() {
   const { slug, tenantPath } = useTenantSlug();
