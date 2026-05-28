@@ -1,17 +1,16 @@
-## Plan
+# Add retry for failed mobile photo uploads
 
-1. **Stop the business-card lightbox using thumbnail rasters**
-   - The enlarged preview on the files page is currently fed only `thumbnail_urls`, so when it is expanded it blows up a low-res PNG/JPEG instead of rendering the PDF.
-   - I’ll pass the selected document’s processed PDF path into the lightbox, sign it, and provide per-page `pdfSources` to `PreviewLightbox`/`DocumentPreview`.
+## Problem
+On the mobile upload page (`/upload/:token`), if a photo fails to upload, the customer is stuck — there is no way to retry that file. Once any upload finishes (success or error), the page flips into "all done" mode and hides the upload buttons too, so the only option is "Upload More", which re-picks the file from scratch.
 
-2. **Make the file-step lightbox honour TrimBox cropping too**
-   - The main configurator preview already has a path for PDF rendering + trim clipping, but the files-page lightbox does not currently pass trim data.
-   - I’ll derive `trimCrop` from `preflight_data.trim_box_pt` and the stored PDF dimensions, then pass it into the same preview renderer so crop marks/bleed are clipped consistently.
+## Fix (frontend only, `src/pages/MobileUpload.tsx`)
 
-3. **Use a print-proof render scale for tiny products**
-   - Keep the existing oversampled `PdfPageView`, but make it robust enough for the full-screen business-card proof: render from the actual PDF at a higher internal canvas resolution with a safe cap, then CSS-scale down.
-   - This avoids changing the actual production output and only improves customer confidence in the on-screen proof.
+1. **Per-file Retry button** — for any row with `status === "error"`, show a small "Retry" button next to the error message that re-runs `uploadFile(u)` for that single item (resets its status to `pending`, then `uploading`).
 
-4. **Validation**
-   - Check the edited code paths for the files-page lightbox and shared PDF renderer.
-   - I’ll avoid backend changes unless the frontend PDF render path reveals missing source-PDF data.
+2. **"Retry all failed" action** — when `errorCount > 0`, add a button above the list that re-uploads every failed item sequentially.
+
+3. **Don't flip to "all done" when there are failures** — only show the green "Upload Complete!" success screen when `errorCount === 0`. If some failed, keep the Select Photos / Browse Files buttons visible so the customer can also add more, and keep the failed rows with their Retry buttons.
+
+4. **Friendlier error copy** — if `err.message` is empty or generic, fall back to "Upload failed — tap Retry to try again." Keep the existing specific server messages (file too large, expired link, etc.) when present.
+
+No backend, edge function, or schema changes — `mobile-upload` already supports repeat POSTs for the same session.

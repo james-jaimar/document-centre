@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Loader2, Upload, Check, AlertCircle, Camera } from "lucide-react";
+import { Loader2, Upload, Check, AlertCircle, Camera, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 
@@ -62,7 +62,9 @@ export default function MobileUpload() {
 
       setUploads((prev) =>
         prev.map((u) =>
-          u.id === fileUpload.id ? { ...u, status: "uploading", progress: 30 } : u,
+          u.id === fileUpload.id
+            ? { ...u, status: "uploading", progress: 30, error: undefined }
+            : u,
         ),
       );
 
@@ -74,7 +76,7 @@ export default function MobileUpload() {
 
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || "Upload failed");
+          throw new Error(data.error || "");
         }
 
         setUploads((prev) =>
@@ -83,10 +85,13 @@ export default function MobileUpload() {
           ),
         );
       } catch (err: any) {
+        const message =
+          (err?.message && String(err.message).trim()) ||
+          "Upload failed — tap Retry to try again.";
         setUploads((prev) =>
           prev.map((u) =>
             u.id === fileUpload.id
-              ? { ...u, status: "error", error: err.message }
+              ? { ...u, status: "error", error: message }
               : u,
           ),
         );
@@ -94,6 +99,23 @@ export default function MobileUpload() {
     },
     [token],
   );
+
+  const retryUpload = useCallback(
+    async (id: string) => {
+      const target = uploads.find((u) => u.id === id);
+      if (!target) return;
+      await uploadFile(target);
+    },
+    [uploads, uploadFile],
+  );
+
+  const retryAllFailed = useCallback(async () => {
+    const failed = uploads.filter((u) => u.status === "error");
+    for (const fu of failed) {
+      await uploadFile(fu);
+    }
+  }, [uploads, uploadFile]);
+
 
   const handleFiles = useCallback(
     async (fileList: FileList | null) => {
@@ -114,12 +136,14 @@ export default function MobileUpload() {
         await uploadFile(fu);
       }
 
-      // Check if all done
+      // Only flip to "all done" when nothing failed; otherwise keep the
+      // selector + per-row Retry buttons visible.
       setUploads((prev) => {
         const allFinished = prev.every(
           (u) => u.status === "done" || u.status === "error",
         );
-        if (allFinished) setAllDone(true);
+        const anyError = prev.some((u) => u.status === "error");
+        if (allFinished && !anyError) setAllDone(true);
         return prev;
       });
     },
@@ -228,6 +252,20 @@ export default function MobileUpload() {
               )}
             </div>
 
+            {errorCount > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full gap-2"
+                onClick={retryAllFailed}
+              >
+                <RefreshCw className="h-4 w-4" />
+                Retry {errorCount} failed upload{errorCount !== 1 ? "s" : ""}
+              </Button>
+            )}
+
+
+
             <div className="space-y-2 max-h-[50vh] overflow-y-auto">
               {uploads.map((u) => (
                 <div
@@ -256,9 +294,21 @@ export default function MobileUpload() {
                       </p>
                     )}
                   </div>
-                  <span className="text-xs text-muted-foreground flex-shrink-0">
-                    {(u.file.size / 1024 / 1024).toFixed(1)} MB
-                  </span>
+                  {u.status === "error" ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2 gap-1 flex-shrink-0"
+                      onClick={() => retryUpload(u.id)}
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      Retry
+                    </Button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground flex-shrink-0">
+                      {(u.file.size / 1024 / 1024).toFixed(1)} MB
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -266,7 +316,7 @@ export default function MobileUpload() {
         )}
 
         {/* All done message */}
-        {allDone && doneCount > 0 && (
+        {allDone && doneCount > 0 && errorCount === 0 && (
           <div className="text-center space-y-3 py-8">
             <div className="flex justify-center">
               <div className="h-16 w-16 rounded-full bg-green-500/10 flex items-center justify-center">
