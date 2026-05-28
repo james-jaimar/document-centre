@@ -276,20 +276,28 @@ export async function listShippingQuotes(req: ShippingQuoteRequest): Promise<{
     req.tenantId
       ? supabase
           .from("tenant_delivery_method_overrides")
-          .select("method_id, is_enabled")
+          .select("method_id, is_enabled, branch_id")
           .eq("tenant_id", req.tenantId)
-      : Promise.resolve({ data: [] as Array<{ method_id: string; is_enabled: boolean }> }),
+      : Promise.resolve({ data: [] as Array<{ method_id: string; is_enabled: boolean; branch_id: string | null }> }),
   ]);
 
-  const disabled = new Set(
-    (overrides ?? [])
-      .filter((o: any) => o.is_enabled === false)
-      .map((o: any) => o.method_id as string),
-  );
+  // Effective enable: branch override > tenant override > method default.
+  const tenantMap = new Map<string, boolean>();
+  const branchMap = new Map<string, boolean>();
+  for (const o of (overrides ?? []) as any[]) {
+    if (o.branch_id === null) tenantMap.set(o.method_id, o.is_enabled);
+    else if (o.branch_id === req.branchId) branchMap.set(o.method_id, o.is_enabled);
+  }
+  const isDisabled = (methodId: string, defaultActive: boolean) => {
+    const eff = branchMap.has(methodId)
+      ? branchMap.get(methodId)!
+      : (tenantMap.has(methodId) ? tenantMap.get(methodId)! : defaultActive);
+    return eff === false;
+  };
 
   const options: ShippingMethodOption[] = [];
   for (const m of methods ?? []) {
-    if (disabled.has(m.id)) continue;
+    if (isDisabled(m.id, (m as any).is_active ?? true)) continue;
     const { data: rateRows } = await supabase.rpc("quote_delivery_rate", {
       p_tenant_id: req.tenantId,
       p_branch_id: req.branchId,

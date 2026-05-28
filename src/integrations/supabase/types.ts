@@ -4013,27 +4013,40 @@ export type Database = {
       }
       tenant_delivery_method_overrides: {
         Row: {
+          branch_id: string | null
           created_at: string
+          id: string
           is_enabled: boolean
           method_id: string
           tenant_id: string
           updated_at: string
         }
         Insert: {
+          branch_id?: string | null
           created_at?: string
+          id?: string
           is_enabled?: boolean
           method_id: string
           tenant_id: string
           updated_at?: string
         }
         Update: {
+          branch_id?: string | null
           created_at?: string
+          id?: string
           is_enabled?: boolean
           method_id?: string
           tenant_id?: string
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "tenant_delivery_method_overrides_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "tenant_delivery_method_overrides_method_id_fkey"
             columns: ["method_id"]
