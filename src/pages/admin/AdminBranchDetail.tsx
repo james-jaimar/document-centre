@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Building2, Users, Settings2, Shield, UserPlus, CreditCard, IdCard } from "lucide-react";
+import { ArrowLeft, Building2, Users, Settings2, Shield, UserPlus, CreditCard, IdCard, Truck } from "lucide-react";
 import { buildAdminPath } from "@/lib/adminRouting";
 import { AddMemberDialog } from "@/components/admin/AddMemberDialog";
 import { PaymentGatewaysCard } from "@/components/payments/PaymentGatewaysCard";
@@ -157,6 +157,7 @@ const AdminBranchDetail = () => {
           <TabsTrigger value="users" className="gap-1.5"><Users size={14} /> Users ({branchMembers.length})</TabsTrigger>
           <TabsTrigger value="capabilities" className="gap-1.5"><Settings2 size={14} /> Capabilities</TabsTrigger>
           <TabsTrigger value="payments" className="gap-1.5"><CreditCard size={14} /> Payments</TabsTrigger>
+          <TabsTrigger value="delivery" className="gap-1.5"><Truck size={14} /> Delivery</TabsTrigger>
         </TabsList>
 
         {/* ─── DETAILS TAB ─── */}
@@ -309,6 +310,18 @@ const AdminBranchDetail = () => {
         <TabsContent value="payments">
           {id && tenantId && (
             <PaymentGatewaysCard scope="branch" scopeId={id} tenantId={tenantId} />
+          )}
+        </TabsContent>
+
+        {/* ─── DELIVERY TAB ─── */}
+        <TabsContent value="delivery">
+          {id && tenantId && (
+            <div className="space-y-4">
+              <div className="rounded-md border bg-muted/30 p-4 text-sm">
+                Branch-level overrides for delivery zones and weight tiers. Leave empty to inherit the tenant defaults.{" "}
+                <a href={buildAdminPath(`/admin/branches/${id}/delivery`)} className="text-primary underline">Open full editor →</a>
+              </div>
+            </div>
           )}
         </TabsContent>
       </Tabs>
