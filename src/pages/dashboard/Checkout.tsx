@@ -512,6 +512,9 @@ export default function Checkout() {
               </RadioGroup>
             </div>
           )}
+
+          {/* Payment Method */}
+          <div className="border border-border rounded-lg p-4 space-y-3">
             <h3 className="font-semibold text-foreground">Payment Method</h3>
             <RadioGroup
               value={paymentMethod}
