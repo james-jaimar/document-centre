@@ -252,6 +252,20 @@ export default function MobileUpload() {
               )}
             </div>
 
+            {errorCount > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full gap-2"
+                onClick={retryAllFailed}
+              >
+                <RefreshCw className="h-4 w-4" />
+                Retry {errorCount} failed upload{errorCount !== 1 ? "s" : ""}
+              </Button>
+            )}
+
+
+
             <div className="space-y-2 max-h-[50vh] overflow-y-auto">
               {uploads.map((u) => (
                 <div
