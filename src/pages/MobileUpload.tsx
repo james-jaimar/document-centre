@@ -136,12 +136,14 @@ export default function MobileUpload() {
         await uploadFile(fu);
       }
 
-      // Check if all done
+      // Only flip to "all done" when nothing failed; otherwise keep the
+      // selector + per-row Retry buttons visible.
       setUploads((prev) => {
         const allFinished = prev.every(
           (u) => u.status === "done" || u.status === "error",
         );
-        if (allFinished) setAllDone(true);
+        const anyError = prev.some((u) => u.status === "error");
+        if (allFinished && !anyError) setAllDone(true);
         return prev;
       });
     },
