@@ -2493,6 +2493,8 @@ export default function OrderFiles() {
           pageAspectRatio={lightboxAspect}
           pdfSizeMm={lightboxPdfSizeMm}
           canvasSizeMm={lightboxPdfSizeMm}
+          pdfSources={lightboxPdfSources}
+          trimCrop={lightboxTrimCrop}
           onClose={() => setLightboxOpen(false)}
         />
       )}
