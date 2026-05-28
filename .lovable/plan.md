@@ -1,68 +1,54 @@
-# Delivery engine — three correctness fixes
+# Branch-level delivery overrides
 
-## Problem (verified)
+Good news: the zones/rates side already supports branch overrides — `delivery_zones`, `delivery_zone_locations`, and `delivery_rates` all carry `scope_type='branch'`, the `quote_delivery_rate` RPC prefers branch over tenant over platform, and `AdminBranchDelivery` already wraps `DeliveryEditor scope="branch"` with a "Reset from tenant" clone.
 
-For postcode **3624** with billable **1.00 kg**, checkout shows:
+The gap is the **methods on/off** side and a few polish items so a branch operator can fully run their own pricing without their tenant overriding them.
 
-| Method | Shown | Source |
-|---|---|---|
-| PostNet2Door — Non-Express | R 185 | Major Centre platform, 0–2 kg |
-| PostNet Courier — Standard | R 115 | Major Centre platform, 1–2 kg |
-| PostNet Courier — Overnight | R 185 | Major Centre platform, 1–2 kg |
+## What to add
 
-Three independent bugs explain why this disagrees with the tenant admin screenshot:
+### 1. Per-branch method visibility (DB)
 
-1. **`3624` is hard-listed under `Major Centre` (platform zone).** The resolver picks it before ever considering the tenant's `Outlying & Remote` zone. Today scope priority only kicks in when *multiple* zones match a location — a platform match still beats a tenant fallback.
-2. **There is no tenant-level "disable method" mechanism the engine respects.** `PostNet2Door — Non-Express` is a platform-scope `delivery_methods` row with `is_active=true`. Toggling it off in admin must either be (a) deleting tenant rates (which we already do — Outlying has none) or (b) flipping a tenant override row. Neither is consulted: the engine pulls platform rates whenever the zone is platform-scope, so the method reappears.
-3. **Tier boundary excludes the upper edge** (`billable < max_weight_kg`). At exactly 1.00 kg you get the 1–2 kg row instead of the 0–1 kg row. This contradicts how the admin UI labels the tier ("0–1") and how users intuit it.
+Extend `tenant_delivery_method_overrides` so branches can disable a method that's enabled tenant-wide.
 
-## Fix
+- Add nullable `branch_id uuid references public.branches(id) on delete cascade`.
+- Drop the existing unique constraint on `(tenant_id, method_id)`; replace with a partial-unique pair:
+  - `unique (tenant_id, method_id) where branch_id is null` (tenant-level)
+  - `unique (tenant_id, branch_id, method_id) where branch_id is not null` (branch-level)
+- RLS: extend tenant-admin policy to also allow branch managers/store operators to write rows where `branch_id` matches their membership.
 
-### 1. Tenant zones beat platform zones, always
+### 2. Resolution order in `quote_delivery_rate`
 
-Update `resolve_delivery_zone` so that **within the same `match_type` pass**, a tenant-scope zone with no matching location for the address but flagged as the tenant's default fallback should beat a platform-scope match. Concretely:
+Update the override join so the effective enabled flag is: **branch override → tenant override → method default (true)**. If a branch row exists with `is_enabled=false`, the method is hidden for that branch even if tenant-enabled, and vice versa.
 
-- After a platform postcode match succeeds, *also* check whether the tenant has any active zone for the country. If yes, prefer the tenant's matching zone (or its fallback) over the platform match.
-- Equivalent simpler rule: do **scope pass first** (branch → tenant → platform), and within each scope do match_type priority (postcode → city → province → fallback). Only fall through to the next scope if the current scope yields nothing.
+### 3. Frontend — `DeliveryEditor` Methods panel
 
-This means the demo tenant's `Outlying & Remote` (the tenant fallback) will be used for 3624 instead of Major Centre.
+When `scope === "branch"`:
 
-### 2. Per-tenant method enable/disable
+- Query overrides for both `(tenant_id, branch_id is null)` and `(tenant_id, branch_id = branchId)`.
+- Show effective state per method (branch override wins, fallback to tenant override, fallback to default).
+- Toggling writes/deletes a **branch-scoped** override row, never touches the tenant row.
+- Show a small "Tenant: off" badge next to methods the tenant has disabled, so the branch operator knows they're toggling against the tenant default.
+- "Add method" stays tenant-scope only (branches don't invent new methods); hide that button in branch scope.
 
-Add a join table `tenant_delivery_method_overrides`:
+### 4. Frontend — `listShippingQuotes`
 
-```
-tenant_id uuid, method_id uuid, is_enabled boolean, PRIMARY KEY(tenant_id, method_id)
-```
+Currently fetches only tenant overrides. Also fetch branch overrides when `branchId` is set, merge with branch-wins precedence, and filter the methods list accordingly. (Defence in depth — the RPC already filters, but the client list should match.)
 
-- `quote_delivery_rate` and `listShippingQuotes` exclude methods where the tenant has `is_enabled = false`.
-- Admin DeliveryTab: list every active platform + tenant method with a toggle. Toggling off writes a row with `is_enabled=false`; toggling on deletes the override (inherits platform default).
-- This is the only switch the engine consults — no other hidden toggles.
+### 5. Branch-scoped clone helper
 
-### 3. Tier boundary is inclusive on `max_weight_kg`
+`clone_tenant_delivery_to_branch` already copies zones, locations, and rates. Extend it to also seed branch override rows by copying any tenant override rows for the same tenant (so "Reset from tenant" gives a true starting point). Operator can then flip individual methods on/off per branch.
 
-Change the tier match in `quote_delivery_rate` from
-`p_billable_kg >= min AND (max IS NULL OR p_billable_kg < max)`
-to
-`p_billable_kg >= min AND (max IS NULL OR p_billable_kg <= max)`.
+## Files
 
-This makes 1.00 kg use the 0–1 row — matching the labels in admin and what the user expects. The 1–2 row then covers (1, 2].
+- New migration: alter `tenant_delivery_method_overrides`, replace constraints, update RLS, rewrite `quote_delivery_rate` and `clone_tenant_delivery_to_branch`.
+- `src/components/delivery/DeliveryEditor.tsx` — `MethodsPanel` gets `scope` + `branchId` props and uses branch overrides when in branch scope; hide "Add method" / "Delete" buttons in branch scope.
+- `src/lib/delivery/quoteShipping.ts` — fetch + apply branch overrides in `listShippingQuotes`.
+- Regenerated `src/integrations/supabase/types.ts` (auto).
 
-Also clamp the displayed/used weight at the `MIN_BILLABLE_KG = 1.0` we already enforce — no change there, just documenting.
+## Result for the user
 
-## Files touched
+A branch owner opens **Admin → Branches → [Branch] → Delivery** and can:
 
-- **Migration**: alter `resolve_delivery_zone`, alter `quote_delivery_rate`, create `tenant_delivery_method_overrides` + grants + RLS (tenant admins write, anon/auth read for resolved tenant).
-- `src/lib/delivery/quoteShipping.ts` — `listShippingQuotes` joins the override table to drop disabled methods.
-- `src/pages/admin/AdminDelivery.tsx` (or the closest equivalent) — add the per-method enable/disable toggle list.
-- `src/integrations/supabase/types.ts` — regenerated.
-
-## Out of scope
-
-- Re-categorising `3624` (it's a small KZN postcode list issue; if 3624 should actually be Outlying, that's a data edit, not an engine fix).
-- Changing the volumetric / per-item weight estimator.
-- Free shipping threshold logic.
-
-## After this, for the user's exact case
-
-With 3624 + 1.00 kg, tenant `Outlying & Remote` resolves, Non-Express stays hidden (no tenant rate, and disabled at method level), and Courier Standard at 0–1 kg shows **R 180** (matching the admin screenshot). Overnight 0–1 kg = R 290.
+- Hit "Reset from tenant" to seed everything.
+- Set their own zone weight tiers / prices independently of tenant defaults.
+- Switch individual courier methods on or off for their branch only, without the tenant's settings clobbering them.
