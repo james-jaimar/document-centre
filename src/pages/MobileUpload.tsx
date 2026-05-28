@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Loader2, Upload, Check, AlertCircle, Camera } from "lucide-react";
+import { Loader2, Upload, Check, AlertCircle, Camera, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 
