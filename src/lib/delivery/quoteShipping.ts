@@ -129,10 +129,14 @@ export function aggregateCartWeight(items: CartItemLike[]) {
   };
 }
 
+/** Minimum billable weight (kg) — courier minimums apply even to tiny parcels. */
+export const MIN_BILLABLE_KG = 1.0;
+
 /** Main entry point. Returns a quote (price may be null if no rate found). */
 export async function quoteShipping(req: ShippingQuoteRequest): Promise<ShippingQuoteResult> {
   const currency = req.currency ?? "ZAR";
   const weights = aggregateCartWeight(req.items);
+  const chargeableKg = Math.max(weights.billableKg, MIN_BILLABLE_KG);
 
   const baseResult: ShippingQuoteResult = {
     zoneId: null,
@@ -140,13 +144,13 @@ export async function quoteShipping(req: ShippingQuoteRequest): Promise<Shipping
     price: null,
     currency,
     ...weights,
+    billableKg: chargeableKg,
   };
 
   if (!req.address?.city && !req.address?.postal_code && !req.address?.province) {
     return { ...baseResult, reason: "address_incomplete" };
   }
 
-  // Resolve zone
   const { data: zoneId, error: zoneErr } = await supabase.rpc("resolve_delivery_zone", {
     p_tenant_id: req.tenantId,
     p_branch_id: req.branchId,
@@ -160,20 +164,18 @@ export async function quoteShipping(req: ShippingQuoteRequest): Promise<Shipping
     return { ...baseResult, reason: zoneErr?.message ?? "no_zone" };
   }
 
-  // Fetch zone label
   const { data: zoneRow } = await supabase
     .from("delivery_zones")
     .select("id, code, label")
     .eq("id", zoneId as string)
     .maybeSingle();
 
-  // Quote rate
   const { data: rateRows, error: rateErr } = await supabase.rpc("quote_delivery_rate", {
     p_tenant_id: req.tenantId,
     p_branch_id: req.branchId,
     p_zone_id: zoneId,
     p_method_id: req.methodId ?? null,
-    p_billable_kg: weights.billableKg,
+    p_billable_kg: chargeableKg,
     p_currency: currency,
   });
 
@@ -189,7 +191,6 @@ export async function quoteShipping(req: ShippingQuoteRequest): Promise<Shipping
     };
   }
 
-  // Method label
   let methodLabel: string | null = null;
   if (rate.method_id) {
     const { data: mRow } = await supabase
@@ -209,5 +210,6 @@ export async function quoteShipping(req: ShippingQuoteRequest): Promise<Shipping
     price: Number(rate.price),
     currency: rate.currency_code,
     ...weights,
+    billableKg: chargeableKg,
   };
 }
