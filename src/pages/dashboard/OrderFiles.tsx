@@ -1234,16 +1234,92 @@ export default function OrderFiles() {
     return Array.isArray(previewDoc.thumbnail_urls) ? (previewDoc.thumbnail_urls as string[]) : [];
   }, [previewDoc]);
 
+  // Resolve the TrimBox (preferred) → CropBox from preflight so the lightbox
+  // can crop crop-marks/bleed for high-fidelity proofs (esp. business cards).
+  const lightboxTrimBox = useMemo(() => {
+    if (!previewDoc) return undefined;
+    const preflight = previewDoc.preflight_data as Record<string, unknown> | null;
+    let tb = preflight?.trim_box_pt as number[] | undefined;
+    if (!tb || tb.length !== 4) {
+      const boxes = preflight?.boxes as Record<string, number[]> | undefined;
+      tb = boxes?.TrimBox ?? boxes?.CropBox;
+    }
+    return tb && tb.length === 4 ? tb : undefined;
+  }, [previewDoc]);
+
   const lightboxPdfSizeMm = useMemo(() => {
+    if (lightboxTrimBox) {
+      const PT_TO_MM = 25.4 / 72;
+      const w = Math.abs(lightboxTrimBox[2] - lightboxTrimBox[0]) * PT_TO_MM;
+      const h = Math.abs(lightboxTrimBox[3] - lightboxTrimBox[1]) * PT_TO_MM;
+      if (w > 0 && h > 0) return { widthMm: w, heightMm: h };
+    }
     const w = Number(previewDoc?.page_width_mm);
     const h = Number(previewDoc?.page_height_mm);
     if (!w || !h || w <= 0 || h <= 0) return undefined;
     return { widthMm: w, heightMm: h };
-  }, [previewDoc]);
+  }, [previewDoc, lightboxTrimBox]);
 
   const lightboxAspect = lightboxPdfSizeMm
     ? lightboxPdfSizeMm.widthMm / lightboxPdfSizeMm.heightMm
     : undefined;
+
+  // TrimBox-as-fraction-of-MediaBox crop, mirroring PreviewPanel's math so
+  // the lightbox honours the same crop-mark clipping the inline panel does.
+  const lightboxTrimCrop = useMemo(() => {
+    if (!previewDoc || !lightboxTrimBox) return undefined;
+    const preflight = previewDoc.preflight_data as Record<string, unknown> | null;
+    const boxes = preflight?.boxes as Record<string, number[]> | undefined;
+    const PT_TO_MM = 25.4 / 72;
+    let mediaWmm = Number(previewDoc.page_width_mm) || 0;
+    let mediaHmm = Number(previewDoc.page_height_mm) || 0;
+    if (boxes?.MediaBox && boxes.MediaBox.length === 4) {
+      const mbW = Math.abs(boxes.MediaBox[2] - boxes.MediaBox[0]) * PT_TO_MM;
+      const mbH = Math.abs(boxes.MediaBox[3] - boxes.MediaBox[1]) * PT_TO_MM;
+      if (mbW > 0 && mbH > 0) { mediaWmm = mbW; mediaHmm = mbH; }
+    }
+    if (!mediaWmm || !mediaHmm) return undefined;
+    const trimW = Math.abs(lightboxTrimBox[2] - lightboxTrimBox[0]) * PT_TO_MM;
+    const trimH = Math.abs(lightboxTrimBox[3] - lightboxTrimBox[1]) * PT_TO_MM;
+    if (mediaWmm - trimW < 1 && mediaHmm - trimH < 1) return undefined;
+    const left = Math.min(lightboxTrimBox[0], lightboxTrimBox[2]) * PT_TO_MM / mediaWmm;
+    const top = 1 - (Math.max(lightboxTrimBox[1], lightboxTrimBox[3]) * PT_TO_MM / mediaHmm);
+    return { left, top, width: trimW / mediaWmm, height: trimH / mediaHmm };
+  }, [previewDoc, lightboxTrimBox]);
+
+  // Sign the processed PDF (fallback: original upload) so the lightbox can
+  // render directly from the PDF instead of the low-res thumbnail rasters.
+  const lightboxPdfPath = useMemo<string | null>(() => {
+    if (!previewDoc) return null;
+    const processed = (previewDoc.preflight_data as any)?.processed_file_path as string | undefined;
+    return processed || previewDoc.file_path || null;
+  }, [previewDoc]);
+
+  const [lightboxSignedPdfUrl, setLightboxSignedPdfUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!lightboxOpen || !lightboxPdfPath) {
+      setLightboxSignedPdfUrl(null);
+      return;
+    }
+    let cancelled = false;
+    getDownloadUrls([lightboxPdfPath]).then((map) => {
+      if (!cancelled) setLightboxSignedPdfUrl(map[lightboxPdfPath] || null);
+    }).catch(() => {
+      if (!cancelled) setLightboxSignedPdfUrl(null);
+    });
+    return () => { cancelled = true; };
+  }, [lightboxOpen, lightboxPdfPath]);
+
+  const lightboxPdfSources = useMemo(() => {
+    if (!lightboxSignedPdfUrl || !lightboxPdfPath) return undefined;
+    const count = lightboxThumbnails.length || (previewDoc?.page_count ?? 0);
+    if (count <= 0) return undefined;
+    return Array.from({ length: count }, (_, i) => ({
+      url: lightboxSignedPdfUrl,
+      pageNumber: i + 1,
+      cacheKey: lightboxPdfPath,
+    }));
+  }, [lightboxSignedPdfUrl, lightboxPdfPath, lightboxThumbnails.length, previewDoc?.page_count]);
 
   const ensuredItemIdRef = useRef<string | null>(null);
 
@@ -2417,6 +2493,8 @@ export default function OrderFiles() {
           pageAspectRatio={lightboxAspect}
           pdfSizeMm={lightboxPdfSizeMm}
           canvasSizeMm={lightboxPdfSizeMm}
+          pdfSources={lightboxPdfSources}
+          trimCrop={lightboxTrimCrop}
           onClose={() => setLightboxOpen(false)}
         />
       )}
