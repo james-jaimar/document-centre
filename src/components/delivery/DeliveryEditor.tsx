@@ -531,25 +531,29 @@ function LocationDialog({ onAdd }: { onAdd: (l: Omit<Location, "id" | "zone_id">
 }
 
 // ---------- Methods Panel ----------
-function MethodsPanel({ methods, tenantId, onChanged }: { methods: Method[]; tenantId?: string | null; onChanged: () => void }) {
+function MethodsPanel({ methods, tenantId, branchId, scope, onChanged }: { methods: Method[]; tenantId?: string | null; branchId?: string | null; scope: Scope; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Partial<Method>>({ code: "", label: "", is_express: false, is_active: true, sort_order: 0 });
+  const isBranchScope = scope === "branch" && !!branchId;
 
-  // Per-tenant enable/disable overrides for (platform or tenant) methods.
+  // Tenant-level and (when in branch scope) branch-level overrides.
   const overridesQuery = useQuery({
-    queryKey: ["delivery", "method-overrides", tenantId ?? null],
+    queryKey: ["delivery", "method-overrides", tenantId ?? null, branchId ?? null],
     enabled: !!tenantId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("tenant_delivery_method_overrides")
-        .select("method_id, is_enabled")
+        .select("method_id, is_enabled, branch_id")
         .eq("tenant_id", tenantId!);
       if (error) throw error;
       return data ?? [];
     },
   });
-  const overrideMap = new Map<string, boolean>(
-    (overridesQuery.data ?? []).map((o: any) => [o.method_id, o.is_enabled]),
+  const tenantOverrideMap = new Map<string, boolean>(
+    (overridesQuery.data ?? []).filter((o: any) => o.branch_id === null).map((o: any) => [o.method_id, o.is_enabled]),
+  );
+  const branchOverrideMap = new Map<string, boolean>(
+    (overridesQuery.data ?? []).filter((o: any) => o.branch_id === branchId).map((o: any) => [o.method_id, o.is_enabled]),
   );
 
   const create = async () => {
@@ -566,10 +570,43 @@ function MethodsPanel({ methods, tenantId, onChanged }: { methods: Method[]; ten
     toast.success("Method added"); setOpen(false); setForm({ code: "", label: "", is_express: false, is_active: true, sort_order: 0 }); onChanged();
   };
 
-  // For tenant-owned methods, toggle is_active directly.
-  // For platform methods, write/delete an override row.
+  // Toggle logic:
+  // - Branch scope: write/delete a branch-scoped override row (never touches tenant or method).
+  // - Tenant scope, platform method: write/delete tenant-scoped override.
+  // - Tenant scope, tenant-owned method: flip is_active directly.
   const toggle = async (m: Method, enabled: boolean) => {
     const isPlatform = m.tenant_id === null;
+
+    if (isBranchScope) {
+      if (!tenantId || !branchId) return;
+      // Determine the inherited default we'd fall back to if no branch row exists.
+      const inherited = isPlatform
+        ? (tenantOverrideMap.has(m.id) ? tenantOverrideMap.get(m.id)! : m.is_active)
+        : (tenantOverrideMap.has(m.id) ? tenantOverrideMap.get(m.id)! : m.is_active);
+      if (enabled === inherited) {
+        // Matches inherited — delete the branch override row.
+        const { error } = await supabase
+          .from("tenant_delivery_method_overrides")
+          .delete()
+          .eq("tenant_id", tenantId)
+          .eq("branch_id", branchId)
+          .eq("method_id", m.id);
+        if (error) { toast.error(error.message); return; }
+      } else {
+        const { error } = await supabase
+          .from("tenant_delivery_method_overrides")
+          .upsert(
+            { tenant_id: tenantId, branch_id: branchId, method_id: m.id, is_enabled: enabled },
+            { onConflict: "tenant_id,branch_id,method_id" },
+          );
+        if (error) { toast.error(error.message); return; }
+      }
+      overridesQuery.refetch();
+      onChanged();
+      return;
+    }
+
+    // Tenant scope
     if (isPlatform) {
       if (!tenantId) return;
       if (enabled) {
@@ -577,13 +614,14 @@ function MethodsPanel({ methods, tenantId, onChanged }: { methods: Method[]; ten
           .from("tenant_delivery_method_overrides")
           .delete()
           .eq("tenant_id", tenantId)
+          .is("branch_id", null)
           .eq("method_id", m.id);
         if (error) { toast.error(error.message); return; }
       } else {
         const { error } = await supabase
           .from("tenant_delivery_method_overrides")
           .upsert(
-            { tenant_id: tenantId, method_id: m.id, is_enabled: false },
+            { tenant_id: tenantId, branch_id: null, method_id: m.id, is_enabled: false },
             { onConflict: "tenant_id,method_id" },
           );
         if (error) { toast.error(error.message); return; }
