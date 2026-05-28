@@ -87,7 +87,7 @@ export default function PdfPageView({
   // px) still look crisp. We render the PDF into a larger canvas and then
   // CSS-scale it down to the slot size. Cap to keep memory bounded.
   const OVERSAMPLE = 2.5;
-  const MAX_RENDER_PX = 2400;
+  const MAX_RENDER_PX = 3600;
   const oversampleScale = Math.min(OVERSAMPLE, Math.max(1, MAX_RENDER_PX / Math.max(displayWidth, 1)));
   const renderWidth = Math.round(displayWidth * oversampleScale);
 
