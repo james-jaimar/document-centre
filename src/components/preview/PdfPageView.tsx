@@ -80,7 +80,16 @@ export default function PdfPageView({
       });
   }, [cacheKey, pdfUrl]);
 
-  const renderWidth = Math.round(width);
+  const displayWidth = Math.round(width);
+  const displayHeight = Math.round(height);
+
+  // Oversample so small on-screen renders (e.g. business cards at ~300 CSS
+  // px) still look crisp. We render the PDF into a larger canvas and then
+  // CSS-scale it down to the slot size. Cap to keep memory bounded.
+  const OVERSAMPLE = 2.5;
+  const MAX_RENDER_PX = 2400;
+  const oversampleScale = Math.min(OVERSAMPLE, Math.max(1, MAX_RENDER_PX / Math.max(displayWidth, 1)));
+  const renderWidth = Math.round(displayWidth * oversampleScale);
 
   // When cached, pass the ArrayBuffer directly — pdf.js won't fetch again.
   // When not cached (no cacheKey), fall back to URL-based loading.
@@ -112,16 +121,16 @@ export default function PdfPageView({
   }
 
   return (
-    <div className="flex items-center justify-center" style={{ width, height, ...style }}>
+    <div className="flex items-center justify-center" style={{ width: displayWidth, height: displayHeight, ...style }}>
       <Document
         file={fileOptions}
         loading={
-          <div className="flex items-center justify-center" style={{ width: renderWidth, height }}>
+          <div className="flex items-center justify-center" style={{ width: displayWidth, height: displayHeight }}>
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50" />
           </div>
         }
         error={
-          <div className="flex items-center justify-center" style={{ width: renderWidth, height }}>
+          <div className="flex items-center justify-center" style={{ width: displayWidth, height: displayHeight }}>
             <div className="text-center text-muted-foreground">
               <FileText className="h-8 w-8 mx-auto mb-1 opacity-30" />
               <p className="text-xs">Preview unavailable</p>
@@ -130,19 +139,29 @@ export default function PdfPageView({
         }
         onLoadError={() => setError(true)}
       >
-        <div style={{ width: renderWidth, overflow: "hidden" }}>
-          <Page
-            pageNumber={pageNumber}
-            width={renderWidth}
-            renderTextLayer={false}
-            renderAnnotationLayer={false}
-            loading={
-              <div className="flex items-center justify-center" style={{ width: renderWidth, height }}>
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50" />
-              </div>
-            }
-            canvasBackground="#ffffff"
-          />
+        {/* Outer slot sized to the requested display dimensions; the inner
+            div oversamples the PDF render and CSS-scales it back down. */}
+        <div style={{ width: displayWidth, height: displayHeight, overflow: "hidden" }}>
+          <div
+            style={{
+              width: renderWidth,
+              transform: `scale(${1 / oversampleScale})`,
+              transformOrigin: "top left",
+            }}
+          >
+            <Page
+              pageNumber={pageNumber}
+              width={renderWidth}
+              renderTextLayer={false}
+              renderAnnotationLayer={false}
+              loading={
+                <div className="flex items-center justify-center" style={{ width: renderWidth, height: displayHeight * oversampleScale }}>
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50" />
+                </div>
+              }
+              canvasBackground="#ffffff"
+            />
+          </div>
         </div>
       </Document>
     </div>
