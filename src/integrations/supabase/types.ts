@@ -685,6 +685,228 @@ export type Database = {
           },
         ]
       }
+      delivery_methods: {
+        Row: {
+          code: string
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          is_express: boolean
+          label: string
+          sort_order: number
+          tenant_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          is_express?: boolean
+          label: string
+          sort_order?: number
+          tenant_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          is_express?: boolean
+          label?: string
+          sort_order?: number
+          tenant_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_methods_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      delivery_rates: {
+        Row: {
+          branch_id: string | null
+          created_at: string
+          currency_code: string
+          id: string
+          is_active: boolean
+          max_weight_kg: number | null
+          method_id: string
+          min_weight_kg: number
+          price: number
+          scope_type: Database["public"]["Enums"]["delivery_scope"]
+          sort_order: number
+          tenant_id: string | null
+          updated_at: string
+          zone_id: string
+        }
+        Insert: {
+          branch_id?: string | null
+          created_at?: string
+          currency_code?: string
+          id?: string
+          is_active?: boolean
+          max_weight_kg?: number | null
+          method_id: string
+          min_weight_kg?: number
+          price: number
+          scope_type?: Database["public"]["Enums"]["delivery_scope"]
+          sort_order?: number
+          tenant_id?: string | null
+          updated_at?: string
+          zone_id: string
+        }
+        Update: {
+          branch_id?: string | null
+          created_at?: string
+          currency_code?: string
+          id?: string
+          is_active?: boolean
+          max_weight_kg?: number | null
+          method_id?: string
+          min_weight_kg?: number
+          price?: number
+          scope_type?: Database["public"]["Enums"]["delivery_scope"]
+          sort_order?: number
+          tenant_id?: string | null
+          updated_at?: string
+          zone_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_rates_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_rates_method_id_fkey"
+            columns: ["method_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_methods"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_rates_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_rates_zone_id_fkey"
+            columns: ["zone_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_zones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      delivery_zone_locations: {
+        Row: {
+          country: string
+          created_at: string
+          id: string
+          match_type: Database["public"]["Enums"]["delivery_location_match"]
+          value: string
+          zone_id: string
+        }
+        Insert: {
+          country?: string
+          created_at?: string
+          id?: string
+          match_type: Database["public"]["Enums"]["delivery_location_match"]
+          value: string
+          zone_id: string
+        }
+        Update: {
+          country?: string
+          created_at?: string
+          id?: string
+          match_type?: Database["public"]["Enums"]["delivery_location_match"]
+          value?: string
+          zone_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_zone_locations_zone_id_fkey"
+            columns: ["zone_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_zones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      delivery_zones: {
+        Row: {
+          branch_id: string | null
+          code: string
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          is_default_fallback: boolean
+          label: string
+          scope_type: Database["public"]["Enums"]["delivery_scope"]
+          sort_order: number
+          tenant_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          branch_id?: string | null
+          code: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          is_default_fallback?: boolean
+          label: string
+          scope_type?: Database["public"]["Enums"]["delivery_scope"]
+          sort_order?: number
+          tenant_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          branch_id?: string | null
+          code?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          is_default_fallback?: boolean
+          label?: string
+          scope_type?: Database["public"]["Enums"]["delivery_scope"]
+          sort_order?: number
+          tenant_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_zones_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_zones_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       derived_files: {
         Row: {
           asset_id: string | null
@@ -4418,6 +4640,10 @@ export type Database = {
         Args: { p_tenant_id: string }
         Returns: undefined
       }
+      clone_tenant_delivery_to_branch: {
+        Args: { p_branch_id: string }
+        Returns: undefined
+      }
       clone_tenant_pricing_to_branch: {
         Args: { p_branch_id: string }
         Returns: undefined
@@ -4470,6 +4696,25 @@ export type Database = {
         Args: { p_app_id: string; p_sequence_type: string }
         Returns: number
       }
+      quote_delivery_rate: {
+        Args: {
+          p_billable_kg: number
+          p_branch_id: string
+          p_currency?: string
+          p_method_id: string
+          p_tenant_id: string
+          p_zone_id: string
+        }
+        Returns: {
+          currency_code: string
+          max_weight_kg: number
+          method_id: string
+          min_weight_kg: number
+          price: number
+          rate_id: string
+          zone_id: string
+        }[]
+      }
       read_email_account_secret: {
         Args: { p_secret_id: string }
         Returns: string
@@ -4478,6 +4723,17 @@ export type Database = {
       regenerate_pricing_rules_for_currency: {
         Args: { p_currency: string }
         Returns: number
+      }
+      resolve_delivery_zone: {
+        Args: {
+          p_branch_id: string
+          p_city: string
+          p_country?: string
+          p_postal_code: string
+          p_province: string
+          p_tenant_id: string
+        }
+        Returns: string
       }
       resolve_tenant_setting: {
         Args: { p_category: string; p_key: string; p_tenant_id: string }
@@ -4535,6 +4791,8 @@ export type Database = {
       click_colour: "mono" | "colour"
       click_sides: "simplex" | "duplex"
       click_size: "A4" | "A3"
+      delivery_location_match: "city" | "postcode_prefix" | "province"
+      delivery_scope: "platform" | "tenant" | "branch"
       document_status:
         | "pending"
         | "uploading"
@@ -4709,6 +4967,8 @@ export const Constants = {
       click_colour: ["mono", "colour"],
       click_sides: ["simplex", "duplex"],
       click_size: ["A4", "A3"],
+      delivery_location_match: ["city", "postcode_prefix", "province"],
+      delivery_scope: ["platform", "tenant", "branch"],
       document_status: [
         "pending",
         "uploading",
