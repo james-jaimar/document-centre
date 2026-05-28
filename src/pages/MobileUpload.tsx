@@ -62,7 +62,9 @@ export default function MobileUpload() {
 
       setUploads((prev) =>
         prev.map((u) =>
-          u.id === fileUpload.id ? { ...u, status: "uploading", progress: 30 } : u,
+          u.id === fileUpload.id
+            ? { ...u, status: "uploading", progress: 30, error: undefined }
+            : u,
         ),
       );
 
@@ -74,7 +76,7 @@ export default function MobileUpload() {
 
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || "Upload failed");
+          throw new Error(data.error || "");
         }
 
         setUploads((prev) =>
@@ -83,10 +85,13 @@ export default function MobileUpload() {
           ),
         );
       } catch (err: any) {
+        const message =
+          (err?.message && String(err.message).trim()) ||
+          "Upload failed — tap Retry to try again.";
         setUploads((prev) =>
           prev.map((u) =>
             u.id === fileUpload.id
-              ? { ...u, status: "error", error: err.message }
+              ? { ...u, status: "error", error: message }
               : u,
           ),
         );
@@ -94,6 +99,23 @@ export default function MobileUpload() {
     },
     [token],
   );
+
+  const retryUpload = useCallback(
+    async (id: string) => {
+      const target = uploads.find((u) => u.id === id);
+      if (!target) return;
+      await uploadFile(target);
+    },
+    [uploads, uploadFile],
+  );
+
+  const retryAllFailed = useCallback(async () => {
+    const failed = uploads.filter((u) => u.status === "error");
+    for (const fu of failed) {
+      await uploadFile(fu);
+    }
+  }, [uploads, uploadFile]);
+
 
   const handleFiles = useCallback(
     async (fileList: FileList | null) => {
