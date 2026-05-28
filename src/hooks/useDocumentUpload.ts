@@ -20,7 +20,7 @@ import {
   renderPages,
 } from "@/lib/documentCentreApi";
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
-import { detectNonIsoSize, detectNearIsoWithBleed, matchIsoSize, UNKNOWN_SIZE_LABEL } from "@/lib/paperSizes";
+import { detectNonIsoSize, detectNearIsoWithBleed, matchIsoSize, matchBusinessCardSize, isBusinessCardFamily, UNKNOWN_SIZE_LABEL } from "@/lib/paperSizes";
 import { isImageFile, imageFileToPdf, type TargetSize } from "@/lib/imageToPage";
 import { isOfficeFile, officeMimeFromFilename } from "@/lib/officeFiles";
 import { getPrintReadyPlan, type FamilyPrintConfig } from "@/lib/printIntent";
