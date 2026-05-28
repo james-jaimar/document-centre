@@ -572,12 +572,16 @@ export function useDocumentUpload(
 
         // Detect non-ISO size or near-ISO bleed for the advisory.
         // Order: exact ISO match → known non-ISO/presentation size → near-ISO+bleed → unknown.
-        const isoMatch = matchIsoSize(pageWidthMm, pageHeightMm);
-        const knownNonIso = !isoMatch ? detectNonIsoSize(pageWidthMm, pageHeightMm) : null;
-        const nearIsoMatch = !isoMatch && !knownNonIso
-          ? detectNearIsoWithBleed(pageWidthMm, pageHeightMm, productFamilySlug)
-          : null;
-        const isUnknownSize = !isoMatch && !knownNonIso && !nearIsoMatch;
+        // Business cards: any of our recognised BC sizes counts as a clean
+        // match — never raise the "custom size" advisory for them.
+        const isBcFamily = isBusinessCardFamily(productFamilySlug);
+        const bcSizeMatch = isBcFamily ? matchBusinessCardSize(pageWidthMm, pageHeightMm) : null;
+        const isoMatch = bcSizeMatch ? null : matchIsoSize(pageWidthMm, pageHeightMm);
+        const knownNonIso = bcSizeMatch || isoMatch ? null : detectNonIsoSize(pageWidthMm, pageHeightMm);
+        const nearIsoMatch = bcSizeMatch || isoMatch || knownNonIso
+          ? null
+          : detectNearIsoWithBleed(pageWidthMm, pageHeightMm, productFamilySlug);
+        const isUnknownSize = !bcSizeMatch && !isoMatch && !knownNonIso && !nearIsoMatch;
         const detectedSize = knownNonIso ?? (isUnknownSize ? UNKNOWN_SIZE_LABEL : null);
 
         // TrimBox differs from MediaBox? Treat it as an explicit author intent
