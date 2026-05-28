@@ -311,7 +311,7 @@ export default function DeliveryEditor({ scope, tenantId, branchId, title, descr
         </TabsContent>
 
         <TabsContent value="methods" className="space-y-4">
-          <MethodsPanel methods={methods} tenantId={tenantId} onChanged={invalidate} />
+          <MethodsPanel methods={methods} tenantId={tenantId} branchId={branchId} scope={scope} onChanged={invalidate} />
         </TabsContent>
       </Tabs>
     </div>
