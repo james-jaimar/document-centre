@@ -673,7 +673,10 @@ export function usePlaceOrder() {
       // Demo mode: prices are presented as a single all-in figure with no VAT line.
       // Tenants will configure their own VAT rules in a future iteration.
       const vatAmount = 0;
-      const totalAmount = subtotal;
+      const deliveryAmount = input.deliveryMethod === "delivery"
+        ? Math.max(0, Number(input.deliveryAmount ?? 0))
+        : 0;
+      const totalAmount = subtotal + deliveryAmount;
       // Use the currency stamped on the cart at first add. The cart can't mix
       // currencies, so this is the source of truth for the placed order.
       const orderCurrency = (cartOrder.currency as string | undefined) || "ZAR";
