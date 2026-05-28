@@ -42,6 +42,38 @@ export const NON_ISO_SIZES: PaperSize[] = [
   { name: "PowerPoint On-screen Show (16:10)", widthMm: 339, heightMm: 212 },
 ];
 
+/**
+ * Business card sizes we sell. Used to suppress the "custom size" advisory
+ * when a customer uploads artwork at any recognised BC size.
+ */
+export const BUSINESS_CARD_SIZES: PaperSize[] = [
+  { name: "Standard (90 × 50 mm)", widthMm: 90, heightMm: 50 },
+  { name: "85 × 55 mm", widthMm: 85, heightMm: 55 },
+  { name: "90 × 55 mm", widthMm: 90, heightMm: 55 },
+  { name: "US Standard (88.9 × 50.8 mm)", widthMm: 88.9, heightMm: 50.8 },
+  { name: "European ISO (85.6 × 54 mm)", widthMm: 85.6, heightMm: 53.98 },
+  { name: "Square (55 × 55 mm)", widthMm: 55, heightMm: 55 },
+  // Folded flat sheet (90 × 100) trims to 90 × 50 — accept either dimension.
+  { name: "Folded flat (90 × 100 mm)", widthMm: 90, heightMm: 100 },
+];
+
+/** True when the family slug refers to business cards (either dash or underscore form). */
+export function isBusinessCardFamily(slug?: string | null): boolean {
+  const s = (slug ?? "").toLowerCase().trim();
+  return s === "business-cards" || s === "business_cards";
+}
+
+/**
+ * Match a page's dimensions against any known business card size (with the
+ * standard tolerance). Used to short-circuit the size advisory for BC uploads.
+ */
+export function matchBusinessCardSize(widthMm: number, heightMm: number): PaperSize | null {
+  for (const bc of BUSINESS_CARD_SIZES) {
+    if (matchesSize(widthMm, heightMm, bc)) return bc;
+  }
+  return null;
+}
+
 /** Label used in the advisory when a page matches no known size at all. */
 export const UNKNOWN_SIZE_LABEL = "Custom size";
 
