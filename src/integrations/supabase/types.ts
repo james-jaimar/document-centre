@@ -690,6 +690,7 @@ export type Database = {
           code: string
           created_at: string
           description: string | null
+          fulfillment_kind: string
           id: string
           is_active: boolean
           is_express: boolean
@@ -702,6 +703,7 @@ export type Database = {
           code: string
           created_at?: string
           description?: string | null
+          fulfillment_kind?: string
           id?: string
           is_active?: boolean
           is_express?: boolean
@@ -714,6 +716,7 @@ export type Database = {
           code?: string
           created_at?: string
           description?: string | null
+          fulfillment_kind?: string
           id?: string
           is_active?: boolean
           is_express?: boolean

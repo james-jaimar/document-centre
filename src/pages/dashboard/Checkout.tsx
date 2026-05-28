@@ -24,7 +24,7 @@ import { toast } from "sonner";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
 import CheckoutAuth from "@/components/checkout/CheckoutAuth";
-import { quoteShipping, type ShippingQuoteResult } from "@/lib/delivery/quoteShipping";
+import { quoteShipping, listShippingQuotes, type ShippingQuoteResult, type ShippingMethodOption } from "@/lib/delivery/quoteShipping";
 
 export default function Checkout() {
   const { slug, tenantPath } = useTenantSlug();
@@ -93,6 +93,8 @@ export default function Checkout() {
   // Shipping quote (only relevant when delivery is selected)
   const [shippingQuote, setShippingQuote] = useState<ShippingQuoteResult | null>(null);
   const [quotingShipping, setQuotingShipping] = useState(false);
+  const [shippingOptions, setShippingOptions] = useState<ShippingMethodOption[]>([]);
+  const [selectedMethodId, setSelectedMethodId] = useState<string | null>(null);
 
   const quoteKey = useMemo(() => JSON.stringify({
     m: deliveryMethod,
@@ -102,17 +104,22 @@ export default function Checkout() {
     items: items.map((i) => ({ id: i.id, q: i.quantity })),
   }), [deliveryMethod, address.city, address.postal_code, address.province, items]);
 
+  // 1. Resolve zone + list available shipping methods when address changes.
   useEffect(() => {
-    if (deliveryMethod !== "delivery") { setShippingQuote(null); return; }
-    if (!items.length) { setShippingQuote(null); return; }
-    if (!address.city.trim() && !address.postal_code.trim() && !address.province.trim()) {
+    if (deliveryMethod !== "delivery") {
+      setShippingOptions([]);
+      setSelectedMethodId(null);
       setShippingQuote(null);
       return;
     }
+    if (!items.length) { setShippingOptions([]); return; }
+    if (!address.city.trim() && !address.postal_code.trim() && !address.province.trim()) {
+      setShippingOptions([]);
+      return;
+    }
     const handle = setTimeout(async () => {
-      setQuotingShipping(true);
       try {
-        const q = await quoteShipping({
+        const res = await listShippingQuotes({
           tenantId: tenantId ?? null,
           branchId: collectionBranch?.id ?? null,
           address: {
@@ -124,6 +131,46 @@ export default function Checkout() {
           items,
           currency,
         });
+        setShippingOptions(res.options);
+        // Auto-select cheapest if nothing selected or current selection no longer available.
+        setSelectedMethodId((curr) => {
+          if (curr && res.options.some((o) => o.methodId === curr)) return curr;
+          const cheapest = [...res.options]
+            .filter((o) => o.price != null)
+            .sort((a, b) => (a.price ?? 0) - (b.price ?? 0))[0];
+          return cheapest?.methodId ?? null;
+        });
+      } catch (err) {
+        console.warn("[checkout] shipping options failed", err);
+        setShippingOptions([]);
+      }
+    }, 350);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteKey, tenantId, collectionBranch?.id, currency]);
+
+  // 2. Quote the selected method (for label, zone, persisted method id, etc).
+  useEffect(() => {
+    if (deliveryMethod !== "delivery" || !selectedMethodId || !items.length) {
+      setShippingQuote(null);
+      return;
+    }
+    setQuotingShipping(true);
+    (async () => {
+      try {
+        const q = await quoteShipping({
+          tenantId: tenantId ?? null,
+          branchId: collectionBranch?.id ?? null,
+          address: {
+            city: address.city,
+            postal_code: address.postal_code,
+            province: address.province,
+            country: "ZA",
+          },
+          items,
+          methodId: selectedMethodId,
+          currency,
+        });
         setShippingQuote(q);
       } catch (err) {
         console.warn("[checkout] shipping quote failed", err);
@@ -131,10 +178,9 @@ export default function Checkout() {
       } finally {
         setQuotingShipping(false);
       }
-    }, 350);
-    return () => clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quoteKey, tenantId, collectionBranch?.id, currency]);
+    })();
+  }, [selectedMethodId, quoteKey, tenantId, collectionBranch?.id, currency]);
+
 
   const deliveryFee = deliveryMethod === "delivery" ? (shippingQuote?.price ?? 0) : 0;
   // Demo mode: no VAT/tax line. Tenants will configure their own tax rules later.
@@ -435,6 +481,35 @@ export default function Checkout() {
                   />
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Delivery Options */}
+          {deliveryMethod === "delivery" && shippingOptions.length > 0 && (
+            <div className="border border-border rounded-lg p-4 space-y-3">
+              <h3 className="font-semibold text-foreground">Delivery Option</h3>
+              <RadioGroup
+                value={selectedMethodId ?? ""}
+                onValueChange={setSelectedMethodId}
+                className="space-y-2"
+              >
+                {shippingOptions.map((o) => (
+                  <div key={o.methodId} className="flex items-center justify-between gap-3 rounded-md border border-border p-3 hover:border-primary/40">
+                    <div className="flex items-start gap-2">
+                      <RadioGroupItem value={o.methodId} id={`sm-${o.methodId}`} className="mt-1" />
+                      <Label htmlFor={`sm-${o.methodId}`} className="cursor-pointer">
+                        <div className="text-sm font-medium text-foreground">{o.label}</div>
+                        {o.description && (
+                          <div className="text-xs text-muted-foreground">{o.description}</div>
+                        )}
+                      </Label>
+                    </div>
+                    <div className="font-mono text-sm text-foreground shrink-0">
+                      {o.price != null ? formatPrice(o.price, o.currency) : "—"}
+                    </div>
+                  </div>
+                ))}
+              </RadioGroup>
             </div>
           )}
 
