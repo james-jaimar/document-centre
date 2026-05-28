@@ -213,3 +213,92 @@ export async function quoteShipping(req: ShippingQuoteRequest): Promise<Shipping
     billableKg: chargeableKg,
   };
 }
+
+export interface ShippingMethodOption {
+  methodId: string;
+  label: string;
+  description: string | null;
+  price: number | null;
+  currency: string;
+}
+
+/**
+ * List available shipping (not collection) methods + their quoted price
+ * for the resolved zone & cart weight. Used by the checkout UI so the
+ * customer can pick between Standard / Overnight etc.
+ */
+export async function listShippingQuotes(req: ShippingQuoteRequest): Promise<{
+  zoneId: string | null;
+  zoneLabel: string | null;
+  zoneCode: string | null;
+  billableKg: number;
+  options: ShippingMethodOption[];
+}> {
+  const currency = req.currency ?? "ZAR";
+  const weights = aggregateCartWeight(req.items);
+  const chargeableKg = Math.max(weights.billableKg, MIN_BILLABLE_KG);
+
+  if (!req.address?.city && !req.address?.postal_code && !req.address?.province) {
+    return { zoneId: null, zoneLabel: null, zoneCode: null, billableKg: chargeableKg, options: [] };
+  }
+
+  const { data: zoneId } = await supabase.rpc("resolve_delivery_zone", {
+    p_tenant_id: req.tenantId,
+    p_branch_id: req.branchId,
+    p_city: req.address.city ?? null,
+    p_postal_code: req.address.postal_code ?? null,
+    p_province: req.address.province ?? null,
+    p_country: req.address.country ?? "ZA",
+  });
+
+  if (!zoneId) {
+    return { zoneId: null, zoneLabel: null, zoneCode: null, billableKg: chargeableKg, options: [] };
+  }
+
+  const { data: zoneRow } = await supabase
+    .from("delivery_zones")
+    .select("id, code, label")
+    .eq("id", zoneId as string)
+    .maybeSingle();
+
+  const tenantFilter = req.tenantId
+    ? `tenant_id.is.null,tenant_id.eq.${req.tenantId}`
+    : `tenant_id.is.null`;
+
+  const { data: methods } = await supabase
+    .from("delivery_methods")
+    .select("id, label, description, sort_order, tenant_id, fulfillment_kind, is_active")
+    .eq("is_active", true)
+    .eq("fulfillment_kind", "shipping")
+    .or(tenantFilter)
+    .order("sort_order", { ascending: true });
+
+  const options: ShippingMethodOption[] = [];
+  for (const m of methods ?? []) {
+    const { data: rateRows } = await supabase.rpc("quote_delivery_rate", {
+      p_tenant_id: req.tenantId,
+      p_branch_id: req.branchId,
+      p_zone_id: zoneId,
+      p_method_id: m.id,
+      p_billable_kg: chargeableKg,
+      p_currency: currency,
+    });
+    const rate = Array.isArray(rateRows) ? rateRows[0] : rateRows;
+    if (!rate) continue;
+    options.push({
+      methodId: m.id,
+      label: m.label,
+      description: (m as any).description ?? null,
+      price: Number(rate.price),
+      currency: rate.currency_code,
+    });
+  }
+
+  return {
+    zoneId: zoneId as string,
+    zoneLabel: zoneRow?.label ?? null,
+    zoneCode: zoneRow?.code ?? null,
+    billableKg: chargeableKg,
+    options,
+  };
+}
