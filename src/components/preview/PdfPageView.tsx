@@ -121,16 +121,16 @@ export default function PdfPageView({
   }
 
   return (
-    <div className="flex items-center justify-center" style={{ width, height, ...style }}>
+    <div className="flex items-center justify-center" style={{ width: displayWidth, height: displayHeight, ...style }}>
       <Document
         file={fileOptions}
         loading={
-          <div className="flex items-center justify-center" style={{ width: renderWidth, height }}>
+          <div className="flex items-center justify-center" style={{ width: displayWidth, height: displayHeight }}>
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50" />
           </div>
         }
         error={
-          <div className="flex items-center justify-center" style={{ width: renderWidth, height }}>
+          <div className="flex items-center justify-center" style={{ width: displayWidth, height: displayHeight }}>
             <div className="text-center text-muted-foreground">
               <FileText className="h-8 w-8 mx-auto mb-1 opacity-30" />
               <p className="text-xs">Preview unavailable</p>
@@ -139,19 +139,29 @@ export default function PdfPageView({
         }
         onLoadError={() => setError(true)}
       >
-        <div style={{ width: renderWidth, overflow: "hidden" }}>
-          <Page
-            pageNumber={pageNumber}
-            width={renderWidth}
-            renderTextLayer={false}
-            renderAnnotationLayer={false}
-            loading={
-              <div className="flex items-center justify-center" style={{ width: renderWidth, height }}>
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50" />
-              </div>
-            }
-            canvasBackground="#ffffff"
-          />
+        {/* Outer slot sized to the requested display dimensions; the inner
+            div oversamples the PDF render and CSS-scales it back down. */}
+        <div style={{ width: displayWidth, height: displayHeight, overflow: "hidden" }}>
+          <div
+            style={{
+              width: renderWidth,
+              transform: `scale(${1 / oversampleScale})`,
+              transformOrigin: "top left",
+            }}
+          >
+            <Page
+              pageNumber={pageNumber}
+              width={renderWidth}
+              renderTextLayer={false}
+              renderAnnotationLayer={false}
+              loading={
+                <div className="flex items-center justify-center" style={{ width: renderWidth, height: displayHeight * oversampleScale }}>
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50" />
+                </div>
+              }
+              canvasBackground="#ffffff"
+            />
+          </div>
         </div>
       </Document>
     </div>
