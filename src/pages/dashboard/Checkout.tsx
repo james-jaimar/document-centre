@@ -93,6 +93,8 @@ export default function Checkout() {
   // Shipping quote (only relevant when delivery is selected)
   const [shippingQuote, setShippingQuote] = useState<ShippingQuoteResult | null>(null);
   const [quotingShipping, setQuotingShipping] = useState(false);
+  const [shippingOptions, setShippingOptions] = useState<ShippingMethodOption[]>([]);
+  const [selectedMethodId, setSelectedMethodId] = useState<string | null>(null);
 
   const quoteKey = useMemo(() => JSON.stringify({
     m: deliveryMethod,
@@ -102,17 +104,22 @@ export default function Checkout() {
     items: items.map((i) => ({ id: i.id, q: i.quantity })),
   }), [deliveryMethod, address.city, address.postal_code, address.province, items]);
 
+  // 1. Resolve zone + list available shipping methods when address changes.
   useEffect(() => {
-    if (deliveryMethod !== "delivery") { setShippingQuote(null); return; }
-    if (!items.length) { setShippingQuote(null); return; }
-    if (!address.city.trim() && !address.postal_code.trim() && !address.province.trim()) {
+    if (deliveryMethod !== "delivery") {
+      setShippingOptions([]);
+      setSelectedMethodId(null);
       setShippingQuote(null);
       return;
     }
+    if (!items.length) { setShippingOptions([]); return; }
+    if (!address.city.trim() && !address.postal_code.trim() && !address.province.trim()) {
+      setShippingOptions([]);
+      return;
+    }
     const handle = setTimeout(async () => {
-      setQuotingShipping(true);
       try {
-        const q = await quoteShipping({
+        const res = await listShippingQuotes({
           tenantId: tenantId ?? null,
           branchId: collectionBranch?.id ?? null,
           address: {
@@ -124,6 +131,46 @@ export default function Checkout() {
           items,
           currency,
         });
+        setShippingOptions(res.options);
+        // Auto-select cheapest if nothing selected or current selection no longer available.
+        setSelectedMethodId((curr) => {
+          if (curr && res.options.some((o) => o.methodId === curr)) return curr;
+          const cheapest = [...res.options]
+            .filter((o) => o.price != null)
+            .sort((a, b) => (a.price ?? 0) - (b.price ?? 0))[0];
+          return cheapest?.methodId ?? null;
+        });
+      } catch (err) {
+        console.warn("[checkout] shipping options failed", err);
+        setShippingOptions([]);
+      }
+    }, 350);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteKey, tenantId, collectionBranch?.id, currency]);
+
+  // 2. Quote the selected method (for label, zone, persisted method id, etc).
+  useEffect(() => {
+    if (deliveryMethod !== "delivery" || !selectedMethodId || !items.length) {
+      setShippingQuote(null);
+      return;
+    }
+    setQuotingShipping(true);
+    (async () => {
+      try {
+        const q = await quoteShipping({
+          tenantId: tenantId ?? null,
+          branchId: collectionBranch?.id ?? null,
+          address: {
+            city: address.city,
+            postal_code: address.postal_code,
+            province: address.province,
+            country: "ZA",
+          },
+          items,
+          methodId: selectedMethodId,
+          currency,
+        });
         setShippingQuote(q);
       } catch (err) {
         console.warn("[checkout] shipping quote failed", err);
@@ -131,10 +178,9 @@ export default function Checkout() {
       } finally {
         setQuotingShipping(false);
       }
-    }, 350);
-    return () => clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quoteKey, tenantId, collectionBranch?.id, currency]);
+    })();
+  }, [selectedMethodId, quoteKey, tenantId, collectionBranch?.id, currency]);
+
 
   const deliveryFee = deliveryMethod === "delivery" ? (shippingQuote?.price ?? 0) : 0;
   // Demo mode: no VAT/tax line. Tenants will configure their own tax rules later.
