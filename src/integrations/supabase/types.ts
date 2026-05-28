@@ -818,6 +818,7 @@ export type Database = {
           created_at: string
           id: string
           match_type: Database["public"]["Enums"]["delivery_location_match"]
+          notes: string | null
           value: string
           zone_id: string
         }
@@ -826,6 +827,7 @@ export type Database = {
           created_at?: string
           id?: string
           match_type: Database["public"]["Enums"]["delivery_location_match"]
+          notes?: string | null
           value: string
           zone_id: string
         }
@@ -834,6 +836,7 @@ export type Database = {
           created_at?: string
           id?: string
           match_type?: Database["public"]["Enums"]["delivery_location_match"]
+          notes?: string | null
           value?: string
           zone_id?: string
         }
