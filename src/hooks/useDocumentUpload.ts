@@ -687,9 +687,14 @@ export function useDocumentUpload(
         // Persist explicit TrimBox / bleed signals so a later scale-to-size
         // call (e.g. A5 → A4) knows to ask the server for trim-aware
         // resizing even when the file is an exact ISO size with bleed.
-        if (finalExplicitTrim && finalTrimBox) {
-          preflight.trim_box_pt = finalTrimBox;
-          preflight.has_bleed = true;
+        // For business cards we always stamp the TrimBox when one is present
+        // so the preview's CSS trim-clip can engage even if the post-finalize
+        // TrimBox momentarily equals the MediaBox.
+        if (finalTrimBox && finalTrimBox.length === 4) {
+          if (finalExplicitTrim || isBcFamily) {
+            preflight.trim_box_pt = finalTrimBox;
+            preflight.has_bleed = finalExplicitTrim || preflight.has_bleed === true;
+          }
         }
         if (orientationMismatch) {
           preflight.orientation_mismatch = orientationMismatch;
