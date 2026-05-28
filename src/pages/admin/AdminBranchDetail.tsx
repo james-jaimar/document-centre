@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Building2, Users, Settings2, Shield, UserPlus, CreditCard, IdCard } from "lucide-react";
+import { ArrowLeft, Building2, Users, Settings2, Shield, UserPlus, CreditCard, IdCard, Truck } from "lucide-react";
 import { buildAdminPath } from "@/lib/adminRouting";
 import { AddMemberDialog } from "@/components/admin/AddMemberDialog";
 import { PaymentGatewaysCard } from "@/components/payments/PaymentGatewaysCard";
