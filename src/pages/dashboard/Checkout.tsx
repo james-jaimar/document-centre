@@ -483,7 +483,38 @@ export default function Checkout() {
             ))}
           </div>
           <div className="border-t border-border pt-3 space-y-1.5">
-            <div className="flex justify-between text-base font-bold">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Subtotal</span>
+              <span className="font-mono text-foreground">{formatPrice(subtotal, currency)}</span>
+            </div>
+            {deliveryMethod === "delivery" && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground flex items-center gap-1.5">
+                  <Truck className="h-3.5 w-3.5" />
+                  Delivery
+                  {shippingQuote?.zoneLabel && (
+                    <Badge variant="secondary" className="ml-1 text-[10px] py-0 px-1.5">
+                      {shippingQuote.zoneLabel}
+                    </Badge>
+                  )}
+                </span>
+                <span className="font-mono text-foreground">
+                  {quotingShipping
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin inline" />
+                    : shippingQuote?.price != null
+                      ? formatPrice(deliveryFee, currency)
+                      : <span className="text-muted-foreground text-xs">enter address</span>}
+                </span>
+              </div>
+            )}
+            {deliveryMethod === "delivery" && shippingQuote && (
+              <div className="text-[11px] text-muted-foreground">
+                Billable weight: {shippingQuote.billableKg.toFixed(2)}kg
+                {shippingQuote.volumetricKg > shippingQuote.physicalKg && " (volumetric)"}
+                {shippingQuote.methodLabel && ` • ${shippingQuote.methodLabel}`}
+              </div>
+            )}
+            <div className="flex justify-between text-base font-bold pt-1">
               <span className="text-foreground">Total</span>
               <span className="font-mono text-foreground">{formatPrice(total, currency)}</span>
             </div>
