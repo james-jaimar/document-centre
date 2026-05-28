@@ -744,12 +744,24 @@ export function usePlaceOrder() {
             source_channel: isDemo ? "demo" : "storefront",
             notes_customer: input.notes || null,
             date_required: null,
-            metadata: { cart_order_id: input.cartOrderId, is_demo: isDemo },
+            metadata: {
+              cart_order_id: input.cartOrderId,
+              is_demo: isDemo,
+              ...(input.deliveryMethod === "delivery" && deliveryAmount > 0 ? {
+                shipping: {
+                  amount: deliveryAmount,
+                  method_code: input.deliveryMethodCode ?? null,
+                  zone_code: input.deliveryZoneCode ?? null,
+                  currency: orderCurrency,
+                },
+              } : {}),
+            },
           },
           pricing: {
             currency: orderCurrency,
             subtotal,
             vat_amount: vatAmount,
+            delivery_amount: deliveryAmount,
             total_amount: totalAmount,
             amount_paid: 0,
             amount_due: totalAmount,
