@@ -389,6 +389,9 @@ export function usePlaceOrder() {
       deliveryMethod: "collection" | "delivery";
       notes?: string;
       branchId?: string;
+      deliveryAmount?: number;
+      deliveryMethodCode?: string;
+      deliveryZoneCode?: string;
       deliveryAddress?: {
         contact_name?: string;
         company_name?: string;
@@ -670,7 +673,10 @@ export function usePlaceOrder() {
       // Demo mode: prices are presented as a single all-in figure with no VAT line.
       // Tenants will configure their own VAT rules in a future iteration.
       const vatAmount = 0;
-      const totalAmount = subtotal;
+      const deliveryAmount = input.deliveryMethod === "delivery"
+        ? Math.max(0, Number(input.deliveryAmount ?? 0))
+        : 0;
+      const totalAmount = subtotal + deliveryAmount;
       // Use the currency stamped on the cart at first add. The cart can't mix
       // currencies, so this is the source of truth for the placed order.
       const orderCurrency = (cartOrder.currency as string | undefined) || "ZAR";
@@ -738,12 +744,24 @@ export function usePlaceOrder() {
             source_channel: isDemo ? "demo" : "storefront",
             notes_customer: input.notes || null,
             date_required: null,
-            metadata: { cart_order_id: input.cartOrderId, is_demo: isDemo },
+            metadata: {
+              cart_order_id: input.cartOrderId,
+              is_demo: isDemo,
+              ...(input.deliveryMethod === "delivery" && deliveryAmount > 0 ? {
+                shipping: {
+                  amount: deliveryAmount,
+                  method_code: input.deliveryMethodCode ?? null,
+                  zone_code: input.deliveryZoneCode ?? null,
+                  currency: orderCurrency,
+                },
+              } : {}),
+            },
           },
           pricing: {
             currency: orderCurrency,
             subtotal,
             vat_amount: vatAmount,
+            delivery_amount: deliveryAmount,
             total_amount: totalAmount,
             amount_paid: 0,
             amount_due: totalAmount,

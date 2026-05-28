@@ -1,5 +1,5 @@
 import { useTenantSlug } from "@/hooks/useTenantSlug";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -13,15 +13,17 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Loader2, MapPin, ShoppingBag } from "lucide-react";
+import { ArrowLeft, Loader2, MapPin, ShoppingBag, Truck } from "lucide-react";
 import { toast } from "sonner";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
 import CheckoutAuth from "@/components/checkout/CheckoutAuth";
+import { quoteShipping, type ShippingQuoteResult } from "@/lib/delivery/quoteShipping";
 
 export default function Checkout() {
   const { slug, tenantPath } = useTenantSlug();
@@ -86,8 +88,56 @@ export default function Checkout() {
     (sum, item) => sum + Number(item.unit_price) * item.quantity,
     0
   );
+
+  // Shipping quote (only relevant when delivery is selected)
+  const [shippingQuote, setShippingQuote] = useState<ShippingQuoteResult | null>(null);
+  const [quotingShipping, setQuotingShipping] = useState(false);
+
+  const quoteKey = useMemo(() => JSON.stringify({
+    m: deliveryMethod,
+    c: address.city.trim().toLowerCase(),
+    p: address.postal_code.trim(),
+    pv: address.province.trim().toLowerCase(),
+    items: items.map((i) => ({ id: i.id, q: i.quantity })),
+  }), [deliveryMethod, address.city, address.postal_code, address.province, items]);
+
+  useEffect(() => {
+    if (deliveryMethod !== "delivery") { setShippingQuote(null); return; }
+    if (!items.length) { setShippingQuote(null); return; }
+    if (!address.city.trim() && !address.postal_code.trim() && !address.province.trim()) {
+      setShippingQuote(null);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      setQuotingShipping(true);
+      try {
+        const q = await quoteShipping({
+          tenantId: tenantId ?? null,
+          branchId: collectionBranch?.id ?? null,
+          address: {
+            city: address.city,
+            postal_code: address.postal_code,
+            province: address.province,
+            country: "ZA",
+          },
+          items,
+          currency,
+        });
+        setShippingQuote(q);
+      } catch (err) {
+        console.warn("[checkout] shipping quote failed", err);
+        setShippingQuote(null);
+      } finally {
+        setQuotingShipping(false);
+      }
+    }, 350);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteKey, tenantId, collectionBranch?.id, currency]);
+
+  const deliveryFee = deliveryMethod === "delivery" ? (shippingQuote?.price ?? 0) : 0;
   // Demo mode: no VAT/tax line. Tenants will configure their own tax rules later.
-  const total = subtotal;
+  const total = subtotal + deliveryFee;
 
   const handlePlaceOrder = async () => {
     if (!cart) return;
@@ -99,6 +149,10 @@ export default function Checkout() {
       toast.error("Please enter a delivery address");
       return;
     }
+    if (deliveryMethod === "delivery" && shippingQuote && shippingQuote.price == null) {
+      toast.error("We couldn't quote delivery to that address. Please check the city / postal code.");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -108,6 +162,9 @@ export default function Checkout() {
         notes: notes.trim() || undefined,
         deliveryAddress: deliveryMethod === "delivery" ? address : undefined,
         branchId: deliveryMethod === "collection" ? collectionBranch?.id : undefined,
+        deliveryAmount: deliveryFee,
+        deliveryMethodCode: shippingQuote?.methodLabel ?? undefined,
+        deliveryZoneCode: shippingQuote?.zoneCode ?? undefined,
       });
 
       // Online payment selected — create payment session and redirect
@@ -426,7 +483,38 @@ export default function Checkout() {
             ))}
           </div>
           <div className="border-t border-border pt-3 space-y-1.5">
-            <div className="flex justify-between text-base font-bold">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Subtotal</span>
+              <span className="font-mono text-foreground">{formatPrice(subtotal, currency)}</span>
+            </div>
+            {deliveryMethod === "delivery" && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground flex items-center gap-1.5">
+                  <Truck className="h-3.5 w-3.5" />
+                  Delivery
+                  {shippingQuote?.zoneLabel && (
+                    <Badge variant="secondary" className="ml-1 text-[10px] py-0 px-1.5">
+                      {shippingQuote.zoneLabel}
+                    </Badge>
+                  )}
+                </span>
+                <span className="font-mono text-foreground">
+                  {quotingShipping
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin inline" />
+                    : shippingQuote?.price != null
+                      ? formatPrice(deliveryFee, currency)
+                      : <span className="text-muted-foreground text-xs">enter address</span>}
+                </span>
+              </div>
+            )}
+            {deliveryMethod === "delivery" && shippingQuote && (
+              <div className="text-[11px] text-muted-foreground">
+                Billable weight: {shippingQuote.billableKg.toFixed(2)}kg
+                {shippingQuote.volumetricKg > shippingQuote.physicalKg && " (volumetric)"}
+                {shippingQuote.methodLabel && ` • ${shippingQuote.methodLabel}`}
+              </div>
+            )}
+            <div className="flex justify-between text-base font-bold pt-1">
               <span className="text-foreground">Total</span>
               <span className="font-mono text-foreground">{formatPrice(total, currency)}</span>
             </div>
