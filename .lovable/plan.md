@@ -1,29 +1,40 @@
-# Delivery mechanism overhaul
+## Why R 0,00 is showing
 
-Three issues, three fixes. Cause of the "Outlying & Remote" misclassification for Kloof (3624) is a bug in the zone resolver — postcode 3624 IS in the platform database mapped to **Major Centre**, but the tenant's fallback zone hijacks the lookup before the platform postcode index is even consulted.
+The order summary says "Delivery — Major Centre — R 0,00 — Collection from branch". That's the bug.
 
-## 1. Fix the zone resolver (the real bug)
+The tenant has three delivery methods registered against the Major Centre zone:
+- Collection from branch — R 0 (flat, all weights)
+- PostNet Courier — Standard — R 95 (0–1 kg) … R 450 (20–30 kg)
+- PostNet Courier — Overnight — R 150 (0–1 kg) … higher
 
-Current `resolve_delivery_zone` iterates `branch → tenant → platform` and inside each scope tries postcode → city → province → **fallback**. That means PostNet's tenant-scoped "Outlying & Remote" fallback zone matches before the platform postcode table is queried. Every address falls into Outlying regardless of postcode.
+The checkout calls `quoteShipping` without a `methodId`, so `quote_delivery_rate` returns the cheapest matching rate — which is the R 0 collection rate. That rate should never be eligible when the customer chose "Delivery — Ship to your address".
 
-Rewrite the function to run in two passes:
+## Fix
 
-- **Pass 1 — specific match**: across all scopes (branch, tenant, platform), find the most specific location hit in this priority order: postcode_prefix (longest prefix wins) → city → province. Branch beats tenant beats platform only when both have a specific hit.
-- **Pass 2 — fallback**: only if no specific match anywhere, walk scopes branch → tenant → platform looking for `is_default_fallback = true`.
+### 1. Mark methods as shipping vs collection (DB)
+Add `fulfillment_kind text not null default 'shipping'` to `public.delivery_methods` (check constraint: `'shipping' | 'collection'`). Backfill the tenant's "Collection from branch" method (code `collection`) to `'collection'`.
 
-This makes the 3,266 platform postcodes actually drive zoning, while tenant/branch overrides still take precedence when they specifically cover a postcode/city/province.
+### 2. Update `quote_delivery_rate`
+When the caller does not specify a method, only consider methods where `fulfillment_kind = 'shipping'`. When the caller does specify a method, respect it as-is. No signature change.
 
-## 2. Province selector
+### 3. Surface method choice in checkout (UI only)
+On the Checkout page, when "Delivery" is selected and the address resolves to a zone, fetch the available shipping methods + per-method price for the billable weight and render a small radio list:
 
-Replace the freeform Province text input on `src/pages/dashboard/Checkout.tsx` with a `Select` populated from the nine ZA provinces (Eastern Cape, Free State, Gauteng, KwaZulu-Natal, Limpopo, Mpumalanga, Northern Cape, North West, Western Cape). Store the canonical name in `address.province`. Default to empty; required when "Delivery" is chosen.
+```
+Delivery option
+( ) PostNet Courier — Standard ............ R 115,00
+(•) PostNet Courier — Overnight ........... R 180,00
+```
 
-## 3. Minimum billable 1 kg
+Default to the cheapest shipping method. The Order Summary line updates from the selected method (label + price). Pass the chosen `methodId` into `quoteShipping`.
 
-In `src/lib/delivery/quoteShipping.ts`, clamp `billableKg` to a floor of `1.0` before calling `quote_delivery_rate`. Keep raw `physicalKg` / `volumetricKg` in the result for display, but expose the clamped value as what gets priced. UI line in Checkout that shows "Billable weight: 0.09kg" will then read "Billable weight: 1.00kg (1 kg minimum)".
+To power that list, add a tiny helper `listShippingQuotes({ tenantId, branchId, zoneId, billableKg, currency })` in `src/lib/delivery/quoteShipping.ts` that queries `delivery_methods` (kind = shipping, active, scope cascade) and calls `quote_delivery_rate` once per method.
 
-## Technical notes
+### 4. Verification
+- Kloof / 3624 / KZN → zone resolves to Major Centre → checkout shows Standard R 115 and Overnight R 180 → Place Order persists the chosen method + fee.
+- Switching to Collection hides the delivery option list and zeros the fee.
+- No changes to billable-weight floor (1 kg) or province selector — those stay as built.
 
-- **Migration**: replace `resolve_delivery_zone` with the two-pass version. Same signature, no schema change, no RLS/GRANT changes (function already `SECURITY DEFINER`).
-- **No data changes** — the existing 3,266 postcode rows and the PostNet rate tables already in place are correct. They just weren't being reached.
-- **Verification after migration**: re-quote Kloof / 3624 → must resolve to platform `major_centre`, not tenant `outlying`. Quote a 0.09 kg parcel → must price the 0–1 kg tier.
-- **Out of scope**: no UI changes to the admin delivery editor, no changes to rate tables, no changes to the postcode ingest function.
+## Out of scope
+- Admin UI to manage `fulfillment_kind` (the migration sets it correctly; admin editor work can come later).
+- Any change to zone resolver, rate seed data, or address schema.
