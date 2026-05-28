@@ -535,6 +535,23 @@ function MethodsPanel({ methods, tenantId, onChanged }: { methods: Method[]; ten
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Partial<Method>>({ code: "", label: "", is_express: false, is_active: true, sort_order: 0 });
 
+  // Per-tenant enable/disable overrides for (platform or tenant) methods.
+  const overridesQuery = useQuery({
+    queryKey: ["delivery", "method-overrides", tenantId ?? null],
+    enabled: !!tenantId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("tenant_delivery_method_overrides")
+        .select("method_id, is_enabled")
+        .eq("tenant_id", tenantId!);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const overrideMap = new Map<string, boolean>(
+    (overridesQuery.data ?? []).map((o: any) => [o.method_id, o.is_enabled]),
+  );
+
   const create = async () => {
     if (!form.code || !form.label) return;
     const { error } = await supabase.from("delivery_methods").insert({
@@ -548,8 +565,34 @@ function MethodsPanel({ methods, tenantId, onChanged }: { methods: Method[]; ten
     if (error) { toast.error(error.message); return; }
     toast.success("Method added"); setOpen(false); setForm({ code: "", label: "", is_express: false, is_active: true, sort_order: 0 }); onChanged();
   };
-  const toggle = async (m: Method, is_active: boolean) => {
-    const { error } = await supabase.from("delivery_methods").update({ is_active }).eq("id", m.id);
+
+  // For tenant-owned methods, toggle is_active directly.
+  // For platform methods, write/delete an override row.
+  const toggle = async (m: Method, enabled: boolean) => {
+    const isPlatform = m.tenant_id === null;
+    if (isPlatform) {
+      if (!tenantId) return;
+      if (enabled) {
+        const { error } = await supabase
+          .from("tenant_delivery_method_overrides")
+          .delete()
+          .eq("tenant_id", tenantId)
+          .eq("method_id", m.id);
+        if (error) { toast.error(error.message); return; }
+      } else {
+        const { error } = await supabase
+          .from("tenant_delivery_method_overrides")
+          .upsert(
+            { tenant_id: tenantId, method_id: m.id, is_enabled: false },
+            { onConflict: "tenant_id,method_id" },
+          );
+        if (error) { toast.error(error.message); return; }
+      }
+      overridesQuery.refetch();
+      onChanged();
+      return;
+    }
+    const { error } = await supabase.from("delivery_methods").update({ is_active: enabled }).eq("id", m.id);
     if (error) toast.error(error.message); else onChanged();
   };
   const remove = async (m: Method) => {
@@ -562,7 +605,7 @@ function MethodsPanel({ methods, tenantId, onChanged }: { methods: Method[]; ten
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
           <CardTitle>Delivery methods</CardTitle>
-          <CardDescription>Services your customers can pick (PostNet2Door, courier, etc.). Platform methods are read-only here.</CardDescription>
+          <CardDescription>Services your customers can pick (PostNet2Door, courier, etc.). Platform methods can be enabled or disabled for your tenant — disabled methods are hidden at checkout.</CardDescription>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild><Button size="sm"><Plus className="size-4 mr-1" />Add method</Button></DialogTrigger>
@@ -581,17 +624,31 @@ function MethodsPanel({ methods, tenantId, onChanged }: { methods: Method[]; ten
       </CardHeader>
       <CardContent>
         <Table>
-          <TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Label</TableHead><TableHead>Scope</TableHead><TableHead>Express</TableHead><TableHead>Active</TableHead><TableHead /></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Label</TableHead><TableHead>Scope</TableHead><TableHead>Express</TableHead><TableHead>Enabled</TableHead><TableHead /></TableRow></TableHeader>
           <TableBody>
             {methods.map((m) => {
               const isPlatform = m.tenant_id === null;
+              const overrideEnabled = overrideMap.get(m.id);
+              const effective = isPlatform
+                ? (overrideEnabled ?? m.is_active)
+                : m.is_active;
               return (
                 <TableRow key={m.id}>
                   <TableCell><Badge variant="outline">{m.code}</Badge></TableCell>
                   <TableCell>{m.label}</TableCell>
-                  <TableCell>{isPlatform ? <Badge variant="secondary">Platform</Badge> : <Badge>Tenant</Badge>}</TableCell>
+                  <TableCell>
+                    {isPlatform
+                      ? <Badge variant="secondary">Platform{overrideEnabled === false ? " · disabled" : ""}</Badge>
+                      : <Badge>Tenant</Badge>}
+                  </TableCell>
                   <TableCell>{m.is_express ? "Yes" : "—"}</TableCell>
-                  <TableCell><Switch checked={m.is_active} disabled={isPlatform} onCheckedChange={(v) => toggle(m, v)} /></TableCell>
+                  <TableCell>
+                    <Switch
+                      checked={effective}
+                      disabled={isPlatform && !tenantId}
+                      onCheckedChange={(v) => toggle(m, v)}
+                    />
+                  </TableCell>
                   <TableCell className="text-right">
                     {!isPlatform && <Button variant="ghost" size="icon" onClick={() => remove(m)}><Trash2 className="size-4 text-destructive" /></Button>}
                   </TableCell>
