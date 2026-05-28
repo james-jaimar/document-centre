@@ -297,7 +297,7 @@ export async function listShippingQuotes(req: ShippingQuoteRequest): Promise<{
 
   const options: ShippingMethodOption[] = [];
   for (const m of methods ?? []) {
-    if (disabled.has(m.id)) continue;
+    if (isDisabled(m.id, (m as any).is_active ?? true)) continue;
     const { data: rateRows } = await supabase.rpc("quote_delivery_rate", {
       p_tenant_id: req.tenantId,
       p_branch_id: req.branchId,
