@@ -280,6 +280,16 @@ function AppRoutes() {
             <AdminRateCard />
           </ProtectedRoute>
         } />
+        <Route path="/admin/delivery" element={
+          <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
+            <AdminDelivery />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/branches/:id/delivery" element={
+          <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
+            <AdminBranchDelivery />
+          </ProtectedRoute>
+        } />
         <Route path="/admin/users" element={
           <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
             <AdminUsers />
