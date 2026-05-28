@@ -45,6 +45,7 @@ export default function MobileNavSheet({ open, onOpenChange }: Props) {
   const publicNav = [
     { to: tenantPath("print-centre"), icon: Home, label: "Home", exact: true },
     { to: tenantPath("orders/new"), icon: Plus, label: "Create an Order", exact: false },
+    { to: tenantPath("cart"), icon: ShoppingCart, label: "Cart", exact: false, badge: true as const },
   ];
   const authNav = [
     { to: tenantPath("print-centre"), icon: Home, label: "Home", exact: true },
