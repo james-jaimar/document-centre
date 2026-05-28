@@ -265,16 +265,31 @@ export async function listShippingQuotes(req: ShippingQuoteRequest): Promise<{
     ? `tenant_id.is.null,tenant_id.eq.${req.tenantId}`
     : `tenant_id.is.null`;
 
-  const { data: methods } = await supabase
-    .from("delivery_methods")
-    .select("id, label, description, sort_order, tenant_id, fulfillment_kind, is_active")
-    .eq("is_active", true)
-    .eq("fulfillment_kind", "shipping")
-    .or(tenantFilter)
-    .order("sort_order", { ascending: true });
+  const [{ data: methods }, { data: overrides }] = await Promise.all([
+    supabase
+      .from("delivery_methods")
+      .select("id, label, description, sort_order, tenant_id, fulfillment_kind, is_active")
+      .eq("is_active", true)
+      .eq("fulfillment_kind", "shipping")
+      .or(tenantFilter)
+      .order("sort_order", { ascending: true }),
+    req.tenantId
+      ? supabase
+          .from("tenant_delivery_method_overrides")
+          .select("method_id, is_enabled")
+          .eq("tenant_id", req.tenantId)
+      : Promise.resolve({ data: [] as Array<{ method_id: string; is_enabled: boolean }> }),
+  ]);
+
+  const disabled = new Set(
+    (overrides ?? [])
+      .filter((o: any) => o.is_enabled === false)
+      .map((o: any) => o.method_id as string),
+  );
 
   const options: ShippingMethodOption[] = [];
   for (const m of methods ?? []) {
+    if (disabled.has(m.id)) continue;
     const { data: rateRows } = await supabase.rpc("quote_delivery_rate", {
       p_tenant_id: req.tenantId,
       p_branch_id: req.branchId,
