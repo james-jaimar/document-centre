@@ -1,21 +1,40 @@
-# Branch Portal — Delivery page
+# Branch delivery edits not persisting
 
-Branch managers currently have no in-portal access to delivery pricing. The branch-scoped `DeliveryEditor` already exists (used at `/admin/branches/:id/delivery`); we just need to surface it inside the Branch portal so they can self-serve.
+## Root cause
 
-## Changes
+The branch Delivery page renders fine (anyone can `SELECT` from `delivery_rates` / `delivery_zones` / `delivery_zone_locations`), but **only tenant owners/admins can write** to those tables. The current policy is:
 
-1. **New page** `src/pages/branch/BranchDelivery.tsx`
-   - Reads `tenantId` and `branchId` from `useTenantContext`.
-   - Renders `<DeliveryEditor scope="branch" tenantId={tenantId} branchId={branchId} title="Branch Delivery" description="Your branch's own delivery zones, methods and rates. Use 'Reset from tenant' to seed from the tenant defaults, then customise prices and toggle methods on/off." />`.
-   - Mirrors the empty-state guards in `BranchRateCard.tsx` (no tenant / no branch assigned).
+```sql
+USING / WITH CHECK:
+  (scope_type='platform' AND platform_admin)
+  OR (tenant_id IS NOT NULL AND user_is_tenant_admin(tenant_id))
+```
 
-2. **Route** in `src/App.tsx`
-   - Add `<Route path="/branch/delivery" element={<BranchDelivery />} />` inside the existing `BranchLayout` block, alongside `/branch/rate-card`.
+`user_is_tenant_admin` only matches roles `owner` / `admin`. A branch manager (or any non-tenant-admin branch role) silently fails the UPDATE — Postgres reports 0 rows changed, PostgREST returns 200, the UI shows the green "Rate saved" toast, and the value reverts on refetch.
 
-3. **Sidebar** `src/components/BranchSidebar.tsx`
-   - Add a `Delivery` nav item (e.g. `Truck` icon from lucide) between **Rate Card** and **Settings**, pointing to `/branch/delivery`.
+The new `tenant_delivery_method_overrides` table already has branch-scoped policies (owner/admin/branch_manager/store_operator at that branch). The three older delivery tables were never extended.
 
-## Notes / no DB work needed
+## Fix
 
-- The branch-override DB schema, RLS, `quote_delivery_rate` scope priority, and `clone_tenant_delivery_to_branch` were all delivered in the prior migrations.
-- `DeliveryEditor` already supports `scope="branch"` (Zones, Methods with branch overrides, Rates, "Reset from tenant"). This is purely a routing + navigation surface.
+One migration that rewrites the manage policies on **`delivery_zones`**, **`delivery_rates`**, and **`delivery_zone_locations`** so branch members can manage rows scoped to their branch.
+
+New rule on `delivery_zones` and `delivery_rates`:
+
+```text
+platform rows  → platform_admin
+tenant rows    → user_is_tenant_admin(tenant_id)             (unchanged)
+branch rows    → tenant admin of tenant_id
+                  OR active membership in (tenant_id, branch_id)
+                  with role in (owner, admin, branch_manager, store_operator)
+```
+
+`delivery_zone_locations` mirrors the same rule by joining its parent `delivery_zones` row.
+
+Policies are replaced atomically (DROP + CREATE) inside the migration. No table or column changes. No frontend changes needed — once the policy allows the write, the existing `saveRate` mutation persists.
+
+## Verification
+
+- As a Sandton branch user, edit a Standard 0–1kg price → refetch should show the new value.
+- As the same user, add and delete a branch-scoped tier → both should persist.
+- Tenant admin behaviour unchanged (tenant-scope edits still work; can also edit branch-scope rows for any branch under their tenant).
+- Platform-scope rows still restricted to platform admins.
