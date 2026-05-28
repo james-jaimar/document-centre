@@ -24,7 +24,7 @@ import { toast } from "sonner";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
 import CheckoutAuth from "@/components/checkout/CheckoutAuth";
-import { quoteShipping, type ShippingQuoteResult } from "@/lib/delivery/quoteShipping";
+import { quoteShipping, listShippingQuotes, type ShippingQuoteResult, type ShippingMethodOption } from "@/lib/delivery/quoteShipping";
 
 export default function Checkout() {
   const { slug, tenantPath } = useTenantSlug();
