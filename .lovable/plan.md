@@ -1,56 +1,29 @@
-## Goal
+# Delivery mechanism overhaul
 
-PostNet has the 3,266 SA postcodes mapped (at platform scope) but no methods, no rates, and only an empty tenant-level "Major Centre" zone with Bloemfontein. So `resolve_delivery_zone` returns a zone for any address, but `quote_delivery_rate` has nothing to price against → checkout shipping fails.
+Three issues, three fixes. Cause of the "Outlying & Remote" misclassification for Kloof (3624) is a bug in the zone resolver — postcode 3624 IS in the platform database mapped to **Major Centre**, but the tenant's fallback zone hijacks the lookup before the platform postcode index is even consulted.
 
-Seed PostNet with sensible defaults the tenant admin can then tweak per branch.
+## 1. Fix the zone resolver (the real bug)
 
-## What gets created (all at `scope_type='tenant'`, `tenant_id = PostNet`)
+Current `resolve_delivery_zone` iterates `branch → tenant → platform` and inside each scope tries postcode → city → province → **fallback**. That means PostNet's tenant-scoped "Outlying & Remote" fallback zone matches before the platform postcode table is queried. Every address falls into Outlying regardless of postcode.
 
-### 1. Clean up
-- Delete the empty PostNet tenant-scoped "Major Centre" zone (`18e8a43d…`) and its single Bloemfontein city row. It currently shadows nothing useful but would mask the platform Major Centre zone for postcode lookups in Bloemfontein only. Removing it lets every address resolve against the platform postcode dataset.
+Rewrite the function to run in two passes:
 
-### 2. Delivery methods (3)
-| code | label | notes |
-|---|---|---|
-| `collection` | Collection from branch | free, flat R0 |
-| `courier_standard` | PostNet Courier — Standard (2–3 days) | default fallback |
-| `courier_express` | PostNet Courier — Overnight | ~1.6× standard |
+- **Pass 1 — specific match**: across all scopes (branch, tenant, platform), find the most specific location hit in this priority order: postcode_prefix (longest prefix wins) → city → province. Branch beats tenant beats platform only when both have a specific hit.
+- **Pass 2 — fallback**: only if no specific match anywhere, walk scopes branch → tenant → platform looking for `is_default_fallback = true`.
 
-### 3. Tenant fallback zone
-- Add one tenant-scoped zone `outlying` / "Outlying & Remote" with `is_default_fallback = true`. Used when an address has no recognisable postcode/city (and the platform has no fallback).
+This makes the 3,266 platform postcodes actually drive zoning, while tenant/branch overrides still take precedence when they specifically cover a postcode/city/province.
 
-### 4. Rates (weight tiers, ZAR)
+## 2. Province selector
 
-Rates are written against the **platform zone IDs** for `major_centre` and `regional` (allowed — `quote_delivery_rate` doesn't require zone scope to match rate scope; it picks by rank with tenant rates winning over platform). Plus rates on the new tenant `outlying` zone.
+Replace the freeform Province text input on `src/pages/dashboard/Checkout.tsx` with a `Select` populated from the nine ZA provinces (Eastern Cape, Free State, Gauteng, KwaZulu-Natal, Limpopo, Mpumalanga, Northern Cape, North West, Western Cape). Store the canonical name in `address.province`. Default to empty; required when "Delivery" is chosen.
 
-Standard PostNet-style indicative pricing:
+## 3. Minimum billable 1 kg
 
-| Weight (kg) | Major Centre | Regional | Outlying |
-|---|---|---|---|
-| 0 – 1 | R 95 | R 130 | R 180 |
-| 1 – 2 | R 115 | R 160 | R 220 |
-| 2 – 5 | R 150 | R 210 | R 290 |
-| 5 – 10 | R 210 | R 290 | R 390 |
-| 10 – 20 | R 320 | R 430 | R 580 |
-| 20 – 30 | R 450 | R 600 | R 800 |
-
-- `courier_standard` uses the table above.
-- `courier_express` = standard × 1.6, rounded to nearest R5.
-- `collection` = single open-ended rate (0 – ∞ kg) at R0 against every zone.
-
-That is 3 zones × (6 standard + 6 express + 1 collection) = **39 rate rows**.
-
-### 5. Out of scope
-- No UI changes — the existing Delivery editor already lists what we insert.
-- No changes to the platform postcode dataset or to other tenants.
-- No per-branch overrides — branch admins can override later via the existing branch delivery page.
+In `src/lib/delivery/quoteShipping.ts`, clamp `billableKg` to a floor of `1.0` before calling `quote_delivery_rate`. Keep raw `physicalKg` / `volumetricKg` in the result for display, but expose the clamped value as what gets priced. UI line in Checkout that shows "Billable weight: 0.09kg" will then read "Billable weight: 1.00kg (1 kg minimum)".
 
 ## Technical notes
 
-- Single migration: `DELETE` the empty zone + its location, `INSERT` methods, `INSERT` fallback zone, `INSERT` 39 rates in a CTE keyed by `(zone_code, method_code, tier_index)` resolving `zone_id` and `method_id` by lookup so it's idempotent and easy to re-run for other tenants later.
-- All inserts scoped to `tenant_id = 'c0000000-0000-0000-0000-000000000002'`, `scope_type = 'tenant'`, `currency_code = 'ZAR'`.
-- No schema changes, no RLS changes, no GRANTs needed.
-
-## Confirm before I run
-
-- Pricing table above — adjust any cell now, or accept as the starter set and tweak in the editor afterwards?
+- **Migration**: replace `resolve_delivery_zone` with the two-pass version. Same signature, no schema change, no RLS/GRANT changes (function already `SECURITY DEFINER`).
+- **No data changes** — the existing 3,266 postcode rows and the PostNet rate tables already in place are correct. They just weren't being reached.
+- **Verification after migration**: re-quote Kloof / 3624 → must resolve to platform `major_centre`, not tenant `outlying`. Quote a 0.09 kg parcel → must price the 0–1 kg tier.
+- **Out of scope**: no UI changes to the admin delivery editor, no changes to rate tables, no changes to the postcode ingest function.
