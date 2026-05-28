@@ -10,6 +10,7 @@ import {
   DollarSign,
   Tags,
   FileText,
+  Truck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -35,6 +36,7 @@ const BRANCH_NAV = [
   { to: "/branch/products", icon: <Store size={20} />, label: "Products" },
   { to: "/branch/pricing", icon: <DollarSign size={20} />, label: "Pricing Rules" },
   { to: "/branch/rate-card", icon: <Tags size={20} />, label: "Rate Card" },
+  { to: "/branch/delivery", icon: <Truck size={20} />, label: "Delivery" },
   { to: "/branch/settings", icon: <Wrench size={20} />, label: "Settings" },
 ];
 

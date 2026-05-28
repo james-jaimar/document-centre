@@ -77,6 +77,7 @@ import BranchOrderDetail from "@/pages/branch/BranchOrderDetail";
 import BranchProducts from "@/pages/branch/BranchProducts";
 import BranchPricing from "@/pages/branch/BranchPricing";
 import BranchRateCard from "@/pages/branch/BranchRateCard";
+import BranchDelivery from "@/pages/branch/BranchDelivery";
 import BranchQuotes from "@/pages/branch/BranchQuotes";
 import BranchQuoteDetail from "@/pages/branch/BranchQuoteDetail";
 import BranchSettings from "@/pages/branch/BranchSettings";
@@ -207,6 +208,7 @@ function AppRoutes() {
         <Route path="/branch/products" element={<BranchProducts />} />
         <Route path="/branch/pricing" element={<BranchPricing />} />
         <Route path="/branch/rate-card" element={<BranchRateCard />} />
+        <Route path="/branch/delivery" element={<BranchDelivery />} />
         <Route path="/branch/quotes" element={<BranchQuotes />} />
         <Route path="/branch/quotes/:id" element={<BranchQuoteDetail />} />
         <Route path="/branch/settings" element={<BranchSettings />} />
