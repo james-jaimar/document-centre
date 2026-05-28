@@ -294,9 +294,21 @@ export default function MobileUpload() {
                       </p>
                     )}
                   </div>
-                  <span className="text-xs text-muted-foreground flex-shrink-0">
-                    {(u.file.size / 1024 / 1024).toFixed(1)} MB
-                  </span>
+                  {u.status === "error" ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2 gap-1 flex-shrink-0"
+                      onClick={() => retryUpload(u.id)}
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      Retry
+                    </Button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground flex-shrink-0">
+                      {(u.file.size / 1024 / 1024).toFixed(1)} MB
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -304,7 +316,7 @@ export default function MobileUpload() {
         )}
 
         {/* All done message */}
-        {allDone && doneCount > 0 && (
+        {allDone && doneCount > 0 && errorCount === 0 && (
           <div className="text-center space-y-3 py-8">
             <div className="flex justify-center">
               <div className="h-16 w-16 rounded-full bg-green-500/10 flex items-center justify-center">
