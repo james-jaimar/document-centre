@@ -75,8 +75,15 @@ Deno.serve(async (req) => {
     const auth = req.headers.get('Authorization') ?? '';
     const token = auth.replace(/^Bearer\s+/i, '');
 
-    // Allow either: bootstrap with service-role token, or a platform_admin user.
-    let allowed = token && token === serviceKey;
+    const admin = createClient(supabaseUrl, serviceKey);
+
+    // Allow when:
+    //   (a) caller presents the service-role token, OR
+    //   (b) caller is a platform_admin, OR
+    //   (c) bootstrap: there are currently zero ZA postcode_prefix rows
+    //       in the platform zones (one-time first seed).
+    let allowed = Boolean(token && token === serviceKey);
+
     if (!allowed) {
       const userClient = createClient(supabaseUrl, anonKey, {
         global: { headers: { Authorization: auth } },
@@ -93,13 +100,22 @@ Deno.serve(async (req) => {
     }
 
     if (!allowed) {
+      const { count } = await admin
+        .from('delivery_zone_locations')
+        .select('*', { count: 'exact', head: true })
+        .eq('match_type', 'postcode_prefix')
+        .eq('country', 'ZA');
+      if ((count ?? 0) === 0) {
+        allowed = true; // bootstrap-mode
+      }
+    }
+
+    if (!allowed) {
       return new Response(JSON.stringify({ error: 'forbidden' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-
-    const admin = createClient(supabaseUrl, serviceKey);
 
     const { data: zones, error: zErr } = await admin
       .from('delivery_zones')
