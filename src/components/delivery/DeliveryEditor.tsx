@@ -643,22 +643,28 @@ function MethodsPanel({ methods, tenantId, branchId, scope, onChanged }: { metho
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
           <CardTitle>Delivery methods</CardTitle>
-          <CardDescription>Services your customers can pick (PostNet2Door, courier, etc.). Platform methods can be enabled or disabled for your tenant — disabled methods are hidden at checkout.</CardDescription>
+          <CardDescription>
+            {isBranchScope
+              ? "Switch courier services on or off for this branch. Branch settings override the tenant defaults — disabled methods are hidden at checkout for customers ordering from this branch."
+              : "Services your customers can pick (PostNet2Door, courier, etc.). Platform methods can be enabled or disabled for your tenant — disabled methods are hidden at checkout."}
+          </CardDescription>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button size="sm"><Plus className="size-4 mr-1" />Add method</Button></DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>New delivery method</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <div><Label>Code</Label><Input value={form.code ?? ""} onChange={(e) => setForm({ ...form, code: e.target.value })} /></div>
-              <div><Label>Label</Label><Input value={form.label ?? ""} onChange={(e) => setForm({ ...form, label: e.target.value })} /></div>
-              <div><Label>Description</Label><Input value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
-              <div className="flex items-center justify-between"><Label>Express</Label><Switch checked={form.is_express ?? false} onCheckedChange={(v) => setForm({ ...form, is_express: v })} /></div>
-              <div className="flex items-center justify-between"><Label>Active</Label><Switch checked={form.is_active ?? true} onCheckedChange={(v) => setForm({ ...form, is_active: v })} /></div>
-            </div>
-            <DialogFooter><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button><Button onClick={create}>Create</Button></DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {!isBranchScope && (
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild><Button size="sm"><Plus className="size-4 mr-1" />Add method</Button></DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>New delivery method</DialogTitle></DialogHeader>
+              <div className="space-y-3">
+                <div><Label>Code</Label><Input value={form.code ?? ""} onChange={(e) => setForm({ ...form, code: e.target.value })} /></div>
+                <div><Label>Label</Label><Input value={form.label ?? ""} onChange={(e) => setForm({ ...form, label: e.target.value })} /></div>
+                <div><Label>Description</Label><Input value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+                <div className="flex items-center justify-between"><Label>Express</Label><Switch checked={form.is_express ?? false} onCheckedChange={(v) => setForm({ ...form, is_express: v })} /></div>
+                <div className="flex items-center justify-between"><Label>Active</Label><Switch checked={form.is_active ?? true} onCheckedChange={(v) => setForm({ ...form, is_active: v })} /></div>
+              </div>
+              <DialogFooter><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button><Button onClick={create}>Create</Button></DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </CardHeader>
       <CardContent>
         <Table>
@@ -666,18 +672,24 @@ function MethodsPanel({ methods, tenantId, branchId, scope, onChanged }: { metho
           <TableBody>
             {methods.map((m) => {
               const isPlatform = m.tenant_id === null;
-              const overrideEnabled = overrideMap.get(m.id);
-              const effective = isPlatform
-                ? (overrideEnabled ?? m.is_active)
+              const tenantOverride = tenantOverrideMap.get(m.id);
+              const branchOverride = branchOverrideMap.get(m.id);
+              const tenantEffective = isPlatform
+                ? (tenantOverride ?? m.is_active)
                 : m.is_active;
+              const effective = isBranchScope
+                ? (branchOverride ?? tenantEffective)
+                : tenantEffective;
+              const branchOverridesTenant = isBranchScope && branchOverride !== undefined && branchOverride !== tenantEffective;
               return (
                 <TableRow key={m.id}>
                   <TableCell><Badge variant="outline">{m.code}</Badge></TableCell>
                   <TableCell>{m.label}</TableCell>
-                  <TableCell>
+                  <TableCell className="space-x-1">
                     {isPlatform
-                      ? <Badge variant="secondary">Platform{overrideEnabled === false ? " · disabled" : ""}</Badge>
+                      ? <Badge variant="secondary">Platform{tenantOverride === false ? " · tenant off" : ""}</Badge>
                       : <Badge>Tenant</Badge>}
+                    {branchOverridesTenant && <Badge variant="outline">Branch override</Badge>}
                   </TableCell>
                   <TableCell>{m.is_express ? "Yes" : "—"}</TableCell>
                   <TableCell>
@@ -688,7 +700,7 @@ function MethodsPanel({ methods, tenantId, branchId, scope, onChanged }: { metho
                     />
                   </TableCell>
                   <TableCell className="text-right">
-                    {!isPlatform && <Button variant="ghost" size="icon" onClick={() => remove(m)}><Trash2 className="size-4 text-destructive" /></Button>}
+                    {!isPlatform && !isBranchScope && <Button variant="ghost" size="icon" onClick={() => remove(m)}><Trash2 className="size-4 text-destructive" /></Button>}
                   </TableCell>
                 </TableRow>
               );
