@@ -154,20 +154,9 @@ export default function CustomerHeader() {
 
   return (
     <header className="print-topbar">
-      {originUrl ? (
-        <a
-          href={originUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center shrink-0"
-        >
-          {logoContent}
-        </a>
-      ) : (
-        <Link to={tenantPath("print-centre")} className="flex items-center shrink-0">
-          {logoContent}
-        </Link>
-      )}
+      <Link to={tenantPath("print-centre")} className="flex items-center shrink-0">
+        {logoContent}
+      </Link>
 
       {/* Branch indicator — always visible while loading or for multi-branch tenants */}
       {branchesLoading ? (
