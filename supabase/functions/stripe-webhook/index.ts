@@ -177,3 +177,38 @@ async function upsertSubscription(
     .update({ plan_slug: planSlug })
     .eq("id", tenantId);
 }
+
+async function upsertBranchSubscription(
+  branchId: string,
+  tenantId: string,
+  stripeCustomerId: string,
+  sub: Stripe.Subscription
+) {
+  const planSlug = sub.metadata?.plan_slug || "branch";
+  const item = sub.items.data[0];
+  const billingStatus = sub.status === "active" || sub.status === "trialing" ? "paid" : "pending_payment";
+  const record = {
+    branch_id: branchId,
+    tenant_id: tenantId,
+    stripe_customer_id: stripeCustomerId,
+    stripe_subscription_id: sub.id,
+    plan_slug: planSlug,
+    status: sub.status,
+    billing_status: billingStatus,
+    current_period_start: new Date(sub.current_period_start * 1000).toISOString(),
+    current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
+    trial_ends_at: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
+    cancelled_at: sub.canceled_at ? new Date(sub.canceled_at * 1000).toISOString() : null,
+    metadata: {
+      stripe_price_id: item?.price?.id,
+      stripe_product_id: item?.price?.product,
+    },
+  };
+  const { error } = await supabaseAdmin
+    .from("branch_subscriptions" as any)
+    .upsert(record, { onConflict: "branch_id" });
+  if (error) {
+    console.error("Error upserting branch subscription:", error);
+    throw error;
+  }
+}
