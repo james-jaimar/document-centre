@@ -378,20 +378,46 @@ function buildRfc2822(
   fromName: string,
   fromEmail: string,
   row: OutboxRow,
-  replyTo?: string
+  replyTo: string | undefined,
+  attachments: LoadedAttachment[]
 ): string {
-  const lines: string[] = [];
-  lines.push(`From: ${fromName} <${fromEmail}>`);
-  lines.push(`To: ${row.to_email}`);
-  if (row.cc?.length) lines.push(`Cc: ${row.cc.join(", ")}`);
-  if (row.bcc?.length) lines.push(`Bcc: ${row.bcc.join(", ")}`);
-  if (replyTo) lines.push(`Reply-To: ${replyTo}`);
-  lines.push(`Subject: ${row.subject}`);
-  lines.push("MIME-Version: 1.0");
-  lines.push('Content-Type: text/html; charset="UTF-8"');
-  lines.push("");
-  lines.push(row.html ?? row.text_body ?? "");
-  return lines.join("\r\n");
+  const headers: string[] = [];
+  headers.push(`From: ${fromName} <${fromEmail}>`);
+  headers.push(`To: ${row.to_email}`);
+  if (row.cc?.length) headers.push(`Cc: ${row.cc.join(", ")}`);
+  if (row.bcc?.length) headers.push(`Bcc: ${row.bcc.join(", ")}`);
+  if (replyTo) headers.push(`Reply-To: ${replyTo}`);
+  headers.push(`Subject: ${row.subject}`);
+  headers.push("MIME-Version: 1.0");
+
+  const htmlBody = row.html ?? row.text_body ?? "";
+
+  if (!attachments.length) {
+    headers.push('Content-Type: text/html; charset="UTF-8"');
+    return headers.join("\r\n") + "\r\n\r\n" + htmlBody;
+  }
+
+  const boundary = `==DC_BOUNDARY_${crypto.randomUUID().replace(/-/g, "")}`;
+  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+
+  const parts: string[] = [];
+  parts.push(
+    `--${boundary}\r\n` +
+      'Content-Type: text/html; charset="UTF-8"\r\n' +
+      "Content-Transfer-Encoding: 7bit\r\n\r\n" +
+      htmlBody
+  );
+  for (const a of attachments) {
+    const b64 = bytesToBase64(a.bytes).replace(/.{76}/g, "$&\r\n");
+    parts.push(
+      `--${boundary}\r\n` +
+        `Content-Type: ${a.contentType}; name="${a.filename}"\r\n` +
+        `Content-Disposition: attachment; filename="${a.filename}"\r\n` +
+        "Content-Transfer-Encoding: base64\r\n\r\n" +
+        b64
+    );
+  }
+  return headers.join("\r\n") + "\r\n\r\n" + parts.join("\r\n") + `\r\n--${boundary}--\r\n`;
 }
 
 function base64UrlEncode(str: string): string {
@@ -407,13 +433,15 @@ async function sendViaGmail(
   row: OutboxRow,
   fromName: string,
   fromEmail: string,
-  replyTo: string | undefined
+  replyTo: string | undefined,
+  attachments: LoadedAttachment[]
 ): Promise<{ messageId: string | null }> {
   console.log(`[gmail] refreshing token for ${creds.oauth_email}`);
   const token = await getGmailAccessToken(creds);
   console.log(`[gmail] got token; sending as ${fromEmail} -> ${row.to_email}`);
 
-  const raw = base64UrlEncode(buildRfc2822(fromName, fromEmail, row, replyTo));
+  const raw = base64UrlEncode(buildRfc2822(fromName, fromEmail, row, replyTo, attachments));
+
 
   const res = await withTimeout(
     fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
