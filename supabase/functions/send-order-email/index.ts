@@ -87,16 +87,24 @@ const BODIES: Record<EventKey, (ctx: any) => string> = {
     `<br><br>Please pay via EFT using <strong>${c.orderNo}</strong> as your reference.`,
 };
 
-const SITE_ORIGIN = "https://document-centre.com";
+const DEFAULT_ORIGIN = "https://document-centre.com";
 
-function absolutiseUrl(url: string | undefined | null): string | undefined {
+function resolveTenantOrigin(tenant: any): string {
+  const raw = (tenant?.custom_domain as string | undefined)?.trim();
+  if (!raw) return DEFAULT_ORIGIN;
+  const stripped = raw.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+  if (!stripped) return DEFAULT_ORIGIN;
+  return `https://${stripped}`;
+}
+
+function absolutiseUrl(url: string | undefined | null, origin: string = DEFAULT_ORIGIN): string | undefined {
   if (!url) return undefined;
   const trimmed = String(url).trim();
   if (!trimmed) return undefined;
   if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith("data:")) return trimmed;
   if (trimmed.startsWith("//")) return `https:${trimmed}`;
-  if (trimmed.startsWith("/")) return `${SITE_ORIGIN}${trimmed}`;
-  return `${SITE_ORIGIN}/${trimmed}`;
+  if (trimmed.startsWith("/")) return `${origin}${trimmed}`;
+  return `${origin}/${trimmed}`;
 }
 
 function renderHtml(opts: {
@@ -110,7 +118,8 @@ function renderHtml(opts: {
 }) {
   const primary = (opts.branding.primary_color as string) || "#1a1a2e";
   const portalName = (opts.branding.portal_name as string) || opts.tenant.trading_name || opts.tenant.name;
-  const logo = absolutiseUrl(opts.branding.logo_url as string | undefined);
+  const origin = resolveTenantOrigin(opts.tenant);
+  const logo = absolutiseUrl(opts.branding.logo_url as string | undefined, origin);
   const headline = HEADLINES[opts.event];
   const body = BODIES[opts.event](opts.ctx);
   const showBank =
@@ -266,12 +275,15 @@ Deno.serve(async (req) => {
     };
 
     const subject = SUBJECTS[eventKey](ctx.orderNo, ctx);
-    // Suppress the View-Order CTA on invoice/proforma emails — the PDF is attached instead.
+    const tenantOrigin = resolveTenantOrigin(tenant);
+    const hasCustomDomain = tenantOrigin !== DEFAULT_ORIGIN;
     const ctaUrl =
       eventKey === "invoice_sent"
         ? undefined
+        : hasCustomDomain
+        ? `${tenantOrigin}/orders/${order_id}`
         : tenant?.slug
-        ? `https://document-centre.com/t/${tenant.slug}/orders/${order_id}`
+        ? `${DEFAULT_ORIGIN}/t/${tenant.slug}/orders/${order_id}`
         : undefined;
     const html = renderHtml({ branding, tenant, branch, bank, event: eventKey, ctx, ctaUrl });
 

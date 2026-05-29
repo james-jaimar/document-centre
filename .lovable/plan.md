@@ -1,44 +1,25 @@
-## Diagnosis
+## Goal
 
-The proforma you just received (`INV-2026-01062`) still has the old, plain layout:
+Order/quote emails (View Order CTA, logo absolute URL) currently hard-code `https://document-centre.com/t/{slug}/...`. They should use the tenant's own custom domain when set (e.g. `postnetprintcenter.com`).
 
-```
-PostNet South Africa | PostNet                PROFORMA INVOICE
-PostNet (Pty) Ltd                             Invoice No: …
-support@postnet.co.za                         Order No: …
-…
-Description           Qty   Unit Price   Total
-…
-Subtotal / Delivery / VAT / Total / Amount Due
-```
+## Change
 
-However, `supabase/functions/generate-invoice-pdf/index.ts` on disk already contains the new PostNet-style layout that matches the updated quote PDF:
+Edit `supabase/functions/send-order-email/index.ts`:
 
-- "Invoice From:" bordered box (top-left) with trading name, address, Tel, Fax, EMail
-- Logo + `PROFORMA INVOICE` title + number stacked top-right
-- "Invoice To:" and "Deliver To:" bordered boxes side-by-side
-- Brand-tinted metadata strip (Account No, VAT Reg No, Proforma Date, Order Number, Representative, Proforma Number)
-- 7-column items table (Item Code, Description, Quantity, Unit Price, Disc %, VAT %, Line Total) with spec key/value pairs under each line
-- Terms + Banking + Acceptance signature block (left), totals stack (right)
-- Disclaimer + per-page "Created / Page X of Y" footer
+1. Add a helper `resolveTenantOrigin(tenant)` that returns:
+   - `https://{tenant.custom_domain}` if `custom_domain` is set (strip protocol/trailing slash if present)
+   - else fall back to `https://document-centre.com`
 
-In other words: the code is right, the deployed copy is stale. The earlier redeploy in this thread only pushed `send-order-email` and `email-dispatcher`; `generate-invoice-pdf` was edited but never redeployed, so production is still running the previous build.
+2. Build the CTA URL using that origin:
+   - With custom domain → `${origin}/orders/${order_id}` (subdomain-style, no `/t/{slug}` prefix — matches how `useTenantSlug` builds paths when `isSubdomain` is true)
+   - Without custom domain → `${origin}/t/${tenant.slug}/orders/${order_id}` (current behaviour)
 
-## Fix
+3. Pass the resolved origin into `renderHtml` and use it inside `absolutiseUrl` instead of the hard-coded `SITE_ORIGIN`, so a tenant logo stored as a relative path resolves against the tenant's own domain.
 
-1. Redeploy `generate-invoice-pdf` (single edge function, no code changes).
-2. Regenerate the proforma for this order from the admin UI (it issues a new invoice number) and confirm:
-   - PROFORMA INVOICE title + number top-right
-   - Invoice From / Invoice To / Deliver To boxes render
-   - 7-column items table with spec breakdown under the line
-   - Terms, Banking (when EFT is enabled), Acceptance signature lines
-   - Totals stack on the right matches the quote PDF
-
-## Files touched
-
-- None. Deploy-only.
+4. Redeploy `send-order-email`.
 
 ## Out of scope
 
-- Any further design tweaks to the invoice layout — call those out separately once you've seen the redeployed output.
-- The quote PDF, the email template, attachments, or footer email work already done in this thread.
+- No DB changes — `tenants.custom_domain` already exists and is already selected via `select("*")`.
+- No change to invoice PDF, dispatcher, or branch logic.
+- Auth links (handled separately by `resolveAppOrigin` in `buildAuthLink.ts`) are unchanged.
