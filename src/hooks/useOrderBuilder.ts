@@ -111,6 +111,17 @@ export function useCreateOrder() {
 
       if (!user) throw new Error("Not authenticated");
 
+      // Branch subscription gate (client-side precheck — DB also enforces via RLS).
+      if (branchId) {
+        const [{ data: gateOk }, { data: canBypass }] = await Promise.all([
+          supabase.rpc("branch_subscription_active" as any, { p_branch_id: branchId }),
+          supabase.rpc("user_can_bypass_branch_gate" as any, { p_branch_id: branchId }),
+        ]);
+        if (!gateOk && !canBypass) {
+          throw new Error("This branch's subscription is not active. New orders are paused.");
+        }
+      }
+
       // Get user's tenant membership for tenant_id and app_id
       const { data: membership } = await supabase
         .from("tenant_memberships")

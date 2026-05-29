@@ -4793,6 +4793,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      branch_subscription_active: {
+        Args: { p_branch_id: string }
+        Returns: boolean
+      }
       clone_master_rate_card_to_tenant: {
         Args: { p_tenant_id: string }
         Returns: undefined
@@ -4911,6 +4915,10 @@ export type Database = {
       }
       sync_order_amounts: { Args: { p_order_id: string }; Returns: undefined }
       user_branch_id: { Args: never; Returns: string }
+      user_can_bypass_branch_gate: {
+        Args: { p_branch_id: string }
+        Returns: boolean
+      }
       user_can_manage_branch: {
         Args: { p_branch_id: string }
         Returns: boolean
