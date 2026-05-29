@@ -148,17 +148,20 @@ Deno.serve(async (req) => {
     const shouldSendEmail = send_email !== false;
     const displayName = [cleanFirst, cleanLast].filter(Boolean).join(" ").trim() || cleanEmail.split("@")[0];
 
-    // Verify caller is admin/owner for this tenant
+    // Verify caller permissions:
+    //  - Platform admin: anything
+    //  - Tenant owner/admin: any role
+    //  - Branch manager: can ONLY invite store_operator into their own branch
     const { data: callerMembership } = await admin
       .from("tenant_memberships")
-      .select("role")
+      .select("role, branch_id")
       .eq("profile_id", caller.id)
       .eq("tenant_id", tenant_id)
       .eq("app_id", app_id)
       .eq("is_active", true)
-      .in("role", ["owner", "admin"])
-      .limit(1)
-      .maybeSingle();
+      .in("role", ["owner", "admin", "branch_manager"])
+      .order("role", { ascending: true })
+      .limit(5);
 
     const { data: platformRole } = await admin
       .from("user_roles")
@@ -168,9 +171,26 @@ Deno.serve(async (req) => {
       .limit(1)
       .maybeSingle();
 
-    if (!callerMembership && !platformRole) {
-      return err("Forbidden: you must be an admin or owner of this tenant", 403);
+    const isPlatformAdmin = !!platformRole;
+    const isTenantAdmin = (callerMembership ?? []).some((m: any) => m.role === "owner" || m.role === "admin");
+    const callerBranchManager = (callerMembership ?? []).find((m: any) => m.role === "branch_manager" && m.branch_id);
+
+    if (!isPlatformAdmin && !isTenantAdmin) {
+      if (!callerBranchManager) {
+        return err("Forbidden: you must be an admin or owner of this tenant", 403);
+      }
+      // Branch manager path: lock down role and branch
+      if (role !== "store_operator") {
+        return err("Branch managers can only invite Store Operators", 403);
+      }
+      if (branch_id && branch_id !== callerBranchManager.branch_id) {
+        return err("Branch managers can only invite users into their own branch", 403);
+      }
+      // Force-assign the branch to the caller's own branch
+      body.branch_id = callerBranchManager.branch_id;
     }
+
+
 
     // Look up existing profile
     const { data: existingProfile } = await admin
