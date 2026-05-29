@@ -74,6 +74,47 @@ function clients(authHeader: string) {
   return { userClient, admin };
 }
 
+// ── Branch subscription gate ────────────────────────────────
+// Returns null when allowed, or an error string when the branch is
+// read-only (no/cancelled/past_due subscription) AND the caller cannot bypass
+// (platform admin or tenant owner/admin for the branch's tenant).
+async function checkBranchGate(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  branch_id: string | null | undefined,
+): Promise<string | null> {
+  if (!branch_id) return null;
+
+  const [{ data: roleRow }, { data: branchRow }, { data: subRow }] = await Promise.all([
+    admin.from("user_roles").select("role").eq("user_id", userId).eq("role", "platform_admin").maybeSingle(),
+    admin.from("branches").select("tenant_id").eq("id", branch_id).maybeSingle(),
+    admin.from("branch_subscriptions").select("status,billing_status").eq("branch_id", branch_id).maybeSingle(),
+  ]);
+
+  if (roleRow) return null; // platform admin
+
+  if (branchRow?.tenant_id) {
+    const { data: tm } = await admin
+      .from("tenant_memberships")
+      .select("role")
+      .eq("profile_id", userId)
+      .eq("tenant_id", branchRow.tenant_id)
+      .eq("is_active", true)
+      .in("role", ["owner", "admin"])
+      .maybeSingle();
+    if (tm) return null; // tenant admin bypass
+  }
+
+  if (!subRow) return "This branch does not have an active subscription. Please contact your tenant administrator.";
+  const status = subRow.status || "";
+  const billing = subRow.billing_status || "";
+  if (status === "active" || status === "trialing" || billing === "paid" || billing === "free") return null;
+  if (status === "past_due") return "This branch's subscription payment is past due. New orders are paused.";
+  if (status === "cancelled" || status === "canceled") return "This branch's subscription was cancelled. New orders are paused.";
+  if (billing === "pending_payment") return "This branch is awaiting subscription payment. New orders are paused.";
+  return `This branch's subscription is not active (status: ${status || billing || "unknown"}).`;
+}
+
 // ── Action handlers ─────────────────────────────────────────
 
 async function createOrderWithJobs(
