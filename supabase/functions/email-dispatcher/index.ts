@@ -497,14 +497,19 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
   try {
     let messageId: string | null = null;
 
+    const loadedAttachments = await loadAttachments(admin, row.attachments);
+    if (loadedAttachments.length) {
+      console.log(`[dispatch] loaded ${loadedAttachments.length} attachment(s) for row=${row.id}`);
+    }
+
     if (creds.kind === "graph") {
       console.log(`[dispatch] entering sendViaGraph for row=${row.id}`);
-      const result = await sendViaGraph(creds, row, fromName, fromEmail, replyTo);
+      const result = await sendViaGraph(creds, row, fromName, fromEmail, replyTo, loadedAttachments);
       console.log(`[dispatch] sendViaGraph returned messageId=${result.messageId}`);
       messageId = result.messageId;
     } else if (creds.kind === "gmail_oauth") {
       console.log(`[dispatch] entering sendViaGmail for row=${row.id}`);
-      const result = await sendViaGmail(creds, row, fromName, fromEmail, replyTo);
+      const result = await sendViaGmail(creds, row, fromName, fromEmail, replyTo, loadedAttachments);
       console.log(`[dispatch] sendViaGmail returned messageId=${result.messageId}`);
       messageId = result.messageId;
     } else {
@@ -531,6 +536,13 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
             subject: row.subject,
             html: row.html ?? undefined,
             text: row.text_body ?? undefined,
+            attachments: loadedAttachments.length
+              ? loadedAttachments.map((a) => ({
+                  filename: a.filename,
+                  content: a.bytes,
+                  contentType: a.contentType,
+                }))
+              : undefined,
           }),
           SEND_TIMEOUT_MS,
           "SMTP send"
