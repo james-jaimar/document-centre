@@ -289,6 +289,99 @@ export type Database = {
           },
         ]
       }
+      branch_subscriptions: {
+        Row: {
+          assigned_at: string | null
+          assigned_by: string | null
+          assigned_plan_slug: string | null
+          billing_status: string | null
+          branch_id: string
+          cancelled_at: string | null
+          created_at: string
+          current_period_end: string | null
+          current_period_start: string | null
+          discount_type: string | null
+          discount_value: number | null
+          id: string
+          metadata: Json
+          plan_slug: string | null
+          promo_code_id: string | null
+          region_id: string | null
+          status: string | null
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          tenant_id: string
+          trial_days: number | null
+          trial_ends_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          assigned_at?: string | null
+          assigned_by?: string | null
+          assigned_plan_slug?: string | null
+          billing_status?: string | null
+          branch_id: string
+          cancelled_at?: string | null
+          created_at?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
+          discount_type?: string | null
+          discount_value?: number | null
+          id?: string
+          metadata?: Json
+          plan_slug?: string | null
+          promo_code_id?: string | null
+          region_id?: string | null
+          status?: string | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          tenant_id: string
+          trial_days?: number | null
+          trial_ends_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          assigned_at?: string | null
+          assigned_by?: string | null
+          assigned_plan_slug?: string | null
+          billing_status?: string | null
+          branch_id?: string
+          cancelled_at?: string | null
+          created_at?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
+          discount_type?: string | null
+          discount_value?: number | null
+          id?: string
+          metadata?: Json
+          plan_slug?: string | null
+          promo_code_id?: string | null
+          region_id?: string | null
+          status?: string | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          tenant_id?: string
+          trial_days?: number | null
+          trial_ends_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "branch_subscriptions_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: true
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "branch_subscriptions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       branches: {
         Row: {
           accounts_email: string | null
@@ -2757,6 +2850,7 @@ export type Database = {
           plan_slug: string
           price: number
           region_id: string
+          scope: string
           sort_order: number
           stripe_price_id: string | null
           updated_at: string
@@ -2768,6 +2862,7 @@ export type Database = {
           plan_slug: string
           price?: number
           region_id: string
+          scope?: string
           sort_order?: number
           stripe_price_id?: string | null
           updated_at?: string
@@ -2779,6 +2874,7 @@ export type Database = {
           plan_slug?: string
           price?: number
           region_id?: string
+          scope?: string
           sort_order?: number
           stripe_price_id?: string | null
           updated_at?: string
@@ -4819,6 +4915,10 @@ export type Database = {
         Args: { p_branch_id: string }
         Returns: boolean
       }
+      user_can_read_branch_subscription: {
+        Args: { p_branch_id: string }
+        Returns: boolean
+      }
       user_can_read_order: {
         Args: {
           p_app_id: string
@@ -4829,6 +4929,10 @@ export type Database = {
       }
       user_can_see_tenant_quote: {
         Args: { p_branch_id: string; p_tenant_id: string }
+        Returns: boolean
+      }
+      user_can_write_branch_subscription: {
+        Args: { p_branch_id: string }
         Returns: boolean
       }
       user_has_membership: {
