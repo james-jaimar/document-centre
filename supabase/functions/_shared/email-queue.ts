@@ -29,6 +29,12 @@ export interface EnqueueEmailInput {
   scheduled_for?: string | null;
   created_by_profile_id?: string | null;
   metadata?: Record<string, unknown>;
+  attachments?: Array<{
+    filename: string;
+    storage_bucket: string;
+    storage_path: string;
+    content_type?: string;
+  }>;
 }
 
 export interface EnqueuedEmail {
