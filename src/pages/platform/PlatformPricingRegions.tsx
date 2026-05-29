@@ -353,6 +353,136 @@ export default function PlatformPricingRegions() {
           </table>
         </div>
       </div>
+
+      {/* Branch Plans */}
+      <div className="space-y-3">
+        <div className="flex items-end justify-between gap-4 flex-wrap">
+          <div>
+            <h2 className="text-lg font-semibold">Branch Plans</h2>
+            <p className="text-sm text-muted-foreground">
+              Subscription tiers assigned per branch (e.g. Postnet branch subscriptions). Stripe Price IDs are required for checkout.
+            </p>
+          </div>
+          <div className="flex items-end gap-2">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Plan slug</label>
+              <Input
+                value={newBranchSlug}
+                onChange={(e) => setNewBranchSlug(e.target.value)}
+                placeholder="branch_basic"
+                className="h-8 w-44 font-mono text-xs"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Display name</label>
+              <Input
+                value={newBranchLabel}
+                onChange={(e) => setNewBranchLabel(e.target.value)}
+                placeholder="Branch Basic"
+                className="h-8 w-44"
+              />
+            </div>
+            <Button onClick={addBranchPlan} size="sm">
+              <Plus className="h-4 w-4 mr-1" /> Add Branch Plan
+            </Button>
+          </div>
+        </div>
+
+        {branchSlugs.length === 0 ? (
+          <div className="rounded-lg border bg-muted/30 p-6 text-sm text-muted-foreground text-center">
+            No branch plans yet. Add one above (one row per region).
+          </div>
+        ) : (
+          <>
+            <div className="rounded-lg border bg-card overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="px-4 py-3 text-left font-semibold">Region</th>
+                    {branchSlugs.map((s) => {
+                      const sample = branchPlans.find((p) => p.plan_slug === s);
+                      return (
+                        <th key={s} className="px-4 py-3 text-right font-semibold">
+                          <div className="flex items-center justify-end gap-2">
+                            <span>{sample?.plan_name || s}</span>
+                            <button
+                              onClick={() => removeBranchPlan(s)}
+                              className="text-muted-foreground hover:text-destructive"
+                              title="Delete this branch plan"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          <div className="text-xs font-mono text-muted-foreground font-normal">{s}</div>
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {regions.map((r) => (
+                    <tr key={r.id} className="border-b last:border-0">
+                      <td className="px-4 py-2 font-medium">
+                        {FLAG_MAP[r.region_code] || ""} {r.currency_symbol}
+                      </td>
+                      {branchSlugs.map((slug) => {
+                        const p = getBranchPlan(r.id, slug);
+                        return (
+                          <td key={slug} className="px-4 py-2 text-right">
+                            <Input
+                              type="number"
+                              value={p?.price ?? 0}
+                              onChange={(e) => setBranchPlanField(r.id, slug, "price", e.target.value)}
+                              className="h-8 w-28 ml-auto text-right"
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="rounded-lg border bg-card overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="px-4 py-3 text-left font-semibold">Region — Branch Stripe Price IDs</th>
+                    {branchSlugs.map((s) => (
+                      <th key={s} className="px-4 py-3 text-left font-semibold">
+                        <div className="font-mono text-xs">{s}</div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {regions.map((r) => (
+                    <tr key={r.id} className="border-b last:border-0">
+                      <td className="px-4 py-2 font-medium">
+                        {FLAG_MAP[r.region_code] || ""} {r.region_code}
+                      </td>
+                      {branchSlugs.map((slug) => {
+                        const p = getBranchPlan(r.id, slug);
+                        return (
+                          <td key={slug} className="px-4 py-2">
+                            <Input
+                              value={p?.stripe_price_id || ""}
+                              onChange={(e) => setBranchPlanField(r.id, slug, "stripe_price_id", e.target.value)}
+                              className="h-8 w-48 font-mono text-xs"
+                              placeholder="price_..."
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
