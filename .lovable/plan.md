@@ -1,25 +1,24 @@
 ## Goal
+Make the PostNet logo reliably appear in customer emails while keeping the attached PDFs unchanged.
 
-Order/quote emails (View Order CTA, logo absolute URL) currently hard-code `https://document-centre.com/t/{slug}/...`. They should use the tenant's own custom domain when set (e.g. `postnetprintcenter.com`).
+## Diagnosis
+The current branding setting points email HTML to an SVG logo:
+`.../tenant-assets/.../logo.svg?...`
 
-## Change
+Many email clients do not render SVG images in email bodies, even when the URL is public and correct. The PDF can still look perfect because PDF rendering supports the asset differently.
 
-Edit `supabase/functions/send-order-email/index.ts`:
+## Plan
+1. **Add email-safe logo handling in `send-order-email`**
+   - Detect when the tenant branding logo is an SVG.
+   - Prefer an email-specific raster logo setting if available, e.g. `email_logo_url`.
+   - Fall back to the normal `logo_url` only when it is already email-safe.
 
-1. Add a helper `resolveTenantOrigin(tenant)` that returns:
-   - `https://{tenant.custom_domain}` if `custom_domain` is set (strip protocol/trailing slash if present)
-   - else fall back to `https://document-centre.com`
+2. **Set PostNet’s email logo to a PNG/JPG asset**
+   - Use an existing PNG/JPG PostNet logo if one is already in tenant assets.
+   - If only SVG exists, create/upload a PNG version and store it as the email logo setting.
 
-2. Build the CTA URL using that origin:
-   - With custom domain → `${origin}/orders/${order_id}` (subdomain-style, no `/t/{slug}` prefix — matches how `useTenantSlug` builds paths when `isSubdomain` is true)
-   - Without custom domain → `${origin}/t/${tenant.slug}/orders/${order_id}` (current behaviour)
+3. **Redeploy the email function**
+   - Deploy `send-order-email` so future customer emails use the email-safe logo.
 
-3. Pass the resolved origin into `renderHtml` and use it inside `absolutiseUrl` instead of the hard-coded `SITE_ORIGIN`, so a tenant logo stored as a relative path resolves against the tenant's own domain.
-
-4. Redeploy `send-order-email`.
-
-## Out of scope
-
-- No DB changes — `tenants.custom_domain` already exists and is already selected via `select("*")`.
-- No change to invoice PDF, dispatcher, or branch logic.
-- Auth links (handled separately by `resolveAppOrigin` in `buildAuthLink.ts`) are unchanged.
+## Expected result
+Future order confirmation emails for PostNet will show the logo, while invoices/proformas continue using the current PDF design.
