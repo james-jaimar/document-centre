@@ -1,24 +1,22 @@
-## Goal
-Make the PostNet logo reliably appear in customer emails while keeping the attached PDFs unchanged.
-
-## Diagnosis
-The current branding setting points email HTML to an SVG logo:
-`.../tenant-assets/.../logo.svg?...`
-
-Many email clients do not render SVG images in email bodies, even when the URL is public and correct. The PDF can still look perfect because PDF rendering supports the asset differently.
-
 ## Plan
-1. **Add email-safe logo handling in `send-order-email`**
-   - Detect when the tenant branding logo is an SVG.
-   - Prefer an email-specific raster logo setting if available, e.g. `email_logo_url`.
-   - Fall back to the normal `logo_url` only when it is already email-safe.
 
-2. **Set PostNet’s email logo to a PNG/JPG asset**
-   - Use an existing PNG/JPG PostNet logo if one is already in tenant assets.
-   - If only SVG exists, create/upload a PNG version and store it as the email logo setting.
+1. **Stop using the live image proxy**
+   - Remove the `images.weserv.nl` SVG-to-PNG conversion from the order email renderer.
+   - This avoids long proxied URLs, external proxy fragility, and Gmail clipping caused by larger/rewritten email content.
 
-3. **Redeploy the email function**
-   - Deploy `send-order-email` so future customer emails use the email-safe logo.
+2. **Use a real raster logo for email**
+   - Add support for an email-specific logo setting such as `branding.email_logo_url`.
+   - Prefer that PNG/JPG/WebP URL in emails.
+   - Only fall back to the normal tenant `logo_url` when it is already email-safe.
+   - If the normal logo is SVG and no email logo exists, show the tenant name as text instead of forcing a broken/proxied image.
 
-## Expected result
-Future order confirmation emails for PostNet will show the logo, while invoices/proformas continue using the current PDF design.
+3. **Set PostNet to a proper PNG/JPG email logo**
+   - Find or create a raster PostNet logo asset in storage.
+   - Save it to PostNet’s branding settings as the email logo, leaving the PDF/proforma SVG untouched.
+
+4. **Reduce email HTML size and clipping risk**
+   - Keep the email header simple: fixed logo height/width, no proxy URL, no oversized inline image content.
+   - Avoid adding anything unnecessary to the email body.
+
+5. **Redeploy the email function**
+   - Deploy the updated `send-order-email` function so the next test email uses the new logo behavior.
