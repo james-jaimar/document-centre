@@ -60,6 +60,28 @@ async function assertTenantAdmin(admin: any, callerId: string, tenant_id: string
   return !!pa;
 }
 
+/** True if caller is platform admin, tenant owner/admin, or active branch_manager of `branch_id`. */
+async function assertCanManageBranchOrTenant(
+  admin: any,
+  callerId: string,
+  tenant_id: string,
+  branch_id: string | null
+) {
+  if (await assertTenantAdmin(admin, callerId, tenant_id)) return true;
+  if (!branch_id) return false;
+  const { data } = await admin
+    .from("tenant_memberships")
+    .select("id")
+    .eq("profile_id", callerId)
+    .eq("tenant_id", tenant_id)
+    .eq("branch_id", branch_id)
+    .eq("role", "branch_manager")
+    .eq("is_active", true)
+    .maybeSingle();
+  return !!data;
+}
+
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -81,7 +103,8 @@ Deno.serve(async (req) => {
     const body = (await req.json()) as Body;
 
     if (body.action === "upsert") {
-      if (!(await assertTenantAdmin(admin, caller.id, body.tenant_id))) return json({ error: "Forbidden" }, 403);
+      if (!(await assertCanManageBranchOrTenant(admin, caller.id, body.tenant_id, body.branch_id ?? null))) return json({ error: "Forbidden" }, 403);
+
 
       let secret_id: string | null = null;
 
@@ -156,7 +179,8 @@ Deno.serve(async (req) => {
     if (body.action === "delete") {
       const { data: acct } = await admin.from("email_accounts").select("*").eq("id", body.id).maybeSingle();
       if (!acct) return json({ error: "Not found" }, 404);
-      if (!(await assertTenantAdmin(admin, caller.id, acct.tenant_id))) return json({ error: "Forbidden" }, 403);
+      if (!(await assertCanManageBranchOrTenant(admin, caller.id, acct.tenant_id, acct.branch_id))) return json({ error: "Forbidden" }, 403);
+
       if (acct.smtp_password_secret_id) {
         await admin.rpc("delete_email_account_secret", { p_secret_id: acct.smtp_password_secret_id });
       }
@@ -168,7 +192,8 @@ Deno.serve(async (req) => {
     if (body.action === "test_send") {
       const { data: acct } = await admin.from("email_accounts").select("*").eq("id", body.id).maybeSingle();
       if (!acct) return json({ error: "Not found" }, 404);
-      if (!(await assertTenantAdmin(admin, caller.id, acct.tenant_id))) return json({ error: "Forbidden" }, 403);
+      if (!(await assertCanManageBranchOrTenant(admin, caller.id, acct.tenant_id, acct.branch_id))) return json({ error: "Forbidden" }, 403);
+
 
       const { data: pwd, error: pwdErr } = await admin.rpc("read_email_account_secret", {
         p_secret_id: acct.smtp_password_secret_id,
@@ -207,7 +232,8 @@ Deno.serve(async (req) => {
     if (body.action === "disconnect_gmail") {
       const { data: acct } = await admin.from("email_accounts").select("*").eq("id", body.id).maybeSingle();
       if (!acct) return json({ error: "Not found" }, 404);
-      if (!(await assertTenantAdmin(admin, caller.id, acct.tenant_id))) return json({ error: "Forbidden" }, 403);
+      if (!(await assertCanManageBranchOrTenant(admin, caller.id, acct.tenant_id, acct.branch_id))) return json({ error: "Forbidden" }, 403);
+
       if (acct.transport !== "gmail_oauth") return json({ error: "Account is not Gmail OAuth" }, 400);
       if (acct.oauth_refresh_token_secret_id) {
         await admin.rpc("delete_email_account_secret", { p_secret_id: acct.oauth_refresh_token_secret_id });

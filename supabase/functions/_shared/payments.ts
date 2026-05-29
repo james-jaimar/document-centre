@@ -77,12 +77,11 @@ export async function resolveGatewaysForOrder(orderId: string): Promise<{
 
   const gateways: ResolvedGateway[] = [];
   for (const t of tpgs ?? []) {
-    if (!t.credentials_secret_id) continue;
-
-    let secretId: string = t.credentials_secret_id;
+    let secretId: string | null = t.credentials_secret_id;
     let mode: "test" | "live" = t.mode;
     let source: "branch" | "tenant" = "tenant";
 
+    // Branch override (and the ONLY way to obtain credentials if tenant has none)
     if (order.branch_id) {
       const { data: bpg } = await sb
         .from("branch_payment_gateways")
@@ -97,6 +96,9 @@ export async function resolveGatewaysForOrder(orderId: string): Promise<{
       }
     }
 
+    // No credentials anywhere — skip this provider for this order.
+    if (!secretId) continue;
+
     // Currency filter
     if (t.provider === "payfast" && (order.currency || "ZAR").toUpperCase() !== "ZAR") continue;
 
@@ -109,6 +111,7 @@ export async function resolveGatewaysForOrder(orderId: string): Promise<{
       displayLabel: t.display_label,
     });
   }
+
 
   return { order, gateways };
 }
