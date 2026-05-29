@@ -37,6 +37,8 @@ export default function PlatformPricingRegions() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [newBranchSlug, setNewBranchSlug] = useState("");
+  const [newBranchLabel, setNewBranchLabel] = useState("");
 
   useEffect(() => {
     loadData();
