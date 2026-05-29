@@ -9,7 +9,8 @@ import { useTenantSettingsMap, useBulkUpsertTenantSettings } from "@/hooks/useTe
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { PaymentGatewaysCard } from "@/components/payments/PaymentGatewaysCard";
 import { toast } from "sonner";
-import { Save, Banknote, CreditCard } from "lucide-react";
+import { Save, Banknote, CreditCard, Info } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export function PaymentsTab() {
   const { tenantId } = useTenantContext();
