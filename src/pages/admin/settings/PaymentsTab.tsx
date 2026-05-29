@@ -58,6 +58,17 @@ export function PaymentsTab() {
 
   return (
     <div className="space-y-6">
+      <Alert>
+        <Info className="h-4 w-4" />
+        <AlertTitle>Per-branch credentials required</AlertTitle>
+        <AlertDescription>
+          Enabling an online payment provider here makes it available to your network. Each branch must
+          then enter their own merchant credentials from <strong>Branch Settings → Payments</strong>.
+          Funds and settlements flow directly to the branch's own merchant account — credentials are
+          strictly isolated per branch.
+        </AlertDescription>
+      </Alert>
+
       {tenantId && <PaymentGatewaysCard scope="tenant" scopeId={tenantId} />}
 
       <Card>
