@@ -171,7 +171,7 @@ function renderHtml(opts: {
       <tr><td align="center">
         <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.05)">
           <tr><td style="background:#ffffff;padding:18px 24px;border-bottom:1px solid #f0f1f4">
-            ${logo ? `<img src="${logo}" alt="${portalName}" style="max-height:40px;display:block;border:0;outline:none;text-decoration:none">` : `<div style="color:#fff;font-size:18px;font-weight:600">${portalName}</div>`}
+            ${logo ? `<img src="${logo}" alt="${portalName}" style="max-height:40px;display:block;border:0;outline:none;text-decoration:none">` : `<div style="color:${primary};font-size:18px;font-weight:600">${portalName}</div>`}
           </td></tr>
           <tr><td style="padding:28px 28px 8px">
             <h1 style="margin:0 0 12px;font-size:20px;color:#111827">${headline}</h1>
