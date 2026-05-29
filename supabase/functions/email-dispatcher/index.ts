@@ -290,7 +290,8 @@ async function sendViaGraph(
   row: OutboxRow,
   fromName: string,
   fromEmail: string,
-  replyTo: string | undefined
+  replyTo: string | undefined,
+  attachments: LoadedAttachment[]
 ): Promise<{ messageId: string | null }> {
   console.log(`[graph] fetching token for tenant ${creds.tenant_id}`);
   const token = await getGraphAccessToken(creds);
@@ -309,6 +310,15 @@ async function sendViaGraph(
     from: { emailAddress: { address: fromEmail, name: fromName } },
   };
   if (replyTo) message.replyTo = toGraphRecipients(replyTo);
+  if (attachments.length) {
+    message.attachments = attachments.map((a) => ({
+      "@odata.type": "#microsoft.graph.fileAttachment",
+      name: a.filename,
+      contentType: a.contentType,
+      contentBytes: bytesToBase64(a.bytes),
+    }));
+  }
+
 
   const res = await withTimeout(
     fetch(url, {
