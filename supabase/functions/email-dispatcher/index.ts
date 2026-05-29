@@ -22,6 +22,19 @@ function nextAttemptAt(attempts: number): string {
   return new Date(Date.now() + ms).toISOString();
 }
 
+interface AttachmentSpec {
+  filename: string;
+  storage_bucket: string;
+  storage_path: string;
+  content_type?: string;
+}
+
+interface LoadedAttachment {
+  filename: string;
+  contentType: string;
+  bytes: Uint8Array;
+}
+
 interface OutboxRow {
   id: string;
   email_account_id: string | null;
@@ -38,6 +51,44 @@ interface OutboxRow {
   attempts: number;
   max_attempts: number;
   metadata: Record<string, unknown>;
+  attachments: AttachmentSpec[] | null;
+}
+
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20 MB total per email
+
+async function loadAttachments(
+  admin: any,
+  specs: AttachmentSpec[] | null | undefined
+): Promise<LoadedAttachment[]> {
+  if (!specs || !specs.length) return [];
+  const out: LoadedAttachment[] = [];
+  let total = 0;
+  for (const s of specs) {
+    const { data, error } = await admin.storage.from(s.storage_bucket).download(s.storage_path);
+    if (error || !data) {
+      throw new Error(`attachment_download_failed: ${s.storage_path} (${error?.message ?? "no data"})`);
+    }
+    const buf = new Uint8Array(await data.arrayBuffer());
+    total += buf.byteLength;
+    if (total > MAX_ATTACHMENT_BYTES) {
+      throw new Error(`attachment_too_large: total exceeds ${MAX_ATTACHMENT_BYTES} bytes`);
+    }
+    out.push({
+      filename: s.filename,
+      contentType: s.content_type || "application/octet-stream",
+      bytes: buf,
+    });
+  }
+  return out;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
 }
 
 interface BaseCreds {
@@ -239,7 +290,8 @@ async function sendViaGraph(
   row: OutboxRow,
   fromName: string,
   fromEmail: string,
-  replyTo: string | undefined
+  replyTo: string | undefined,
+  attachments: LoadedAttachment[]
 ): Promise<{ messageId: string | null }> {
   console.log(`[graph] fetching token for tenant ${creds.tenant_id}`);
   const token = await getGraphAccessToken(creds);
@@ -258,6 +310,15 @@ async function sendViaGraph(
     from: { emailAddress: { address: fromEmail, name: fromName } },
   };
   if (replyTo) message.replyTo = toGraphRecipients(replyTo);
+  if (attachments.length) {
+    message.attachments = attachments.map((a) => ({
+      "@odata.type": "#microsoft.graph.fileAttachment",
+      name: a.filename,
+      contentType: a.contentType,
+      contentBytes: bytesToBase64(a.bytes),
+    }));
+  }
+
 
   const res = await withTimeout(
     fetch(url, {
@@ -317,20 +378,46 @@ function buildRfc2822(
   fromName: string,
   fromEmail: string,
   row: OutboxRow,
-  replyTo?: string
+  replyTo: string | undefined,
+  attachments: LoadedAttachment[]
 ): string {
-  const lines: string[] = [];
-  lines.push(`From: ${fromName} <${fromEmail}>`);
-  lines.push(`To: ${row.to_email}`);
-  if (row.cc?.length) lines.push(`Cc: ${row.cc.join(", ")}`);
-  if (row.bcc?.length) lines.push(`Bcc: ${row.bcc.join(", ")}`);
-  if (replyTo) lines.push(`Reply-To: ${replyTo}`);
-  lines.push(`Subject: ${row.subject}`);
-  lines.push("MIME-Version: 1.0");
-  lines.push('Content-Type: text/html; charset="UTF-8"');
-  lines.push("");
-  lines.push(row.html ?? row.text_body ?? "");
-  return lines.join("\r\n");
+  const headers: string[] = [];
+  headers.push(`From: ${fromName} <${fromEmail}>`);
+  headers.push(`To: ${row.to_email}`);
+  if (row.cc?.length) headers.push(`Cc: ${row.cc.join(", ")}`);
+  if (row.bcc?.length) headers.push(`Bcc: ${row.bcc.join(", ")}`);
+  if (replyTo) headers.push(`Reply-To: ${replyTo}`);
+  headers.push(`Subject: ${row.subject}`);
+  headers.push("MIME-Version: 1.0");
+
+  const htmlBody = row.html ?? row.text_body ?? "";
+
+  if (!attachments.length) {
+    headers.push('Content-Type: text/html; charset="UTF-8"');
+    return headers.join("\r\n") + "\r\n\r\n" + htmlBody;
+  }
+
+  const boundary = `==DC_BOUNDARY_${crypto.randomUUID().replace(/-/g, "")}`;
+  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+
+  const parts: string[] = [];
+  parts.push(
+    `--${boundary}\r\n` +
+      'Content-Type: text/html; charset="UTF-8"\r\n' +
+      "Content-Transfer-Encoding: 7bit\r\n\r\n" +
+      htmlBody
+  );
+  for (const a of attachments) {
+    const b64 = bytesToBase64(a.bytes).replace(/.{76}/g, "$&\r\n");
+    parts.push(
+      `--${boundary}\r\n` +
+        `Content-Type: ${a.contentType}; name="${a.filename}"\r\n` +
+        `Content-Disposition: attachment; filename="${a.filename}"\r\n` +
+        "Content-Transfer-Encoding: base64\r\n\r\n" +
+        b64
+    );
+  }
+  return headers.join("\r\n") + "\r\n\r\n" + parts.join("\r\n") + `\r\n--${boundary}--\r\n`;
 }
 
 function base64UrlEncode(str: string): string {
@@ -346,13 +433,15 @@ async function sendViaGmail(
   row: OutboxRow,
   fromName: string,
   fromEmail: string,
-  replyTo: string | undefined
+  replyTo: string | undefined,
+  attachments: LoadedAttachment[]
 ): Promise<{ messageId: string | null }> {
   console.log(`[gmail] refreshing token for ${creds.oauth_email}`);
   const token = await getGmailAccessToken(creds);
   console.log(`[gmail] got token; sending as ${fromEmail} -> ${row.to_email}`);
 
-  const raw = base64UrlEncode(buildRfc2822(fromName, fromEmail, row, replyTo));
+  const raw = base64UrlEncode(buildRfc2822(fromName, fromEmail, row, replyTo, attachments));
+
 
   const res = await withTimeout(
     fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
@@ -408,14 +497,19 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
   try {
     let messageId: string | null = null;
 
+    const loadedAttachments = await loadAttachments(admin, row.attachments);
+    if (loadedAttachments.length) {
+      console.log(`[dispatch] loaded ${loadedAttachments.length} attachment(s) for row=${row.id}`);
+    }
+
     if (creds.kind === "graph") {
       console.log(`[dispatch] entering sendViaGraph for row=${row.id}`);
-      const result = await sendViaGraph(creds, row, fromName, fromEmail, replyTo);
+      const result = await sendViaGraph(creds, row, fromName, fromEmail, replyTo, loadedAttachments);
       console.log(`[dispatch] sendViaGraph returned messageId=${result.messageId}`);
       messageId = result.messageId;
     } else if (creds.kind === "gmail_oauth") {
       console.log(`[dispatch] entering sendViaGmail for row=${row.id}`);
-      const result = await sendViaGmail(creds, row, fromName, fromEmail, replyTo);
+      const result = await sendViaGmail(creds, row, fromName, fromEmail, replyTo, loadedAttachments);
       console.log(`[dispatch] sendViaGmail returned messageId=${result.messageId}`);
       messageId = result.messageId;
     } else {
@@ -442,6 +536,13 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
             subject: row.subject,
             html: row.html ?? undefined,
             text: row.text_body ?? undefined,
+            attachments: loadedAttachments.length
+              ? loadedAttachments.map((a) => ({
+                  filename: a.filename,
+                  content: a.bytes,
+                  contentType: a.contentType,
+                }))
+              : undefined,
           }),
           SEND_TIMEOUT_MS,
           "SMTP send"
