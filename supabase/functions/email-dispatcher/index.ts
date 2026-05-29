@@ -136,6 +136,68 @@ async function loadVaultSecret(admin: any, secret_id: string | null): Promise<st
   return (data as string) ?? null;
 }
 
+/** Build AccountCreds from a fully-fetched email_accounts row, honouring its transport. */
+async function buildCredsFromAccount(
+  admin: ReturnType<typeof createClient>,
+  a: any,
+): Promise<AccountCreds | null> {
+  if (!a || !a.is_active) return null;
+  const transport = a.transport ?? "smtp";
+
+  if (transport === "graph") {
+    const clientSecret = await loadVaultSecret(admin, a.graph_client_secret_id);
+    if (!clientSecret || !a.graph_tenant_id || !a.graph_client_id || !a.graph_sender_address) return null;
+    return {
+      kind: "graph",
+      id: a.id,
+      tenant_id: a.graph_tenant_id,
+      client_id: a.graph_client_id,
+      client_secret: clientSecret,
+      sender: a.graph_sender_address,
+      from_name: a.from_name,
+      from_email: a.from_email,
+      reply_to: a.reply_to,
+      send_delay_ms: a.send_delay_ms ?? 1500,
+    };
+  }
+
+  if (transport === "gmail_oauth") {
+    const refreshToken = await loadVaultSecret(admin, a.oauth_refresh_token_secret_id);
+    const gmailClientId = Deno.env.get("GMAIL_OAUTH_CLIENT_ID");
+    const gmailClientSecret = Deno.env.get("GMAIL_OAUTH_CLIENT_SECRET");
+    if (!refreshToken || !gmailClientId || !gmailClientSecret || !a.oauth_email) return null;
+    return {
+      kind: "gmail_oauth",
+      id: a.id,
+      refresh_token: refreshToken,
+      client_id: gmailClientId,
+      client_secret: gmailClientSecret,
+      oauth_email: a.oauth_email,
+      from_name: a.from_name,
+      from_email: a.from_email,
+      reply_to: a.reply_to,
+      send_delay_ms: a.send_delay_ms ?? 1500,
+    };
+  }
+
+  // smtp
+  const password = await loadVaultSecret(admin, a.smtp_password_secret_id);
+  if (!password) return null;
+  return {
+    kind: "smtp",
+    id: a.id,
+    host: a.smtp_host,
+    port: a.smtp_port,
+    secure: a.smtp_secure,
+    username: a.smtp_username,
+    password,
+    from_name: a.from_name,
+    from_email: a.from_email,
+    reply_to: a.reply_to,
+    send_delay_ms: a.send_delay_ms ?? 1500,
+  };
+}
+
 async function resolveCreds(
   admin: ReturnType<typeof createClient>,
   row: OutboxRow
@@ -147,101 +209,53 @@ async function resolveCreds(
       .select("*")
       .eq("id", row.email_account_id)
       .maybeSingle();
-    const a = acct as any;
-    if (a && a.is_active) {
-      const transport = a.transport ?? "smtp";
+    const built = await buildCredsFromAccount(admin, acct);
+    if (built) return built;
+  }
 
-      if (transport === "graph") {
-        const clientSecret = await loadVaultSecret(admin, a.graph_client_secret_id);
-        if (clientSecret && a.graph_tenant_id && a.graph_client_id && a.graph_sender_address) {
-          return {
-            kind: "graph",
-            id: a.id,
-            tenant_id: a.graph_tenant_id,
-            client_id: a.graph_client_id,
-            client_secret: clientSecret,
-            sender: a.graph_sender_address,
-            from_name: a.from_name,
-            from_email: a.from_email,
-            reply_to: a.reply_to,
-            send_delay_ms: a.send_delay_ms ?? 1500,
-          };
-        }
-      } else if (transport === "gmail_oauth") {
-        const refreshToken = await loadVaultSecret(admin, a.oauth_refresh_token_secret_id);
-        const gmailClientId = Deno.env.get("GMAIL_OAUTH_CLIENT_ID");
-        const gmailClientSecret = Deno.env.get("GMAIL_OAUTH_CLIENT_SECRET");
-        if (refreshToken && gmailClientId && gmailClientSecret && a.oauth_email) {
-          return {
-            kind: "gmail_oauth",
-            id: a.id,
-            refresh_token: refreshToken,
-            client_id: gmailClientId,
-            client_secret: gmailClientSecret,
-            oauth_email: a.oauth_email,
-            from_name: a.from_name,
-            from_email: a.from_email,
-            reply_to: a.reply_to,
-            send_delay_ms: a.send_delay_ms ?? 1500,
-          };
-        }
-      } else {
-        const password = await loadVaultSecret(admin, a.smtp_password_secret_id);
-        if (password) {
-          return {
-            kind: "smtp",
-            id: a.id,
-            host: a.smtp_host,
-            port: a.smtp_port,
-            secure: a.smtp_secure,
-            username: a.smtp_username,
-            password,
-            from_name: a.from_name,
-            from_email: a.from_email,
-            reply_to: a.reply_to,
-            send_delay_ms: a.send_delay_ms ?? 1500,
-          };
-        }
-      }
+  // 2. Tenant-scoped lookup with branch preference (any transport).
+  if (row.tenant_id) {
+    const { data: tenantAccounts } = await admin
+      .from("email_accounts")
+      .select("*")
+      .eq("is_active", true)
+      .eq("tenant_id", row.tenant_id);
+    const accounts = (tenantAccounts as any[]) ?? [];
+
+    const candidates = [
+      // Branch-scoped default
+      row.branch_id ? accounts.find((a) => a.branch_id === row.branch_id && a.is_default) : null,
+      // Any branch-scoped
+      row.branch_id ? accounts.find((a) => a.branch_id === row.branch_id) : null,
+      // Tenant-wide default (no branch)
+      accounts.find((a) => !a.branch_id && a.is_default),
+      // Any tenant-wide
+      accounts.find((a) => !a.branch_id),
+      // Any account for this tenant
+      accounts[0],
+    ].filter(Boolean);
+
+    for (const cand of candidates) {
+      const built = await buildCredsFromAccount(admin, cand);
+      if (built) return built;
     }
   }
 
-  // 2. Fallback: pick the first active Graph account (prefer default, then tenant match).
-  let query = admin
+  // 3. Last-resort: any active Graph account anywhere (legacy platform fallback)
+  const { data: graphAccounts } = await admin
     .from("email_accounts")
     .select("*")
     .eq("is_active", true)
     .eq("transport", "graph")
     .order("is_default", { ascending: false })
     .order("created_at", { ascending: true });
-
-  const { data: graphAccounts } = await query;
-  const accounts = (graphAccounts as any[]) ?? [];
-  // Prefer one matching the row's tenant if present, else first available.
-  const preferred =
-    (row.tenant_id && accounts.find((a) => a.tenant_id === row.tenant_id)) ||
-    accounts[0];
-
-  if (!preferred) return null;
-
-  const clientSecret = await loadVaultSecret(admin, preferred.graph_client_secret_id);
-  if (!clientSecret || !preferred.graph_tenant_id || !preferred.graph_client_id || !preferred.graph_sender_address) {
-    return null;
+  for (const a of (graphAccounts as any[]) ?? []) {
+    const built = await buildCredsFromAccount(admin, a);
+    if (built) return built;
   }
-
-  return {
-    kind: "graph",
-    id: preferred.id,
-    tenant_id: preferred.graph_tenant_id,
-    client_id: preferred.graph_client_id,
-    client_secret: clientSecret,
-    sender: preferred.graph_sender_address,
-    from_name: preferred.from_name,
-    from_email: preferred.from_email,
-    reply_to: preferred.reply_to,
-    send_delay_ms: preferred.send_delay_ms ?? 1500,
-  };
+  return null;
 }
+
 
 const SEND_TIMEOUT_MS = 60_000;
 const withTimeout = <T>(p: Promise<T>, ms: number, label: string): Promise<T> =>
