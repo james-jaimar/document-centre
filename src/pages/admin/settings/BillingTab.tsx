@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useTenantSubscriptions } from "@/hooks/useTenantSubscriptions";
 import { formatPrice } from "@/lib/formatCurrency";
+import { BranchSubscriptionsOverview } from "@/components/admin/branches/BranchSubscriptionsOverview";
 
 interface PricingRegion {
   id: string;
@@ -321,6 +322,8 @@ export function BillingTab() {
           )}
         </CardContent>
       </Card>
+
+      <BranchSubscriptionsOverview />
     </div>
   );
 }

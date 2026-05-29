@@ -9,12 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Save, Clock, Truck, MapPin, Phone, IdCard, CreditCard, Mail, Users } from "lucide-react";
+import { Save, Clock, Truck, MapPin, Phone, IdCard, CreditCard, Mail, Users, Wallet } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import BranchIdentityBankingCard from "@/components/branch/BranchIdentityBankingCard";
 import { PaymentGatewaysCard } from "@/components/payments/PaymentGatewaysCard";
 import { BranchEmailAccountsPanel } from "@/components/branch/BranchEmailAccountsPanel";
 import { BranchUsersPanel } from "@/components/branch/BranchUsersPanel";
+import { BranchSubscriptionPanel } from "@/components/branch/BranchSubscriptionPanel";
+import { useSearchParams } from "react-router-dom";
 
 
 interface BranchSettingsData {
@@ -121,13 +123,14 @@ const BranchSettings = () => {
         </Button>
       </div>
 
-      <Tabs defaultValue="identity">
+      <Tabs defaultValue={new URLSearchParams(window.location.search).get("tab") || "identity"}>
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="identity" className="gap-1.5"><IdCard size={14} /> Identity &amp; Banking</TabsTrigger>
           <TabsTrigger value="operations" className="gap-1.5"><Clock size={14} /> Operations</TabsTrigger>
           <TabsTrigger value="email" className="gap-1.5"><Mail size={14} /> Email</TabsTrigger>
           <TabsTrigger value="users" className="gap-1.5"><Users size={14} /> Users</TabsTrigger>
           <TabsTrigger value="payments" className="gap-1.5"><CreditCard size={14} /> Payments</TabsTrigger>
+          <TabsTrigger value="subscription" className="gap-1.5"><Wallet size={14} /> Subscription</TabsTrigger>
         </TabsList>
 
         <TabsContent value="identity">
@@ -149,6 +152,11 @@ const BranchSettings = () => {
             <PaymentGatewaysCard scope="branch" scopeId={branch.id} tenantId={tenantId} />
           )}
         </TabsContent>
+
+        <TabsContent value="subscription">
+          <BranchSubscriptionPanel branchId={branch.id} />
+        </TabsContent>
+
 
 
         <TabsContent value="operations" className="space-y-6">
