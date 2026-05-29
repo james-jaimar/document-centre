@@ -209,10 +209,13 @@ Deno.serve(async (req) => {
       invoice = inv;
     }
 
-    const [{ data: tenant }, { data: settings }, { data: addresses }] = await Promise.all([
+    const [{ data: tenant }, { data: settings }, { data: addresses }, { data: branch }] = await Promise.all([
       admin.from("tenants").select("*").eq("id", order.tenant_id).single(),
       admin.from("tenant_settings").select("*").eq("tenant_id", order.tenant_id),
       admin.from("order_addresses").select("*").eq("order_id", order_id),
+      order.branch_id
+        ? admin.from("branches").select("name, email, billing_email, accounts_email, phone").eq("id", order.branch_id).maybeSingle()
+        : Promise.resolve({ data: null }),
     ]);
 
     const branding: any = {}, notif: any = {}, bank: any = {};
