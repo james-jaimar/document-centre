@@ -60,6 +60,28 @@ async function assertTenantAdmin(admin: any, callerId: string, tenant_id: string
   return !!pa;
 }
 
+/** True if caller is platform admin, tenant owner/admin, or active branch_manager of `branch_id`. */
+async function assertCanManageBranchOrTenant(
+  admin: any,
+  callerId: string,
+  tenant_id: string,
+  branch_id: string | null
+) {
+  if (await assertTenantAdmin(admin, callerId, tenant_id)) return true;
+  if (!branch_id) return false;
+  const { data } = await admin
+    .from("tenant_memberships")
+    .select("id")
+    .eq("profile_id", callerId)
+    .eq("tenant_id", tenant_id)
+    .eq("branch_id", branch_id)
+    .eq("role", "branch_manager")
+    .eq("is_active", true)
+    .maybeSingle();
+  return !!data;
+}
+
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 

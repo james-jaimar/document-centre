@@ -4815,6 +4815,10 @@ export type Database = {
       }
       sync_order_amounts: { Args: { p_order_id: string }; Returns: undefined }
       user_branch_id: { Args: never; Returns: string }
+      user_can_manage_branch: {
+        Args: { p_branch_id: string }
+        Returns: boolean
+      }
       user_can_read_order: {
         Args: {
           p_app_id: string
