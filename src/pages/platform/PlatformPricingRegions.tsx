@@ -125,7 +125,62 @@ export default function PlatformPricingRegions() {
     setSaving(false);
   }
 
-  const planSlugs = ["starter", "core", "multi_branch"];
+  const tenantPlans = plans.filter((p) => (p.scope ?? "tenant") === "tenant");
+  const branchPlans = plans.filter((p) => p.scope === "branch");
+  const planSlugs = Array.from(
+    new Set(tenantPlans.length ? tenantPlans.map((p) => p.plan_slug) : ["starter", "core", "multi_branch"])
+  );
+  const branchSlugs = Array.from(new Set(branchPlans.map((p) => p.plan_slug)));
+
+  function getBranchPlan(regionId: string, slug: string) {
+    return branchPlans.find((p) => p.region_id === regionId && p.plan_slug === slug);
+  }
+  function setBranchPlanField(regionId: string, slug: string, field: "price" | "stripe_price_id" | "plan_name", value: any) {
+    setPlans((prev) =>
+      prev.map((p) =>
+        p.scope === "branch" && p.region_id === regionId && p.plan_slug === slug
+          ? { ...p, [field]: field === "price" ? parseFloat(value) || 0 : value || (field === "stripe_price_id" ? null : "") }
+          : p
+      )
+    );
+  }
+
+  async function addBranchPlan() {
+    const slug = newBranchSlug.trim().toLowerCase().replace(/\s+/g, "_");
+    const name = newBranchLabel.trim() || slug;
+    if (!slug) return toast.error("Enter a plan slug");
+    if (branchSlugs.includes(slug)) return toast.error("That branch plan slug already exists");
+    if (regions.length === 0) return toast.error("Add a region first");
+
+    const rows = regions.map((r, idx) => ({
+      region_id: r.id,
+      plan_slug: slug,
+      plan_name: name,
+      price: 0,
+      sort_order: branchSlugs.length * 10 + idx,
+      stripe_price_id: null,
+      scope: "branch",
+    }));
+    const { data, error } = await supabase.from("platform_pricing_plans").insert(rows).select("*");
+    if (error) return toast.error(`Failed: ${error.message}`);
+    setPlans((prev) => [...prev, ...((data as Plan[]) || [])]);
+    setNewBranchSlug("");
+    setNewBranchLabel("");
+    toast.success(`Added branch plan "${name}"`);
+  }
+
+  async function removeBranchPlan(slug: string) {
+    if (!confirm(`Delete branch plan "${slug}" across all regions?`)) return;
+    const { error } = await supabase
+      .from("platform_pricing_plans")
+      .delete()
+      .eq("scope", "branch")
+      .eq("plan_slug", slug);
+    if (error) return toast.error(`Failed: ${error.message}`);
+    setPlans((prev) => prev.filter((p) => !(p.scope === "branch" && p.plan_slug === slug)));
+    toast.success(`Removed "${slug}"`);
+  }
+
 
   if (loading) return <div className="p-8 text-muted-foreground">Loading pricing regions…</div>;
 
