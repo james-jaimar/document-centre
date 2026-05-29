@@ -22,6 +22,19 @@ function nextAttemptAt(attempts: number): string {
   return new Date(Date.now() + ms).toISOString();
 }
 
+interface AttachmentSpec {
+  filename: string;
+  storage_bucket: string;
+  storage_path: string;
+  content_type?: string;
+}
+
+interface LoadedAttachment {
+  filename: string;
+  contentType: string;
+  bytes: Uint8Array;
+}
+
 interface OutboxRow {
   id: string;
   email_account_id: string | null;
@@ -38,6 +51,44 @@ interface OutboxRow {
   attempts: number;
   max_attempts: number;
   metadata: Record<string, unknown>;
+  attachments: AttachmentSpec[] | null;
+}
+
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20 MB total per email
+
+async function loadAttachments(
+  admin: any,
+  specs: AttachmentSpec[] | null | undefined
+): Promise<LoadedAttachment[]> {
+  if (!specs || !specs.length) return [];
+  const out: LoadedAttachment[] = [];
+  let total = 0;
+  for (const s of specs) {
+    const { data, error } = await admin.storage.from(s.storage_bucket).download(s.storage_path);
+    if (error || !data) {
+      throw new Error(`attachment_download_failed: ${s.storage_path} (${error?.message ?? "no data"})`);
+    }
+    const buf = new Uint8Array(await data.arrayBuffer());
+    total += buf.byteLength;
+    if (total > MAX_ATTACHMENT_BYTES) {
+      throw new Error(`attachment_too_large: total exceeds ${MAX_ATTACHMENT_BYTES} bytes`);
+    }
+    out.push({
+      filename: s.filename,
+      contentType: s.content_type || "application/octet-stream",
+      bytes: buf,
+    });
+  }
+  return out;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
 }
 
 interface BaseCreds {
