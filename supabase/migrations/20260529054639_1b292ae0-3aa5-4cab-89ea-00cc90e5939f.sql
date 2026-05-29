@@ -1,0 +1,1 @@
+ALTER TABLE public.email_outbox ADD COLUMN IF NOT EXISTS attachments jsonb NOT NULL DEFAULT '[]'::jsonb;

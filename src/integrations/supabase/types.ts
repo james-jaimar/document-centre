@@ -1218,6 +1218,7 @@ export type Database = {
       email_outbox: {
         Row: {
           app_id: string | null
+          attachments: Json
           attempts: number
           bcc: string[] | null
           branch_id: string | null
@@ -1250,6 +1251,7 @@ export type Database = {
         }
         Insert: {
           app_id?: string | null
+          attachments?: Json
           attempts?: number
           bcc?: string[] | null
           branch_id?: string | null
@@ -1282,6 +1284,7 @@ export type Database = {
         }
         Update: {
           app_id?: string | null
+          attachments?: Json
           attempts?: number
           bcc?: string[] | null
           branch_id?: string | null
