@@ -128,6 +128,11 @@ async function createOrderWithJobs(
     return err("Missing required fields: app_slug, tenant_id, customer (profile_id, email), jobs[]");
   }
 
+  // Branch subscription gate
+  const gateMsg = await checkBranchGate(admin, userId, branch_id);
+  if (gateMsg) return json({ error: gateMsg, code: "branch_subscription_blocked" }, 402);
+
+
   // Resolve app_id from slug
   const { data: app, error: appErr } = await admin
     .from("apps")
