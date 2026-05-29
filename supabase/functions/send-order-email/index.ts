@@ -87,9 +87,22 @@ const BODIES: Record<EventKey, (ctx: any) => string> = {
     `<br><br>Please pay via EFT using <strong>${c.orderNo}</strong> as your reference.`,
 };
 
+const SITE_ORIGIN = "https://document-centre.com";
+
+function absolutiseUrl(url: string | undefined | null): string | undefined {
+  if (!url) return undefined;
+  const trimmed = String(url).trim();
+  if (!trimmed) return undefined;
+  if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith("data:")) return trimmed;
+  if (trimmed.startsWith("//")) return `https:${trimmed}`;
+  if (trimmed.startsWith("/")) return `${SITE_ORIGIN}${trimmed}`;
+  return `${SITE_ORIGIN}/${trimmed}`;
+}
+
 function renderHtml(opts: {
   branding: any;
   tenant: any;
+  branch: any;
   bank: any;
   event: EventKey;
   ctx: any;
@@ -97,7 +110,7 @@ function renderHtml(opts: {
 }) {
   const primary = (opts.branding.primary_color as string) || "#1a1a2e";
   const portalName = (opts.branding.portal_name as string) || opts.tenant.trading_name || opts.tenant.name;
-  const logo = opts.branding.logo_url as string | undefined;
+  const logo = absolutiseUrl(opts.branding.logo_url as string | undefined);
   const headline = HEADLINES[opts.event];
   const body = BODIES[opts.event](opts.ctx);
   const showBank =
@@ -122,12 +135,20 @@ function renderHtml(opts: {
     ? `<p style="margin:22px 0"><a href="${opts.ctaUrl}" style="background:${primary};color:#fff;text-decoration:none;padding:10px 18px;border-radius:6px;font-size:14px;display:inline-block">View order</a></p>`
     : "";
 
+  const footerName = opts.branch?.name || opts.tenant.legal_name || opts.tenant.name;
+  const footerEmail =
+    opts.branch?.email ||
+    opts.branch?.billing_email ||
+    opts.branch?.accounts_email ||
+    opts.tenant.support_email;
+  const footerPhone = opts.branch?.phone || opts.tenant.support_phone;
+
   return `<!doctype html><html><body style="margin:0;background:#f6f7f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111827">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f6f7f9;padding:24px 0">
       <tr><td align="center">
         <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.05)">
           <tr><td style="background:${primary};padding:18px 24px">
-            ${logo ? `<img src="${logo}" alt="${portalName}" style="max-height:36px;display:block">` : `<div style="color:#fff;font-size:18px;font-weight:600">${portalName}</div>`}
+            ${logo ? `<img src="${logo}" alt="${portalName}" style="max-height:40px;display:block;border:0;outline:none;text-decoration:none">` : `<div style="color:#fff;font-size:18px;font-weight:600">${portalName}</div>`}
           </td></tr>
           <tr><td style="padding:28px 28px 8px">
             <h1 style="margin:0 0 12px;font-size:20px;color:#111827">${headline}</h1>
@@ -136,7 +157,7 @@ function renderHtml(opts: {
             ${bankBlock}
           </td></tr>
           <tr><td style="padding:18px 28px 28px;font-size:12px;color:#6b7280;border-top:1px solid #f0f1f4;margin-top:18px">
-            <p style="margin:0">${opts.tenant.legal_name || opts.tenant.name}${opts.tenant.support_email ? ` &middot; <a href="mailto:${opts.tenant.support_email}" style="color:${primary}">${opts.tenant.support_email}</a>` : ""}${opts.tenant.support_phone ? ` &middot; ${opts.tenant.support_phone}` : ""}</p>
+            <p style="margin:0">${footerName}${footerEmail ? ` &middot; <a href="mailto:${footerEmail}" style="color:${primary}">${footerEmail}</a>` : ""}${footerPhone ? ` &middot; ${footerPhone}` : ""}</p>
           </td></tr>
         </table>
       </td></tr>
