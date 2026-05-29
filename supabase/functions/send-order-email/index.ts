@@ -275,12 +275,15 @@ Deno.serve(async (req) => {
     };
 
     const subject = SUBJECTS[eventKey](ctx.orderNo, ctx);
-    // Suppress the View-Order CTA on invoice/proforma emails — the PDF is attached instead.
+    const tenantOrigin = resolveTenantOrigin(tenant);
+    const hasCustomDomain = tenantOrigin !== DEFAULT_ORIGIN;
     const ctaUrl =
       eventKey === "invoice_sent"
         ? undefined
+        : hasCustomDomain
+        ? `${tenantOrigin}/orders/${order_id}`
         : tenant?.slug
-        ? `https://document-centre.com/t/${tenant.slug}/orders/${order_id}`
+        ? `${DEFAULT_ORIGIN}/t/${tenant.slug}/orders/${order_id}`
         : undefined;
     const html = renderHtml({ branding, tenant, branch, bank, event: eventKey, ctx, ctaUrl });
 
