@@ -1,50 +1,44 @@
-## Three fixes to the invoice/quote/proforma email
+## Diagnosis
 
-### 1. Logo not embedding
-**Cause:** Some tenant `branding.logo_url` values are stored as relative paths (e.g. `/document-centre-logo.svg`). Email clients can't resolve relative URLs, so the header renders as a solid red band only.
+The proforma you just received (`INV-2026-01062`) still has the old, plain layout:
 
-**Fix in `send-order-email/index.ts` (`renderHtml`):**
-- Normalise `logo_url` to an absolute URL. If it starts with `/`, prefix with the production site origin (`https://document-centre.com`, with fall-back to `https://document-centre.lovable.app`).
-- Add `border:0;outline:none;text-decoration:none` to the `<img>` (Outlook hardening) and a small white background pad so dark logos remain visible on the primary-colour banner.
-
-### 2. Attach the invoice PDF instead of a "View order" link
-The PDF already exists in storage (`order_invoices.storage_bucket/path`). Today the email only links to the portal. We'll switch the `invoice_sent` event to actually attach the PDF.
-
-**a. Schema — add attachments support to outbox** (new migration):
-```sql
-ALTER TABLE public.email_outbox
-  ADD COLUMN IF NOT EXISTS attachments jsonb NOT NULL DEFAULT '[]'::jsonb;
 ```
-Attachment shape: `{ filename, storage_bucket, storage_path, content_type }`.
+PostNet South Africa | PostNet                PROFORMA INVOICE
+PostNet (Pty) Ltd                             Invoice No: …
+support@postnet.co.za                         Order No: …
+…
+Description           Qty   Unit Price   Total
+…
+Subtotal / Delivery / VAT / Total / Amount Due
+```
 
-**b. `_shared/email-queue.ts`:** extend `EnqueueEmailInput` with optional `attachments`; pass through to the insert.
+However, `supabase/functions/generate-invoice-pdf/index.ts` on disk already contains the new PostNet-style layout that matches the updated quote PDF:
 
-**c. `send-order-email/index.ts` (event = `invoice_sent`):**
-- Look up the invoice row (already done) and enqueue with `attachments: [{ filename: \`${invoice_number}.pdf\`, storage_bucket, storage_path, content_type: 'application/pdf' }]`.
-- Remove the `View order` CTA for this event (drop `ctaUrl` when `event === 'invoice_sent'`). Other events keep the CTA.
+- "Invoice From:" bordered box (top-left) with trading name, address, Tel, Fax, EMail
+- Logo + `PROFORMA INVOICE` title + number stacked top-right
+- "Invoice To:" and "Deliver To:" bordered boxes side-by-side
+- Brand-tinted metadata strip (Account No, VAT Reg No, Proforma Date, Order Number, Representative, Proforma Number)
+- 7-column items table (Item Code, Description, Quantity, Unit Price, Disc %, VAT %, Line Total) with spec key/value pairs under each line
+- Terms + Banking + Acceptance signature block (left), totals stack (right)
+- Disclaimer + per-page "Created / Page X of Y" footer
 
-**d. `email-dispatcher/index.ts`:** before sending, if `row.attachments?.length`, download each via `admin.storage.from(bucket).download(path)` into a Uint8Array, then:
-- **SMTP (nodemailer):** pass `attachments: [{ filename, content: Buffer.from(bytes), contentType }]`.
-- **Microsoft Graph:** add to message body as `attachments: [{ "@odata.type": "#microsoft.graph.fileAttachment", name, contentType, contentBytes: base64(bytes) }]`.
-- **Gmail OAuth:** build a multipart/mixed MIME message (currently sends single-part); include attachments as base64 parts.
-Add a 10 MB total cap and log + fail the row with a clear error if exceeded.
+In other words: the code is right, the deployed copy is stale. The earlier redeploy in this thread only pushed `send-order-email` and `email-dispatcher`; `generate-invoice-pdf` was edited but never redeployed, so production is still running the previous build.
 
-Select the new `attachments` column in the outbox claim query.
+## Fix
 
-### 3. Footer email = sending branch's email
-**Cause:** Footer hard-codes `tenant.support_email`. Branch context is ignored.
-
-**Fix in `send-order-email/index.ts`:**
-- Fetch the branch when `order.branch_id` is set: `select name, email, billing_email, phone from branches`.
-- In `renderHtml`, prefer `branch.email` (fallback chain: `branch.email` → `branch.billing_email` → `notif.sender_email` → `tenant.support_email`). Similarly prefer `branch.phone` over `tenant.support_phone`, and `branch.name` over `tenant.legal_name`/`tenant.name` for the footer line.
-- This is display-only; the actual SMTP `from`/sender resolution (already branch-aware via `resolveEmailAccount`) is unchanged.
+1. Redeploy `generate-invoice-pdf` (single edge function, no code changes).
+2. Regenerate the proforma for this order from the admin UI (it issues a new invoice number) and confirm:
+   - PROFORMA INVOICE title + number top-right
+   - Invoice From / Invoice To / Deliver To boxes render
+   - 7-column items table with spec breakdown under the line
+   - Terms, Banking (when EFT is enabled), Acceptance signature lines
+   - Totals stack on the right matches the quote PDF
 
 ## Files touched
-- `supabase/functions/send-order-email/index.ts` — logo absolutising, conditional CTA, attachments wiring, branch-aware footer.
-- `supabase/functions/_shared/email-queue.ts` — `attachments` field.
-- `supabase/functions/email-dispatcher/index.ts` — download + attach across SMTP / Graph / Gmail; include `attachments` in outbox select.
-- `supabase/migrations/<new>.sql` — add `email_outbox.attachments`.
+
+- None. Deploy-only.
 
 ## Out of scope
-- No changes to `generate-invoice-pdf`, `quote-pdf`, `send-quote-email`, or any UI.
-- No change to idempotency, SMTP resolution, or banking-details block.
+
+- Any further design tweaks to the invoice layout — call those out separately once you've seen the redeployed output.
+- The quote PDF, the email template, attachments, or footer email work already done in this thread.
