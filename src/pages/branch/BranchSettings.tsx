@@ -15,7 +15,7 @@ import BranchIdentityBankingCard from "@/components/branch/BranchIdentityBanking
 import { PaymentGatewaysCard } from "@/components/payments/PaymentGatewaysCard";
 import { BranchEmailAccountsPanel } from "@/components/branch/BranchEmailAccountsPanel";
 import { BranchUsersPanel } from "@/components/branch/BranchUsersPanel";
-import { useTenantContext as useTC2 } from "@/hooks/useTenantContext";
+
 
 interface BranchSettingsData {
   manager_name: string;
