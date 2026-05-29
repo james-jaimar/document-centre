@@ -132,7 +132,8 @@ function renderHtml(opts: {
   const primary = (opts.branding.primary_color as string) || "#1a1a2e";
   const portalName = (opts.branding.portal_name as string) || opts.tenant.trading_name || opts.tenant.name;
   const origin = resolveTenantOrigin(opts.tenant);
-  const logo = absolutiseUrl(opts.branding.logo_url as string | undefined, origin);
+  const rawLogo = absolutiseUrl(opts.branding.logo_url as string | undefined, origin);
+  const logo = toEmailSafeLogoUrl(rawLogo);
   const headline = HEADLINES[opts.event];
   const body = BODIES[opts.event](opts.ctx);
   const showBank =
