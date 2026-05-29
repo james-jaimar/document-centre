@@ -49,11 +49,21 @@ Deno.serve(async (req) => {
   const isPlatformAdmin = !!roleRow;
 
   if (!isPlatformAdmin) {
-    const { data: m } = await sb.from("tenant_memberships")
+    const { data: tenantAdminMembership } = await sb.from("tenant_memberships")
       .select("role").eq("profile_id", user.id).eq("tenant_id", tenantId).eq("is_active", true)
       .in("role", ["owner", "admin"]).maybeSingle();
-    if (!m) return json({ error: "Forbidden" }, 403);
+
+    let allowed = !!tenantAdminMembership;
+    // Branch managers can manage their own branch's credentials.
+    if (!allowed && body.scope === "branch") {
+      const { data: bm } = await sb.from("tenant_memberships")
+        .select("id").eq("profile_id", user.id).eq("tenant_id", tenantId)
+        .eq("branch_id", body.scope_id).eq("role", "branch_manager").eq("is_active", true).maybeSingle();
+      allowed = !!bm;
+    }
+    if (!allowed) return json({ error: "Forbidden" }, 403);
   }
+
 
   const credBlob: Record<string, string> = {};
   if (body.provider === "stripe") {
