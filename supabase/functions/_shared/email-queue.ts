@@ -165,6 +165,7 @@ export async function enqueueEmail(
     next_attempt_at: input.scheduled_for ?? new Date().toISOString(),
     created_by_profile_id: input.created_by_profile_id ?? null,
     metadata: input.metadata ?? {},
+    attachments: input.attachments ?? [],
     status: "queued",
   };
 
