@@ -17,9 +17,10 @@ import { Building2, Palette, Workflow, Receipt, Upload, Bell, FileText, Truck, M
 
 const AdminSettings = () => {
   const [searchParams] = useSearchParams();
-  const { membershipRole } = useTenantContext();
+  const { membershipRole, isOverriding } = useTenantContext();
   const defaultTab = searchParams.get("tab") || "general";
-  const isOwnerOrAdmin = membershipRole === "owner" || membershipRole === "admin";
+  // Platform admins impersonating a tenant (isOverriding) should also see Billing.
+  const isOwnerOrAdmin = isOverriding || membershipRole === "owner" || membershipRole === "admin";
 
   return (
     <div className="space-y-6">
