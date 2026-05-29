@@ -30,10 +30,30 @@ Deno.serve(async (req) => {
   const { order_id, provider, return_url, cancel_url } = parsed.data;
 
   // Confirm order is visible to this user via RLS.
-  const { data: ownedOrder } = await sbUser.from("orders").select("id").eq("id", order_id).maybeSingle();
+  const { data: ownedOrder } = await sbUser.from("orders").select("id, branch_id, tenant_id").eq("id", order_id).maybeSingle();
   if (!ownedOrder) return json({ error: "Forbidden" }, 403);
 
+  // Branch subscription gate — block new payment sessions for read-only branches.
+  if (ownedOrder.branch_id) {
+    const sbAdmin = adminClient();
+    const [{ data: roleRow }, { data: tmRow }, { data: subRow }] = await Promise.all([
+      sbAdmin.from("user_roles").select("role").eq("user_id", user.id).eq("role", "platform_admin").maybeSingle(),
+      sbAdmin.from("tenant_memberships").select("role").eq("profile_id", user.id).eq("tenant_id", ownedOrder.tenant_id).eq("is_active", true).in("role", ["owner", "admin"]).maybeSingle(),
+      sbAdmin.from("branch_subscriptions").select("status,billing_status").eq("branch_id", ownedOrder.branch_id).maybeSingle(),
+    ]);
+    const bypass = !!roleRow || !!tmRow;
+    if (!bypass) {
+      const status = subRow?.status || "";
+      const billing = subRow?.billing_status || "";
+      const ok = status === "active" || status === "trialing" || billing === "paid" || billing === "free";
+      if (!ok) {
+        return json({ error: "This branch's subscription is not active. Payments are paused.", code: "branch_subscription_blocked" }, 402);
+      }
+    }
+  }
+
   const { order, gateways } = await resolveGatewaysForOrder(order_id);
+
   const gw = gateways.find((g) => g.provider === provider);
   if (!gw) return json({ error: `Provider ${provider} not enabled or not configured` }, 400);
 
