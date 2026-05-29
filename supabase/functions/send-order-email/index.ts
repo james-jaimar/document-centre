@@ -107,17 +107,18 @@ function absolutiseUrl(url: string | undefined | null, origin: string = DEFAULT_
   return `${origin}/${trimmed}`;
 }
 
-// Many email clients (Gmail in particular) strip SVG <img> tags. Route SVG
-// logos through images.weserv.nl which rasterises them to PNG on the fly so
-// the logo renders inline. Other formats are returned unchanged.
-function toEmailSafeLogoUrl(url: string | undefined): string | undefined {
-  if (!url) return undefined;
-  if (!/^https?:\/\//i.test(url)) return url;
-  const isSvg = /\.svg(\?|$)/i.test(url);
-  if (!isSvg) return url;
-  // weserv requires the URL without the protocol.
-  const stripped = url.replace(/^https?:\/\//i, "");
-  return `https://images.weserv.nl/?url=${encodeURIComponent(stripped)}&output=png&h=120`;
+// Many email clients (Gmail in particular) strip or fail to render SVG
+// <img> tags. Pick an email-safe raster logo URL: prefer an explicit
+// `email_logo_url` branding setting (PNG/JPG/WebP); otherwise use the main
+// logo only if it's already a raster format. SVG-only logos fall back to
+// the portal name as text rather than a broken/proxied image.
+function pickEmailLogo(branding: any, origin: string): string | undefined {
+  const isRaster = (u: string) => /\.(png|jpe?g|webp|gif)(\?|$)/i.test(u);
+  const emailLogo = absolutiseUrl(branding.email_logo_url as string | undefined, origin);
+  if (emailLogo && isRaster(emailLogo)) return emailLogo;
+  const main = absolutiseUrl(branding.logo_url as string | undefined, origin);
+  if (main && isRaster(main)) return main;
+  return undefined;
 }
 
 function renderHtml(opts: {
@@ -132,8 +133,7 @@ function renderHtml(opts: {
   const primary = (opts.branding.primary_color as string) || "#1a1a2e";
   const portalName = (opts.branding.portal_name as string) || opts.tenant.trading_name || opts.tenant.name;
   const origin = resolveTenantOrigin(opts.tenant);
-  const rawLogo = absolutiseUrl(opts.branding.logo_url as string | undefined, origin);
-  const logo = toEmailSafeLogoUrl(rawLogo);
+  const logo = pickEmailLogo(opts.branding, origin);
   const headline = HEADLINES[opts.event];
   const body = BODIES[opts.event](opts.ctx);
   const showBank =
