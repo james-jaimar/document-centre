@@ -65,7 +65,7 @@ export function useBranchPlans(regionId?: string) {
   return useQuery({
     queryKey: ["platform_pricing_plans", "branch", regionId],
     queryFn: async () => {
-      let q = supabase.from("platform_pricing_plans").select("*").eq("scope" as any, "branch").order("sort_order");
+      let q: any = (supabase as any).from("platform_pricing_plans").select("*").eq("scope", "branch").order("sort_order");
       if (regionId) q = q.eq("region_id", regionId);
       const { data, error } = await q;
       if (error) throw error;

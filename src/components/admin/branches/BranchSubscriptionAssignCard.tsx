@@ -41,10 +41,10 @@ export function BranchSubscriptionAssignCard({ branchId }: Props) {
   const { data: branchPlans } = useQuery({
     queryKey: ["platform_pricing_plans", "branch", "all"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("platform_pricing_plans")
         .select("*")
-        .eq("scope" as any, "branch")
+        .eq("scope", "branch")
         .order("sort_order");
       if (error) throw error;
       return (data ?? []) as any[];
