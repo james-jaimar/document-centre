@@ -4451,7 +4451,13 @@ export type Database = {
       tenants: {
         Row: {
           app_id: string | null
+          assigned_discount_type: string | null
+          assigned_discount_value: number | null
+          assigned_plan_slug: string | null
+          assigned_region_id: string | null
+          assigned_trial_days: number | null
           billing_email: string | null
+          billing_notes: string | null
           country: string
           created_at: string
           custom_domain: string | null
@@ -4466,6 +4472,8 @@ export type Database = {
           name: string
           onboarding_status: string
           payment_mode: string
+          plan_assigned_at: string | null
+          plan_assigned_by: string | null
           plan_slug: string
           proof_mode: string
           registration_number: string | null
@@ -4482,7 +4490,13 @@ export type Database = {
         }
         Insert: {
           app_id?: string | null
+          assigned_discount_type?: string | null
+          assigned_discount_value?: number | null
+          assigned_plan_slug?: string | null
+          assigned_region_id?: string | null
+          assigned_trial_days?: number | null
           billing_email?: string | null
+          billing_notes?: string | null
           country?: string
           created_at?: string
           custom_domain?: string | null
@@ -4497,6 +4511,8 @@ export type Database = {
           name: string
           onboarding_status?: string
           payment_mode?: string
+          plan_assigned_at?: string | null
+          plan_assigned_by?: string | null
           plan_slug?: string
           proof_mode?: string
           registration_number?: string | null
@@ -4513,7 +4529,13 @@ export type Database = {
         }
         Update: {
           app_id?: string | null
+          assigned_discount_type?: string | null
+          assigned_discount_value?: number | null
+          assigned_plan_slug?: string | null
+          assigned_region_id?: string | null
+          assigned_trial_days?: number | null
           billing_email?: string | null
+          billing_notes?: string | null
           country?: string
           created_at?: string
           custom_domain?: string | null
@@ -4528,6 +4550,8 @@ export type Database = {
           name?: string
           onboarding_status?: string
           payment_mode?: string
+          plan_assigned_at?: string | null
+          plan_assigned_by?: string | null
           plan_slug?: string
           proof_mode?: string
           registration_number?: string | null
@@ -4548,6 +4572,13 @@ export type Database = {
             columns: ["app_id"]
             isOneToOne: false
             referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenants_assigned_region_id_fkey"
+            columns: ["assigned_region_id"]
+            isOneToOne: false
+            referencedRelation: "platform_pricing_regions"
             referencedColumns: ["id"]
           },
         ]
@@ -4793,6 +4824,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      apply_tenant_plan_to_branches: {
+        Args: { p_tenant_id: string }
+        Returns: number
+      }
       branch_subscription_active: {
         Args: { p_branch_id: string }
         Returns: boolean
