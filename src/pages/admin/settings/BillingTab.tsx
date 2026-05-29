@@ -143,6 +143,8 @@ export function BillingTab() {
 
   return (
     <div className="space-y-6">
+      {tenantId && <TenantPlanAssignmentCard tenantId={tenantId} />}
+
       {/* Current Subscription Status */}
       <Card>
         <CardHeader>
