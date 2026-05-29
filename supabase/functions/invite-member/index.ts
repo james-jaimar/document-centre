@@ -127,9 +127,11 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
     const {
-      email, tenant_id, app_id, role, branch_id, can_view_all_orders,
+      email, tenant_id, app_id, role, can_view_all_orders,
       first_name, last_name, phone, job_title, send_email,
     } = body;
+    let branch_id: string | null = body.branch_id ?? null;
+
 
     if (!email || !tenant_id || !app_id || !role) {
       return err("Missing required fields: email, tenant_id, app_id, role");
@@ -187,8 +189,9 @@ Deno.serve(async (req) => {
         return err("Branch managers can only invite users into their own branch", 403);
       }
       // Force-assign the branch to the caller's own branch
-      body.branch_id = callerBranchManager.branch_id;
+      branch_id = callerBranchManager.branch_id;
     }
+
 
 
 
