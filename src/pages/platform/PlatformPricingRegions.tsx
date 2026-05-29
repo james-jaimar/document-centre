@@ -25,6 +25,7 @@ interface Plan {
   price: number;
   sort_order: number;
   stripe_price_id: string | null;
+  scope?: string;
 }
 
 const FLAG_MAP: Record<string, string> = {
