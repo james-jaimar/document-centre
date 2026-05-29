@@ -46,12 +46,13 @@ Deno.serve(async (req) => {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
+        const branchId = session.metadata?.branch_id;
         const tenantId = session.metadata?.tenant_id;
-        if (!tenantId) break;
-
-        // Upsert subscription record
-        if (session.subscription) {
-          const sub = await stripe.subscriptions.retrieve(session.subscription as string);
+        if (!session.subscription) break;
+        const sub = await stripe.subscriptions.retrieve(session.subscription as string);
+        if (branchId) {
+          await upsertBranchSubscription(branchId, sub.metadata?.tenant_id || tenantId!, session.customer as string, sub);
+        } else if (tenantId) {
           await upsertSubscription(tenantId, session.customer as string, sub);
         }
         break;
@@ -60,51 +61,62 @@ Deno.serve(async (req) => {
       case "customer.subscription.created":
       case "customer.subscription.updated": {
         const sub = event.data.object as Stripe.Subscription;
+        const branchId = sub.metadata?.branch_id;
         const tenantId = sub.metadata?.tenant_id;
-        if (!tenantId) break;
-        await upsertSubscription(tenantId, sub.customer as string, sub);
+        if (branchId) {
+          await upsertBranchSubscription(branchId, tenantId!, sub.customer as string, sub);
+        } else if (tenantId) {
+          await upsertSubscription(tenantId, sub.customer as string, sub);
+        }
         break;
       }
 
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;
+        const branchId = sub.metadata?.branch_id;
         const tenantId = sub.metadata?.tenant_id;
-        if (!tenantId) break;
-
-        await supabaseAdmin
-          .from("tenant_subscriptions")
-          .update({
-            status: "cancelled",
-            cancelled_at: new Date().toISOString(),
-          })
-          .eq("stripe_subscription_id", sub.id);
-
-        // Downgrade tenant plan
-        await supabaseAdmin
-          .from("tenants")
-          .update({ plan_slug: "starter" })
-          .eq("id", tenantId);
+        if (branchId) {
+          await supabaseAdmin
+            .from("branch_subscriptions" as any)
+            .update({ status: "cancelled", billing_status: "pending_payment", cancelled_at: new Date().toISOString() })
+            .eq("stripe_subscription_id", sub.id);
+        } else if (tenantId) {
+          await supabaseAdmin
+            .from("tenant_subscriptions")
+            .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
+            .eq("stripe_subscription_id", sub.id);
+          await supabaseAdmin.from("tenants").update({ plan_slug: "starter" }).eq("id", tenantId);
+        }
         break;
       }
 
       case "invoice.payment_succeeded": {
         const invoice = event.data.object as Stripe.Invoice;
-        if (invoice.subscription) {
-          await supabaseAdmin
-            .from("tenant_subscriptions")
-            .update({ status: "active" })
-            .eq("stripe_subscription_id", invoice.subscription as string);
+        if (!invoice.subscription) break;
+        const subId = invoice.subscription as string;
+        // Try branch table first then tenant table — only one will hit
+        const { data: bsHit } = await supabaseAdmin
+          .from("branch_subscriptions" as any)
+          .update({ status: "active", billing_status: "paid" })
+          .eq("stripe_subscription_id", subId).select("id");
+        if (!bsHit || (bsHit as any[]).length === 0) {
+          await supabaseAdmin.from("tenant_subscriptions")
+            .update({ status: "active" }).eq("stripe_subscription_id", subId);
         }
         break;
       }
 
       case "invoice.payment_failed": {
         const invoice = event.data.object as Stripe.Invoice;
-        if (invoice.subscription) {
-          await supabaseAdmin
-            .from("tenant_subscriptions")
-            .update({ status: "past_due" })
-            .eq("stripe_subscription_id", invoice.subscription as string);
+        if (!invoice.subscription) break;
+        const subId = invoice.subscription as string;
+        const { data: bsHit } = await supabaseAdmin
+          .from("branch_subscriptions" as any)
+          .update({ status: "past_due" })
+          .eq("stripe_subscription_id", subId).select("id");
+        if (!bsHit || (bsHit as any[]).length === 0) {
+          await supabaseAdmin.from("tenant_subscriptions")
+            .update({ status: "past_due" }).eq("stripe_subscription_id", subId);
         }
         break;
       }
