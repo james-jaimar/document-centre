@@ -107,6 +107,19 @@ function absolutiseUrl(url: string | undefined | null, origin: string = DEFAULT_
   return `${origin}/${trimmed}`;
 }
 
+// Many email clients (Gmail in particular) strip SVG <img> tags. Route SVG
+// logos through images.weserv.nl which rasterises them to PNG on the fly so
+// the logo renders inline. Other formats are returned unchanged.
+function toEmailSafeLogoUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  if (!/^https?:\/\//i.test(url)) return url;
+  const isSvg = /\.svg(\?|$)/i.test(url);
+  if (!isSvg) return url;
+  // weserv requires the URL without the protocol.
+  const stripped = url.replace(/^https?:\/\//i, "");
+  return `https://images.weserv.nl/?url=${encodeURIComponent(stripped)}&output=png&h=120`;
+}
+
 function renderHtml(opts: {
   branding: any;
   tenant: any;
