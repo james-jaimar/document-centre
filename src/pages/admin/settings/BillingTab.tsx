@@ -11,6 +11,7 @@ import { useTenantContext } from "@/hooks/useTenantContext";
 import { useTenantSubscriptions } from "@/hooks/useTenantSubscriptions";
 import { formatPrice } from "@/lib/formatCurrency";
 import { BranchSubscriptionsOverview } from "@/components/admin/branches/BranchSubscriptionsOverview";
+import { TenantPlanAssignmentCard } from "@/components/admin/billing/TenantPlanAssignmentCard";
 
 interface PricingRegion {
   id: string;
