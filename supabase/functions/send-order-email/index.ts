@@ -87,16 +87,24 @@ const BODIES: Record<EventKey, (ctx: any) => string> = {
     `<br><br>Please pay via EFT using <strong>${c.orderNo}</strong> as your reference.`,
 };
 
-const SITE_ORIGIN = "https://document-centre.com";
+const DEFAULT_ORIGIN = "https://document-centre.com";
 
-function absolutiseUrl(url: string | undefined | null): string | undefined {
+function resolveTenantOrigin(tenant: any): string {
+  const raw = (tenant?.custom_domain as string | undefined)?.trim();
+  if (!raw) return DEFAULT_ORIGIN;
+  const stripped = raw.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+  if (!stripped) return DEFAULT_ORIGIN;
+  return `https://${stripped}`;
+}
+
+function absolutiseUrl(url: string | undefined | null, origin: string = DEFAULT_ORIGIN): string | undefined {
   if (!url) return undefined;
   const trimmed = String(url).trim();
   if (!trimmed) return undefined;
   if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith("data:")) return trimmed;
   if (trimmed.startsWith("//")) return `https:${trimmed}`;
-  if (trimmed.startsWith("/")) return `${SITE_ORIGIN}${trimmed}`;
-  return `${SITE_ORIGIN}/${trimmed}`;
+  if (trimmed.startsWith("/")) return `${origin}${trimmed}`;
+  return `${origin}/${trimmed}`;
 }
 
 function renderHtml(opts: {
