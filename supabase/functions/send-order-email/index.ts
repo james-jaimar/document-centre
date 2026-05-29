@@ -266,11 +266,27 @@ Deno.serve(async (req) => {
     };
 
     const subject = SUBJECTS[eventKey](ctx.orderNo, ctx);
-    const ctaUrl = tenant?.slug ? `https://document-centre.lovable.app/t/${tenant.slug}/orders/${order_id}` : undefined;
-    const html = renderHtml({ branding, tenant, bank, event: eventKey, ctx, ctaUrl });
+    // Suppress the View-Order CTA on invoice/proforma emails — the PDF is attached instead.
+    const ctaUrl =
+      eventKey === "invoice_sent"
+        ? undefined
+        : tenant?.slug
+        ? `https://document-centre.com/t/${tenant.slug}/orders/${order_id}`
+        : undefined;
+    const html = renderHtml({ branding, tenant, branch, bank, event: eventKey, ctx, ctaUrl });
 
     const senderName = (notif.sender_name as string) || tenant.trading_name || tenant.name || "Orders";
     const senderEmail = (notif.sender_email as string) || null;
+
+    const attachments =
+      eventKey === "invoice_sent" && invoice?.storage_bucket && invoice?.storage_path
+        ? [{
+            filename: `${invoice.invoice_number || "invoice"}.pdf`,
+            storage_bucket: invoice.storage_bucket,
+            storage_path: invoice.storage_path,
+            content_type: "application/pdf",
+          }]
+        : undefined;
 
     await enqueueEmail(admin, {
       tenant_id: order.tenant_id,
@@ -286,6 +302,7 @@ Deno.serve(async (req) => {
       related_type: "order",
       related_id: order_id,
       metadata: { event_key: eventKey, order_number: ctx.orderNo, ...(invoice_id ? { invoice_id } : {}) },
+      attachments,
     });
 
     // Kick the dispatcher so the customer email goes out promptly.
