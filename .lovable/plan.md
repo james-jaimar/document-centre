@@ -1,107 +1,55 @@
-## Per-branch subscriptions (Postnet)
 
-Mirrors the existing tenant subscription model but at branch level. Each branch is its own Stripe customer and pays its own bill. Tenant admins assign the plan; branch managers complete the Stripe checkout.
+## Goal
 
-### 1. Plan catalogue — branch tier
+Allocate the subscription plan at the **tenant** level (Postnet). Every active branch then automatically inherits that plan. Stripe billing still happens per branch (one Stripe sub per branch), but assignment + plan changes are managed centrally.
 
-Extend `platform_pricing_plans` with a `scope` column:
+## Changes
 
-- `scope text not null default 'tenant'` — values: `'tenant' | 'branch'`
-- Tenant-level UIs filter `scope = 'tenant'` (no behaviour change).
-- Branch assignment UI filters `scope = 'branch'`.
+### 1. Database
 
-Platform admin manages branch-scoped plans on the existing `PlatformPricingRegions` page via a new "Tenant plans / Branch plans" toggle. You paste `stripe_price_id` for each branch tier exactly like you do for tenant plans today.
+Add tenant-level assignment fields to `tenants`:
+- `assigned_plan_slug text`
+- `assigned_region_id uuid references platform_pricing_regions(id)`
+- `discount_type text`, `discount_value numeric`, `trial_days int`, `billing_notes text`
 
-### 2. New table: `branch_subscriptions`
+New RPC `apply_tenant_plan_to_branches(p_tenant_id uuid)`:
+- For every active branch of the tenant, upsert a row in `branch_subscriptions` with the tenant's assigned plan/region/discount/trial.
+- Overwrites existing `assigned_plan_slug` on every branch (per your choice).
+- Leaves Stripe-managed fields (`stripe_subscription_id`, `status`, `current_period_*`) untouched so existing paid subs keep working; only the assigned plan + commercial terms are synced.
+- SECURITY DEFINER, gated to platform_admin or tenant_admin.
 
-Mirror of `tenant_subscriptions`, keyed by `branch_id`:
+Trigger on `branches` insert (when `is_active = true`): if the tenant has an assigned plan, seed a `branch_subscriptions` row for the new branch automatically.
 
-```
-branch_subscriptions (
-  id, branch_id (unique, fk),
-  tenant_id, region_id,
-  stripe_customer_id, stripe_subscription_id,
-  plan_slug, status, billing_status,
-  assigned_plan_slug, assigned_at, assigned_by,
-  promo_code_id, discount_type, discount_value, trial_days,
-  current_period_start, current_period_end,
-  trial_ends_at, cancelled_at,
-  metadata jsonb, created_at, updated_at
-)
-```
+### 2. Edge function
 
-RLS:
-- Platform admin: full access.
-- Tenant admin (owner/admin of `branch.tenant_id`): full access — this is how they assign plans, promo codes, trials.
-- Branch manager of that branch: SELECT only (read their own status / open Stripe portal).
-- Service role: full (webhooks).
+`assign-tenant-plan` (new): writes the assignment onto `tenants`, then calls `apply_tenant_plan_to_branches`. Returns a count of branches updated.
 
-Grants: `authenticated` select/insert/update/delete; `service_role` all.
+### 3. Tenant admin UI (`/admin/settings` → Billing tab)
 
-### 3. Edge functions
+Replace the current "Subscription" card (which today shows the tenant's own sub) with a **Tenant Subscription Plan** card that lets the tenant admin (and platform admin):
+- Pick region + plan slug (only `scope='branch'` plans, since each branch pays its own).
+- Optionally set discount / trial / notes.
+- Save → calls `assign-tenant-plan` → toast shows "Applied to N branches".
+- Shows the current assigned plan and last-applied timestamp.
 
-**`create-branch-checkout`** (clone of `create-checkout`):
-- Auth: branch manager of `branch_id`, OR tenant admin, OR platform admin.
-- Per-branch Stripe customer created from `branch.billing_email` / `branch.trading_name`.
-- Passes `branch_id` + `tenant_id` in session + subscription metadata.
-- Upserts `branch_subscriptions` with `status='incomplete'` and the Stripe customer id.
+The existing **Branch Subscriptions** overview table stays below it so the admin can see per-branch Stripe status (paid / past_due / etc.) at a glance.
 
-**`stripe-webhook`** — extend to route on metadata:
-- If `metadata.branch_id` present → `upsertBranchSubscription` (new helper) and skip tenant logic.
-- Otherwise existing tenant flow unchanged.
-- On `customer.subscription.deleted` for a branch: set `status='cancelled'`, do NOT touch tenant plan.
+### 4. Branch-level UI
 
-**`assign-branch-plan`** (new, mirrors the existing manual assign flow):
-- Tenant-admin or platform-admin only.
-- Sets `assigned_plan_slug`, `discount_*`, `trial_days`, `promo_code_id` on `branch_subscriptions` so the branch's next checkout picks them up.
+Remove the per-branch "assign plan" controls (`BranchSubscriptionAssignCard` on `AdminBranchDetail`). Branch detail keeps a **read-only** subscription panel showing: inherited plan name, Stripe status, period dates, "Pay Now" if pending. No override.
 
-### 4. UI — Tenant admin portal
+The customer-facing `BranchSettings → Subscription` tab stays as today (payment + status), since payment is still per branch.
 
-**A. Central overview** — `Tenant → Settings → Billing → Branches` (new sub-section under the existing BillingTab):
-- Table: branch name | assigned plan | live status | period end | actions.
-- Inline "Assign plan" dialog (plan dropdown filtered to `scope='branch'`, promo code, discount, trial days). Mirrors the existing tenant `useUpsertSubscription` / `useUpdateTenantPlan` UX.
-- "Open Stripe portal" link if `stripe_customer_id` present.
+### 5. Platform tenants page
 
-**B. Per-branch detail** — `Tenant → Branches → [branch] → Subscription` (new tab on `AdminBranchDetail`):
-- Same assign controls, plus full Stripe state read-out, history, cancel.
+Optional small addition: column on `/platform/tenants` showing the tenant's assigned plan slug, so platform admins can see at a glance which tenants have a plan set.
 
-Both surfaces call the same hooks (`useBranchSubscription(branchId)`, `useAssignBranchPlan`).
+## Out of scope
 
-### 5. UI — Branch admin portal
+- No change to Stripe webhook routing — events still land on `branch_subscriptions` via `branch_id` metadata.
+- No change to the gate logic — `branch_subscription_active()` keeps reading `branch_subscriptions`.
+- Tenant-level Stripe subscription (the existing `tenant_subscriptions` row used for platform-only tenants without branches) is left intact; this flow only affects tenants that have branches.
 
-`BranchSettings` → new **Subscription** tab:
-- Read-only summary of currently assigned plan + status.
-- If `status != 'active' / 'trialing'`: prominent "Activate subscription" CTA → calls `create-branch-checkout` → redirects to Stripe Checkout.
-- If active: "Manage in Stripe" → Stripe billing portal session.
+## Migration / data backfill
 
-### 6. Soft block enforcement
-
-When a branch's `branch_subscriptions.status` is `past_due`, `cancelled`, or missing entirely:
-
-- Branch storefront (`/t/:slug/*` resolved to this branch) and branch admin become **read-only**:
-  - New gate hook `useBranchSubscriptionGate(branchId)` returns `{ readOnly, reason }`.
-  - Wrap order-create mutations (`order-engine`, `ensureOrder`, `payments-create-session`) to refuse when read-only.
-  - Show a persistent amber banner in BranchLayout + on storefront product pages: "This branch is currently read-only — contact the branch manager."
-- Existing orders remain viewable; payments on already-created orders still work.
-- Platform admin & tenant admin bypass the gate (so they can still manage / unblock).
-
-### 7. Migrations summary (single migration)
-
-1. `ALTER TABLE platform_pricing_plans ADD COLUMN scope text NOT NULL DEFAULT 'tenant' CHECK (scope IN ('tenant','branch'));`
-2. `CREATE TABLE public.branch_subscriptions (...)` + GRANTs + RLS + policies.
-3. `CREATE TRIGGER set_updated_at` on `branch_subscriptions`.
-4. Helper fn `public.user_can_read_branch_subscription(p_branch_id uuid)` — used by SELECT policy for branch managers.
-
-### Technical notes
-
-- No change to existing `tenant_subscriptions` — tenant-level billing keeps working as is.
-- Stripe webhook secret already configured; the same endpoint handles both flows.
-- `create-branch-checkout` reuses the `create-checkout` coupon / trial logic — extracted into a shared helper in `_shared/stripe.ts`.
-- Read-only enforcement is server-side (in the relevant edge functions) plus a UI banner — never trust the banner alone.
-- Ringfencing: every query / RLS policy keys on `branch_id`; tenant-level rollups never include branch financial data, and `stripe_customer_id` is unique per branch.
-
-### Out of scope (call out for later)
-
-- Consolidated invoicing to tenant HQ.
-- Branch self-service plan upgrade (today only tenant admin assigns the plan; branch just pays).
-- Stripe Connect / payouts per branch — separate concern from subscription billing.
+For Postnet specifically: once you set the tenant plan in the UI and click Save, the new RPC will populate every active Postnet branch in one shot. No manual SQL needed.
