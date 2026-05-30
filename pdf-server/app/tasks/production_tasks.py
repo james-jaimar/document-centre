@@ -65,6 +65,66 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
         job_repo.mark_running(db, pdf_job_id)
         bundle = load_job_bundle(job_id)
 
+        # ── Photo-prints branch ─────────────────────────────────────────
+        # Photo-prints jobs upload raw images (JPEG/PNG/etc.) instead of
+        # PDFs and carry their assembly spec on configuration.photo_prints.
+        # Handle them with a dedicated assembler that crops + paginates
+        # one page per copy, then short-circuits the document pipeline.
+        from app.services.photo_prints_assembly import (
+            is_photo_prints_job,
+            assemble_photo_prints,
+        )
+        if is_photo_prints_job(bundle):
+            cfg_pp = (bundle.configuration or {}).get("photo_prints") if isinstance(bundle.configuration, dict) else None
+            photo_spec_inputs = {
+                "engine": "photo_prints",
+                "print_size_slug": (cfg_pp or {}).get("print_size_slug"),
+                "finish_slug": (cfg_pp or {}).get("finish_slug"),
+                "border_slug": (cfg_pp or {}).get("border_slug"),
+                "photos": [
+                    {
+                        "id": p.get("id"),
+                        "src": p.get("original_storage_path"),
+                        "rotation": p.get("rotation"),
+                        "crop": p.get("croppedAreaPixels"),
+                        "qty": p.get("quantity"),
+                    }
+                    for p in ((cfg_pp or {}).get("photos") or [])
+                    if isinstance(p, dict)
+                ],
+                "photo_pipeline_version": 1,
+            }
+            photo_hash = pdf_ops.spec_hash(photo_spec_inputs)
+            existing_hash = bundle.job.get("print_ready_spec_hash")
+            existing_path = bundle.job.get("print_ready_pdf_path")
+            if (not force) and existing_hash == photo_hash and existing_path:
+                result = {
+                    "storage_path": existing_path,
+                    "reused_cache": True,
+                    "spec_hash": photo_hash,
+                }
+                job_repo.mark_done(db, pdf_job_id, result)
+                return result
+
+            from datetime import datetime, timezone
+            job_number = _safe(bundle.job.get("job_number"), pdf_job_id[:8])
+            with Workspace() as ws:
+                storage_path, report = assemble_photo_prints(bundle, ws, job_number)
+
+            write_artefact_path(job_id, "print_ready_pdf_path", storage_path)
+            write_job_field(job_id, "assembly_report", report)
+            write_job_field(job_id, "print_ready_spec_hash", photo_hash)
+            write_job_field(job_id, "print_ready_assembled_at", datetime.now(timezone.utc).isoformat())
+
+            result = {
+                "storage_path": storage_path,
+                "reused_cache": False,
+                "spec_hash": photo_hash,
+                **report,
+            }
+            job_repo.mark_done(db, pdf_job_id, result)
+            return result
+
         if not bundle.asset_paths:
             cfg = bundle.configuration or {}
             src_item = cfg.get("source_order_item_id") if isinstance(cfg, dict) else None
@@ -74,6 +134,7 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                 "(order_items → documents → assets) and upload-path heuristic. "
                 f"job_id={job_id}, source_order_item_id={src_item}"
             )
+
 
         target = bundle.target
         # Spec hash short-circuits repeat work.
