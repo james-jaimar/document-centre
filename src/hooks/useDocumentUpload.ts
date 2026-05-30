@@ -771,17 +771,23 @@ export function useDocumentUpload(
       try {
         updateUpload(fileName, { statusText: "Registering file…", progress: 30 });
 
-        // Register asset WITHOUT auto-queuing rasterization
-        const { asset_id } = await createAsset({
+        // Register asset WITHOUT auto-queuing rasterization. The server
+        // runs a pikepdf-only probe inline and returns metadata in the
+        // response — no Celery hop for inspect.
+        const { asset_id, inline_inspect } = await createAsset({
           original_filename: fileName,
           media_type: "application/pdf",
           source_storage_path: storagePath,
           auto_queue: false,
+          inline_inspect: true,
         });
 
         // Defer finalize so the outer uploadFile flow can chain print-ready
         // → generate_previews server-side (single round-trip).
-        return await inspectExistingAsset(docId, asset_id, fileName, { skipFinalize: true });
+        return await inspectExistingAsset(docId, asset_id, fileName, {
+          skipFinalize: true,
+          inlineInspect: inline_inspect,
+        });
       } catch (err: any) {
         console.error("[upload] inspectDocument failed:", err);
         toast({
