@@ -721,6 +721,10 @@ def prepare_for_product(
 
     This replaces the fragile multi-job client-side sequencing that
     previously let Ghostscript revert pypdf page rotations.
+
+    Idempotency: a signature of the prepare inputs is stamped onto the
+    asset metadata. Re-running with the same inputs is a no-op (returns
+    immediately without downloading or re-running Ghostscript).
     """
     db = _db()
     try:
@@ -728,6 +732,34 @@ def prepare_for_product(
         asset = asset_repo.get_asset(db, asset_id)
         if not asset:
             raise ValueError(f"Asset not found: {asset_id}")
+
+        # ── Idempotency guard ─────────────────────────────────────
+        # Build a stable signature of every input that would change the
+        # output. If the asset's metadata records the exact same
+        # signature from a previous successful run, skip the entire
+        # pipeline (no download, no Ghostscript, no upload).
+        prepare_sig = {
+            "dominant_orientation": dominant_orientation,
+            "target_width_mm": target_width_mm,
+            "target_height_mm": target_height_mm,
+            "fit_mode": fit_mode,
+            "dest_profile": dest_profile,
+            "intent": intent,
+            "respect_trim_box": respect_trim_box,
+        }
+        existing_meta = asset.get("metadata") or {}
+        if existing_meta.get("prepare_for_product_sig") == prepare_sig:
+            result = {
+                "skipped": True,
+                "reason": "already_prepared",
+                "storage_path": asset.get("normalized_storage_path"),
+                "normalized_storage_path": asset.get("normalized_storage_path"),
+                "page_count": asset.get("page_count"),
+                "width_pt": asset.get("width_pt"),
+                "height_pt": asset.get("height_pt"),
+            }
+            job_repo.mark_done(db, job_id, result)
+            return result
 
         prefix = _tenant_prefix(asset.get("source_storage_path"))
         with Workspace() as ws:
@@ -762,7 +794,7 @@ def prepare_for_product(
 
             # Update metadata to record what was done
             existing_meta = asset.get("metadata") or {}
-            new_meta = {**existing_meta}
+            new_meta = {**existing_meta, "prepare_for_product_sig": prepare_sig}
             if dest_profile:
                 new_meta["print_ready_profile"] = dest_profile
                 new_meta["print_ready_intent"] = intent

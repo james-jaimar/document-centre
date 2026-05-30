@@ -10,6 +10,14 @@ class AssetCreate(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     auto_queue: bool = True
     source_url: str | None = None
+    # When True (default), the route downloads the PDF once and runs a
+    # pikepdf-only inspect inline so the response carries
+    # page_count/width_pt/height_pt/boxes/mixed_orientation/status
+    # synchronously. The client can then skip the legacy inspect_asset
+    # Celery job + its queue hop entirely.
+    # Ignored for non-PDF media types (Office files still need
+    # convert_office before any inspection is possible).
+    inline_inspect: bool = True
 
 
 class AssetResponse(BaseModel):
