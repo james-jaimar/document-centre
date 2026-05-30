@@ -46,6 +46,12 @@ class JobBundle:
     # Raw configuration JSON from the matching order_item (carries
     # merge_directives emitted by buildJobSnapshot).
     configuration: dict[str, Any] | None = None
+    # Optional extras — populated best-effort for richer artefacts (job ticket).
+    branch: dict[str, Any] | None = None
+    branding: dict[str, Any] | None = None      # {primary_color, logo_url, ...}
+    delivery_address: dict[str, Any] | None = None
+    order_item: dict[str, Any] | None = None    # matching order_items row
+
 
 
 def _client() -> Client:
@@ -279,6 +285,68 @@ def load_job_bundle(job_id: str) -> JobBundle:
         except Exception:
             customer = None
 
+    # ---- Optional extras (best-effort) ----
+    branch = None
+    if order and order.get("branch_id"):
+        try:
+            branch = (
+                sb.table("branches")
+                .select("name,trading_name,address,city,province,postal_code,country,phone,email")
+                .eq("id", order["branch_id"])
+                .single()
+                .execute()
+                .data
+            )
+        except Exception:
+            branch = None
+
+    branding = None
+    if job.get("tenant_id"):
+        try:
+            rows = (
+                sb.table("tenant_settings")
+                .select("setting_key,setting_value")
+                .eq("tenant_id", job["tenant_id"])
+                .eq("category", "branding")
+                .execute()
+                .data
+                or []
+            )
+            branding = {r["setting_key"]: r["setting_value"] for r in rows}
+        except Exception:
+            branding = None
+
+    delivery_address = None
+    if order:
+        try:
+            addr_rows = (
+                sb.table("order_addresses")
+                .select("*")
+                .eq("order_id", order["id"])
+                .execute()
+                .data
+                or []
+            )
+            # Prefer explicit delivery/shipping address, else first row.
+            for r in addr_rows:
+                if (r.get("address_type") or "").lower() in ("delivery", "shipping"):
+                    delivery_address = r
+                    break
+            if delivery_address is None and addr_rows:
+                delivery_address = addr_rows[0]
+        except Exception:
+            delivery_address = None
+
+    order_item = None
+    item_id = job.get("order_item_id") or source_order_item_id
+    if item_id:
+        for it in items:
+            if it.get("id") == item_id:
+                order_item = it
+                break
+    if order_item is None and items:
+        order_item = items[0]
+
     return JobBundle(
         job=job,
         order=order,
@@ -290,7 +358,12 @@ def load_job_bundle(job_id: str) -> JobBundle:
         target=_extract_target_spec(job),
         section_paths=section_paths,
         configuration=configuration,
+        branch=branch,
+        branding=branding,
+        delivery_address=delivery_address,
+        order_item=order_item,
     )
+
 
 
 def write_artefact_path(job_id: str, column: str, storage_path: str) -> None:
