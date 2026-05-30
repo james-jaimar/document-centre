@@ -21,6 +21,8 @@ import { PAYMENT_STATUS_CONFIG } from "@/lib/orders/status-maps";
 import { StatusBadge } from "@/components/orders/StatusBadge";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatPrice } from "@/lib/formatCurrency";
+import { useMarkOrderReadStaff } from "@/hooks/useUnreadMessages";
+
 
 /**
  * Branch order detail — same engine as AdminOrderDetail but scoped:
