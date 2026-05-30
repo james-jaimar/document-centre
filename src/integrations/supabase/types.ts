@@ -5047,14 +5047,24 @@ export type Database = {
         Args: { p_branch_id: string }
         Returns: boolean
       }
-      user_can_read_order: {
-        Args: {
-          p_app_id: string
-          p_ordered_by_profile_id: string
-          p_tenant_id: string
-        }
-        Returns: boolean
-      }
+      user_can_read_order:
+        | {
+            Args: {
+              p_app_id: string
+              p_branch_id: string
+              p_ordered_by_profile_id: string
+              p_tenant_id: string
+            }
+            Returns: boolean
+          }
+        | {
+            Args: {
+              p_app_id: string
+              p_ordered_by_profile_id: string
+              p_tenant_id: string
+            }
+            Returns: boolean
+          }
       user_can_see_tenant_quote: {
         Args: { p_branch_id: string; p_tenant_id: string }
         Returns: boolean
