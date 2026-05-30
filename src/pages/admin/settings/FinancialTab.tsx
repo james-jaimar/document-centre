@@ -12,6 +12,7 @@ export function FinancialTab() {
   const { settingsMap, isLoading } = useTenantSettingsMap("financial");
   const bulkUpsert = useBulkUpsertTenantSettings();
 
+  const [taxEnabled, setTaxEnabled] = useState(true);
   const [taxLabel, setTaxLabel] = useState("VAT");
   const [taxRate, setTaxRate] = useState("15");
   const [taxInclusive, setTaxInclusive] = useState(false);
@@ -20,8 +21,15 @@ export function FinancialTab() {
 
   useEffect(() => {
     if (!isLoading && settingsMap) {
+      // Default tax_enabled to true when a non-zero rate is configured.
+      const rate = Number(settingsMap.tax_rate ?? 15);
+      setTaxEnabled(
+        settingsMap.tax_enabled === undefined || settingsMap.tax_enabled === null
+          ? rate > 0
+          : settingsMap.tax_enabled === true,
+      );
       setTaxLabel((settingsMap.tax_label as string) ?? "VAT");
-      setTaxRate(String(settingsMap.tax_rate ?? 15));
+      setTaxRate(String(rate));
       setTaxInclusive(settingsMap.tax_inclusive === true);
       setInvoicePrefix((settingsMap.invoice_prefix as string) ?? "INV");
       setInvoiceNextNumber(String(settingsMap.invoice_next_number ?? 1001));
@@ -31,6 +39,7 @@ export function FinancialTab() {
   const handleSave = async () => {
     try {
       await bulkUpsert.mutateAsync([
+        { category: "financial", setting_key: "tax_enabled", setting_value: taxEnabled, value_type: "boolean" },
         { category: "financial", setting_key: "tax_label", setting_value: taxLabel, value_type: "string" },
         { category: "financial", setting_key: "tax_rate", setting_value: parseFloat(taxRate), value_type: "number" },
         { category: "financial", setting_key: "tax_inclusive", setting_value: taxInclusive, value_type: "boolean" },
