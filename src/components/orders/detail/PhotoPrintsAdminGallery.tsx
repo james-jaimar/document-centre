@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Image as ImageIcon, ImageOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { resolveUrls } from "@/lib/thumbnailUtils";
-import { renderPhotoPreview, borderFractionFor } from "@/lib/photoPrints/renderPreview";
-import { getPhotoPrintSize, PHOTO_BORDER_OPTIONS } from "@/lib/photoPrints/sizes";
+import { getPhotoPrintSize } from "@/lib/photoPrints/sizes";
 
 interface PhotoEntry {
   id?: string;
@@ -24,13 +23,11 @@ interface Props {
 /**
  * Read-only admin preview of a Photo Prints order.
  *
- * Display strategy (fail-open):
- *   1. Signed original image is shown immediately as the baseline tile.
- *   2. A canvas-rendered crop preview replaces it once (and if) it succeeds.
- *   3. If signing fails, an explicit "Preview unavailable" state is shown.
- *
- * This avoids the infinite-spinner failure mode where a single canvas/CORS
- * error blanked every tile.
+ * Renders the signed S3 original directly. We previously layered a
+ * canvas-rendered crop preview on top, but that required CORS-enabled
+ * image loads and produced a wall of console errors on every render —
+ * the direct <img> baseline is enough for the admin to recognise the
+ * photo, and the actual print-ready PDF already applies the crop.
  */
 export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
   const photos: PhotoEntry[] = Array.isArray(photoPrints?.photos) ? photoPrints.photos : [];
@@ -38,11 +35,8 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
   const finishSlug: string = photoPrints?.finish_slug || "gloss";
   const printSizeSlug: string = photoPrints?.print_size_slug || "4x6";
 
-  // Map: storage path -> signed URL ('' = signing failed, undefined = pending)
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [signingFailed, setSigningFailed] = useState(false);
-  // Map: photo id -> canvas-rendered crop preview (best-effort enhancement)
-  const [cropPreviews, setCropPreviews] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const paths = photos.map((p) => p.original_storage_path).filter(Boolean) as string[];
@@ -58,51 +52,13 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
         setSignedUrls(next);
         if (Object.keys(next).length === 0) setSigningFailed(true);
       })
-      .catch((e) => {
-        console.warn("[photo-prints-admin-gallery] sign failed", e);
+      .catch(() => {
         if (!cancelled) setSigningFailed(true);
       });
     return () => {
       cancelled = true;
     };
   }, [photos]);
-
-  // Best-effort canvas crop render. Failures are silent — the direct signed
-  // image continues to display.
-  const inFlightRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    photos.forEach((p) => {
-      const path = p.original_storage_path;
-      if (!path || !p.id) return;
-      const src = signedUrls[path];
-      if (!src) return;
-      if (inFlightRef.current.has(p.id)) return;
-      inFlightRef.current.add(p.id);
-
-      const size = getPhotoPrintSize(p.print_size_slug);
-      const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === borderSlug);
-      const borderMm = border?.border_mm ?? 0;
-      const borderFraction = borderFractionFor(
-        Math.max(size.width_mm, size.height_mm),
-        borderMm,
-      );
-      renderPhotoPreview({
-        imageUrl: src,
-        croppedAreaPixels: p.croppedAreaPixels ?? null,
-        rotation: p.rotation || 0,
-        aspect: size.aspect,
-        borderFraction,
-        outputLongEdgePx: 360,
-      })
-        .then((url) => {
-          setCropPreviews((prev) => ({ ...prev, [p.id!]: url }));
-        })
-        .catch((e) => {
-          // Non-fatal — the direct signed image stays visible.
-          console.debug("[photo-prints-admin-gallery] crop render skipped", e);
-        });
-    });
-  }, [photos, signedUrls, borderSlug]);
 
   if (!photos.length) return null;
 
@@ -128,9 +84,7 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
           const id = p.id || `${idx}`;
           const path = p.original_storage_path;
           const signed = path ? signedUrls[path] : undefined;
-          const crop = cropPreviews[id];
-          const displayUrl = crop || signed;
-          const unavailable = signingFailed && !displayUrl;
+          const unavailable = signingFailed && !signed;
 
           return (
             <div
@@ -141,14 +95,12 @@ export default function PhotoPrintsAdminGallery({ photoPrints }: Props) {
                 className="relative w-full bg-muted"
                 style={{ aspectRatio: size.aspect }}
               >
-                {displayUrl ? (
+                {signed ? (
                   <img
-                    src={displayUrl}
+                    src={signed}
                     alt={p.file_name || `Photo ${idx + 1}`}
                     className="absolute inset-0 w-full h-full object-cover"
                     onError={(e) => {
-                      // If the direct signed URL fails to load, swap to a
-                      // neutral state instead of leaving a broken icon.
                       (e.currentTarget as HTMLImageElement).style.display = "none";
                     }}
                   />
