@@ -563,7 +563,7 @@ const CustomerDashboard = () => {
                       )}
                       <div>
                         <p className="text-sm font-medium text-foreground">
-                          Order {order.id.slice(0, 8)}
+                          Order {order.order_number ?? order.id.slice(0, 8)}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           Updated{" "}
