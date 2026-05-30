@@ -488,7 +488,20 @@ export function useDocumentUpload(
       docId: string,
       assetId: string,
       fileName: string,
-      opts?: { skipFinalize?: boolean },
+      opts?: {
+        skipFinalize?: boolean;
+        /** When supplied, the caller has already obtained metadata via
+         *  the synchronous /v1/assets inline probe. We skip the Celery
+         *  inspect_asset hop and the initial getAsset round-trip. */
+        inlineInspect?: {
+          page_count: number;
+          width_pt: number;
+          height_pt: number;
+          boxes: Record<string, number[]>;
+          mixed_orientation: boolean;
+          status: string;
+        } | null;
+      },
     ) => {
       try {
         await supabase
@@ -496,25 +509,25 @@ export function useDocumentUpload(
           .update({ backend_asset_id: assetId })
           .eq("id", docId);
 
-        // Explicitly enqueue an inspect job (this also authorizes the
-        // asset for subsequent reads — without it GET /v1/assets/:id 401s).
-        updateUpload(fileName, { progress: 35, statusText: "Inspecting PDF…" });
-        const { job_id: inspectJobId } = await inspectAsset(assetId);
-
-        await pollJob(inspectJobId, (job) => {
-          if (job.status === "pending") {
-            updateUpload(fileName, { progress: 35, statusText: "Queued — inspecting…" });
-          } else if (job.status === "running") {
-            updateUpload(fileName, { progress: 45, statusText: "Reading page metadata…" });
-          }
-        });
-
-        // inspect_asset writes page_count + boxes synchronously before
-        // marking the job complete, so the first read after pollJob is
-        // already authoritative. inspect_asset writes page_count + boxes
-        // synchronously before marking the job complete, so the first read
-        // after pollJob is final — no retry loop needed.
-        let asset = await getAsset(assetId);
+        let asset: Awaited<ReturnType<typeof getAsset>>;
+        if (opts?.inlineInspect) {
+          // Fast path: the server already returned metadata inline. No
+          // Celery hop, no GET /assets round-trip.
+          updateUpload(fileName, { progress: 45, statusText: "Reading page metadata…" });
+          asset = await getAsset(assetId);
+        } else {
+          // Legacy path: queue inspect_asset and poll it.
+          updateUpload(fileName, { progress: 35, statusText: "Inspecting PDF…" });
+          const { job_id: inspectJobId } = await inspectAsset(assetId);
+          await pollJob(inspectJobId, (job) => {
+            if (job.status === "pending") {
+              updateUpload(fileName, { progress: 35, statusText: "Queued — inspecting…" });
+            } else if (job.status === "running") {
+              updateUpload(fileName, { progress: 45, statusText: "Reading page metadata…" });
+            }
+          });
+          asset = await getAsset(assetId);
+        }
 
         // ── Per-page orientation normalisation ────────────────────────
         // For products with a required orientation (Bound Documents,
@@ -524,6 +537,12 @@ export function useDocumentUpload(
         // table page in a portrait bound document MUST be rotated 90°
         // CW so it sits upright on the printed sheet.
         //
+        // OPTIMISATION: when the inline probe reported
+        // `mixed_orientation: false` (i.e. every page is the same
+        // orientation), we skip the explicit Celery hop entirely.
+        // prepare_for_product still runs its own orientation pass
+        // downstream, so any whole-document mismatch is still corrected.
+        //
         // The whole-document OrientationAdvisory below still fires when
         // the *entire* document violates the policy (e.g. a fully
         // landscape file uploaded against Bound Documents) — that is a
@@ -531,7 +550,10 @@ export function useDocumentUpload(
         // a user prompt.
         const requiredOrient = requiredOrientationFor(productFamilySlug);
         const pageCountForNormalise = Number(asset.page_count ?? 0);
-        if (requiredOrient && pageCountForNormalise > 1) {
+        const documentLikelyMixed = opts?.inlineInspect
+          ? opts.inlineInspect.mixed_orientation
+          : true; // unknown when no probe — fall back to legacy behaviour
+        if (requiredOrient && pageCountForNormalise > 1 && documentLikelyMixed) {
           try {
             updateUpload(fileName, {
               progress: 50,
@@ -556,6 +578,7 @@ export function useDocumentUpload(
             );
           }
         }
+
 
         const boxes = asset.boxes as Record<string, number[]> | null;
         const trimBox = boxes?.TrimBox;
