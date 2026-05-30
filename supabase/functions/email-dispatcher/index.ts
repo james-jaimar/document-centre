@@ -81,6 +81,8 @@ async function loadAttachments(
       filename: s.filename,
       contentType: s.content_type || "application/octet-stream",
       bytes: buf,
+      contentId: s.content_id,
+      inline: !!s.inline,
     });
   }
   return out;
