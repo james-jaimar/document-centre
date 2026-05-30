@@ -87,7 +87,9 @@ const BODIES: Record<EventKey, (ctx: any) => string> = {
     (c.unpaid ? `<br><br>Please pay via EFT using <strong>${c.orderNo}</strong> as your reference.` : ""),
   payment_request: (c) =>
     `A payment of <strong>${c.amountDueFmt}</strong> is due for order <strong>${c.orderNo}</strong>.` +
+    (c.hasAttachment ? `<br><br>Your proforma invoice (<strong>${c.invoiceNumber}</strong>) is attached.` : "") +
     `<br><br>Please pay via EFT using <strong>${c.orderNo}</strong> as your reference.`,
+
 };
 
 const DEFAULT_ORIGIN = "https://document-centre.com";
