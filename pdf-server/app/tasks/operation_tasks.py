@@ -794,7 +794,7 @@ def prepare_for_product(
 
             # Update metadata to record what was done
             existing_meta = asset.get("metadata") or {}
-            new_meta = {**existing_meta}
+            new_meta = {**existing_meta, "prepare_for_product_sig": prepare_sig}
             if dest_profile:
                 new_meta["print_ready_profile"] = dest_profile
                 new_meta["print_ready_intent"] = intent
