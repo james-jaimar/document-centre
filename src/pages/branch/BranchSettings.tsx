@@ -284,6 +284,11 @@ const BranchSettings = () => {
           />
         </CardContent>
       </Card>
+
+      {/* Tax / VAT override */}
+      {tenantId && branchId && (
+        <BranchTaxCard tenantId={tenantId} branchId={branchId} />
+      )}
         </TabsContent>
       </Tabs>
     </div>
