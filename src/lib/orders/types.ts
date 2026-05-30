@@ -12,6 +12,7 @@ export type OrderAdminStatus =
   | 'in_production'
   | 'qa'
   | 'ready_for_dispatch'
+  | 'dispatched'
   | 'completed'
   | 'on_hold'
   | 'cancelled';
