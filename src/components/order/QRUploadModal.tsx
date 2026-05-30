@@ -124,7 +124,7 @@ export default function QRUploadModal({
               <div className="rounded-2xl border bg-white p-4 shadow-sm">
                 <QRCodeSVG
                   value={uploadUrl}
-                  size={220}
+                  size={incomingFiles.length > 8 ? 140 : 220}
                   level="M"
                   includeMargin
                 />
@@ -144,26 +144,21 @@ export default function QRUploadModal({
           {/* Live incoming files */}
           {incomingFiles.length > 0 && (
             <div className="w-full space-y-2">
-              <p className="text-sm font-medium text-foreground flex items-center gap-2">
+              <p className="text-sm font-medium text-foreground flex items-center gap-2 sticky top-0 bg-background py-1">
                 <Check className="h-4 w-4 text-green-500" />
                 {incomingFiles.length} file{incomingFiles.length !== 1 ? "s" : ""}{" "}
                 received
               </p>
-              <div className="grid grid-cols-4 gap-2">
-                {incomingFiles.slice(0, 12).map((f) => (
+              <div className="grid grid-cols-6 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                {incomingFiles.map((f) => (
                   <div
                     key={f.id}
-                    className="flex items-center justify-center h-16 rounded-lg bg-muted border text-xs text-muted-foreground truncate p-1"
+                    className="flex items-center justify-center h-12 rounded-md bg-muted border text-xs text-muted-foreground truncate p-1"
                     title={f.file_name}
                   >
-                    <ImageIcon className="h-6 w-6 text-primary/50" />
+                    <ImageIcon className="h-4 w-4 text-primary/50" />
                   </div>
                 ))}
-                {incomingFiles.length > 12 && (
-                  <div className="flex items-center justify-center h-16 rounded-lg bg-muted border text-xs text-muted-foreground">
-                    +{incomingFiles.length - 12} more
-                  </div>
-                )}
               </div>
             </div>
           )}
