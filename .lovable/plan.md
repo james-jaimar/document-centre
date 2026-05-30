@@ -1,55 +1,53 @@
+## Root cause
 
-## Goal
+There are two parallel subscription tables and the upload gate only looks at one:
 
-Allocate the subscription plan at the **tenant** level (Postnet). Every active branch then automatically inherits that plan. Stripe billing still happens per branch (one Stripe sub per branch), but assignment + plan changes are managed centrally.
+- **`tenant_subscriptions`** — what the platform "Subscription Management" page writes. For `demo` it's `plan=core, status=active, billing_status=free`.
+- **`branch_subscriptions`** — what the gate (`branch_subscription_active(branch_id)`) reads. For `demo` there are **zero rows**, so every branch returns "not active → uploads paused".
 
-## Changes
+So setting Free/Active on the platform Subscriptions page never propagates to branches. Only the newer tenant-admin "Tenant Subscription Plan" card (`assign-tenant-plan` → `apply_tenant_plan_to_branches`) writes branch rows, and even that defaults branches to `pending_payment`, not `free`.
 
-### 1. Database
+Two things to fix:
 
-Add tenant-level assignment fields to `tenants`:
-- `assigned_plan_slug text`
-- `assigned_region_id uuid references platform_pricing_regions(id)`
-- `discount_type text`, `discount_value numeric`, `trial_days int`, `billing_notes text`
+1. The gate should treat `tenant_subscriptions.billing_status='free'` or `status in ('active','trialing')` as an unblock for every branch under that tenant (and always allow demo tenants).
+2. The platform Subscriptions page should cascade to `branch_subscriptions` when you mark a tenant Free/Active, so the two tables stop drifting.
 
-New RPC `apply_tenant_plan_to_branches(p_tenant_id uuid)`:
-- For every active branch of the tenant, upsert a row in `branch_subscriptions` with the tenant's assigned plan/region/discount/trial.
-- Overwrites existing `assigned_plan_slug` on every branch (per your choice).
-- Leaves Stripe-managed fields (`stripe_subscription_id`, `status`, `current_period_*`) untouched so existing paid subs keep working; only the assigned plan + commercial terms are synced.
-- SECURITY DEFINER, gated to platform_admin or tenant_admin.
+## Plan
 
-Trigger on `branches` insert (when `is_active = true`): if the tenant has an assigned plan, seed a `branch_subscriptions` row for the new branch automatically.
+### 1. Migration — widen `branch_subscription_active`
 
-### 2. Edge function
+Replace the function so a branch is "active" if **any** of:
 
-`assign-tenant-plan` (new): writes the assignment onto `tenants`, then calls `apply_tenant_plan_to_branches`. Returns a count of branches updated.
+- the existing `branch_subscriptions` row says active/trialing/paid/free, OR
+- the parent tenant's `tenant_subscriptions` row has `status in ('active','trialing')` or `billing_status in ('paid','free')`, OR
+- the parent tenant has `is_demo = true`.
 
-### 3. Tenant admin UI (`/admin/settings` → Billing tab)
+Keep signature and `SECURITY DEFINER` / `search_path` as-is so all existing RLS and call sites keep working.
 
-Replace the current "Subscription" card (which today shows the tenant's own sub) with a **Tenant Subscription Plan** card that lets the tenant admin (and platform admin):
-- Pick region + plan slug (only `scope='branch'` plans, since each branch pays its own).
-- Optionally set discount / trial / notes.
-- Save → calls `assign-tenant-plan` → toast shows "Applied to N branches".
-- Shows the current assigned plan and last-applied timestamp.
+### 2. Migration — backfill `branch_subscriptions` for demo + any tenant already marked free/active
 
-The existing **Branch Subscriptions** overview table stays below it so the admin can see per-branch Stripe status (paid / past_due / etc.) at a glance.
+For every tenant where `tenant_subscriptions.billing_status in ('free','paid')` or `status='active'`, upsert one `branch_subscriptions` row per active branch with the matching plan, `status='active'`, `billing_status='free'` (or `'paid'`). Idempotent — uses the existing unique `(branch_id)` constraint.
 
-### 4. Branch-level UI
+### 3. Edge function — cascade from platform Subscriptions page
 
-Remove the per-branch "assign plan" controls (`BranchSubscriptionAssignCard` on `AdminBranchDetail`). Branch detail keeps a **read-only** subscription panel showing: inherited plan name, Stripe status, period dates, "Pay Now" if pending. No override.
+`supabase/functions/upsert-tenant-subscription` (the function called by `useTenantSubscriptions`): after writing the `tenant_subscriptions` row, if it ends up `billing_status in ('free','paid')` or `status in ('active','trialing')`, call `apply_tenant_plan_to_branches` (or inline the same upsert) and stamp the resulting branch rows with the same `status` + `billing_status` so the gate sees them immediately.
 
-The customer-facing `BranchSettings → Subscription` tab stays as today (payment + status), since payment is still per branch.
+If the tenant is moved back to `pending_payment`/`cancelled`, flip the branch rows to match too — otherwise cancelling on the platform page would leave branches "stuck on free".
 
-### 5. Platform tenants page
+### 4. No frontend changes required
 
-Optional small addition: column on `/platform/tenants` showing the tenant's assigned plan slug, so platform admins can see at a glance which tenants have a plan set.
+`useBranchSubscriptionGate` already returns "active" when `billing_status='free'`, so once (1)–(3) land, the demo tenant immediately unblocks across every branch and the platform Free/Active toggle becomes the single source of truth.
 
-## Out of scope
+### Files touched
 
-- No change to Stripe webhook routing — events still land on `branch_subscriptions` via `branch_id` metadata.
-- No change to the gate logic — `branch_subscription_active()` keeps reading `branch_subscriptions`.
-- Tenant-level Stripe subscription (the existing `tenant_subscriptions` row used for platform-only tenants without branches) is left intact; this flow only affects tenants that have branches.
+- `supabase/migrations/<new>.sql` — replace `branch_subscription_active`, backfill rows.
+- `supabase/functions/upsert-tenant-subscription/index.ts` — cascade to branches.
+- (No client changes.)
 
-## Migration / data backfill
+### Verification
 
-For Postnet specifically: once you set the tenant plan in the UI and click Save, the new RPC will populate every active Postnet branch in one shot. No manual SQL needed.
+After deploy:
+
+- `select branch_subscription_active(id) from branches where tenant_id = '<demo>'` → all `true`.
+- Customer upload on demo storefront no longer shows "subscription is not active".
+- Toggling `postnet` back to `pending_payment` on the platform page re-locks its branches.
