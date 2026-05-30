@@ -61,17 +61,21 @@ export function FinancialTab() {
           <CardTitle className="flex items-center gap-2"><Receipt className="h-5 w-5" /> Tax Configuration</CardTitle>
           <CardDescription>How tax is calculated and displayed on orders and invoices</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-3">
+        <CardContent className="grid gap-4 md:grid-cols-4">
+          <div className="flex items-center gap-3 pt-6">
+            <Switch checked={taxEnabled} onCheckedChange={setTaxEnabled} />
+            <Label>Charge tax</Label>
+          </div>
           <div className="space-y-2">
             <Label>Tax Label</Label>
-            <Input value={taxLabel} onChange={(e) => setTaxLabel(e.target.value)} placeholder="e.g. VAT, GST" />
+            <Input value={taxLabel} onChange={(e) => setTaxLabel(e.target.value)} placeholder="e.g. VAT, GST" disabled={!taxEnabled} />
           </div>
           <div className="space-y-2">
             <Label>Tax Rate (%)</Label>
-            <Input type="number" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} />
+            <Input type="number" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} disabled={!taxEnabled} />
           </div>
           <div className="flex items-center gap-3 pt-6">
-            <Switch checked={taxInclusive} onCheckedChange={setTaxInclusive} />
+            <Switch checked={taxInclusive} onCheckedChange={setTaxInclusive} disabled={!taxEnabled} />
             <Label>Tax-inclusive pricing</Label>
           </div>
         </CardContent>
