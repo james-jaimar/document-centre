@@ -7,12 +7,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Plus, ArrowRight, Trash2, Loader2, FileText, Package, Clock, Info } from "lucide-react";
+import { Plus, ArrowRight, Trash2, Loader2, FileText, Package, Clock, Info, MessageSquare } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { formatPrice } from "@/lib/formatCurrency";
+import { useUnreadMessagesCustomer } from "@/hooks/useUnreadMessages";
+
 
 const CUSTOMER_STATUS_LABEL: Record<string, string> = {
   awaiting_payment: "Awaiting Payment",
@@ -121,7 +123,9 @@ const CustomerOrders = () => {
   const { tenantId } = useTenantContext();
   const queryClient = useQueryClient();
   const { data: orders, isLoading } = useUserOrders(user?.id, tenantId);
+  const { data: unreadMap = {} } = useUnreadMessagesCustomer();
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+
 
   // Visible orders:
   // - Hide cart rows
@@ -189,6 +193,7 @@ const CustomerOrders = () => {
     const moreCount = Math.max(itemCount - productNames.length, 0);
     const statusKey = order.customer_status;
     const paymentKey = order.payment_status;
+    const unread = unreadMap[order.id] || 0;
     return (
       <button
         onClick={() => navigate(tenantPath(`orders/${order.id}`))}
@@ -220,7 +225,14 @@ const CustomerOrders = () => {
                 >
                   {PAYMENT_LABEL[paymentKey] || paymentKey}
                 </span>
+                {unread > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-semibold text-white">
+                    <MessageSquare className="h-3 w-3" />
+                    {unread} new
+                  </span>
+                )}
               </div>
+
               <p className="mt-1 text-sm text-foreground truncate">
                 {productNames.length > 0 ? productNames.join(", ") : "Order"}
                 {moreCount > 0 && (

@@ -1758,6 +1758,8 @@ export type Database = {
           job_id: string | null
           message_body: string
           order_id: string | null
+          read_by_customer_at: string | null
+          read_by_staff_at: string | null
           recipient_type: string
           sender_profile_id: string | null
           sender_type: string
@@ -1772,6 +1774,8 @@ export type Database = {
           job_id?: string | null
           message_body: string
           order_id?: string | null
+          read_by_customer_at?: string | null
+          read_by_staff_at?: string | null
           recipient_type?: string
           sender_profile_id?: string | null
           sender_type: string
@@ -1786,6 +1790,8 @@ export type Database = {
           job_id?: string | null
           message_body?: string
           order_id?: string | null
+          read_by_customer_at?: string | null
+          read_by_staff_at?: string | null
           recipient_type?: string
           sender_profile_id?: string | null
           sender_type?: string
@@ -4871,6 +4877,20 @@ export type Database = {
       }
       generate_order_number: { Args: { p_app_id: string }; Returns: string }
       generate_quote_number: { Args: { p_app_id: string }; Returns: string }
+      get_unread_message_counts_for_customer: {
+        Args: never
+        Returns: {
+          order_id: string
+          unread_count: number
+        }[]
+      }
+      get_unread_message_counts_for_staff: {
+        Args: { p_branch_id?: string; p_tenant_id: string }
+        Returns: {
+          order_id: string
+          unread_count: number
+        }[]
+      }
       get_user_tenant_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
@@ -4887,6 +4907,14 @@ export type Database = {
       map_customer_job_status: {
         Args: { p_job_status: string; p_payment_status?: string }
         Returns: string
+      }
+      mark_order_messages_read_customer: {
+        Args: { p_order_id: string }
+        Returns: undefined
+      }
+      mark_order_messages_read_staff: {
+        Args: { p_order_id: string }
+        Returns: undefined
       }
       next_number: {
         Args: { p_app_id: string; p_sequence_type: string }

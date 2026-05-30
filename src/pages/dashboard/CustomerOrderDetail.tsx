@@ -20,7 +20,7 @@ import {
   Eye,
 } from "lucide-react";
 import { format } from "date-fns";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { sendMessage } from "@/lib/orders/mutations";
 import { OrderInvoicesList } from "@/components/orders/OrderInvoicesList";
 import { useQueryClient } from "@tanstack/react-query";
@@ -29,6 +29,8 @@ import { cn } from "@/lib/utils";
 import PreviewLightbox from "@/components/order/PreviewLightbox";
 import { inferPreviewTypeFromJob } from "@/lib/orders/inferPreviewType";
 import PhotoPrintsAdminGallery from "@/components/orders/detail/PhotoPrintsAdminGallery";
+import { useMarkOrderReadCustomer } from "@/hooks/useUnreadMessages";
+
 
 const CUSTOMER_STATUS_LABEL: Record<string, string> = {
   awaiting_payment: "Awaiting Payment",
@@ -110,6 +112,11 @@ const CustomerOrderDetail = () => {
   const messages = data?.messages ?? [];
   const payments = data?.payments ?? [];
   const documents = data?.documents ?? [];
+
+  // Mark staff→customer messages as read whenever this order is opened.
+  useMarkOrderReadCustomer(id);
+
+
 
   const handleSendMessage = async () => {
     if (!messageText.trim() || !id) return;

@@ -18,6 +18,8 @@ import {
 import type { OrderAdminStatus, PaymentStatus, AdminOrderListFilters } from "@/lib/orders/types";
 import { format } from "date-fns";
 import { formatPrice } from "@/lib/formatCurrency";
+import { useUnreadMessagesStaff } from "@/hooks/useUnreadMessages";
+
 
 const ALL_ADMIN_STATUSES: OrderAdminStatus[] = [
   "new_order", "under_review", "approved", "in_production", "qa",
@@ -61,6 +63,8 @@ export default function BranchOrders() {
   const orders = data?.orders || [];
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / (data?.pageSize || 25));
+  const { data: unreadMap = {} } = useUnreadMessagesStaff(tenantId, branchId);
+
 
   const handleToggleStatus = (status: OrderAdminStatus) => {
     setSelectedStatuses((prev) =>
@@ -249,10 +253,22 @@ export default function BranchOrders() {
                       <ReadyIcon status={job.job_status} />
                     </TableCell>
                     <TableCell className="text-center">
-                      <span className="inline-flex items-center justify-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground min-w-[20px]">
-                        0
-                      </span>
+                      {(() => {
+                        const u = unreadMap[order.id] || 0;
+                        return (
+                          <span
+                            className={
+                              u > 0
+                                ? "inline-flex items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-semibold text-white min-w-[20px]"
+                                : "inline-flex items-center justify-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground min-w-[20px]"
+                            }
+                          >
+                            {u}
+                          </span>
+                        );
+                      })()}
                     </TableCell>
+
                     <TableCell>
                       <StatusBadge {...ADMIN_STATUS_CONFIG[order.admin_status as keyof typeof ADMIN_STATUS_CONFIG]} />
                     </TableCell>

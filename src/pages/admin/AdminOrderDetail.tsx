@@ -23,6 +23,8 @@ import { ADMIN_STATUS_CONFIG, PAYMENT_STATUS_CONFIG } from "@/lib/orders/status-
 import { StatusBadge } from "@/components/orders/StatusBadge";
 import { Undo2 } from "lucide-react";
 import { formatPrice } from "@/lib/formatCurrency";
+import { useMarkOrderReadStaff } from "@/hooks/useUnreadMessages";
+
 
 export default function AdminOrderDetail() {
   const { id } = useParams<{ id: string }>();
@@ -42,6 +44,10 @@ export default function AdminOrderDetail() {
       setSelectedJobId(data.jobs[0].id);
     }
   }, [data?.jobs, selectedJobId]);
+
+  // Mark customer messages as read whenever admin opens an order.
+  useMarkOrderReadStaff(id);
+
 
   if (isLoading) {
     return (
