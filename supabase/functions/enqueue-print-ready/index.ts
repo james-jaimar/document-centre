@@ -47,7 +47,6 @@ Deno.serve(async (req) => {
     if (!jobs?.length) return json({ ok: true, jobs: 0 });
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
     // Fire each assemble in parallel; production-pdf polls the pdf-server
     // and returns when done. We don't wait for the result here — pg_net
