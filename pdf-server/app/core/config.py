@@ -71,7 +71,10 @@ class Settings(BaseSettings):
     # Single-process batch render: when page_count <= this threshold, run
     # ONE Ghostscript invocation for the whole document (avoiding N×
     # per-page GS startup cost) and then upload/downscale concurrently.
-    render_batch_threshold: int = Field(alias='RENDER_BATCH_THRESHOLD', default=32)
+    # Raised to 200 so the vast majority of customer uploads take the
+    # batch path — fanout incurs N extra S3 downloads (one per page
+    # subtask) and is only worthwhile for very large books.
+    render_batch_threshold: int = Field(alias='RENDER_BATCH_THRESHOLD', default=200)
 
     cors_origins: str = Field(alias='CORS_ORIGINS', default='http://localhost:5173')
     admin_username: str = Field(alias='ADMIN_USERNAME', default='admin')
