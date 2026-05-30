@@ -413,22 +413,59 @@ function buildRfc2822(
 
   const htmlBody = row.html ?? row.text_body ?? "";
 
+  const inlineAtts = attachments.filter((a) => a.inline && a.contentId);
+  const regularAtts = attachments.filter((a) => !(a.inline && a.contentId));
+
   if (!attachments.length) {
     headers.push('Content-Type: text/html; charset="UTF-8"');
     return headers.join("\r\n") + "\r\n\r\n" + htmlBody;
+  }
+
+  // Build the HTML body part, optionally wrapping inline images in multipart/related
+  const buildBodyPart = (): string => {
+    if (!inlineAtts.length) {
+      return (
+        'Content-Type: text/html; charset="UTF-8"\r\n' +
+        "Content-Transfer-Encoding: 7bit\r\n\r\n" +
+        htmlBody
+      );
+    }
+    const relBoundary = `==DC_REL_${crypto.randomUUID().replace(/-/g, "")}`;
+    let body =
+      `Content-Type: multipart/related; boundary="${relBoundary}"\r\n\r\n` +
+      `--${relBoundary}\r\n` +
+      'Content-Type: text/html; charset="UTF-8"\r\n' +
+      "Content-Transfer-Encoding: 7bit\r\n\r\n" +
+      htmlBody +
+      "\r\n";
+    for (const a of inlineAtts) {
+      const b64 = bytesToBase64(a.bytes).replace(/.{76}/g, "$&\r\n");
+      body +=
+        `--${relBoundary}\r\n` +
+        `Content-Type: ${a.contentType}\r\n` +
+        `Content-Transfer-Encoding: base64\r\n` +
+        `Content-ID: <${a.contentId}>\r\n` +
+        `Content-Disposition: inline; filename="${a.filename}"\r\n\r\n` +
+        b64 +
+        "\r\n";
+    }
+    body += `--${relBoundary}--\r\n`;
+    return body;
+  };
+
+  // If only inline attachments, no need for outer multipart/mixed
+  if (!regularAtts.length) {
+    const bodyPart = buildBodyPart();
+    // bodyPart already begins with Content-Type header line
+    return headers.join("\r\n") + "\r\n" + bodyPart;
   }
 
   const boundary = `==DC_BOUNDARY_${crypto.randomUUID().replace(/-/g, "")}`;
   headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
 
   const parts: string[] = [];
-  parts.push(
-    `--${boundary}\r\n` +
-      'Content-Type: text/html; charset="UTF-8"\r\n' +
-      "Content-Transfer-Encoding: 7bit\r\n\r\n" +
-      htmlBody
-  );
-  for (const a of attachments) {
+  parts.push(`--${boundary}\r\n` + buildBodyPart());
+  for (const a of regularAtts) {
     const b64 = bytesToBase64(a.bytes).replace(/.{76}/g, "$&\r\n");
     parts.push(
       `--${boundary}\r\n` +
