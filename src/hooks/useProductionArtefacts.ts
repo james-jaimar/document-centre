@@ -102,12 +102,12 @@ export function useProductionArtefacts(jobId: string | null) {
     }
   }, [jobId, qc, toast]);
 
-  const generateJobTicket = useCallback(async () => {
+  const generateJobTicket = useCallback(async (opts?: { force?: boolean }) => {
     if (!jobId) return;
     setGenerating("ticket");
     try {
       const { data, error } = await supabase.functions.invoke("production-pdf", {
-        body: { action: "ticket", job_id: jobId },
+        body: { action: "ticket", job_id: jobId, force: !!opts?.force },
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);

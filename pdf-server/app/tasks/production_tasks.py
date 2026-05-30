@@ -669,13 +669,24 @@ def _fetch_logo_image(url: str | None, max_height_mm: float = 16.0):
 
 
 def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
+    """Render a 1-page A4 operator job ticket.
+
+    Layout goals:
+      - Clean white header with the tenant logo in a white box so red/dark logos
+        stay legible regardless of brand colour.
+      - Brand colour used only as a thin accent rule and for small section labels.
+      - No pricing — this is a work ticket, not an invoice.
+      - Mirror the admin Job Details panel: status badges, quantity, the full
+        `configuration.summary` + `configuration.sections[]` block, and the
+        source-files list (with `bundle.asset_paths` fallback).
+      - Writable production fields: Due, Operator, Started, Completed, QC, Notes.
+    """
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import mm
     from reportlab.platypus import (
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage,
-        KeepTogether,
     )
 
     job = bundle.job
@@ -686,75 +697,92 @@ def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
     branding = bundle.branding or {}
     customer = bundle.customer or {}
     delivery = bundle.delivery_address or {}
-    item = bundle.order_item or {}
 
     brand_hex = branding.get("primary_color") or "#1e293b"
     brand = _hex_to_rl_color(brand_hex, "#1e293b")
     ink = colors.HexColor("#0f172a")
     muted = colors.HexColor("#64748b")
     rule = colors.HexColor("#e2e8f0")
-    panel = colors.HexColor("#f8fafc")
+    panel_bg = colors.HexColor("#f8fafc")
 
     styles = getSampleStyleSheet()
-    h_title = ParagraphStyle("ticket_title", parent=styles["Heading1"], fontSize=22, leading=24, textColor=ink, spaceAfter=0)
-    h_sub = ParagraphStyle("ticket_sub", parent=styles["BodyText"], fontSize=10, leading=12, textColor=muted)
-    h_band = ParagraphStyle("ticket_band", parent=styles["BodyText"], fontSize=11, leading=13, textColor=colors.white, fontName="Helvetica-Bold")
-    h_band_sub = ParagraphStyle("ticket_band_sub", parent=styles["BodyText"], fontSize=8.5, leading=11, textColor=colors.Color(1, 1, 1, alpha=0.85))
-    h_section = ParagraphStyle("ticket_section", parent=styles["BodyText"], fontSize=8.5, leading=10, textColor=muted, fontName="Helvetica-Bold", spaceAfter=4)
-    body = ParagraphStyle("ticket_body", parent=styles["BodyText"], fontSize=9, leading=12, textColor=ink)
-    body_b = ParagraphStyle("ticket_body_b", parent=body, fontName="Helvetica-Bold")
-    body_mute = ParagraphStyle("ticket_body_mute", parent=body, textColor=muted)
-    small = ParagraphStyle("ticket_small", parent=styles["BodyText"], fontSize=7.5, leading=9, textColor=muted)
+    h_title = ParagraphStyle("tk_title", parent=styles["Heading1"], fontSize=20, leading=22, textColor=ink, spaceAfter=0)
+    h_sub = ParagraphStyle("tk_sub", parent=styles["BodyText"], fontSize=9, leading=11, textColor=muted)
+    h_section = ParagraphStyle("tk_section", parent=styles["BodyText"], fontSize=8, leading=10,
+                               textColor=brand, fontName="Helvetica-Bold", spaceAfter=3)
+    body = ParagraphStyle("tk_body", parent=styles["BodyText"], fontSize=9, leading=11.5, textColor=ink)
+    body_b = ParagraphStyle("tk_body_b", parent=body, fontName="Helvetica-Bold")
+    body_mute = ParagraphStyle("tk_body_mute", parent=body, textColor=muted)
+    small = ParagraphStyle("tk_small", parent=styles["BodyText"], fontSize=7.5, leading=9, textColor=muted)
+    branch_name_s = ParagraphStyle("tk_branch", parent=body_b, fontSize=11, leading=13, textColor=ink)
 
     flow = []
 
     # ------------------------------------------------------------------
-    # Top brand band — tenant logo + branch name + branch contact line
+    # 1. Header — white background, logo in a white box, brand accent rule
     # ------------------------------------------------------------------
-    branch_name = _safe(branch.get("trading_name") or branch.get("name") or (bundle.tenant or {}).get("name"), "Branch")
-    branch_addr_parts = [branch.get(k) for k in ("address", "city", "province", "postal_code") if branch.get(k)]
-    branch_contact = " · ".join([p for p in [
-        ", ".join([p for p in branch_addr_parts if p]) or None,
-        branch.get("phone"),
-        branch.get("email"),
+    branch_name = _safe(
+        branch.get("trading_name") or branch.get("name") or (bundle.tenant or {}).get("name"),
+        "Branch",
+    )
+    branch_addr = ", ".join([p for p in [
+        branch.get("address"), branch.get("city"), branch.get("province"), branch.get("postal_code"),
     ] if p])
+    branch_contact_bits = [p for p in [branch.get("phone"), branch.get("email")] if p]
+    branch_contact = "  ·  ".join(branch_contact_bits)
 
-    logo = _fetch_logo_image(branding.get("logo_url"))
-    band_inner = [
-        [
-            logo or Paragraph("&nbsp;", h_band),
-            [
-                Paragraph(branch_name, h_band),
-                Paragraph(branch_contact or "&nbsp;", h_band_sub),
-            ],
-            Paragraph("JOB TICKET", h_band),
-        ]
+    logo = _fetch_logo_image(branding.get("logo_url"), max_height_mm=14.0)
+    logo_cell = logo or Paragraph("", body)
+
+    branch_block = [
+        [Paragraph(branch_name, branch_name_s)],
     ]
-    band = Table(band_inner, colWidths=[28 * mm, 110 * mm, 44 * mm])
-    band.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), brand),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN", (0, 0), (0, 0), "LEFT"),
-        ("ALIGN", (2, 0), (2, 0), "RIGHT"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    if branch_addr:
+        branch_block.append([Paragraph(branch_addr, h_sub)])
+    if branch_contact:
+        branch_block.append([Paragraph(branch_contact, h_sub)])
+    branch_tbl = Table(branch_block, colWidths=[110 * mm])
+    branch_tbl.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
     ]))
-    flow.append(band)
-    flow.append(Spacer(1, 6))
+
+    job_ticket_lbl = Paragraph(
+        f"<font color='#64748b' size='8'>JOB TICKET</font><br/>"
+        f"<font color='#0f172a' size='10'><b>{datetime.utcnow().strftime('%Y-%m-%d')}</b></font>",
+        body,
+    )
+
+    header = Table([[logo_cell, branch_tbl, job_ticket_lbl]],
+                   colWidths=[32 * mm, 110 * mm, 40 * mm])
+    header.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (2, 0), (2, 0), "RIGHT"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LINEBELOW", (0, 0), (-1, -1), 1.8, brand),
+    ]))
+    flow.append(header)
+    flow.append(Spacer(1, 8))
 
     # ------------------------------------------------------------------
-    # Job number + meta + QR
+    # 2. Job identity row — job number + status chips + QR (no overlap)
     # ------------------------------------------------------------------
-    job_no = _safe(job.get("job_number"), job.get("id", "")[:8])
+    job_no = _safe(job.get("job_number"), (job.get("id") or "")[:8])
     order_no = _safe(order.get("order_number"))
-    qty = _safe(int(job.get("quantity") or 0))
-    product_name = _safe(job.get("product_name") or snap.get("name"))
-    urgency = _safe(job.get("urgency"), "Standard").title()
-    due = _safe(job.get("ready_at") or order.get("required_by") or order.get("delivery_date"))
+    qty = int(job.get("quantity") or 0)
+    qty_sent = int(job.get("qty_sent") or 0)
+    qty_remaining = int(job.get("qty_remaining") or max(qty - qty_sent, 0))
+    product_name = _safe(job.get("job_name") or job.get("product_name") or snap.get("name"))
 
     status_chip = (job.get("job_status") or "new").replace("_", " ").title()
+    proof_chip = (job.get("proof_status") or "not_required").replace("_", " ").title()
+    urgency_chip = (job.get("urgency") or "standard").replace("_", " ").title()
 
     qr_image = None
     try:
@@ -768,34 +796,45 @@ def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
         buf = io.BytesIO()
         img.save(buf, format="PNG")
         buf.seek(0)
-        qr_image = RLImage(buf, width=26 * mm, height=26 * mm)
+        qr_image = RLImage(buf, width=24 * mm, height=24 * mm)
     except Exception:
         qr_image = Paragraph("", body)
 
-    meta_block = [
-        [Paragraph(f'<font size="20"><b>{job_no}</b></font>', body)],
-        [Paragraph(f"{product_name} &nbsp;·&nbsp; <b>{qty}</b> qty &nbsp;·&nbsp; Order <b>{order_no}</b>", body)],
-        [Paragraph(f"Due: <b>{due}</b> &nbsp;·&nbsp; Urgency: <b>{urgency}</b> &nbsp;·&nbsp; Status: <b>{status_chip}</b>", body_mute)],
+    identity_left = [
+        [Paragraph(f"<b>{job_no}</b>  &nbsp; <font color='#64748b' size='9'>· Order {order_no}</font>", h_title)],
+        [Paragraph(_safe(product_name), body_b)],
+        [Paragraph(
+            f"<font color='#64748b'>Status</font> <b>{status_chip}</b> &nbsp;·&nbsp; "
+            f"<font color='#64748b'>Proof</font> <b>{proof_chip}</b> &nbsp;·&nbsp; "
+            f"<font color='#64748b'>Urgency</font> <b>{urgency_chip}</b>",
+            body,
+        )],
+        [Paragraph(
+            f"<font color='#64748b'>Quantity</font> <b>{qty:,}</b> "
+            f"<font color='#64748b'>({qty_sent:,} sent · {qty_remaining:,} remaining)</font>",
+            body,
+        )],
     ]
-    meta_tbl = Table(meta_block, colWidths=[155 * mm])
-    meta_tbl.setStyle(TableStyle([
+    id_tbl = Table(identity_left, colWidths=[155 * mm])
+    id_tbl.setStyle(TableStyle([
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 1),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
     ]))
-    header2 = Table([[meta_tbl, qr_image]], colWidths=[155 * mm, 27 * mm])
-    header2.setStyle(TableStyle([
+
+    identity = Table([[id_tbl, qr_image]], colWidths=[155 * mm, 27 * mm])
+    identity.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("ALIGN", (1, 0), (1, 0), "RIGHT"),
-        ("LINEBELOW", (0, 0), (-1, -1), 1.2, brand),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
     ]))
-    flow.append(header2)
+    flow.append(identity)
     flow.append(Spacer(1, 8))
 
     # ------------------------------------------------------------------
-    # Three-column block: Customer · Fulfilment · Pricing
+    # 3. Customer + Fulfilment + Due / Required by  (NO pricing)
     # ------------------------------------------------------------------
     cust_name = _safe(customer.get("full_name") or customer.get("email") or order.get("customer_name"))
     cust_company = customer.get("company") or (delivery.get("company_name") if delivery else None) or ""
@@ -813,46 +852,36 @@ def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
             ", ".join([p for p in [delivery.get("suburb"), delivery.get("city")] if p]),
             ", ".join([p for p in [delivery.get("province"), delivery.get("postal_code")] if p]),
             delivery.get("country") or "",
-            (delivery.get("phone") or ""),
+            delivery.get("phone") or "",
         ]
         fulfil_lines = ["<b>Delivery</b>"] + [l for l in addr_lines if l and l.strip(", ")]
     else:
-        fulfil_lines = [
-            "<b>Collection</b>",
-            branch.get("name") or branch.get("trading_name") or "",
-            branch.get("address") or "",
-            ", ".join([p for p in [branch.get("city"), branch.get("postal_code")] if p]),
-            branch.get("phone") or "",
-        ]
+        fulfil_lines = ["<b>Collection</b>",
+                        branch.get("name") or branch.get("trading_name") or "",
+                        branch.get("address") or "",
+                        ", ".join([p for p in [branch.get("city"), branch.get("postal_code")] if p]),
+                        branch.get("phone") or ""]
         fulfil_lines = [l for l in fulfil_lines if l]
 
-    unit_price = item.get("unit_price")
-    item_qty = item.get("quantity") or job.get("quantity") or 0
-    currency = order.get("currency") or "ZAR"
-    try:
-        net = float(unit_price) * float(item_qty) if unit_price is not None else None
-    except Exception:
-        net = None
-    payment_status = (order.get("payment_status") or "").replace("_", " ").title() or "—"
-    payment_method = (order.get("payment_method") or order.get("payment_provider") or "").upper() or ""
+    due_value = job.get("ready_at") or order.get("required_by") or order.get("delivery_date")
+    turnaround = order.get("turnaround") or snap.get("turnaround") or "—"
 
-    pricing_lines = [
-        f"Unit &nbsp; <b>{_format_money(unit_price, currency)}</b>" if unit_price is not None else "Unit &nbsp; —",
-        f"Qty &nbsp; <b>×{item_qty}</b>",
-        f"Net &nbsp; <b>{_format_money(net, currency)}</b>" if net is not None else "Net &nbsp; —",
-        f"Payment &nbsp; <b>{payment_status}</b>" + (f" ({payment_method})" if payment_method else ""),
+    schedule_lines = [
+        f"<font color='#64748b'>Date required</font><br/><b>{_safe(due_value)}</b>",
+        f"<font color='#64748b'>Turnaround</font><br/><b>{_safe(turnaround)}</b>",
+        "<font color='#64748b'>Due in shop by</font><br/><b>____ / ____ / ______</b>",
     ]
 
-    def _panel(title: str, lines: list[str]):
+    def _panel(title: str, lines: list[str], width_mm: float):
         rows = [[Paragraph(title, h_section)]]
         for ln in lines:
             rows.append([Paragraph(ln, body)])
-        t = Table(rows, colWidths=[60 * mm])
+        t = Table(rows, colWidths=[width_mm * mm])
         t.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), panel),
+            ("BACKGROUND", (0, 0), (-1, -1), panel_bg),
             ("BOX", (0, 0), (-1, -1), 0.5, rule),
-            ("LEFTPADDING", (0, 0), (-1, -1), 8),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("LEFTPADDING", (0, 0), (-1, -1), 7),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
             ("TOPPADDING", (0, 0), (0, 0), 6),
             ("TOPPADDING", (0, 1), (-1, -1), 1),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
@@ -860,17 +889,12 @@ def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
         ]))
         return t
 
-    cust_lines = [l for l in [
-        f"<b>{cust_name}</b>",
-        cust_company,
-        cust_email,
-        cust_phone,
-    ] if l]
+    cust_lines = [l for l in [f"<b>{cust_name}</b>", cust_company, cust_email, cust_phone] if l]
 
     three_col = Table(
-        [[_panel("CUSTOMER", cust_lines),
-          _panel("FULFILMENT", fulfil_lines),
-          _panel("PRICING", pricing_lines)]],
+        [[_panel("CUSTOMER", cust_lines, 60),
+          _panel("FULFILMENT", fulfil_lines, 60),
+          _panel("SCHEDULE", schedule_lines, 60)]],
         colWidths=[60 * mm, 60 * mm, 60 * mm],
     )
     three_col.setStyle(TableStyle([
@@ -882,131 +906,211 @@ def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
     flow.append(Spacer(1, 10))
 
     # ------------------------------------------------------------------
-    # Production specs grid (resolved from worker target + snapshot)
+    # 4. Production specs — mirror the admin Job Details panel
+    #    Pulls from configuration.summary.primary_spec_*  and
+    #    configuration.sections[] (label/value pairs).
     # ------------------------------------------------------------------
-    flow.append(Paragraph("PRODUCTION SPECS", h_section))
-    report = job.get("assembly_report") or {}
-    resolved = report.get("target") if isinstance(report, dict) else {}
-    if not isinstance(resolved, dict):
-        resolved = {}
-    resolved_size = None
-    if resolved.get("width_mm") and resolved.get("height_mm"):
-        resolved_size = f"{resolved['width_mm']:.0f}×{resolved['height_mm']:.0f}mm"
+    flow.append(Paragraph("PRODUCTION SPECIFICATIONS", h_section))
 
-    spec_keys = [
-        ("Size", resolved_size or snap.get("size") or (f"{snap.get('width_mm')}×{snap.get('height_mm')}mm" if snap.get("width_mm") else None)),
-        ("Orientation", resolved.get("orientation") or snap.get("orientation")),
-        ("Paper", cfg.get("paper") or snap.get("paper")),
-        ("Weight", f"{snap.get('paper_weight_gsm')}gsm" if snap.get("paper_weight_gsm") else None),
-        ("Colour", (resolved.get("colour_mode") or "").upper() or cfg.get("colour") or snap.get("colour")),
-        ("Sides", (resolved.get("duplex_mode") or "").title() or cfg.get("sides") or snap.get("sides")),
-        ("Print to edge", "Yes" if resolved.get("print_to_edge") else None),
-        ("Binding", cfg.get("binding") or snap.get("binding")),
-        ("Cover", cfg.get("cover") or snap.get("cover")),
-        ("Finishing", cfg.get("finishing") or snap.get("finishing")),
-    ]
-    pairs = [(k, v) for k, v in spec_keys if v]
+    summary = (cfg.get("summary") or {}) if isinstance(cfg, dict) else {}
+    cfg_sections = (cfg.get("sections") or []) if isinstance(cfg, dict) else []
 
-    # Render in 3 columns of key/value pairs (so we get up to 9 specs neatly).
-    rows = []
-    for i in range(0, len(pairs), 3):
-        chunk = pairs[i:i + 3]
-        cells = []
-        for k, v in chunk:
-            cells.append(Paragraph(f"<font color='#64748b'>{k}</font><br/><b>{_safe(v)}</b>", body))
-        while len(cells) < 3:
-            cells.append(Paragraph("", body))
-        rows.append(cells)
-    if rows:
-        spec_tbl = Table(rows, colWidths=[60 * mm, 60 * mm, 60 * mm])
-        spec_tbl.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), panel),
+    # Flatten all spec pairs (summary first, then every section's items) into
+    # a single compact 3-column grid. Skip section titles — the labels carry
+    # enough context (Paper Stock, Print Colour, etc.) and we need to stay
+    # on a single A4 page.
+    spec_pairs: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def _push(label: str, value):
+        if not label or value in (None, ""):
+            return
+        key = (label.strip().lower(), str(value).strip().lower())
+        if key in seen:
+            return
+        seen.add(key)
+        spec_pairs.append((label.strip(), str(value).strip()))
+
+    for i in (1, 2, 3):
+        _push(summary.get(f"primary_spec_{i}_label"), summary.get(f"primary_spec_{i}_value"))
+
+    if isinstance(cfg_sections, list):
+        for section in cfg_sections:
+            if not isinstance(section, dict):
+                continue
+            for it in (section.get("items") or []):
+                if isinstance(it, dict):
+                    _push(it.get("label"), it.get("value"))
+
+    # Legacy fallback when configuration is empty.
+    if not spec_pairs:
+        report = job.get("assembly_report") or {}
+        resolved = report.get("target") if isinstance(report, dict) else {}
+        if not isinstance(resolved, dict):
+            resolved = {}
+        size_str = None
+        if resolved.get("width_mm") and resolved.get("height_mm"):
+            size_str = f"{resolved['width_mm']:.0f}×{resolved['height_mm']:.0f}mm"
+        for k, v in [
+            ("Size", size_str or snap.get("size")),
+            ("Orientation", resolved.get("orientation") or snap.get("orientation")),
+            ("Paper", (cfg.get("paper") if isinstance(cfg, dict) else None) or snap.get("paper")),
+            ("Colour", (resolved.get("colour_mode") or "").upper() or snap.get("colour")),
+            ("Sides", (resolved.get("duplex_mode") or "").title() or snap.get("sides")),
+            ("Binding", (cfg.get("binding") if isinstance(cfg, dict) else None) or snap.get("binding")),
+        ]:
+            _push(k, v)
+
+    if spec_pairs:
+        rows = []
+        for i in range(0, len(spec_pairs), 3):
+            chunk = spec_pairs[i:i + 3]
+            cells = []
+            for k, v in chunk:
+                cells.append(Paragraph(
+                    f"<font color='#64748b' size='7.5'>{k.upper()}</font><br/><b>{v}</b>",
+                    body,
+                ))
+            while len(cells) < 3:
+                cells.append(Paragraph("", body))
+            rows.append(cells)
+        specs_tbl = Table(rows, colWidths=[60 * mm, 60 * mm, 60 * mm])
+        specs_tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.white),
             ("BOX", (0, 0), (-1, -1), 0.5, rule),
-            ("INNERGRID", (0, 0), (-1, -1), 0.5, rule),
+            ("INNERGRID", (0, 0), (-1, -1), 0.4, rule),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 8),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING", (0, 0), (-1, -1), 7),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
         ]))
-        flow.append(spec_tbl)
+        flow.append(specs_tbl)
+
     flow.append(Spacer(1, 10))
 
     # ------------------------------------------------------------------
-    # Documents block
+    # 5. Files — prefer bundle.documents, fall back to asset_paths
     # ------------------------------------------------------------------
-    flow.append(Paragraph("DOCUMENTS", h_section))
+    flow.append(Paragraph("SOURCE FILES", h_section))
+
+    file_rows: list[list] = [[
+        Paragraph("<b>#</b>", body),
+        Paragraph("<b>File name</b>", body),
+        Paragraph("<b>Pages</b>", body),
+        Paragraph("<b>Page size</b>", body),
+        Paragraph("<b>File size</b>", body),
+    ]]
+
     if bundle.documents:
-        rows = [[
-            Paragraph("<b>#</b>", body),
-            Paragraph("<b>File</b>", body),
-            Paragraph("<b>Pages</b>", body),
-            Paragraph("<b>Size</b>", body),
-            Paragraph("<b>File size</b>", body),
-        ]]
         for i, d in enumerate(bundle.documents, 1):
             meta = d.get("metadata") if isinstance(d.get("metadata"), dict) else {}
-            page_count = d.get("page_count") or meta.get("page_count")
-            size_label = (
-                f"{d.get('page_width_mm'):.0f}×{d.get('page_height_mm'):.0f}mm"
-                if d.get("page_width_mm") and d.get("page_height_mm")
-                else meta.get("size_label") or "—"
-            )
-            rows.append([
+            preflight = d.get("preflight_data") if isinstance(d.get("preflight_data"), dict) else {}
+            page_count = (d.get("page_count")
+                          or meta.get("page_count")
+                          or preflight.get("page_count"))
+            pw = d.get("page_width_mm") or preflight.get("page_width_mm")
+            ph = d.get("page_height_mm") or preflight.get("page_height_mm")
+            try:
+                size_label = f"{float(pw):.0f}×{float(ph):.0f}mm" if pw and ph else (meta.get("size_label") or "—")
+            except Exception:
+                size_label = "—"
+            file_rows.append([
                 Paragraph(str(i), body),
                 Paragraph(_safe(d.get("file_name")), body),
                 Paragraph(_safe(page_count), body),
                 Paragraph(size_label, body),
                 Paragraph(_format_filesize(d.get("file_size") or meta.get("file_size")), body),
             ])
-        files_table = Table(rows, colWidths=[8 * mm, 92 * mm, 18 * mm, 30 * mm, 32 * mm])
-        files_table.setStyle(TableStyle([
-            ("BOX", (0, 0), (-1, -1), 0.5, rule),
-            ("INNERGRID", (0, 0), (-1, -1), 0.25, rule),
-            ("BACKGROUND", (0, 0), (-1, 0), panel),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ]))
-        flow.append(files_table)
+    elif bundle.asset_paths:
+        # Snapshot-based jobs: only the filename + storage path are available.
+        for i, (fname, _path) in enumerate(bundle.asset_paths, 1):
+            file_rows.append([
+                Paragraph(str(i), body),
+                Paragraph(_safe(fname), body),
+                Paragraph("—", body),
+                Paragraph("—", body),
+                Paragraph("—", body),
+            ])
     else:
-        flow.append(Paragraph("<i>No source files attached.</i>", body_mute))
+        file_rows.append([
+            Paragraph("", body),
+            Paragraph("<i>No source files attached.</i>", body_mute),
+            Paragraph("", body), Paragraph("", body), Paragraph("", body),
+        ])
 
+    files_table = Table(file_rows, colWidths=[8 * mm, 92 * mm, 18 * mm, 30 * mm, 32 * mm])
+    files_table.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.5, rule),
+        ("INNERGRID", (0, 0), (-1, -1), 0.25, rule),
+        ("BACKGROUND", (0, 0), (-1, 0), panel_bg),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    flow.append(files_table)
     flow.append(Spacer(1, 12))
 
     # ------------------------------------------------------------------
-    # Sign-off
+    # 6. Operator sign-off — writable fields
     # ------------------------------------------------------------------
-    sign_rows = [[
-        Paragraph("<font color='#64748b'>Operator</font><br/>________________", body),
-        Paragraph("<font color='#64748b'>QC</font><br/>________________", body),
-        Paragraph("<font color='#64748b'>Started</font><br/>________________", body),
-        Paragraph("<font color='#64748b'>Completed</font><br/>________________", body),
-    ]]
-    sign_table = Table(sign_rows, colWidths=[45 * mm, 45 * mm, 45 * mm, 45 * mm])
-    sign_table.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LINEABOVE", (0, 0), (-1, 0), 0.5, rule),
-        ("TOPPADDING", (0, 0), (-1, -1), 8),
-    ]))
-    flow.append(sign_table)
+    flow.append(Paragraph("PRODUCTION SIGN-OFF", h_section))
 
-    notes_row = Table(
-        [[Paragraph("<font color='#64748b'>Notes</font>", body),
-          Paragraph("________________________________________________________________________", body)]],
-        colWidths=[20 * mm, 162 * mm],
+    def _field(label: str, width_mm: float, height_mm: float = 9):
+        cell = Table(
+            [[Paragraph(f"<font color='#64748b' size='7.5'>{label.upper()}</font>", body)],
+             [Paragraph("", body)]],
+            colWidths=[width_mm * mm],
+            rowHeights=[5 * mm, height_mm * mm],
+        )
+        cell.setStyle(TableStyle([
+            ("BOX", (0, 0), (-1, -1), 0.5, rule),
+            ("LINEABOVE", (0, 1), (-1, 1), 0.4, rule),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+        return cell
+
+    sign_row = Table(
+        [[_field("Operator", 44),
+          _field("QC", 44),
+          _field("Started", 47),
+          _field("Completed", 47)]],
+        colWidths=[44 * mm, 44 * mm, 47 * mm, 47 * mm],
     )
-    notes_row.setStyle(TableStyle([
+    sign_row.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
     ]))
-    flow.append(notes_row)
+    flow.append(sign_row)
+    flow.append(Spacer(1, 6))
 
-    flow.append(Spacer(1, 4))
+    notes_cell = Table(
+        [[Paragraph("<font color='#64748b' size='7.5'>NOTES</font>", body)],
+         [Paragraph("", body)]],
+        colWidths=[182 * mm],
+        rowHeights=[5 * mm, 22 * mm],
+    )
+    notes_cell.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.5, rule),
+        ("LINEABOVE", (0, 1), (-1, 1), 0.4, rule),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    flow.append(notes_cell)
+
+    flow.append(Spacer(1, 6))
     flow.append(Paragraph(
-        f"Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} &nbsp;·&nbsp; Powered by Document Centre",
+        f"Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}  ·  Powered by Document Centre",
         small,
     ))
 

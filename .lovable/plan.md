@@ -1,93 +1,85 @@
+# Plan: make the job ticket a true production source-of-truth
 
-## 1. Branch portal — on-brand sidebar, no text overrun
+## What I found
 
-**Problem (from screenshot)**
-- `PostNet — PostNet Sandt…` clips the branch name (tenant + branch concatenated on one line).
-- `sandtoncityadmin@postne…` clips the user email in the footer.
-- The active nav pill ("Orders") is generic white; it should pick up the tenant's brand colour (PostNet red).
-- Logo slot doesn't show the tenant logo distinctly.
+- The VPS is now rendering the new code, but the current layout has defects:
+  - Logo is placed on a red brand band, so the red PostNet logo disappears.
+  - Header text and job title can collide/overlap.
+  - The ticket still includes a pricing panel, which should not be on a work ticket.
+  - The production specs section is mostly empty because the renderer reads only a few legacy keys (`paper`, `binding`, etc.), while the admin UI gets the real details from `job.configuration.summary` and `job.configuration.sections`.
+  - Documents show “No source files attached” because the renderer uses `bundle.documents`, but for current snapshot-based jobs the source files are resolved into `bundle.asset_paths` instead.
 
-**Changes in `src/components/BranchSidebar.tsx`**
-- Stack identity vertically: line 1 = tenant name (medium weight, truncate), line 2 = branch name in tenant primary colour (semibold), line 3 = "Branch Portal" muted. Drops the "—" concatenation entirely so neither name clips.
-- Footer user block: shrink email to `text-[11px]`, keep `truncate`, and add `title={user.email}` so the full address is in a tooltip.
-- When `branding.logo_url` exists, render at `h-9 w-auto max-w-[40px]` with `object-contain` so the actual mark shows instead of a square crop.
-- Apply brand colour via inline CSS variable on the `<aside>`:
-  - `style={{ '--brand': branding.primary_color }}`
-  - Active nav pill uses `bg-[hsl(var(--brand)/0.12)] text-[hsl(var(--brand))]` with a 2px left border in `--brand`.
-  - Collapse chevron + hover states tinted with `--brand`.
-- Add the same treatment to `BranchLayout` top bar if it carries a title (quick check during implementation).
+## Changes to make
 
-**Sidebar — no behaviour changes**, purely presentational. Admin/platform sidebars untouched.
+### 1. Rebuild the PDF layout for print-shop use
+Update `pdf-server/app/tasks/production_tasks.py`:
 
-## 2. Job ticket PDF — proper operator-grade layout
+- Use a clean white header instead of a solid red band.
+- Put the PostNet/tenant logo inside a white logo box so it is visible regardless of brand colour.
+- Use brand colour only for a thin accent rule, section headings, and small labels.
+- Keep the QR code top-right, but prevent it from squeezing/overlapping the job title.
+- Remove pricing entirely.
+- Add writable fields for:
+  - Due date
+  - Operator
+  - Started
+  - Completed
+  - QC
+  - Notes
 
-The current ticket (`pdf-server/app/tasks/production_tasks.py::_render_ticket_pdf`) is plain ReportLab with a "Document Centre" header, three small tables, and sign-off lines. It ignores branding, has no thumbnails, no pricing, no delivery details, and shows "Document Centre" instead of the branch.
+### 2. Mirror the admin Job Details panel
+Use the same data sources as `JobDetailPanel.tsx`:
 
-### Data — extend `load_job_bundle` (`production_orchestrator.py`)
+- Job ID / job number
+- Job name / product
+- Category
+- Quantity, unit label, sent, remaining
+- Status, proof status, urgency
+- Primary summary specs:
+  - Size
+  - Pages
+  - Any other `configuration.summary.primary_spec_*` values
+- Full `configuration.sections[]` output, including examples shown in the admin screenshot:
+  - Document / Pages
+  - Standard sizes / Document Size
+  - Printed covers
+  - Cover lamination
+  - White paper / Paper Stock
+  - Print to edge
+  - Print / Print Colour / Print Sides
+  - Document sections / Body colour-duplex rules
+  - Files / file name, page count, size
+  - Net price should be excluded from the ticket
 
-Add these optional fields to `JobBundle` and populate when available:
-- `branch`: row from `branches` (name, address, phone, email) keyed off `order.branch_id`.
-- `branding`: row from `tenant_branding` (logo_url, primary_color, secondary_color).
-- `delivery_address`: latest row from `order_addresses` for this order where `kind = 'delivery'`.
-- `order_item`: matching `order_items` row for unit/net price, currency, qty.
-- `document_thumbnails`: for each document, prefer `documents.thumbnail_path`; otherwise rasterise page 1 of the resolved source PDF at ~120 DPI in the worker workspace.
+### 3. Fix source-file listing
+Still in `production_tasks.py`:
 
-Branch/branding/address fetches are best-effort (`try/except` → `None`), so no migration required and existing tickets continue to render when fields are missing.
+- Render files from `bundle.documents` when available.
+- If `bundle.documents` is empty, fall back to `bundle.asset_paths` so snapshot jobs show files like `8pp A4.pdf` instead of “No source files attached”.
+- Include file name and any available page/size metadata; if only `asset_paths` are available, show the filename and mark unknown metadata as `—`.
 
-### Rendering — rewrite `_render_ticket_pdf`
+### 4. Improve data loading if needed
+Update `pdf-server/app/services/production_orchestrator.py` only if required:
 
-Single A4 page, generous whitespace, brand-led:
+- Ensure the selected `order_item` query carries enough detail for future renderer use (`spec`, `title`, `quantity`, possibly price fields only if already present, but pricing will not be printed).
+- Do not add migrations.
 
-```text
-┌──────────────────────────────────────────────────────────┐
-│ [Tenant Logo]  PostNet Sandton City              Job     │  ← brand-coloured band
-│                123 Rivonia Rd · 011-234-5678     Ticket  │
-├──────────────────────────────────────────────────────────┤
-│  INV-00069-1                              ████ QR ████   │
-│  Booklets · 5 copies                      (links to      │
-│  Due: Mon 2 Jun · Urgency: Normal          admin order)  │
-├──────────────────────────────────────────────────────────┤
-│ CUSTOMER             │ FULFILMENT          │ PRICING     │
-│ James Hawkins        │ Collection          │ Unit  R 43.70│
-│ Acme Co              │ PostNet Sandton City│ Qty   ×5    │
-│ james@acme.co.za     │ 123 Rivonia Rd      │ Net   R 218.50│
-│ +27 82 ...           │ Sandton, 2196       │ Paid (EFT)  │
-├──────────────────────────────────────────────────────────┤
-│ PRODUCTION SPECS                                          │
-│ Size A4 (A3 folded)   Paper 80gsm White Bond   ...        │
-│ Colour Full Colour    Sides  Duplex            ...        │
-│ Binding Saddle stitch Cover  Printed (same stock)  ...    │
-├──────────────────────────────────────────────────────────┤
-│ DOCUMENTS                                                 │
-│  ┌──┐  body.pdf            8 pages   A4   12.3 MB         │
-│  │📄│                                                      │
-│  └──┘                                                      │
-│  ┌──┐  cover.pdf           2 pages   A3   3.1 MB          │
-├──────────────────────────────────────────────────────────┤
-│ Operator ______  QC ______  Started ____  Completed ____  │
-│ Notes ____________________________________________________│
-│                                                            │
-│ Generated 2026-05-30 15:42 UTC · Powered by Document Centre│
-└──────────────────────────────────────────────────────────┘
-```
+### 5. Make regeneration explicit from the admin UI
+Update the app-side call path:
 
-Implementation notes:
-- Use the tenant `primary_color` for the top band, the job-number divider rule, and section header underlines. Fallback to slate-700 if missing.
-- Logo via `RLImage` from the branding `logo_url` (download to workspace, scale to 18mm height). Skip silently on error.
-- Three-column block (Customer / Fulfilment / Pricing) is a single `Table` with 60/60/65mm columns and an outer `LINEABOVE`/`LINEBELOW`.
-- Production specs grid stays the resolved-target-aware block we have today, but rendered as a 2-column key/value layout in 3 visual columns (so up to 9 specs fit without overflow).
-- Documents list: for each document, render a 22×28mm thumbnail (or a placeholder doc icon) next to filename, page count, detected size, file size.
-- Sign-off row condensed to a single line; QR moves to top-right.
-- Footer reads "Generated … by Document Centre" so the platform brand stays, but the page itself is fully tenant-branded.
+- `src/hooks/useProductionArtefacts.ts`: let `generateJobTicket({ force: true })` pass `force` to `production-pdf`.
+- `src/components/orders/detail/ProductionPanel.tsx`: when a ticket already exists, the “Re-generate” button should call `force: true` so operators get the new layout after renderer updates.
 
-### Files touched
-- `pdf-server/app/services/production_orchestrator.py` — extend `JobBundle` + `load_job_bundle`.
-- `pdf-server/app/tasks/production_tasks.py` — rewrite `_render_ticket_pdf`, add a small thumbnail helper.
-- `src/components/BranchSidebar.tsx` — branded identity + footer fixes.
+The Supabase edge function already forwards `force`, and the VPS route accepts the field, so this is mainly UI/hook wiring.
 
-No DB migrations, no edge-function changes, no API contract changes. Existing "Print ticket" button in `ProductionPanel` keeps working — it just produces a much nicer PDF.
+## Validation
 
-## Out of scope (intentionally)
-- Admin & platform sidebars (only branch is on-brand per the request).
-- Multi-page tickets / per-section breakdowns (branches are small, one page is the brief).
-- Live preview of the ticket in the web UI (not requested; PDF only).
+- Generate a sample ticket locally from a representative `JobBundle` shape based on the screenshot.
+- Convert the PDF page to an image and inspect it for:
+  - No logo/header collision
+  - No overlapping job title text
+  - No pricing block
+  - Admin-visible specs present
+  - Files listed correctly
+  - Enough writable production space
+- After merging/deploying, redeploy `pdf-server` and click **Re-generate** on `INV-00069-1`.
