@@ -230,7 +230,7 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
         path={artefacts?.job_ticket_pdf_path ?? null}
         loading={isLoading || generating === "ticket"}
         opening={openingPath === artefacts?.job_ticket_pdf_path}
-        onGenerate={generateJobTicket}
+        onGenerate={() => generateJobTicket({ force: !!artefacts?.job_ticket_pdf_path })}
         onOpen={() => download(artefacts?.job_ticket_pdf_path ?? null, "ticket")}
         generateLabel="Print ticket"
       />
