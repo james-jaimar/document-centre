@@ -792,11 +792,22 @@ async function sendMessage(
   // Resolve app context from order
   const { data: order } = await admin
     .from("orders")
-    .select("app_id, tenant_id, branch_id, order_number")
+    .select("app_id, tenant_id, branch_id, order_number, ordered_by_profile_id")
     .eq("id", order_id)
     .single();
 
   if (!order) return err("Order not found", 404);
+
+  // Customer-originated messages: must own the order and cannot be internal.
+  // Staff-originated messages: enforce branch-scoped staff access.
+  if (sender_type === "customer") {
+    if ((order as any).ordered_by_profile_id !== userId || is_internal) {
+      return err("Not authorised to message on this order", 403);
+    }
+  } else {
+    const denied = await assertOrderStaffAccess(admin, userId, order as any);
+    if (denied) return err(denied, 403);
+  }
 
   const { data: msg, error: msgErr } = await admin
     .from("messages")
