@@ -193,7 +193,7 @@ function getOrderDisplayName(order: any): string {
     // Fall back to item title
     if (items[0]?.title) return items[0].title;
   }
-  return `Order ${order.id.slice(0, 8)}`;
+  return `Order ${order.order_number ?? order.id.slice(0, 8)}`;
 }
 
 /* ── Product Carousel ── */
