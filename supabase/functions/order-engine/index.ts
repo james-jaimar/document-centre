@@ -1225,10 +1225,14 @@ Deno.serve(async (req) => {
           const data = await response.clone().json();
           if (data?.order_id) {
             sideEffects = async () => {
-              await Promise.all([
-                triggerInvoice(authHeader, data.order_id, "proforma"),
-                triggerEmail(authHeader, data.order_id, "order_received"),
-              ]);
+              // Generate the proforma first so we can attach it to the confirmation email.
+              const inv = await triggerInvoice(authHeader, data.order_id, "proforma");
+              await triggerEmail(
+                authHeader,
+                data.order_id,
+                "order_received",
+                inv?.invoice_id ? { invoice_id: inv.invoice_id } : {},
+              );
             };
           }
         }
