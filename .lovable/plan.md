@@ -1,85 +1,51 @@
-# Plan: make the job ticket a true production source-of-truth
+## What I checked
 
-## What I found
+The Orders list is **not** waiting on Supabase Postgres — I ran the underlying query and it returns in ~8 ms (48 orders total, RLS policies eval fast). It's also not the edge functions (none are called on this page). The slowness is on the **client / PostgREST round-trip** side. Three concrete causes:
 
-- The VPS is now rendering the new code, but the current layout has defects:
-  - Logo is placed on a red brand band, so the red PostNet logo disappears.
-  - Header text and job title can collide/overlap.
-  - The ticket still includes a pricing panel, which should not be on a work ticket.
-  - The production specs section is mostly empty because the renderer reads only a few legacy keys (`paper`, `binding`, etc.), while the admin UI gets the real details from `job.configuration.summary` and `job.configuration.sections`.
-  - Documents show “No source files attached” because the renderer uses `bundle.documents`, but for current snapshot-based jobs the source files are resolved into `bundle.asset_paths` instead.
+### 1. Two parallel `useAdminOrders` calls with different cache keys
+`src/pages/branch/BranchOrders.tsx` calls the hook twice:
+- Once with the user's filters
+- A second time with `page_size: 1` purely to compute `totalForBranch` for the empty-state hint
 
-## Changes to make
+Because the `filters` object differs, React Query treats them as two queries — both fire on every mount and on every filter change. On a cold load that's 2 sequential PostgREST requests competing on the same HTTP/2 connection, each carrying `Prefer: count=exact`.
 
-### 1. Rebuild the PDF layout for print-shop use
-Update `pdf-server/app/tasks/production_tasks.py`:
+### 2. `count: "exact"` on every fetch (`src/lib/orders/queries.ts`)
+`count: "exact"` forces PostgREST to run a second `SELECT count(*)` with full RLS evaluation on every request. We only need a real count when paginating. Switching to `count: "planned"` (or only requesting it on page 1 / when total is unknown) typically cuts latency in half.
 
-- Use a clean white header instead of a solid red band.
-- Put the PostNet/tenant logo inside a white logo box so it is visible regardless of brand colour.
-- Use brand colour only for a thin accent rule, section headings, and small labels.
-- Keep the QR code top-right, but prevent it from squeezing/overlapping the job title.
-- Remove pricing entirely.
-- Add writable fields for:
-  - Due date
-  - Operator
-  - Started
-  - Completed
-  - QC
-  - Notes
+### 3. The list query pulls `order_jobs.configuration` (JSONB)
+The table view never renders `configuration`, but we select it. On the branch's 42 jobs that's ~95 kB transferred per request — and PostgREST serialises JSONB row-by-row. Dropping it from the select shrinks the payload and the parse time.
 
-### 2. Mirror the admin Job Details panel
-Use the same data sources as `JobDetailPanel.tsx`:
+### Secondary contributors (not blocking, but worth noting)
+- `useUnreadMessagesStaff` opens a realtime websocket on mount; the handshake can add ~300–800 ms but doesn't block the table render.
+- `TenantContext` resolves `tenantId/branchId` before `enabled: !!tenantId` lets the query fire, so the spinner you see includes that membership lookup.
+- No `staleTime` set on `useAdminOrders` → every navigation back to /branch/orders refetches.
 
-- Job ID / job number
-- Job name / product
-- Category
-- Quantity, unit label, sent, remaining
-- Status, proof status, urgency
-- Primary summary specs:
-  - Size
-  - Pages
-  - Any other `configuration.summary.primary_spec_*` values
-- Full `configuration.sections[]` output, including examples shown in the admin screenshot:
-  - Document / Pages
-  - Standard sizes / Document Size
-  - Printed covers
-  - Cover lamination
-  - White paper / Paper Stock
-  - Print to edge
-  - Print / Print Colour / Print Sides
-  - Document sections / Body colour-duplex rules
-  - Files / file name, page count, size
-  - Net price should be excluded from the ticket
+---
 
-### 3. Fix source-file listing
-Still in `production_tasks.py`:
+## Plan
 
-- Render files from `bundle.documents` when available.
-- If `bundle.documents` is empty, fall back to `bundle.asset_paths` so snapshot jobs show files like `8pp A4.pdf` instead of “No source files attached”.
-- Include file name and any available page/size metadata; if only `asset_paths` are available, show the filename and mark unknown metadata as `—`.
+**A. `src/pages/branch/BranchOrders.tsx`**
+- Remove the second `useAdminOrders({…, page_size: 1})` call. Derive `totalForBranch` from `data?.total` when there are no active filters; only show the "X total orders for this branch" hint in that case.
+- Memoise the `filters` object with `useMemo` so the query key is stable across re-renders.
 
-### 4. Improve data loading if needed
-Update `pdf-server/app/services/production_orchestrator.py` only if required:
+**B. `src/lib/orders/queries.ts` — `fetchAdminOrders`**
+- Change `{ count: "exact" }` → `{ count: "planned" }`. Keep `total` returned the same way (planned count is close enough for "Page 1 of N").
+- Drop `configuration` from the `order_jobs(...)` embed. (The detail page already fetches it via `fetchOrderDetail`.) Keep `job_number, sequence_no, product_name, product_category, job_name, job_status, customer_job_status, proof_status, file_status, urgency, quantity, unit_label, net_price, gross_price, created_at` — those are all the table actually reads.
+- Same treatment for `fetchCustomerOrders` (drop `configuration` from the embed).
 
-- Ensure the selected `order_item` query carries enough detail for future renderer use (`spec`, `title`, `quantity`, possibly price fields only if already present, but pricing will not be printed).
-- Do not add migrations.
+**C. `src/hooks/useOrders.ts`**
+- Add `staleTime: 15_000` and `gcTime: 60_000` to `useAdminOrders` and `useCustomerOrders` so re-entering the page from the order detail view is instant.
 
-### 5. Make regeneration explicit from the admin UI
-Update the app-side call path:
+**D. Verify**
+- Reload `/branch/orders` with DevTools network panel open and confirm:
+  - Only **one** request to `/rest/v1/orders` (was two).
+  - Response size drops noticeably (configuration removed).
+  - `Prefer: count=planned` header sent.
+  - Returning from an order detail back to the list shows cached data instantly.
 
-- `src/hooks/useProductionArtefacts.ts`: let `generateJobTicket({ force: true })` pass `force` to `production-pdf`.
-- `src/components/orders/detail/ProductionPanel.tsx`: when a ticket already exists, the “Re-generate” button should call `force: true` so operators get the new layout after renderer updates.
+### Out of scope
+- No DB index changes — query plan is already fast on this volume.
+- No RLS policy changes — they're not the bottleneck at 48 rows.
+- No layout/visual changes to the Orders page.
 
-The Supabase edge function already forwards `force`, and the VPS route accepts the field, so this is mainly UI/hook wiring.
-
-## Validation
-
-- Generate a sample ticket locally from a representative `JobBundle` shape based on the screenshot.
-- Convert the PDF page to an image and inspect it for:
-  - No logo/header collision
-  - No overlapping job title text
-  - No pricing block
-  - Admin-visible specs present
-  - Files listed correctly
-  - Enough writable production space
-- After merging/deploying, redeploy `pdf-server` and click **Re-generate** on `INV-00069-1`.
+If after these three changes the page still spins for ~10 s, the next thing to look at is auth/membership resolution before `tenantId` is available — I'd add a perf mark inside `TenantContext` to confirm.
