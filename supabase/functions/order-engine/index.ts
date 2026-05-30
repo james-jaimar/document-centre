@@ -1260,14 +1260,19 @@ Deno.serve(async (req) => {
         response = await recordPaymentEvent(admin, userId, payload);
         if (response.ok && payload.status === "paid" && payload.order_id) {
           sideEffects = async () => {
-            await Promise.all([
-              triggerInvoice(authHeader, payload.order_id, "invoice"),
-              triggerEmail(authHeader, payload.order_id, "payment_received"),
-            ]);
+            // Sequence: generate tax invoice first so we can attach it to the email.
+            const inv = await triggerInvoice(authHeader, payload.order_id, "invoice");
+            await triggerEmail(
+              authHeader,
+              payload.order_id,
+              "payment_received",
+              inv?.invoice_id ? { invoice_id: inv.invoice_id } : {},
+            );
           };
         }
         break;
       }
+
       case "refundPayment": {
         response = await refundPayment(admin, userId, payload);
         if (response.ok && payload.order_id) {
@@ -1288,7 +1293,17 @@ Deno.serve(async (req) => {
         break;
       case "sendMessage":
         response = await sendMessage(admin, userId, payload);
+        if (response.ok && payload.order_id && !payload.is_internal && payload.sender_type !== "customer") {
+          sideEffects = async () => {
+            await triggerEmail(authHeader, payload.order_id, "new_message", {
+              force: true,
+              message_excerpt: String(payload.message_body || "").slice(0, 240),
+            });
+          };
+        }
         break;
+
+
       case "cancelOrder": {
         response = await cancelOrder(admin, userId, payload);
         if (response.ok && payload.order_id) {

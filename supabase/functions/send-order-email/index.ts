@@ -24,7 +24,9 @@ type EventKey =
   | "refunded"
   | "order_cancelled"
   | "invoice_sent"
-  | "payment_request";
+  | "payment_request"
+  | "new_message";
+
 
 const SUBJECTS: Record<EventKey, (n: string, extra?: any) => string> = {
   order_received: (n) => `Order ${n} received — thank you!`,
@@ -38,7 +40,9 @@ const SUBJECTS: Record<EventKey, (n: string, extra?: any) => string> = {
   order_cancelled: (n) => `Order ${n} has been cancelled`,
   invoice_sent: (n, e) => `${e?.invoiceLabel || "Invoice"} for order ${n}`,
   payment_request: (n) => `Payment request for order ${n}`,
+  new_message: (n) => `New message on order ${n}`,
 };
+
 
 const HEADLINES: Record<EventKey, string> = {
   order_received: "Thanks for your order!",
@@ -52,7 +56,9 @@ const HEADLINES: Record<EventKey, string> = {
   order_cancelled: "Your order has been cancelled",
   invoice_sent: "Your invoice is attached",
   payment_request: "Payment required",
+  new_message: "You have a new message",
 };
+
 
 const KIND_LABEL: Record<string, string> = {
   proforma: "Proforma Invoice",
@@ -66,7 +72,10 @@ const BODIES: Record<EventKey, (ctx: any) => string> = {
     `We've received your order <strong>${c.orderNo}</strong> for ${c.totalFmt}. ${
       c.unpaid ? `Please pay via EFT using the banking details below — use <strong>${c.orderNo}</strong> as your reference.` : "Your payment has been recorded."
     }${c.hasProforma ? `<br><br>Your proforma invoice (<strong>${c.invoiceNumber}</strong>) is attached for your records.` : ""}`,
-  payment_received: (c) => `We've received your payment of ${c.totalFmt} for order <strong>${c.orderNo}</strong>. We'll get started right away.`,
+  payment_received: (c) =>
+    `We've received your payment of ${c.totalFmt} for order <strong>${c.orderNo}</strong>. We'll get started right away.` +
+    (c.hasAttachment ? `<br><br>Your ${c.invoiceLabel.toLowerCase()} (<strong>${c.invoiceNumber}</strong>) is attached for your records.` : ""),
+
   proof_ready: (c) => `A proof for order <strong>${c.orderNo}</strong> is ready for your review. Please log in to approve it.`,
   in_production: (c) => `Order <strong>${c.orderNo}</strong> has moved into production. We'll let you know when it's ready.`,
   ready_for_collection: (c) => `Order <strong>${c.orderNo}</strong> is ready for collection from our store.`,
@@ -84,8 +93,14 @@ const BODIES: Record<EventKey, (ctx: any) => string> = {
     (c.unpaid ? `<br><br>Please pay via EFT using <strong>${c.orderNo}</strong> as your reference.` : ""),
   payment_request: (c) =>
     `A payment of <strong>${c.amountDueFmt}</strong> is due for order <strong>${c.orderNo}</strong>.` +
+    (c.hasAttachment ? `<br><br>Your proforma invoice (<strong>${c.invoiceNumber}</strong>) is attached.` : "") +
     `<br><br>Please pay via EFT using <strong>${c.orderNo}</strong> as your reference.`,
+  new_message: (c) =>
+    `You have a new message on order <strong>${c.orderNo}</strong>.` +
+    (c.messageExcerpt ? `<br><br><em>"${c.messageExcerpt}"</em>` : "") +
+    `<br><br>Open your order to reply.`,
 };
+
 
 const DEFAULT_ORIGIN = "https://document-centre.com";
 
@@ -225,12 +240,76 @@ Deno.serve(async (req) => {
     if ((order as any).is_demo) return json({ success: true, skipped: true, reason: "demo_order" });
     if (!order.customer_email) return json({ success: true, skipped: true, reason: "no_email" });
 
-    // Fetch invoice details if invoice_sent OR if order_received was given a proforma to attach
+    // Resolve invoice to attach for events that should include a PDF.
+    // Events that carry an attachment:
+    //   - invoice_sent: explicit invoice_id passed in
+    //   - order_received: proforma (passed in by order-engine)
+    //   - payment_received: latest paid invoice/receipt
+    //   - payment_request: latest proforma (auto-generate if none exists)
     let invoice: any = null;
-    if ((eventKey === "invoice_sent" || eventKey === "order_received") && invoice_id) {
-      const { data: inv } = await admin.from("order_invoices").select("*").eq("id", invoice_id).single();
-      invoice = inv;
+    const ATTACH_EVENTS = new Set<EventKey>([
+      "invoice_sent",
+      "order_received",
+      "payment_received",
+      "payment_request",
+    ]);
+
+    if (ATTACH_EVENTS.has(eventKey)) {
+      if (invoice_id) {
+        const { data: inv } = await admin.from("order_invoices").select("*").eq("id", invoice_id).single();
+        invoice = inv;
+      } else {
+        // Auto-resolve the most appropriate invoice for this order/event.
+        let preferredKinds: string[] = [];
+        if (eventKey === "payment_received") preferredKinds = ["receipt", "invoice"];
+        else if (eventKey === "payment_request") preferredKinds = ["proforma"];
+        else if (eventKey === "order_received") preferredKinds = ["proforma"];
+
+        if (preferredKinds.length) {
+          const { data: invRow } = await admin
+            .from("order_invoices")
+            .select("*")
+            .eq("order_id", order_id)
+            .in("kind", preferredKinds)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          invoice = invRow;
+
+          // No proforma yet for a payment_request → generate one now.
+          if (!invoice && eventKey === "payment_request") {
+            try {
+              const genRes = await fetch(
+                `${Deno.env.get("SUPABASE_URL")!}/functions/v1/generate-invoice-pdf`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: req.headers.get("Authorization") || `Bearer ${serviceKey}`,
+                  },
+                  body: JSON.stringify({ order_id, kind: "proforma" }),
+                },
+              );
+              if (genRes.ok) {
+                const genData = await genRes.json().catch(() => null);
+                const newId = (genData as any)?.invoice_id;
+                if (newId) {
+                  const { data: inv } = await admin
+                    .from("order_invoices")
+                    .select("*")
+                    .eq("id", newId)
+                    .single();
+                  invoice = inv;
+                }
+              }
+            } catch (e) {
+              console.error("auto-generate proforma failed:", e);
+            }
+          }
+        }
+      }
     }
+
 
     const [{ data: tenant }, { data: settings }, { data: addresses }, { data: branch }] = await Promise.all([
       admin.from("tenants").select("*").eq("id", order.tenant_id).single(),
@@ -287,6 +366,10 @@ Deno.serve(async (req) => {
       invoiceLabel,
       invoiceNumber: invoice?.invoice_number || "",
       hasProforma: eventKey === "order_received" && !!invoice?.storage_path,
+      hasAttachment: !!invoice?.storage_path,
+      messageExcerpt: typeof body.message_excerpt === "string" ? body.message_excerpt : "",
+
+
     };
 
     const subject = SUBJECTS[eventKey](ctx.orderNo, ctx);
@@ -306,9 +389,7 @@ Deno.serve(async (req) => {
     const senderEmail = (notif.sender_email as string) || null;
 
     const attachments =
-      (eventKey === "invoice_sent" || eventKey === "order_received") &&
-      invoice?.storage_bucket &&
-      invoice?.storage_path
+      ATTACH_EVENTS.has(eventKey) && invoice?.storage_bucket && invoice?.storage_path
         ? [{
             filename: `${invoice.invoice_number || "invoice"}.pdf`,
             storage_bucket: invoice.storage_bucket,
@@ -316,6 +397,7 @@ Deno.serve(async (req) => {
             content_type: "application/pdf",
           }]
         : undefined;
+
 
     await enqueueEmail(admin, {
       tenant_id: order.tenant_id,
