@@ -81,8 +81,52 @@ def enrich_asset(asset: dict) -> dict:
 
 @api_router.post("/assets", response_model=dict)
 def create_asset(payload: AssetCreate, db: Session = Depends(get_db)):
-    asset_id = asset_repo.create_asset(db, payload.model_dump(exclude={"auto_queue"}))
+    asset_id = asset_repo.create_asset(
+        db, payload.model_dump(exclude={"auto_queue", "inline_inspect"})
+    )
     job_ids: list[str] = []
+    inline: dict | None = None
+
+    is_pdf = (payload.media_type or "").lower() == "application/pdf" \
+        or payload.original_filename.lower().endswith(".pdf")
+
+    # ── Synchronous pikepdf probe ──────────────────────────────────
+    # Runs in the request handler so the response carries page_count,
+    # boxes, dimensions and mixed-orientation flag without an extra
+    # Celery hop. Pikepdf-only (no Ghostscript), typically <100 ms on
+    # an 8-page PDF. Network download time dominates.
+    if payload.inline_inspect and is_pdf:
+        try:
+            from app.services.files import Workspace
+            from app.services.pdf_ops import pdf_ops
+            with Workspace() as ws:
+                src = ws.path("probe.pdf")
+                storage.download(payload.source_storage_path, src)
+                info = pdf_ops.inspect(src)
+                asset_repo.update_asset(db, asset_id, {
+                    "page_count": info["page_count"],
+                    "width_pt": info["width_pt"],
+                    "height_pt": info["height_pt"],
+                    "boxes": info["boxes"],
+                    "status": "normalized",
+                })
+                inline = {
+                    "page_count": info["page_count"],
+                    "width_pt": info["width_pt"],
+                    "height_pt": info["height_pt"],
+                    "boxes": info["boxes"],
+                    "mixed_orientation": bool(info.get("mixed_orientation")),
+                    "status": "normalized",
+                }
+        except Exception as exc:
+            # Non-fatal — fall through to legacy auto_queue / explicit inspect.
+            # The frontend can still POST /assets/{id}/inspect if it wants
+            # full metadata. We surface the failure as inline=None.
+            import logging
+            logging.getLogger(__name__).warning(
+                "create_asset: inline probe failed for %s: %s",
+                payload.source_storage_path, exc,
+            )
 
     if payload.auto_queue:
         job_id = job_repo.create_job(db, asset_id, "normalize_asset", "documents", {})
@@ -90,7 +134,7 @@ def create_asset(payload: AssetCreate, db: Session = Depends(get_db)):
         job_repo.set_celery_task_id(db, job_id, task.id)
         job_ids.append(job_id)
 
-    return {"asset_id": asset_id, "job_ids": job_ids}
+    return {"asset_id": asset_id, "job_ids": job_ids, "inline_inspect": inline}
 
 
 @api_router.get("/assets/{asset_id}", response_model=AssetResponse)
