@@ -30,6 +30,7 @@ import PreviewLightbox from "@/components/order/PreviewLightbox";
 import { inferPreviewTypeFromJob } from "@/lib/orders/inferPreviewType";
 import PhotoPrintsAdminGallery from "@/components/orders/detail/PhotoPrintsAdminGallery";
 import { useMarkOrderReadCustomer } from "@/hooks/useUnreadMessages";
+import { useBranch } from "@/contexts/BranchContext";
 
 
 const CUSTOMER_STATUS_LABEL: Record<string, string> = {
