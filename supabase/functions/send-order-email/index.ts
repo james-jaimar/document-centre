@@ -286,6 +286,7 @@ Deno.serve(async (req) => {
       refundPending: body.refund_pending === true,
       invoiceLabel,
       invoiceNumber: invoice?.invoice_number || "",
+      hasProforma: eventKey === "order_received" && !!invoice?.storage_path,
     };
 
     const subject = SUBJECTS[eventKey](ctx.orderNo, ctx);
