@@ -336,6 +336,7 @@ async function sendViaGraph(
       name: a.filename,
       contentType: a.contentType,
       contentBytes: bytesToBase64(a.bytes),
+      ...(a.inline && a.contentId ? { contentId: a.contentId, isInline: true } : {}),
     }));
   }
 
