@@ -136,6 +136,27 @@ function pickEmailLogo(branding: any, origin: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Parse a Supabase Storage public URL into {bucket, path} so the dispatcher
+ * can fetch and inline it as a CID attachment — avoids exposing the raw
+ * supabase.co host in the email's <img src>.
+ */
+function parseStorageRef(url: string | undefined): { bucket: string; path: string } | null {
+  if (!url) return null;
+  const m = url.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/(.+?)(?:\?.*)?$/i);
+  if (!m) return null;
+  return { bucket: m[1], path: decodeURIComponent(m[2]) };
+}
+
+function inferContentType(url: string): string {
+  const u = url.toLowerCase().split("?")[0];
+  if (u.endsWith(".png")) return "image/png";
+  if (u.endsWith(".jpg") || u.endsWith(".jpeg")) return "image/jpeg";
+  if (u.endsWith(".webp")) return "image/webp";
+  if (u.endsWith(".gif")) return "image/gif";
+  return "application/octet-stream";
+}
+
 function renderHtml(opts: {
   branding: any;
   tenant: any;
@@ -144,11 +165,14 @@ function renderHtml(opts: {
   event: EventKey;
   ctx: any;
   ctaUrl?: string;
+  /** When true, render the logo as <img src="cid:tenant-logo"> instead of an https URL */
+  inlineLogoCid?: string;
 }) {
   const primary = (opts.branding.primary_color as string) || "#1a1a2e";
   const portalName = (opts.branding.portal_name as string) || opts.tenant.trading_name || opts.tenant.name;
   const origin = resolveTenantOrigin(opts.tenant);
-  const logo = pickEmailLogo(opts.branding, origin);
+  const logoUrl = pickEmailLogo(opts.branding, origin);
+  const logoSrc = opts.inlineLogoCid ? `cid:${opts.inlineLogoCid}` : logoUrl;
   const headline = HEADLINES[opts.event];
   const body = BODIES[opts.event](opts.ctx);
   const showBank =
@@ -186,7 +210,7 @@ function renderHtml(opts: {
       <tr><td align="center">
         <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.05)">
           <tr><td style="background:#ffffff;padding:18px 24px;border-bottom:1px solid #f0f1f4">
-            ${logo ? `<img src="${logo}" alt="${portalName}" style="max-width:180px;max-height:48px;width:auto;height:auto;display:block;border:0;outline:none;text-decoration:none">` : `<div style="color:${primary};font-size:18px;font-weight:600">${portalName}</div>`}
+            ${logoSrc ? `<img src="${logoSrc}" alt="${portalName}" width="140" style="width:140px;max-width:140px;height:auto;display:block;border:0;outline:none;text-decoration:none">` : `<div style="color:${primary};font-size:18px;font-weight:600">${portalName}</div>`}
           </td></tr>
           <tr><td style="padding:28px 28px 8px">
             <h1 style="margin:0 0 12px;font-size:20px;color:#111827">${headline}</h1>
@@ -383,20 +407,37 @@ Deno.serve(async (req) => {
         : tenant?.slug
         ? `${DEFAULT_ORIGIN}/t/${tenant.slug}/orders/${order_id}`
         : undefined;
-    const html = renderHtml({ branding, tenant, branch, bank, event: eventKey, ctx, ctaUrl });
+    // Inline the logo as a CID attachment when we can resolve it from Supabase
+    // Storage — avoids exposing the raw supabase.co URL in the email body.
+    const logoUrlRaw = pickEmailLogo(branding, tenantOrigin);
+    const logoRef = parseStorageRef(logoUrlRaw);
+    const LOGO_CID = "tenant-logo";
+    const inlineLogoCid = logoRef ? LOGO_CID : undefined;
+
+    const html = renderHtml({ branding, tenant, branch, bank, event: eventKey, ctx, ctaUrl, inlineLogoCid });
 
     const senderName = (notif.sender_name as string) || tenant.trading_name || tenant.name || "Orders";
     const senderEmail = (notif.sender_email as string) || null;
 
-    const attachments =
-      ATTACH_EVENTS.has(eventKey) && invoice?.storage_bucket && invoice?.storage_path
-        ? [{
-            filename: `${invoice.invoice_number || "invoice"}.pdf`,
-            storage_bucket: invoice.storage_bucket,
-            storage_path: invoice.storage_path,
-            content_type: "application/pdf",
-          }]
-        : undefined;
+    const attachments: Array<any> = [];
+    if (ATTACH_EVENTS.has(eventKey) && invoice?.storage_bucket && invoice?.storage_path) {
+      attachments.push({
+        filename: `${invoice.invoice_number || "invoice"}.pdf`,
+        storage_bucket: invoice.storage_bucket,
+        storage_path: invoice.storage_path,
+        content_type: "application/pdf",
+      });
+    }
+    if (logoRef) {
+      attachments.push({
+        filename: logoRef.path.split("/").pop() || "logo",
+        storage_bucket: logoRef.bucket,
+        storage_path: logoRef.path,
+        content_type: inferContentType(logoUrlRaw || ""),
+        content_id: LOGO_CID,
+        inline: true,
+      });
+    }
 
 
     await enqueueEmail(admin, {
@@ -413,7 +454,7 @@ Deno.serve(async (req) => {
       related_type: "order",
       related_id: order_id,
       metadata: { event_key: eventKey, order_number: ctx.orderNo, ...(invoice_id ? { invoice_id } : {}) },
-      attachments,
+      attachments: attachments.length ? attachments : undefined,
     });
 
     // Kick the dispatcher so the customer email goes out promptly.
