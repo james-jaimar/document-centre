@@ -208,7 +208,7 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
           loading={isLoading || generating === "impose"}
           opening={openingPath === artefacts?.imposed_pdf_path}
           onGenerate={() => generateImposition(selectedTemplateId)}
-          onOpen={() => open(artefacts?.imposed_pdf_path ?? null)}
+          onOpen={() => download(artefacts?.imposed_pdf_path ?? null, "imposed")}
           generateLabel="Impose"
           disabledReason={
             !artefacts?.print_ready_pdf_path
