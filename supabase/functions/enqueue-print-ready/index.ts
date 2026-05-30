@@ -23,12 +23,20 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
+    // Internal-only: require service-role bearer (called by pg_net trigger
+    // or other trusted edge functions). Rejects unauthenticated callers.
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    if (authHeader !== `Bearer ${serviceKey}`) {
+      return json({ error: "Unauthorized" }, 401);
+    }
+
     const { order_id, force } = await req.json();
     if (!order_id) return json({ error: "order_id required" }, 400);
 
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      serviceKey,
     );
 
     const { data: jobs, error } = await admin
@@ -39,7 +47,6 @@ Deno.serve(async (req) => {
     if (!jobs?.length) return json({ ok: true, jobs: 0 });
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
     // Fire each assemble in parallel; production-pdf polls the pdf-server
     // and returns when done. We don't wait for the result here — pg_net
