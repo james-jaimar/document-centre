@@ -407,20 +407,37 @@ Deno.serve(async (req) => {
         : tenant?.slug
         ? `${DEFAULT_ORIGIN}/t/${tenant.slug}/orders/${order_id}`
         : undefined;
-    const html = renderHtml({ branding, tenant, branch, bank, event: eventKey, ctx, ctaUrl });
+    // Inline the logo as a CID attachment when we can resolve it from Supabase
+    // Storage — avoids exposing the raw supabase.co URL in the email body.
+    const logoUrlRaw = pickEmailLogo(branding, tenantOrigin);
+    const logoRef = parseStorageRef(logoUrlRaw);
+    const LOGO_CID = "tenant-logo";
+    const inlineLogoCid = logoRef ? LOGO_CID : undefined;
+
+    const html = renderHtml({ branding, tenant, branch, bank, event: eventKey, ctx, ctaUrl, inlineLogoCid });
 
     const senderName = (notif.sender_name as string) || tenant.trading_name || tenant.name || "Orders";
     const senderEmail = (notif.sender_email as string) || null;
 
-    const attachments =
-      ATTACH_EVENTS.has(eventKey) && invoice?.storage_bucket && invoice?.storage_path
-        ? [{
-            filename: `${invoice.invoice_number || "invoice"}.pdf`,
-            storage_bucket: invoice.storage_bucket,
-            storage_path: invoice.storage_path,
-            content_type: "application/pdf",
-          }]
-        : undefined;
+    const attachments: Array<any> = [];
+    if (ATTACH_EVENTS.has(eventKey) && invoice?.storage_bucket && invoice?.storage_path) {
+      attachments.push({
+        filename: `${invoice.invoice_number || "invoice"}.pdf`,
+        storage_bucket: invoice.storage_bucket,
+        storage_path: invoice.storage_path,
+        content_type: "application/pdf",
+      });
+    }
+    if (logoRef) {
+      attachments.push({
+        filename: logoRef.path.split("/").pop() || "logo",
+        storage_bucket: logoRef.bucket,
+        storage_path: logoRef.path,
+        content_type: inferContentType(logoUrlRaw || ""),
+        content_id: LOGO_CID,
+        inline: true,
+      });
+    }
 
 
     await enqueueEmail(admin, {
@@ -437,7 +454,7 @@ Deno.serve(async (req) => {
       related_type: "order",
       related_id: order_id,
       metadata: { event_key: eventKey, order_number: ctx.orderNo, ...(invoice_id ? { invoice_id } : {}) },
-      attachments,
+      attachments: attachments.length ? attachments : undefined,
     });
 
     // Kick the dispatcher so the customer email goes out promptly.
