@@ -367,6 +367,8 @@ Deno.serve(async (req) => {
       invoiceNumber: invoice?.invoice_number || "",
       hasProforma: eventKey === "order_received" && !!invoice?.storage_path,
       hasAttachment: !!invoice?.storage_path,
+      messageExcerpt: typeof body.message_excerpt === "string" ? body.message_excerpt : "",
+
 
     };
 
