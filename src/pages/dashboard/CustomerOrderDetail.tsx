@@ -113,6 +113,11 @@ const CustomerOrderDetail = () => {
   const payments = data?.payments ?? [];
   const documents = data?.documents ?? [];
 
+  // Mark staff→customer messages as read whenever this order is opened.
+  useMarkOrderReadCustomer(id);
+
+
+
   const handleSendMessage = async () => {
     if (!messageText.trim() || !id) return;
     setSending(true);
