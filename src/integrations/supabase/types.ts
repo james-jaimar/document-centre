@@ -289,6 +289,63 @@ export type Database = {
           },
         ]
       }
+      branch_settings: {
+        Row: {
+          branch_id: string
+          category: string
+          created_at: string
+          id: string
+          is_sensitive: boolean
+          setting_key: string
+          setting_value: Json | null
+          sort_order: number
+          tenant_id: string
+          updated_at: string
+          value_type: string | null
+        }
+        Insert: {
+          branch_id: string
+          category: string
+          created_at?: string
+          id?: string
+          is_sensitive?: boolean
+          setting_key: string
+          setting_value?: Json | null
+          sort_order?: number
+          tenant_id: string
+          updated_at?: string
+          value_type?: string | null
+        }
+        Update: {
+          branch_id?: string
+          category?: string
+          created_at?: string
+          id?: string
+          is_sensitive?: boolean
+          setting_key?: string
+          setting_value?: Json | null
+          sort_order?: number
+          tenant_id?: string
+          updated_at?: string
+          value_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "branch_settings_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "branch_settings_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       branch_subscriptions: {
         Row: {
           assigned_at: string | null
