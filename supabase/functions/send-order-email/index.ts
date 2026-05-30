@@ -351,6 +351,8 @@ Deno.serve(async (req) => {
       invoiceLabel,
       invoiceNumber: invoice?.invoice_number || "",
       hasProforma: eventKey === "order_received" && !!invoice?.storage_path,
+      hasAttachment: !!invoice?.storage_path,
+
     };
 
     const subject = SUBJECTS[eventKey](ctx.orderNo, ctx);
