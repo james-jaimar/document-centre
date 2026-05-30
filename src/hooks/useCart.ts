@@ -670,13 +670,25 @@ export function usePlaceOrder() {
       }
 
       const subtotal = jobs.reduce((sum: number, j: any) => sum + j.net_price, 0);
-      // Demo mode: prices are presented as a single all-in figure with no VAT line.
-      // Tenants will configure their own VAT rules in a future iteration.
-      const vatAmount = 0;
+
+      // Resolve effective tax config: branch override → tenant default.
+      const { resolveBranchTax, computeVat } = await import("@/lib/tax/resolveBranchTax");
+      const taxCfg = await resolveBranchTax(
+        tenantId || cartOrder.tenant_id,
+        input.branchId || cartOrder.branch_id || null,
+      );
       const deliveryAmount = input.deliveryMethod === "delivery"
         ? Math.max(0, Number(input.deliveryAmount ?? 0))
         : 0;
-      const totalAmount = subtotal + deliveryAmount;
+      // Inclusive VAT is already part of subtotal; exclusive VAT is added on top.
+      // Delivery is taxable only when exclusive (mirrors how the order tab edits it).
+      const taxableBase = subtotal + (taxCfg.inclusive ? 0 : deliveryAmount);
+      const vatAmount = taxCfg.inclusive
+        ? computeVat(taxableBase, taxCfg)
+        : computeVat(taxableBase, taxCfg);
+      const totalAmount = taxCfg.inclusive
+        ? subtotal + deliveryAmount
+        : subtotal + deliveryAmount + vatAmount;
       // Use the currency stamped on the cart at first add. The cart can't mix
       // currencies, so this is the source of truth for the placed order.
       const orderCurrency = (cartOrder.currency as string | undefined) || "ZAR";

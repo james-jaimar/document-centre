@@ -16,6 +16,7 @@ import { PaymentGatewaysCard } from "@/components/payments/PaymentGatewaysCard";
 import { BranchEmailAccountsPanel } from "@/components/branch/BranchEmailAccountsPanel";
 import { BranchUsersPanel } from "@/components/branch/BranchUsersPanel";
 import { BranchSubscriptionPanel } from "@/components/branch/BranchSubscriptionPanel";
+import { BranchTaxCard } from "@/components/branch/BranchTaxCard";
 import { useSearchParams } from "react-router-dom";
 
 
@@ -283,6 +284,11 @@ const BranchSettings = () => {
           />
         </CardContent>
       </Card>
+
+      {/* Tax / VAT override */}
+      {tenantId && branchId && (
+        <BranchTaxCard tenantId={tenantId} branchId={branchId} />
+      )}
         </TabsContent>
       </Tabs>
     </div>
