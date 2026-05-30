@@ -83,12 +83,20 @@ const Auth = () => {
 
         const list = (memberships ?? []) as LandingMembership[];
 
+        // Helper: safely apply ?redirect= if it's a same-origin path within this tenant.
+        const rawRedirect = searchParams.get("redirect");
+        const safeRedirect =
+          rawRedirect && rawRedirect.startsWith("/") && !rawRedirect.startsWith("//")
+            ? rawRedirect
+            : null;
+
         if (isTenantPortal) {
           // On /t/:slug/auth — user must have a membership for THIS tenant.
           const matchSlug = list.find((m) => m.tenants?.slug === tenantSlug);
           if (matchSlug) {
             const primary = pickPrimaryMembership(list, tenantSlug ?? null) ?? matchSlug;
-            navigate(resolveTenantLanding(primary, tenantSlug ?? null), { replace: true });
+            const target = safeRedirect ?? resolveTenantLanding(primary, tenantSlug ?? null);
+            navigate(target, { replace: true });
             return;
           }
           // Wrong tenant — sign out and explain.

@@ -34,11 +34,18 @@ export function ProtectedRoute({ children, allowedRoles, allowedMembershipRoles 
     ? buildTenantPath(slug, branchSlug, "dashboard")
     : "/dashboard";
 
-  if (!user) {
+  // Treat anonymous (storefront-bootstrap) sessions as unauthenticated
+  // for protected pages — they need to actually sign in.
+  const isAnonymous = (user as any)?.is_anonymous === true;
+
+  if (!user || isAnonymous) {
     const authPath = slug
       ? buildTenantPath(slug, branchSlug, "auth")
       : "/auth";
-    return <Navigate to={authPath} replace />;
+    // Preserve the original target so we can bounce back after login.
+    const target = `${location.pathname}${location.search}${location.hash}`;
+    const redirectQs = `?redirect=${encodeURIComponent(target)}`;
+    return <Navigate to={`${authPath}${redirectQs}`} replace />;
   }
 
   const hasAppRole = allowedRoles ? allowedRoles.some((r) => roles.includes(r)) : false;

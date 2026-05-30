@@ -2,14 +2,22 @@ import { useState, useMemo } from "react";
 import { Search, MapPin, Store } from "lucide-react";
 import { useBranch, type Branch, branchUrlSlug } from "@/contexts/BranchContext";
 import { Input } from "@/components/ui/input";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
+
+// Routes where the active branch is implied by the resource being viewed
+// (orders/:id, quotes/:id, etc). The page itself sets the branch from the
+// resource — suppress the picker so it doesn't block the screen.
+const RESOURCE_BRANCH_ROUTE_RE =
+  /\/(orders|quotes)\/[0-9a-f-]{8,}(\/|$)/i;
 
 export default function BranchPicker() {
   const { branches, showPicker, selectBranch, closePicker, activeBranch } = useBranch();
   const { slug: tenantSlug, isSubdomain } = useTenantSlug();
   const navigate = useNavigate();
+  const location = useLocation();
   const [search, setSearch] = useState("");
+
 
   const handleSelect = (b: Branch) => {
     selectBranch(b);
@@ -31,6 +39,8 @@ export default function BranchPicker() {
   }, [branches, search]);
 
   if (!showPicker) return null;
+  if (RESOURCE_BRANCH_ROUTE_RE.test(location.pathname)) return null;
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
