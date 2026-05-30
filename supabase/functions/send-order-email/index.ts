@@ -306,7 +306,9 @@ Deno.serve(async (req) => {
     const senderEmail = (notif.sender_email as string) || null;
 
     const attachments =
-      eventKey === "invoice_sent" && invoice?.storage_bucket && invoice?.storage_path
+      (eventKey === "invoice_sent" || eventKey === "order_received") &&
+      invoice?.storage_bucket &&
+      invoice?.storage_path
         ? [{
             filename: `${invoice.invoice_number || "invoice"}.pdf`,
             storage_bucket: invoice.storage_bucket,
