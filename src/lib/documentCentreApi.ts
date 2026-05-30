@@ -680,8 +680,14 @@ export async function prepareForProduct(
      * from the visible canvas. When false (default) the entire MediaBox is
      * scaled — fine for clean documents, but mangles bleed PDFs. */
     respectTrimBox?: boolean;
+    /** When true, the server enqueues generate_previews as the final step
+     *  of prepare_for_product and hands the prepared PDF over the shared
+     *  on-disk cache (no second S3 download). Response includes
+     *  `preview_job_id` so the client polls only the downstream job. */
+    chainGeneratePreviews?: boolean;
+    chainRenderBox?: [number, number, number, number] | null;
   } = {},
-): Promise<{ job_id: string }> {
+): Promise<{ job_id: string; preview_job_id: string | null }> {
   return request("v1/operations/prepare-for-product", "POST", {
     asset_id: assetId,
     ...(options.dominantOrientation ? { dominant_orientation: options.dominantOrientation } : {}),
@@ -691,6 +697,8 @@ export async function prepareForProduct(
     ...(options.destProfile ? { dest_profile: options.destProfile } : {}),
     ...(options.intent ? { intent: options.intent } : {}),
     ...(options.respectTrimBox ? { respect_trim_box: true } : {}),
+    chain_generate_previews: options.chainGeneratePreviews ?? false,
+    ...(options.chainRenderBox ? { chain_render_box: options.chainRenderBox } : {}),
   });
 }
 
