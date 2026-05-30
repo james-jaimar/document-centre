@@ -156,6 +156,7 @@ export default function LooseSheetsPreview({
                     ...(useTrimClip ? { transform: `translate(${offsetX}px, ${offsetY}px)` } : {}),
                   }}
                   cacheKey={pdfSource.cacheKey}
+                  placeholderUrl={url || undefined}
                 />
               </div>
             </div>

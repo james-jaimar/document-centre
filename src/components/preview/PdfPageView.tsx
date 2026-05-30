@@ -28,6 +28,13 @@ interface PdfPageViewProps {
    * eliminating redundant S3 round-trips when print options change.
    */
   cacheKey?: string;
+  /**
+   * Optional low-res placeholder image (typically the pre-generated 150 DPI
+   * thumbnail). When supplied, it is shown instantly while pdf.js downloads
+   * and rasterises the page, then faded out once the crisp render is ready.
+   * No spinner is shown when a placeholder is present.
+   */
+  placeholderUrl?: string;
 }
 
 /**
@@ -42,16 +49,24 @@ export default function PdfPageView({
   height,
   style,
   cacheKey,
+  placeholderUrl,
 }: PdfPageViewProps) {
   const [error, setError] = useState(false);
   const [cachedData, setCachedData] = useState<ArrayBuffer | null>(null);
   const [loading, setLoading] = useState(!!cacheKey);
+  const [rendered, setRendered] = useState(false);
   const mountedRef = useRef(true);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
+
+  // Reset the "rendered" flag whenever the page identity changes so the
+  // placeholder reappears immediately for the next page.
+  useEffect(() => {
+    setRendered(false);
+  }, [pdfUrl, pageNumber, cacheKey]);
 
   // When a cacheKey is provided, fetch via the blob cache instead of
   // letting react-pdf hit the network directly.
@@ -102,6 +117,22 @@ export default function PdfPageView({
   }, [cachedData, pdfUrl, cacheKey]);
 
   if (error) {
+    // If we have a placeholder we can still show something useful instead
+    // of an error card — the thumbnail is already a valid page image.
+    if (placeholderUrl) {
+      return (
+        <div
+          className="flex items-center justify-center"
+          style={{ width: displayWidth, height: displayHeight, ...style }}
+        >
+          <img
+            src={placeholderUrl}
+            alt={`Page ${pageNumber}`}
+            style={{ width: displayWidth, height: displayHeight, objectFit: "contain" }}
+          />
+        </div>
+      );
+    }
     return (
       <div className="w-full h-full flex items-center justify-center">
         <div className="text-center text-muted-foreground">
@@ -112,7 +143,23 @@ export default function PdfPageView({
     );
   }
 
+  // Cold-load state: no fileOptions yet. Show the placeholder if we have
+  // one (instant), otherwise fall back to the spinner.
   if (loading || !fileOptions) {
+    if (placeholderUrl) {
+      return (
+        <div
+          className="flex items-center justify-center"
+          style={{ width: displayWidth, height: displayHeight, ...style }}
+        >
+          <img
+            src={placeholderUrl}
+            alt={`Page ${pageNumber}`}
+            style={{ width: displayWidth, height: displayHeight, objectFit: "contain" }}
+          />
+        </div>
+      );
+    }
     return (
       <div className="flex items-center justify-center" style={{ width, height }}>
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50" />
@@ -121,21 +168,47 @@ export default function PdfPageView({
   }
 
   return (
-    <div className="flex items-center justify-center" style={{ width: displayWidth, height: displayHeight, ...style }}>
+    <div
+      className="flex items-center justify-center relative"
+      style={{ width: displayWidth, height: displayHeight, ...style }}
+    >
+      {/* Placeholder thumbnail shown instantly; fades out once the crisp
+          pdf.js render completes. */}
+      {placeholderUrl && (
+        <img
+          src={placeholderUrl}
+          alt={`Page ${pageNumber}`}
+          aria-hidden={rendered}
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: displayWidth,
+            height: displayHeight,
+            objectFit: "contain",
+            opacity: rendered ? 0 : 1,
+            transition: "opacity 150ms ease-out",
+            pointerEvents: "none",
+          }}
+        />
+      )}
       <Document
         file={fileOptions}
         loading={
-          <div className="flex items-center justify-center" style={{ width: displayWidth, height: displayHeight }}>
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50" />
-          </div>
+          placeholderUrl ? null : (
+            <div className="flex items-center justify-center" style={{ width: displayWidth, height: displayHeight }}>
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50" />
+            </div>
+          )
         }
         error={
-          <div className="flex items-center justify-center" style={{ width: displayWidth, height: displayHeight }}>
-            <div className="text-center text-muted-foreground">
-              <FileText className="h-8 w-8 mx-auto mb-1 opacity-30" />
-              <p className="text-xs">Preview unavailable</p>
+          placeholderUrl ? null : (
+            <div className="flex items-center justify-center" style={{ width: displayWidth, height: displayHeight }}>
+              <div className="text-center text-muted-foreground">
+                <FileText className="h-8 w-8 mx-auto mb-1 opacity-30" />
+                <p className="text-xs">Preview unavailable</p>
+              </div>
             </div>
-          </div>
+          )
         }
         onLoadError={() => setError(true)}
       >
@@ -155,11 +228,16 @@ export default function PdfPageView({
               renderTextLayer={false}
               renderAnnotationLayer={false}
               loading={
-                <div className="flex items-center justify-center" style={{ width: renderWidth, height: displayHeight * oversampleScale }}>
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50" />
-                </div>
+                placeholderUrl ? <div style={{ width: renderWidth, height: displayHeight * oversampleScale }} /> : (
+                  <div className="flex items-center justify-center" style={{ width: renderWidth, height: displayHeight * oversampleScale }}>
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50" />
+                  </div>
+                )
               }
               canvasBackground="#ffffff"
+              onRenderSuccess={() => {
+                if (mountedRef.current) setRendered(true);
+              }}
             />
           </div>
         </div>
