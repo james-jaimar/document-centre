@@ -34,6 +34,9 @@ export interface EnqueueEmailInput {
     storage_bucket: string;
     storage_path: string;
     content_type?: string;
+    /** When set, attachment is rendered inline (multipart/related) and referenced via cid:<content_id> */
+    content_id?: string;
+    inline?: boolean;
   }>;
 }
 
