@@ -27,12 +27,16 @@ interface AttachmentSpec {
   storage_bucket: string;
   storage_path: string;
   content_type?: string;
+  content_id?: string;
+  inline?: boolean;
 }
 
 interface LoadedAttachment {
   filename: string;
   contentType: string;
   bytes: Uint8Array;
+  contentId?: string;
+  inline?: boolean;
 }
 
 interface OutboxRow {
