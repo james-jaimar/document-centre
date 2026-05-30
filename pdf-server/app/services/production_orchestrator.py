@@ -46,6 +46,12 @@ class JobBundle:
     # Raw configuration JSON from the matching order_item (carries
     # merge_directives emitted by buildJobSnapshot).
     configuration: dict[str, Any] | None = None
+    # Optional extras — populated best-effort for richer artefacts (job ticket).
+    branch: dict[str, Any] | None = None
+    branding: dict[str, Any] | None = None      # {primary_color, logo_url, ...}
+    delivery_address: dict[str, Any] | None = None
+    order_item: dict[str, Any] | None = None    # matching order_items row
+
 
 
 def _client() -> Client:
