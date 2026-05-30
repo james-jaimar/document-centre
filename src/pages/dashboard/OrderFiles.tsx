@@ -42,6 +42,7 @@ import { useTenantContext } from "@/hooks/useTenantContext";
 import { useAuth } from "@/hooks/useAuth";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import { uploadToS3, getDownloadUrls } from "@/lib/s3Storage";
+import { getPdfBlob } from "@/lib/pdfBlobCache";
 
 import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbnailUtils";
 import type { PaperSize, NearIsoMatch } from "@/lib/paperSizes";
@@ -2436,7 +2437,24 @@ export default function OrderFiles() {
           <div className="glass-card p-4 sticky top-24 space-y-4">
             <InlinePreviewThumb
               document={previewDoc}
-              onClick={() => lightboxThumbnails.length > 0 && setLightboxOpen(true)}
+              onClick={() => {
+                if (lightboxThumbnails.length === 0) return;
+                // Pre-warm the PDF blob cache the moment the user signals
+                // intent — by the time the lightbox mounts and pdf.js asks
+                // for bytes, they're already local. Best-effort; the
+                // lightbox has its own signed-URL fallback path.
+                if (lightboxPdfPath) {
+                  getDownloadUrls([lightboxPdfPath])
+                    .then((map) => {
+                      const signed = map[lightboxPdfPath];
+                      if (signed) {
+                        void getPdfBlob(lightboxPdfPath, signed).catch(() => {});
+                      }
+                    })
+                    .catch(() => {});
+                }
+                setLightboxOpen(true);
+              }}
             />
             <div className="border-t border-border/60" />
             <SectionActions
