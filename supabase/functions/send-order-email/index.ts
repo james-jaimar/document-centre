@@ -225,12 +225,76 @@ Deno.serve(async (req) => {
     if ((order as any).is_demo) return json({ success: true, skipped: true, reason: "demo_order" });
     if (!order.customer_email) return json({ success: true, skipped: true, reason: "no_email" });
 
-    // Fetch invoice details if invoice_sent OR if order_received was given a proforma to attach
+    // Resolve invoice to attach for events that should include a PDF.
+    // Events that carry an attachment:
+    //   - invoice_sent: explicit invoice_id passed in
+    //   - order_received: proforma (passed in by order-engine)
+    //   - payment_received: latest paid invoice/receipt
+    //   - payment_request: latest proforma (auto-generate if none exists)
     let invoice: any = null;
-    if ((eventKey === "invoice_sent" || eventKey === "order_received") && invoice_id) {
-      const { data: inv } = await admin.from("order_invoices").select("*").eq("id", invoice_id).single();
-      invoice = inv;
+    const ATTACH_EVENTS = new Set<EventKey>([
+      "invoice_sent",
+      "order_received",
+      "payment_received",
+      "payment_request",
+    ]);
+
+    if (ATTACH_EVENTS.has(eventKey)) {
+      if (invoice_id) {
+        const { data: inv } = await admin.from("order_invoices").select("*").eq("id", invoice_id).single();
+        invoice = inv;
+      } else {
+        // Auto-resolve the most appropriate invoice for this order/event.
+        let preferredKinds: string[] = [];
+        if (eventKey === "payment_received") preferredKinds = ["receipt", "invoice"];
+        else if (eventKey === "payment_request") preferredKinds = ["proforma"];
+        else if (eventKey === "order_received") preferredKinds = ["proforma"];
+
+        if (preferredKinds.length) {
+          const { data: invRow } = await admin
+            .from("order_invoices")
+            .select("*")
+            .eq("order_id", order_id)
+            .in("kind", preferredKinds)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          invoice = invRow;
+
+          // No proforma yet for a payment_request → generate one now.
+          if (!invoice && eventKey === "payment_request") {
+            try {
+              const genRes = await fetch(
+                `${Deno.env.get("SUPABASE_URL")!}/functions/v1/generate-invoice-pdf`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: req.headers.get("Authorization") || `Bearer ${serviceKey}`,
+                  },
+                  body: JSON.stringify({ order_id, kind: "proforma" }),
+                },
+              );
+              if (genRes.ok) {
+                const genData = await genRes.json().catch(() => null);
+                const newId = (genData as any)?.invoice_id;
+                if (newId) {
+                  const { data: inv } = await admin
+                    .from("order_invoices")
+                    .select("*")
+                    .eq("id", newId)
+                    .single();
+                  invoice = inv;
+                }
+              }
+            } catch (e) {
+              console.error("auto-generate proforma failed:", e);
+            }
+          }
+        }
+      }
     }
+
 
     const [{ data: tenant }, { data: settings }, { data: addresses }, { data: branch }] = await Promise.all([
       admin.from("tenants").select("*").eq("id", order.tenant_id).single(),
