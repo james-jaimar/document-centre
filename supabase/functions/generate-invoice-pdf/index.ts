@@ -223,6 +223,32 @@ Deno.serve(async (req) => {
       .from("orders").select("*").eq("id", order_id).single();
     if (oErr || !order) return json({ error: "Order not found" }, 404);
 
+    // Branch-aware staff/customer access check before generating an invoice.
+    {
+      const userId = u.user.id;
+      const isCustomer = (order as any).ordered_by_profile_id === userId;
+      if (!isCustomer) {
+        // Platform admin bypass
+        const { data: roles } = await admin
+          .from("user_roles").select("role").eq("user_id", userId);
+        const isPlatformAdmin = (roles ?? []).some((r: any) => r.role === "platform_admin");
+        if (!isPlatformAdmin) {
+          const { data: memberships } = await admin
+            .from("tenant_memberships")
+            .select("role, branch_id")
+            .eq("profile_id", userId)
+            .eq("tenant_id", (order as any).tenant_id)
+            .eq("is_active", true);
+          const allowed = (memberships ?? []).some((m: any) => {
+            if (!["owner","admin","sales","production","accounts","branch_manager","store_operator"].includes(m.role)) return false;
+            if (m.branch_id == null) return true;
+            return (order as any).branch_id != null && m.branch_id === (order as any).branch_id;
+          });
+          if (!allowed) return json({ error: "Forbidden" }, 403);
+        }
+      }
+    }
+
     const [
       { data: jobs },
       { data: addresses },
