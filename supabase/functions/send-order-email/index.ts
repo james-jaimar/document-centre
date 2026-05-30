@@ -65,7 +65,7 @@ const BODIES: Record<EventKey, (ctx: any) => string> = {
   order_received: (c) =>
     `We've received your order <strong>${c.orderNo}</strong> for ${c.totalFmt}. ${
       c.unpaid ? `Please pay via EFT using the banking details below — use <strong>${c.orderNo}</strong> as your reference.` : "Your payment has been recorded."
-    }`,
+    }${c.hasProforma ? `<br><br>Your proforma invoice (<strong>${c.invoiceNumber}</strong>) is attached for your records.` : ""}`,
   payment_received: (c) => `We've received your payment of ${c.totalFmt} for order <strong>${c.orderNo}</strong>. We'll get started right away.`,
   proof_ready: (c) => `A proof for order <strong>${c.orderNo}</strong> is ready for your review. Please log in to approve it.`,
   in_production: (c) => `Order <strong>${c.orderNo}</strong> has moved into production. We'll let you know when it's ready.`,
@@ -171,7 +171,7 @@ function renderHtml(opts: {
       <tr><td align="center">
         <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.05)">
           <tr><td style="background:#ffffff;padding:18px 24px;border-bottom:1px solid #f0f1f4">
-            ${logo ? `<img src="${logo}" alt="${portalName}" style="max-height:40px;display:block;border:0;outline:none;text-decoration:none">` : `<div style="color:${primary};font-size:18px;font-weight:600">${portalName}</div>`}
+            ${logo ? `<img src="${logo}" alt="${portalName}" width="180" height="48" style="max-width:180px;max-height:48px;width:auto;height:48px;display:block;border:0;outline:none;text-decoration:none">` : `<div style="color:${primary};font-size:18px;font-weight:600">${portalName}</div>`}
           </td></tr>
           <tr><td style="padding:28px 28px 8px">
             <h1 style="margin:0 0 12px;font-size:20px;color:#111827">${headline}</h1>
@@ -225,9 +225,9 @@ Deno.serve(async (req) => {
     if ((order as any).is_demo) return json({ success: true, skipped: true, reason: "demo_order" });
     if (!order.customer_email) return json({ success: true, skipped: true, reason: "no_email" });
 
-    // Fetch invoice details if invoice_sent
+    // Fetch invoice details if invoice_sent OR if order_received was given a proforma to attach
     let invoice: any = null;
-    if (eventKey === "invoice_sent" && invoice_id) {
+    if ((eventKey === "invoice_sent" || eventKey === "order_received") && invoice_id) {
       const { data: inv } = await admin.from("order_invoices").select("*").eq("id", invoice_id).single();
       invoice = inv;
     }
@@ -286,6 +286,7 @@ Deno.serve(async (req) => {
       refundPending: body.refund_pending === true,
       invoiceLabel,
       invoiceNumber: invoice?.invoice_number || "",
+      hasProforma: eventKey === "order_received" && !!invoice?.storage_path,
     };
 
     const subject = SUBJECTS[eventKey](ctx.orderNo, ctx);
@@ -305,7 +306,9 @@ Deno.serve(async (req) => {
     const senderEmail = (notif.sender_email as string) || null;
 
     const attachments =
-      eventKey === "invoice_sent" && invoice?.storage_bucket && invoice?.storage_path
+      (eventKey === "invoice_sent" || eventKey === "order_received") &&
+      invoice?.storage_bucket &&
+      invoice?.storage_path
         ? [{
             filename: `${invoice.invoice_number || "invoice"}.pdf`,
             storage_bucket: invoice.storage_bucket,

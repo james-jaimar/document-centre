@@ -38,16 +38,20 @@ async function triggerEmail(authHeader: string, order_id: string, event_key: str
   }
 }
 
-async function triggerInvoice(authHeader: string, order_id: string, kind: string) {
+async function triggerInvoice(authHeader: string, order_id: string, kind: string): Promise<{ invoice_id?: string } | null> {
   try {
     const url = Deno.env.get("SUPABASE_URL")!;
-    await fetch(`${url}/functions/v1/generate-invoice-pdf`, {
+    const res = await fetch(`${url}/functions/v1/generate-invoice-pdf`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: authHeader },
       body: JSON.stringify({ order_id, kind }),
     });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    return data && typeof data === "object" ? { invoice_id: (data as any).invoice_id } : null;
   } catch (e) {
     console.error("triggerInvoice failed:", e);
+    return null;
   }
 }
 
@@ -1221,10 +1225,14 @@ Deno.serve(async (req) => {
           const data = await response.clone().json();
           if (data?.order_id) {
             sideEffects = async () => {
-              await Promise.all([
-                triggerInvoice(authHeader, data.order_id, "proforma"),
-                triggerEmail(authHeader, data.order_id, "order_received"),
-              ]);
+              // Generate the proforma first so we can attach it to the confirmation email.
+              const inv = await triggerInvoice(authHeader, data.order_id, "proforma");
+              await triggerEmail(
+                authHeader,
+                data.order_id,
+                "order_received",
+                inv?.invoice_id ? { invoice_id: inv.invoice_id } : {},
+              );
             };
           }
         }
