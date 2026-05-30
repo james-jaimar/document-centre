@@ -24,7 +24,9 @@ type EventKey =
   | "refunded"
   | "order_cancelled"
   | "invoice_sent"
-  | "payment_request";
+  | "payment_request"
+  | "new_message";
+
 
 const SUBJECTS: Record<EventKey, (n: string, extra?: any) => string> = {
   order_received: (n) => `Order ${n} received — thank you!`,
