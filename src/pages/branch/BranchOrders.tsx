@@ -63,6 +63,8 @@ export default function BranchOrders() {
   const orders = data?.orders || [];
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / (data?.pageSize || 25));
+  const { data: unreadMap = {} } = useUnreadMessagesStaff(tenantId, branchId);
+
 
   const handleToggleStatus = (status: OrderAdminStatus) => {
     setSelectedStatuses((prev) =>
