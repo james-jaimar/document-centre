@@ -25,9 +25,9 @@ export async function fetchAdminOrders(filters: AdminOrderListFilters = {}) {
          id, job_number, sequence_no, product_name, product_category,
          job_name, job_status, customer_job_status, proof_status, file_status,
          urgency, quantity, unit_label, net_price, gross_price,
-         configuration, created_at
+         created_at
        )`,
-      { count: "exact" }
+      { count: "planned" }
     )
     .not("app_id", "is", null)
     .not("submitted_at", "is", null)
