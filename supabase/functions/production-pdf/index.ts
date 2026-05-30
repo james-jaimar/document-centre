@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
 
     const { data: job, error: jobErr } = await admin
       .from("order_jobs")
-      .select("id, tenant_id")
+      .select("id, tenant_id, order_id")
       .eq("id", job_id)
       .single();
     if (jobErr || !job) return json({ error: "Job not found" }, 404);
@@ -76,15 +76,32 @@ Deno.serve(async (req) => {
       if (userErr || !userData?.user) return json({ error: "Unauthorized" }, 401);
       const userId = userData.user.id;
 
-      const { data: membership } = await admin
+      // Any active tenant_membership counts — owners/admins/etc work tenant-wide,
+      // branch-scoped members only on orders in their own branch. Branch admins
+      // can tighten this later via app-level role restrictions if needed.
+      const { data: memberships } = await admin
         .from("tenant_memberships")
-        .select("role")
+        .select("role, branch_id")
         .eq("profile_id", userId)
         .eq("tenant_id", job.tenant_id)
-        .eq("is_active", true)
-        .maybeSingle();
+        .eq("is_active", true);
 
-      if (!membership || !["owner", "admin", "production", "sales"].includes(membership.role)) {
+      let allowed = false;
+      if (memberships?.length) {
+        // Load the order's branch for branch-scoped membership matching.
+        const { data: order } = await admin
+          .from("orders")
+          .select("branch_id")
+          .eq("id", job.order_id)
+          .maybeSingle();
+        const orderBranchId = order?.branch_id ?? null;
+
+        allowed = memberships.some((m: any) =>
+          m.branch_id == null ? true : m.branch_id === orderBranchId
+        );
+      }
+
+      if (!allowed) {
         const { data: roles } = await admin
           .from("user_roles")
           .select("role")
@@ -93,6 +110,7 @@ Deno.serve(async (req) => {
         if (!isPlatformAdmin) return json({ error: "Forbidden" }, 403);
       }
     }
+
 
     // Use the same base URL as the pdf-api proxy (single source of truth).
     // Falls back to the legacy VPS_PDF_API_URL secret if DOCUMENT_CENTRE_API_URL is unset.
