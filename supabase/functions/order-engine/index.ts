@@ -930,24 +930,6 @@ async function cancelOrder(
 
 // ── Admin-only order editing ────────────────────────────────
 
-async function requireTenantAdmin(
-  admin: ReturnType<typeof createClient>,
-  userId: string,
-  tenant_id: string,
-): Promise<string | null> {
-  const { data } = await admin
-    .from("tenant_memberships")
-    .select("role")
-    .eq("profile_id", userId)
-    .eq("tenant_id", tenant_id)
-    .eq("is_active", true)
-    .maybeSingle();
-  if (!data || !["owner", "admin"].includes((data as any).role)) {
-    return "Only tenant owners or admins can perform this action";
-  }
-  return null;
-}
-
 async function fetchOrderForAdmin(
   admin: ReturnType<typeof createClient>,
   userId: string,
