@@ -73,9 +73,9 @@ export async function fetchCustomerOrders(filters: ClientOrderListFilters = {}) 
        order_jobs (
          id, job_number, sequence_no, product_name,
          customer_job_status, proof_status, quantity, unit_label,
-         gross_price, configuration, created_at
+         gross_price, created_at
        )`,
-      { count: "exact" }
+      { count: "planned" }
     )
     .not("app_id", "is", null)
     .not("submitted_at", "is", null)
