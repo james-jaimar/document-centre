@@ -45,6 +45,10 @@ export default function AdminOrderDetail() {
     }
   }, [data?.jobs, selectedJobId]);
 
+  // Mark customer messages as read whenever admin opens an order.
+  useMarkOrderReadStaff(id);
+
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
