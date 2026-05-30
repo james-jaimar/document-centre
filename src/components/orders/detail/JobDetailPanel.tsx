@@ -197,6 +197,8 @@ export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber }
       <ProductionPanel
         jobId={job.id}
         jobStatus={job.job_status}
+        jobNumber={job.job_number}
+        orderNumber={orderNumber ?? null}
         productFamilyId={
           ((job as any).product_snapshot?.product_family?.id
             ?? (job as any).product_snapshot?.product_family_id
