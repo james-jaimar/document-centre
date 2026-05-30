@@ -732,6 +732,9 @@ def prepare_for_product(
     dest_profile: str | None = None,
     intent: str = "relative_colorimetric",
     respect_trim_box: bool = False,
+    chain_generate_previews: bool = False,
+    chain_render_box: list[float] | None = None,
+    chain_job_id: str | None = None,
 ):
     """Perform CMYK conversion, orientation normalisation, and optional
     resize in one deterministic pipeline. The result is promoted to the
@@ -744,6 +747,11 @@ def prepare_for_product(
     Idempotency: a signature of the prepare inputs is stamped onto the
     asset metadata. Re-running with the same inputs is a no-op (returns
     immediately without downloading or re-running Ghostscript).
+
+    When ``chain_generate_previews`` is True and ``chain_job_id`` is set,
+    the worker also writes the prepared PDF into the shared on-disk
+    cache and enqueues generate_previews against ``chain_job_id`` so the
+    light worker can read the PDF from local disk instead of S3.
     """
     db = _db()
     try:
@@ -778,6 +786,12 @@ def prepare_for_product(
                 "height_pt": asset.get("height_pt"),
             }
             job_repo.mark_done(db, job_id, result)
+            # Still chain so the client gets its previews — generate_previews
+            # will fall back to S3 since we didn't populate the cache on a
+            # skip path.
+            _maybe_chain_generate_previews(
+                db, asset_id, chain_generate_previews, chain_render_box, chain_job_id,
+            )
             return result
 
         prefix = _tenant_prefix(asset.get("source_storage_path"))
@@ -830,6 +844,12 @@ def prepare_for_product(
             })
             removed = derived_file_repo.clear_page_renders(db, asset_id)
 
+            # Populate the shared on-disk cache so the chained
+            # generate_previews task (running on a different worker on
+            # the same host) can skip the S3 download. Best-effort —
+            # cache misses fall back to S3 transparently.
+            cache_put(storage_path, out_pdf)
+
             result = {
                 **stats,
                 "storage_path": storage_path,
@@ -840,13 +860,25 @@ def prepare_for_product(
                 "cleared_page_renders": removed,
             }
             job_repo.mark_done(db, job_id, result)
+            _maybe_chain_generate_previews(
+                db, asset_id, chain_generate_previews, chain_render_box, chain_job_id,
+            )
             return result
 
     except Exception as exc:
         job_repo.mark_failed(db, job_id, traceback.format_exc())
+        # If the chain job was pre-allocated, mark it failed so the
+        # client doesn't poll forever.
+        if chain_generate_previews and chain_job_id:
+            try:
+                job_repo.mark_failed(db, chain_job_id, f"upstream prepare_for_product failed: {exc}")
+            except Exception:
+                pass
         raise exc
     finally:
         db.close()
+
+
 
 
 @shared_task(bind=True, queue='documents')
