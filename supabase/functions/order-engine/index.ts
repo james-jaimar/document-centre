@@ -17,6 +17,55 @@ function err(message: string, status = 400) {
   return json({ error: message }, status);
 }
 
+// ── Branch-scoped staff guard ──────────────────────────────
+// Mirrors the pattern used in `production-pdf`: any active tenant_membership
+// counts (owner/admin/sales/production/accounts/branch_manager/store_operator),
+// but branch-scoped memberships only authorise actions on orders in their
+// own branch. Returns null on success, or an error message string on denial.
+async function assertOrderStaffAccess(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  order: { app_id: string | null; tenant_id: string | null; branch_id: string | null },
+  opts: { adminOnly?: boolean } = {},
+): Promise<string | null> {
+  if (!order?.tenant_id) return "Order has no tenant context";
+
+  // Platform admins bypass.
+  const { data: roles } = await admin
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId);
+  if ((roles ?? []).some((r: any) => r.role === "platform_admin")) return null;
+
+  const { data: memberships } = await admin
+    .from("tenant_memberships")
+    .select("role, branch_id")
+    .eq("profile_id", userId)
+    .eq("tenant_id", order.tenant_id)
+    .eq("is_active", true);
+
+  if (!memberships?.length) return "No active membership for this tenant";
+
+  const allowedRoles = opts.adminOnly
+    ? ["owner", "admin"]
+    : ["owner", "admin", "sales", "production", "accounts", "branch_manager", "store_operator"];
+
+  const ok = memberships.some((m: any) => {
+    if (!allowedRoles.includes(m.role)) return false;
+    // Tenant-wide membership: branch_id null → allowed for any order branch.
+    if (m.branch_id == null) return true;
+    // Branch-scoped membership: must match the order's branch.
+    return order.branch_id != null && m.branch_id === order.branch_id;
+  });
+
+  if (!ok) {
+    return opts.adminOnly
+      ? "Only owners or admins of this branch/tenant may perform this action"
+      : "Not authorised for this order's branch";
+  }
+  return null;
+}
+
 // ── Side-effect helpers (fire-and-forget) ───────────────────
 async function isDemoOrder(admin: ReturnType<typeof createClient>, order_id: string): Promise<boolean> {
   try {
