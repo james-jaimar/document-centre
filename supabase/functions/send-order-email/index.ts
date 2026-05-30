@@ -261,6 +261,42 @@ Deno.serve(async (req) => {
       .eq("id", order_id)
       .single();
     if (oErr || !order) return json({ error: "Order not found" }, 404);
+
+    // Auth guard: caller must be either service-role (internal pg_net path)
+    // OR an authenticated staff member with branch-scoped access to this order.
+    {
+      const authHeader = req.headers.get("Authorization") ?? "";
+      const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+      const isServiceRole = bearer && bearer === serviceKey;
+      if (!isServiceRole) {
+        if (!authHeader) return json({ error: "Unauthorized" }, 401);
+        const userClient = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, {
+          global: { headers: { Authorization: authHeader } },
+        });
+        const { data: u } = await userClient.auth.getUser();
+        const userId = u?.user?.id;
+        if (!userId) return json({ error: "Unauthorized" }, 401);
+
+        const { data: roles } = await admin
+          .from("user_roles").select("role").eq("user_id", userId);
+        const isPlatformAdmin = (roles ?? []).some((r: any) => r.role === "platform_admin");
+        if (!isPlatformAdmin) {
+          const { data: memberships } = await admin
+            .from("tenant_memberships")
+            .select("role, branch_id")
+            .eq("profile_id", userId)
+            .eq("tenant_id", (order as any).tenant_id)
+            .eq("is_active", true);
+          const allowed = (memberships ?? []).some((m: any) => {
+            if (!["owner","admin","sales","production","accounts","branch_manager","store_operator"].includes(m.role)) return false;
+            if (m.branch_id == null) return true;
+            return (order as any).branch_id != null && m.branch_id === (order as any).branch_id;
+          });
+          if (!allowed) return json({ error: "Forbidden" }, 403);
+        }
+      }
+    }
+
     if ((order as any).is_demo) return json({ success: true, skipped: true, reason: "demo_order" });
     if (!order.customer_email) return json({ success: true, skipped: true, reason: "no_email" });
 

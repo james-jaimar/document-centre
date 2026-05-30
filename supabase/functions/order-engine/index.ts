@@ -17,6 +17,55 @@ function err(message: string, status = 400) {
   return json({ error: message }, status);
 }
 
+// ── Branch-scoped staff guard ──────────────────────────────
+// Mirrors the pattern used in `production-pdf`: any active tenant_membership
+// counts (owner/admin/sales/production/accounts/branch_manager/store_operator),
+// but branch-scoped memberships only authorise actions on orders in their
+// own branch. Returns null on success, or an error message string on denial.
+async function assertOrderStaffAccess(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  order: { app_id: string | null; tenant_id: string | null; branch_id: string | null },
+  opts: { adminOnly?: boolean } = {},
+): Promise<string | null> {
+  if (!order?.tenant_id) return "Order has no tenant context";
+
+  // Platform admins bypass.
+  const { data: roles } = await admin
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId);
+  if ((roles ?? []).some((r: any) => r.role === "platform_admin")) return null;
+
+  const { data: memberships } = await admin
+    .from("tenant_memberships")
+    .select("role, branch_id")
+    .eq("profile_id", userId)
+    .eq("tenant_id", order.tenant_id)
+    .eq("is_active", true);
+
+  if (!memberships?.length) return "No active membership for this tenant";
+
+  const allowedRoles = opts.adminOnly
+    ? ["owner", "admin"]
+    : ["owner", "admin", "sales", "production", "accounts", "branch_manager", "store_operator"];
+
+  const ok = memberships.some((m: any) => {
+    if (!allowedRoles.includes(m.role)) return false;
+    // Tenant-wide membership: branch_id null → allowed for any order branch.
+    if (m.branch_id == null) return true;
+    // Branch-scoped membership: must match the order's branch.
+    return order.branch_id != null && m.branch_id === order.branch_id;
+  });
+
+  if (!ok) {
+    return opts.adminOnly
+      ? "Only owners or admins of this branch/tenant may perform this action"
+      : "Not authorised for this order's branch";
+  }
+  return null;
+}
+
 // ── Side-effect helpers (fire-and-forget) ───────────────────
 async function isDemoOrder(admin: ReturnType<typeof createClient>, order_id: string): Promise<boolean> {
   try {
@@ -366,14 +415,21 @@ async function updateJobStatus(
   const { job_id, job_status, reason } = payload;
   if (!job_id || !job_status) return err("Missing job_id or job_status");
 
-  // Get current job
+  // Get current job (incl. order for branch context)
   const { data: job, error: jobErr } = await admin
     .from("order_jobs")
-    .select("id, order_id, job_status, app_id, tenant_id, job_number")
+    .select("id, order_id, job_status, app_id, tenant_id, job_number, order:orders!inner(branch_id)")
     .eq("id", job_id)
     .single();
 
   if (jobErr || !job) return err("Job not found", 404);
+
+  const denied = await assertOrderStaffAccess(admin, userId, {
+    app_id: (job as any).app_id,
+    tenant_id: (job as any).tenant_id,
+    branch_id: (job as any).order?.branch_id ?? null,
+  });
+  if (denied) return err(denied, 403);
 
   const fromStatus = job.job_status;
 
@@ -425,14 +481,17 @@ async function recordPaymentEvent(
     return err("Missing required fields: order_id, provider, status, amount");
   }
 
-  // Get order
+  // Get order (incl. branch for access guard)
   const { data: order, error: oErr } = await admin
     .from("orders")
-    .select("id, app_id, tenant_id, order_number, amount_paid, amount_due")
+    .select("id, app_id, tenant_id, branch_id, order_number, amount_paid, amount_due")
     .eq("id", order_id)
     .single();
 
   if (oErr || !order) return err("Order not found", 404);
+
+  const denied = await assertOrderStaffAccess(admin, userId, order as any);
+  if (denied) return err(denied, 403);
 
   // Insert payment
   const { data: payment, error: pErr } = await admin
@@ -613,6 +672,9 @@ async function uploadOrderDocument(
     branch_id = order.branch_id;
   }
 
+  const denied = await assertOrderStaffAccess(admin, userId, { app_id, tenant_id, branch_id });
+  if (denied) return err(denied, 403);
+
   const { data: doc, error: docErr } = await admin
     .from("order_documents")
     .insert({
@@ -730,11 +792,22 @@ async function sendMessage(
   // Resolve app context from order
   const { data: order } = await admin
     .from("orders")
-    .select("app_id, tenant_id, branch_id, order_number")
+    .select("app_id, tenant_id, branch_id, order_number, ordered_by_profile_id")
     .eq("id", order_id)
     .single();
 
   if (!order) return err("Order not found", 404);
+
+  // Customer-originated messages: must own the order and cannot be internal.
+  // Staff-originated messages: enforce branch-scoped staff access.
+  if (sender_type === "customer") {
+    if ((order as any).ordered_by_profile_id !== userId || is_internal) {
+      return err("Not authorised to message on this order", 403);
+    }
+  } else {
+    const denied = await assertOrderStaffAccess(admin, userId, order as any);
+    if (denied) return err(denied, 403);
+  }
 
   const { data: msg, error: msgErr } = await admin
     .from("messages")
@@ -800,17 +873,9 @@ async function cancelOrder(
     return err("Completed orders cannot be cancelled");
   }
 
-  // Permission: tenant owner or admin only
-  const { data: membership } = await admin
-    .from("tenant_memberships")
-    .select("role")
-    .eq("profile_id", userId)
-    .eq("tenant_id", order.tenant_id)
-    .eq("is_active", true)
-    .maybeSingle();
-  if (!membership || !["owner", "admin"].includes(membership.role)) {
-    return err("Only tenant owners or admins can cancel orders", 403);
-  }
+  // Permission: tenant- or branch-scoped owner/admin only, branch-matched.
+  const denied = await assertOrderStaffAccess(admin, userId, order as any, { adminOnly: true });
+  if (denied) return err(denied, 403);
 
   const refundPending = Number(order.amount_paid) > 0;
 
@@ -894,7 +959,7 @@ async function fetchOrderForAdmin(
     .eq("id", order_id)
     .maybeSingle();
   if (error || !order) return { error: "Order not found", order: null };
-  const denied = await requireTenantAdmin(admin, userId, order.tenant_id as string);
+  const denied = await assertOrderStaffAccess(admin, userId, order as any, { adminOnly: true });
   if (denied) return { error: denied, order: null };
   return { error: null, order };
 }
