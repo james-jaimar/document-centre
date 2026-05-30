@@ -98,6 +98,31 @@ export async function updateJobStatus(payload: UpdateJobStatusPayload) {
   }>("updateJobStatus", payload as unknown as Record<string, unknown>);
 }
 
+export async function updateOrderStatus(payload: {
+  order_id: string;
+  admin_status:
+    | "new_order"
+    | "under_review"
+    | "approved"
+    | "in_production"
+    | "qa"
+    | "ready_for_dispatch"
+    | "dispatched"
+    | "completed"
+    | "on_hold"
+    | "cancelled";
+  reason?: string;
+  tracking_number?: string;
+  tracking_carrier?: string;
+}) {
+  return invokeOrderEngine<{
+    success: boolean;
+    from_status: string;
+    to_status: string;
+    fulfillment_type: string | null;
+  }>("updateOrderStatus", payload as unknown as Record<string, unknown>);
+}
+
 export async function recordPaymentEvent(payload: RecordPaymentPayload) {
   return invokeOrderEngine<{
     success: boolean;

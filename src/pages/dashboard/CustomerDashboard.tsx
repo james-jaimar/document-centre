@@ -162,7 +162,7 @@ function useTrackingOrders(userId: string | undefined, tenantId: string | null) 
       if (!userId || !tenantId) return [];
       const { data, error } = await supabase
         .from("orders")
-        .select("*")
+        .select("id, order_number, order_status, updated_at, user_id, tenant_id")
         .eq("user_id", userId)
         .eq("tenant_id", tenantId)
         .in("order_status", [
@@ -193,7 +193,7 @@ function getOrderDisplayName(order: any): string {
     // Fall back to item title
     if (items[0]?.title) return items[0].title;
   }
-  return `Order ${order.id.slice(0, 8)}`;
+  return `Order ${order.order_number ?? order.id.slice(0, 8)}`;
 }
 
 /* ── Product Carousel ── */
@@ -563,7 +563,7 @@ const CustomerDashboard = () => {
                       )}
                       <div>
                         <p className="text-sm font-medium text-foreground">
-                          Order {order.id.slice(0, 8)}
+                          Order {order.order_number ?? order.id.slice(0, 8)}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           Updated{" "}

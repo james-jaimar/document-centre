@@ -408,9 +408,18 @@ Deno.serve(async (req) => {
       new Intl.NumberFormat("en-ZA", { style: "currency", currency: order.currency || "ZAR" }).format(Number(n) || 0);
 
     const delivery = (addresses || []).find((a: any) => a.address_type === "delivery");
-    const deliveryLine = delivery?.line1
+    const shipLine = delivery?.line1
       ? `Shipping to ${[delivery.line1, delivery.suburb, delivery.city].filter(Boolean).join(", ")}.`
       : "";
+    // For dispatched emails, prefer tracking info (from request body or order columns)
+    const trackingNumber = body.tracking_number || (order as any).tracking_number || "";
+    const trackingCarrier = body.tracking_carrier || (order as any).tracking_carrier || "";
+    const trackingLine = trackingNumber
+      ? `${trackingCarrier ? trackingCarrier + " " : ""}Tracking number: <strong>${trackingNumber}</strong>.`
+      : "";
+    const deliveryLine = eventKey === "dispatched"
+      ? [shipLine, trackingLine].filter(Boolean).join(" ")
+      : shipLine;
 
     const invoiceLabel = invoice ? (KIND_LABEL[invoice.kind] || invoice.kind) : "Invoice";
 
