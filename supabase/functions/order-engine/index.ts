@@ -873,17 +873,9 @@ async function cancelOrder(
     return err("Completed orders cannot be cancelled");
   }
 
-  // Permission: tenant owner or admin only
-  const { data: membership } = await admin
-    .from("tenant_memberships")
-    .select("role")
-    .eq("profile_id", userId)
-    .eq("tenant_id", order.tenant_id)
-    .eq("is_active", true)
-    .maybeSingle();
-  if (!membership || !["owner", "admin"].includes(membership.role)) {
-    return err("Only tenant owners or admins can cancel orders", 403);
-  }
+  // Permission: tenant- or branch-scoped owner/admin only, branch-matched.
+  const denied = await assertOrderStaffAccess(admin, userId, order as any, { adminOnly: true });
+  if (denied) return err(denied, 403);
 
   const refundPending = Number(order.amount_paid) > 0;
 
