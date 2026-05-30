@@ -471,6 +471,129 @@ async function updateJobStatus(
   return json({ success: true, from_status: fromStatus, to_status: job_status });
 }
 
+// ── Order-level status workflow ─────────────────────────────
+// Maps admin_status → { customer_status, fulfilment_status, job_status_cascade }
+const ORDER_STATUS_MAP: Record<string, {
+  customer_status: string;
+  fulfilment_status?: string;
+  cascade_job_status?: string;
+}> = {
+  new_order:          { customer_status: "awaiting_payment", fulfilment_status: "pending" },
+  under_review:       { customer_status: "awaiting_payment", fulfilment_status: "pending" },
+  approved:           { customer_status: "in_production",    fulfilment_status: "pending", cascade_job_status: "approved_for_production" },
+  in_production:      { customer_status: "in_production",    fulfilment_status: "in_production", cascade_job_status: "in_production" },
+  qa:                 { customer_status: "in_production",    fulfilment_status: "in_production", cascade_job_status: "qa" },
+  ready_for_dispatch: { customer_status: "ready",            fulfilment_status: "ready", cascade_job_status: "ready" },
+  dispatched:         { customer_status: "dispatched",       fulfilment_status: "dispatched" },
+  completed:          { customer_status: "completed",        cascade_job_status: "completed" },
+  on_hold:            { customer_status: "on_hold",          cascade_job_status: "on_hold" },
+  cancelled:          { customer_status: "cancelled",        fulfilment_status: "cancelled", cascade_job_status: "cancelled" },
+};
+
+async function updateOrderStatus(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any,
+) {
+  const { order_id, admin_status, reason, tracking_number, tracking_carrier } = payload;
+  if (!order_id || !admin_status) return err("Missing order_id or admin_status");
+
+  const mapping = ORDER_STATUS_MAP[admin_status];
+  if (!mapping) return err(`Unknown admin_status: ${admin_status}`);
+
+  // Dispatched requires a tracking number
+  if (admin_status === "dispatched" && !tracking_number) {
+    return err("tracking_number is required when marking dispatched");
+  }
+
+  const { data: order, error: oErr } = await admin
+    .from("orders")
+    .select("id, app_id, tenant_id, branch_id, order_number, admin_status, fulfillment_type")
+    .eq("id", order_id)
+    .single();
+  if (oErr || !order) return err("Order not found", 404);
+
+  const denied = await assertOrderStaffAccess(admin, userId, order as any);
+  if (denied) return err(denied, 403);
+
+  const fromStatus = (order as any).admin_status as string;
+  const fulfillmentType = (order as any).fulfillment_type as string | null;
+
+  // Build update payload
+  const nowIso = new Date().toISOString();
+  const updates: Record<string, unknown> = {
+    admin_status,
+    customer_status: mapping.customer_status,
+    updated_at: nowIso,
+  };
+  if (mapping.fulfilment_status !== undefined) {
+    // Final fulfilment state depends on fulfillment_type when "ready" or "dispatched"
+    if (admin_status === "completed") {
+      updates.fulfilment_status = fulfillmentType === "delivery" ? "delivered" : "collected";
+    } else {
+      updates.fulfilment_status = mapping.fulfilment_status;
+    }
+  }
+  if (admin_status === "ready_for_dispatch") updates.ready_at = nowIso;
+  if (admin_status === "dispatched") {
+    updates.dispatched_at = nowIso;
+    updates.tracking_number = tracking_number;
+    if (tracking_carrier) updates.tracking_carrier = tracking_carrier;
+  }
+  if (admin_status === "completed") updates.completed_at = nowIso;
+
+  const { error: updErr } = await admin.from("orders").update(updates).eq("id", order_id);
+  if (updErr) return err(`Failed to update order: ${updErr.message}`);
+
+  // Cascade to jobs that haven't reached this stage yet (best-effort)
+  if (mapping.cascade_job_status) {
+    const cascadeTarget = mapping.cascade_job_status;
+    // Skip jobs that are already at a terminal/forward state
+    const skip = new Set(["completed", "cancelled"]);
+    const { data: jobs } = await admin
+      .from("order_jobs")
+      .select("id, job_status")
+      .eq("order_id", order_id);
+    for (const j of jobs ?? []) {
+      if (skip.has((j as any).job_status)) continue;
+      if ((j as any).job_status === cascadeTarget) continue;
+      await admin.from("order_jobs").update({ job_status: cascadeTarget }).eq("id", (j as any).id);
+    }
+  }
+
+  // Status history
+  await admin.from("status_history").insert({
+    app_id: (order as any).app_id,
+    tenant_id: (order as any).tenant_id,
+    order_id,
+    entity_type: "order",
+    from_status: fromStatus,
+    to_status: admin_status,
+    reason: reason || null,
+    changed_by: userId,
+  });
+
+  // Timeline event
+  await admin.from("timeline_events").insert({
+    app_id: (order as any).app_id,
+    tenant_id: (order as any).tenant_id,
+    order_id,
+    event_type: "order_status_changed",
+    visibility: "both",
+    actor_type: "admin",
+    actor_profile_id: userId,
+    description: `Order ${(order as any).order_number} status changed from ${fromStatus} to ${admin_status}`,
+    metadata: { from_status: fromStatus, to_status: admin_status, reason, tracking_number, tracking_carrier },
+  });
+
+  return json({
+    success: true,
+    from_status: fromStatus,
+    to_status: admin_status,
+    fulfillment_type: fulfillmentType,
+  });
+}
+
 async function recordPaymentEvent(
   admin: ReturnType<typeof createClient>,
   userId: string,
