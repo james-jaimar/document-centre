@@ -173,9 +173,11 @@ export default function BranchOrders() {
                         ? "No orders match these filters."
                         : "No orders yet for this branch."}
                     </p>
-                    <p className="text-xs text-muted-foreground">
-                      {totalForBranch} total order{totalForBranch === 1 ? "" : "s"} for this branch.
-                    </p>
+                    {totalForBranch !== null && (
+                      <p className="text-xs text-muted-foreground">
+                        {totalForBranch} total order{totalForBranch === 1 ? "" : "s"} for this branch.
+                      </p>
+                    )}
                     {hasActiveFilters && (
                       <Button variant="outline" size="sm" onClick={clearFilters} className="mt-1">
                         Clear filters
