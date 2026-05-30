@@ -123,7 +123,9 @@ const CustomerOrders = () => {
   const { tenantId } = useTenantContext();
   const queryClient = useQueryClient();
   const { data: orders, isLoading } = useUserOrders(user?.id, tenantId);
+  const { data: unreadMap = {} } = useUnreadMessagesCustomer();
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+
 
   // Visible orders:
   // - Hide cart rows
