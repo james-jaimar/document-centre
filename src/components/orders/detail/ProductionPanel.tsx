@@ -11,9 +11,18 @@ interface Props {
   jobStatus?: string | null;
   /** Product family this job belongs to — scopes the imposition picker. */
   productFamilyId?: string | null;
+  /** Used to build a meaningful download filename. */
+  jobNumber?: string | null;
+  orderNumber?: string | null;
 }
 
-export function ProductionPanel({ jobId, jobStatus, productFamilyId }: Props) {
+/** Sanitise a string for use in a download filename. */
+function safeFilenamePart(s: string | null | undefined, fallback: string): string {
+  const v = (s ?? "").toString().trim().replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  return v || fallback;
+}
+
+export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, orderNumber }: Props) {
   const {
     artefacts,
     isLoading,
@@ -41,12 +50,44 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId }: Props) {
     }
   }, [artefacts?.imposition_template_id, templates]);
 
-  const open = async (path: string | null) => {
+  const filenameFor = (suffix: string): string => {
+    const order = safeFilenamePart(orderNumber, "order");
+    const job = safeFilenamePart(jobNumber, "job");
+    return `${order}-${job}-${suffix}.pdf`;
+  };
+
+  /**
+   * Fetch the signed S3 URL as a Blob and trigger a same-origin download
+   * with a meaningful filename. Falls back to opening the signed URL in
+   * a new tab if the bucket CORS doesn't allow fetch from this origin.
+   */
+  const download = async (path: string | null, suffix: string) => {
     if (!path) return;
     setOpeningPath(path);
     try {
       const url = await signedUrl(path);
-      if (url) window.open(url, "_blank", "noopener,noreferrer");
+      if (!url) return;
+      const filename = filenameFor(suffix);
+      let triggered = false;
+      try {
+        const res = await fetch(url);
+        if (res.ok) {
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = blobUrl;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          // Revoke after the click has been processed.
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+          triggered = true;
+        }
+      } catch {
+        // CORS / network — fall through to plain open.
+      }
+      if (!triggered) window.open(url, "_blank", "noopener,noreferrer");
     } finally {
       setOpeningPath(null);
     }
