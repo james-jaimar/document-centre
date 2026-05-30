@@ -199,6 +199,12 @@ class PrepareForProductRequest(BaseModel):
     ] = "relative_colorimetric"
     # See ResizeRequest.respect_trim_box.
     respect_trim_box: bool = False
+    # Server-side chaining (mirrors PrintReadyRequest): when True the worker
+    # enqueues generate_previews against ``chain_render_box`` as its final
+    # step. The response then includes ``preview_job_id`` so the client
+    # skips the prepare poll entirely and only watches the preview job.
+    chain_generate_previews: bool = False
+    chain_render_box: list[float] | None = Field(default=None, min_length=4, max_length=4)
 
 
 class JobArtefactRequest(BaseModel):
