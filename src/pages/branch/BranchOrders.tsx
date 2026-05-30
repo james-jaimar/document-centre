@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAdminOrders } from "@/hooks/useOrders";
 import { useTenantContext } from "@/hooks/useTenantContext";
@@ -38,7 +38,10 @@ export default function BranchOrders() {
   const [selectedPaymentStatuses, setSelectedPaymentStatuses] = useState<PaymentStatus[]>([]);
   const [page, setPage] = useState(1);
 
-  const filters: AdminOrderListFilters = {
+  const hasActiveFilters =
+    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0;
+
+  const filters: AdminOrderListFilters = useMemo(() => ({
     tenant_id: tenantId || undefined,
     branch_id: branchId || undefined,
     search: search || undefined,
@@ -46,23 +49,14 @@ export default function BranchOrders() {
     payment_status: selectedPaymentStatuses.length ? selectedPaymentStatuses : undefined,
     page,
     page_size: 25,
-  };
-
-  const { data: totalData } = useAdminOrders({
-    tenant_id: tenantId || undefined,
-    branch_id: branchId || undefined,
-    page: 1,
-    page_size: 1,
-  });
-  const totalForBranch = totalData?.total || 0;
-
-  const hasActiveFilters =
-    !!search || selectedStatuses.length > 0 || selectedPaymentStatuses.length > 0;
+  }), [tenantId, branchId, search, selectedStatuses, selectedPaymentStatuses, page]);
 
   const { data, isLoading } = useAdminOrders(filters);
   const orders = data?.orders || [];
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / (data?.pageSize || 25));
+  // When no filters are active, the page total IS the branch total.
+  const totalForBranch = hasActiveFilters ? null : total;
   const { data: unreadMap = {} } = useUnreadMessagesStaff(tenantId, branchId);
 
 
@@ -179,9 +173,11 @@ export default function BranchOrders() {
                         ? "No orders match these filters."
                         : "No orders yet for this branch."}
                     </p>
-                    <p className="text-xs text-muted-foreground">
-                      {totalForBranch} total order{totalForBranch === 1 ? "" : "s"} for this branch.
-                    </p>
+                    {totalForBranch !== null && (
+                      <p className="text-xs text-muted-foreground">
+                        {totalForBranch} total order{totalForBranch === 1 ? "" : "s"} for this branch.
+                      </p>
+                    )}
                     {hasActiveFilters && (
                       <Button variant="outline" size="sm" onClick={clearFilters} className="mt-1">
                         Clear filters

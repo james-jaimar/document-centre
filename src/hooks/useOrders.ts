@@ -6,6 +6,8 @@ export function useAdminOrders(filters: AdminOrderListFilters = {}) {
   return useQuery({
     queryKey: ["admin-orders", filters],
     queryFn: () => fetchAdminOrders(filters),
+    staleTime: 15_000,
+    gcTime: 60_000,
   });
 }
 
@@ -13,6 +15,8 @@ export function useCustomerOrders(filters: ClientOrderListFilters = {}) {
   return useQuery({
     queryKey: ["customer-orders", filters],
     queryFn: () => fetchCustomerOrders(filters),
+    staleTime: 15_000,
+    gcTime: 60_000,
   });
 }
 
