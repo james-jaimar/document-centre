@@ -132,7 +132,7 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
         loading={isLoading || generating === "print_ready"}
         opening={openingPath === artefacts?.print_ready_pdf_path}
         onGenerate={() => generatePrintReady()}
-        onOpen={() => open(artefacts?.print_ready_pdf_path ?? null)}
+        onOpen={() => download(artefacts?.print_ready_pdf_path ?? null, "print-ready")}
         generateLabel="Assemble"
       />
       {artefacts?.print_ready_pdf_path && (
