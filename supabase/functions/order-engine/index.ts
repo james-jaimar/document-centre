@@ -672,6 +672,9 @@ async function uploadOrderDocument(
     branch_id = order.branch_id;
   }
 
+  const denied = await assertOrderStaffAccess(admin, userId, { app_id, tenant_id, branch_id });
+  if (denied) return err(denied, 403);
+
   const { data: doc, error: docErr } = await admin
     .from("order_documents")
     .insert({
