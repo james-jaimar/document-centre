@@ -10,6 +10,12 @@ Group=root
 WorkingDirectory=/opt/document-centre-api
 EnvironmentFile=/opt/document-centre-api/.env
 Environment=PYTHONUNBUFFERED=1
+# Ensure the shared PDF handoff cache exists before the worker starts.
+# Both heavy + light workers write to /var/cache/document-centre/pdf-cache
+# so prepare_for_product can hand the prepared PDF to generate_previews
+# over local disk instead of re-downloading from S3.
+ExecStartPre=/bin/mkdir -p /var/cache/document-centre/pdf-cache
+ExecStartPre=/bin/chmod 0775 /var/cache/document-centre/pdf-cache
 # 2 prefork children, recycle every 25 tasks or at ~1.5 GB RSS.
 # Tuned for a 4 vCPU / 16 GB host running alongside the light worker
 # and a 3-worker uvicorn API.
