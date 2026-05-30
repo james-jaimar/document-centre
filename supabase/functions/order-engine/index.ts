@@ -481,14 +481,17 @@ async function recordPaymentEvent(
     return err("Missing required fields: order_id, provider, status, amount");
   }
 
-  // Get order
+  // Get order (incl. branch for access guard)
   const { data: order, error: oErr } = await admin
     .from("orders")
-    .select("id, app_id, tenant_id, order_number, amount_paid, amount_due")
+    .select("id, app_id, tenant_id, branch_id, order_number, amount_paid, amount_due")
     .eq("id", order_id)
     .single();
 
   if (oErr || !order) return err("Order not found", 404);
+
+  const denied = await assertOrderStaffAccess(admin, userId, order as any);
+  if (denied) return err(denied, 403);
 
   // Insert payment
   const { data: payment, error: pErr } = await admin
