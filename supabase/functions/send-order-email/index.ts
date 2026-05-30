@@ -136,6 +136,27 @@ function pickEmailLogo(branding: any, origin: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Parse a Supabase Storage public URL into {bucket, path} so the dispatcher
+ * can fetch and inline it as a CID attachment — avoids exposing the raw
+ * supabase.co host in the email's <img src>.
+ */
+function parseStorageRef(url: string | undefined): { bucket: string; path: string } | null {
+  if (!url) return null;
+  const m = url.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/(.+?)(?:\?.*)?$/i);
+  if (!m) return null;
+  return { bucket: m[1], path: decodeURIComponent(m[2]) };
+}
+
+function inferContentType(url: string): string {
+  const u = url.toLowerCase().split("?")[0];
+  if (u.endsWith(".png")) return "image/png";
+  if (u.endsWith(".jpg") || u.endsWith(".jpeg")) return "image/jpeg";
+  if (u.endsWith(".webp")) return "image/webp";
+  if (u.endsWith(".gif")) return "image/gif";
+  return "application/octet-stream";
+}
+
 function renderHtml(opts: {
   branding: any;
   tenant: any;
