@@ -391,18 +391,17 @@ def op_merge(payload: MergeRequest, db: Session = Depends(get_db)):
 
 @api_router.post("/operations/crop-rasterize")
 def op_crop_rasterize(payload: CropRasterizeRequest, db: Session = Depends(get_db)):
-    """DEPRECATED: prefer /operations/generate-previews (single GS pass).
+    """REMOVED — replaced by /operations/generate-previews.
 
-    Retained for backwards-compatibility with older clients. Runs Ghostscript
-    twice (once per resolution) — the new endpoint runs it once and uses PIL
-    to downscale to the thumbnail size.
+    crop_rasterize ran Ghostscript twice (once per resolution). The
+    generate_previews endpoint runs it once and downscales thumbnails with
+    PIL — roughly half the wall-clock and identical output. Returning 410
+    so any old clients fail loudly instead of silently using the slow path.
     """
-    asset_id = str(payload.asset_id)
-    body = payload.model_dump(mode="json")
-    job_id = job_repo.create_job(db, asset_id, "crop_rasterize", "thumbnails", body)
-    task = crop_rasterize.delay(asset_id, job_id, payload.box, payload.dpi)
-    job_repo.set_celery_task_id(db, job_id, task.id)
-    return {"job_id": job_id}
+    raise HTTPException(
+        status_code=410,
+        detail="crop_rasterize is retired — use /v1/operations/generate-previews",
+    )
 
 
 @api_router.post("/operations/generate-previews")
