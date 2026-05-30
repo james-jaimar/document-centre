@@ -599,6 +599,9 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
                   filename: a.filename,
                   content: a.bytes,
                   contentType: a.contentType,
+                  ...(a.inline && a.contentId
+                    ? { cid: a.contentId, contentDisposition: "inline" as const }
+                    : {}),
                 }))
               : undefined,
           }),
