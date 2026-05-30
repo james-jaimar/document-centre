@@ -66,7 +66,10 @@ const BODIES: Record<EventKey, (ctx: any) => string> = {
     `We've received your order <strong>${c.orderNo}</strong> for ${c.totalFmt}. ${
       c.unpaid ? `Please pay via EFT using the banking details below — use <strong>${c.orderNo}</strong> as your reference.` : "Your payment has been recorded."
     }${c.hasProforma ? `<br><br>Your proforma invoice (<strong>${c.invoiceNumber}</strong>) is attached for your records.` : ""}`,
-  payment_received: (c) => `We've received your payment of ${c.totalFmt} for order <strong>${c.orderNo}</strong>. We'll get started right away.`,
+  payment_received: (c) =>
+    `We've received your payment of ${c.totalFmt} for order <strong>${c.orderNo}</strong>. We'll get started right away.` +
+    (c.hasAttachment ? `<br><br>Your ${c.invoiceLabel.toLowerCase()} (<strong>${c.invoiceNumber}</strong>) is attached for your records.` : ""),
+
   proof_ready: (c) => `A proof for order <strong>${c.orderNo}</strong> is ready for your review. Please log in to approve it.`,
   in_production: (c) => `Order <strong>${c.orderNo}</strong> has moved into production. We'll let you know when it's ready.`,
   ready_for_collection: (c) => `Order <strong>${c.orderNo}</strong> is ready for collection from our store.`,
