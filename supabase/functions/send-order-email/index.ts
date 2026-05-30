@@ -165,11 +165,14 @@ function renderHtml(opts: {
   event: EventKey;
   ctx: any;
   ctaUrl?: string;
+  /** When true, render the logo as <img src="cid:tenant-logo"> instead of an https URL */
+  inlineLogoCid?: string;
 }) {
   const primary = (opts.branding.primary_color as string) || "#1a1a2e";
   const portalName = (opts.branding.portal_name as string) || opts.tenant.trading_name || opts.tenant.name;
   const origin = resolveTenantOrigin(opts.tenant);
-  const logo = pickEmailLogo(opts.branding, origin);
+  const logoUrl = pickEmailLogo(opts.branding, origin);
+  const logoSrc = opts.inlineLogoCid ? `cid:${opts.inlineLogoCid}` : logoUrl;
   const headline = HEADLINES[opts.event];
   const body = BODIES[opts.event](opts.ctx);
   const showBank =
