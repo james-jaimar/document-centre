@@ -554,10 +554,35 @@ def op_prepare_for_product(payload: PrepareForProductRequest, db: Session = Depe
     normalize-orientation → resize) with a single deterministic pipeline.
     The server performs all mutations in the correct order and promotes one
     final PDF to the asset's normalized_storage_path.
+
+    When ``chain_generate_previews`` is true, the worker enqueues a
+    follow-up generate_previews job as the final step (same pattern as
+    /operations/print-ready). The response then includes ``preview_job_id``
+    so the client polls only the downstream job — one less client↔server
+    round-trip and the prepared PDF is handed over the shared on-disk
+    cache instead of being re-downloaded from S3.
     """
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "prepare_for_product", "documents", body)
+
+    preview_job_id: str | None = None
+    if payload.chain_generate_previews:
+        # Pre-allocate the downstream job row so the response can return
+        # its id immediately. The prepare_for_product worker enqueues the
+        # actual celery task against this id once the prepared PDF is
+        # committed.
+        preview_job_id = job_repo.create_job(
+            db,
+            asset_id,
+            "generate_previews",
+            "thumbnails",
+            {
+                "render_box": payload.chain_render_box,
+                "chained_from_prepare_for_product": str(job_id),
+            },
+        )
+
     task = prepare_for_product.delay(
         asset_id,
         job_id,
@@ -568,9 +593,12 @@ def op_prepare_for_product(payload: PrepareForProductRequest, db: Session = Depe
         payload.dest_profile,
         payload.intent,
         payload.respect_trim_box,
+        payload.chain_generate_previews,
+        payload.chain_render_box,
+        preview_job_id,
     )
     job_repo.set_celery_task_id(db, job_id, task.id)
-    return {"job_id": job_id}
+    return {"job_id": job_id, "preview_job_id": preview_job_id}
 
 
 @api_router.post("/operations/pad-pages")
