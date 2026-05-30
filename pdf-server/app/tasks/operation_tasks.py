@@ -1,4 +1,6 @@
 from __future__ import annotations
+import logging
+import shutil
 import traceback
 from pathlib import Path
 from celery import shared_task
@@ -6,11 +8,12 @@ from app.db.session import SessionLocal
 from app.services.assets import asset_repo
 from app.services.jobs import job_repo
 from app.services.storage import StorageService
-from app.services.files import Workspace, unique_name
+from app.services.files import Workspace, cache_get, cache_put, unique_name
 from app.services.pdf_ops import pdf_ops
 from app.services.derived_files import derived_file_repo
 
 storage = StorageService()
+logger = logging.getLogger(__name__)
 
 def _db():
     return SessionLocal()
@@ -24,9 +27,24 @@ def _tenant_prefix(source_path: str | None) -> str:
     return ""
 
 def _download_asset_pdf(db, asset_id: str, ws: Workspace) -> Path:
+    """Materialise the asset's authoritative PDF into the workspace.
+
+    Prefers the shared on-disk cache (populated by an immediately preceding
+    prepare_for_product on the same host); falls back to S3 on miss. The
+    cache copy is brought into the workspace dir so callers can mutate it
+    freely without affecting the cache entry.
+    """
     asset = asset_repo.get_asset(db, asset_id)
     source = asset['normalized_storage_path'] or asset['source_storage_path']
     path = ws.path(f'{asset_id}.pdf')
+    cached = cache_get(source)
+    if cached is not None:
+        try:
+            shutil.copyfile(cached, path)
+            logger.info('pdf_cache: hit asset=%s key=%s', asset_id, source)
+            return path
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('pdf_cache: copy from cache failed (%s) — falling back to S3', exc)
     storage.download(source, path)
     return path
 
@@ -34,6 +52,7 @@ def _get_asset_prefix(db, asset_id: str) -> str:
     """Get the tenant prefix for an asset's output files."""
     asset = asset_repo.get_asset(db, asset_id)
     return _tenant_prefix(asset.get('source_storage_path'))
+
 
 def _finalize_pdf_output(db, *, asset_id: str | None, job_id: str, out_pdf: Path, kind: str, prefix: str = '', extra: dict | None = None):
     storage_path = unique_name(f'{prefix}outputs', '.pdf')
