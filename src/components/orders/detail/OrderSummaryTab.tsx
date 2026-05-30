@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/orders/StatusBadge";
 import { ADMIN_STATUS_CONFIG, PAYMENT_STATUS_CONFIG } from "@/lib/orders/status-maps";
 import { format } from "date-fns";
+import { OrderWorkflowPanel } from "./OrderWorkflowPanel";
 
 interface Props {
   order: any;
