@@ -415,14 +415,21 @@ async function updateJobStatus(
   const { job_id, job_status, reason } = payload;
   if (!job_id || !job_status) return err("Missing job_id or job_status");
 
-  // Get current job
+  // Get current job (incl. order for branch context)
   const { data: job, error: jobErr } = await admin
     .from("order_jobs")
-    .select("id, order_id, job_status, app_id, tenant_id, job_number")
+    .select("id, order_id, job_status, app_id, tenant_id, job_number, order:orders!inner(branch_id)")
     .eq("id", job_id)
     .single();
 
   if (jobErr || !job) return err("Job not found", 404);
+
+  const denied = await assertOrderStaffAccess(admin, userId, {
+    app_id: (job as any).app_id,
+    tenant_id: (job as any).tenant_id,
+    branch_id: (job as any).order?.branch_id ?? null,
+  });
+  if (denied) return err(denied, 403);
 
   const fromStatus = job.job_status;
 
