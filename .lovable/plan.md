@@ -1,80 +1,128 @@
-## Root cause
+## Goals
 
-After the branch-lockdown migration:
+1. Replace the raw UUID slice ("Order e32573ce") on the customer dashboard's Order Tracking widget with the human-readable `order_number` (e.g. `INV-00069`).
+2. Give branch operators (and admins) a real workflow tool: a status picker on each order/job that transitions through the lifecycle (New → Under Review → Approved → In Production → QA → Ready → Completed, plus On Hold / Cancelled), with the right side-effects and email triggers.
+3. Add dispatch handling: when a delivery order is marked Ready, prompt for a tracking number + carrier, and on "Mark Dispatched" send the dispatched email to the customer with the tracking info.
 
-- `user_is_staff_for(app_id, tenant_id)` was narrowed to **exclude** `branch_manager` / `store_operator` (it now requires `tm.branch_id IS NULL` and a tenant-wide role).
-- `user_can_read_order(app_id, tenant_id, ordered_by_profile_id)` only grants access via: `platform_admin` OR `user_is_staff_for(...)` OR customer-self. It **never** consults `user_is_staff_for_branch(...)`.
-- A branch_manager therefore loses access to every table whose RLS depends solely on `user_can_read_order`.
+---
 
-The parent `orders` row still appears because of the legacy policy `Branch staff can view branch orders` (uses `user_branch_id()`), but the equivalent escape hatch doesn't exist on the child tables, so the detail page shows the order shell with empty Jobs / Pricing / Documents / Addresses / Payments.
+## 1. Customer dashboard — human-readable order references
 
-Concretely, these SELECT policies still rely on `user_can_read_order` without a branch-staff fallback:
+**File:** `src/pages/dashboard/CustomerDashboard.tsx`
 
-- `order_jobs.order_jobs_select_policy` ← the symptom in the screenshot ("No jobs in this order")
-- `order_addresses.order_addresses_select_policy`
-- `order_pricing_snapshots.order_pricing_snapshots_select_policy`
-- `payments.payments_select_policy`
-- `orders.orders_select_membership` (masked by the legacy `user_branch_id()` policy)
+- Extend `useTrackingOrders` to select `order_number` alongside the existing columns.
+- In the Order Tracking list (around line 566), render `order.order_number ?? \`Order ${order.id.slice(0,8)}\`` so it shows e.g. `INV-00069` (and keep the UUID slice only as a fallback for legacy rows with no number).
+- Same treatment in `getOrderDisplayName` (line 196) — prefer `order_number` over UUID slice.
 
-(Other order-scoped policies — `messages`, `job_proofs`, `order_documents`, `order_invoices`, `status_history`, `timeline_events`, `order_adjustments`, `email_outbox_select_staff` — already inline `user_is_staff_for_branch(...)` and behave correctly.)
+No other surfaces are affected — admin/branch already display `INV-xxxxx`.
 
-## Fix
+---
 
-Single source of truth: extend `user_can_read_order` with a `p_branch_id` parameter and have it OR in `user_is_staff_for_branch(p_app_id, p_tenant_id, p_branch_id)`. Then update the five outstanding SELECT policies to pass `o.branch_id`.
+## 2. Branch / admin workflow — status transition controls
 
-### Migration
+### 2a. Database — new columns + state-history helpers
 
-```sql
--- 1) New 4-arg version (keep old 3-arg in place during rollout, then drop)
-CREATE OR REPLACE FUNCTION public.user_can_read_order(
-  p_app_id uuid,
-  p_tenant_id uuid,
-  p_branch_id uuid,
-  p_ordered_by_profile_id uuid
-) RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
-  SELECT (
-    public.has_role(auth.uid(), 'platform_admin'::app_role)
-    OR public.user_is_staff_for(p_app_id, p_tenant_id)
-    OR public.user_is_staff_for_branch(p_app_id, p_tenant_id, p_branch_id)
-    OR EXISTS (
-      SELECT 1 FROM public.tenant_memberships tm
-      WHERE tm.profile_id = auth.uid()
-        AND tm.app_id = p_app_id
-        AND tm.tenant_id = p_tenant_id
-        AND tm.is_active = true
-        AND tm.role = 'customer'
-        AND (p_ordered_by_profile_id = auth.uid() OR tm.can_view_all_orders = true)
-    )
-  );
-$$;
+Migration adds to `public.orders`:
+- `tracking_number text` (nullable)
+- `tracking_carrier text` (nullable)
+- `dispatched_at timestamptz` (nullable)
+- `ready_at timestamptz` (nullable)
+- `completed_at` already exists per the queries.
 
--- 2) Recreate the 5 affected SELECT policies to call the 4-arg form.
--- (orders_select_membership, order_jobs_select_policy, order_addresses_select_policy,
---  order_pricing_snapshots_select_policy, payments_select_policy)
+No new tables, no RLS changes (existing order policies cover these columns).
 
--- 3) Update the existing inline-fallback policies (messages, job_proofs,
---    order_documents, order_invoices, status_history, timeline_events,
---    email_outbox_select_customer, order_payment_attempts) to call the new
---    4-arg form so they don't double-evaluate the branch check.
+### 2b. New `order-engine` action: `updateOrderStatus`
 
--- 4) Drop the legacy 3-arg user_can_read_order signature once nothing references it.
+Handles order-level transitions and is the single entry-point for the workflow:
+
+```
+payload: {
+  order_id,
+  admin_status,                  // target admin status
+  reason?: string,
+  tracking_number?: string,      // required when transitioning to "dispatched"
+  tracking_carrier?: string,
+}
 ```
 
-### Verification (post-migration)
+Logic:
+1. `assertOrderStaffAccess` (existing helper).
+2. Map `admin_status → customer_status` and `fulfilment_status` using the matrix below.
+3. Apply allowed transitions (reject illegal jumps like `cancelled → in_production`).
+4. Update `orders` row (status fields + `ready_at` / `dispatched_at` / `completed_at` timestamps as appropriate + tracking fields when dispatching).
+5. Cascade to `order_jobs.job_status` for jobs still in earlier states (e.g. when order becomes `in_production`, push pending jobs to `in_production`; when `completed`, push all to `completed`). Per-job overrides remain possible via `updateJobStatus`.
+6. Write `status_history` + `timeline_events` rows (existing pattern).
+7. Fire `send-order-email` (fire-and-forget, like the existing `payment_request` call) for these transitions:
+    - `admin_status='ready_for_dispatch'` AND `fulfillment_type='collection'` → `ready_for_collection`
+    - `admin_status='ready_for_dispatch'` AND `fulfillment_type='delivery'` → no email yet (waiting for tracking)
+    - separate transition `dispatched` (delivery only) → `dispatched` email; pass tracking_number/carrier through `extra` for the body.
+    - `admin_status='completed'` → existing `order_completed` event if one exists, otherwise skip.
 
-Run as the branch_manager (`sandtoncityadmin@postnet.co.za`):
+### Status mapping matrix
 
-```sql
-SET LOCAL ROLE authenticated; -- with their JWT
-SELECT count(*) FROM order_jobs WHERE order_id = '14aa5e77-...';  -- expect 1
-SELECT count(*) FROM payments WHERE order_id = '14aa5e77-...';    -- expect ≥ 1
-```
+| admin_status         | customer_status     | fulfilment_status | timestamp set | email                    |
+|----------------------|---------------------|-------------------|---------------|--------------------------|
+| new_order            | awaiting_payment    | pending           | —             | —                        |
+| under_review         | awaiting_payment    | pending           | —             | —                        |
+| approved             | in_production       | pending           | —             | —                        |
+| in_production        | in_production       | in_production     | —             | —                        |
+| qa                   | in_production       | in_production     | —             | —                        |
+| ready_for_dispatch   | ready               | ready             | ready_at      | ready_for_collection*    |
+| dispatched (delivery)| dispatched          | dispatched        | dispatched_at | dispatched (w/ tracking) |
+| completed            | completed           | delivered/collected| completed_at | —                        |
+| on_hold              | on_hold             | (unchanged)       | —             | —                        |
+| cancelled            | cancelled           | cancelled         | —             | —                        |
 
-Then reload `/branch/orders/14aa5e77-…` and confirm the Job List, Pricing, Delivery, and Payment cards populate.
+`*` only when `fulfillment_type='collection'`.
 
-### Out of scope
+### 2c. Frontend client
 
-- Re-evaluating the legacy `Branch staff can view branch orders` / `user_branch_id()` policies (still active fallback, harmless given the stronger `user_is_staff_for_branch` checks).
-- Edge function changes — `production-pdf` / `order-engine` already use `user_is_staff_for_branch` correctly.
-- Photo-prints VPS assembly (separate workstream).
+`src/lib/orders/mutations.ts`: add `updateOrderStatus({...})` wrapper that calls the new engine action (mirrors existing `updateJobStatus`).
+
+### 2d. UI — Order Status Workflow card
+
+New component `src/components/orders/detail/OrderWorkflowPanel.tsx`, rendered in `OrderSummaryTab` directly under the existing status row.
+
+- Shows current `admin_status` badge.
+- Renders the next legal transitions as primary action buttons (e.g. when status = `new_order`: [Mark Under Review] [Approve] [Cancel]; when `approved`: [Start Production] [On Hold]; etc.).
+- A "More…" dropdown exposes On Hold and Cancel everywhere they're legal.
+- When the target is `ready_for_dispatch` for a delivery order, the button label is "Mark Ready" and after success the panel reveals a small inline form for `Carrier` + `Tracking Number` and a [Mark Dispatched & Notify Customer] button. Cancel/Reason prompts use a small dialog where useful (cancel always requires a reason).
+- Uses `updateOrderStatus` and invalidates the order detail query on success; toast on success / error.
+
+Per-job status changes remain available on `JobDetailPanel` (already shows `JOB_STATUS_CONFIG` badges) — we add a small inline `Select` next to the job status badge that calls the existing `updateJobStatus` mutation for fine-grained per-job overrides. This is optional polish but cheap and was the original "we used to have it" behaviour.
+
+### 2e. Wiring
+
+- `OrderSummaryTab` receives `order` already; pass `order` (incl. `fulfillment_type`, `tracking_number`, `dispatched_at`) to `OrderWorkflowPanel`. No prop changes needed in `BranchOrderDetail` / `AdminOrderDetail` beyond what they already pass.
+- Reuse `ADMIN_STATUS_CONFIG` for labels and existing `StatusBadge` for visuals.
+
+---
+
+## 3. Email templates (`send-order-email`)
+
+Already supports `ready_for_collection` and `dispatched` event keys (verified in `supabase/functions/send-order-email/index.ts`). Two small updates:
+- Extend the `dispatched` body to include tracking number + carrier when present (`c.deliveryLine` already exists — populate it from the order's new `tracking_number`/`tracking_carrier` when building `ctx`).
+- No new templates needed for the other transitions; we intentionally do not spam customers on internal status changes (Approved, In Production, QA) — only on Ready/Dispatched.
+
+---
+
+## Technical details
+
+**Files added**
+- `supabase/migrations/<ts>_order_tracking_fields.sql` — adds tracking + timestamp columns.
+- `src/components/orders/detail/OrderWorkflowPanel.tsx` — workflow UI.
+
+**Files edited**
+- `supabase/functions/order-engine/index.ts` — add `updateOrderStatus` action + switch case + cascade logic + email dispatch.
+- `supabase/functions/send-order-email/index.ts` — include tracking info in `dispatched` body.
+- `src/lib/orders/mutations.ts` — add `updateOrderStatus` wrapper.
+- `src/lib/orders/queries.ts` — already returns `*` from `orders`, so tracking columns flow through automatically (verify after migration).
+- `src/components/orders/detail/OrderSummaryTab.tsx` — render `OrderWorkflowPanel`.
+- `src/components/orders/detail/JobDetailPanel.tsx` — optional inline per-job status select using `updateJobStatus`.
+- `src/pages/dashboard/CustomerDashboard.tsx` — show `order_number` in Order Tracking widget + helper.
+
+**Out of scope**
+- Auth/RLS changes (existing branch_manager access already works after the recent migration).
+- Production/file pipeline changes.
+- Adding new email templates beyond what already exists.
+- Photo-prints VPS pipeline (separate workstream).
