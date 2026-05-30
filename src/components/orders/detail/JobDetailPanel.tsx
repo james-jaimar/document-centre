@@ -17,9 +17,11 @@ interface Props {
   /** ISO currency for the parent order. Used to render job prices in the
    *  customer's region (GBP/USD/EUR/AUD). Defaults to ZAR for safety. */
   currency?: string;
+  /** Parent order's human-readable order number — used for download filenames. */
+  orderNumber?: string | null;
 }
 
-export function JobDetailPanel({ job, documents, currency = "ZAR" }: Props) {
+export function JobDetailPanel({ job, documents, currency = "ZAR", orderNumber }: Props) {
   const fmt = (amount: number) => formatPrice(Number(amount ?? 0), currency);
   const config: JobConfiguration = job.configuration || {};
   const sections: ConfigSection[] = config.sections || [];
