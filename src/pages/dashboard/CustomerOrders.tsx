@@ -193,6 +193,7 @@ const CustomerOrders = () => {
     const moreCount = Math.max(itemCount - productNames.length, 0);
     const statusKey = order.customer_status;
     const paymentKey = order.payment_status;
+    const unread = unreadMap[order.id] || 0;
     return (
       <button
         onClick={() => navigate(tenantPath(`orders/${order.id}`))}
@@ -224,7 +225,14 @@ const CustomerOrders = () => {
                 >
                   {PAYMENT_LABEL[paymentKey] || paymentKey}
                 </span>
+                {unread > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-semibold text-white">
+                    <MessageSquare className="h-3 w-3" />
+                    {unread} new
+                  </span>
+                )}
               </div>
+
               <p className="mt-1 text-sm text-foreground truncate">
                 {productNames.length > 0 ? productNames.join(", ") : "Order"}
                 {moreCount > 0 && (
