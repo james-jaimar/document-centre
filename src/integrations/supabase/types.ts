@@ -2673,6 +2673,7 @@ export type Database = {
           date_required: string | null
           delivery_amount: number
           discount_amount: number
+          dispatched_at: string | null
           external_code: string | null
           external_order_ref: string | null
           fulfillment_type:
@@ -2689,6 +2690,7 @@ export type Database = {
           order_status: Database["public"]["Enums"]["order_status"]
           ordered_by_profile_id: string | null
           payment_status: string
+          ready_at: string | null
           source_channel: string | null
           storefront_name: string | null
           submitted_at: string | null
@@ -2696,6 +2698,8 @@ export type Database = {
           tenant_id: string | null
           total_amount: number
           total_price: number
+          tracking_carrier: string | null
+          tracking_number: string | null
           turnaround_time_text: string | null
           updated_at: string
           user_id: string
@@ -2718,6 +2722,7 @@ export type Database = {
           date_required?: string | null
           delivery_amount?: number
           discount_amount?: number
+          dispatched_at?: string | null
           external_code?: string | null
           external_order_ref?: string | null
           fulfillment_type?:
@@ -2734,6 +2739,7 @@ export type Database = {
           order_status?: Database["public"]["Enums"]["order_status"]
           ordered_by_profile_id?: string | null
           payment_status?: string
+          ready_at?: string | null
           source_channel?: string | null
           storefront_name?: string | null
           submitted_at?: string | null
@@ -2741,6 +2747,8 @@ export type Database = {
           tenant_id?: string | null
           total_amount?: number
           total_price?: number
+          tracking_carrier?: string | null
+          tracking_number?: string | null
           turnaround_time_text?: string | null
           updated_at?: string
           user_id: string
@@ -2763,6 +2771,7 @@ export type Database = {
           date_required?: string | null
           delivery_amount?: number
           discount_amount?: number
+          dispatched_at?: string | null
           external_code?: string | null
           external_order_ref?: string | null
           fulfillment_type?:
@@ -2779,6 +2788,7 @@ export type Database = {
           order_status?: Database["public"]["Enums"]["order_status"]
           ordered_by_profile_id?: string | null
           payment_status?: string
+          ready_at?: string | null
           source_channel?: string | null
           storefront_name?: string | null
           submitted_at?: string | null
@@ -2786,6 +2796,8 @@ export type Database = {
           tenant_id?: string | null
           total_amount?: number
           total_price?: number
+          tracking_carrier?: string | null
+          tracking_number?: string | null
           turnaround_time_text?: string | null
           updated_at?: string
           user_id?: string
