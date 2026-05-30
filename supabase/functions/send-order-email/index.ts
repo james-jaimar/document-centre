@@ -56,7 +56,9 @@ const HEADLINES: Record<EventKey, string> = {
   order_cancelled: "Your order has been cancelled",
   invoice_sent: "Your invoice is attached",
   payment_request: "Payment required",
+  new_message: "You have a new message",
 };
+
 
 const KIND_LABEL: Record<string, string> = {
   proforma: "Proforma Invoice",
