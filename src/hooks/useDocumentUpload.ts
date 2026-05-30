@@ -425,25 +425,43 @@ export function useDocumentUpload(
     ): Promise<{ ok: boolean; previewJobId: string | null }> => {
       const requiredOrient = requiredOrientationFor(productFamilySlug);
       const printPlan = getPrintReadyPlan(productFamilyPrintConfig);
+      const wantChain = !!chainOpts?.chainGeneratePreviews;
 
       // ── Single server call: CMYK → orient → (no resize at this stage) ─
       // The server performs all mutations in the correct order inside one
-      // pipeline. No more multi-job sequencing where Ghostscript can undo
-      // pypdf rotations.
+      // pipeline. When chaining is requested, the server also enqueues
+      // generate_previews against the pre-allocated `preview_job_id` and
+      // hands the prepared PDF over a shared on-disk cache — saving one
+      // S3 round-trip AND the prepare→previews polling gap.
+      let previewJobId: string | null = null;
       try {
         updateUpload(fileName, { progress: 52, statusText: "Preparing for print…" });
-        const { job_id } = await prepareForProduct(assetId, {
+        const { job_id, preview_job_id } = await prepareForProduct(assetId, {
           dominantOrientation: requiredOrient,
           destProfile: printPlan?.destProfile ?? null,
           intent: printPlan?.intent,
+          chainGeneratePreviews: wantChain,
+          chainRenderBox: chainOpts?.chainRenderBox ?? null,
         });
-        await pollJob(job_id, (job) => {
-          if (job.status === "pending") updateUpload(fileName, { progress: 55, statusText: "Queued — preparing…" });
-          else if (job.status === "running") updateUpload(fileName, { progress: 60, statusText: "Processing…" });
-        });
+        previewJobId = preview_job_id ?? null;
+
+        if (wantChain && previewJobId) {
+          // Server will dispatch generate_previews itself the moment the
+          // prepared PDF is committed. We don't need to poll the prepare
+          // job — the caller polls the preview job, which only flips to
+          // running AFTER prepare_for_product is done. Skip the wait so
+          // the next inspectionrelated reads happen sooner.
+          updateUpload(fileName, { progress: 58, statusText: "Preparing for print…" });
+        } else {
+          await pollJob(job_id, (job) => {
+            if (job.status === "pending") updateUpload(fileName, { progress: 55, statusText: "Queued — preparing…" });
+            else if (job.status === "running") updateUpload(fileName, { progress: 60, statusText: "Processing…" });
+          });
+        }
       } catch (prepareErr: any) {
         // Non-fatal — continue with the un-prepared PDF.
         console.warn("[upload] prepare-for-product failed (non-fatal):", prepareErr?.message);
+        previewJobId = null;
       }
 
       // Persist what happened
@@ -471,7 +489,7 @@ export function useDocumentUpload(
         console.warn("[upload] persist print_ready flag failed:", persistErr);
       }
 
-      return { ok: true, previewJobId: null };
+      return { ok: true, previewJobId };
     },
     [productFamilyPrintConfig, productFamilySlug, updateUpload],
   );
