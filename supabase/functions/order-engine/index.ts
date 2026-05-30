@@ -1293,7 +1293,15 @@ Deno.serve(async (req) => {
         break;
       case "sendMessage":
         response = await sendMessage(admin, userId, payload);
+        if (response.ok && payload.order_id && !payload.is_internal && payload.sender_type !== "customer") {
+          sideEffects = async () => {
+            await triggerEmail(authHeader, payload.order_id, "new_message", {
+              message_excerpt: String(payload.message_body || "").slice(0, 240),
+            });
+          };
+        }
         break;
+
       case "cancelOrder": {
         response = await cancelOrder(admin, userId, payload);
         if (response.ok && payload.order_id) {
