@@ -18,6 +18,7 @@ export const ADMIN_STATUS_CONFIG: Record<OrderAdminStatus, { label: string; colo
   in_production:      { label: 'In Production',   color: 'bg-indigo-100 text-indigo-800' },
   qa:                 { label: 'QA',               color: 'bg-purple-100 text-purple-800' },
   ready_for_dispatch: { label: 'Ready',            color: 'bg-teal-100 text-teal-800' },
+  dispatched:         { label: 'Dispatched',        color: 'bg-sky-100 text-sky-800' },
   completed:          { label: 'Completed',        color: 'bg-green-100 text-green-800' },
   on_hold:            { label: 'On Hold',          color: 'bg-orange-100 text-orange-800' },
   cancelled:          { label: 'Cancelled',        color: 'bg-red-100 text-red-800' },
