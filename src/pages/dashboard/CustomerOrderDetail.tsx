@@ -117,6 +117,19 @@ const CustomerOrderDetail = () => {
   // Mark staff→customer messages as read whenever this order is opened.
   useMarkOrderReadCustomer(id);
 
+  // Auto-resolve the branch from the order itself, so customers arriving
+  // from an emailed order link don't get blocked by the branch picker.
+  const { allBranches, activeBranch, selectBranch } = useBranch();
+  useEffect(() => {
+    const branchId = (order as any)?.branch_id;
+    if (!branchId) return;
+    if (activeBranch?.id === branchId) return;
+    const match = allBranches.find((b) => b.id === branchId);
+    if (match) selectBranch(match);
+  }, [order, allBranches, activeBranch?.id, selectBranch]);
+
+
+
 
 
   const handleSendMessage = async () => {
