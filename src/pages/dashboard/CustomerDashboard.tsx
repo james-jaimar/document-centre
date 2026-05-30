@@ -162,7 +162,7 @@ function useTrackingOrders(userId: string | undefined, tenantId: string | null) 
       if (!userId || !tenantId) return [];
       const { data, error } = await supabase
         .from("orders")
-        .select("*")
+        .select("id, order_number, order_status, updated_at, user_id, tenant_id")
         .eq("user_id", userId)
         .eq("tenant_id", tenantId)
         .in("order_status", [
