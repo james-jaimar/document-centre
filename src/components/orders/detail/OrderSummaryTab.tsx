@@ -78,6 +78,8 @@ export function OrderSummaryTab({ order, jobs, selectedJobId, onSelectJob }: Pro
         </div>
       </div>
 
+      <OrderWorkflowPanel order={order} />
+
       {/* Job List */}
       <div>
         <div className="flex items-center justify-between mb-2">
