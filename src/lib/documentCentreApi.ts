@@ -11,11 +11,27 @@ export interface CreateAssetPayload {
   source_storage_path: string;
   metadata?: Record<string, unknown>;
   auto_queue?: boolean;
+  /** When true (server default), POST /v1/assets runs a pikepdf-only
+   *  inspect inline and returns the metadata in the response. Lets the
+   *  client skip the legacy inspect_asset Celery job. PDF only. */
+  inline_inspect?: boolean;
+}
+
+export interface InlineInspectMetadata {
+  page_count: number;
+  width_pt: number;
+  height_pt: number;
+  boxes: Record<string, number[]>;
+  mixed_orientation: boolean;
+  status: string;
 }
 
 export interface CreateAssetResponse {
   asset_id: string;
   job_ids: string[];
+  /** Present when the server ran the inline pikepdf probe (PDF media
+   *  type, inline_inspect != false, and the probe succeeded). */
+  inline_inspect: InlineInspectMetadata | null;
 }
 
 export interface Asset {
