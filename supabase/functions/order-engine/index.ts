@@ -1426,6 +1426,31 @@ Deno.serve(async (req) => {
         }
         break;
       }
+      case "updateOrderStatus": {
+        response = await updateOrderStatus(admin, userId, payload);
+        if (response.ok) {
+          const data = await response.clone().json();
+          const to = data?.to_status as string | undefined;
+          const fulfillment = data?.fulfillment_type as string | null | undefined;
+          if (to && payload.order_id) {
+            let eventKey: string | null = null;
+            const extra: Record<string, unknown> = {};
+            if (to === "ready_for_dispatch" && fulfillment === "collection") {
+              eventKey = "ready_for_collection";
+            } else if (to === "dispatched") {
+              eventKey = "dispatched";
+              if (payload.tracking_number) extra.tracking_number = payload.tracking_number;
+              if (payload.tracking_carrier) extra.tracking_carrier = payload.tracking_carrier;
+            }
+            if (eventKey) {
+              sideEffects = async () => {
+                await triggerEmail(authHeader, payload.order_id, eventKey!, extra);
+              };
+            }
+          }
+        }
+        break;
+      }
       case "recordPaymentEvent": {
         response = await recordPaymentEvent(admin, userId, payload);
         if (response.ok && payload.status === "paid" && payload.order_id) {
