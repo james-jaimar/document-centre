@@ -225,9 +225,9 @@ Deno.serve(async (req) => {
     if ((order as any).is_demo) return json({ success: true, skipped: true, reason: "demo_order" });
     if (!order.customer_email) return json({ success: true, skipped: true, reason: "no_email" });
 
-    // Fetch invoice details if invoice_sent
+    // Fetch invoice details if invoice_sent OR if order_received was given a proforma to attach
     let invoice: any = null;
-    if (eventKey === "invoice_sent" && invoice_id) {
+    if ((eventKey === "invoice_sent" || eventKey === "order_received") && invoice_id) {
       const { data: inv } = await admin.from("order_invoices").select("*").eq("id", invoice_id).single();
       invoice = inv;
     }
