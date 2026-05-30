@@ -40,7 +40,9 @@ const SUBJECTS: Record<EventKey, (n: string, extra?: any) => string> = {
   order_cancelled: (n) => `Order ${n} has been cancelled`,
   invoice_sent: (n, e) => `${e?.invoiceLabel || "Invoice"} for order ${n}`,
   payment_request: (n) => `Payment request for order ${n}`,
+  new_message: (n) => `New message on order ${n}`,
 };
+
 
 const HEADLINES: Record<EventKey, string> = {
   order_received: "Thanks for your order!",
