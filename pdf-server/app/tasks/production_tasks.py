@@ -915,37 +915,35 @@ def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
     summary = (cfg.get("summary") or {}) if isinstance(cfg, dict) else {}
     cfg_sections = (cfg.get("sections") or []) if isinstance(cfg, dict) else []
 
-    # Collect (label, value) pairs from summary first, then each section.
+    # Flatten all spec pairs (summary first, then every section's items) into
+    # a single compact 3-column grid. Skip section titles — the labels carry
+    # enough context (Paper Stock, Print Colour, etc.) and we need to stay
+    # on a single A4 page.
     spec_pairs: list[tuple[str, str]] = []
-    for i in (1, 2, 3):
-        lbl = summary.get(f"primary_spec_{i}_label")
-        val = summary.get(f"primary_spec_{i}_value")
-        if lbl and val:
-            spec_pairs.append((str(lbl), str(val)))
+    seen: set[tuple[str, str]] = set()
 
-    # Render each configuration section as its own labelled group so the
-    # ticket matches the structure operators see in the admin UI.
-    section_groups: list[tuple[str, list[tuple[str, str]]]] = []
+    def _push(label: str, value):
+        if not label or value in (None, ""):
+            return
+        key = (label.strip().lower(), str(value).strip().lower())
+        if key in seen:
+            return
+        seen.add(key)
+        spec_pairs.append((label.strip(), str(value).strip()))
+
+    for i in (1, 2, 3):
+        _push(summary.get(f"primary_spec_{i}_label"), summary.get(f"primary_spec_{i}_value"))
+
     if isinstance(cfg_sections, list):
         for section in cfg_sections:
             if not isinstance(section, dict):
                 continue
-            title = str(section.get("title") or "").strip()
-            items = section.get("items") or []
-            pairs: list[tuple[str, str]] = []
-            if isinstance(items, list):
-                for it in items:
-                    if not isinstance(it, dict):
-                        continue
-                    lbl = str(it.get("label") or "").strip()
-                    val = it.get("value")
-                    if lbl and val not in (None, ""):
-                        pairs.append((lbl, str(val)))
-            if title and pairs:
-                section_groups.append((title, pairs))
+            for it in (section.get("items") or []):
+                if isinstance(it, dict):
+                    _push(it.get("label"), it.get("value"))
 
-    # Fallback: legacy specs from snapshot/configuration when no sections shipped.
-    if not spec_pairs and not section_groups:
+    # Legacy fallback when configuration is empty.
+    if not spec_pairs:
         report = job.get("assembly_report") or {}
         resolved = report.get("target") if isinstance(report, dict) else {}
         if not isinstance(resolved, dict):
@@ -953,20 +951,20 @@ def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
         size_str = None
         if resolved.get("width_mm") and resolved.get("height_mm"):
             size_str = f"{resolved['width_mm']:.0f}×{resolved['height_mm']:.0f}mm"
-        legacy = [
+        for k, v in [
             ("Size", size_str or snap.get("size")),
             ("Orientation", resolved.get("orientation") or snap.get("orientation")),
-            ("Paper", cfg.get("paper") or snap.get("paper") if isinstance(cfg, dict) else snap.get("paper")),
+            ("Paper", (cfg.get("paper") if isinstance(cfg, dict) else None) or snap.get("paper")),
             ("Colour", (resolved.get("colour_mode") or "").upper() or snap.get("colour")),
             ("Sides", (resolved.get("duplex_mode") or "").title() or snap.get("sides")),
             ("Binding", (cfg.get("binding") if isinstance(cfg, dict) else None) or snap.get("binding")),
-        ]
-        spec_pairs.extend([(k, str(v)) for k, v in legacy if v])
+        ]:
+            _push(k, v)
 
-    def _spec_table(pairs: list[tuple[str, str]]):
+    if spec_pairs:
         rows = []
-        for i in range(0, len(pairs), 3):
-            chunk = pairs[i:i + 3]
+        for i in range(0, len(spec_pairs), 3):
+            chunk = spec_pairs[i:i + 3]
             cells = []
             for k, v in chunk:
                 cells.append(Paragraph(
@@ -976,10 +974,8 @@ def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
             while len(cells) < 3:
                 cells.append(Paragraph("", body))
             rows.append(cells)
-        if not rows:
-            return None
-        t = Table(rows, colWidths=[60 * mm, 60 * mm, 60 * mm])
-        t.setStyle(TableStyle([
+        specs_tbl = Table(rows, colWidths=[60 * mm, 60 * mm, 60 * mm])
+        specs_tbl.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), colors.white),
             ("BOX", (0, 0), (-1, -1), 0.5, rule),
             ("INNERGRID", (0, 0), (-1, -1), 0.4, rule),
@@ -989,19 +985,7 @@ def _render_ticket_pdf(bundle: JobBundle, dest: Path) -> None:
             ("TOPPADDING", (0, 0), (-1, -1), 5),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
         ]))
-        return t
-
-    primary_tbl = _spec_table(spec_pairs)
-    if primary_tbl is not None:
-        flow.append(primary_tbl)
-        flow.append(Spacer(1, 4))
-
-    for title, pairs in section_groups:
-        flow.append(Spacer(1, 2))
-        flow.append(Paragraph(title.upper(), h_section))
-        t = _spec_table(pairs)
-        if t is not None:
-            flow.append(t)
+        flow.append(specs_tbl)
 
     flow.append(Spacer(1, 10))
 
