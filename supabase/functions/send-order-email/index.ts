@@ -95,8 +95,12 @@ const BODIES: Record<EventKey, (ctx: any) => string> = {
     `A payment of <strong>${c.amountDueFmt}</strong> is due for order <strong>${c.orderNo}</strong>.` +
     (c.hasAttachment ? `<br><br>Your proforma invoice (<strong>${c.invoiceNumber}</strong>) is attached.` : "") +
     `<br><br>Please pay via EFT using <strong>${c.orderNo}</strong> as your reference.`,
-
+  new_message: (c) =>
+    `You have a new message on order <strong>${c.orderNo}</strong>.` +
+    (c.messageExcerpt ? `<br><br><em>"${c.messageExcerpt}"</em>` : "") +
+    `<br><br>Open your order to reply.`,
 };
+
 
 const DEFAULT_ORIGIN = "https://document-centre.com";
 
