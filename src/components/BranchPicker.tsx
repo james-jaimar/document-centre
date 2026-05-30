@@ -39,6 +39,8 @@ export default function BranchPicker() {
   }, [branches, search]);
 
   if (!showPicker) return null;
+  if (RESOURCE_BRANCH_ROUTE_RE.test(location.pathname)) return null;
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
