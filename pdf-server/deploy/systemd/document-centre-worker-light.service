@@ -10,6 +10,11 @@ Group=root
 WorkingDirectory=/opt/document-centre-api
 EnvironmentFile=/opt/document-centre-api/.env
 Environment=PYTHONUNBUFFERED=1
+# Ensure the shared PDF handoff cache exists before the worker starts.
+# generate_previews reads PDFs from /var/cache/document-centre/pdf-cache
+# when the heavy worker has just prepared them, saving the S3 download.
+ExecStartPre=/bin/mkdir -p /var/cache/document-centre/pdf-cache
+ExecStartPre=/bin/chmod 0775 /var/cache/document-centre/pdf-cache
 # 8 prefork children for fast / IO-bound jobs so heavy PDF work cannot
 # starve thumbnail and ops queues. inspect_asset + normalize_orientation
 # also live on `default` now.

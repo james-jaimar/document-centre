@@ -76,6 +76,15 @@ class Settings(BaseSettings):
     # subtask) and is only worthwhile for very large books.
     render_batch_threshold: int = Field(alias='RENDER_BATCH_THRESHOLD', default=200)
 
+    # Shared on-disk PDF cache. Workers (heavy + light) all co-locate on
+    # the same host, so we can hand the prepared PDF over the local disk
+    # instead of round-tripping through S3 between prepare_for_product
+    # and generate_previews. S3 remains the source of truth; the cache is
+    # purely advisory. Misses fall back to storage.download.
+    pdf_cache_enabled: bool = Field(alias='PDF_CACHE_ENABLED', default=True)
+    pdf_cache_dir: str = Field(alias='PDF_CACHE_DIR', default='/var/cache/document-centre/pdf-cache')
+    pdf_cache_max_age_seconds: int = Field(alias='PDF_CACHE_MAX_AGE_SECONDS', default=1800)
+
     cors_origins: str = Field(alias='CORS_ORIGINS', default='http://localhost:5173')
     admin_username: str = Field(alias='ADMIN_USERNAME', default='admin')
     admin_password: str = Field(alias='ADMIN_PASSWORD', default='admin123')
