@@ -211,7 +211,7 @@ export default function BranchOrderDetail() {
         <div>
           <div className="text-sm font-medium text-primary mb-4">Job Details</div>
           {selectedJob ? (
-            <JobDetailPanel job={selectedJob} documents={documents} currency={order.currency} />
+            <JobDetailPanel job={selectedJob} documents={documents} currency={order.currency} orderNumber={order.order_number} />
           ) : (
             <div className="rounded-lg border bg-card p-8 text-center text-muted-foreground">
               No jobs in this order
