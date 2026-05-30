@@ -959,7 +959,7 @@ async function fetchOrderForAdmin(
     .eq("id", order_id)
     .maybeSingle();
   if (error || !order) return { error: "Order not found", order: null };
-  const denied = await requireTenantAdmin(admin, userId, order.tenant_id as string);
+  const denied = await assertOrderStaffAccess(admin, userId, order as any, { adminOnly: true });
   if (denied) return { error: denied, order: null };
   return { error: null, order };
 }
