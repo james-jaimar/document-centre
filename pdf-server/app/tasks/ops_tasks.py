@@ -17,6 +17,7 @@ from celery import shared_task
 
 from app.db.session import SessionLocal
 from app.db.models.ops_storage_snapshot import OpsStorageSnapshot
+from app.services.files import cache_prune
 from app.services.storage_metrics import storage_live
 
 log = logging.getLogger(__name__)
