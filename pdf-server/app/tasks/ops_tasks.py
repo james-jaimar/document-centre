@@ -67,4 +67,13 @@ def cleanup_tmp(max_age_hours: int = 24) -> dict:
         except Exception as exc:  # noqa: BLE001
             log.warning("cleanup_tmp: failed on %s: %s", entry.path, exc)
             errors += 1
-    return {"removed": removed, "bytes_freed": bytes_freed, "errors": errors}
+    # Also prune the shared on-disk PDF cache. Entries are short-lived
+    # (TTL set by PDF_CACHE_MAX_AGE_SECONDS, default 30 min) but the
+    # daily sweep catches anything missed.
+    pdf_cache = cache_prune()
+    return {
+        "removed": removed,
+        "bytes_freed": bytes_freed,
+        "errors": errors,
+        "pdf_cache": pdf_cache,
+    }
