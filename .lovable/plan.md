@@ -1,128 +1,93 @@
-## Goals
 
-1. Replace the raw UUID slice ("Order e32573ce") on the customer dashboard's Order Tracking widget with the human-readable `order_number` (e.g. `INV-00069`).
-2. Give branch operators (and admins) a real workflow tool: a status picker on each order/job that transitions through the lifecycle (New → Under Review → Approved → In Production → QA → Ready → Completed, plus On Hold / Cancelled), with the right side-effects and email triggers.
-3. Add dispatch handling: when a delivery order is marked Ready, prompt for a tracking number + carrier, and on "Mark Dispatched" send the dispatched email to the customer with the tracking info.
+## 1. Branch portal — on-brand sidebar, no text overrun
 
----
+**Problem (from screenshot)**
+- `PostNet — PostNet Sandt…` clips the branch name (tenant + branch concatenated on one line).
+- `sandtoncityadmin@postne…` clips the user email in the footer.
+- The active nav pill ("Orders") is generic white; it should pick up the tenant's brand colour (PostNet red).
+- Logo slot doesn't show the tenant logo distinctly.
 
-## 1. Customer dashboard — human-readable order references
+**Changes in `src/components/BranchSidebar.tsx`**
+- Stack identity vertically: line 1 = tenant name (medium weight, truncate), line 2 = branch name in tenant primary colour (semibold), line 3 = "Branch Portal" muted. Drops the "—" concatenation entirely so neither name clips.
+- Footer user block: shrink email to `text-[11px]`, keep `truncate`, and add `title={user.email}` so the full address is in a tooltip.
+- When `branding.logo_url` exists, render at `h-9 w-auto max-w-[40px]` with `object-contain` so the actual mark shows instead of a square crop.
+- Apply brand colour via inline CSS variable on the `<aside>`:
+  - `style={{ '--brand': branding.primary_color }}`
+  - Active nav pill uses `bg-[hsl(var(--brand)/0.12)] text-[hsl(var(--brand))]` with a 2px left border in `--brand`.
+  - Collapse chevron + hover states tinted with `--brand`.
+- Add the same treatment to `BranchLayout` top bar if it carries a title (quick check during implementation).
 
-**File:** `src/pages/dashboard/CustomerDashboard.tsx`
+**Sidebar — no behaviour changes**, purely presentational. Admin/platform sidebars untouched.
 
-- Extend `useTrackingOrders` to select `order_number` alongside the existing columns.
-- In the Order Tracking list (around line 566), render `order.order_number ?? \`Order ${order.id.slice(0,8)}\`` so it shows e.g. `INV-00069` (and keep the UUID slice only as a fallback for legacy rows with no number).
-- Same treatment in `getOrderDisplayName` (line 196) — prefer `order_number` over UUID slice.
+## 2. Job ticket PDF — proper operator-grade layout
 
-No other surfaces are affected — admin/branch already display `INV-xxxxx`.
+The current ticket (`pdf-server/app/tasks/production_tasks.py::_render_ticket_pdf`) is plain ReportLab with a "Document Centre" header, three small tables, and sign-off lines. It ignores branding, has no thumbnails, no pricing, no delivery details, and shows "Document Centre" instead of the branch.
 
----
+### Data — extend `load_job_bundle` (`production_orchestrator.py`)
 
-## 2. Branch / admin workflow — status transition controls
+Add these optional fields to `JobBundle` and populate when available:
+- `branch`: row from `branches` (name, address, phone, email) keyed off `order.branch_id`.
+- `branding`: row from `tenant_branding` (logo_url, primary_color, secondary_color).
+- `delivery_address`: latest row from `order_addresses` for this order where `kind = 'delivery'`.
+- `order_item`: matching `order_items` row for unit/net price, currency, qty.
+- `document_thumbnails`: for each document, prefer `documents.thumbnail_path`; otherwise rasterise page 1 of the resolved source PDF at ~120 DPI in the worker workspace.
 
-### 2a. Database — new columns + state-history helpers
+Branch/branding/address fetches are best-effort (`try/except` → `None`), so no migration required and existing tickets continue to render when fields are missing.
 
-Migration adds to `public.orders`:
-- `tracking_number text` (nullable)
-- `tracking_carrier text` (nullable)
-- `dispatched_at timestamptz` (nullable)
-- `ready_at timestamptz` (nullable)
-- `completed_at` already exists per the queries.
+### Rendering — rewrite `_render_ticket_pdf`
 
-No new tables, no RLS changes (existing order policies cover these columns).
+Single A4 page, generous whitespace, brand-led:
 
-### 2b. New `order-engine` action: `updateOrderStatus`
-
-Handles order-level transitions and is the single entry-point for the workflow:
-
+```text
+┌──────────────────────────────────────────────────────────┐
+│ [Tenant Logo]  PostNet Sandton City              Job     │  ← brand-coloured band
+│                123 Rivonia Rd · 011-234-5678     Ticket  │
+├──────────────────────────────────────────────────────────┤
+│  INV-00069-1                              ████ QR ████   │
+│  Booklets · 5 copies                      (links to      │
+│  Due: Mon 2 Jun · Urgency: Normal          admin order)  │
+├──────────────────────────────────────────────────────────┤
+│ CUSTOMER             │ FULFILMENT          │ PRICING     │
+│ James Hawkins        │ Collection          │ Unit  R 43.70│
+│ Acme Co              │ PostNet Sandton City│ Qty   ×5    │
+│ james@acme.co.za     │ 123 Rivonia Rd      │ Net   R 218.50│
+│ +27 82 ...           │ Sandton, 2196       │ Paid (EFT)  │
+├──────────────────────────────────────────────────────────┤
+│ PRODUCTION SPECS                                          │
+│ Size A4 (A3 folded)   Paper 80gsm White Bond   ...        │
+│ Colour Full Colour    Sides  Duplex            ...        │
+│ Binding Saddle stitch Cover  Printed (same stock)  ...    │
+├──────────────────────────────────────────────────────────┤
+│ DOCUMENTS                                                 │
+│  ┌──┐  body.pdf            8 pages   A4   12.3 MB         │
+│  │📄│                                                      │
+│  └──┘                                                      │
+│  ┌──┐  cover.pdf           2 pages   A3   3.1 MB          │
+├──────────────────────────────────────────────────────────┤
+│ Operator ______  QC ______  Started ____  Completed ____  │
+│ Notes ____________________________________________________│
+│                                                            │
+│ Generated 2026-05-30 15:42 UTC · Powered by Document Centre│
+└──────────────────────────────────────────────────────────┘
 ```
-payload: {
-  order_id,
-  admin_status,                  // target admin status
-  reason?: string,
-  tracking_number?: string,      // required when transitioning to "dispatched"
-  tracking_carrier?: string,
-}
-```
 
-Logic:
-1. `assertOrderStaffAccess` (existing helper).
-2. Map `admin_status → customer_status` and `fulfilment_status` using the matrix below.
-3. Apply allowed transitions (reject illegal jumps like `cancelled → in_production`).
-4. Update `orders` row (status fields + `ready_at` / `dispatched_at` / `completed_at` timestamps as appropriate + tracking fields when dispatching).
-5. Cascade to `order_jobs.job_status` for jobs still in earlier states (e.g. when order becomes `in_production`, push pending jobs to `in_production`; when `completed`, push all to `completed`). Per-job overrides remain possible via `updateJobStatus`.
-6. Write `status_history` + `timeline_events` rows (existing pattern).
-7. Fire `send-order-email` (fire-and-forget, like the existing `payment_request` call) for these transitions:
-    - `admin_status='ready_for_dispatch'` AND `fulfillment_type='collection'` → `ready_for_collection`
-    - `admin_status='ready_for_dispatch'` AND `fulfillment_type='delivery'` → no email yet (waiting for tracking)
-    - separate transition `dispatched` (delivery only) → `dispatched` email; pass tracking_number/carrier through `extra` for the body.
-    - `admin_status='completed'` → existing `order_completed` event if one exists, otherwise skip.
+Implementation notes:
+- Use the tenant `primary_color` for the top band, the job-number divider rule, and section header underlines. Fallback to slate-700 if missing.
+- Logo via `RLImage` from the branding `logo_url` (download to workspace, scale to 18mm height). Skip silently on error.
+- Three-column block (Customer / Fulfilment / Pricing) is a single `Table` with 60/60/65mm columns and an outer `LINEABOVE`/`LINEBELOW`.
+- Production specs grid stays the resolved-target-aware block we have today, but rendered as a 2-column key/value layout in 3 visual columns (so up to 9 specs fit without overflow).
+- Documents list: for each document, render a 22×28mm thumbnail (or a placeholder doc icon) next to filename, page count, detected size, file size.
+- Sign-off row condensed to a single line; QR moves to top-right.
+- Footer reads "Generated … by Document Centre" so the platform brand stays, but the page itself is fully tenant-branded.
 
-### Status mapping matrix
+### Files touched
+- `pdf-server/app/services/production_orchestrator.py` — extend `JobBundle` + `load_job_bundle`.
+- `pdf-server/app/tasks/production_tasks.py` — rewrite `_render_ticket_pdf`, add a small thumbnail helper.
+- `src/components/BranchSidebar.tsx` — branded identity + footer fixes.
 
-| admin_status         | customer_status     | fulfilment_status | timestamp set | email                    |
-|----------------------|---------------------|-------------------|---------------|--------------------------|
-| new_order            | awaiting_payment    | pending           | —             | —                        |
-| under_review         | awaiting_payment    | pending           | —             | —                        |
-| approved             | in_production       | pending           | —             | —                        |
-| in_production        | in_production       | in_production     | —             | —                        |
-| qa                   | in_production       | in_production     | —             | —                        |
-| ready_for_dispatch   | ready               | ready             | ready_at      | ready_for_collection*    |
-| dispatched (delivery)| dispatched          | dispatched        | dispatched_at | dispatched (w/ tracking) |
-| completed            | completed           | delivered/collected| completed_at | —                        |
-| on_hold              | on_hold             | (unchanged)       | —             | —                        |
-| cancelled            | cancelled           | cancelled         | —             | —                        |
+No DB migrations, no edge-function changes, no API contract changes. Existing "Print ticket" button in `ProductionPanel` keeps working — it just produces a much nicer PDF.
 
-`*` only when `fulfillment_type='collection'`.
-
-### 2c. Frontend client
-
-`src/lib/orders/mutations.ts`: add `updateOrderStatus({...})` wrapper that calls the new engine action (mirrors existing `updateJobStatus`).
-
-### 2d. UI — Order Status Workflow card
-
-New component `src/components/orders/detail/OrderWorkflowPanel.tsx`, rendered in `OrderSummaryTab` directly under the existing status row.
-
-- Shows current `admin_status` badge.
-- Renders the next legal transitions as primary action buttons (e.g. when status = `new_order`: [Mark Under Review] [Approve] [Cancel]; when `approved`: [Start Production] [On Hold]; etc.).
-- A "More…" dropdown exposes On Hold and Cancel everywhere they're legal.
-- When the target is `ready_for_dispatch` for a delivery order, the button label is "Mark Ready" and after success the panel reveals a small inline form for `Carrier` + `Tracking Number` and a [Mark Dispatched & Notify Customer] button. Cancel/Reason prompts use a small dialog where useful (cancel always requires a reason).
-- Uses `updateOrderStatus` and invalidates the order detail query on success; toast on success / error.
-
-Per-job status changes remain available on `JobDetailPanel` (already shows `JOB_STATUS_CONFIG` badges) — we add a small inline `Select` next to the job status badge that calls the existing `updateJobStatus` mutation for fine-grained per-job overrides. This is optional polish but cheap and was the original "we used to have it" behaviour.
-
-### 2e. Wiring
-
-- `OrderSummaryTab` receives `order` already; pass `order` (incl. `fulfillment_type`, `tracking_number`, `dispatched_at`) to `OrderWorkflowPanel`. No prop changes needed in `BranchOrderDetail` / `AdminOrderDetail` beyond what they already pass.
-- Reuse `ADMIN_STATUS_CONFIG` for labels and existing `StatusBadge` for visuals.
-
----
-
-## 3. Email templates (`send-order-email`)
-
-Already supports `ready_for_collection` and `dispatched` event keys (verified in `supabase/functions/send-order-email/index.ts`). Two small updates:
-- Extend the `dispatched` body to include tracking number + carrier when present (`c.deliveryLine` already exists — populate it from the order's new `tracking_number`/`tracking_carrier` when building `ctx`).
-- No new templates needed for the other transitions; we intentionally do not spam customers on internal status changes (Approved, In Production, QA) — only on Ready/Dispatched.
-
----
-
-## Technical details
-
-**Files added**
-- `supabase/migrations/<ts>_order_tracking_fields.sql` — adds tracking + timestamp columns.
-- `src/components/orders/detail/OrderWorkflowPanel.tsx` — workflow UI.
-
-**Files edited**
-- `supabase/functions/order-engine/index.ts` — add `updateOrderStatus` action + switch case + cascade logic + email dispatch.
-- `supabase/functions/send-order-email/index.ts` — include tracking info in `dispatched` body.
-- `src/lib/orders/mutations.ts` — add `updateOrderStatus` wrapper.
-- `src/lib/orders/queries.ts` — already returns `*` from `orders`, so tracking columns flow through automatically (verify after migration).
-- `src/components/orders/detail/OrderSummaryTab.tsx` — render `OrderWorkflowPanel`.
-- `src/components/orders/detail/JobDetailPanel.tsx` — optional inline per-job status select using `updateJobStatus`.
-- `src/pages/dashboard/CustomerDashboard.tsx` — show `order_number` in Order Tracking widget + helper.
-
-**Out of scope**
-- Auth/RLS changes (existing branch_manager access already works after the recent migration).
-- Production/file pipeline changes.
-- Adding new email templates beyond what already exists.
-- Photo-prints VPS pipeline (separate workstream).
+## Out of scope (intentionally)
+- Admin & platform sidebars (only branch is on-brand per the request).
+- Multi-page tickets / per-section breakdowns (branches are small, one page is the brief).
+- Live preview of the ticket in the web UI (not requested; PDF only).
