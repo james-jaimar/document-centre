@@ -23,6 +23,8 @@ import { ADMIN_STATUS_CONFIG, PAYMENT_STATUS_CONFIG } from "@/lib/orders/status-
 import { StatusBadge } from "@/components/orders/StatusBadge";
 import { Undo2 } from "lucide-react";
 import { formatPrice } from "@/lib/formatCurrency";
+import { useMarkOrderReadStaff } from "@/hooks/useUnreadMessages";
+
 
 export default function AdminOrderDetail() {
   const { id } = useParams<{ id: string }>();
