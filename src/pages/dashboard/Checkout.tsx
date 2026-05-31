@@ -506,6 +506,15 @@ export default function Checkout() {
                   />
                 </div>
               </div>
+              {user && (
+                <label className="flex items-center gap-2 pt-1 text-xs text-muted-foreground cursor-pointer">
+                  <Checkbox
+                    checked={saveAddress}
+                    onCheckedChange={(v) => setSaveAddress(!!v)}
+                  />
+                  Save this address for next time
+                </label>
+              )}
             </div>
           )}
 
