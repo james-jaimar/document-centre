@@ -911,6 +911,7 @@ export default function PreviewPanel({
           pageAspectRatio={pageAspectRatio}
           effects={effects}
           sectionTypes={sectionTypes}
+          duplexFlags={duplexFlags}
           pageRoles={computedPageRoles}
           bleedFlags={bleedFlags}
           pageLabels={pageLabels}
@@ -938,6 +939,7 @@ export default function PreviewPanel({
           pageAspectRatio={pageAspectRatio}
           effects={effects}
           sectionTypes={sectionTypes}
+          duplexFlags={duplexFlags}
           pageRoles={computedPageRoles}
           bleedFlags={bleedFlags}
           pageLabels={pageLabels}
