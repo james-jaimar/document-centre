@@ -19,6 +19,7 @@ export interface ManageUserInput {
   target_profile_id: string;
   tenant_id?: string | null;
   app_id?: string | null;
+  branch_id?: string | null;
   membership_id?: string | null;
   new_email?: string;
   new_password?: string;
@@ -28,6 +29,7 @@ export interface ManageUserInput {
   phone?: string | null;
   reason?: string;
 }
+
 
 export function useManageUser() {
   const qc = useQueryClient();
