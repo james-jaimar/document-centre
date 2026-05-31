@@ -21,6 +21,7 @@ export interface DocumentPreviewProps {
   pageAspectRatio?: number;
   effects?: PreviewEffects;
   sectionTypes?: string[];
+  duplexFlags?: boolean[];
   pageRoles?: string[];
   bleedFlags?: boolean[];
   pageLabels?: string[];
@@ -60,6 +61,7 @@ export default function DocumentPreview({
   pageAspectRatio,
   effects,
   sectionTypes,
+  duplexFlags,
   pageRoles,
   bleedFlags,
   pageLabels,
@@ -168,6 +170,7 @@ export default function DocumentPreview({
     pageAspectRatio,
     effects,
     sectionTypes,
+    duplexFlags,
     pageRoles,
     bleedFlags,
     pageLabels,
