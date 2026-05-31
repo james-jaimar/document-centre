@@ -352,14 +352,26 @@ function ClicksTab({
                   />
                 </TableCell>
                 <TableCell>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7"
-                    onClick={() => remove(row.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <TiersButton
+                      table="clicks"
+                      lineId={row.id}
+                      label={`${row.size} · ${row.colour} · ${row.sides}`}
+                      scope={scope}
+                      tenantId={tenantId}
+                      branchId={branchId}
+                      fallbackSell={Number(row.sell_price)}
+                      fallbackCost={Number(row.cost_price)}
+                    />
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      onClick={() => remove(row.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             );
