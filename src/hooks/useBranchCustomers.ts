@@ -24,7 +24,10 @@ export function useBranchCustomers() {
       const { data, error } = await supabase.rpc("get_branch_customers", {
         _branch_id: branchId!,
       });
-      if (error) throw error;
+      if (error) {
+        console.error("[useBranchCustomers] RPC get_branch_customers failed", { branchId, error });
+        throw error;
+      }
       return ((data ?? []) as any[]).map((r) => ({
         profile_id: r.profile_id,
         display_name: r.display_name,

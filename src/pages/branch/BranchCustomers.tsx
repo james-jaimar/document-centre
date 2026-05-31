@@ -21,7 +21,7 @@ import { BranchCustomerEditDialog } from "@/components/branch/BranchCustomerEdit
 
 export default function BranchCustomers() {
   const { tenantId, appId, branchId } = useTenantContext();
-  const { data, isLoading } = useBranchCustomers();
+  const { data, isLoading, error } = useBranchCustomers();
   const manage = useManageUser();
   const [search, setSearch] = useState("");
   const [editTarget, setEditTarget] = useState<BranchCustomerRow | null>(null);
@@ -81,6 +81,11 @@ export default function BranchCustomers() {
             {Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-12 w-full" />
             ))}
+          </div>
+        ) : error ? (
+          <div className="p-12 text-center text-destructive">
+            <p className="font-medium">Couldn't load customers.</p>
+            <p className="text-sm text-muted-foreground mt-1">{(error as any)?.message ?? "Unknown error"}</p>
           </div>
         ) : filtered.length === 0 ? (
           <div className="p-12 text-center text-muted-foreground">
