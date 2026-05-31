@@ -1,30 +1,73 @@
-# Fix hole-punch side for simplex loose / stapled pages
+## 1. Customer self-service password reset (verify only)
 
-## Problem
-In `LooseSheetsPreview`, the back-face flag (which flips hole punches to the right edge) is computed from page parity alone:
+The plumbing already exists:
+- `Auth.tsx` has a "Forgot password?" mode (tenant portals only) that calls the `request-password-reset` edge function.
+- That function generates a branded recovery link via the tenant's SMTP and routes the user to `/reset-password`.
+- `ResetPassword.tsx` page exists.
 
-```ts
-const isBackFace = currentPage % 2 === 1;
-```
+Action: smoke-test the flow on the Sandton City portal. If it works, no code change. If broken, fix in a follow-up. No migration needed.
 
-That assumes a duplex sheet where every odd page is the reverse of the previous one. For **simplex** loose sheets / stapled jobs every printed page is its own one-sided sheet, so the holes should stay on the left for every page.
+## 2. New Branch → Customers page
 
-## Fix
+A new sidebar item "Customers" in the Branch portal, listing only customers who have transacted at this branch, with reset + edit powers.
 
-1. **Pass a per-page duplex flag into the preview.**
-   - `buildPreviewSnapshot` already attaches the originating `section` (with `is_duplex`) to every page. Surface a parallel `duplexFlags: boolean[]` (true = page belongs to a duplex section).
-   - In `PreviewPanel.tsx` derive `duplexFlags` from `finalPages.map(p => p.section?.is_duplex ?? true)` and pass it through `DocumentPreview` → `LooseSheetsPreview` (and `PreviewLightbox`).
+### Page: `src/pages/branch/BranchCustomers.tsx`
 
-2. **Use it in `LooseSheetsPreview`.**
-   - Replace the parity-only computation with:
-     ```ts
-     const isDuplex = duplexFlags?.[currentPage] ?? true;
-     const isBackFace = isDuplex && currentPage % 2 === 1;
-     ```
-   - That keeps the existing duplex behaviour (holes alternate L/R) and forces simplex pages to render as front faces (holes on the left).
+Columns: Name, Email, Phone, Orders (count at this branch), Last Order, Total Spend, Actions.
 
-3. **Type plumbing.**
-   - Add optional `duplexFlags?: boolean[]` to `PreviewComponentProps` in `src/components/preview/previewTypes.ts` so all preview components accept it without churn. Only `LooseSheetsPreview` consumes it for now; bound previews already drive hole side via `BACK_FACE_ROLES` in `PageEffects`, so they're unaffected.
+Actions per row:
+- **Send password reset** — calls `manage-user` edge function with `action: "force_password_reset"`.
+- **Edit contact details** — opens a dialog to update `display_name` / `first_name` / `last_name` / `phone` / `email` via `manage-user` `update_profile` and `update_email`.
+- **View orders** — link filtering `BranchOrders` to that customer.
 
-## Scope
-Frontend preview only — no changes to pricing, snapshot schema, or stored data. No backend / migration impact.
+Search box on name / email / phone.
+
+### Detail page: `src/pages/branch/BranchCustomerDetail.tsx`
+
+Shows the customer's branch-scoped orders, quotes, addresses (read-only), notes. Reuses existing tenant `AdminCustomerDetail` components where possible.
+
+### Data source: new hook `src/hooks/useBranchCustomers.ts`
+
+Query strategy (no schema changes — uses existing tables):
+- `orders` filtered by `branch_id = currentBranchId` and `tenant_id`, group by `profile_id`.
+- Union with `quotes` filtered the same way.
+- Join `profiles` for name/email/phone.
+- Aggregate: order count, last order date, lifetime spend.
+
+A new SECURITY DEFINER RPC `get_branch_customers(_branch_id uuid)` returns the aggregated rows. RLS guard inside the function: caller must have an active `tenant_memberships` row for that branch's tenant with role in (owner, admin, sales, accounts, production).
+
+### Routing & sidebar
+
+- Add `/branch/:branchId/customers` and `/branch/:branchId/customers/:profileId` to `App.tsx`.
+- Add "Customers" item to the branch sidebar (between Quotes and Products).
+
+### Edge function changes
+
+`manage-user` currently authorises platform admins OR tenant owner/admin. Extend it to also accept tenant memberships with role in (owner, admin, sales, accounts) when:
+- `action ∈ { force_password_reset, update_profile, update_email }`
+- The target customer has at least one order/quote at one of the caller's branches (so a Joburg branch can't reset a Cape Town customer who never ordered from them).
+
+Disabling, deleting, password setting, and platform admin actions remain tenant-admin / platform-admin only.
+
+## Technical summary
+
+**New migration:**
+- `get_branch_customers(_branch_id uuid)` SECURITY DEFINER, `search_path = public`.
+- Helper `caller_has_branch_access(_branch_id uuid, _roles tenant_member_role[])`.
+
+**New / edited files:**
+- `supabase/functions/manage-user/index.ts` — add branch-staff authorisation path with branch-scoped customer check.
+- `src/pages/branch/BranchCustomers.tsx` (new)
+- `src/pages/branch/BranchCustomerDetail.tsx` (new)
+- `src/hooks/useBranchCustomers.ts` (new)
+- `src/components/branch/BranchCustomerEditDialog.tsx` (new) — reuses logic from `EditCustomerDialog`.
+- `src/App.tsx` — routes.
+- Branch sidebar component — add nav item.
+
+**No new tables, no changes to `customers`, `profiles`, or `orders` schema.**
+
+## Out of scope
+
+- Customer Disable / Delete from branch portal.
+- Manual password setting at branch level.
+- Cross-branch customer search (deferred — can revisit once branches ask for it).
