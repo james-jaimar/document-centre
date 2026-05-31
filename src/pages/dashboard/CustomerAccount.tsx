@@ -57,23 +57,14 @@ export default function CustomerAccount() {
     }
   }, [profile]);
 
-  const { data: addresses } = useQuery({
-    queryKey: ["customer-addresses", user?.id],
-    enabled: !!user?.id,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("order_addresses")
-        .select("*, orders!inner(ordered_by_profile_id)")
-        .eq("orders.ordered_by_profile_id", user!.id);
-      const seen = new Set<string>();
-      return (data ?? []).filter((a: any) => {
-        const k = `${a.address_type}|${a.line1 ?? ""}|${a.postal_code ?? ""}|${a.city ?? ""}`;
-        if (seen.has(k)) return false;
-        seen.add(k);
-        return true;
-      });
-    },
-  });
+  // Saved address book (CRUD-enabled)
+  const addressBook = useCustomerAddresses(user?.id);
+  const [addrDialogOpen, setAddrDialogOpen] = useState(false);
+  const [editingAddr, setEditingAddr] = useState<CustomerAddress | null>(null);
+
+  // Favourite branch
+  const fav = useFavouriteBranch();
+  const { branches: liveBranches } = useBranch();
 
   const handleSaveProfile = async () => {
     if (!user) return;
