@@ -162,7 +162,11 @@ const CustomerOrders = () => {
     return true;
   });
 
-  const placedOrders = visibleOrders.filter(isPlaced);
+  const placedOrders = visibleOrders.filter(isPlaced).sort((a: any, b: any) => {
+    const aUnread = (unreadMap[a.id] || 0) > 0 ? 1 : 0;
+    const bUnread = (unreadMap[b.id] || 0) > 0 ? 1 : 0;
+    return bUnread - aUnread;
+  });
   const draftOrders = visibleOrders.filter((o: any) => !isPlaced(o));
 
   const handleDeleteOrder = useCallback(
