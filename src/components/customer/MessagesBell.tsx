@@ -3,6 +3,7 @@ import { Bell, MessageSquare, Package } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useUnreadMessagesCustomer } from "@/hooks/useUnreadMessages";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
+import { useTenantContext } from "@/hooks/useTenantContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Popover,
@@ -26,13 +27,10 @@ const STATUS_LABEL: Record<string, string> = {
 export default function MessagesBell() {
   const navigate = useNavigate();
   const { tenantPath } = useTenantSlug();
+  const { tenantId } = useTenantContext();
   const { data: map = {} } = useUnreadMessagesCustomer();
   const [open, setOpen] = useState(false);
 
-  const total = Object.values(map).reduce(
-    (sum, n) => sum + (Number(n) || 0),
-    0
-  );
   const orderIds = Object.keys(map).filter((id) => (map[id] || 0) > 0);
 
   const { data: orders = [] } = useQuery({
@@ -41,7 +39,7 @@ export default function MessagesBell() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("orders")
-        .select("id, order_number, customer_status")
+        .select("id, order_number, customer_status, tenant_id")
         .in("id", orderIds);
       if (error) throw error;
       return data ?? [];
@@ -49,8 +47,11 @@ export default function MessagesBell() {
   });
 
   const rows = orders
+    .filter((o: any) => !tenantId || o.tenant_id === tenantId)
     .map((o: any) => ({ ...o, unread: map[o.id] || 0 }))
     .sort((a, b) => b.unread - a.unread);
+
+  const total = rows.reduce((sum, o) => sum + (Number(o.unread) || 0), 0);
 
   const goToOrder = (id: string) => {
     setOpen(false);
