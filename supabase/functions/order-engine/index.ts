@@ -240,6 +240,8 @@ async function createOrderWithJobs(
       fulfillment_type: fulfillment_type || (delivery_address ? "delivery" : (branch_id ? "collection" : null)),
       external_code: order?.external_code || null,
       notes_customer: order?.notes_customer || null,
+      po_number: order?.po_number || null,
+      cost_centre: order?.cost_centre || null,
       metadata: order?.metadata || {},
       submitted_at: new Date().toISOString(),
       is_demo: payload.is_demo === true,
