@@ -7,13 +7,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Plus, ArrowRight, Trash2, Loader2, FileText, Package, Clock, Info, MessageSquare } from "lucide-react";
+import { Plus, ArrowRight, Trash2, Loader2, FileText, Package, Clock, Info, MessageSquare, Bookmark, Repeat } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { formatPrice } from "@/lib/formatCurrency";
 import { useUnreadMessagesCustomer } from "@/hooks/useUnreadMessages";
+import { useCustomerSavedOrders } from "@/hooks/useCustomerSavedOrders";
+import { reorderOrder } from "@/lib/orders/mutations";
 
 
 const CUSTOMER_STATUS_LABEL: Record<string, string> = {
