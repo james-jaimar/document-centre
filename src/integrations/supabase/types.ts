@@ -5028,6 +5028,10 @@ export type Database = {
         Args: { p_branch_id: string }
         Returns: boolean
       }
+      caller_has_branch_access: {
+        Args: { _branch_id: string }
+        Returns: boolean
+      }
       clone_master_rate_card_to_tenant: {
         Args: { p_tenant_id: string }
         Returns: undefined
@@ -5067,6 +5071,20 @@ export type Database = {
       }
       generate_order_number: { Args: { p_app_id: string }; Returns: string }
       generate_quote_number: { Args: { p_app_id: string }; Returns: string }
+      get_branch_customers: {
+        Args: { _branch_id: string }
+        Returns: {
+          display_name: string
+          email: string
+          first_name: string
+          last_name: string
+          last_order_at: string
+          order_count: number
+          phone: string
+          profile_id: string
+          total_spent: number
+        }[]
+      }
       get_unread_message_counts_for_customer: {
         Args: never
         Returns: {
@@ -5109,6 +5127,10 @@ export type Database = {
       next_number: {
         Args: { p_app_id: string; p_sequence_type: string }
         Returns: number
+      }
+      profile_belongs_to_branch: {
+        Args: { _branch_id: string; _profile_id: string }
+        Returns: boolean
       }
       quote_delivery_rate: {
         Args: {
