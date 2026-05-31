@@ -218,18 +218,27 @@ const CustomerOrders = () => {
     return (
       <button
         onClick={() => navigate(tenantPath(`orders/${order.id}`))}
-        className="w-full text-left rounded-lg border bg-card p-4 hover:border-primary/40 hover:shadow-sm transition-all group"
+        className={cn(
+          "w-full text-left rounded-lg border bg-card p-4 hover:border-primary/40 hover:shadow-sm transition-all group",
+          unread > 0 && "border-l-4 border-l-red-500 bg-red-50/40 hover:bg-red-50/60"
+        )}
       >
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3 min-w-0 flex-1">
-            <div className="rounded-md bg-primary/10 p-2 shrink-0">
-              <Package className="h-5 w-5 text-primary" />
+            <div className={cn("rounded-md p-2 shrink-0", unread > 0 ? "bg-red-100" : "bg-primary/10")}>
+              <Package className={cn("h-5 w-5", unread > 0 ? "text-red-600" : "text-primary")} />
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-mono text-sm font-semibold text-foreground">
                   {order.order_number}
                 </span>
+                {unread > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-red-500 px-2.5 py-1 text-xs font-semibold text-white shadow-sm">
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    {unread} new message{unread === 1 ? "" : "s"}
+                  </span>
+                )}
                 <span
                   className={cn(
                     "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium",
@@ -246,12 +255,6 @@ const CustomerOrders = () => {
                 >
                   {PAYMENT_LABEL[paymentKey] || paymentKey}
                 </span>
-                {unread > 0 && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-semibold text-white">
-                    <MessageSquare className="h-3 w-3" />
-                    {unread} new
-                  </span>
-                )}
               </div>
 
               <p className="mt-1 text-sm text-foreground truncate">
