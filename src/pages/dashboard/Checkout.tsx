@@ -221,6 +221,42 @@ export default function Checkout() {
         deliveryZoneCode: shippingQuote?.zoneCode ?? undefined,
       });
 
+      // Persist PO / cost centre on the new order (best-effort).
+      if (poNumber.trim() || costCentre.trim()) {
+        try {
+          await supabase
+            .from("orders")
+            .update({
+              po_number: poNumber.trim() || null,
+              cost_centre: costCentre.trim() || null,
+            })
+            .eq("id", newOrderId);
+        } catch (e) {
+          console.warn("Failed to persist PO/cost centre:", e);
+        }
+      }
+
+      // Save delivery address to the customer's address book if requested.
+      if (saveAddress && deliveryMethod === "delivery" && user && address.line1.trim()) {
+        try {
+          await createSavedAddress.mutateAsync({
+            address_type: "delivery",
+            contact_name: address.contact_name || null,
+            company_name: address.company_name || null,
+            phone: address.phone || null,
+            email: address.email || null,
+            line1: address.line1 || null,
+            line2: address.line2 || null,
+            city: address.city || null,
+            province: address.province || null,
+            postal_code: address.postal_code || null,
+            country: "South Africa",
+          });
+        } catch (e) {
+          console.warn("Failed to save address to address book:", e);
+        }
+      }
+
       // Online payment selected — create payment session and redirect
       if (paymentMethod === "stripe" || paymentMethod === "payfast") {
         const origin = window.location.origin;
