@@ -1,25 +1,17 @@
-## Problem
+## Make orders with new messages obvious
 
-The customer `/orders` page is blank and the console shows:
+The unread badge already exists on order rows but is easy to miss in a long list. Two small changes in `src/pages/dashboard/CustomerOrders.tsx`:
 
-> cannot add `postgres_changes` callbacks for `realtime:unread-msgs-customer-<uid>` after `subscribe()`
+### 1. Surface unread orders to the top
+Sort `placedOrders` so any order with `unreadMap[order.id] > 0` appears first (preserving date order within each group). Coming from the bell, the user lands with the relevant order(s) right at the top of the list.
 
-Root cause: `useUnreadMessagesCustomer` is now mounted twice on that page — once in the header (`MessagesBell`, added last turn) and once inside `CustomerOrders.tsx`. Both effects call `supabase.channel("unread-msgs-customer-<uid>")` with the **same topic**. Supabase's client de-duplicates channels by topic, so the second mount receives the already-subscribed channel and the follow-up `.on("postgres_changes", …)` throws. The thrown error unmounts the route → blank screen.
+### 2. Make the row itself visually flag unread
+On `PlacedOrderCard`, when `unread > 0`:
+- Add a coloured left border + subtle tinted background (e.g. `border-l-4 border-l-red-500 bg-red-50/40`) so the whole card stands out, not just the small pill.
+- Keep the existing "N new" message pill, but enlarge it slightly and place it more prominently next to the order number.
 
-The same latent bug exists in `useUnreadMessagesStaff` (will fire the moment we mount a staff bell alongside `BranchOrders`).
+No data, RPC, or realtime changes — purely presentational tweaks to the existing `useUnreadMessagesCustomer` map already wired in.
 
-## Fix
-
-In `src/hooks/useUnreadMessages.ts`, give each hook instance its own channel topic so multiple subscribers can coexist:
-
-- Generate a per-mount suffix (e.g. `useRef(crypto.randomUUID())` or `Math.random().toString(36).slice(2)`).
-- Use it in the channel name: `unread-msgs-customer-${user.id}-${suffix}` and `unread-msgs-staff-${tenantId}-${branchId ?? "any"}-${suffix}`.
-- Keep the existing cleanup (`supabase.removeChannel`) unchanged.
-
-No schema, RLS, or RPC changes. Only this one file is touched.
-
-## Verification
-
-- Reload `/sandton-city/orders` as a customer with the bell visible → page renders, no "cannot add postgres_changes" errors.
-- Bell badge still updates when staff posts a customer-visible message (realtime invalidation still fires on each channel).
-- Branch portal `/branch/orders` continues to work (no regression for staff hook).
+### Out of scope
+- Branch/staff order lists (can mirror the pattern later if you want).
+- Deep-linking the bell to a specific order — staying with "bell → orders list, unread floats to top" since multiple orders can have messages.
