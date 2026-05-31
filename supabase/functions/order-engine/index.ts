@@ -1542,6 +1542,7 @@ Deno.serve(async (req) => {
           }
         }
         break;
+      }
       case "generateInvoice": {
         if (!payload.order_id) {
           response = err("order_id required");
