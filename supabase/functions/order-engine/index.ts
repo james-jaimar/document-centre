@@ -1541,6 +1541,8 @@ Deno.serve(async (req) => {
               eventKey = "dispatched";
               if (payload.tracking_number) extra.tracking_number = payload.tracking_number;
               if (payload.tracking_carrier) extra.tracking_carrier = payload.tracking_carrier;
+            } else if (to === "completed") {
+              eventKey = "completed";
             }
             if (eventKey) {
               sideEffects = async () => {
