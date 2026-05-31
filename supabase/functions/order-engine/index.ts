@@ -984,7 +984,7 @@ async function cancelOrder(
 
   const { data: order, error: oErr } = await admin
     .from("orders")
-    .select("id, app_id, tenant_id, branch_id, order_number, admin_status, order_status, payment_status, amount_paid")
+    .select("id, app_id, tenant_id, branch_id, order_number, admin_status, order_status, payment_status, amount_paid, customer_status, ordered_by_profile_id")
     .eq("id", order_id)
     .single();
   if (oErr || !order) return err("Order not found", 404);
@@ -996,9 +996,20 @@ async function cancelOrder(
     return err("Completed orders cannot be cancelled");
   }
 
-  // Permission: tenant- or branch-scoped owner/admin only, branch-matched.
-  const denied = await assertOrderStaffAccess(admin, userId, order as any, { adminOnly: true });
-  if (denied) return err(denied, 403);
+  // Permission: staff (owner/admin, branch-matched) OR customer self-cancel
+  // when the order has not yet entered production / proof / dispatch.
+  const isOwner = (order as any).ordered_by_profile_id === userId;
+  const SELF_CANCEL_OK = new Set(["awaiting_payment", "proof_pending"]);
+  const ADMIN_SELF_CANCEL_OK = new Set(["new_order", "under_review"]);
+  const customerCanCancel =
+    isOwner &&
+    SELF_CANCEL_OK.has(order.customer_status as string) &&
+    ADMIN_SELF_CANCEL_OK.has(order.admin_status as string);
+
+  if (!customerCanCancel) {
+    const denied = await assertOrderStaffAccess(admin, userId, order as any, { adminOnly: true });
+    if (denied) return err(denied, 403);
+  }
 
   const refundPending = Number(order.amount_paid) > 0;
 
