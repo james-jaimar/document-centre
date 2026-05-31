@@ -567,17 +567,29 @@ function PapersTab({
                 )}
               </TableCell>
               <TableCell>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    remove(p.id);
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <TiersButton
+                    table="papers"
+                    lineId={p.id}
+                    label={`${p.label || p.code} · ${p.size}`}
+                    scope={scope}
+                    tenantId={tenantId}
+                    branchId={branchId}
+                    fallbackSell={Number(p.sell_price)}
+                    fallbackCost={Number(p.cost_price)}
+                  />
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      remove(p.id);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                  </Button>
+                </div>
               </TableCell>
             </TableRow>
           ))}
