@@ -68,7 +68,7 @@ function useUserOrders(userId: string | undefined, tenantId: string | null) {
       let query = supabase
         .from("orders")
         .select(
-          "*, order_items(id, product_family_id, build_status, title, spec, quantity, unit_price), order_jobs(id, product_name, quantity, gross_price, customer_job_status)"
+          "*, branch:branch_id(id, name), order_items(id, product_family_id, build_status, title, spec, quantity, unit_price), order_jobs(id, product_name, quantity, gross_price, customer_job_status)"
         )
         .eq("user_id", userId)
         .order("created_at", { ascending: false });
