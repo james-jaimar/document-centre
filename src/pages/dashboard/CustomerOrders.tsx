@@ -372,6 +372,9 @@ const CustomerOrders = () => {
             <TabsTrigger value="drafts">
               Drafts ({draftOrders.length})
             </TabsTrigger>
+            <TabsTrigger value="templates">
+              Templates ({(savedOrders.data ?? []).length})
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="placed" className="space-y-3 mt-4">
