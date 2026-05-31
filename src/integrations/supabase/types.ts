@@ -5089,6 +5089,10 @@ export type Database = {
         Args: { p_app_id: string; p_tenant_id: string }
         Returns: boolean
       }
+      user_is_branch_manager: {
+        Args: { p_app_id: string; p_branch_id: string; p_tenant_id: string }
+        Returns: boolean
+      }
       user_is_member_admin: {
         Args: { p_app_id: string; p_tenant_id: string }
         Returns: boolean
