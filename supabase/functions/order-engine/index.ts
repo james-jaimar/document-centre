@@ -973,6 +973,93 @@ async function sendMessage(
   return json({ success: true, message_id: msg?.id, created_at: msg?.created_at }, 201);
 }
 
+async function reorderOrder(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any
+) {
+  const { order_id } = payload;
+  if (!order_id) return err("Missing order_id");
+
+  // Load source order + jobs + delivery address
+  const { data: source, error: sErr } = await admin
+    .from("orders")
+    .select(
+      "id, app_id, tenant_id, branch_id, ordered_by_profile_id, customer_email, customer_name, company_name, currency, fulfillment_type, po_number, cost_centre, notes_customer, metadata, date_required, turnaround_time_text"
+    )
+    .eq("id", order_id)
+    .single();
+  if (sErr || !source) return err("Source order not found", 404);
+
+  // Only the original customer (or staff for that order) may reorder
+  if (source.ordered_by_profile_id !== userId) {
+    const denied = await assertOrderStaffAccess(admin, userId, source as any);
+    if (denied) return err(denied, 403);
+  }
+
+  const [{ data: jobs }, { data: addresses }] = await Promise.all([
+    admin
+      .from("order_jobs")
+      .select(
+        "product_name, product_category, job_name, quantity, unit_label, net_price, cost_price, vat_rate, gross_price, product_snapshot, configuration, production_specs, integration_payload, external_product_key, sequence_no"
+      )
+      .eq("order_id", order_id)
+      .order("sequence_no"),
+    admin
+      .from("order_addresses")
+      .select("address_type, contact_name, company_name, line1, line2, suburb, city, province, postal_code, country, phone, email, instructions")
+      .eq("order_id", order_id),
+  ]);
+
+  if (!jobs?.length) return err("No items to reorder");
+
+  // Resolve app slug for createOrderWithJobs
+  const { data: app } = await admin
+    .from("apps")
+    .select("slug")
+    .eq("id", source.app_id)
+    .single();
+  if (!app) return err("App not found", 404);
+
+  const subtotal = (jobs as any[]).reduce((s, j) => s + Number(j.net_price ?? 0), 0);
+  const delivery = (addresses ?? []).find((a: any) => a.address_type === "delivery");
+  const billing = (addresses ?? []).find((a: any) => a.address_type === "billing");
+
+  const payloadOut = {
+    app_slug: app.slug,
+    tenant_id: source.tenant_id,
+    branch_id: source.branch_id,
+    customer: {
+      profile_id: source.ordered_by_profile_id,
+      email: source.customer_email,
+      name: source.customer_name,
+      company_name: source.company_name,
+    },
+    order: {
+      source_channel: "reorder",
+      notes_customer: source.notes_customer,
+      po_number: source.po_number,
+      cost_centre: source.cost_centre,
+      metadata: { ...(source.metadata || {}), reordered_from: order_id },
+    },
+    pricing: {
+      currency: source.currency || "ZAR",
+      subtotal,
+      vat_amount: 0,
+      delivery_amount: 0,
+      total_amount: subtotal,
+      amount_paid: 0,
+      amount_due: subtotal,
+    },
+    fulfillment_type: source.fulfillment_type,
+    delivery_address: delivery || undefined,
+    billing_address: billing || undefined,
+    jobs,
+  };
+
+  return await createOrderWithJobs(admin, userId, payloadOut);
+}
+
 async function cancelOrder(
   admin: ReturnType<typeof createClient>,
   userId: string,
