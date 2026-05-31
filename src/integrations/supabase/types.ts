@@ -780,6 +780,63 @@ export type Database = {
         }
         Relationships: []
       }
+      customer_saved_orders: {
+        Row: {
+          app_id: string
+          branch_id: string | null
+          created_at: string
+          id: string
+          name: string
+          notes: string | null
+          profile_id: string
+          snapshot: Json
+          source_order_id: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          app_id: string
+          branch_id?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          notes?: string | null
+          profile_id: string
+          snapshot?: Json
+          source_order_id?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          app_id?: string
+          branch_id?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          notes?: string | null
+          profile_id?: string
+          snapshot?: Json
+          source_order_id?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_saved_orders_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_saved_orders_source_order_id_fkey"
+            columns: ["source_order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customer_tags: {
         Row: {
           app_id: string
@@ -2664,6 +2721,7 @@ export type Database = {
           branch_id: string | null
           company_name: string | null
           completed_at: string | null
+          cost_centre: string | null
           created_at: string
           created_by_admin_profile_id: string | null
           currency: string
@@ -2690,6 +2748,7 @@ export type Database = {
           order_status: Database["public"]["Enums"]["order_status"]
           ordered_by_profile_id: string | null
           payment_status: string
+          po_number: string | null
           ready_at: string | null
           source_channel: string | null
           storefront_name: string | null
@@ -2713,6 +2772,7 @@ export type Database = {
           branch_id?: string | null
           company_name?: string | null
           completed_at?: string | null
+          cost_centre?: string | null
           created_at?: string
           created_by_admin_profile_id?: string | null
           currency?: string
@@ -2739,6 +2799,7 @@ export type Database = {
           order_status?: Database["public"]["Enums"]["order_status"]
           ordered_by_profile_id?: string | null
           payment_status?: string
+          po_number?: string | null
           ready_at?: string | null
           source_channel?: string | null
           storefront_name?: string | null
@@ -2762,6 +2823,7 @@ export type Database = {
           branch_id?: string | null
           company_name?: string | null
           completed_at?: string | null
+          cost_centre?: string | null
           created_at?: string
           created_by_admin_profile_id?: string | null
           currency?: string
@@ -2788,6 +2850,7 @@ export type Database = {
           order_status?: Database["public"]["Enums"]["order_status"]
           ordered_by_profile_id?: string | null
           payment_status?: string
+          po_number?: string | null
           ready_at?: string | null
           source_channel?: string | null
           storefront_name?: string | null
@@ -3385,6 +3448,7 @@ export type Database = {
           created_at: string
           display_name: string | null
           email: string | null
+          favourite_branch_id: string | null
           first_name: string | null
           global_role: string
           id: string
@@ -3400,6 +3464,7 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           email?: string | null
+          favourite_branch_id?: string | null
           first_name?: string | null
           global_role?: string
           id: string
@@ -3415,6 +3480,7 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           email?: string | null
+          favourite_branch_id?: string | null
           first_name?: string | null
           global_role?: string
           id?: string
@@ -3426,6 +3492,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "profiles_favourite_branch_id_fkey"
+            columns: ["favourite_branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "profiles_tenant_id_fkey"
             columns: ["tenant_id"]

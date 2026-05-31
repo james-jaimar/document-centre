@@ -240,6 +240,8 @@ async function createOrderWithJobs(
       fulfillment_type: fulfillment_type || (delivery_address ? "delivery" : (branch_id ? "collection" : null)),
       external_code: order?.external_code || null,
       notes_customer: order?.notes_customer || null,
+      po_number: order?.po_number || null,
+      cost_centre: order?.cost_centre || null,
       metadata: order?.metadata || {},
       submitted_at: new Date().toISOString(),
       is_demo: payload.is_demo === true,
@@ -971,6 +973,93 @@ async function sendMessage(
   return json({ success: true, message_id: msg?.id, created_at: msg?.created_at }, 201);
 }
 
+async function reorderOrder(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  payload: any
+) {
+  const { order_id } = payload;
+  if (!order_id) return err("Missing order_id");
+
+  // Load source order + jobs + delivery address
+  const { data: source, error: sErr } = await admin
+    .from("orders")
+    .select(
+      "id, app_id, tenant_id, branch_id, ordered_by_profile_id, customer_email, customer_name, company_name, currency, fulfillment_type, po_number, cost_centre, notes_customer, metadata, date_required, turnaround_time_text"
+    )
+    .eq("id", order_id)
+    .single();
+  if (sErr || !source) return err("Source order not found", 404);
+
+  // Only the original customer (or staff for that order) may reorder
+  if (source.ordered_by_profile_id !== userId) {
+    const denied = await assertOrderStaffAccess(admin, userId, source as any);
+    if (denied) return err(denied, 403);
+  }
+
+  const [{ data: jobs }, { data: addresses }] = await Promise.all([
+    admin
+      .from("order_jobs")
+      .select(
+        "product_name, product_category, job_name, quantity, unit_label, net_price, cost_price, vat_rate, gross_price, product_snapshot, configuration, production_specs, integration_payload, external_product_key, sequence_no"
+      )
+      .eq("order_id", order_id)
+      .order("sequence_no"),
+    admin
+      .from("order_addresses")
+      .select("address_type, contact_name, company_name, line1, line2, suburb, city, province, postal_code, country, phone, email, instructions")
+      .eq("order_id", order_id),
+  ]);
+
+  if (!jobs?.length) return err("No items to reorder");
+
+  // Resolve app slug for createOrderWithJobs
+  const { data: app } = await admin
+    .from("apps")
+    .select("slug")
+    .eq("id", source.app_id)
+    .single();
+  if (!app) return err("App not found", 404);
+
+  const subtotal = (jobs as any[]).reduce((s, j) => s + Number(j.net_price ?? 0), 0);
+  const delivery = (addresses ?? []).find((a: any) => a.address_type === "delivery");
+  const billing = (addresses ?? []).find((a: any) => a.address_type === "billing");
+
+  const payloadOut = {
+    app_slug: app.slug,
+    tenant_id: source.tenant_id,
+    branch_id: source.branch_id,
+    customer: {
+      profile_id: source.ordered_by_profile_id,
+      email: source.customer_email,
+      name: source.customer_name,
+      company_name: source.company_name,
+    },
+    order: {
+      source_channel: "reorder",
+      notes_customer: source.notes_customer,
+      po_number: source.po_number,
+      cost_centre: source.cost_centre,
+      metadata: { ...(source.metadata || {}), reordered_from: order_id },
+    },
+    pricing: {
+      currency: source.currency || "ZAR",
+      subtotal,
+      vat_amount: 0,
+      delivery_amount: 0,
+      total_amount: subtotal,
+      amount_paid: 0,
+      amount_due: subtotal,
+    },
+    fulfillment_type: source.fulfillment_type,
+    delivery_address: delivery || undefined,
+    billing_address: billing || undefined,
+    jobs,
+  };
+
+  return await createOrderWithJobs(admin, userId, payloadOut);
+}
+
 async function cancelOrder(
   admin: ReturnType<typeof createClient>,
   userId: string,
@@ -984,7 +1073,7 @@ async function cancelOrder(
 
   const { data: order, error: oErr } = await admin
     .from("orders")
-    .select("id, app_id, tenant_id, branch_id, order_number, admin_status, order_status, payment_status, amount_paid")
+    .select("id, app_id, tenant_id, branch_id, order_number, admin_status, order_status, payment_status, amount_paid, customer_status, ordered_by_profile_id")
     .eq("id", order_id)
     .single();
   if (oErr || !order) return err("Order not found", 404);
@@ -996,9 +1085,20 @@ async function cancelOrder(
     return err("Completed orders cannot be cancelled");
   }
 
-  // Permission: tenant- or branch-scoped owner/admin only, branch-matched.
-  const denied = await assertOrderStaffAccess(admin, userId, order as any, { adminOnly: true });
-  if (denied) return err(denied, 403);
+  // Permission: staff (owner/admin, branch-matched) OR customer self-cancel
+  // when the order has not yet entered production / proof / dispatch.
+  const isOwner = (order as any).ordered_by_profile_id === userId;
+  const SELF_CANCEL_OK = new Set(["awaiting_payment", "proof_pending"]);
+  const ADMIN_SELF_CANCEL_OK = new Set(["new_order", "under_review"]);
+  const customerCanCancel =
+    isOwner &&
+    SELF_CANCEL_OK.has(order.customer_status as string) &&
+    ADMIN_SELF_CANCEL_OK.has(order.admin_status as string);
+
+  if (!customerCanCancel) {
+    const denied = await assertOrderStaffAccess(admin, userId, order as any, { adminOnly: true });
+    if (denied) return err(denied, 403);
+  }
 
   const refundPending = Number(order.amount_paid) > 0;
 
@@ -1509,6 +1609,24 @@ Deno.serve(async (req) => {
               refund_pending: data?.refund_pending === true,
             });
           };
+        }
+        break;
+      }
+      case "reorderOrder": {
+        response = await reorderOrder(admin, userId, payload);
+        if (response.status === 201) {
+          const data = await response.clone().json();
+          if (data?.order_id) {
+            sideEffects = async () => {
+              const inv = await triggerInvoice(authHeader, data.order_id, "proforma");
+              await triggerEmail(
+                authHeader,
+                data.order_id,
+                "order_received",
+                inv?.invoice_id ? { invoice_id: inv.invoice_id } : {},
+              );
+            };
+          }
         }
         break;
       }

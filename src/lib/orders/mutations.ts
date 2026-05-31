@@ -179,6 +179,14 @@ export async function cancelOrder(payload: { order_id: string; reason: string })
   return invokeOrderEngine<{ success: boolean; refund_pending: boolean }>("cancelOrder", payload);
 }
 
+export async function reorderOrder(payload: { order_id: string }) {
+  return invokeOrderEngine<{
+    order_id: string;
+    order_number: string;
+    jobs: Array<{ id: string; job_number: string; sequence_no: number }>;
+  }>("reorderOrder", payload);
+}
+
 export async function generateInvoice(payload: {
   order_id: string;
   kind?: "proforma" | "invoice" | "credit_note" | "receipt";
