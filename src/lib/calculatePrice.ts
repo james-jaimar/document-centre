@@ -679,12 +679,19 @@ export function calculatePriceFromRateCard(
             candidates[candidates.length - 1]?.row ??
             null;
           if (fin) {
+            const bindUnit = tieredUnit(
+              rc.priceBreaks,
+              "finishing",
+              fin.id,
+              Math.max(1, spec.quantity),
+              Number(fin.sell_price),
+            );
             lines.push({
               label: `Binding: ${fin.label}`,
               type: "option",
-              unit_amount: Number(fin.sell_price),
+              unit_amount: bindUnit,
               multiplier: 1,
-              total: Number(fin.sell_price),
+              total: bindUnit,
             });
             continue;
           }
