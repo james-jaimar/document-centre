@@ -777,6 +777,42 @@ const CustomerOrderDetail = () => {
           />
         );
       })()}
+
+      <CancelOrderDialog
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+        orderId={order.id}
+        orderNumber={order.order_number ?? order.id.slice(0, 8)}
+        amountPaid={Number((order as any).amount_paid ?? 0)}
+        currency={(order as any).currency ?? "ZAR"}
+      />
+
+      <Dialog open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save order as template</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="tpl-name">Template name</Label>
+            <Input
+              id="tpl-name"
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
+              placeholder={`e.g. ${order.order_number ?? "Monthly reprint"}`}
+              autoFocus
+            />
+            <p className="text-xs text-muted-foreground">
+              You'll be able to re-order this from the Templates tab in My Orders.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSaveTemplateOpen(false)}>Cancel</Button>
+            <Button onClick={handleSaveTemplate} disabled={!templateName.trim() || savedOrders.create.isPending}>
+              {savedOrders.create.isPending ? "Saving…" : "Save template"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
