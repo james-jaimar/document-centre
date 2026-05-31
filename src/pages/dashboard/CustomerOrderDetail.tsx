@@ -315,6 +315,36 @@ const CustomerOrderDetail = () => {
         </div>
       </div>
 
+      {/* Customer actions */}
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={handleReorder} disabled={reordering}>
+          <Repeat className="h-3.5 w-3.5 mr-1.5" />
+          {reordering ? "Reordering…" : "Reorder"}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setSaveTemplateOpen(true)}>
+          <Bookmark className="h-3.5 w-3.5 mr-1.5" />
+          Save as template
+        </Button>
+        {["awaiting_payment", "proof_pending"].includes(order.customer_status) &&
+          ["new_order", "under_review"].includes(order.admin_status) && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-destructive hover:text-destructive"
+              onClick={() => setCancelOpen(true)}
+            >
+              <X className="h-3.5 w-3.5 mr-1.5" />
+              Cancel order
+            </Button>
+          )}
+        {(order.po_number || order.cost_centre) && (
+          <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+            {order.po_number && <span>PO: <strong className="text-foreground">{order.po_number}</strong></span>}
+            {order.cost_centre && <span>Cost Centre: <strong className="text-foreground">{order.cost_centre}</strong></span>}
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main content */}
         <div className="lg:col-span-2 space-y-6">
@@ -554,15 +584,23 @@ const CustomerOrderDetail = () => {
                 </div>
               )}
 
-              <p className="text-xs text-muted-foreground">
-                {order.fulfilment_status === "dispatched"
-                  ? "Dispatched"
-                  : order.fulfilment_status === "delivered"
-                    ? "Delivered"
-                    : order.fulfilment_status === "ready"
-                      ? "Ready for collection / dispatch"
-                      : "Tracking will appear here once dispatched."}
-              </p>
+              {(order as any).tracking_number ? (
+                <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-xs">
+                  <p className="font-semibold text-sky-900 mb-1">Tracking</p>
+                  <p className="text-sky-900">
+                    {(order as any).tracking_carrier && (
+                      <span className="font-medium">{(order as any).tracking_carrier} · </span>
+                    )}
+                    <span className="font-mono">{(order as any).tracking_number}</span>
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {order.fulfilment_status === "ready"
+                    ? "Ready for collection / dispatch"
+                    : "Tracking will appear here once dispatched."}
+                </p>
+              )}
             </div>
           </div>
 
