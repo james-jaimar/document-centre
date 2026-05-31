@@ -630,12 +630,19 @@ export function calculatePriceFromRateCard(
         const code = bindingMethod === "saddle_stitch" ? "saddle-stitch" : "perfect-bind";
         const fin = rc.finishing.find((x) => x.code === code && x.is_active);
         if (fin) {
+          const bindUnit = tieredUnit(
+            rc.priceBreaks,
+            "finishing",
+            fin.id,
+            Math.max(1, spec.quantity),
+            Number(fin.sell_price),
+          );
           lines.push({
             label: `Binding: ${fin.label}`,
             type: "option",
-            unit_amount: Number(fin.sell_price),
+            unit_amount: bindUnit,
             multiplier: 1,
-            total: Number(fin.sell_price),
+            total: bindUnit,
           });
           continue;
         }
