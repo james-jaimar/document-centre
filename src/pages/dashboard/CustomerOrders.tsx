@@ -220,7 +220,7 @@ const CustomerOrders = () => {
         onClick={() => navigate(tenantPath(`orders/${order.id}`))}
         className={cn(
           "w-full text-left rounded-lg border bg-card p-4 hover:border-primary/40 hover:shadow-sm transition-all group",
-          unread > 0 && "border-l-4 border-l-red-500 bg-red-50/40 hover:bg-red-50/60"
+          unread > 0 && "ring-2 ring-red-500 ring-offset-2 bg-red-50 hover:bg-red-50"
         )}
       >
         <div className="flex items-start justify-between gap-4">
