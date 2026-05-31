@@ -1351,17 +1351,29 @@ function BusinessCardsTab({
                 )}
               </TableCell>
               <TableCell>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    remove(b.id);
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <TiersButton
+                    table="business_cards"
+                    lineId={b.id}
+                    label={`${b.label || b.code} · qty ${b.quantity}`}
+                    scope={scope}
+                    tenantId={tenantId}
+                    branchId={branchId}
+                    fallbackSell={Number(b.sell_price)}
+                    fallbackCost={Number(b.cost_price)}
+                  />
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      remove(b.id);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                  </Button>
+                </div>
               </TableCell>
             </TableRow>
           ))}
