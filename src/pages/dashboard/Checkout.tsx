@@ -25,6 +25,9 @@ import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
 import CheckoutAuth from "@/components/checkout/CheckoutAuth";
 import { quoteShipping, listShippingQuotes, type ShippingQuoteResult, type ShippingMethodOption } from "@/lib/delivery/quoteShipping";
+import AddressPicker from "@/components/customer/AddressPicker";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useCustomerAddresses } from "@/hooks/useCustomerAddresses";
 
 export default function Checkout() {
   const { slug, tenantPath } = useTenantSlug();
