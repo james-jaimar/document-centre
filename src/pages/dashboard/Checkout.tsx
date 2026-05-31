@@ -48,6 +48,10 @@ export default function Checkout() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<string>("offline");
   const [showBranchSwitch, setShowBranchSwitch] = useState(false);
+  const [poNumber, setPoNumber] = useState("");
+  const [costCentre, setCostCentre] = useState("");
+  const [saveAddress, setSaveAddress] = useState(false);
+  const { create: createSavedAddress } = useCustomerAddresses(user?.id);
 
   // Fetch online payment providers enabled for this tenant
   const { data: onlineProviders } = useQuery({
