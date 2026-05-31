@@ -326,11 +326,15 @@ export function calculatePriceFromRateCard(
     const borderSlug = String(opts["Border"] ?? opts.border_slug ?? "none");
     const borderMm = borderSlug === "white_3mm" ? 3 : 0;
 
-    const unit = resolvePhotoPrintPrice(rc.photoPrints ?? [], {
-      size_slug: sizeSlug,
-      finish,
-      border_mm: borderMm,
-    });
+    const unit = resolvePhotoPrintPrice(
+      rc.photoPrints ?? [],
+      {
+        size_slug: sizeSlug,
+        finish,
+        border_mm: borderMm,
+      },
+      { breaks: rc.priceBreaks, quantity: spec.quantity },
+    );
 
     const lines: PriceLineItem[] = [
       {
