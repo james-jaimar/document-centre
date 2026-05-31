@@ -130,11 +130,11 @@ export default function PhotoPrintsBuilder() {
 
   const { uploads, uploadPhotos, clearUploads } = usePhotoUpload(orderItem?.id);
 
-  const { data: photoRateCard = [] } = useRateCardPhotoPrints(
-    activeBranch?.id
-      ? { scope: "branch", tenantId: tenantId ?? undefined, branchId: activeBranch.id }
-      : { scope: "tenant", tenantId: tenantId ?? undefined },
-  );
+  const rcScopeArgs = activeBranch?.id
+    ? ({ scope: "branch" as const, tenantId: tenantId ?? undefined, branchId: activeBranch.id })
+    : ({ scope: "tenant" as const, tenantId: tenantId ?? undefined });
+  const { data: photoRateCard = [] } = useRateCardPhotoPrints(rcScopeArgs);
+  const { data: rcPriceBreaks = [] } = useRateCardPriceBreaksBundle(rcScopeArgs);
 
   const availableSizes = useMemo(
     () => derivePhotoPrintSizesFromRateCard(photoRateCard),
