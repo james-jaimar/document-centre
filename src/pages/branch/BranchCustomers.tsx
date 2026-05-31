@@ -82,6 +82,11 @@ export default function BranchCustomers() {
               <Skeleton key={i} className="h-12 w-full" />
             ))}
           </div>
+        ) : error ? (
+          <div className="p-12 text-center text-destructive">
+            <p className="font-medium">Couldn't load customers.</p>
+            <p className="text-sm text-muted-foreground mt-1">{(error as any)?.message ?? "Unknown error"}</p>
+          </div>
         ) : filtered.length === 0 ? (
           <div className="p-12 text-center text-muted-foreground">
             <Users className="mx-auto h-10 w-10 opacity-40 mb-3" />
