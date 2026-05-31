@@ -81,6 +81,7 @@ import BranchDelivery from "@/pages/branch/BranchDelivery";
 import BranchQuotes from "@/pages/branch/BranchQuotes";
 import BranchQuoteDetail from "@/pages/branch/BranchQuoteDetail";
 import BranchSettings from "@/pages/branch/BranchSettings";
+import BranchCustomers from "@/pages/branch/BranchCustomers";
 
 // Platform
 import PlatformTenants from "@/pages/platform/PlatformTenants";
