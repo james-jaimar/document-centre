@@ -122,6 +122,8 @@ export default function CustomerHeader() {
           )}
         </Link>
 
+        <MessagesBell />
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
