@@ -327,14 +327,18 @@ export default function PhotoPrintsBuilder() {
     const totalPhotos = photoSpec.photos.length;
     const totalPrints = photoSpec.photos.reduce((s, p) => s + p.quantity, 0);
     const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === photoSpec.border_slug);
-    const unitPrice = resolvePhotoPrintPrice(photoRateCard, {
-      size_slug: photoSpec.print_size_slug,
-      finish: photoSpec.finish_slug,
-      border_mm: border?.border_mm ?? 0,
-    });
+    const unitPrice = resolvePhotoPrintPrice(
+      photoRateCard,
+      {
+        size_slug: photoSpec.print_size_slug,
+        finish: photoSpec.finish_slug,
+        border_mm: border?.border_mm ?? 0,
+      },
+      { breaks: rcPriceBreaks, quantity: totalPrints },
+    );
     const totalPrice = totalPrints * unitPrice;
     return { size, totalPhotos, totalPrints, totalPrice, unitPrice };
-  }, [photoSpec, photoRateCard]);
+  }, [photoSpec, photoRateCard, rcPriceBreaks]);
 
   const [showCartDialog, setShowCartDialog] = useState(false);
   const [cartReference, setCartReference] = useState("");
