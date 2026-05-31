@@ -798,17 +798,29 @@ function FinishingTab({
                     {formatPrice(f.sell_price, "ZAR")}
                   </TableCell>
                   <TableCell>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        remove(f.id);
-                      }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <TiersButton
+                        table="finishing"
+                        lineId={f.id}
+                        label={`${f.label || f.code}${f.variant ? ` · ${f.variant}` : ""}`}
+                        scope={scope}
+                        tenantId={tenantId}
+                        branchId={branchId}
+                        fallbackSell={Number(f.sell_price)}
+                        fallbackCost={Number(f.cost_price)}
+                      />
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          remove(f.id);
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
