@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -33,10 +33,11 @@ export function useUnreadMessagesCustomer() {
   });
 
   // Realtime: any new non-internal staff message → refetch counts.
+  const customerSuffixRef = useRef<string>(Math.random().toString(36).slice(2));
   useEffect(() => {
     if (!user?.id) return;
     const channel = supabase
-      .channel(`unread-msgs-customer-${user.id}`)
+      .channel(`unread-msgs-customer-${user.id}-${customerSuffixRef.current}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages" },
@@ -90,10 +91,11 @@ export function useUnreadMessagesStaff(tenantId: string | null | undefined, bran
     },
   });
 
+  const staffSuffixRef = useRef<string>(Math.random().toString(36).slice(2));
   useEffect(() => {
     if (!tenantId) return;
     const channel = supabase
-      .channel(`unread-msgs-staff-${tenantId}-${branchId ?? "any"}`)
+      .channel(`unread-msgs-staff-${tenantId}-${branchId ?? "any"}-${staffSuffixRef.current}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `tenant_id=eq.${tenantId}` },
