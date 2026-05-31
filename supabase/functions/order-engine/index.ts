@@ -1525,6 +1525,23 @@ Deno.serve(async (req) => {
         }
         break;
       }
+      case "reorderOrder": {
+        response = await reorderOrder(admin, userId, payload);
+        if (response.status === 201) {
+          const data = await response.clone().json();
+          if (data?.order_id) {
+            sideEffects = async () => {
+              const inv = await triggerInvoice(authHeader, data.order_id, "proforma");
+              await triggerEmail(
+                authHeader,
+                data.order_id,
+                "order_received",
+                inv?.invoice_id ? { invoice_id: inv.invoice_id } : {},
+              );
+            };
+          }
+        }
+        break;
       case "generateInvoice": {
         if (!payload.order_id) {
           response = err("order_id required");
