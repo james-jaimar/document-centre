@@ -55,6 +55,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Trash2, RefreshCw } from "lucide-react";
+import TiersButton from "./TiersButton";
 import { toast } from "@/hooks/use-toast";
 import { formatPrice } from "@/lib/formatCurrency";
 
@@ -351,14 +352,26 @@ function ClicksTab({
                   />
                 </TableCell>
                 <TableCell>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7"
-                    onClick={() => remove(row.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <TiersButton
+                      table="clicks"
+                      lineId={row.id}
+                      label={`${row.size} · ${row.colour} · ${row.sides}`}
+                      scope={scope}
+                      tenantId={tenantId}
+                      branchId={branchId}
+                      fallbackSell={Number(row.sell_price)}
+                      fallbackCost={Number(row.cost_price)}
+                    />
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      onClick={() => remove(row.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             );
@@ -554,17 +567,29 @@ function PapersTab({
                 )}
               </TableCell>
               <TableCell>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    remove(p.id);
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <TiersButton
+                    table="papers"
+                    lineId={p.id}
+                    label={`${p.label || p.code} · ${p.size}`}
+                    scope={scope}
+                    tenantId={tenantId}
+                    branchId={branchId}
+                    fallbackSell={Number(p.sell_price)}
+                    fallbackCost={Number(p.cost_price)}
+                  />
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      remove(p.id);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                  </Button>
+                </div>
               </TableCell>
             </TableRow>
           ))}
@@ -773,17 +798,29 @@ function FinishingTab({
                     {formatPrice(f.sell_price, "ZAR")}
                   </TableCell>
                   <TableCell>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        remove(f.id);
-                      }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <TiersButton
+                        table="finishing"
+                        lineId={f.id}
+                        label={`${f.label || f.code}${f.variant ? ` · ${f.variant}` : ""}`}
+                        scope={scope}
+                        tenantId={tenantId}
+                        branchId={branchId}
+                        fallbackSell={Number(f.sell_price)}
+                        fallbackCost={Number(f.cost_price)}
+                      />
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          remove(f.id);
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -1024,17 +1061,29 @@ function PhotoPrintsTab({
                 )}
               </TableCell>
               <TableCell>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    remove(p.id);
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <TiersButton
+                    table="photo_prints"
+                    lineId={p.id}
+                    label={`${p.label || p.code} · ${p.size_slug} ${p.finish}`}
+                    scope={scope}
+                    tenantId={tenantId}
+                    branchId={branchId}
+                    fallbackSell={Number(p.sell_price)}
+                    fallbackCost={Number(p.cost_price)}
+                  />
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      remove(p.id);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                  </Button>
+                </div>
               </TableCell>
             </TableRow>
           ))}
@@ -1302,17 +1351,29 @@ function BusinessCardsTab({
                 )}
               </TableCell>
               <TableCell>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    remove(b.id);
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <TiersButton
+                    table="business_cards"
+                    lineId={b.id}
+                    label={`${b.label || b.code} · qty ${b.quantity}`}
+                    scope={scope}
+                    tenantId={tenantId}
+                    branchId={branchId}
+                    fallbackSell={Number(b.sell_price)}
+                    fallbackCost={Number(b.cost_price)}
+                  />
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      remove(b.id);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                  </Button>
+                </div>
               </TableCell>
             </TableRow>
           ))}

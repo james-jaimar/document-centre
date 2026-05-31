@@ -4081,6 +4081,54 @@ export type Database = {
           },
         ]
       }
+      rate_card_price_breaks: {
+        Row: {
+          branch_id: string | null
+          cost_price: number
+          created_at: string
+          id: string
+          max_quantity: number | null
+          min_quantity: number
+          rate_card_id: string
+          rate_card_table: string
+          scope_type: string
+          sell_price: number
+          sort_order: number
+          tenant_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          branch_id?: string | null
+          cost_price?: number
+          created_at?: string
+          id?: string
+          max_quantity?: number | null
+          min_quantity: number
+          rate_card_id: string
+          rate_card_table: string
+          scope_type: string
+          sell_price?: number
+          sort_order?: number
+          tenant_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          branch_id?: string | null
+          cost_price?: number
+          created_at?: string
+          id?: string
+          max_quantity?: number | null
+          min_quantity?: number
+          rate_card_id?: string
+          rate_card_table?: string
+          scope_type?: string
+          sell_price?: number
+          sort_order?: number
+          tenant_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       status_history: {
         Row: {
           app_id: string
@@ -5039,6 +5087,18 @@ export type Database = {
       rollup_order_status: { Args: { p_order_id: string }; Returns: undefined }
       seed_branch_capabilities: {
         Args: { p_branch_id: string }
+        Returns: undefined
+      }
+      seed_default_price_breaks: {
+        Args: {
+          p_branch_id: string
+          p_cost_price: number
+          p_rate_card_id: string
+          p_scope_type: string
+          p_sell_price: number
+          p_table: string
+          p_tenant_id: string
+        }
         Returns: undefined
       }
       sync_master_rate_card_to_tenant: {
