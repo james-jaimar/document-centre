@@ -430,6 +430,61 @@ const CustomerOrders = () => {
               draftOrders.map((order: any) => <DraftCard key={order.id} order={order} />)
             )}
           </TabsContent>
+
+          <TabsContent value="templates" className="space-y-3 mt-4">
+            {(savedOrders.data ?? []).length === 0 ? (
+              <div className="rounded-lg border border-dashed bg-muted/20 p-12 text-center">
+                <Bookmark className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                <p className="font-medium text-foreground">No saved templates yet</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Open any placed order and choose "Save as template" to re-order it later in one click.
+                </p>
+              </div>
+            ) : (
+              (savedOrders.data ?? []).map((tpl: any) => (
+                <div key={tpl.id} className="flex items-center justify-between gap-3 rounded-lg border bg-card p-4">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className="rounded-md bg-primary/10 p-2 shrink-0">
+                      <Bookmark className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-medium text-foreground truncate">{tpl.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Saved {format(new Date(tpl.created_at), "dd MMM yyyy")}
+                        {tpl.snapshot?.order_number && ` · from ${tpl.snapshot.order_number}`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!tpl.source_order_id || reorderingId === tpl.source_order_id}
+                      onClick={() => tpl.source_order_id && handleReorder(tpl.source_order_id)}
+                    >
+                      {reorderingId === tpl.source_order_id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                      ) : (
+                        <Repeat className="h-3.5 w-3.5 mr-1.5" />
+                      )}
+                      Re-order
+                    </Button>
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`Delete template "${tpl.name}"?`)) {
+                          savedOrders.remove.mutate(tpl.id);
+                        }
+                      }}
+                      className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                      title="Delete template"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </TabsContent>
         </Tabs>
       )}
     </div>
