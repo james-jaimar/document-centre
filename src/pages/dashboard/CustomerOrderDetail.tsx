@@ -160,6 +160,7 @@ const CustomerOrderDetail = () => {
 
   const [cancelOpen, setCancelOpen] = useState(false);
   const [reordering, setReordering] = useState(false);
+  const [reorderResult, setReorderResult] = useState<{ id: string; number: string; currency?: string } | null>(null);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   const [templateName, setTemplateName] = useState("");
   const savedOrders = useCustomerSavedOrders();
@@ -170,7 +171,7 @@ const CustomerOrderDetail = () => {
     try {
       const res = await reorderOrder({ order_id: id });
       toast.success(`New order ${res.order_number} created`);
-      navigate(tenantPath(`orders/${res.order_id}`));
+      setReorderResult({ id: res.order_id, number: res.order_number, currency: (res as any).currency ?? order?.currency });
     } catch (e: any) {
       toast.error("Failed to reorder", { description: e.message });
     } finally {
