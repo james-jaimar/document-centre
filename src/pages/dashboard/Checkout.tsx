@@ -404,6 +404,24 @@ export default function Checkout() {
           {deliveryMethod === "delivery" && (
             <div className="border border-border rounded-lg p-4 space-y-3">
               <h3 className="font-semibold text-foreground">Delivery Address</h3>
+              {user && (
+                <AddressPicker
+                  onSelect={(addr) => {
+                    setAddress({
+                      contact_name: addr.contact_name ?? "",
+                      company_name: addr.company_name ?? "",
+                      line1: addr.line1 ?? "",
+                      line2: addr.line2 ?? "",
+                      city: addr.city ?? "",
+                      province: addr.province ?? "",
+                      postal_code: addr.postal_code ?? "",
+                      phone: addr.phone ?? "",
+                      email: addr.email ?? "",
+                    });
+                    setSaveAddress(false);
+                  }}
+                />
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">Contact Name</Label>
