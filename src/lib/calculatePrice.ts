@@ -244,12 +244,22 @@ import type {
 } from "@/hooks/useRateCard";
 import type { ProductRecipe } from "@/hooks/useProductRecipe";
 import { resolvePhotoPrintPrice } from "@/lib/photoPrints/pricing";
+import type { RateCardPriceBreak, RateCardTable } from "@/hooks/useRateCardPriceBreaks";
+import { resolveTier } from "@/hooks/useRateCardPriceBreaks";
 
 export interface RateCardBundle {
   clicks: RateCardClick[];
   papers: RateCardPaper[];
   finishing: RateCardFinishing[];
   photoPrints?: RateCardPhotoPrint[];
+  /**
+   * Optional: per-line quantity-tier price breaks (flat list across all
+   * rate-card tables in the active scope). When present, the engine picks
+   * the matching tier's `sell_price` per line based on that line's total
+   * billed quantity; absent / unmatched → fall back to the parent row's
+   * static `sell_price` (zero-risk for legacy carts).
+   */
+  priceBreaks?: RateCardPriceBreak[];
   /**
    * Optional: binding spine specifications used to map a selected
    * binding option (Binding: Twin Loop Wire Black, etc.) onto the
@@ -262,6 +272,28 @@ export interface RateCardBundle {
     min_sheets: number;
     max_sheets_80gsm: number;
   }>;
+}
+
+/**
+ * Resolve a rate-card line's effective unit sell price for a given billed
+ * quantity using its tiered price breaks. Falls back to `fallback` (the
+ * line's static `sell_price`) when no break exists or matches.
+ */
+function tieredUnit(
+  breaks: RateCardPriceBreak[] | undefined,
+  table: RateCardTable,
+  lineId: string,
+  quantity: number,
+  fallback: number,
+): number {
+  if (!breaks || breaks.length === 0) return fallback;
+  const forLine = breaks.filter(
+    (b) => b.rate_card_table === table && b.rate_card_id === lineId,
+  );
+  const tier = resolveTier(forLine, quantity);
+  if (!tier) return fallback;
+  const price = Number(tier.sell_price);
+  return Number.isFinite(price) ? price : fallback;
 }
 
 /**
@@ -294,11 +326,15 @@ export function calculatePriceFromRateCard(
     const borderSlug = String(opts["Border"] ?? opts.border_slug ?? "none");
     const borderMm = borderSlug === "white_3mm" ? 3 : 0;
 
-    const unit = resolvePhotoPrintPrice(rc.photoPrints ?? [], {
-      size_slug: sizeSlug,
-      finish,
-      border_mm: borderMm,
-    });
+    const unit = resolvePhotoPrintPrice(
+      rc.photoPrints ?? [],
+      {
+        size_slug: sizeSlug,
+        finish,
+        border_mm: borderMm,
+      },
+      { breaks: rc.priceBreaks, quantity: spec.quantity },
+    );
 
     const lines: PriceLineItem[] = [
       {
@@ -349,7 +385,7 @@ export function calculatePriceFromRateCard(
     finishedSize: string,
     cellColour: "mono" | "colour",
     cellSides: "simplex" | "duplex"
-  ): { unit: number; sourceSize: string; nUp: number } | null {
+  ): { unit: number; sourceSize: string; nUp: number; lineId: string } | null {
     const direct = rc.clicks.find(
       (c) =>
         c.is_active &&
@@ -357,7 +393,7 @@ export function calculatePriceFromRateCard(
         c.colour === cellColour &&
         c.sides === cellSides
     );
-    if (direct) return { unit: Number(direct.sell_price), sourceSize: finishedSize, nUp: 1 };
+    if (direct) return { unit: Number(direct.sell_price), sourceSize: finishedSize, nUp: 1, lineId: direct.id };
     const imp = SIZE_IMPOSITION[finishedSize];
     if (imp) {
       const parent = rc.clicks.find(
@@ -367,7 +403,7 @@ export function calculatePriceFromRateCard(
           c.colour === cellColour &&
           c.sides === cellSides
       );
-      if (parent) return { unit: Number(parent.sell_price), sourceSize: imp.parent, nUp: imp.nUp };
+      if (parent) return { unit: Number(parent.sell_price), sourceSize: imp.parent, nUp: imp.nUp, lineId: parent.id };
     }
     return null;
   }
@@ -383,9 +419,6 @@ export function calculatePriceFromRateCard(
     const direct = rc.papers.find((p) => p.code === requestedCode && p.is_active);
     if (direct) {
       const imp = SIZE_IMPOSITION[finishedSize];
-      // If the matched paper IS the parent size for an imposed finished
-      // size, apply n-up. (e.g. user selected the A3 paper while making A5
-      // flyers — bill at A3 paper / 4 sheets per finished piece.)
       if (imp && direct.size === imp.parent) return { paper: direct, nUp: imp.nUp };
       return { paper: direct, nUp: 1 };
     }
@@ -430,9 +463,22 @@ export function calculatePriceFromRateCard(
       totalSheets += clicks; // 1 sheet per click regardless of sides
       const rate = resolveClickRate(size, sectionColour, sectionSides);
       if (!rate || clicks === 0) continue;
-      // n-up: a single parent click prints `nUp` finished pieces. Charge
-      // the parent rate divided across the imposed pieces.
-      const unit = rate.unit / rate.nUp;
+      // Tiered pricing — total billed parent clicks across the whole run for
+      // this line: clicks per piece × finished quantity ÷ nUp (a single
+      // parent click prints `nUp` finished pieces).
+      const totalParentClicks = Math.max(
+        1,
+        Math.ceil((clicks * spec.quantity) / rate.nUp),
+      );
+      const tieredParentUnit = tieredUnit(
+        rc.priceBreaks,
+        "clicks",
+        rate.lineId,
+        totalParentClicks,
+        rate.unit,
+      );
+      // n-up: parent rate divided across the imposed pieces.
+      const unit = tieredParentUnit / rate.nUp;
       const sectionLabel = section.label ? `${section.label}: ` : "";
       lines.push({
         label: `${sectionLabel}Print ${size} ${sectionColour} ${sectionSides}`,
@@ -452,9 +498,19 @@ export function calculatePriceFromRateCard(
   if (paperCode && totalSheets > 0) {
     const resolved = resolvePaper(paperCode, size);
     if (resolved) {
-      // n-up: small finished pieces share a parent sheet, so the effective
-      // paper cost per finished sheet is parent_price / nUp.
-      const unit = Number(resolved.paper.sell_price) / resolved.nUp;
+      // Tiered pricing — total parent sheets billed for the entire run.
+      const totalParentSheets = Math.max(
+        1,
+        Math.ceil((totalSheets * spec.quantity) / resolved.nUp),
+      );
+      const tieredParentUnit = tieredUnit(
+        rc.priceBreaks,
+        "papers",
+        resolved.paper.id,
+        totalParentSheets,
+        Number(resolved.paper.sell_price),
+      );
+      const unit = tieredParentUnit / resolved.nUp;
       lines.push({
         label: `Paper: ${resolved.paper.label}`,
         type: "per_page",
@@ -496,12 +552,23 @@ export function calculatePriceFromRateCard(
         multiplier = 1;
         break;
     }
+    // Tiered pricing — total billed units for this finishing line across the
+    // whole run (multiplier already accounts for per-piece quantity; we then
+    // scale by finished quantity for the tier lookup).
+    const totalFinishingUnits = Math.max(1, multiplier * spec.quantity);
+    const finUnit = tieredUnit(
+      rc.priceBreaks,
+      "finishing",
+      fin.id,
+      totalFinishingUnits,
+      Number(fin.sell_price),
+    );
     lines.push({
       label: `Finishing: ${fin.label}`,
       type: "option",
-      unit_amount: Number(fin.sell_price),
+      unit_amount: finUnit,
       multiplier,
-      total: Number(fin.sell_price) * multiplier,
+      total: finUnit * multiplier,
     });
   }
 
@@ -563,12 +630,19 @@ export function calculatePriceFromRateCard(
         const code = bindingMethod === "saddle_stitch" ? "saddle-stitch" : "perfect-bind";
         const fin = rc.finishing.find((x) => x.code === code && x.is_active);
         if (fin) {
+          const bindUnit = tieredUnit(
+            rc.priceBreaks,
+            "finishing",
+            fin.id,
+            Math.max(1, spec.quantity),
+            Number(fin.sell_price),
+          );
           lines.push({
             label: `Binding: ${fin.label}`,
             type: "option",
-            unit_amount: Number(fin.sell_price),
+            unit_amount: bindUnit,
             multiplier: 1,
-            total: Number(fin.sell_price),
+            total: bindUnit,
           });
           continue;
         }
@@ -605,12 +679,19 @@ export function calculatePriceFromRateCard(
             candidates[candidates.length - 1]?.row ??
             null;
           if (fin) {
+            const bindUnit = tieredUnit(
+              rc.priceBreaks,
+              "finishing",
+              fin.id,
+              Math.max(1, spec.quantity),
+              Number(fin.sell_price),
+            );
             lines.push({
               label: `Binding: ${fin.label}`,
               type: "option",
-              unit_amount: Number(fin.sell_price),
+              unit_amount: bindUnit,
               multiplier: 1,
-              total: Number(fin.sell_price),
+              total: bindUnit,
             });
             continue;
           }

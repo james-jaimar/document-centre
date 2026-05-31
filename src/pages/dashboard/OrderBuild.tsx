@@ -40,6 +40,7 @@ import {
   useRateCardFinishing,
   useRateCardPhotoPrints,
 } from "@/hooks/useRateCard";
+import { useRateCardPriceBreaksBundle } from "@/hooks/useRateCardPriceBreaks";
 import { useBindingSpecifications } from "@/hooks/useBindingSpecifications";
 import { useBranch } from "@/contexts/BranchContext";
 import { formatPrice } from "@/lib/formatCurrency";
@@ -157,9 +158,17 @@ export default function OrderBuild() {
   const { data: rcFinishing = [] } = useRateCardFinishing(rcArgs);
   const { data: rcPhotoPrints = [] } = useRateCardPhotoPrints(rcArgs);
   const { data: bindingSpecs = [] } = useBindingSpecifications();
+  const { data: rcPriceBreaks = [] } = useRateCardPriceBreaksBundle(rcArgs);
   const rateCard = useMemo(
-    () => ({ clicks: rcClicks, papers: rcPapers, finishing: rcFinishing, photoPrints: rcPhotoPrints, bindingSpecs }),
-    [rcClicks, rcPapers, rcFinishing, rcPhotoPrints, bindingSpecs],
+    () => ({
+      clicks: rcClicks,
+      papers: rcPapers,
+      finishing: rcFinishing,
+      photoPrints: rcPhotoPrints,
+      bindingSpecs,
+      priceBreaks: rcPriceBreaks,
+    }),
+    [rcClicks, rcPapers, rcFinishing, rcPhotoPrints, bindingSpecs, rcPriceBreaks],
   );
   const useNewEngine = !!recipe && (rcClicks.length > 0 || rcPhotoPrints.length > 0);
 

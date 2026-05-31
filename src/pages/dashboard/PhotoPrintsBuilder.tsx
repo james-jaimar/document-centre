@@ -19,6 +19,7 @@ import {
 } from "@/lib/photoPrints/sizes";
 import { resolvePhotoPrintPrice } from "@/lib/photoPrints/pricing";
 import { useRateCardPhotoPrints } from "@/hooks/useRateCard";
+import { useRateCardPriceBreaksBundle } from "@/hooks/useRateCardPriceBreaks";
 import type { PhotoPrintEntry, PhotoPrintsSpec } from "@/lib/photoPrints/types";
 import PhotoUploader from "@/components/photo/PhotoUploader";
 import QRUploadModal from "@/components/order/QRUploadModal";
@@ -129,11 +130,11 @@ export default function PhotoPrintsBuilder() {
 
   const { uploads, uploadPhotos, clearUploads } = usePhotoUpload(orderItem?.id);
 
-  const { data: photoRateCard = [] } = useRateCardPhotoPrints(
-    activeBranch?.id
-      ? { scope: "branch", tenantId: tenantId ?? undefined, branchId: activeBranch.id }
-      : { scope: "tenant", tenantId: tenantId ?? undefined },
-  );
+  const rcScopeArgs = activeBranch?.id
+    ? ({ scope: "branch" as const, tenantId: tenantId ?? undefined, branchId: activeBranch.id })
+    : ({ scope: "tenant" as const, tenantId: tenantId ?? undefined });
+  const { data: photoRateCard = [] } = useRateCardPhotoPrints(rcScopeArgs);
+  const { data: rcPriceBreaks = [] } = useRateCardPriceBreaksBundle(rcScopeArgs);
 
   const availableSizes = useMemo(
     () => derivePhotoPrintSizesFromRateCard(photoRateCard),
@@ -326,14 +327,18 @@ export default function PhotoPrintsBuilder() {
     const totalPhotos = photoSpec.photos.length;
     const totalPrints = photoSpec.photos.reduce((s, p) => s + p.quantity, 0);
     const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === photoSpec.border_slug);
-    const unitPrice = resolvePhotoPrintPrice(photoRateCard, {
-      size_slug: photoSpec.print_size_slug,
-      finish: photoSpec.finish_slug,
-      border_mm: border?.border_mm ?? 0,
-    });
+    const unitPrice = resolvePhotoPrintPrice(
+      photoRateCard,
+      {
+        size_slug: photoSpec.print_size_slug,
+        finish: photoSpec.finish_slug,
+        border_mm: border?.border_mm ?? 0,
+      },
+      { breaks: rcPriceBreaks, quantity: totalPrints },
+    );
     const totalPrice = totalPrints * unitPrice;
     return { size, totalPhotos, totalPrints, totalPrice, unitPrice };
-  }, [photoSpec, photoRateCard]);
+  }, [photoSpec, photoRateCard, rcPriceBreaks]);
 
   const [showCartDialog, setShowCartDialog] = useState(false);
   const [cartReference, setCartReference] = useState("");
@@ -457,11 +462,15 @@ export default function PhotoPrintsBuilder() {
             <SelectContent>
               {availableSizes.map((s) => {
                 const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === photoSpec.border_slug);
-                const price = resolvePhotoPrintPrice(photoRateCard, {
-                  size_slug: s.slug,
-                  finish: photoSpec.finish_slug,
-                  border_mm: border?.border_mm ?? 0,
-                });
+                const price = resolvePhotoPrintPrice(
+                  photoRateCard,
+                  {
+                    size_slug: s.slug,
+                    finish: photoSpec.finish_slug,
+                    border_mm: border?.border_mm ?? 0,
+                  },
+                  { breaks: rcPriceBreaks, quantity: totals.totalPrints },
+                );
                 return (
                   <SelectItem key={s.slug} value={s.slug}>
                     {s.label} — {formatPrice(price, activeCurrency)}
