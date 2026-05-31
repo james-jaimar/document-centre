@@ -19,6 +19,7 @@ import {
 } from "@/lib/photoPrints/sizes";
 import { resolvePhotoPrintPrice } from "@/lib/photoPrints/pricing";
 import { useRateCardPhotoPrints } from "@/hooks/useRateCard";
+import { useRateCardPriceBreaksBundle } from "@/hooks/useRateCardPriceBreaks";
 import type { PhotoPrintEntry, PhotoPrintsSpec } from "@/lib/photoPrints/types";
 import PhotoUploader from "@/components/photo/PhotoUploader";
 import QRUploadModal from "@/components/order/QRUploadModal";
