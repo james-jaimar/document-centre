@@ -14,10 +14,10 @@ function interpolate(html: string, ctx: LegalTemplateContext): string {
   const site = ctx.website_url || "our website";
   const country = ctx.country || "South Africa";
   return html
-    .replaceAll("{{tenant_name}}", ctx.tenant_name)
-    .replaceAll("{{support_email}}", support)
-    .replaceAll("{{website_url}}", site)
-    .replaceAll("{{country}}", country);
+    .split("{{tenant_name}}").join(ctx.tenant_name)
+    .split("{{support_email}}").join(support)
+    .split("{{website_url}}").join(site)
+    .split("{{country}}").join(country);
 }
 
 const TERMS_TEMPLATE = `
