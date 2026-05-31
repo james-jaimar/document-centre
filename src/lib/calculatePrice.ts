@@ -244,12 +244,22 @@ import type {
 } from "@/hooks/useRateCard";
 import type { ProductRecipe } from "@/hooks/useProductRecipe";
 import { resolvePhotoPrintPrice } from "@/lib/photoPrints/pricing";
+import type { RateCardPriceBreak, RateCardTable } from "@/hooks/useRateCardPriceBreaks";
+import { resolveTier } from "@/hooks/useRateCardPriceBreaks";
 
 export interface RateCardBundle {
   clicks: RateCardClick[];
   papers: RateCardPaper[];
   finishing: RateCardFinishing[];
   photoPrints?: RateCardPhotoPrint[];
+  /**
+   * Optional: per-line quantity-tier price breaks (flat list across all
+   * rate-card tables in the active scope). When present, the engine picks
+   * the matching tier's `sell_price` per line based on that line's total
+   * billed quantity; absent / unmatched → fall back to the parent row's
+   * static `sell_price` (zero-risk for legacy carts).
+   */
+  priceBreaks?: RateCardPriceBreak[];
   /**
    * Optional: binding spine specifications used to map a selected
    * binding option (Binding: Twin Loop Wire Black, etc.) onto the
@@ -262,6 +272,28 @@ export interface RateCardBundle {
     min_sheets: number;
     max_sheets_80gsm: number;
   }>;
+}
+
+/**
+ * Resolve a rate-card line's effective unit sell price for a given billed
+ * quantity using its tiered price breaks. Falls back to `fallback` (the
+ * line's static `sell_price`) when no break exists or matches.
+ */
+function tieredUnit(
+  breaks: RateCardPriceBreak[] | undefined,
+  table: RateCardTable,
+  lineId: string,
+  quantity: number,
+  fallback: number,
+): number {
+  if (!breaks || breaks.length === 0) return fallback;
+  const forLine = breaks.filter(
+    (b) => b.rate_card_table === table && b.rate_card_id === lineId,
+  );
+  const tier = resolveTier(forLine, quantity);
+  if (!tier) return fallback;
+  const price = Number(tier.sell_price);
+  return Number.isFinite(price) ? price : fallback;
 }
 
 /**
