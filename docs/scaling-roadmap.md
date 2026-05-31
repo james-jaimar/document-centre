@@ -1,20 +1,10 @@
-Save the horizontal-scaling roadmap to a single file in the repo so we can pick it up cold in a week or two without re-deriving anything.
-
-## File
-
-`docs/scaling-roadmap.md` — new markdown file. Sits alongside the existing `docs/document-centre-api-contract.md` so it's discoverable and lives with the code, not in chat history.
-
-## Contents
-
-The file will contain everything below — the architecture plan, the trigger conditions, the cost sketch, AND the notes a future agent needs to resume without re-asking.
-
----
-
 # PDF Processing — Horizontal Scaling Roadmap
 
 **Status:** Deferred. Single-VPS setup is adequate for the pilot phase (5–10 PostNet branches). Revisit when paid clients ≥ 5 OR sustained queue depth on `documents` queue > 20 for > 5 min.
 
 **Owner:** James. **Last reviewed:** 2026-05-31.
+
+> When picking this up in future: this file is the single source of truth. Read it top-to-bottom, then start at Phase 1. No need to re-derive anything from chat history.
 
 ## Trigger to start work
 
@@ -73,7 +63,7 @@ Behaviour identical after this — but Redis is no longer tied to one box.
 ### Phase 3 — Spin up worker pool
 1. Provision 2 worker VPSes (Hetzner CPX31 ≈ €16/mo each).
 2. Each: install Docker, pull image, run with shared `.env` (Upstash URL + Supabase creds + service role).
-3. Verify in Platform → Workers UI (`PlatformDocumentCentreWorkers.tsx`) that `heavy@vps-1`, `light@vps-1`, `heavy@vps-2`, `light@vps-2` all show up.
+3. Verify in Platform → Workers UI (`src/pages/platform/PlatformDocumentCentreWorkers.tsx`) that `heavy@vps-1`, `light@vps-1`, `heavy@vps-2`, `light@vps-2` all show up.
 4. Load-test: 50 concurrent uploads, watch jobs spread.
 
 ### Phase 4 — Operational hardening
@@ -85,13 +75,13 @@ Behaviour identical after this — but Redis is no longer tied to one box.
 
 - **Shared PDF cache caveat**: heavy and light workers currently hand prepared PDFs to each other via `/var/cache/document-centre/pdf-cache` on local disk. With workers on different VPSes the cache misses and falls back to S3. Code already handles this — just slightly slower per job. Don't try to "fix" it with a shared NFS mount, not worth it.
 - **`PDF_CACHE_ENABLED` env var**: leave true; misses are cheap.
-- **`task_acks_late=True` + `task_reject_on_worker_lost=True`** are already set in `pdf-server/app/worker.py` — a worker dying mid-task re-queues the job. This is critical for cattle-style workers; don't change it.
+- **`task_acks_late=True` + `task_reject_on_worker_lost=True`** are already set in `pdf-server/app/worker.py` — a worker dying mid-task re-queues the job. Critical for cattle-style workers; don't change it.
 - **Celery beat** must run on **exactly one** node. Either keep it on the API VPS or designate one worker VPS as the beat host. Two beats = duplicate scheduled work.
 - **`worker_prefetch_multiplier=1`** is already set — keep it so heavy children don't hoard small jobs.
 - **Edge functions stay untouched**: `production-pdf`, `enqueue-print-ready` etc. call the API via HTTPS. They don't need to know about workers.
 - **Frontend stays untouched**: API URL unchanged. The `pdf-api` proxy hook doesn't care how many workers are behind the API.
 - **Queue names**: `documents`, `imposition`, `pdf` (heavy) + `default`, `thumbnails` (light). Don't rename — they're hardcoded in task `@queue(...)` decorators.
-- **Migration script exists**: `pdf-server/scripts/migrate-to-split-workers.sh` — useful reference for systemd → split worker pattern, but for the new world the workers are Docker not systemd. Keep the file as historical reference; don't rely on it for the cloud rollout.
+- **Migration script exists**: `pdf-server/scripts/migrate-to-split-workers.sh` — useful reference for systemd → split worker pattern, but the new world is Docker not systemd. Keep as historical reference; don't rely on it for the cloud rollout.
 
 ## Cost sketch (ZAR, monthly, rough)
 
@@ -113,9 +103,3 @@ Behaviour identical after this — but Redis is no longer tied to one box.
 - API URL — frontend untouched.
 - Edge functions.
 - Job semantics, queue names, retry logic.
-
----
-
-## After saving
-
-Reply with one line confirming the file path, nothing more.
