@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
     const admin = createClient(url, serviceKey);
 
     const body = (await req.json()) as Body;
-    const { action, target_profile_id, tenant_id, app_id, membership_id, new_email, new_password, display_name, first_name, last_name, phone, reason } = body;
+    const { action, target_profile_id, tenant_id, app_id, branch_id, membership_id, new_email, new_password, display_name, first_name, last_name, phone, reason } = body;
 
     if (!action || !target_profile_id) {
       return err("Missing action or target_profile_id");
@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Authorisation: platform admin OR tenant owner/admin for the given tenant
+    // Authorisation: platform admin OR tenant owner/admin OR branch staff (limited actions)
     const { data: platformRow } = await admin
       .from("user_roles")
       .select("role")
@@ -108,9 +108,43 @@ Deno.serve(async (req) => {
       isTenantAdmin = !!m;
     }
 
-    if (!isPlatformAdmin && !isTenantAdmin) {
+    // Branch-staff authorisation: limited to safe actions on customers who
+    // have actually transacted at one of the caller's branches.
+    const BRANCH_ALLOWED_ACTIONS: Action[] = [
+      "force_password_reset",
+      "update_profile",
+      "update_email",
+      "resend_invite",
+    ];
+    let isAuthorisedBranchStaff = false;
+    if (
+      !isPlatformAdmin &&
+      !isTenantAdmin &&
+      branch_id &&
+      tenant_id &&
+      BRANCH_ALLOWED_ACTIONS.includes(action)
+    ) {
+      const { data: bm } = await admin
+        .from("tenant_memberships")
+        .select("role")
+        .eq("profile_id", caller.id)
+        .eq("tenant_id", tenant_id)
+        .eq("is_active", true)
+        .in("role", ["owner", "admin", "sales", "accounts", "production", "branch_manager", "store_operator"])
+        .maybeSingle();
+      if (bm) {
+        const { data: belongs } = await admin.rpc("profile_belongs_to_branch", {
+          _profile_id: target_profile_id,
+          _branch_id: branch_id,
+        });
+        if (belongs === true) isAuthorisedBranchStaff = true;
+      }
+    }
+
+    if (!isPlatformAdmin && !isTenantAdmin && !isAuthorisedBranchStaff) {
       return err("Forbidden", 403);
     }
+
 
     // Fetch target profile (for email + audit)
     const { data: targetProfile } = await admin
