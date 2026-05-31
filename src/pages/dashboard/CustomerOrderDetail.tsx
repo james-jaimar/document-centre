@@ -24,6 +24,7 @@ import { useEffect, useState } from "react";
 import { sendMessage, reorderOrder } from "@/lib/orders/mutations";
 import { OrderInvoicesList } from "@/components/orders/OrderInvoicesList";
 import { CancelOrderDialog } from "@/components/orders/CancelOrderDialog";
+import ReorderPaymentDialog from "@/components/customer/ReorderPaymentDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -160,6 +161,7 @@ const CustomerOrderDetail = () => {
 
   const [cancelOpen, setCancelOpen] = useState(false);
   const [reordering, setReordering] = useState(false);
+  const [reorderResult, setReorderResult] = useState<{ id: string; number: string; currency?: string } | null>(null);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   const [templateName, setTemplateName] = useState("");
   const savedOrders = useCustomerSavedOrders();
@@ -170,7 +172,7 @@ const CustomerOrderDetail = () => {
     try {
       const res = await reorderOrder({ order_id: id });
       toast.success(`New order ${res.order_number} created`);
-      navigate(tenantPath(`orders/${res.order_id}`));
+      setReorderResult({ id: res.order_id, number: res.order_number, currency: (res as any).currency ?? order?.currency });
     } catch (e: any) {
       toast.error("Failed to reorder", { description: e.message });
     } finally {
@@ -813,6 +815,12 @@ const CustomerOrderDetail = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ReorderPaymentDialog
+        orderId={reorderResult?.id ?? null}
+        orderNumber={reorderResult?.number}
+        currency={reorderResult?.currency}
+        onClose={() => setReorderResult(null)}
+      />
     </div>
   );
 };

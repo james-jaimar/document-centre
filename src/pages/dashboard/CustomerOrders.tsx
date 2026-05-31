@@ -16,6 +16,7 @@ import { formatPrice } from "@/lib/formatCurrency";
 import { useUnreadMessagesCustomer } from "@/hooks/useUnreadMessages";
 import { useCustomerSavedOrders } from "@/hooks/useCustomerSavedOrders";
 import { reorderOrder } from "@/lib/orders/mutations";
+import ReorderPaymentDialog from "@/components/customer/ReorderPaymentDialog";
 
 
 const CUSTOMER_STATUS_LABEL: Record<string, string> = {
@@ -129,19 +130,20 @@ const CustomerOrders = () => {
   const savedOrders = useCustomerSavedOrders();
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [reorderingId, setReorderingId] = useState<string | null>(null);
+  const [reorderResult, setReorderResult] = useState<{ id: string; number: string; currency?: string } | null>(null);
 
   const handleReorder = useCallback(async (sourceOrderId: string) => {
     setReorderingId(sourceOrderId);
     try {
       const res = await reorderOrder({ order_id: sourceOrderId });
       toast.success(`Order ${res.order_number} created`);
-      navigate(tenantPath(`orders/${res.order_id}`));
+      setReorderResult({ id: res.order_id, number: res.order_number, currency: (res as any).currency });
     } catch (e: any) {
       toast.error("Failed to reorder", { description: e.message });
     } finally {
       setReorderingId(null);
     }
-  }, [navigate, tenantPath]);
+  }, []);
 
 
   // Visible orders:
@@ -504,6 +506,12 @@ const CustomerOrders = () => {
           </TabsContent>
         </Tabs>
       )}
+      <ReorderPaymentDialog
+        orderId={reorderResult?.id ?? null}
+        orderNumber={reorderResult?.number}
+        currency={reorderResult?.currency}
+        onClose={() => setReorderResult(null)}
+      />
     </div>
   );
 };
