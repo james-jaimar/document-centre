@@ -5081,6 +5081,10 @@ export type Database = {
         Args: { p_branch_id: string; p_tenant_id: string }
         Returns: boolean
       }
+      user_can_view_branch_staff_profile: {
+        Args: { _profile_id: string }
+        Returns: boolean
+      }
       user_can_write_branch_subscription: {
         Args: { p_branch_id: string }
         Returns: boolean
