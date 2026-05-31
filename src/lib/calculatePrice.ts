@@ -463,9 +463,22 @@ export function calculatePriceFromRateCard(
       totalSheets += clicks; // 1 sheet per click regardless of sides
       const rate = resolveClickRate(size, sectionColour, sectionSides);
       if (!rate || clicks === 0) continue;
-      // n-up: a single parent click prints `nUp` finished pieces. Charge
-      // the parent rate divided across the imposed pieces.
-      const unit = rate.unit / rate.nUp;
+      // Tiered pricing — total billed parent clicks across the whole run for
+      // this line: clicks per piece × finished quantity ÷ nUp (a single
+      // parent click prints `nUp` finished pieces).
+      const totalParentClicks = Math.max(
+        1,
+        Math.ceil((clicks * spec.quantity) / rate.nUp),
+      );
+      const tieredParentUnit = tieredUnit(
+        rc.priceBreaks,
+        "clicks",
+        rate.lineId,
+        totalParentClicks,
+        rate.unit,
+      );
+      // n-up: parent rate divided across the imposed pieces.
+      const unit = tieredParentUnit / rate.nUp;
       const sectionLabel = section.label ? `${section.label}: ` : "";
       lines.push({
         label: `${sectionLabel}Print ${size} ${sectionColour} ${sectionSides}`,
@@ -485,9 +498,19 @@ export function calculatePriceFromRateCard(
   if (paperCode && totalSheets > 0) {
     const resolved = resolvePaper(paperCode, size);
     if (resolved) {
-      // n-up: small finished pieces share a parent sheet, so the effective
-      // paper cost per finished sheet is parent_price / nUp.
-      const unit = Number(resolved.paper.sell_price) / resolved.nUp;
+      // Tiered pricing — total parent sheets billed for the entire run.
+      const totalParentSheets = Math.max(
+        1,
+        Math.ceil((totalSheets * spec.quantity) / resolved.nUp),
+      );
+      const tieredParentUnit = tieredUnit(
+        rc.priceBreaks,
+        "papers",
+        resolved.paper.id,
+        totalParentSheets,
+        Number(resolved.paper.sell_price),
+      );
+      const unit = tieredParentUnit / resolved.nUp;
       lines.push({
         label: `Paper: ${resolved.paper.label}`,
         type: "per_page",
@@ -529,12 +552,23 @@ export function calculatePriceFromRateCard(
         multiplier = 1;
         break;
     }
+    // Tiered pricing — total billed units for this finishing line across the
+    // whole run (multiplier already accounts for per-piece quantity; we then
+    // scale by finished quantity for the tier lookup).
+    const totalFinishingUnits = Math.max(1, multiplier * spec.quantity);
+    const finUnit = tieredUnit(
+      rc.priceBreaks,
+      "finishing",
+      fin.id,
+      totalFinishingUnits,
+      Number(fin.sell_price),
+    );
     lines.push({
       label: `Finishing: ${fin.label}`,
       type: "option",
-      unit_amount: Number(fin.sell_price),
+      unit_amount: finUnit,
       multiplier,
-      total: Number(fin.sell_price) * multiplier,
+      total: finUnit * multiplier,
     });
   }
 
