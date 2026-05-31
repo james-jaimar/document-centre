@@ -1,6 +1,6 @@
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -10,8 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, Plus, Pencil, Trash2, Star, MapPin } from "lucide-react";
+import { useCustomerAddresses, type CustomerAddress } from "@/hooks/useCustomerAddresses";
+import { CustomerAddressDialog } from "@/components/admin/CustomerAddressDialog";
+import { useFavouriteBranch } from "@/hooks/useFavouriteBranch";
+import { useBranch } from "@/contexts/BranchContext";
 
 export default function CustomerAccount() {
   const { user } = useAuth();
@@ -52,23 +57,14 @@ export default function CustomerAccount() {
     }
   }, [profile]);
 
-  const { data: addresses } = useQuery({
-    queryKey: ["customer-addresses", user?.id],
-    enabled: !!user?.id,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("order_addresses")
-        .select("*, orders!inner(ordered_by_profile_id)")
-        .eq("orders.ordered_by_profile_id", user!.id);
-      const seen = new Set<string>();
-      return (data ?? []).filter((a: any) => {
-        const k = `${a.address_type}|${a.line1 ?? ""}|${a.postal_code ?? ""}|${a.city ?? ""}`;
-        if (seen.has(k)) return false;
-        seen.add(k);
-        return true;
-      });
-    },
-  });
+  // Saved address book (CRUD-enabled)
+  const addressBook = useCustomerAddresses(user?.id);
+  const [addrDialogOpen, setAddrDialogOpen] = useState(false);
+  const [editingAddr, setEditingAddr] = useState<CustomerAddress | null>(null);
+
+  // Favourite branch
+  const fav = useFavouriteBranch();
+  const { branches: liveBranches } = useBranch();
 
   const handleSaveProfile = async () => {
     if (!user) return;
@@ -184,23 +180,94 @@ export default function CustomerAccount() {
                     {saving ? "Saving…" : "Save changes"}
                   </Button>
                 </div>
+
+                {/* Favourite branch */}
+                {liveBranches.length > 1 && (
+                  <div className="pt-4 border-t space-y-2">
+                    <Label className="flex items-center gap-1.5">
+                      <Star className="h-3.5 w-3.5" /> Favourite branch
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      We'll preselect this branch whenever you visit the storefront.
+                    </p>
+                    <Select
+                      value={fav.data ?? "none"}
+                      onValueChange={(v) => fav.set.mutate(v === "none" ? null : v)}
+                    >
+                      <SelectTrigger className="max-w-sm">
+                        <SelectValue placeholder="No preference" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No preference</SelectItem>
+                        {liveBranches.map((b) => (
+                          <SelectItem key={b.id} value={b.id}>
+                            {b.name}{b.city ? ` — ${b.city}` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
             )}
           </Card>
         </TabsContent>
 
         <TabsContent value="addresses">
-          <Card className="p-4 md:p-6">
-            {(addresses ?? []).length === 0 ? (
+          <Card className="p-4 md:p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold">Saved addresses</h3>
+                <p className="text-xs text-muted-foreground">
+                  Use these at checkout for faster delivery.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => { setEditingAddr(null); setAddrDialogOpen(true); }}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1.5" />
+                Add address
+              </Button>
+            </div>
+            {(addressBook.data ?? []).length === 0 ? (
               <div className="text-center text-muted-foreground py-8">
-                No saved addresses yet. Addresses will appear here after your first order.
+                <MapPin className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                No saved addresses yet. Add one to speed up checkout.
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {(addresses ?? []).map((a: any) => (
-                  <div key={a.id} className="rounded-lg border p-4 text-sm">
-                    <div className="text-xs uppercase text-muted-foreground mb-1">
-                      {a.address_type}
+                {(addressBook.data ?? []).map((a) => (
+                  <div key={a.id} className="rounded-lg border p-4 text-sm relative group">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs uppercase text-muted-foreground">
+                          {a.label || a.address_type}
+                        </span>
+                        {a.is_default && (
+                          <span className="text-[10px] rounded-full bg-primary/10 text-primary px-1.5 py-0.5">
+                            Default
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => { setEditingAddr(a); setAddrDialogOpen(true); }}
+                          className="h-7 w-7 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                          title="Edit"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (window.confirm("Delete this address?")) addressBook.remove.mutate(a.id);
+                          }}
+                          className="h-7 w-7 flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                     {a.contact_name && <div className="font-medium">{a.contact_name}</div>}
                     {a.company_name && <div>{a.company_name}</div>}
@@ -211,6 +278,14 @@ export default function CustomerAccount() {
                   </div>
                 ))}
               </div>
+            )}
+            {user?.id && (
+              <CustomerAddressDialog
+                open={addrDialogOpen}
+                onOpenChange={setAddrDialogOpen}
+                customerProfileId={user.id}
+                initial={editingAddr}
+              />
             )}
           </Card>
         </TabsContent>

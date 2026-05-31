@@ -17,6 +17,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import MessagesBell from "@/components/customer/MessagesBell";
 
 export default function CustomerHeader() {
   const { slug, tenantPath } = useTenantSlug();
@@ -120,6 +121,8 @@ export default function CustomerHeader() {
             </span>
           )}
         </Link>
+
+        <MessagesBell />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

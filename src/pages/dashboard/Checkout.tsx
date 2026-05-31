@@ -25,6 +25,9 @@ import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPrice } from "@/lib/formatCurrency";
 import CheckoutAuth from "@/components/checkout/CheckoutAuth";
 import { quoteShipping, listShippingQuotes, type ShippingQuoteResult, type ShippingMethodOption } from "@/lib/delivery/quoteShipping";
+import AddressPicker from "@/components/customer/AddressPicker";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useCustomerAddresses } from "@/hooks/useCustomerAddresses";
 
 export default function Checkout() {
   const { slug, tenantPath } = useTenantSlug();
@@ -45,6 +48,10 @@ export default function Checkout() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<string>("offline");
   const [showBranchSwitch, setShowBranchSwitch] = useState(false);
+  const [poNumber, setPoNumber] = useState("");
+  const [costCentre, setCostCentre] = useState("");
+  const [saveAddress, setSaveAddress] = useState(false);
+  const { create: createSavedAddress } = useCustomerAddresses(user?.id);
 
   // Fetch online payment providers enabled for this tenant
   const { data: onlineProviders } = useQuery({
@@ -213,6 +220,42 @@ export default function Checkout() {
         deliveryMethodCode: shippingQuote?.methodLabel ?? undefined,
         deliveryZoneCode: shippingQuote?.zoneCode ?? undefined,
       });
+
+      // Persist PO / cost centre on the new order (best-effort).
+      if (poNumber.trim() || costCentre.trim()) {
+        try {
+          await supabase
+            .from("orders")
+            .update({
+              po_number: poNumber.trim() || null,
+              cost_centre: costCentre.trim() || null,
+            })
+            .eq("id", newOrderId);
+        } catch (e) {
+          console.warn("Failed to persist PO/cost centre:", e);
+        }
+      }
+
+      // Save delivery address to the customer's address book if requested.
+      if (saveAddress && deliveryMethod === "delivery" && user && address.line1.trim()) {
+        try {
+          await createSavedAddress.mutateAsync({
+            address_type: "delivery",
+            contact_name: address.contact_name || null,
+            company_name: address.company_name || null,
+            phone: address.phone || null,
+            email: address.email || null,
+            line1: address.line1 || null,
+            line2: address.line2 || null,
+            city: address.city || null,
+            province: address.province || null,
+            postal_code: address.postal_code || null,
+            country: "South Africa",
+          });
+        } catch (e) {
+          console.warn("Failed to save address to address book:", e);
+        }
+      }
 
       // Online payment selected — create payment session and redirect
       if (paymentMethod === "stripe" || paymentMethod === "payfast") {
@@ -397,6 +440,24 @@ export default function Checkout() {
           {deliveryMethod === "delivery" && (
             <div className="border border-border rounded-lg p-4 space-y-3">
               <h3 className="font-semibold text-foreground">Delivery Address</h3>
+              {user && (
+                <AddressPicker
+                  onSelect={(addr) => {
+                    setAddress({
+                      contact_name: addr.contact_name ?? "",
+                      company_name: addr.company_name ?? "",
+                      line1: addr.line1 ?? "",
+                      line2: addr.line2 ?? "",
+                      city: addr.city ?? "",
+                      province: addr.province ?? "",
+                      postal_code: addr.postal_code ?? "",
+                      phone: addr.phone ?? "",
+                      email: addr.email ?? "",
+                    });
+                    setSaveAddress(false);
+                  }}
+                />
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">Contact Name</Label>
@@ -481,6 +542,15 @@ export default function Checkout() {
                   />
                 </div>
               </div>
+              {user && (
+                <label className="flex items-center gap-2 pt-1 text-xs text-muted-foreground cursor-pointer">
+                  <Checkbox
+                    checked={saveAddress}
+                    onCheckedChange={(v) => setSaveAddress(!!v)}
+                  />
+                  Save this address for next time
+                </label>
+              )}
             </div>
           )}
 
@@ -539,6 +609,32 @@ export default function Checkout() {
                 </div>
               ))}
             </RadioGroup>
+          </div>
+
+          {/* PO / Cost Centre (optional) */}
+          <div className="border border-border rounded-lg p-4 space-y-3">
+            <h3 className="font-semibold text-foreground">Reference (optional)</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">PO Number</Label>
+                <Input
+                  value={poNumber}
+                  onChange={(e) => setPoNumber(e.target.value)}
+                  placeholder="e.g. PO-2025-0142"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Cost Centre</Label>
+                <Input
+                  value={costCentre}
+                  onChange={(e) => setCostCentre(e.target.value)}
+                  placeholder="e.g. Marketing"
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Shown on your invoice and order details for reconciliation.
+            </p>
           </div>
 
           {/* Notes */}
