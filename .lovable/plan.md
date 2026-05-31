@@ -1,49 +1,82 @@
-Two changes to the branch portal: refresh the dashboard with a richer e-commerce style overview, and fix the empty Customers list.
+Replace the "coming soon" Terms and Privacy pages on the customer storefront with proper, per-tenant legal documents that the admin can edit in their settings.
 
-## 1. Fix Branch Customers (empty list)
+## Scope (confirmed)
+- **Tenant only** — one T&Cs and one privacy policy per tenant, shared by all branches.
+- **Seed a SA e-commerce template** for tenants that haven't written their own.
+- **Rich text editor** (WYSIWYG) in the admin.
 
-Database check confirms PostNet Sandton City has 16 non-cart orders for `jimmybhawkins@gmail.com` (plus 12 guest orders with no profile). The `get_branch_customers` RPC is wired correctly and the `branch_manager` role passes the `caller_has_branch_access` guard — so the customer should appear.
+## 1. Storage
+Use the existing `tenant_settings` table (cascading settings, JSONB). Two new keys under a new `legal` category:
+- `legal.terms_of_service` — HTML string
+- `legal.privacy_policy` — HTML string
+- `legal.terms_updated_at` / `legal.privacy_updated_at` — ISO date strings shown as "Last updated".
 
-The likely cause is one of:
-- A silent RPC error swallowed by the hook (it `throw`s but the UI only shows the empty state).
-- A stale React Query cache from before recent role/migration changes.
+No schema change — just new setting keys. A migration will seed both keys for every existing tenant using the SA template (interpolating `{{tenant_name}}`, `{{support_email}}`, `{{website_url}}`, `{{country}}`).
 
-**Fix:**
-- In `useBranchCustomers`, surface errors (return `error` and render an inline error state in `BranchCustomers.tsx` instead of "No customers...").
-- Verify in preview after the change — if an error appears, capture it and patch the RPC or RLS path. If not, the page will show jimmybhawkins as expected.
-- No schema changes anticipated; only add a migration if the error reveals one.
+## 2. SA e-commerce template (seed content)
+Standard structure used by SA online retailers, covering ECT Act and POPIA:
 
-## 2. Refresh Branch Dashboard
+**Terms of Service** sections:
+1. About us / definitions
+2. Acceptance of terms
+3. Account registration
+4. Orders, pricing & VAT
+5. Payment (PayFast, EFT, account)
+6. Production turnaround & delivery (Cloudprinter / courier)
+7. Customer-supplied artwork & content responsibility
+8. Cancellations & refunds (per ECT Act s44 — print-on-demand exemption noted)
+9. Intellectual property
+10. Limitation of liability
+11. Governing law (South Africa) & dispute resolution
+12. Contact details
 
-Current `BranchDashboard.tsx` shows only 3 plain count cards (Pending / In Production / Complete). Replace with a modern operations overview while keeping it lightweight and on-brand (utilitarian admin styling, no glassmorphism).
+**Privacy Policy** sections (POPIA-aligned):
+1. Who we are & responsible party
+2. Information we collect (account, order, payment, uploaded files)
+3. How we use it
+4. Sharing (PayFast, Cloudprinter, courier, hosting)
+5. Cookies & analytics
+6. Data retention
+7. Your POPIA rights (access, correction, deletion, objection)
+8. Security
+9. International transfers
+10. Contact / Information Officer
 
-**New layout (single file edit to `src/pages/branch/BranchDashboard.tsx` + small query hook):**
+Both templates live in `src/lib/legal/defaultTemplates.ts` so the same content powers both the seed migration and a "Restore default template" button in the admin.
 
-```text
-┌───────────────────────────────────────────────────────────┐
-│ KPI strip (6 compact cards)                               │
-│ Pending • In Production • Ready • Completed today •       │
-│ Revenue today • Revenue this month                        │
-├──────────────────────────┬────────────────────────────────┤
-│ Orders – last 14 days    │ Today's queue (top 5)          │
-│ (sparkline / mini bar)   │ order #, customer, status,     │
-│                          │ amount → links to detail       │
-├──────────────────────────┼────────────────────────────────┤
-│ Status mix (donut)       │ Recent activity (5 events from │
-│ new / production / ready │ status_history for this branch)│
-└──────────────────────────┴────────────────────────────────┘
-```
+## 3. Admin editor
+New tab in `AdminSettings`: **Legal** (after Notifications). Two stacked rich text editors using a lightweight WYSIWYG. The project already uses Tiptap-compatible components in a couple of places; if not present, add `@tiptap/react` + starter kit (small, well-supported).
 
-**Data sources (all already exist):**
-- `orders` filtered by `tenant_id` + `branch_id`, grouped by `admin_status`, `created_at::date`, `total_amount`.
-- `status_history` joined to `orders` for this branch (last 5 entries).
+Editor surface per document:
+- Title (Terms of Service / Privacy Policy)
+- "Last updated" date (auto-stamped on save)
+- WYSIWYG (headings, bold/italic, lists, links)
+- Buttons: **Save**, **Preview** (opens the customer page in a new tab), **Restore default template**
 
-**Implementation notes:**
-- Add a single `useBranchDashboard` hook that runs the aggregate queries in parallel via React Query.
-- Use `recharts` (already in project) for the sparkline and donut — small, no new deps.
-- Reuse existing `Card`, `Badge`, `Skeleton`, semantic tokens. No new colors.
-- All cards link through to the existing Orders page with the relevant filter so the dashboard becomes a true entry point.
+Saves via the existing `upsert_tenant_setting` RPC (one row per key).
+
+## 4. Customer-facing pages
+Update `src/pages/dashboard/PortalTerms.tsx` and `PortalPrivacy.tsx`:
+- Read the resolved tenant setting via the existing `useTenantSettings` / `resolve_tenant_setting` path.
+- Render the stored HTML inside a `prose` container (Tailwind typography) — no untrusted input concern since only tenant admins can write it.
+- Show tenant name in the H1 and "Last updated {{date}}" subheading.
+- Loading skeleton while fetching; fall back to the in-code default template if a tenant somehow has no value (defence in depth).
+
+These pages are already routed under `/t/:slug/terms` and `/t/:slug/privacy`, so footer links don't need changes — they're already dynamic per storefront.
+
+## 5. Footer links
+Quick audit of the customer footer to confirm the existing `terms` / `privacy` links resolve through the active tenant slug (they already do via the `/t/:slug` route prefix). No code change expected; will verify during implementation.
 
 ## Out of scope
-- No changes to Orders, Quotes, Products, Pricing, Rate Card, Delivery.
-- No sidebar / navigation changes.
+- Branch-level overrides (explicitly excluded).
+- Versioning / acceptance tracking (customers re-accept on changes) — can be a later phase if needed.
+- Cookie consent banner.
+- Email notification to customers when terms change.
+
+## Technical notes
+- New file: `src/lib/legal/defaultTemplates.ts` — exports `defaultTermsHtml(tenant)` and `defaultPrivacyHtml(tenant)`.
+- New file: `src/pages/admin/settings/LegalTab.tsx` — two WYSIWYG editors + save/restore.
+- New file: `src/components/admin/RichTextEditor.tsx` — thin Tiptap wrapper with the project's design tokens.
+- Edited: `src/pages/admin/AdminSettings.tsx` — register the Legal tab.
+- Edited: `src/pages/dashboard/PortalTerms.tsx`, `PortalPrivacy.tsx` — read tenant setting + render HTML.
+- Migration: insert default `legal.terms_of_service` / `legal.privacy_policy` for each existing tenant (skip where already set).
