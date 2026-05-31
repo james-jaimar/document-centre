@@ -126,7 +126,22 @@ const CustomerOrders = () => {
   const queryClient = useQueryClient();
   const { data: orders, isLoading } = useUserOrders(user?.id, tenantId);
   const { data: unreadMap = {} } = useUnreadMessagesCustomer();
+  const savedOrders = useCustomerSavedOrders();
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [reorderingId, setReorderingId] = useState<string | null>(null);
+
+  const handleReorder = useCallback(async (sourceOrderId: string) => {
+    setReorderingId(sourceOrderId);
+    try {
+      const res = await reorderOrder({ order_id: sourceOrderId });
+      toast.success(`Order ${res.order_number} created`);
+      navigate(tenantPath(`orders/${res.order_id}`));
+    } catch (e: any) {
+      toast.error("Failed to reorder", { description: e.message });
+    } finally {
+      setReorderingId(null);
+    }
+  }, [navigate, tenantPath]);
 
 
   // Visible orders:
