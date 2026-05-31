@@ -67,6 +67,10 @@ export interface PreviewComponentProps {
   pageLabels?: string[];
   /** Per-page color (e.g. insert sheet color slug) */
   pageColors?: string[];
+  /** Per-page duplex flag — true if the page belongs to a duplex section.
+   * Consumed by LooseSheetsPreview so simplex pages keep hole punches on the
+   * left edge instead of alternating L/R per physical sheet face. */
+  duplexFlags?: boolean[];
   /** Tab positions for persistent overlay rendering */
   tabPositions?: TabPosition[];
   /** Per-page PDF source for inline rendering (static types only) */

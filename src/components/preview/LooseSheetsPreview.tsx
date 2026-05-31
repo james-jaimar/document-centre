@@ -27,6 +27,7 @@ export default function LooseSheetsPreview({
   pdfSizeMm,
   scaleMode = "fit",
   trimCrop,
+  duplexFlags,
 }: LooseSheetsPreviewProps) {
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
   const ratio = pageAspectRatio ?? 0.707; // fallback to A4
@@ -68,8 +69,11 @@ export default function LooseSheetsPreview({
   const isColor = colorFlags?.[currentPage] ?? true;
   const bleedInsetPx = Math.round(canvasWidth * 0.03);
   const grayscaleFilter = isColor ? undefined : "grayscale(100%)";
-  // Physical sheet physics: odd 0-based indices are the back face of a sheet
-  const isBackFace = currentPage % 2 === 1;
+  // Physical sheet physics: odd 0-based indices are the back face of a sheet —
+  // but only when the section is printed duplex. Simplex jobs are one-sided
+  // sheets, so every page should render as a front face (holes on the left).
+  const isDuplex = duplexFlags?.[currentPage] ?? true;
+  const isBackFace = isDuplex && currentPage % 2 === 1;
 
   // Determine if PDF content is smaller than canvas (different aspect ratio)
   const hasSizeMismatch =
