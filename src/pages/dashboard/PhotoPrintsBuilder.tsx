@@ -462,11 +462,15 @@ export default function PhotoPrintsBuilder() {
             <SelectContent>
               {availableSizes.map((s) => {
                 const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === photoSpec.border_slug);
-                const price = resolvePhotoPrintPrice(photoRateCard, {
-                  size_slug: s.slug,
-                  finish: photoSpec.finish_slug,
-                  border_mm: border?.border_mm ?? 0,
-                });
+                const price = resolvePhotoPrintPrice(
+                  photoRateCard,
+                  {
+                    size_slug: s.slug,
+                    finish: photoSpec.finish_slug,
+                    border_mm: border?.border_mm ?? 0,
+                  },
+                  { breaks: rcPriceBreaks, quantity: totals.totalPrints },
+                );
                 return (
                   <SelectItem key={s.slug} value={s.slug}>
                     {s.label} — {formatPrice(price, activeCurrency)}
