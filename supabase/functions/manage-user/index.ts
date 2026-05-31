@@ -38,6 +38,7 @@ interface Body {
   target_profile_id: string;
   tenant_id?: string | null;
   app_id?: string | null;
+  branch_id?: string | null;
   membership_id?: string | null;
   new_email?: string;
   new_password?: string;
@@ -47,6 +48,7 @@ interface Body {
   phone?: string | null;
   reason?: string;
 }
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
