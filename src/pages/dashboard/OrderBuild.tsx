@@ -40,6 +40,7 @@ import {
   useRateCardFinishing,
   useRateCardPhotoPrints,
 } from "@/hooks/useRateCard";
+import { useRateCardPriceBreaksBundle } from "@/hooks/useRateCardPriceBreaks";
 import { useBindingSpecifications } from "@/hooks/useBindingSpecifications";
 import { useBranch } from "@/contexts/BranchContext";
 import { formatPrice } from "@/lib/formatCurrency";
