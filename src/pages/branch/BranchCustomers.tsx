@@ -21,7 +21,7 @@ import { BranchCustomerEditDialog } from "@/components/branch/BranchCustomerEdit
 
 export default function BranchCustomers() {
   const { tenantId, appId, branchId } = useTenantContext();
-  const { data, isLoading } = useBranchCustomers();
+  const { data, isLoading, error } = useBranchCustomers();
   const manage = useManageUser();
   const [search, setSearch] = useState("");
   const [editTarget, setEditTarget] = useState<BranchCustomerRow | null>(null);
