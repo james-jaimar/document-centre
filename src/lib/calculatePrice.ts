@@ -385,7 +385,7 @@ export function calculatePriceFromRateCard(
     finishedSize: string,
     cellColour: "mono" | "colour",
     cellSides: "simplex" | "duplex"
-  ): { unit: number; sourceSize: string; nUp: number } | null {
+  ): { unit: number; sourceSize: string; nUp: number; lineId: string } | null {
     const direct = rc.clicks.find(
       (c) =>
         c.is_active &&
@@ -393,7 +393,7 @@ export function calculatePriceFromRateCard(
         c.colour === cellColour &&
         c.sides === cellSides
     );
-    if (direct) return { unit: Number(direct.sell_price), sourceSize: finishedSize, nUp: 1 };
+    if (direct) return { unit: Number(direct.sell_price), sourceSize: finishedSize, nUp: 1, lineId: direct.id };
     const imp = SIZE_IMPOSITION[finishedSize];
     if (imp) {
       const parent = rc.clicks.find(
@@ -403,7 +403,7 @@ export function calculatePriceFromRateCard(
           c.colour === cellColour &&
           c.sides === cellSides
       );
-      if (parent) return { unit: Number(parent.sell_price), sourceSize: imp.parent, nUp: imp.nUp };
+      if (parent) return { unit: Number(parent.sell_price), sourceSize: imp.parent, nUp: imp.nUp, lineId: parent.id };
     }
     return null;
   }
@@ -419,9 +419,6 @@ export function calculatePriceFromRateCard(
     const direct = rc.papers.find((p) => p.code === requestedCode && p.is_active);
     if (direct) {
       const imp = SIZE_IMPOSITION[finishedSize];
-      // If the matched paper IS the parent size for an imposed finished
-      // size, apply n-up. (e.g. user selected the A3 paper while making A5
-      // flyers — bill at A3 paper / 4 sheets per finished piece.)
       if (imp && direct.size === imp.parent) return { paper: direct, nUp: imp.nUp };
       return { paper: direct, nUp: 1 };
     }
