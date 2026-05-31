@@ -1,6 +1,6 @@
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -10,8 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, Plus, Pencil, Trash2, Star, MapPin } from "lucide-react";
+import { useCustomerAddresses, type CustomerAddress } from "@/hooks/useCustomerAddresses";
+import { CustomerAddressDialog } from "@/components/admin/CustomerAddressDialog";
+import { useFavouriteBranch } from "@/hooks/useFavouriteBranch";
+import { useBranch } from "@/contexts/BranchContext";
 
 export default function CustomerAccount() {
   const { user } = useAuth();
