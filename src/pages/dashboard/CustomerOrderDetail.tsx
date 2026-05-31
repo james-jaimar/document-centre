@@ -21,8 +21,9 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { useEffect, useState } from "react";
-import { sendMessage } from "@/lib/orders/mutations";
+import { sendMessage, reorderOrder } from "@/lib/orders/mutations";
 import { OrderInvoicesList } from "@/components/orders/OrderInvoicesList";
+import { CancelOrderDialog } from "@/components/orders/CancelOrderDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,11 @@ import { inferPreviewTypeFromJob } from "@/lib/orders/inferPreviewType";
 import PhotoPrintsAdminGallery from "@/components/orders/detail/PhotoPrintsAdminGallery";
 import { useMarkOrderReadCustomer } from "@/hooks/useUnreadMessages";
 import { useBranch } from "@/contexts/BranchContext";
+import { useCustomerSavedOrders } from "@/hooks/useCustomerSavedOrders";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { X, Repeat, Bookmark } from "lucide-react";
 
 
 const CUSTOMER_STATUS_LABEL: Record<string, string> = {
@@ -152,10 +158,61 @@ const CustomerOrderDetail = () => {
     }
   };
 
-  const handlePayNow = () => {
-    toast.info("Online payments coming soon", {
-      description: "For now, please pay via EFT and your store will mark this paid once received.",
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [reordering, setReordering] = useState(false);
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+  const savedOrders = useCustomerSavedOrders();
+
+  const handleReorder = async () => {
+    if (!id) return;
+    setReordering(true);
+    try {
+      const res = await reorderOrder({ order_id: id });
+      toast.success(`New order ${res.order_number} created`);
+      navigate(tenantPath(`orders/${res.order_id}`));
+    } catch (e: any) {
+      toast.error("Failed to reorder", { description: e.message });
+    } finally {
+      setReordering(false);
+    }
+  };
+
+  const handlePayNow = async () => {
+    if (!order) return;
+    try {
+      const origin = window.location.origin;
+      const returnUrl = `${origin}${tenantPath(`orders/${order.id}`)}`;
+      const cancelUrl = `${origin}${tenantPath(`orders/${order.id}`)}?payment=cancelled`;
+      const { data, error } = await import("@/integrations/supabase/client").then((m) =>
+        m.supabase.functions.invoke("payments-create-session", {
+          body: { order_id: order.id, provider: "stripe", return_url: returnUrl, cancel_url: cancelUrl },
+        })
+      );
+      if (error) throw error;
+      if (data?.redirect_url) {
+        window.location.href = data.redirect_url;
+        return;
+      }
+      toast.info("Pay by EFT — banking details have been emailed");
+    } catch (e: any) {
+      toast.info("Online payments not available", {
+        description: "Please pay via EFT; your store will mark the order paid once received.",
+      });
+    }
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!order || !templateName.trim()) return;
+    await savedOrders.create.mutateAsync({
+      name: templateName.trim(),
+      app_id: (order as any).app_id,
+      branch_id: (order as any).branch_id ?? null,
+      source_order_id: order.id,
+      snapshot: { order_number: order.order_number, total_amount: order.total_amount },
     });
+    setSaveTemplateOpen(false);
+    setTemplateName("");
   };
 
 
