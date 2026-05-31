@@ -575,6 +575,32 @@ export default function Checkout() {
             </RadioGroup>
           </div>
 
+          {/* PO / Cost Centre (optional) */}
+          <div className="border border-border rounded-lg p-4 space-y-3">
+            <h3 className="font-semibold text-foreground">Reference (optional)</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">PO Number</Label>
+                <Input
+                  value={poNumber}
+                  onChange={(e) => setPoNumber(e.target.value)}
+                  placeholder="e.g. PO-2025-0142"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Cost Centre</Label>
+                <Input
+                  value={costCentre}
+                  onChange={(e) => setCostCentre(e.target.value)}
+                  placeholder="e.g. Marketing"
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Shown on your invoice and order details for reconciliation.
+            </p>
+          </div>
+
           {/* Notes */}
           <div className="border border-border rounded-lg p-4 space-y-3">
             <h3 className="font-semibold text-foreground">Special Instructions</h3>
