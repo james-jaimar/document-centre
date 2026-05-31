@@ -24,6 +24,7 @@ import { useEffect, useState } from "react";
 import { sendMessage, reorderOrder } from "@/lib/orders/mutations";
 import { OrderInvoicesList } from "@/components/orders/OrderInvoicesList";
 import { CancelOrderDialog } from "@/components/orders/CancelOrderDialog";
+import ReorderPaymentDialog from "@/components/customer/ReorderPaymentDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
