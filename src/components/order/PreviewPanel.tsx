@@ -592,6 +592,7 @@ export default function PreviewPanel({
   }, [finalPages, signedPdfUrls, isStaticType]);
   const colorFlags = useMemo(() => finalPages.map((p) => p.isColor), [finalPages]);
   const sectionTypes = useMemo(() => finalPages.map((p) => p.section?.section_type ?? "body"), [finalPages]);
+  const duplexFlags = useMemo(() => finalPages.map((p) => p.section?.is_duplex ?? true), [finalPages]);
   const pageLabels = useMemo(() => finalPages.map((p) => p.label ?? ""), [finalPages]);
   const pageColors = useMemo(() => finalPages.map((p) => p.color ?? ""), [finalPages]);
 
