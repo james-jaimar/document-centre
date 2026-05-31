@@ -1,47 +1,23 @@
-## Why the current change isn't landing
+## Problem
 
-The orders list already gets a red left border and a red "N new messages" pill for any placed order with unread messages — and the unread RPC is returning data (verified: `INV-00054` has 1 unread message for the signed-in user). Either:
+The customer messages bell lists every order with unread messages for the signed-in user across **all** tenants they belong to. In a multi-tenant storefront (e.g. signed in on PostNet but also a customer of another tenant), clicking a row sends them to `/t/postnet/.../orders/{id}` for an order that belongs to a different tenant. `CustomerOrderDetail.tsx` then correctly blocks it with "This order doesn't belong to this storefront."
 
-- the highlight is too quiet to read as "this is the one", or
-- the bell currently dumps you on the orders list with no pointer at all.
+The unread badge count has the same cross-tenant leak — it shows totals from foreign tenants too.
 
-You explicitly said: "I cannot see which order that notification pertains to." So the real fix is to make the bell itself tell you which orders, not lean on highlighting in a long list.
+## Fix (frontend only)
 
-## Plan
+Scope the bell to the **current tenant** in `src/components/customer/MessagesBell.tsx`:
 
-### 1. Turn the bell into a popover (`MessagesBell.tsx`)
+1. Read `tenantId` from `useTenantContext()`.
+2. In the orders-by-id query, also `select` `tenant_id` and filter the result to rows where `tenant_id === currentTenantId`. (Keep using the RPC as-is — it already returns the user's full unread map; we just trim it to this storefront.)
+3. Derive the unread `total` (badge number) from the **filtered** rows, not from the raw RPC map, so the count matches what the popover actually shows.
+4. Empty state copy stays "No new messages" — from the customer's point of view, there are none in this storefront.
 
-Replace the plain `Link` with a shadcn `Popover`:
-
-- Trigger: same bell + red count badge as today.
-- Content: a small panel listing each order with `unread > 0`, sorted by unread count desc.
-- Each row shows: order number, status pill, and an `N new` chip — clicking the row navigates straight to `orders/:id` (the order detail, not the list).
-- Footer link: "View all orders" → `tenantPath("orders")` (current behaviour preserved).
-- Empty state: "No new messages" (so the popover still works if a user clicks an unbadged bell).
-
-Data source is the existing `useUnreadMessagesCustomer()` map. To render order numbers + status in the popover, extend the RPC return slightly OR do a one-shot fetch of `orders(id, order_number, customer_status)` for the IDs in the map. Prefer the second — no migration, keeps the RPC tight.
-
-### 2. Keep the orders-list highlight, but make it louder
-
-The current `border-l-4 border-l-red-500 bg-red-50/40` is genuinely too subtle on a long list. Bump it to:
-
-- Full-card ring: `ring-2 ring-red-500 ring-offset-2`
-- Stronger tint: `bg-red-50` (drop the `/40`)
-- Pill stays as-is (already prominent)
-
-Sort-to-top behaviour stays.
-
-### 3. Deep-link from bell click
-
-When a row in the popover is clicked, navigate to `tenantPath(\`orders/\${orderId}\`)` and close the popover. This is the single most direct answer to "which order does the notification pertain to" — the user never has to scan the list.
-
-## Out of scope
-
-- No DB migration; no changes to `get_unread_message_counts_for_customer`.
-- No changes to staff bell / branch orders page.
-- No realtime channel changes — existing per-instance suffixes stay.
+No changes to:
+- The RPC `get_unread_message_counts_for_customer` (still global; other tenants' bells will continue to work correctly when the user visits them).
+- `CustomerOrders.tsx` (its query is already tenant-scoped via the orders list).
+- Staff bell, realtime channels, routes, or RLS.
 
 ## Files touched
 
-- `src/components/customer/MessagesBell.tsx` — rewrite as Popover with order list.
-- `src/pages/dashboard/CustomerOrders.tsx` — strengthen the unread card styling (2-line change).
+- `src/components/customer/MessagesBell.tsx` — add tenant filter + recompute total.
