@@ -68,7 +68,7 @@ function useUserOrders(userId: string | undefined, tenantId: string | null) {
       let query = supabase
         .from("orders")
         .select(
-          "*, order_items(id, product_family_id, build_status, title, spec, quantity, unit_price), order_jobs(id, product_name, quantity, gross_price, customer_job_status)"
+          "*, branch:branch_id(id, name), order_items(id, product_family_id, build_status, title, spec, quantity, unit_price), order_jobs(id, product_name, quantity, gross_price, customer_job_status)"
         )
         .eq("user_id", userId)
         .order("created_at", { ascending: false });
@@ -255,6 +255,11 @@ const CustomerOrders = () => {
                 >
                   {PAYMENT_LABEL[paymentKey] || paymentKey}
                 </span>
+                {order.branch?.name && (
+                  <span className="inline-flex items-center rounded-full border border-border bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    📍 {order.branch.name}
+                  </span>
+                )}
               </div>
 
               <p className="mt-1 text-sm text-foreground truncate">
@@ -311,6 +316,11 @@ const CustomerOrders = () => {
                 {expiresSoon && (
                   <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800">
                     Expires in {daysLeft}d
+                  </span>
+                )}
+                {order.branch?.name && (
+                  <span className="inline-flex items-center rounded-full border border-border bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    📍 {order.branch.name}
                   </span>
                 )}
               </div>
