@@ -506,6 +506,12 @@ const CustomerOrders = () => {
           </TabsContent>
         </Tabs>
       )}
+      <ReorderPaymentDialog
+        orderId={reorderResult?.id ?? null}
+        orderNumber={reorderResult?.number}
+        currency={reorderResult?.currency}
+        onClose={() => setReorderResult(null)}
+      />
     </div>
   );
 };
