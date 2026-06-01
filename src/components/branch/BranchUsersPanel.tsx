@@ -114,11 +114,20 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
     if (!confirmAction) return;
     const { member, type } = confirmAction;
     try {
-      const action = type === "disable" ? "disable_account" : type === "enable" ? "enable_account" : "force_password_reset";
+      const action =
+        type === "disable" ? "disable_account" :
+        type === "enable" ? "enable_account" :
+        type === "invite" ? "resend_invite" :
+        "force_password_reset";
       await manageUser.mutateAsync({
         action, target_profile_id: member.profile_id, tenant_id: member.tenant_id, app_id: member.app_id,
       });
-      toast.success(type === "disable" ? "Account disabled" : type === "enable" ? "Account enabled" : "Reset email sent");
+      toast.success(
+        type === "disable" ? "Account disabled" :
+        type === "enable" ? "Account enabled" :
+        type === "invite" ? "Invite resent" :
+        "Reset email sent"
+      );
       setConfirmAction(null);
     } catch (e: any) { toast.error(e.message); }
   };
