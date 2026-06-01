@@ -406,19 +406,6 @@ function GAPageViewTracker() {
   return null;
 }
 
-  return (
-    <Routes>
-      {/* Public marketing landing — only when NOT on a tenant subdomain */}
-      {!matched && <Route path="/" element={<MarketingLanding />} />}
-      {/* One-click demo entry */}
-      <Route path="/try" element={<Try />} />
-      <Route path="/pricing" element={<Pricing />} />
-      {/* Authenticated entry: redirects users to their portal */}
-      <Route path="/app" element={<AppEntryRedirect />} />
-      <Route path="*" element={<NotFound />} />
-    </Routes>
-  );
-}
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
