@@ -29,6 +29,7 @@ export default function BranchLayout() {
   const { tenantId, tenantName } = useTenantContext();
   useDocumentBranding(tenantId, tenantName, "Branch Portal");
 
+  return (
     <div className="flex h-screen w-full bg-background">
       <BranchSidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
