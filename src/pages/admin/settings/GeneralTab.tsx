@@ -42,10 +42,12 @@ export function GeneralTab() {
   const bulkUpsert = useBulkUpsertTenantSettings();
   const [tawkEnabled, setTawkEnabled] = useState(false);
   const [tawkPropertyId, setTawkPropertyId] = useState("");
+  const [gaPropertyId, setGaPropertyId] = useState("");
 
   useEffect(() => {
     setTawkEnabled(settingsMap.tawk_enabled === true);
     setTawkPropertyId(String(settingsMap.tawk_property_id || ""));
+    setGaPropertyId(String(settingsMap.ga_property_id || ""));
   }, [settingsMap]);
 
   useEffect(() => {
