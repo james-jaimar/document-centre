@@ -21,6 +21,8 @@ export interface BranchSubscription {
   current_period_start: string | null;
   current_period_end: string | null;
   trial_ends_at: string | null;
+  trial_started_at: string | null;
+  trial_status: "not_started" | "active" | "expired" | "converted" | string;
   cancelled_at: string | null;
   metadata: Record<string, unknown>;
   created_at: string;

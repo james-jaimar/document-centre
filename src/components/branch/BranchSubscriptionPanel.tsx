@@ -80,8 +80,12 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
 
   const billing = subscription?.billing_status || "";
   const status = subscription?.status || "";
-  const isActive = status === "active" || status === "trialing" || billing === "paid";
-  const isPending = !isActive && !!subscription?.assigned_plan_slug;
+  const trialStatus = (subscription as any)?.trial_status || "";
+  const trialEndsAt = (subscription as any)?.trial_ends_at;
+  const inTrial = trialStatus === "active" && trialEndsAt && new Date(trialEndsAt) > new Date();
+  const trialExpired = trialStatus === "expired";
+  const isActive = status === "active" || status === "trialing" || billing === "paid" || inTrial;
+  const isPending = (!isActive && !!subscription?.assigned_plan_slug) || trialExpired;
   const noPlan = !subscription?.assigned_plan_slug;
 
   return (
@@ -106,15 +110,35 @@ export function BranchSubscriptionPanel({ branchId }: { branchId: string }) {
               <div className="flex items-start gap-3">
                 <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
                 <div className="space-y-1">
-                  <p className="font-semibold text-amber-900 dark:text-amber-200">Activate your subscription</p>
+                  <p className="font-semibold text-amber-900 dark:text-amber-200">
+                    {trialExpired ? "Your 14-day trial has ended" : "Activate your subscription"}
+                  </p>
                   <p className="text-sm text-amber-800 dark:text-amber-300">
-                    Plan <strong className="capitalize">{subscription.assigned_plan_slug}</strong> is ready. Complete payment to activate this branch.
+                    Plan <strong className="capitalize">{subscription.assigned_plan_slug}</strong> is ready. Complete payment to {trialExpired ? "keep your branch active" : "activate this branch"}.
                   </p>
                 </div>
               </div>
             </div>
             <Button onClick={handlePay} disabled={loading} size="lg" className="w-full">
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Pay Now
+            </Button>
+          </div>
+        ) : inTrial ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30">
+                <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <p className="text-lg font-semibold capitalize">{subscription?.assigned_plan_slug}</p>
+                <Badge variant="outline" className={statusColors.trialing}>Trial</Badge>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Trial ends {new Date(trialEndsAt!).toLocaleDateString()} — add payment any time to continue without interruption.
+            </p>
+            <Button onClick={handlePay} disabled={loading} size="sm" variant="outline" className="w-full">
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Add payment method
             </Button>
           </div>
         ) : (

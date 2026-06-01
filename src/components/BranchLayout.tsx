@@ -1,10 +1,12 @@
-import { Outlet } from "react-router-dom";
+import { useEffect, useRef } from "react";
+import { Outlet, Link } from "react-router-dom";
 import BranchSidebar from "@/components/BranchSidebar";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useBranchSubscriptionGate } from "@/hooks/useBranchSubscriptions";
 import { useDocumentBranding } from "@/hooks/useDocumentBranding";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle } from "lucide-react";
-import { Link } from "react-router-dom";
 
 function SubscriptionGateBanner() {
   const { branchId, membershipRole } = useTenantContext();
@@ -26,8 +28,27 @@ function SubscriptionGateBanner() {
 }
 
 export default function BranchLayout() {
-  const { tenantId, tenantName } = useTenantContext();
+  const { tenantId, tenantName, branchId } = useTenantContext();
   useDocumentBranding(tenantId, tenantName, "Branch Portal");
+  const qc = useQueryClient();
+  const startedRef = useRef<string | null>(null);
+
+  // Stamp trial_started_at on first authenticated load for this branch
+  useEffect(() => {
+    if (!branchId || startedRef.current === branchId) return;
+    startedRef.current = branchId;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      try {
+        await supabase.functions.invoke("start-branch-trial", { body: { branch_id: branchId } });
+        qc.invalidateQueries({ queryKey: ["branch_subscriptions"] });
+      } catch (e) {
+        console.warn("start-branch-trial failed (non-fatal):", e);
+      }
+    })();
+  }, [branchId, qc]);
+
 
   return (
     <div className="flex h-screen w-full bg-background">
