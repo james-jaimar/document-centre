@@ -213,188 +213,287 @@ const Auth = () => {
     }
   }, [isTenantPortal, branding?.favicon_url]);
 
-  // Build branded background style
-  const bgStyle = useMemo(() => {
+  // Resolve a usable brand colour. Fall back to the portal's slate/red default
+  // (#1a1a2e is the "no brand set" sentinel from useTenantBranding).
+  const brandColor = useMemo(() => {
     if (isTenantPortal && branding?.primary_color && branding.primary_color !== "#1a1a2e") {
-      return {
-        background: `linear-gradient(135deg, ${branding.primary_color} 0%, ${branding.secondary_color || branding.primary_color} 100%)`,
-      };
+      return branding.primary_color;
     }
-    return undefined;
-  }, [isTenantPortal, branding?.primary_color, branding?.secondary_color]);
-
-  const btnStyle = useMemo(() => {
-    if (isTenantPortal && branding?.primary_color && branding.primary_color !== "#1a1a2e") {
-      return { backgroundColor: branding.primary_color, borderColor: branding.primary_color };
-    }
-    return undefined;
+    return null;
   }, [isTenantPortal, branding?.primary_color]);
+
+  // Expose brand colour as a CSS variable so we can tint blobs, focus rings,
+  // and buttons consistently without prop-drilling colours into every element.
+  const brandVarsStyle = useMemo(
+    () =>
+      brandColor
+        ? ({ ["--brand" as any]: brandColor } as React.CSSProperties)
+        : undefined,
+    [brandColor],
+  );
+
+  const primaryBtnStyle = useMemo<React.CSSProperties | undefined>(
+    () =>
+      brandColor
+        ? {
+            backgroundColor: brandColor,
+            borderColor: brandColor,
+            boxShadow: `0 10px 25px -10px ${brandColor}55`,
+          }
+        : undefined,
+    [brandColor],
+  );
+
+  const accentTextStyle = useMemo<React.CSSProperties | undefined>(
+    () => (brandColor ? { color: brandColor } : undefined),
+    [brandColor],
+  );
 
   // Branded splash while tenant + branding load on tenant portals, so the
   // generic Printer icon / default gradient never flashes before the tenant
   // logo and brand colours arrive.
   if (isTenantPortal && (tenantLoading || brandingLoading)) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background" style={bgStyle}>
+      <div className="flex min-h-screen items-center justify-center bg-[#f8f9fa]">
         <div className="flex flex-col items-center gap-6">
           {brandedTenant?.logo_url ? (
             <img
               src={brandedTenant.logo_url}
               alt={brandedTenant?.name ?? ""}
-              className="h-14 w-auto max-w-[220px] object-contain opacity-90"
+              className="h-12 w-auto max-w-[220px] object-contain opacity-80"
             />
           ) : null}
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/30 border-t-white/80" />
+          <div
+            className="h-6 w-6 animate-spin rounded-full border-2 border-gray-200"
+            style={{ borderTopColor: brandColor ?? "#0f172a" }}
+          />
         </div>
       </div>
     );
   }
 
+  const heading = isTenantPortal
+    ? mode === "login"
+      ? `Sign in to ${brandedTenant?.name ?? "your portal"}`
+      : mode === "register"
+      ? "Create your account"
+      : "Reset your password"
+    : mode === "login"
+    ? "Platform sign-in"
+    : mode === "register"
+    ? "Create account"
+    : "Reset password";
+
+  const subheading = isTenantPortal
+    ? mode === "login"
+      ? "Welcome back to the portal"
+      : mode === "register"
+      ? `Join ${brandedTenant?.name ?? "the portal"} to get started`
+      : "Enter your email and we'll send a reset link"
+    : "Platform staff sign-in";
+
   return (
     <div
-      className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[hsl(222,47%,11%)] to-[hsl(215,70%,25%)]"
-      style={bgStyle}
+      className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[#f8f9fa] px-4 py-10"
+      style={brandVarsStyle}
     >
-      <div className="w-full max-w-md px-4">
-        <Card className="shadow-2xl">
-          <CardHeader className="text-center">
+      {/* Atmospheric background blobs — brand-tinted */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div
+          className="absolute -left-[10%] -top-[10%] h-[45%] w-[45%] rounded-full opacity-60 blur-[120px]"
+          style={{
+            background: brandColor
+              ? `radial-gradient(circle, ${brandColor}22 0%, transparent 70%)`
+              : "rgba(15, 23, 42, 0.06)",
+          }}
+        />
+        <div className="absolute -bottom-[10%] -right-[10%] h-[45%] w-[45%] rounded-full bg-slate-200 opacity-40 blur-[120px]" />
+      </div>
+
+      <div className="relative w-full max-w-[460px]">
+        <div className="rounded-3xl border border-gray-100 bg-white p-8 shadow-[0_20px_50px_rgba(0,0,0,0.08)] sm:p-10 md:p-12">
+          {/* Brand Header */}
+          <div className="mb-8 flex flex-col items-center text-center">
             {isTenantPortal && brandedTenant?.logo_url ? (
-              <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center overflow-hidden rounded-xl">
-                <img
-                  src={brandedTenant.logo_url}
-                  alt={`${brandedTenant.name} logo`}
-                  className="max-h-20 max-w-20 object-contain"
-                />
-              </div>
+              <img
+                src={brandedTenant.logo_url}
+                alt={`${brandedTenant.name} logo`}
+                className="mb-6 h-14 w-auto max-w-[220px] object-contain"
+              />
+            ) : isTenantPortal && brandedTenant ? (
+              <span
+                className="mb-6 text-3xl font-black italic uppercase tracking-tighter"
+                style={accentTextStyle}
+              >
+                {brandedTenant.name}
+              </span>
             ) : (
-              <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+              <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-white">
                 <Printer className="h-7 w-7" />
               </div>
             )}
-            <CardTitle className="text-2xl font-bold">
-              {isTenantPortal && brandedTenant
-                ? brandedTenant.name
-                : mode === "login"
-                ? "Welcome Back"
-                : mode === "register"
-                ? "Create Account"
-                : "Reset Password"}
-            </CardTitle>
-            <CardDescription>
-              {isTenantPortal
-                ? mode === "login"
-                  ? `Sign in to ${brandedTenant?.name ?? "your portal"}`
-                  : mode === "register"
-                  ? `Create your ${brandedTenant?.name ?? ""} account`.trim()
-                  : "Enter your email to reset your password"
-                : "Platform staff sign-in"}
-            </CardDescription>
-          </CardHeader>
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900">{heading}</h1>
+            <p className="mt-2 text-sm text-gray-500">{subheading}</p>
+          </div>
 
-          <form onSubmit={submitHandler}>
-            <CardContent className="space-y-4">
-              {!isTenantPortal && (
-                <Alert>
-                  <Info className="h-4 w-4" />
-                  <AlertDescription>
-                    Customer or team member? Sign in through your organisation's portal using the link your admin sent you.
-                  </AlertDescription>
-                </Alert>
-              )}
+          {!isTenantPortal && (
+            <Alert className="mb-5">
+              <Info className="h-4 w-4" />
+              <AlertDescription>
+                Customer or team member? Sign in through your organisation's portal using the link your admin sent you.
+              </AlertDescription>
+            </Alert>
+          )}
 
-              {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
+          {error && (
+            <Alert variant="destructive" className="mb-5">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-              {mode === "register" && isTenantPortal && (
-                <div className="space-y-2">
-                  <Label htmlFor="displayName">Name</Label>
-                  <Input
-                    id="displayName"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="Your name"
-                  />
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+          <form onSubmit={submitHandler} className="space-y-5">
+            {mode === "register" && isTenantPortal && (
+              <div>
+                <label
+                  htmlFor="displayName"
+                  className="mb-2 ml-1 block text-xs font-bold uppercase tracking-wider text-gray-500"
+                >
+                  Name
+                </label>
                 <Input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  required
+                  id="displayName"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="Your name"
+                  className="h-auto rounded-xl border-gray-200 bg-gray-50 px-5 py-4 text-gray-900 placeholder:text-gray-400 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-offset-0"
+                  style={brandColor ? ({ ["--tw-ring-color" as any]: `${brandColor}33` } as React.CSSProperties) : undefined}
                 />
               </div>
+            )}
 
-              {mode !== "forgot" && (
-                <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    autoComplete={mode === "register" ? "new-password" : "current-password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    required
-                  />
-                </div>
-              )}
+            <div>
+              <label
+                htmlFor="email"
+                className="mb-2 ml-1 block text-xs font-bold uppercase tracking-wider text-gray-500"
+              >
+                Email Address
+              </label>
+              <Input
+                id="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@company.com"
+                required
+                className="h-auto rounded-xl border-gray-200 bg-gray-50 px-5 py-4 text-gray-900 placeholder:text-gray-400 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-offset-0"
+              />
+            </div>
 
-              <div className="relative pt-2">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t" />
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-card px-2 text-muted-foreground">Or</span>
-                </div>
-              </div>
-
-              <SocialAuthButtons tenantSlug={tenantSlug ?? null} />
-            </CardContent>
-
-            <CardFooter className="flex flex-col gap-3">
-              <Button type="submit" className="w-full" disabled={loading || gating} style={btnStyle}>
-                {loading
-                  ? "Please wait..."
-                  : mode === "login"
-                  ? "Sign In"
-                  : mode === "register"
-                  ? "Create Account"
-                  : "Send Reset Link"}
-              </Button>
-
-              {/* Only tenant portals expose register / forgot flows. */}
-              {isTenantPortal && (
-                <div className="flex w-full flex-col gap-1 text-center text-sm text-muted-foreground">
-                  {mode === "login" && (
-                    <>
-                      <button type="button" className="hover:text-primary" onClick={() => setMode("forgot")}>
-                        Forgot password?
-                      </button>
-                      <button type="button" className="hover:text-primary" onClick={() => setMode("register")}>
-                        Don't have an account? <span className="font-medium text-primary">Sign up</span>
-                      </button>
-                    </>
-                  )}
-                  {mode !== "login" && (
-                    <button type="button" className="hover:text-primary" onClick={() => setMode("login")}>
-                      Back to sign in
+            {mode !== "forgot" && (
+              <div>
+                <div className="mb-2 ml-1 flex items-center justify-between">
+                  <label
+                    htmlFor="password"
+                    className="block text-xs font-bold uppercase tracking-wider text-gray-500"
+                  >
+                    Password
+                  </label>
+                  {isTenantPortal && mode === "login" && (
+                    <button
+                      type="button"
+                      onClick={() => setMode("forgot")}
+                      className="text-xs font-semibold hover:underline"
+                      style={accentTextStyle}
+                    >
+                      Forgot password?
                     </button>
                   )}
                 </div>
-              )}
-            </CardFooter>
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete={mode === "register" ? "new-password" : "current-password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  className="h-auto rounded-xl border-gray-200 bg-gray-50 px-5 py-4 text-gray-900 placeholder:text-gray-400 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-offset-0"
+                />
+              </div>
+            )}
+
+            <Button
+              type="submit"
+              disabled={loading || gating}
+              className="mt-2 h-auto w-full rounded-xl py-4 text-base font-bold text-white transition-all active:scale-[0.98] hover:brightness-95"
+              style={primaryBtnStyle}
+            >
+              {loading
+                ? "Please wait..."
+                : mode === "login"
+                ? "Sign In"
+                : mode === "register"
+                ? "Create Account"
+                : "Send Reset Link"}
+            </Button>
           </form>
-        </Card>
+
+          {/* Divider */}
+          <div className="relative my-8">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-100" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-white px-4 font-medium tracking-widest text-gray-400">OR</span>
+            </div>
+          </div>
+
+          <SocialAuthButtons tenantSlug={tenantSlug ?? null} />
+
+          {/* Footer link — sign up / back to sign in */}
+          {isTenantPortal && (
+            <div className="mt-8 text-center text-sm text-gray-500">
+              {mode === "login" && (
+                <p>
+                  Don't have an account?{" "}
+                  <button
+                    type="button"
+                    onClick={() => setMode("register")}
+                    className="font-bold hover:underline"
+                    style={accentTextStyle}
+                  >
+                    Sign up
+                  </button>
+                </p>
+              )}
+              {mode !== "login" && (
+                <button
+                  type="button"
+                  onClick={() => setMode("login")}
+                  className="font-bold hover:underline"
+                  style={accentTextStyle}
+                >
+                  Back to sign in
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Security note */}
+        <div className="mt-6 flex items-center justify-center gap-2 text-gray-400">
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+            />
+          </svg>
+          <span className="text-xs font-medium">Secure, encrypted connection</span>
+        </div>
       </div>
     </div>
   );
