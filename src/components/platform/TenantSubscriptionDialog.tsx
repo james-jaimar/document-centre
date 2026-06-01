@@ -228,6 +228,28 @@ export function TenantSubscriptionDialog({ open, onOpenChange, tenant, subscript
         .update({ plan_slug: selectedPlanSlug })
         .eq("id", tenant.id);
 
+      // Cascade plan to tenants.assigned_* + branch_subscriptions
+      let branchesUpdated = 0;
+      try {
+        const { data: cascadeData, error: cascadeErr } = await supabase.functions.invoke(
+          "assign-tenant-plan",
+          {
+            body: {
+              tenant_id: tenant.id,
+              assigned_plan_slug: selectedPlanSlug,
+              assigned_region_id: selectedRegionId,
+              assigned_discount_type: applyDiscount ? discountType : null,
+              assigned_discount_value: applyDiscount ? (parseFloat(discountValue) || 0) : null,
+              assigned_trial_days: parseInt(trialDays) || 0,
+            },
+          }
+        );
+        if (cascadeErr) throw cascadeErr;
+        branchesUpdated = (cascadeData as any)?.branches_updated ?? 0;
+      } catch (e: any) {
+        toast.error(`Saved subscription, but branch cascade failed: ${e.message}`);
+      }
+
       // Increment promo code usage
       if (matchedPromo) {
         await supabase
@@ -238,10 +260,15 @@ export function TenantSubscriptionDialog({ open, onOpenChange, tenant, subscript
 
       queryClient.invalidateQueries({ queryKey: ["tenant_subscriptions"] });
       queryClient.invalidateQueries({ queryKey: ["tenants"] });
+      queryClient.invalidateQueries({ queryKey: ["tenant_plan_assignment"] });
+      queryClient.invalidateQueries({ queryKey: ["branch_subscriptions"] });
+      const branchSuffix = branchesUpdated
+        ? ` (applied to ${branchesUpdated} branch${branchesUpdated === 1 ? "" : "es"})`
+        : "";
       toast.success(
         isFree
-          ? `${selectedPlanSlug} assigned as free for ${tenant.name}`
-          : `${selectedPlanSlug} assigned to ${tenant.name} — pending payment`
+          ? `${selectedPlanSlug} assigned as free for ${tenant.name}${branchSuffix}`
+          : `${selectedPlanSlug} assigned to ${tenant.name} — pending payment${branchSuffix}`
       );
       onOpenChange(false);
     } catch (e: any) {
