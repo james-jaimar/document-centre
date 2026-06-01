@@ -289,11 +289,13 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
               {confirmAction?.type === "disable" && "Disable account?"}
               {confirmAction?.type === "enable" && "Enable account?"}
               {confirmAction?.type === "reset" && "Send password reset?"}
+              {confirmAction?.type === "invite" && "Resend invite email?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirmAction?.type === "disable" && `${confirmAction && displayName(confirmAction.member)} will lose access until re-enabled.`}
               {confirmAction?.type === "enable" && `${confirmAction && displayName(confirmAction.member)} will be able to sign in again.`}
               {confirmAction?.type === "reset" && `A reset email will be sent to ${confirmAction?.member.profiles?.email}.`}
+              {confirmAction?.type === "invite" && `A fresh sign-in link will be sent to ${confirmAction?.member.profiles?.email}. The new link expires in 1 hour.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
