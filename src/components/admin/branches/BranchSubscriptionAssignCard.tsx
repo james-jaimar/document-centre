@@ -50,9 +50,22 @@ export function BranchSubscriptionAssignCard({ branchId }: Props) {
             <Loader2 className="h-4 w-4 animate-spin" /> Loading…
           </div>
         ) : !subscription ? (
-          <p className="text-sm text-muted-foreground">
-            No plan inherited yet. Assign a tenant plan in Settings → Billing to seed this branch.
-          </p>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              No plan inherited yet. Assign a tenant plan in Settings → Billing to seed this branch.
+            </p>
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              className="gap-2"
+              disabled={overrideSubscription.isPending}
+              onClick={handleOverride}
+            >
+              {overrideSubscription.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+              Activate branch / comp subscription
+            </Button>
+          </div>
         ) : (
           <div className="space-y-3 text-sm">
             <div className="flex items-center gap-3 flex-wrap">
