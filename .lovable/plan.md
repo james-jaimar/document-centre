@@ -1,43 +1,59 @@
-## Diagnosis
+## Problem
 
-Your PostNet assignment **did** save — `tenant_subscriptions` has `assigned_plan_slug = 'postnet'`, `billing_status = 'pending_payment'`, updated today at 12:30 UTC. That's why the badge still shows `pending_payment`.
+Customers ordering from any PostNet branch hit:
+> "This branch's subscription is not active. New orders are paused."
 
-What it didn't do is populate the parallel "tenant plan assignment" fields that the rest of the system reads from:
+Root cause: every branch subscription is created with `billing_status = 'pending_payment'` and `status = 'incomplete'` — even when the assigned plan has `price = 0` (e.g. the "Doc Centre Postnet" plan in ZAR/all regions except one is R0). The `order-engine` gate then refuses orders.
 
-- `tenants.assigned_plan_slug` is **NULL**
-- `tenants.assigned_region_id` / `discount_*` / `trial_days` are **NULL**
-- `plan_assigned_at` is stale (May 29)
-- No cascade was run, so `branch_subscriptions` weren't updated
-
-We have two parallel write paths today:
-
-| Path | Writes to | Cascades to branches? |
-|---|---|---|
-| `TenantSubscriptionDialog` (Platform → Subscriptions) | `tenant_subscriptions` + `tenants.plan_slug` | No |
-| `TenantPlanAssignmentCard` → `assign-tenant-plan` edge fn | `tenants.assigned_*` + `apply_tenant_plan_to_branches` RPC | Yes |
-
-So when you assign from the platform dialog, the BillingTab card (and every branch) sees nothing — looks "unsaved".
+For free plans (price 0 or 100% discount) there is nothing to pay, so they should be admitted automatically.
 
 ## Fix
 
-Make `TenantSubscriptionDialog.handleAssign` do both writes in one go:
+### 1. `apply_tenant_plan_to_branches` RPC
 
-1. Keep the existing `tenant_subscriptions` upsert (drives `billing_status`, promo, etc.).
-2. **Also** invoke `assign-tenant-plan` with the same plan/region/discount/trial values so:
-   - `tenants.assigned_plan_slug` + region + discount + trial_days + `plan_assigned_at/by` get set
-   - `apply_tenant_plan_to_branches` cascades to every active branch
-3. Invalidate `tenant_plan_assignment` and `branch_subscriptions` queries alongside the existing invalidations so the BillingTab card refreshes immediately.
-4. Toast wording stays the same; on success include `branches_updated` count.
+When inserting/upserting branch_subscriptions, compute the effective price per branch from `platform_pricing_plans` + tenant discount:
 
-No schema change, no new RPC — just wiring the dialog to the existing edge function that the per-tenant card already uses.
+- Look up the plan row by `(plan_slug, region_id)` (fall back to any region row for the slug if region_id is null).
+- Effective price = `plan.price` with tenant discount applied (`percentage` or `fixed_amount`).
+- If effective price ≤ 0 → `billing_status = 'free'`, `status = 'active'`.
+- Else → `billing_status = 'pending_payment'`, `status = 'incomplete'` (current behaviour).
 
-### File touched
+Also set `status` on insert (currently never set, leaving it null).
 
-- `src/components/platform/TenantSubscriptionDialog.tsx` — extend `handleAssign` (after the `tenant_subscriptions` upsert succeeds) to call `supabase.functions.invoke("assign-tenant-plan", { body: { tenant_id, assigned_plan_slug, assigned_region_id, assigned_discount_type, assigned_discount_value, assigned_trial_days } })`, then invalidate the extra query keys.
+### 2. `assign-branch-plan` edge function
 
-### Out of scope
+Same logic: resolve plan price + discount, set `billing_status`/`status` accordingly instead of hard-coding `pending_payment`.
 
-- Free subscriptions: I'll still call `assign-tenant-plan` so branches inherit the plan; the `billing_status='free'` lives on `tenant_subscriptions` as today.
-- No changes to the edge function, RPCs, or DB.
+### 3. `order-engine` gate
 
-Shall I implement?
+No code change needed — it already treats `billing === 'free'` and `status === 'active'` as allowed. Once the data is right, orders go through.
+
+### 4. Backfill existing PostNet (and any other free-plan) rows
+
+One-off SQL inside the migration:
+
+```sql
+UPDATE branch_subscriptions bs
+SET billing_status = 'free', status = 'active', updated_at = now()
+FROM platform_pricing_plans p
+WHERE bs.assigned_plan_slug = p.plan_slug
+  AND (bs.region_id = p.region_id OR bs.region_id IS NULL)
+  AND p.price = 0
+  AND bs.billing_status = 'pending_payment';
+```
+
+(Same idea extended to honour 100% discounts.)
+
+## Files
+
+- `supabase/functions/order-engine/index.ts` — no change
+- `supabase/functions/assign-branch-plan/index.ts` — price/discount aware billing_status
+- New migration:
+  - replace `apply_tenant_plan_to_branches` with price-aware version
+  - backfill `branch_subscriptions` for already-assigned free plans
+
+## Out of scope
+
+- Per-branch Stripe checkout for paid plans (unchanged).
+- Tenant-level Subscription card (already simplified).
+- Trial logic (`trial_days` > 0) — current code leaves trial handling to Stripe flow; not changed here.
