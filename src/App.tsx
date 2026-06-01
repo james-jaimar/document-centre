@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/useAuth";
 import { TenantProvider } from "@/hooks/useTenantContext";
+import { useGAPageViews } from "@/hooks/useGAPageViews";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
 import BranchLayout from "@/components/BranchLayout";
@@ -396,18 +397,15 @@ function AppRoutes() {
           <Route path="audit" element={<PlatformDocumentCentreAudit />} />
         </Route>
       </Route>
-
-      {/* Public marketing landing — only when NOT on a tenant subdomain */}
-      {!matched && <Route path="/" element={<MarketingLanding />} />}
-      {/* One-click demo entry */}
-      <Route path="/try" element={<Try />} />
-      <Route path="/pricing" element={<Pricing />} />
-      {/* Authenticated entry: redirects users to their portal */}
-      <Route path="/app" element={<AppEntryRedirect />} />
-      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }
+
+function GAPageViewTracker() {
+  useGAPageViews();
+  return null;
+}
+
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -415,6 +413,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <GAPageViewTracker />
         <SubdomainWrapper>
           <AuthProvider>
             <TenantProvider>

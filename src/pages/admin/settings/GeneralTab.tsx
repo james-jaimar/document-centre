@@ -42,10 +42,12 @@ export function GeneralTab() {
   const bulkUpsert = useBulkUpsertTenantSettings();
   const [tawkEnabled, setTawkEnabled] = useState(false);
   const [tawkPropertyId, setTawkPropertyId] = useState("");
+  const [gaPropertyId, setGaPropertyId] = useState("");
 
   useEffect(() => {
     setTawkEnabled(settingsMap.tawk_enabled === true);
     setTawkPropertyId(String(settingsMap.tawk_property_id || ""));
+    setGaPropertyId(String(settingsMap.ga_property_id || ""));
   }, [settingsMap]);
 
   useEffect(() => {
@@ -281,6 +283,52 @@ export function GeneralTab() {
             disabled={bulkUpsert.isPending}
           >
             <Save className="mr-2 h-4 w-4" /> Save Chat Settings
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Google Analytics Integration */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Globe className="h-5 w-5" />
+            Google Analytics
+          </CardTitle>
+          <CardDescription>
+            Connect your own Google Analytics 4 property to track visitors on your storefront.
+            The platform property (G-12WFPWNXJX) always tracks globally — this adds your own view.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4 max-w-lg">
+          <div className="space-y-2">
+            <Label htmlFor="ga-property">GA4 Measurement ID</Label>
+            <Input
+              id="ga-property"
+              value={gaPropertyId}
+              onChange={(e) => setGaPropertyId(e.target.value)}
+              placeholder="e.g. G-POSTNET-XXXX"
+            />
+            <p className="text-xs text-muted-foreground">
+              Find this in your Google Analytics property → Admin → Data Streams → Web stream details.
+              Leave blank to use platform tracking only.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              try {
+                await bulkUpsert.mutateAsync([
+                  { category: "integrations", setting_key: "ga_property_id", setting_value: gaPropertyId, value_type: "string" },
+                ]);
+                toast.success("Analytics settings saved");
+              } catch (e: any) {
+                toast.error(e.message);
+              }
+            }}
+            disabled={bulkUpsert.isPending}
+          >
+            <Save className="mr-2 h-4 w-4" /> Save Analytics Settings
           </Button>
         </CardContent>
       </Card>

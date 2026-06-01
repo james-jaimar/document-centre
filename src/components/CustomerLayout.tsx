@@ -13,6 +13,7 @@ import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import TenantChatWidget from "@/components/TenantChatWidget";
 import { useTenantSettingsMap } from "@/hooks/useTenantSettings";
+import { useTenantGA } from "@/hooks/useTenantGA";
 import { BranchProvider } from "@/contexts/BranchContext";
 import BranchPicker from "@/components/BranchPicker";
 import { useDeviceKind } from "@/hooks/useDeviceKind";
@@ -51,6 +52,8 @@ function CustomerLayoutInner() {
   const { tenant, loading: tenantLoading } = useTenantFromSlug();
   const { data: branding, isLoading: brandingLoading } = useTenantBranding(tenant?.id ?? null);
   const { settingsMap: integrations } = useTenantSettingsMap("integrations");
+  useTenantGA(integrations.ga_property_id as string | undefined);
+
   // True once both the tenant lookup AND branding fetch have settled. When a
   // slug is present in the URL we must wait for BOTH — otherwise the layout
   // paints with default Document Centre colours before the tenant record
