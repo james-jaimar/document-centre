@@ -57,16 +57,22 @@ function normaliseOrigin(s: string): string | null {
 export function buildAppVerifyLink(
   appOrigin: string,
   linkData: any,
-  next: string = "/reset-password"
+  next: string = "/reset-password",
+  slugPrefix?: string | null
 ): string | null {
   const props = linkData?.properties;
   const hashedToken = props?.hashed_token;
   const verificationType = props?.verification_type || "recovery";
   if (!hashedToken || !appOrigin) return null;
 
-  const u = new URL(`${appOrigin}/auth/verify`);
+  const prefix = slugPrefix ? `/t/${slugPrefix}` : "";
+  const nextWithPrefix = slugPrefix && next.startsWith("/") && !next.startsWith("/t/")
+    ? `${prefix}${next}`
+    : next;
+
+  const u = new URL(`${appOrigin}${prefix}/auth/verify`);
   u.searchParams.set("token_hash", hashedToken);
   u.searchParams.set("type", verificationType);
-  u.searchParams.set("next", next);
+  u.searchParams.set("next", nextWithPrefix);
   return u.toString();
 }

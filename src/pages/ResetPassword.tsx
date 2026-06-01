@@ -43,7 +43,12 @@ const ResetPassword = () => {
       if (error) throw error;
       toast.success("Password updated successfully. Please sign in with your new password.");
       await supabase.auth.signOut();
-      navigate("/auth", { replace: true });
+      // Stay within the tenant portal if we're under /t/:slug[/:branchSlug]
+      const m = window.location.pathname.match(/^\/t\/([^/]+)(?:\/([^/]+))?/);
+      const authPath = m
+        ? (m[2] ? `/t/${m[1]}/${m[2]}/auth` : `/t/${m[1]}/auth`)
+        : "/auth";
+      navigate(authPath, { replace: true });
     } catch (err: any) {
       toast.error(err.message);
     } finally {
