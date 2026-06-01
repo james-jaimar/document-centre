@@ -200,6 +200,9 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
                         <Button variant="ghost" size="icon"><MoreVertical size={14} /></Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-56 bg-popover">
+                        <DropdownMenuItem onClick={() => setConfirmAction({ member: m, type: "invite" })}>
+                          <Mail size={14} className="mr-2" /> Resend invite email
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setConfirmAction({ member: m, type: "reset" })}>
                           <KeyRound size={14} className="mr-2" /> Send password reset
                         </DropdownMenuItem>
