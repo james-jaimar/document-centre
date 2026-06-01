@@ -397,6 +397,14 @@ function AppRoutes() {
           <Route path="audit" element={<PlatformDocumentCentreAudit />} />
         </Route>
       </Route>
+    </Routes>
+  );
+}
+
+function GAPageViewTracker() {
+  useGAPageViews();
+  return null;
+}
 
   return (
     <Routes>
