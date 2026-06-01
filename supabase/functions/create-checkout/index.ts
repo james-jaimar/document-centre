@@ -139,12 +139,20 @@ Deno.serve(async (req) => {
     success_url: body.success_url,
     cancel_url: body.cancel_url,
     subscription_data: {
+      description: "Document Centre subscription — Jaimar Developments Ltd t/a Document Centre",
       metadata: {
         tenant_id: body.tenant_id,
         plan_slug: plan?.plan_slug || "starter",
+        legal_entity: "Jaimar Developments Ltd",
+        company_number: "17071122",
+        trading_name: "Document Centre",
       },
     },
-    metadata: { tenant_id: body.tenant_id },
+    metadata: {
+      tenant_id: body.tenant_id,
+      legal_entity: "Jaimar Developments Ltd",
+      company_number: "17071122",
+    },
   };
 
   // Add trial period if specified
