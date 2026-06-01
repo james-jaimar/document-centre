@@ -398,6 +398,8 @@ function AppRoutes() {
         </Route>
       </Route>
 
+  return (
+    <Routes>
       {/* Public marketing landing — only when NOT on a tenant subdomain */}
       {!matched && <Route path="/" element={<MarketingLanding />} />}
       {/* One-click demo entry */}
@@ -416,6 +418,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <GAPageViewTracker />
         <SubdomainWrapper>
           <AuthProvider>
             <TenantProvider>
