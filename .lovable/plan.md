@@ -1,28 +1,39 @@
-## Why document-centre.com is blank
+## What happened
 
-- `document-centre.com` is the **platform marketing site**, not a tenant.
-- In `src/App.tsx`, the root route `/` is only registered when `useSubdomainTenant().matched === true` (a tenant whose `custom_domain` matches the current host).
-- For document-centre.com, no tenant row matches, so `matched` is `false`, the `/` block is skipped, and no route matches `/` — React Router renders nothing (blank). Console confirms: `No routes matched location "/"`.
-- `MarketingLanding` is already imported in `App.tsx` but never attached to a route.
+Nothing in the recent trial/onboarding work touched the marketing site. `/pricing` and `/try` were **never registered as routes** in `src/App.tsx` — previously they fell into a blank "no route matched" state, now they hit the new `*` → `NotFound` catch-all, so the breakage is now visible.
+
+## Audit of every link on the marketing site
+
+From `src/pages/MarketingLanding.tsx`:
+
+| Link | Route registered? | Page file exists? |
+|---|---|---|
+| `/auth` | yes | yes |
+| `/auth?mode=register` | yes (same route) | yes |
+| `/contact` | yes | yes |
+| `/privacy` | yes | yes |
+| `/terms` | yes | yes |
+| `/pricing` | **NO** | yes (`src/pages/Pricing.tsx`) |
+| `/try` | **NO** | yes (`src/pages/Try.tsx`) |
+| `#features`, `#how-it-works` | n/a (in-page anchors) | n/a |
+| `/#features`, `/#how-it-works` (footer) | resolves to `/` then scrolls | works |
+| `mailto:hello@document-centre.com` | n/a | n/a |
 
 ## Fix
 
-In `src/AppRoutes` (`src/App.tsx`):
+In `src/App.tsx`:
 
-1. When `matched` is **false** (i.e. we're on the platform host, not a tenant host), register:
-   - `<Route path="/" element={<MarketingLanding />} />`
-2. Keep the existing `matched === true` branch unchanged so tenant custom domains continue to render `CustomerLayout` at `/`.
-3. Add a final catch-all so any unknown path renders the existing `NotFound` page instead of going blank:
-   - `<Route path="*" element={<NotFound />} />` (import from `@/pages/NotFound`, which already exists).
+1. Import `Pricing` from `@/pages/Pricing` and `Try` from `@/pages/Try`.
+2. Add two routes alongside the existing public ones (next to `/contact`):
+   ```tsx
+   <Route path="/pricing" element={<Pricing />} />
+   <Route path="/try" element={<Try />} />
+   ```
 
-That's all — no DB, edge function, or styling changes. The marketing page itself (`MarketingLanding.tsx`) is already built and uses the `dc-marketing` brand tokens.
+No other changes. Marketing page itself, brand tokens, and footer links remain untouched.
 
-## Files touched
+## Verification
 
-- `src/App.tsx` — add two `<Route>` lines and (if not already imported) `import NotFound from "@/pages/NotFound"`.
-
-## Verification after build
-
-- Visit `https://document-centre.com/` → marketing landing renders.
-- Visit a tenant custom domain → still renders `CustomerLayout` (unchanged path).
-- Visit `https://document-centre.com/some-bogus-url` → `NotFound` page instead of blank.
+- Visit `/pricing` → renders the Pricing page.
+- Visit `/try` → renders the Try page.
+- Click every header/footer link on the landing page — none should 404.

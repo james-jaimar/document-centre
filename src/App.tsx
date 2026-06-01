@@ -172,6 +172,8 @@ function AppRoutes() {
       <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="/terms" element={<TermsOfService />} />
       <Route path="/contact" element={<Contact />} />
+      <Route path="/pricing" element={<Pricing />} />
+      <Route path="/try" element={<Try />} />
 
       {/* Public mobile upload — no auth required */}
       <Route path="/upload/:token" element={<MobileUpload />} />
