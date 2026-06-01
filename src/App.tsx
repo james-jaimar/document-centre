@@ -166,7 +166,11 @@ function AppRoutes() {
       <Route path="/t/:slug/auth/callback" element={<AuthCallback />} />
       <Route path="/t/:slug/:branchSlug/auth/callback" element={<AuthCallback />} />
       <Route path="/auth/verify" element={<AuthVerify />} />
+      <Route path="/t/:slug/auth/verify" element={<AuthVerify />} />
+      <Route path="/t/:slug/:branchSlug/auth/verify" element={<AuthVerify />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/t/:slug/reset-password" element={<ResetPassword />} />
+      <Route path="/t/:slug/:branchSlug/reset-password" element={<ResetPassword />} />
 
       {/* Public legal pages */}
       <Route path="/privacy" element={<PrivacyPolicy />} />

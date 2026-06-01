@@ -1,49 +1,47 @@
-# Branch invite link expired
+## Problem
 
-## What happened
+Branch staff receive invites, but the password-set page and the post-reset sign-in page render at `document-centre.com/reset-password` and `document-centre.com/auth` — the platform shell, not the tenant's branded portal (e.g. PostNet Print Centre at `/t/postnet`). The tenant identity is lost as soon as the user clicks the email link.
 
-I confirmed in the database that James Hawkins (`hello@printmypics.co`) was invited successfully this morning:
+## Root cause
 
-- Profile created `2026-06-01 12:23:23 UTC`
-- `tenant_memberships` row exists with `role = branch_manager` on the Test Branch
-- He clicked the link around `16:14 UTC` — **roughly 4 hours later**
-
-The invite email contains a Supabase **recovery** link generated via `admin.auth.admin.generateLink({ type: "recovery", ... })` in `supabase/functions/invite-member/index.ts`. Supabase's default expiry for recovery/OTP links is **1 hour**. That's why `AuthVerify.tsx` showed "This link has expired or has already been used."
-
-So nothing is broken — the link simply timed out. But two real gaps need fixing:
-
-1. There is **no "Resend invite" action on the Branch detail page** (`BranchUsersPanel`). Resend exists on Admin Users and Platform Users, but not where you invited James from.
-2. A 1-hour window is too short for real-world invites (people open mail later in the day).
+1. `invite-member` builds the action link as `${appOrigin}/auth/verify?...&next=/reset-password` — no tenant slug in the path.
+2. `ResetPassword.tsx` always redirects to `/auth` after a successful update — no tenant slug either.
+3. There are no `/t/:slug/reset-password` or `/t/:slug/auth/verify` routes, so even if the link contained the slug the page wouldn't mount under the tenant shell.
 
 ## Plan
 
-### 1. Unblock James now
-Use the existing `manage-user` Edge Function (`action: "resend_invite"`) to send him a fresh link. I'll trigger this for his profile so he gets a working email immediately.
+### 1. Add tenant-scoped routes (`src/App.tsx`)
+Inside the existing storefront tenant route group (alongside `/t/:slug/auth`), add:
+- `/t/:slug/auth/verify` → `<AuthVerify />`
+- `/t/:slug/reset-password` → `<ResetPassword />`
+- `/t/:slug/:branchSlug/auth/verify` and `/t/:slug/:branchSlug/reset-password` for branch-aware parity
 
-### 2. Add "Resend invite" to the Branch users panel
-In `src/components/branch/BranchUsersPanel.tsx`, add a row action (dropdown or icon button) that calls `useManageUser` with `resend_invite` for any branch member. Same confirm-dialog pattern as `AdminUsers.tsx`. Show "Invite resent" toast on success.
+These mount inside the same storefront layout that already applies tenant branding (logo, primary colour, portal name), so the password page will look like the tenant's portal.
 
-### 3. Extend the link lifetime
-Recovery-link TTL is a project-wide auth setting and can't be changed per-link from the Edge Function. Two options:
+### 2. Build tenant-prefixed links in `invite-member` (`supabase/functions/invite-member/index.ts`)
+- Look up the tenant slug (already have `tenant_id`) and pass it to a new helper variant `buildAppVerifyLink(appOrigin, linkData, next, slugPrefix?)`.
+- The generated link becomes:
+  `https://document-centre.com/t/postnet/auth/verify?token_hash=...&type=recovery&next=/t/postnet/reset-password`
+- Apply the same change to `request-password-reset` and `manage-user` (resend invite) so all flows are consistent. `invite-platform-admin` stays unprefixed (no tenant).
 
-- **(A) Raise the Supabase Auth OTP/recovery expiry** to e.g. 24 hours via the Auth settings (Dashboard → Auth → Email). I'll point you at the exact toggle; only you can change it. Lowest-effort, biggest payoff.
-- **(B) Stop using `type: "recovery"` for invites and switch to `type: "invite"`** (longer default, 7 days), then handle the resulting `#access_token` flow in `AuthVerify` / `ResetPassword`. More code, but invites become first-class.
+### 3. Post-reset redirect to the tenant's sign-in (`src/pages/ResetPassword.tsx`)
+- Read the current location: if the path starts with `/t/:slug` (or `/t/:slug/:branchSlug`), navigate to `/t/:slug/auth` (or `/t/:slug/:branchSlug/auth`) on success instead of `/auth`.
+- Keep `/auth` fallback for platform/staff resets.
 
-I recommend **(A) now** and consider **(B)** later if you want week-long invite windows without touching auth settings.
-
-### 4. Friendlier expired-link screen
-On `AuthVerify.tsx`, when the token is expired, show a "Request a new invite" button that calls a small public endpoint (or instruct the user to contact their admin). Today it's a dead-end message.
-
-## Technical notes
-
-- No DB migrations needed.
-- `manage-user` already audits resend events into `user_admin_audit` (`kind: "resend_invite"`), so we get a trail for free.
-- The Resend action in `BranchUsersPanel` must be gated to tenant owner/admin and the branch manager themselves (matches `manage-user` permission checks).
-- For option (A), the setting lives at: Supabase Dashboard → Authentication → Providers → Email → "Email OTP Expiration".
+### 4. `AuthVerify` already honours `next` from query, so no change needed beyond mounting it at the tenant path so any branded chrome (if added later) is consistent.
 
 ## Out of scope
 
-- Branch subscription gating (already resolved in the prior loop).
-- Changing the email template or copy.
+- Custom subdomains per tenant (e.g. `postnet.document-centre.com`) — still possible later by setting `branding.portal_url`, which `resolveAppOrigin` already prefers.
+- Changing the email sender domain.
 
-Shall I proceed with steps 1, 2, and 4, and leave the auth-settings change (step 3A) for you to flip in the dashboard?
+## Files touched
+
+- `src/App.tsx` — add 4 routes
+- `src/pages/ResetPassword.tsx` — tenant-aware post-reset redirect
+- `supabase/functions/_shared/buildAuthLink.ts` — add optional slug prefix
+- `supabase/functions/invite-member/index.ts` — pass slug
+- `supabase/functions/request-password-reset/index.ts` — pass slug
+- `supabase/functions/manage-user/index.ts` — pass slug
+
+No DB migration required.

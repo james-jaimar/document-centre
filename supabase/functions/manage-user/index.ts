@@ -177,14 +177,19 @@ Deno.serve(async (req) => {
         const appOrigin = await resolveAppOrigin(admin, tenant_id ?? null, callerOrigin);
         if (!appOrigin) return err("Could not resolve app URL for verification link", 500);
 
+        const { data: tenantSlugRow } = tenant_id
+          ? await admin.from("tenants").select("slug").eq("id", tenant_id).maybeSingle()
+          : { data: null as any };
+        const tenantSlug = (tenantSlugRow as any)?.slug ?? null;
+
         const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
           type: "recovery",
           email: targetEmail,
-          options: { redirectTo: `${appOrigin}/reset-password` },
+          options: { redirectTo: `${appOrigin}${tenantSlug ? `/t/${tenantSlug}` : ""}/reset-password` },
         });
         if (linkErr) return err(`Failed to generate link: ${linkErr.message}`);
 
-        const actionLink = buildAppVerifyLink(appOrigin, linkData, "/reset-password");
+        const actionLink = buildAppVerifyLink(appOrigin, linkData, "/reset-password", tenantSlug);
         if (!actionLink) return err("Failed to build verification link", 500);
 
         // Resolve tenant branding for the email body

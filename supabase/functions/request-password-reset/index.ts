@@ -71,10 +71,15 @@ Deno.serve(async (req) => {
       });
     }
 
+    const { data: tenantSlugRow } = tenant?.id
+      ? await admin.from("tenants").select("slug").eq("id", tenant.id).maybeSingle()
+      : { data: null as any };
+    const tenantSlug = (tenantSlugRow as any)?.slug ?? null;
+
     const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
       type: "recovery",
       email,
-      options: { redirectTo: `${appOrigin}/reset-password` },
+      options: { redirectTo: `${appOrigin}${tenantSlug ? `/t/${tenantSlug}` : ""}/reset-password` },
     });
     if (linkErr) {
       return new Response(JSON.stringify({ error: linkErr.message }), {
@@ -83,7 +88,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const actionLink = buildAppVerifyLink(appOrigin, linkData, "/reset-password");
+    const actionLink = buildAppVerifyLink(appOrigin, linkData, "/reset-password", tenantSlug);
     if (!actionLink) {
       return new Response(JSON.stringify({ error: "Failed to build link" }), {
         status: 500,
