@@ -52,7 +52,7 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
   );
 
   const [removeTarget, setRemoveTarget] = useState<TenantMemberRow | null>(null);
-  const [confirmAction, setConfirmAction] = useState<{ member: TenantMemberRow; type: "disable" | "enable" | "reset" } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ member: TenantMemberRow; type: "disable" | "enable" | "reset" | "invite" } | null>(null);
   const [setPasswordTarget, setSetPasswordTarget] = useState<TenantMemberRow | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [settingPassword, setSettingPassword] = useState(false);
