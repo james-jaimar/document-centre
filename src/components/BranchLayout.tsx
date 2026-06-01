@@ -1,10 +1,12 @@
-import { Outlet } from "react-router-dom";
+import { useEffect, useRef } from "react";
+import { Outlet, Link } from "react-router-dom";
 import BranchSidebar from "@/components/BranchSidebar";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useBranchSubscriptionGate } from "@/hooks/useBranchSubscriptions";
 import { useDocumentBranding } from "@/hooks/useDocumentBranding";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle } from "lucide-react";
-import { Link } from "react-router-dom";
 
 function SubscriptionGateBanner() {
   const { branchId, membershipRole } = useTenantContext();
