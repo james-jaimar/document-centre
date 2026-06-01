@@ -13,6 +13,7 @@ import { Save, Clock, Truck, MapPin, Phone, IdCard, CreditCard, Mail, Users, Wal
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import BranchIdentityBankingCard from "@/components/branch/BranchIdentityBankingCard";
 import { PaymentGatewaysCard } from "@/components/payments/PaymentGatewaysCard";
+import { PayFastQuickStartGuide } from "@/components/branch/PayFastQuickStartGuide";
 import { BranchEmailAccountsPanel } from "@/components/branch/BranchEmailAccountsPanel";
 import { BranchUsersPanel } from "@/components/branch/BranchUsersPanel";
 import { BranchSubscriptionPanel } from "@/components/branch/BranchSubscriptionPanel";
@@ -148,7 +149,8 @@ const BranchSettings = () => {
           )}
         </TabsContent>
 
-        <TabsContent value="payments">
+        <TabsContent value="payments" className="space-y-4">
+          <PayFastQuickStartGuide />
           {tenantId && (
             <PaymentGatewaysCard scope="branch" scopeId={branch.id} tenantId={tenantId} />
           )}
