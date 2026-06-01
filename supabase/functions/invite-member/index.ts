@@ -302,16 +302,23 @@ Deno.serve(async (req) => {
         if (!appOrigin) {
           console.error("Could not resolve app origin for invite link");
         } else {
+          const { data: tenantSlugRow } = await admin
+            .from("tenants")
+            .select("slug")
+            .eq("id", tenant_id)
+            .maybeSingle();
+          const tenantSlug = (tenantSlugRow as any)?.slug ?? null;
+
           const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
             type: "recovery",
             email: cleanEmail,
-            options: { redirectTo: `${appOrigin}/reset-password` },
+            options: { redirectTo: `${appOrigin}${tenantSlug ? `/t/${tenantSlug}` : ""}/reset-password` },
           });
 
           if (linkErr) {
             console.error("generateLink error:", linkErr);
           } else {
-            actionLink = buildAppVerifyLink(appOrigin, linkData, "/reset-password");
+            actionLink = buildAppVerifyLink(appOrigin, linkData, "/reset-password", tenantSlug);
           }
         }
       } catch (e) {
