@@ -1,7 +1,12 @@
 import { Outlet } from "react-router-dom";
 import AppSidebar from "@/components/AppSidebar";
+import { useTenantContext } from "@/hooks/useTenantContext";
+import { useDocumentBranding } from "@/hooks/useDocumentBranding";
 
 export default function AppLayout() {
+  const { tenantId, tenantName } = useTenantContext();
+  useDocumentBranding(tenantId, tenantName, "Admin");
+
   return (
     <div className="flex h-screen w-full bg-background">
       <AppSidebar />

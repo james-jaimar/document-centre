@@ -1,49 +1,32 @@
-## Goal
+# Tenant-branded favicon & title for store admin
 
-Bring the tenant login screen (`/t/postnet/auth`) up to the same polish as the PostNet portal: replace the generic blue printer icon + flat red gradient with a properly branded, on-brand sign-in experience.
+Right now the customer storefront (`CustomerLayout`) and tenant auth page already swap the favicon to `branding.favicon_url`, but the **branch admin** (`/branch/*`) and **tenant admin** (`/admin/*`) portals keep the default Document Centre favicon + "Document Centre — Web-to-Print SaaS" tab title. When a PostNet branch user is logged in, the browser tab still reads like our SaaS, not their store.
 
-## What's wrong today
+## Changes
 
-Looking at the current screen vs. the portal:
-- **Wrong logo**: shows a generic blue printer square instead of the actual PostNet logo (we already fetch `brandedTenant.logo_url` — it just isn't being used prominently).
-- **Flat background**: a plain red-to-grey diagonal gradient with no depth, texture, or brand cue.
-- **Generic card**: white rounded card with no PostNet personality, no print-shop motif, no supporting copy.
-- **Button is raw `#FF0000`** rather than the refined PostNet red used elsewhere in the portal.
-- **No visual continuity** with the portal's glassmorphic "Printflow" aesthetic the rest of the tenant surface uses.
+1. **New hook `src/hooks/useDocumentBranding.ts`**
+   - Inputs: `tenantId`, optional `suffix` (e.g. `"Admin"`, `"Branch Portal"`).
+   - Reads `useTenantBranding(tenantId)` to get `favicon_url` and `portal_name`; falls back to `tenantName` from `useTenantContext`.
+   - On mount / change:
+     - Sets `document.title` to `` `${portal_name || tenantName} — ${suffix}` `` (skips if no tenant resolved).
+     - Updates `<link rel="icon">` href to `favicon_url` when present.
+   - On unmount: restores the original title + favicon (same pattern as `CustomerLayout`).
 
-## Approach
+2. **Wire it into the two admin layouts**
+   - `src/components/AppLayout.tsx` — used by `/admin/*` routes. Call `useDocumentBranding(tenantId, "Admin")`.
+   - `src/components/BranchLayout.tsx` — used by `/branch/*` routes. Call `useDocumentBranding(tenantId, "Branch Portal")`.
+   - Both pull `tenantId` from `useTenantContext()`.
 
-Treat this as a visual refinement of an existing screen. Keep all auth logic, routes, gating, social login, and copy untouched — only the presentation layer of `src/pages/Auth.tsx` (and any small token additions) changes.
+3. **Leave untouched**
+   - `index.html` static defaults (used on platform `/platform/*`, marketing, and pre-tenant loading).
+   - `CustomerLayout` and `Auth.tsx` already self-manage favicon — refactor them to use the new hook as a follow-up only if trivial; not required for this change.
 
-Two-step ritual:
+## Result
 
-1. **Generate 3 rendered design directions** for the tenant-branded sign-in card, locked to:
-   - PostNet red primary, white surface, dark ink text
-   - Tenant logo (`brandedTenant.logo_url`) as the hero mark — no fallback printer icon when a tenant logo exists
-   - Same card contents (email, password, OR divider, Google button, Sign In, Forgot / Sign up links)
-   - Responsive, works at the current 1484-wide viewport and on mobile
-   
-   The three directions vary in composition/atmosphere only — e.g.
-   - **A. Split-screen editorial** — left brand panel with large logo + tagline + subtle print-shop texture, right clean form panel
-   - **B. Centred premium card** — single elevated glass card on a rich layered PostNet-red backdrop (radial glow, subtle paper grain), refined typography
-   - **C. Full-bleed branded canvas** — immersive red gradient with brand pattern (envelopes/parcels motif), floating frosted card
+- PostNet branch user on `/branch/orders` → tab shows `PostNet Print Centre — Branch Portal` with the PostNet favicon.
+- Tenant owner on `/admin/settings` → tab shows `PostNet Print Centre — Admin` with the PostNet favicon.
+- Platform admin on `/platform/*` → unchanged Document Centre branding.
 
-2. **Ask the user to pick one** via a prototype question, then implement only the chosen direction.
+## Out of scope
 
-## Scope
-
-In scope:
-- `src/pages/Auth.tsx` presentation (layout, background, logo treatment, card chrome, button styling, spacing, typography)
-- Small additions to `src/index.css` / tenant branding hookup if needed for tokens or background effects
-- Applies to **tenant** auth (`/t/:slug/auth`) — uses existing `brandedTenant` + `branding` already loaded in the page
-- Platform `/auth` keeps its current treatment (different audience, different brand)
-
-Out of scope:
-- Auth logic, gating effect, role routing, sign-out behaviour
-- `AuthCallback`, `AuthVerify`, `ResetPassword` pages
-- Tenant branding data model / `useTenantBranding`
-- Any backend/Supabase changes
-
-## Next step
-
-On approval I'll capture the current login screen, generate the 3 directions, and come back with a prototype picker.
+Auth flow, routing, branding data model, storefront pages, platform pages, og/meta tags.

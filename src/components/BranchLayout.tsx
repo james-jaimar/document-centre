@@ -2,6 +2,7 @@ import { Outlet } from "react-router-dom";
 import BranchSidebar from "@/components/BranchSidebar";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { useBranchSubscriptionGate } from "@/hooks/useBranchSubscriptions";
+import { useDocumentBranding } from "@/hooks/useDocumentBranding";
 import { AlertCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 
