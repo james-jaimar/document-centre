@@ -13,6 +13,7 @@ import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import TenantChatWidget from "@/components/TenantChatWidget";
 import { useTenantSettingsMap } from "@/hooks/useTenantSettings";
+import { useTenantGA } from "@/hooks/useTenantGA";
 import { BranchProvider } from "@/contexts/BranchContext";
 import BranchPicker from "@/components/BranchPicker";
 import { useDeviceKind } from "@/hooks/useDeviceKind";
