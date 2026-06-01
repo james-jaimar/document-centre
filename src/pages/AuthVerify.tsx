@@ -36,8 +36,12 @@ export default function AuthVerify() {
       });
       if (error) {
         setStatus("error");
+        const msg = (error.message || "").toLowerCase();
+        const isExpired = msg.includes("expired") || msg.includes("invalid") || msg.includes("otp");
         setErrorMsg(
-          "This link has expired or has already been used. Please ask your admin to resend the invitation."
+          isExpired
+            ? "This sign-in link has expired (links are valid for 1 hour) or has already been used. Ask your admin to click \"Resend invite email\" from your branch staff page, and use the fresh link as soon as you receive it."
+            : "We couldn't verify this link. Please ask your admin to resend the invitation."
         );
         return;
       }
