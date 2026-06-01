@@ -206,6 +206,66 @@ export type Database = {
           },
         ]
       }
+      branch_onboarding_progress: {
+        Row: {
+          branch_id: string
+          branding_done: boolean
+          company_details_done: boolean
+          completed_at: string | null
+          created_at: string
+          dismissed_at: string | null
+          email_settings_done: boolean
+          first_order_done: boolean
+          payfast_done: boolean
+          team_invited: boolean
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          branch_id: string
+          branding_done?: boolean
+          company_details_done?: boolean
+          completed_at?: string | null
+          created_at?: string
+          dismissed_at?: string | null
+          email_settings_done?: boolean
+          first_order_done?: boolean
+          payfast_done?: boolean
+          team_invited?: boolean
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          branch_id?: string
+          branding_done?: boolean
+          company_details_done?: boolean
+          completed_at?: string | null
+          created_at?: string
+          dismissed_at?: string | null
+          email_settings_done?: boolean
+          first_order_done?: boolean
+          payfast_done?: boolean
+          team_invited?: boolean
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "branch_onboarding_progress_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: true
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "branch_onboarding_progress_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       branch_payment_gateways: {
         Row: {
           branch_id: string
@@ -370,6 +430,8 @@ export type Database = {
           tenant_id: string
           trial_days: number | null
           trial_ends_at: string | null
+          trial_started_at: string | null
+          trial_status: string
           updated_at: string
         }
         Insert: {
@@ -395,6 +457,8 @@ export type Database = {
           tenant_id: string
           trial_days?: number | null
           trial_ends_at?: string | null
+          trial_started_at?: string | null
+          trial_status?: string
           updated_at?: string
         }
         Update: {
@@ -420,6 +484,8 @@ export type Database = {
           tenant_id?: string
           trial_days?: number | null
           trial_ends_at?: string | null
+          trial_started_at?: string | null
+          trial_status?: string
           updated_at?: string
         }
         Relationships: [
@@ -5061,6 +5127,7 @@ export type Database = {
         Args: { p_secret_id: string }
         Returns: undefined
       }
+      expire_branch_trials: { Args: never; Returns: number }
       generate_invoice_number: {
         Args: { p_app_id: string; p_tenant_id: string }
         Returns: string
@@ -5156,6 +5223,10 @@ export type Database = {
         Returns: string
       }
       read_payment_secret: { Args: { p_secret_id: string }; Returns: string }
+      recompute_branch_onboarding: {
+        Args: { _branch_id: string }
+        Returns: undefined
+      }
       regenerate_pricing_rules_for_currency: {
         Args: { p_currency: string }
         Returns: number
@@ -5195,6 +5266,42 @@ export type Database = {
           p_tenant_id: string
         }
         Returns: undefined
+      }
+      start_branch_trial: {
+        Args: { _branch_id: string }
+        Returns: {
+          assigned_at: string | null
+          assigned_by: string | null
+          assigned_plan_slug: string | null
+          billing_status: string | null
+          branch_id: string
+          cancelled_at: string | null
+          created_at: string
+          current_period_end: string | null
+          current_period_start: string | null
+          discount_type: string | null
+          discount_value: number | null
+          id: string
+          metadata: Json
+          plan_slug: string | null
+          promo_code_id: string | null
+          region_id: string | null
+          status: string | null
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          tenant_id: string
+          trial_days: number | null
+          trial_ends_at: string | null
+          trial_started_at: string | null
+          trial_status: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "branch_subscriptions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       sync_master_rate_card_to_tenant: {
         Args: { p_tenant_id: string }
