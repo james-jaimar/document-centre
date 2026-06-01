@@ -1,121 +1,92 @@
-Save the horizontal-scaling roadmap to a single file in the repo so we can pick it up cold in a week or two without re-deriving anything.
 
-## File
+# Legalities & Stripe wire-up
 
-`docs/scaling-roadmap.md` — new markdown file. Sits alongside the existing `docs/document-centre-api-contract.md` so it's discoverable and lives with the code, not in chat history.
+Anchor facts:
+- **Legal entity:** Jaimar Developments Ltd, Company No. 17071122, registered in England & Wales (UK).
+- **Trading model:** "Jaimar Developments Ltd t/a Document Centre" — single entity, brand only.
+- **Stripe:** Single Jaimar Stripe account, used for **platform billing only** (Jaimar invoices tenants like PostNet). Tenants configure their own Stripe in `tenant_payment_gateways` for taking their customers' money — that money never touches Jaimar.
+- **Legal docs scope (this round):** Platform Terms of Service + Privacy Policy governing Jaimar ↔ tenant relationship.
 
-## Contents
+Important consequence of "UK Ltd selling SaaS into South Africa": this is a B2B cross-border digital service. Default UK VAT treatment is **out of scope for UK VAT** (reverse charge / place-of-supply is the customer's country); SA-based PostNet may owe SA VAT under their own electronic-services rules. Legal docs and invoice templates must reflect that — I'll flag it but you'll want an accountant to sign off before going live.
 
-The file will contain everything below — the architecture plan, the trigger conditions, the cost sketch, AND the notes a future agent needs to resume without re-asking.
+## 1. Centralised entity constants
 
----
+Create `src/lib/legal/entity.ts` as the single source of truth:
 
-# PDF Processing — Horizontal Scaling Roadmap
-
-**Status:** Deferred. Single-VPS setup is adequate for the pilot phase (5–10 PostNet branches). Revisit when paid clients ≥ 5 OR sustained queue depth on `documents` queue > 20 for > 5 min.
-
-**Owner:** James. **Last reviewed:** 2026-05-31.
-
-## Trigger to start work
-
-Any one of:
-- 5+ paying branches onboarded.
-- Queue backlog alerts firing repeatedly.
-- A single upload visibly waits > 60s for preview generation under normal load.
-- A second VPS is being considered "just in case".
-
-Until then: **do nothing**. The current setup is fine.
-
-## Current state (as of 2026-05-31)
-
-- 1 VPS hosts: FastAPI API (3 uvicorn workers), Celery heavy worker (2 children, queues: documents/imposition/pdf), Celery light worker (8 children, queues: default/thumbnails), Celery beat, and Redis.
-- Sized for 4 vCPU / 16 GB. See `pdf-server/coolify/WORKER_ENV_CHECKLIST.md` for the exact split.
-- Redis is local (`redis://127.0.0.1:6379/0`) — this is the blocker for adding more boxes.
-- Supabase Postgres + Storage are already external and shared-safe.
-
-## Target architecture
-
-```text
-Browser → API VPS (FastAPI, stateless) → Supabase (Postgres + Storage)
-                  │
-                  ▼ enqueue
-         Upstash Redis (managed, TLS)  ◄── single source of truth
-                  │
-   ┌──────────────┼──────────────┬──────────────┐
-   ▼              ▼              ▼              ▼
-Worker 1     Worker 2       Worker 3       Worker N
-(heavy+lt)   (heavy+lt)     (heavy+lt)     (heavy+lt)
-   │              │              │              │
-   └──────────────┴──────┬───────┴──────────────┘
-                         ▼
-                Supabase Storage (S3)
+```ts
+export const LEGAL_ENTITY = {
+  legalName: "Jaimar Developments Ltd",
+  tradingName: "Document Centre",
+  fullDisplay: "Jaimar Developments Ltd t/a Document Centre",
+  companyNumber: "17071122",
+  jurisdiction: "England & Wales",
+  registeredOffice: "<TBD — need your registered office address>",
+  contactEmail: "<TBD — e.g. legal@jaimar.dev>",
+  supportEmail: "<TBD — e.g. support@document-centre.com>",
+  dpoEmail: "<TBD>",
+  parentDomain: "jaimar.dev",
+  productDomain: "document-centre.com",
+  vatNumber: "<TBD — UK VAT no. if registered, else null>",
+} as const;
 ```
 
-Workers are identical, stateless, cattle-not-pets. Adding capacity = clone the Docker image onto a new VPS, point at the same Upstash URL.
+Every footer, invoice template, email signature, legal doc, and Stripe metadata field will import from here. No hard-coded "Document Centre" legal references anywhere else.
 
-## Phased plan
+## 2. Update visible surfaces
 
-### Phase 1 — Cut Redis loose (the unblocker)
-1. Create Upstash Redis DB (region: nearest to VPS host — likely `eu-west-1`; `af-south-1` doesn't exist on Upstash, latency-pick closest).
-2. Pick paid tier with TLS + persistence on + eviction off. Free tier's RPS cap will choke Celery polling.
-3. Replace `REDIS_URL` / `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` on the current VPS with the Upstash `rediss://` URL.
-4. Stop and disable local `redis-server` systemd unit.
-5. Smoke: upload a doc end-to-end, confirm preview generates.
+Replace ad-hoc legal copy in:
+- Marketing footer (`src/pages/Index.tsx`, `Contact.tsx`)
+- Storefront footer (`src/pages/storefront/StorefrontLanding.tsx` and tenant portal layouts)
+- Admin/Branch/Platform portal footers
+- Auth pages (`Auth.tsx`, `AuthCallback.tsx`, `ResetPassword.tsx`) — small "© Jaimar Developments Ltd" line
+- Email templates (`send-email` edge function templates) — signature block
+- `index.html` `<meta name="author">` and Schema.org JSON-LD organisation block
 
-Behaviour identical after this — but Redis is no longer tied to one box.
+## 3. Legal documents (Platform ToS + Privacy)
 
-### Phase 2 — Containerise the worker
-1. Confirm existing `pdf-server/Dockerfile` still builds (it's referenced by `docker-compose.yml`).
-2. Add GitHub Actions workflow: build + push to `ghcr.io/james-jaimar/document-centre-pdf-worker:latest` on push to `main`.
-3. Single entrypoint inside the image runs both `start-worker-heavy.sh` and `start-worker-light.sh` (background both, `wait`). One container = one VPS = two Celery processes.
-4. Document spec: 4 vCPU / 16 GB / 80 GB SSD per worker box (Hetzner CPX31 baseline).
+Two new entries seeded into the existing `legal_documents` infrastructure (via `useLegalDocument` / `defaultTemplates.ts`):
 
-### Phase 3 — Spin up worker pool
-1. Provision 2 worker VPSes (Hetzner CPX31 ≈ €16/mo each).
-2. Each: install Docker, pull image, run with shared `.env` (Upstash URL + Supabase creds + service role).
-3. Verify in Platform → Workers UI (`PlatformDocumentCentreWorkers.tsx`) that `heavy@vps-1`, `light@vps-1`, `heavy@vps-2`, `light@vps-2` all show up.
-4. Load-test: 50 concurrent uploads, watch jobs spread.
+- **`platform_terms_of_service`** — Jaimar ↔ tenant (PostNet) terms. Covers: SaaS licence grant, acceptable use, tenant responsibilities for their end customers, subscription billing & cancellation, SLA references (best-effort initially), liability cap, governing law = **England & Wales**, disputes via UK courts.
+- **`platform_privacy_policy`** — UK GDPR compliant. Jaimar as data controller for platform data (tenant admin accounts, billing data, support comms) and **data processor** for tenant-customer data. ICO registration line (you may need to register with the ICO as a data controller — separate action item for you).
 
-### Phase 4 — Operational hardening
-- Per-tenant API rate limiting via `@upstash/ratelimit` (stops one runaway branch starving the queue).
-- Queue-depth alerts via Upstash Prometheus metrics — alert at `documents` depth > 50 for > 2 min.
-- Optional autoscaler (Phase 5): poll queue depth, provision Hetzner VPS via API. Manual scaling fine for first 50 branches.
+Both rendered via existing `LegalLayout` and linked from marketing site footer + tenant admin portal footer at `/legal/terms` and `/legal/privacy`.
 
-## Important caveats / things-to-remember-for-future-agent
+A short **Data Processing Addendum (DPA)** stub is included as a section inside the Platform ToS rather than a separate doc — it can be split later when PostNet's legal team reviews it.
 
-- **Shared PDF cache caveat**: heavy and light workers currently hand prepared PDFs to each other via `/var/cache/document-centre/pdf-cache` on local disk. With workers on different VPSes the cache misses and falls back to S3. Code already handles this — just slightly slower per job. Don't try to "fix" it with a shared NFS mount, not worth it.
-- **`PDF_CACHE_ENABLED` env var**: leave true; misses are cheap.
-- **`task_acks_late=True` + `task_reject_on_worker_lost=True`** are already set in `pdf-server/app/worker.py` — a worker dying mid-task re-queues the job. This is critical for cattle-style workers; don't change it.
-- **Celery beat** must run on **exactly one** node. Either keep it on the API VPS or designate one worker VPS as the beat host. Two beats = duplicate scheduled work.
-- **`worker_prefetch_multiplier=1`** is already set — keep it so heavy children don't hoard small jobs.
-- **Edge functions stay untouched**: `production-pdf`, `enqueue-print-ready` etc. call the API via HTTPS. They don't need to know about workers.
-- **Frontend stays untouched**: API URL unchanged. The `pdf-api` proxy hook doesn't care how many workers are behind the API.
-- **Queue names**: `documents`, `imposition`, `pdf` (heavy) + `default`, `thumbnails` (light). Don't rename — they're hardcoded in task `@queue(...)` decorators.
-- **Migration script exists**: `pdf-server/scripts/migrate-to-split-workers.sh` — useful reference for systemd → split worker pattern, but for the new world the workers are Docker not systemd. Keep the file as historical reference; don't rely on it for the cloud rollout.
+Storefront-facing tenant ToS / Privacy templates and POPIA cookie banner are **out of scope this round** per your answer.
 
-## Cost sketch (ZAR, monthly, rough)
+## 4. Stripe live key cutover
 
-- Upstash Redis Pro (10k cmds/sec, 1 GB): ~$10–30 ≈ R200–R600
-- API VPS (existing): unchanged
-- Worker VPS × 2 (Hetzner CPX31): ~€16 each ≈ R650/mo total
-- **Total added: under R1,500/mo** to comfortably support ~5,000 jobs/day. Each extra worker ≈ R325/mo.
+Two secrets to update in Supabase Edge Function Secrets:
 
-## Open decisions (answer when work resumes)
+- `STRIPE_SECRET_KEY` → live `sk_live_...`
+- `STRIPE_WEBHOOK_SECRET` → live `whsec_...` from the live-mode webhook endpoint on `https://lcvdhtaqoumyokjqaqfw.supabase.co/functions/v1/stripe-webhook` (the platform subscription webhook — distinct from the per-tenant `stripe-order-webhook`).
 
-1. Worker hosting provider — Hetzner (cheapest, EU) vs. stay with current provider?
-2. Upstash region — Europe (lower cost, ~150ms from SA) vs. US East?
-3. Image registry — GHCR (free, integrated) vs. Docker Hub?
-4. Auto-build worker image via GitHub Actions on every `main` commit? (Recommended yes.)
+I will trigger `update_secret` when you confirm — you paste the values into the secure form, I never see them.
 
-## What does NOT change
+Also update `create-checkout/index.ts` to:
+- Set `statement_descriptor_suffix: "DOC CENTRE"` on the subscription so PostNet's bank statement reads `JAIMAR DEVELOPMENTS* DOC CENTRE`.
+- Add `metadata.legal_entity = "Jaimar Developments Ltd"` and `metadata.company_number = "17071122"` on every Customer + Subscription for audit clarity.
+- Default `currency` policy: tenant subscriptions priced in **GBP** (Jaimar's home currency) unless `platform_pricing_plans.region_id` overrides. Confirm — you may want ZAR pricing for SA tenants. (Open question below.)
 
-- Supabase Postgres + Storage.
-- API URL — frontend untouched.
-- Edge functions.
-- Job semantics, queue names, retry logic.
+No DB schema changes needed for the Stripe side — `tenant_subscriptions`, `platform_pricing_plans`, `stripe_customer_id` columns already exist.
 
----
+## 5. Invoice / receipt branding
 
-## After saving
+Stripe-hosted invoices inherit branding from the Stripe Dashboard (logo, colours, business address). Action for you in Stripe Dashboard:
+- Business name: `Jaimar Developments Ltd`
+- Public business name on receipts: `Document Centre`
+- Support email + phone, support URL = `https://document-centre.com/support`
+- Upload `public/document-centre-logo.svg` (rasterised PNG, ≥128×128) as the brand mark.
 
-Reply with one line confirming the file path, nothing more.
+I'll add a short paragraph to the Platform ToS pointing customers at this branding for any billing dispute.
+
+## Open questions before I implement
+
+1. **Registered office address** — what's the UK address on file at Companies House? I need it for legal docs and Stripe metadata.
+2. **Email addresses** — confirm `legal@jaimar.dev`, `support@document-centre.com`, `dpo@jaimar.dev` (or alternatives). Mailboxes must exist.
+3. **VAT** — is Jaimar Developments Ltd UK-VAT-registered? If yes, give me the number; if no, ToS just omits the VAT line.
+4. **Subscription pricing currency** — GBP across the board, or GBP for international tenants and ZAR for SA tenants? This affects how I configure the live Stripe Prices for the existing `platform_pricing_plans`.
+5. **Live webhook endpoint** — confirm I should keep the existing edge function URL (`stripe-webhook`) and you'll point the new live-mode webhook at it, or do you want a fresh function name like `stripe-platform-webhook` for clarity?
+
+I'll wait for these before writing any code or triggering `update_secret` for the live keys.
