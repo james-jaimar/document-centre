@@ -69,6 +69,27 @@ Deno.serve(async (req) => {
     });
   }
 
+  // Resolve effective price to decide billing_status/status
+  let basePrice = 0;
+  {
+    let q = sb.from("platform_pricing_plans").select("price,region_id").eq("plan_slug", body.assigned_plan_slug);
+    if (body.region_id) q = q.eq("region_id", body.region_id);
+    const { data: planRows } = await q;
+    if (planRows && planRows.length) {
+      const match = planRows.find((p: any) => p.region_id === body.region_id) ?? planRows[0];
+      basePrice = Number(match.price ?? 0);
+    }
+  }
+  let effectivePrice = basePrice;
+  if (body.discount_value && body.discount_value > 0) {
+    if (body.discount_type === "percentage") {
+      effectivePrice = basePrice * (1 - body.discount_value / 100);
+    } else if (body.discount_type === "fixed_amount") {
+      effectivePrice = Math.max(0, basePrice - body.discount_value);
+    }
+  }
+  const isFree = effectivePrice <= 0;
+
   const upsert = {
     branch_id: branch.id,
     tenant_id: branch.tenant_id,
@@ -80,7 +101,8 @@ Deno.serve(async (req) => {
     discount_value: body.discount_value ?? null,
     trial_days: body.trial_days ?? null,
     promo_code_id: body.promo_code_id ?? null,
-    billing_status: "pending_payment",
+    billing_status: isFree ? "free" : "pending_payment",
+    status: isFree ? "active" : "incomplete",
   };
 
   const { data, error } = await sb
