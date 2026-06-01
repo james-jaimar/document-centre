@@ -199,6 +199,9 @@ function AppRoutes() {
         </>
       )}
 
+      {/* Platform marketing landing — only when NOT on a tenant custom domain */}
+      {!matched && <Route path="/" element={<MarketingLanding />} />}
+
       {/* Legacy /dashboard redirects to slug-based URL */}
       <Route path="/dashboard/*" element={<ProtectedRoute><StorefrontRedirect /></ProtectedRoute>} />
 
@@ -397,6 +400,9 @@ function AppRoutes() {
           <Route path="audit" element={<PlatformDocumentCentreAudit />} />
         </Route>
       </Route>
+
+      {/* Catch-all */}
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }
