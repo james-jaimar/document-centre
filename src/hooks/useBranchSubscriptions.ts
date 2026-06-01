@@ -98,6 +98,20 @@ export function useAssignBranchPlan() {
   });
 }
 
+export function useOverrideBranchSubscription() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { branch_id: string }) => {
+      const { data, error } = await supabase.functions.invoke("override-branch-subscription", { body: payload });
+      if (error) throw error;
+      return data as { ok: boolean; subscription: BranchSubscription };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["branch_subscriptions"] });
+    },
+  });
+}
+
 /** Read-only soft block gate for a branch. */
 export function useBranchSubscriptionGate(branchId?: string) {
   const { data, isLoading } = useBranchSubscription(branchId);
