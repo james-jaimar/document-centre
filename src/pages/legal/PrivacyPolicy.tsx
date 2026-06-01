@@ -1,37 +1,42 @@
 import LegalLayout from "./LegalLayout";
+import { LEGAL_ENTITY as E } from "@/lib/legal/entity";
 
 export default function PrivacyPolicy() {
   return (
-    <LegalLayout title="Privacy Policy" updated="28 April 2026">
+    <LegalLayout title="Privacy Policy" updated="1 June 2026">
       <p>
-        This Privacy Policy explains how <strong>Document Centre</strong> ("Document Centre", "we",
-        "us", or "our") collects, uses, discloses, and safeguards your information when you use our
-        web-to-print software-as-a-service platform, including any associated websites, customer
-        storefronts, and applications (collectively, the "Service").
+        This Privacy Policy explains how <strong>{E.legalName}</strong>, trading as{" "}
+        <strong>{E.tradingName}</strong> ("we", "us", or "our"), collects, uses, discloses, and
+        safeguards your information when you use our web-to-print software-as-a-service platform,
+        including any associated websites, customer storefronts, and applications (collectively,
+        the "Service").
       </p>
       <p>
-        Document Centre is operated from South Africa and complies with the Protection of Personal
-        Information Act, 2013 (POPIA) and, where applicable, the EU General Data Protection
-        Regulation (GDPR). By using the Service, you agree to the collection and use of information
-        in accordance with this policy.
+        {E.legalName} is a company registered in {E.jurisdiction} (company number{" "}
+        {E.companyNumber}) with its registered office at {E.registeredOffice}. We are the data
+        controller for personal data we process about visitors to our marketing site, Tenant
+        administrators, and platform users, and we comply with the UK General Data Protection
+        Regulation (UK GDPR) and the Data Protection Act 2018. By using the Service, you agree
+        to the collection and use of information in accordance with this policy.
       </p>
 
       <h2>1. Who we are</h2>
       <p>
         Document Centre provides a multi-tenant web-to-print platform that enables print shops
-        ("Tenants") to operate online storefronts where their customers can upload, configure, and
-        order printed documents. Depending on context:
+        ("Tenants") to operate online storefronts where their customers can upload, configure,
+        and order printed documents. Depending on context:
       </p>
       <ul>
         <li>
-          When you visit our marketing site or sign up as a Tenant, Document Centre acts as the
-          <strong> data controller</strong> (responsible party under POPIA) of your personal
-          information.
+          When you visit our marketing site or sign up as a Tenant, {E.legalName} acts as the{" "}
+          <strong>data controller</strong> of your personal information.
         </li>
         <li>
-          When you use a Tenant's storefront as an end-customer, the Tenant is the data controller
-          of your information, and Document Centre acts as the <strong>data processor</strong>
-          (operator under POPIA) on the Tenant's behalf.
+          When you use a Tenant's storefront as an end-customer, the Tenant is the data
+          controller of your information, and {E.legalName} acts as a{" "}
+          <strong>data processor</strong> on the Tenant's behalf. The terms of this policy form
+          the data processing addendum between us and the Tenant for the purposes of UK GDPR
+          Article 28.
         </li>
       </ul>
 
@@ -42,7 +47,7 @@ export default function PrivacyPolicy() {
         <li><strong>Authentication data</strong> — when you sign in with Google or another OAuth provider, we receive your name, email, profile picture, and a unique provider identifier. We do not receive your password.</li>
         <li><strong>Order content</strong> — files (PDF, images, office documents) you upload for printing, together with the print configuration you select (paper, binding, finishing, quantity, delivery address).</li>
         <li><strong>Communications</strong> — messages you send to us or to a Tenant via our support channels, order timeline, or email.</li>
-        <li><strong>Payment information</strong> — when payments are enabled, payment details are processed by our payment provider (e.g. Stripe or Paddle). We do not store full card numbers on our servers.</li>
+        <li><strong>Payment information</strong> — Tenant subscription payments are processed by Stripe Payments Europe, Limited. End-customer payments on Tenant storefronts are processed by the payment provider configured by the Tenant. We do not store full card numbers on our servers.</li>
       </ul>
       <h3>Information collected automatically</h3>
       <ul>
@@ -58,13 +63,13 @@ export default function PrivacyPolicy() {
         <li>Create and manage your account, authenticate sign-in (including via Google OAuth), and secure the Service;</li>
         <li>Process and fulfil print orders, including transmitting order content to the relevant Tenant for production;</li>
         <li>Send transactional emails such as order confirmations, status updates, password resets, and invoices;</li>
-        <li>Provide customer support, including via our embedded chat widget;</li>
+        <li>Provide customer support;</li>
         <li>Detect, prevent, and address fraud, abuse, security incidents, and technical issues;</li>
         <li>Comply with legal obligations and enforce our Terms of Service.</li>
       </ul>
 
       <h2>4. Legal bases for processing</h2>
-      <p>Where GDPR applies, we rely on the following legal bases:</p>
+      <p>Under UK GDPR (and EU GDPR where applicable), we rely on the following legal bases:</p>
       <ul>
         <li><strong>Performance of a contract</strong> — to provide the Service you have requested;</li>
         <li><strong>Legitimate interests</strong> — to improve and secure the Service, prevent abuse, and operate our business;</li>
@@ -78,12 +83,11 @@ export default function PrivacyPolicy() {
         <li><strong>With Tenants</strong> — order content, contact details, and order metadata are shared with the Tenant whose storefront you order from, so they can produce and fulfil your order.</li>
         <li><strong>With sub-processors</strong> who help us run the Service, including:
           <ul>
-            <li>Supabase / Lovable Cloud — database, authentication, file storage, and edge functions;</li>
-            <li>Google LLC — OAuth sign-in and (where enabled) Google Workspace email delivery;</li>
-            <li>Our PDF processing infrastructure (the "Document Centre" rendering pipeline) hosted on dedicated servers;</li>
-            <li>Email and SMTP providers used to deliver transactional email;</li>
-            <li>Payment processors (where payments are enabled);</li>
-            <li>Customer support tools such as our embedded chat widget.</li>
+            <li>Supabase (Lovable Cloud) — database, authentication, file storage, and edge functions;</li>
+            <li>Amazon Web Services — hosting of our marketing site and PDF processing infrastructure;</li>
+            <li>Google LLC — OAuth sign-in;</li>
+            <li>Stripe Payments Europe, Limited — Tenant subscription billing;</li>
+            <li>Email and SMTP providers used to deliver transactional email.</li>
           </ul>
         </li>
         <li><strong>For legal reasons</strong> — when required by law, court order, or to protect our rights, property, or the safety of our users.</li>
@@ -92,30 +96,33 @@ export default function PrivacyPolicy() {
 
       <h2>6. Data retention</h2>
       <p>
-        We retain personal information for as long as your account is active and for a reasonable
-        period afterward to comply with legal obligations, resolve disputes, and enforce our
-        agreements. Uploaded order files are retained for the period configured by the relevant
-        Tenant; abandoned drafts are typically purged automatically. You may request deletion of
-        your account and associated personal data at any time (see Section 9).
+        We retain personal information for as long as your account is active and for a
+        reasonable period afterward to comply with legal obligations (including UK accounting
+        record-keeping requirements), resolve disputes, and enforce our agreements. Uploaded
+        order files are retained for the period configured by the relevant Tenant; abandoned
+        drafts are typically purged automatically. You may request deletion of your account and
+        associated personal data at any time (see Section 9).
       </p>
 
       <h2>7. International data transfers</h2>
       <p>
-        Our infrastructure and sub-processors may store or process data outside your country of
-        residence, including in the European Union and the United States. Where required, we use
-        appropriate safeguards such as Standard Contractual Clauses or equivalent mechanisms.
+        Our infrastructure and sub-processors may store or process data outside the United
+        Kingdom, including in the European Economic Area, the United States and South Africa.
+        Where we transfer personal data outside the UK to a country that does not benefit from a
+        UK adequacy decision, we use appropriate safeguards such as the UK International Data
+        Transfer Agreement (IDTA) or the UK Addendum to the EU Standard Contractual Clauses.
       </p>
 
       <h2>8. Cookies and tracking</h2>
       <p>
         We use a small number of essential cookies to keep you signed in and to remember your
         preferences. We may also use limited analytics cookies to understand how the Service is
-        used. You can control cookies through your browser settings. Disabling essential cookies may
-        prevent parts of the Service from working.
+        used. You can control cookies through your browser settings. Disabling essential cookies
+        may prevent parts of the Service from working.
       </p>
 
       <h2>9. Your rights</h2>
-      <p>Depending on your jurisdiction, you may have the right to:</p>
+      <p>Under UK GDPR you have the right to:</p>
       <ul>
         <li>Access the personal information we hold about you;</li>
         <li>Request correction of inaccurate or incomplete data;</li>
@@ -123,45 +130,53 @@ export default function PrivacyPolicy() {
         <li>Object to or restrict certain processing;</li>
         <li>Request a copy of your data in a portable format;</li>
         <li>Withdraw consent where processing is based on consent;</li>
-        <li>Lodge a complaint with your local data protection authority — in South Africa, the Information Regulator (<a href="https://inforegulator.org.za" target="_blank" rel="noopener noreferrer">inforegulator.org.za</a>).</li>
+        <li>
+          Lodge a complaint with the UK Information Commissioner's Office (
+          <a href="https://ico.org.uk" target="_blank" rel="noopener noreferrer">ico.org.uk</a>)
+          or, where applicable, your local supervisory authority — for example, in South Africa,
+          the Information Regulator (
+          <a href="https://inforegulator.org.za" target="_blank" rel="noopener noreferrer">inforegulator.org.za</a>
+          ).
+        </li>
       </ul>
       <p>
         To exercise these rights, email us at the address in Section 12. If your information is
-        held by a Tenant (i.e. you ordered through their storefront), we will refer your request to
-        the relevant Tenant.
+        held by a Tenant (i.e. you ordered through their storefront), we will refer your request
+        to the relevant Tenant.
       </p>
 
       <h2>10. Security</h2>
       <p>
-        We use industry-standard security measures including TLS encryption in transit, encryption
-        at rest, role-based access control, row-level security on our database, and strict
-        authentication for our infrastructure. No method of transmission over the Internet is 100%
-        secure, but we work hard to protect your information.
+        We use industry-standard security measures including TLS encryption in transit,
+        encryption at rest, role-based access control, row-level security on our database, and
+        strict authentication for our infrastructure. No method of transmission over the Internet
+        is 100% secure, but we work hard to protect your information.
       </p>
 
       <h2>11. Children's privacy</h2>
       <p>
-        The Service is not directed to children under 18, and we do not knowingly collect personal
-        information from children. If you believe a child has provided us with personal
+        The Service is not directed to children under 18, and we do not knowingly collect
+        personal information from children. If you believe a child has provided us with personal
         information, please contact us and we will delete it.
       </p>
 
       <h2>12. Contact us</h2>
       <p>
-        If you have questions about this Privacy Policy or how we handle your information, please
-        contact us at:
+        If you have questions about this Privacy Policy or how we handle your information,
+        please contact us at:
       </p>
       <p>
-        <strong>Document Centre</strong><br />
-        Email: <a href="mailto:privacy@document-centre.com">privacy@document-centre.com</a>
+        <strong>{E.legalName}</strong> (trading as {E.tradingName})<br />
+        {E.registeredOffice}<br />
+        Email: <a href={`mailto:${E.dpoEmail}`}>{E.dpoEmail}</a>
       </p>
 
       <h2>13. Changes to this policy</h2>
       <p>
-        We may update this Privacy Policy from time to time. When we do, we will revise the "Last
-        updated" date above and, for material changes, notify you by email or through a prominent
-        notice in the Service. Your continued use of the Service after changes take effect
-        constitutes acceptance of the updated policy.
+        We may update this Privacy Policy from time to time. When we do, we will revise the
+        "Last updated" date above and, for material changes, notify you by email or through a
+        prominent notice in the Service. Your continued use of the Service after changes take
+        effect constitutes acceptance of the updated policy.
       </p>
     </LegalLayout>
   );
