@@ -1,59 +1,35 @@
-## Problem
+## Diagnosis
 
-Customers ordering from any PostNet branch hit:
-> "This branch's subscription is not active. New orders are paused."
+- The order gate is doing the right branch-level check: it allows orders only when the selected branch subscription is `active`/`trialing` or billing is `paid`/`free`.
+- Both PostNet Sandton City and PostNet Aliwal North currently have branch subscription rows, but they are still `status = incomplete` and `billing_status = pending_payment`, so the gate blocks orders.
+- The `postnet` plan is not universally free: there is a ZA branch plan at `499.00` with a Stripe price, plus other regional `0.00` rows. So relying on tenant-level inheritance/price inference keeps producing ambiguous results.
 
-Root cause: every branch subscription is created with `billing_status = 'pending_payment'` and `status = 'incomplete'` — even when the assigned plan has `price = 0` (e.g. the "Doc Centre Postnet" plan in ZAR/all regions except one is R0). The `order-engine` gate then refuses orders.
+## Plan
 
-For free plans (price 0 or 100% discount) there is nothing to pay, so they should be admitted automatically.
+1. **Add a direct branch override action**
+   - Add a clear admin action on the branch subscription card: **Activate branch / comp subscription**.
+   - This updates only that branch’s subscription to `status = active` and `billing_status = free`.
+   - This is the override you need for testing, onboarding, or branches where payment/login should not block orders.
 
-## Fix
+2. **Add an Edge Function for the override**
+   - Create `override-branch-subscription`.
+   - It will require a logged-in user and allow only platform admins or tenant owner/admins for that branch.
+   - It will upsert/update `branch_subscriptions` for the specific `branch_id` only.
 
-### 1. `apply_tenant_plan_to_branches` RPC
+3. **Keep the order gate unchanged**
+   - No changes to `order-engine` or `branch_subscription_active` are needed.
+   - Once the branch row is overridden to `free/active`, existing logic will immediately allow orders.
 
-When inserting/upserting branch_subscriptions, compute the effective price per branch from `platform_pricing_plans` + tenant discount:
+4. **Backfill the two affected PostNet test branches now**
+   - Update Sandton City and Aliwal North branch subscriptions to `free/active` so the immediate blocker is removed.
 
-- Look up the plan row by `(plan_slug, region_id)` (fall back to any region row for the slug if region_id is null).
-- Effective price = `plan.price` with tenant discount applied (`percentage` or `fixed_amount`).
-- If effective price ≤ 0 → `billing_status = 'free'`, `status = 'active'`.
-- Else → `billing_status = 'pending_payment'`, `status = 'incomplete'` (current behaviour).
+5. **Improve admin visibility**
+   - Show `free` as a green/active billing badge in branch subscription views.
+   - Leave tenant plan billing separate from branch subscription status, so it stays branch-level as requested.
 
-Also set `status` on insert (currently never set, leaving it null).
+## Technical details
 
-### 2. `assign-branch-plan` edge function
-
-Same logic: resolve plan price + discount, set `billing_status`/`status` accordingly instead of hard-coding `pending_payment`.
-
-### 3. `order-engine` gate
-
-No code change needed — it already treats `billing === 'free'` and `status === 'active'` as allowed. Once the data is right, orders go through.
-
-### 4. Backfill existing PostNet (and any other free-plan) rows
-
-One-off SQL inside the migration:
-
-```sql
-UPDATE branch_subscriptions bs
-SET billing_status = 'free', status = 'active', updated_at = now()
-FROM platform_pricing_plans p
-WHERE bs.assigned_plan_slug = p.plan_slug
-  AND (bs.region_id = p.region_id OR bs.region_id IS NULL)
-  AND p.price = 0
-  AND bs.billing_status = 'pending_payment';
-```
-
-(Same idea extended to honour 100% discounts.)
-
-## Files
-
-- `supabase/functions/order-engine/index.ts` — no change
-- `supabase/functions/assign-branch-plan/index.ts` — price/discount aware billing_status
-- New migration:
-  - replace `apply_tenant_plan_to_branches` with price-aware version
-  - backfill `branch_subscriptions` for already-assigned free plans
-
-## Out of scope
-
-- Per-branch Stripe checkout for paid plans (unchanged).
-- Tenant-level Subscription card (already simplified).
-- Trial logic (`trial_days` > 0) — current code leaves trial handling to Stripe flow; not changed here.
+- Database migration: add a `SECURITY DEFINER` RPC or use the new Edge Function service-role update path for branch-only override.
+- Frontend: update `BranchSubscriptionAssignCard.tsx` and `useBranchSubscriptions.ts` with the override mutation.
+- No new tables are required.
+- No global tenant pending-payment logic will be added.
