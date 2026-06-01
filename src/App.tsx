@@ -400,6 +400,9 @@ function AppRoutes() {
           <Route path="audit" element={<PlatformDocumentCentreAudit />} />
         </Route>
       </Route>
+
+      {/* Catch-all */}
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }
