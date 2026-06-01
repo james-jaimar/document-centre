@@ -52,7 +52,7 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
   );
 
   const [removeTarget, setRemoveTarget] = useState<TenantMemberRow | null>(null);
-  const [confirmAction, setConfirmAction] = useState<{ member: TenantMemberRow; type: "disable" | "enable" | "reset" } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ member: TenantMemberRow; type: "disable" | "enable" | "reset" | "invite" } | null>(null);
   const [setPasswordTarget, setSetPasswordTarget] = useState<TenantMemberRow | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [settingPassword, setSettingPassword] = useState(false);
@@ -114,11 +114,20 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
     if (!confirmAction) return;
     const { member, type } = confirmAction;
     try {
-      const action = type === "disable" ? "disable_account" : type === "enable" ? "enable_account" : "force_password_reset";
+      const action =
+        type === "disable" ? "disable_account" :
+        type === "enable" ? "enable_account" :
+        type === "invite" ? "resend_invite" :
+        "force_password_reset";
       await manageUser.mutateAsync({
         action, target_profile_id: member.profile_id, tenant_id: member.tenant_id, app_id: member.app_id,
       });
-      toast.success(type === "disable" ? "Account disabled" : type === "enable" ? "Account enabled" : "Reset email sent");
+      toast.success(
+        type === "disable" ? "Account disabled" :
+        type === "enable" ? "Account enabled" :
+        type === "invite" ? "Invite resent" :
+        "Reset email sent"
+      );
       setConfirmAction(null);
     } catch (e: any) { toast.error(e.message); }
   };
@@ -191,6 +200,9 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
                         <Button variant="ghost" size="icon"><MoreVertical size={14} /></Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-56 bg-popover">
+                        <DropdownMenuItem onClick={() => setConfirmAction({ member: m, type: "invite" })}>
+                          <Mail size={14} className="mr-2" /> Resend invite email
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setConfirmAction({ member: m, type: "reset" })}>
                           <KeyRound size={14} className="mr-2" /> Send password reset
                         </DropdownMenuItem>
@@ -277,11 +289,13 @@ export function BranchUsersPanel({ tenantId, appId, branchId }: Props) {
               {confirmAction?.type === "disable" && "Disable account?"}
               {confirmAction?.type === "enable" && "Enable account?"}
               {confirmAction?.type === "reset" && "Send password reset?"}
+              {confirmAction?.type === "invite" && "Resend invite email?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirmAction?.type === "disable" && `${confirmAction && displayName(confirmAction.member)} will lose access until re-enabled.`}
               {confirmAction?.type === "enable" && `${confirmAction && displayName(confirmAction.member)} will be able to sign in again.`}
               {confirmAction?.type === "reset" && `A reset email will be sent to ${confirmAction?.member.profiles?.email}.`}
+              {confirmAction?.type === "invite" && `A fresh sign-in link will be sent to ${confirmAction?.member.profiles?.email}. The new link expires in 1 hour.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
