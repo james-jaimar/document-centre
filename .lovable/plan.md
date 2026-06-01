@@ -1,39 +1,43 @@
-## What happened
+## Diagnosis
 
-Nothing in the recent trial/onboarding work touched the marketing site. `/pricing` and `/try` were **never registered as routes** in `src/App.tsx` — previously they fell into a blank "no route matched" state, now they hit the new `*` → `NotFound` catch-all, so the breakage is now visible.
+Your PostNet assignment **did** save — `tenant_subscriptions` has `assigned_plan_slug = 'postnet'`, `billing_status = 'pending_payment'`, updated today at 12:30 UTC. That's why the badge still shows `pending_payment`.
 
-## Audit of every link on the marketing site
+What it didn't do is populate the parallel "tenant plan assignment" fields that the rest of the system reads from:
 
-From `src/pages/MarketingLanding.tsx`:
+- `tenants.assigned_plan_slug` is **NULL**
+- `tenants.assigned_region_id` / `discount_*` / `trial_days` are **NULL**
+- `plan_assigned_at` is stale (May 29)
+- No cascade was run, so `branch_subscriptions` weren't updated
 
-| Link | Route registered? | Page file exists? |
+We have two parallel write paths today:
+
+| Path | Writes to | Cascades to branches? |
 |---|---|---|
-| `/auth` | yes | yes |
-| `/auth?mode=register` | yes (same route) | yes |
-| `/contact` | yes | yes |
-| `/privacy` | yes | yes |
-| `/terms` | yes | yes |
-| `/pricing` | **NO** | yes (`src/pages/Pricing.tsx`) |
-| `/try` | **NO** | yes (`src/pages/Try.tsx`) |
-| `#features`, `#how-it-works` | n/a (in-page anchors) | n/a |
-| `/#features`, `/#how-it-works` (footer) | resolves to `/` then scrolls | works |
-| `mailto:hello@document-centre.com` | n/a | n/a |
+| `TenantSubscriptionDialog` (Platform → Subscriptions) | `tenant_subscriptions` + `tenants.plan_slug` | No |
+| `TenantPlanAssignmentCard` → `assign-tenant-plan` edge fn | `tenants.assigned_*` + `apply_tenant_plan_to_branches` RPC | Yes |
+
+So when you assign from the platform dialog, the BillingTab card (and every branch) sees nothing — looks "unsaved".
 
 ## Fix
 
-In `src/App.tsx`:
+Make `TenantSubscriptionDialog.handleAssign` do both writes in one go:
 
-1. Import `Pricing` from `@/pages/Pricing` and `Try` from `@/pages/Try`.
-2. Add two routes alongside the existing public ones (next to `/contact`):
-   ```tsx
-   <Route path="/pricing" element={<Pricing />} />
-   <Route path="/try" element={<Try />} />
-   ```
+1. Keep the existing `tenant_subscriptions` upsert (drives `billing_status`, promo, etc.).
+2. **Also** invoke `assign-tenant-plan` with the same plan/region/discount/trial values so:
+   - `tenants.assigned_plan_slug` + region + discount + trial_days + `plan_assigned_at/by` get set
+   - `apply_tenant_plan_to_branches` cascades to every active branch
+3. Invalidate `tenant_plan_assignment` and `branch_subscriptions` queries alongside the existing invalidations so the BillingTab card refreshes immediately.
+4. Toast wording stays the same; on success include `branches_updated` count.
 
-No other changes. Marketing page itself, brand tokens, and footer links remain untouched.
+No schema change, no new RPC — just wiring the dialog to the existing edge function that the per-tenant card already uses.
 
-## Verification
+### File touched
 
-- Visit `/pricing` → renders the Pricing page.
-- Visit `/try` → renders the Try page.
-- Click every header/footer link on the landing page — none should 404.
+- `src/components/platform/TenantSubscriptionDialog.tsx` — extend `handleAssign` (after the `tenant_subscriptions` upsert succeeds) to call `supabase.functions.invoke("assign-tenant-plan", { body: { tenant_id, assigned_plan_slug, assigned_region_id, assigned_discount_type, assigned_discount_value, assigned_trial_days } })`, then invalidate the extra query keys.
+
+### Out of scope
+
+- Free subscriptions: I'll still call `assign-tenant-plan` so branches inherit the plan; the `billing_status='free'` lives on `tenant_subscriptions` as today.
+- No changes to the edge function, RPCs, or DB.
+
+Shall I implement?
