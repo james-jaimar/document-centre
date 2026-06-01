@@ -6,7 +6,7 @@ export default function PrivacyPolicy() {
     <LegalLayout title="Privacy Policy" updated="1 June 2026">
       <p>
         This Privacy Policy explains how <strong>{E.legalName}</strong>, trading as{" "}
-        <strong>{E.tradingName}</strong> ({"we", "us"}, or "our"), collects, uses, discloses, and
+        <strong>{E.tradingName}</strong> ("we", "us", or "our"), collects, uses, discloses, and
         safeguards your information when you use our web-to-print software-as-a-service platform,
         including any associated websites, customer storefronts, and applications (collectively,
         the "Service").
