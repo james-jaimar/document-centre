@@ -1,33 +1,26 @@
-# Live Stripe Cutover
+# Go-live: Stripe subscriptions
 
-Swap the platform Stripe credentials from test to live so Jaimar can bill tenants for real.
+Scope is platform subscription billing only. Customer order payments stay on PayFast (configured per branch in `tenant_payment_gateways`) — no Stripe order webhook needed.
 
 ## Steps
 
-1. **Update secrets** — trigger `secrets--update_secret` for:
-   - `STRIPE_SECRET_KEY` (live `sk_live_...`)
-   - `STRIPE_WEBHOOK_SECRET` (live `whsec_...` from the live-mode webhook endpoint)
+1. **Update runtime secrets** (single secrets form):
+   - `STRIPE_SECRET_KEY` → live `sk_live_...` from Stripe Dashboard (Live mode → Developers → API keys)
+   - `STRIPE_WEBHOOK_SECRET` → `whsec_pr2knAxhyJd0jsybLRtdX9wSQLZqVDl9` (the live endpoint you just created for `/functions/v1/stripe-webhook`)
 
-   You'll paste the values into the secure form — I never see them.
+2. **Swap subscription price IDs to live**
+   - Live-mode Stripe Products/Prices have different IDs than test.
+   - Update `platform_pricing_plans.stripe_price_id` for every active plan via a migration (you'll paste the live `price_...` values, one per plan).
 
-2. **Verify** — once saved, confirm `create-checkout` and the subscription webhook are using the live keys (no code change needed; they read from env at runtime).
-
-## Pre-flight checklist (do these in Stripe Dashboard before/after)
-
-- Toggle dashboard to **Live mode**
-- Business settings → Public details:
-  - Legal name: `Jaimar Developments Ltd`
-  - Public/Statement name: `Document Centre`
-  - Support email: `hello@document-centre.com`
-  - Registered address: 12 Burghley Park Close, Lincoln, LN6 9XY, UK
-  - Upload Document Centre logo
-- Create the **live** webhook endpoint pointing at the same URL as test, subscribed to the same events — copy its signing secret for `STRIPE_WEBHOOK_SECRET`
-- Recreate (or copy via Stripe CLI) your **Products & Prices in live mode** and update `platform_pricing_plans.stripe_price_id` values — live prices have different IDs than test
-- Confirm payout bank account is verified
+3. **Smoke test**
+   - From `/platform`, assign a paid plan to a test tenant using a real card (or Stripe's live test card if you have one enabled).
+   - Confirm `stripe-webhook` logs show `checkout.session.completed` + `customer.subscription.created` arriving with valid signatures.
+   - Confirm `tenant_subscriptions` row is created/updated.
 
 ## Not in scope
+- `stripe-order-webhook` and any `STRIPE_*` order-side wiring — leave as-is (test keys / unused). Can be removed later if you want; not blocking go-live.
+- Tenant-level `tenant_payment_gateways` (PayFast) — unchanged.
 
-- Tenant-level Stripe Connect keys (`tenant_payment_gateways`) — those are per-tenant and handled separately
-- PayFast credentials — untouched
-
-After you confirm, I'll fire the secret-update prompts.
+## Technical notes
+- No code changes required for step 1; both `stripe-webhook` and `create-checkout` read keys from env at runtime.
+- Step 2 needs the live `price_...` IDs from you before I write the migration.
