@@ -26,7 +26,9 @@ function SubscriptionGateBanner() {
 }
 
 export default function BranchLayout() {
-  return (
+  const { tenantId, tenantName } = useTenantContext();
+  useDocumentBranding(tenantId, tenantName, "Branch Portal");
+
     <div className="flex h-screen w-full bg-background">
       <BranchSidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
