@@ -49,11 +49,17 @@ celery_app.conf.update(
             "schedule": crontab(hour=3, minute=30),
             "kwargs": {"max_age_hours": 24},
         },
-        # Email outbox scan — every 5 seconds. Batch of 50 = ~600/min ceiling
-        # with one worker; scale horizontally with more `emails-default` workers.
+        # Email outbox scan — SAFETY NET only.
+        # Primary push path is Postgres LISTEN/NOTIFY: the `notify_email_dispatcher`
+        # trigger fires pg_notify('email_enqueued', ...) on INSERT, and the
+        # document-centre-listener-emails service immediately calls scan_outbox.
+        # Beat at 30s catches:
+        #   - rows enqueued while the listener was disconnected
+        #   - scheduled_for future rows when their time comes
+        #   - any NOTIFY lost to a network blip (LISTEN/NOTIFY is best-effort)
         "email-scan-outbox": {
             "task": "email.scan_outbox",
-            "schedule": 5.0,
+            "schedule": 30.0,
         },
         # Recover rows whose worker died mid-send.
         "email-release-stuck": {
