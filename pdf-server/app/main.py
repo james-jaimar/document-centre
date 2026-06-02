@@ -6,11 +6,13 @@ from app.core.config import settings
 from app.web.routes import api_router
 from app.web.admin import admin_router
 from app.web.ops_routes import ops_router
+from app.web.email_webhooks import email_webhooks_router
 
 app = FastAPI(title=settings.app_name, debug=settings.app_debug)
 app.include_router(api_router, prefix='/v1')
 app.include_router(ops_router, prefix='/v1')
 app.include_router(admin_router)
+app.include_router(email_webhooks_router)
 app.mount('/static', StaticFiles(directory='app/static'), name='static')
 
 @app.get('/')
