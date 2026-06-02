@@ -1,0 +1,25 @@
+[Unit]
+Description=Document Centre Email LISTEN/NOTIFY bridge (push dispatcher)
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/document-centre-api
+EnvironmentFile=/opt/document-centre-api/.env
+Environment=PYTHONUNBUFFERED=1
+# Holds a long-lived Postgres connection (LISTEN email_enqueued) and
+# dispatches email.scan_outbox to Celery the instant a row is inserted.
+# Uses LISTEN_DATABASE_URL if set (direct connection — required, pgbouncer
+# transaction mode does NOT proxy LISTEN/NOTIFY); falls back to DATABASE_URL.
+ExecStart=/opt/document-centre-api/.venv/bin/python -m app.email.listener
+Restart=always
+RestartSec=5
+TimeoutStartSec=30
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target
