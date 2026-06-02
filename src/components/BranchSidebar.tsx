@@ -12,6 +12,7 @@ import {
   FileText,
   Truck,
   Users,
+  Mail,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -39,6 +40,7 @@ const BRANCH_NAV = [
   { to: "/branch/pricing", icon: <DollarSign size={20} />, label: "Pricing Rules" },
   { to: "/branch/rate-card", icon: <Tags size={20} />, label: "Rate Card" },
   { to: "/branch/delivery", icon: <Truck size={20} />, label: "Delivery" },
+  { to: "/branch/sent-mail", icon: <Mail size={20} />, label: "Sent Mail" },
   { to: "/branch/settings", icon: <Wrench size={20} />, label: "Settings" },
 ];
 
