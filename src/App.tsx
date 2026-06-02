@@ -83,6 +83,7 @@ import BranchQuotes from "@/pages/branch/BranchQuotes";
 import BranchQuoteDetail from "@/pages/branch/BranchQuoteDetail";
 import BranchSettings from "@/pages/branch/BranchSettings";
 import BranchCustomers from "@/pages/branch/BranchCustomers";
+import BranchSentMail from "@/pages/branch/BranchSentMail";
 
 // Platform
 import PlatformTenants from "@/pages/platform/PlatformTenants";
@@ -223,6 +224,7 @@ function AppRoutes() {
         <Route path="/branch/quotes" element={<BranchQuotes />} />
         <Route path="/branch/quotes/:id" element={<BranchQuoteDetail />} />
         <Route path="/branch/customers" element={<BranchCustomers />} />
+        <Route path="/branch/sent-mail" element={<BranchSentMail />} />
         <Route path="/branch/settings" element={<BranchSettings />} />
       </Route>
       <Route path="/admin/branch/products" element={<Navigate to="/branch/products" replace />} />
