@@ -50,7 +50,7 @@ def mark_sent(sb: Client, outbox_id: str, *, provider: str, message_id: str) -> 
         "sent_at": datetime.now(timezone.utc).isoformat(),
         "provider": provider,
         "provider_message_id": message_id,
-        "last_error": None,
+        "error_message": None,
         "last_error_code": None,
         "claimed_by": None,
         "claimed_at": None,
@@ -69,7 +69,7 @@ def mark_retry(
     sb.table("email_outbox").update({
         "status": "retry",
         "scheduled_for": next_attempt_at(attempts),
-        "last_error": error[:2000],
+        "error_message": error[:2000],
         "last_error_code": error_code,
         "claimed_by": None,
         "claimed_at": None,
@@ -80,7 +80,7 @@ def mark_retry(
 def mark_failed(sb: Client, outbox_id: str, *, error: str, error_code: Optional[str] = None, dlq: bool = False) -> None:
     sb.table("email_outbox").update({
         "status": "dlq" if dlq else "failed",
-        "last_error": error[:2000],
+        "error_message": error[:2000],
         "last_error_code": error_code,
         "claimed_by": None,
         "claimed_at": None,
