@@ -1399,6 +1399,7 @@ export type Database = {
           label: string
           last_error: string | null
           last_verified_at: string | null
+          max_concurrency: number
           max_concurrent: number
           oauth_email: string | null
           oauth_refresh_token_secret_id: string | null
@@ -1428,6 +1429,7 @@ export type Database = {
           label: string
           last_error?: string | null
           last_verified_at?: string | null
+          max_concurrency?: number
           max_concurrent?: number
           oauth_email?: string | null
           oauth_refresh_token_secret_id?: string | null
@@ -1457,6 +1459,7 @@ export type Database = {
           label?: string
           last_error?: string | null
           last_verified_at?: string | null
+          max_concurrency?: number
           max_concurrent?: number
           oauth_email?: string | null
           oauth_refresh_token_secret_id?: string | null
@@ -1488,6 +1491,44 @@ export type Database = {
           },
         ]
       }
+      email_events: {
+        Row: {
+          event_type: string
+          id: string
+          outbox_id: string | null
+          provider_message_id: string | null
+          raw: Json
+          received_at: string
+          recipient: string | null
+        }
+        Insert: {
+          event_type: string
+          id?: string
+          outbox_id?: string | null
+          provider_message_id?: string | null
+          raw?: Json
+          received_at?: string
+          recipient?: string | null
+        }
+        Update: {
+          event_type?: string
+          id?: string
+          outbox_id?: string | null
+          provider_message_id?: string | null
+          raw?: Json
+          received_at?: string
+          recipient?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_events_outbox_id_fkey"
+            columns: ["outbox_id"]
+            isOneToOne: false
+            referencedRelation: "email_outbox"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       email_outbox: {
         Row: {
           app_id: string | null
@@ -1497,6 +1538,8 @@ export type Database = {
           branch_id: string | null
           category: string
           cc: string[] | null
+          claimed_at: string | null
+          claimed_by: string | null
           created_by_profile_id: string | null
           email_account_id: string | null
           error_message: string | null
@@ -1504,12 +1547,15 @@ export type Database = {
           from_name: string | null
           html: string | null
           id: string
+          last_error_code: string | null
           locked_at: string | null
           locked_by: string | null
           max_attempts: number
           message_id: string | null
           metadata: Json
           next_attempt_at: string
+          provider: string | null
+          provider_message_id: string | null
           queued_at: string
           related_id: string | null
           related_type: string | null
@@ -1521,6 +1567,7 @@ export type Database = {
           tenant_id: string | null
           text_body: string | null
           to_email: string
+          worker_lease_until: string | null
         }
         Insert: {
           app_id?: string | null
@@ -1530,6 +1577,8 @@ export type Database = {
           branch_id?: string | null
           category?: string
           cc?: string[] | null
+          claimed_at?: string | null
+          claimed_by?: string | null
           created_by_profile_id?: string | null
           email_account_id?: string | null
           error_message?: string | null
@@ -1537,12 +1586,15 @@ export type Database = {
           from_name?: string | null
           html?: string | null
           id?: string
+          last_error_code?: string | null
           locked_at?: string | null
           locked_by?: string | null
           max_attempts?: number
           message_id?: string | null
           metadata?: Json
           next_attempt_at?: string
+          provider?: string | null
+          provider_message_id?: string | null
           queued_at?: string
           related_id?: string | null
           related_type?: string | null
@@ -1554,6 +1606,7 @@ export type Database = {
           tenant_id?: string | null
           text_body?: string | null
           to_email: string
+          worker_lease_until?: string | null
         }
         Update: {
           app_id?: string | null
@@ -1563,6 +1616,8 @@ export type Database = {
           branch_id?: string | null
           category?: string
           cc?: string[] | null
+          claimed_at?: string | null
+          claimed_by?: string | null
           created_by_profile_id?: string | null
           email_account_id?: string | null
           error_message?: string | null
@@ -1570,12 +1625,15 @@ export type Database = {
           from_name?: string | null
           html?: string | null
           id?: string
+          last_error_code?: string | null
           locked_at?: string | null
           locked_by?: string | null
           max_attempts?: number
           message_id?: string | null
           metadata?: Json
           next_attempt_at?: string
+          provider?: string | null
+          provider_message_id?: string | null
           queued_at?: string
           related_id?: string | null
           related_type?: string | null
@@ -1587,6 +1645,7 @@ export type Database = {
           tenant_id?: string | null
           text_body?: string | null
           to_email?: string
+          worker_lease_until?: string | null
         }
         Relationships: [
           {
@@ -1625,6 +1684,63 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      email_send_metrics: {
+        Row: {
+          avg_latency_ms: number
+          bucket_at: string
+          created_at: string
+          email_account_id: string | null
+          failed_count: number
+          id: string
+          sent_count: number
+          tenant_id: string | null
+        }
+        Insert: {
+          avg_latency_ms?: number
+          bucket_at: string
+          created_at?: string
+          email_account_id?: string | null
+          failed_count?: number
+          id?: string
+          sent_count?: number
+          tenant_id?: string | null
+        }
+        Update: {
+          avg_latency_ms?: number
+          bucket_at?: string
+          created_at?: string
+          email_account_id?: string | null
+          failed_count?: number
+          id?: string
+          sent_count?: number
+          tenant_id?: string | null
+        }
+        Relationships: []
+      }
+      email_suppressions: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          reason: string
+          source: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          reason: string
+          source?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          reason?: string
+          source?: string | null
+        }
+        Relationships: []
       }
       imposition_templates: {
         Row: {
@@ -5098,6 +5214,58 @@ export type Database = {
         Args: { _branch_id: string }
         Returns: boolean
       }
+      claim_email_batch: {
+        Args: {
+          p_batch_size?: number
+          p_lease_seconds?: number
+          p_worker_id: string
+        }
+        Returns: {
+          app_id: string | null
+          attachments: Json
+          attempts: number
+          bcc: string[] | null
+          branch_id: string | null
+          category: string
+          cc: string[] | null
+          claimed_at: string | null
+          claimed_by: string | null
+          created_by_profile_id: string | null
+          email_account_id: string | null
+          error_message: string | null
+          from_email: string | null
+          from_name: string | null
+          html: string | null
+          id: string
+          last_error_code: string | null
+          locked_at: string | null
+          locked_by: string | null
+          max_attempts: number
+          message_id: string | null
+          metadata: Json
+          next_attempt_at: string
+          provider: string | null
+          provider_message_id: string | null
+          queued_at: string
+          related_id: string | null
+          related_type: string | null
+          reply_to: string | null
+          scheduled_for: string | null
+          sent_at: string | null
+          status: string
+          subject: string
+          tenant_id: string | null
+          text_body: string | null
+          to_email: string
+          worker_lease_until: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "email_outbox"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       clone_master_rate_card_to_tenant: {
         Args: { p_tenant_id: string }
         Returns: undefined
@@ -5231,6 +5399,7 @@ export type Database = {
         Args: { p_currency: string }
         Returns: number
       }
+      release_stuck_claims: { Args: never; Returns: number }
       resolve_delivery_zone: {
         Args: {
           p_branch_id: string
