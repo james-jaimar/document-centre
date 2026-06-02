@@ -1,0 +1,27 @@
+[Unit]
+Description=Document Centre Worker (emails: SMTP outbox dispatcher)
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/document-centre-api
+EnvironmentFile=/opt/document-centre-api/.env
+Environment=PYTHONUNBUFFERED=1
+# Dedicated pool for outbound SMTP. Each child is mostly waiting on the
+# remote SMTP server, so we can run many in parallel cheaply. Isolated from
+# render/thumbnail queues so a stuck SMTP connection cannot starve them.
+# Consumes:
+#   emails-default  — outbox scan + per-message send tasks
+#   emails-control  — admin/manual triggers (test sends, retries)
+ExecStart=/opt/document-centre-api/.venv/bin/celery -A app.worker.celery_app worker -l info -Q emails-default,emails-control -n emails@%H -P prefork --concurrency=16 --max-tasks-per-child=500 --max-memory-per-child=400000
+Restart=always
+RestartSec=5
+TimeoutStartSec=60
+KillSignal=SIGTERM
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
