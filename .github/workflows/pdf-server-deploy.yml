@@ -69,7 +69,9 @@ jobs:
       - name: Verify required Secret Manager entries exist
         run: |
           required=(PDF_DATABASE_URL PDF_SUPABASE_URL PDF_SUPABASE_SERVICE_ROLE_KEY \
-                    PDF_SUPABASE_STORAGE_BUCKET PDF_SECRET_KEY PDF_CORS_ORIGINS)
+                    PDF_SECRET_KEY PDF_CORS_ORIGINS PDF_STORAGE_MODE \
+                    PDF_AWS_S3_BUCKET PDF_AWS_S3_REGION \
+                    PDF_AWS_ACCESS_KEY_ID PDF_AWS_SECRET_ACCESS_KEY)
           missing=()
           for s in "${required[@]}"; do
             if ! gcloud secrets describe "$s" --project="${GCP_PROJECT_ID}" >/dev/null 2>&1; then
