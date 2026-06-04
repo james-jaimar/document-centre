@@ -95,5 +95,3 @@ class Settings(BaseSettings):
     admin_password: str = Field(alias='ADMIN_PASSWORD', default='admin123')
 
 settings = Settings()
-
-settings = Settings()
