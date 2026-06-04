@@ -1,79 +1,32 @@
-# Phase 2 — GCP Cloud Shell setup, then first deploy
+## Diagnosis
 
-Fonts are in git. Next steps run in your browser via **Google Cloud Shell** (no Windows tooling needed).
+The GitHub Action is reaching Cloud Run deployment successfully, so WIF, image push, and deploy permissions are working. The failing point is container startup.
 
-## Step 1 — Open Cloud Shell
+Two code/config issues stand out:
 
-1. Go to https://console.cloud.google.com/?project=project-59a14b18-b4df-4c6b-b09
-2. Top-right toolbar → click the **`>_`** terminal icon ("Activate Cloud Shell")
-3. Wait for the shell to provision (~30s)
+1. **Cloud Run expects the API to listen on `PORT=8080`**, and the entrypoint honours `$PORT`, but the Dockerfile still documents/exposes `8000`. This is confusing and can cause drift.
+2. **`app.core.config.Settings` requires `DATABASE_URL`, `REDIS_URL`, `CELERY_BROKER_URL`, and `CELERY_RESULT_BACKEND` at import time.** `app.main` imports settings before the server starts. The GitHub Action deploys `pdf-api` with only `ROLE=api,LOG_LEVEL=INFO`, so the FastAPI process likely exits immediately before it can bind to port 8080.
 
-## Step 2 — Pull the latest repo into Cloud Shell
+## Plan
 
-```bash
-cd ~
-git clone https://github.com/james-jaimar/document-centre.git || (cd document-centre && git pull)
-cd ~/document-centre
-ls pdf-server/fonts/microsoft pdf-server/fonts/century-gothic | head
-```
+1. **Make the API image Cloud Run-port aligned**
+   - Update the Dockerfile defaults from `API_PORT=8000` / `EXPOSE 8000` to `API_PORT=8080` / `EXPOSE 8080`.
+   - Keep the entrypoint behaviour of using Cloud Run’s `$PORT` first.
 
-You should see the proprietary font files listed. If not, stop and tell me.
+2. **Add required runtime environment variables to the Cloud Run deploy commands**
+   - Update `.github/workflows/pdf-server-deploy.yml` so `pdf-api`, `pdf-worker-heavy`, and `pdf-worker-light` receive required runtime env vars from GitHub Actions secrets.
+   - Minimum required secrets:
+     - `DATABASE_URL`
+     - `REDIS_URL`
+     - `CELERY_BROKER_URL`
+     - `CELERY_RESULT_BACKEND`
+     - plus Supabase/storage secrets if the deployed API needs real document operations immediately.
 
-## Step 3 — Run the GCP setup script
+3. **Add a fail-fast workflow validation step**
+   - Before build/deploy, check required secrets are present.
+   - If missing, fail with a clear message like `Missing required GitHub secret: DATABASE_URL` instead of waiting for Cloud Run startup failure.
 
-```bash
-bash pdf-server/docker/gcp-setup.sh
-```
-
-This is **idempotent** — safe to re-run. It will:
-
-- Enable APIs: `run`, `artifactregistry`, `iam`, `iamcredentials`, `cloudbuild`, `secretmanager`
-- Create Artifact Registry repo `dc-pdf` in `africa-south1`
-- Create runtime service account `dc-pdf-runtime@…`
-- Create deployer service account `github-deployer@…`
-- Create Workload Identity Pool `github-pool` + provider `github-provider`
-- Bind `github-deployer` to the repo `james-jaimar/document-centre` via WIF
-- Grant `roles/run.admin`, `roles/iam.serviceAccountUser`, `roles/artifactregistry.writer` to the deployer
-
-When it finishes, copy the final summary block it prints. Paste it back to me so I can verify the WIF provider string matches what's hard-coded in `.github/workflows/pdf-server-deploy.yml`.
-
-## Step 4 — Trigger the first deploy
-
-Either:
-
-**Option A — empty commit (recommended, cleanest):**
-```bash
-cd ~/document-centre
-git commit --allow-empty -m "ci: trigger first Cloud Run deploy"
-git push origin main
-```
-
-**Option B — manual trigger:**
-1. Go to https://github.com/james-jaimar/document-centre/actions/workflows/pdf-server-deploy.yml
-2. Click **Run workflow** → branch `main` → green button
-
-## Step 5 — Watch the build
-
-- GitHub Actions: https://github.com/james-jaimar/document-centre/actions
-- Expected runtime: 8–14 min (first build pulls Ubuntu 24.04 + LibreOffice + all fonts)
-- Three services will be created in Cloud Run on success: `pdf-api`, `pdf-worker-heavy`, `pdf-worker-light`
-
-## Step 6 — Smoke test pdf-api
-
-After the workflow goes green, in Cloud Shell:
-
-```bash
-PDF_API_URL=$(gcloud run services describe pdf-api --region africa-south1 --format='value(status.url)')
-echo "$PDF_API_URL"
-curl -fsS "$PDF_API_URL/health" || curl -fsS "$PDF_API_URL/"
-```
-
-Paste the output back to me.
-
----
-
-## What I need from you
-
-Just confirm: **"go"** and I'll switch to build mode if there's anything to update on the Lovable side after Step 6 (env vars in `usePdfApi`, edge function proxy URLs, etc.). For Steps 1–6 themselves, no code changes are needed — they're all Cloud Shell + GitHub Actions, and I'll watch the output you paste back.
-
-If the `gcp-setup.sh` script fails on any step, paste the full error and I'll patch it.
+4. **Recommended manual follow-up**
+   - In GitHub repo settings, add the required secrets under **Settings → Secrets and variables → Actions**.
+   - Re-run the workflow.
+   - If it still fails, open the Cloud Run Logs URL for the revision and paste the first Python traceback; at that point the port/env issue will be ruled out and we can target the next concrete error.

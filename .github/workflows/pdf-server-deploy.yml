@@ -35,6 +35,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate required secrets
+        env:
+          DATABASE_URL: ${{ secrets.PDF_DATABASE_URL }}
+          REDIS_URL: ${{ secrets.PDF_REDIS_URL }}
+          CELERY_BROKER_URL: ${{ secrets.PDF_CELERY_BROKER_URL }}
+          CELERY_RESULT_BACKEND: ${{ secrets.PDF_CELERY_RESULT_BACKEND }}
+        run: |
+          missing=()
+          for v in DATABASE_URL REDIS_URL CELERY_BROKER_URL CELERY_RESULT_BACKEND; do
+            if [ -z "${!v}" ]; then missing+=("PDF_$v"); fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required GitHub Actions secrets: ${missing[*]}"
+            echo "Add them at: Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+
       - name: Resolve image tag
         id: tag
         run: |
@@ -66,13 +83,47 @@ jobs:
         if: github.event.inputs.rollback_sha == ''
         run: docker push "${{ steps.tag.outputs.image }}"
 
+      - name: Write runtime env file
+        env:
+          DATABASE_URL: ${{ secrets.PDF_DATABASE_URL }}
+          REDIS_URL: ${{ secrets.PDF_REDIS_URL }}
+          CELERY_BROKER_URL: ${{ secrets.PDF_CELERY_BROKER_URL }}
+          CELERY_RESULT_BACKEND: ${{ secrets.PDF_CELERY_RESULT_BACKEND }}
+          SUPABASE_URL: ${{ secrets.PDF_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PDF_SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_STORAGE_BUCKET: ${{ secrets.PDF_SUPABASE_STORAGE_BUCKET }}
+          AWS_S3_BUCKET: ${{ secrets.PDF_AWS_S3_BUCKET }}
+          AWS_S3_REGION: ${{ secrets.PDF_AWS_S3_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PDF_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PDF_AWS_SECRET_ACCESS_KEY }}
+          STORAGE_MODE: ${{ secrets.PDF_STORAGE_MODE }}
+          SECRET_KEY: ${{ secrets.PDF_SECRET_KEY }}
+          ADMIN_USERNAME: ${{ secrets.PDF_ADMIN_USERNAME }}
+          ADMIN_PASSWORD: ${{ secrets.PDF_ADMIN_PASSWORD }}
+          CORS_ORIGINS: ${{ secrets.PDF_CORS_ORIGINS }}
+        run: |
+          # Build a YAML env file for --env-vars-file so values with commas/special chars are safe.
+          python3 - <<'PY' > /tmp/runtime.env.yaml
+          import os, yaml
+          keys = [
+              "DATABASE_URL","REDIS_URL","CELERY_BROKER_URL","CELERY_RESULT_BACKEND",
+              "SUPABASE_URL","SUPABASE_SERVICE_ROLE_KEY","SUPABASE_STORAGE_BUCKET",
+              "AWS_S3_BUCKET","AWS_S3_REGION","AWS_ACCESS_KEY_ID","AWS_SECRET_ACCESS_KEY",
+              "STORAGE_MODE","SECRET_KEY","ADMIN_USERNAME","ADMIN_PASSWORD","CORS_ORIGINS",
+          ]
+          out = {k: os.environ[k] for k in keys if os.environ.get(k)}
+          print(yaml.safe_dump(out, default_flow_style=False))
+          PY
+
       - name: Deploy pdf-api (HTTP)
         run: |
           gcloud run deploy pdf-api \
             --image="${{ steps.tag.outputs.image }}" \
             --region="${{ env.GCP_REGION }}" \
             --service-account="${{ env.RUNTIME_SA }}" \
-            --set-env-vars="ROLE=api,LOG_LEVEL=INFO" \
+            --port=8080 \
+            --env-vars-file=/tmp/runtime.env.yaml \
+            --update-env-vars="ROLE=api,LOG_LEVEL=INFO" \
             --memory=1Gi --cpu=1 \
             --concurrency=80 \
             --min-instances=0 --max-instances=10 \
@@ -86,7 +137,8 @@ jobs:
             --image="${{ steps.tag.outputs.image }}" \
             --region="${{ env.GCP_REGION }}" \
             --service-account="${{ env.RUNTIME_SA }}" \
-            --set-env-vars="ROLE=worker-heavy,LOG_LEVEL=INFO" \
+            --env-vars-file=/tmp/runtime.env.yaml \
+            --update-env-vars="ROLE=worker-heavy,LOG_LEVEL=INFO" \
             --memory=4Gi --cpu=2 \
             --concurrency=1 \
             --min-instances=0 --max-instances=5 \
@@ -100,7 +152,8 @@ jobs:
             --image="${{ steps.tag.outputs.image }}" \
             --region="${{ env.GCP_REGION }}" \
             --service-account="${{ env.RUNTIME_SA }}" \
-            --set-env-vars="ROLE=worker-light,LOG_LEVEL=INFO" \
+            --env-vars-file=/tmp/runtime.env.yaml \
+            --update-env-vars="ROLE=worker-light,LOG_LEVEL=INFO" \
             --memory=2Gi --cpu=1 \
             --concurrency=8 \
             --min-instances=0 --max-instances=10 \
