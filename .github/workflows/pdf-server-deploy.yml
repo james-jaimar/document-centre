@@ -1,5 +1,18 @@
 name: Deploy pdf-server to Cloud Run
 
+# Phase 1 of the GCP cutover (see .lovable/plan.md):
+#   - Builds the image, pushes to Artifact Registry.
+#   - Deploys ONLY the pdf-api service (FastAPI sync endpoints).
+#   - All runtime config comes from GCP Secret Manager via --set-secrets.
+#   - Celery workers, beat, and the email listener stay on the VPS until
+#     Phase 3 / Phase 5 of the plan.
+#
+# Required Secret Manager entries (create once via pdf-server/docker/secrets-bootstrap.sh):
+#   PDF_DATABASE_URL, PDF_SUPABASE_URL, PDF_SUPABASE_SERVICE_ROLE_KEY,
+#   PDF_SUPABASE_STORAGE_BUCKET, PDF_AWS_S3_BUCKET, PDF_AWS_S3_REGION,
+#   PDF_AWS_ACCESS_KEY_ID, PDF_AWS_SECRET_ACCESS_KEY, PDF_STORAGE_MODE,
+#   PDF_SECRET_KEY, PDF_ADMIN_USERNAME, PDF_ADMIN_PASSWORD, PDF_CORS_ORIGINS
+
 on:
   push:
     branches: [main]
@@ -13,8 +26,6 @@ on:
         required: false
         type: string
 
-# Hard-coded for the document-centre-prod-dc project. Update GCP_PROJECT_ID
-# in repository variables if the project ID ever changes.
 env:
   GCP_PROJECT_ID: project-59a14b18-b4df-4c6b-b09
   GCP_PROJECT_NUMBER: '622687766375'
@@ -35,23 +46,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate required secrets
-        env:
-          DATABASE_URL: ${{ secrets.PDF_DATABASE_URL }}
-          REDIS_URL: ${{ secrets.PDF_REDIS_URL }}
-          CELERY_BROKER_URL: ${{ secrets.PDF_CELERY_BROKER_URL }}
-          CELERY_RESULT_BACKEND: ${{ secrets.PDF_CELERY_RESULT_BACKEND }}
-        run: |
-          missing=()
-          for v in DATABASE_URL REDIS_URL CELERY_BROKER_URL CELERY_RESULT_BACKEND; do
-            if [ -z "${!v}" ]; then missing+=("PDF_$v"); fi
-          done
-          if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::Missing required GitHub Actions secrets: ${missing[*]}"
-            echo "Add them at: Settings → Secrets and variables → Actions"
-            exit 1
-          fi
-
       - name: Resolve image tag
         id: tag
         run: |
@@ -71,6 +65,22 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
 
+      - name: Verify required Secret Manager entries exist
+        run: |
+          required=(PDF_DATABASE_URL PDF_SUPABASE_URL PDF_SUPABASE_SERVICE_ROLE_KEY \
+                    PDF_SUPABASE_STORAGE_BUCKET PDF_SECRET_KEY PDF_CORS_ORIGINS)
+          missing=()
+          for s in "${required[@]}"; do
+            if ! gcloud secrets describe "$s" --project="${GCP_PROJECT_ID}" >/dev/null 2>&1; then
+              missing+=("$s")
+            fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing Secret Manager entries: ${missing[*]}"
+            echo "Create them by running: bash pdf-server/docker/secrets-bootstrap.sh"
+            exit 1
+          fi
+
       - name: Build image
         if: github.event.inputs.rollback_sha == ''
         run: |
@@ -83,47 +93,44 @@ jobs:
         if: github.event.inputs.rollback_sha == ''
         run: docker push "${{ steps.tag.outputs.image }}"
 
-      - name: Write runtime env file
-        env:
-          DATABASE_URL: ${{ secrets.PDF_DATABASE_URL }}
-          REDIS_URL: ${{ secrets.PDF_REDIS_URL }}
-          CELERY_BROKER_URL: ${{ secrets.PDF_CELERY_BROKER_URL }}
-          CELERY_RESULT_BACKEND: ${{ secrets.PDF_CELERY_RESULT_BACKEND }}
-          SUPABASE_URL: ${{ secrets.PDF_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PDF_SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_STORAGE_BUCKET: ${{ secrets.PDF_SUPABASE_STORAGE_BUCKET }}
-          AWS_S3_BUCKET: ${{ secrets.PDF_AWS_S3_BUCKET }}
-          AWS_S3_REGION: ${{ secrets.PDF_AWS_S3_REGION }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.PDF_AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.PDF_AWS_SECRET_ACCESS_KEY }}
-          STORAGE_MODE: ${{ secrets.PDF_STORAGE_MODE }}
-          SECRET_KEY: ${{ secrets.PDF_SECRET_KEY }}
-          ADMIN_USERNAME: ${{ secrets.PDF_ADMIN_USERNAME }}
-          ADMIN_PASSWORD: ${{ secrets.PDF_ADMIN_PASSWORD }}
-          CORS_ORIGINS: ${{ secrets.PDF_CORS_ORIGINS }}
-        run: |
-          # Build a YAML env file for --env-vars-file so values with commas/special chars are safe.
-          python3 - <<'PY' > /tmp/runtime.env.yaml
-          import os, yaml
-          keys = [
-              "DATABASE_URL","REDIS_URL","CELERY_BROKER_URL","CELERY_RESULT_BACKEND",
-              "SUPABASE_URL","SUPABASE_SERVICE_ROLE_KEY","SUPABASE_STORAGE_BUCKET",
-              "AWS_S3_BUCKET","AWS_S3_REGION","AWS_ACCESS_KEY_ID","AWS_SECRET_ACCESS_KEY",
-              "STORAGE_MODE","SECRET_KEY","ADMIN_USERNAME","ADMIN_PASSWORD","CORS_ORIGINS",
-          ]
-          out = {k: os.environ[k] for k in keys if os.environ.get(k)}
-          print(yaml.safe_dump(out, default_flow_style=False))
-          PY
-
       - name: Deploy pdf-api (HTTP)
         run: |
+          # Optional secrets are added to --set-secrets only if they exist,
+          # so the first deploy works even before AWS / admin secrets are set.
+          BASE_SECRETS=(
+            "DATABASE_URL=PDF_DATABASE_URL:latest"
+            "SUPABASE_URL=PDF_SUPABASE_URL:latest"
+            "SUPABASE_SERVICE_ROLE_KEY=PDF_SUPABASE_SERVICE_ROLE_KEY:latest"
+            "SUPABASE_STORAGE_BUCKET=PDF_SUPABASE_STORAGE_BUCKET:latest"
+            "SECRET_KEY=PDF_SECRET_KEY:latest"
+            "CORS_ORIGINS=PDF_CORS_ORIGINS:latest"
+          )
+          OPTIONAL=(
+            "STORAGE_MODE=PDF_STORAGE_MODE"
+            "AWS_S3_BUCKET=PDF_AWS_S3_BUCKET"
+            "AWS_S3_REGION=PDF_AWS_S3_REGION"
+            "AWS_ACCESS_KEY_ID=PDF_AWS_ACCESS_KEY_ID"
+            "AWS_SECRET_ACCESS_KEY=PDF_AWS_SECRET_ACCESS_KEY"
+            "ADMIN_USERNAME=PDF_ADMIN_USERNAME"
+            "ADMIN_PASSWORD=PDF_ADMIN_PASSWORD"
+          )
+          SECRETS=("${BASE_SECRETS[@]}")
+          for entry in "${OPTIONAL[@]}"; do
+            env_name="${entry%%=*}"
+            sec_name="${entry##*=}"
+            if gcloud secrets describe "$sec_name" --project="${GCP_PROJECT_ID}" >/dev/null 2>&1; then
+              SECRETS+=("${env_name}=${sec_name}:latest")
+            fi
+          done
+          SECRET_FLAG=$(IFS=,; echo "${SECRETS[*]}")
+
           gcloud run deploy pdf-api \
             --image="${{ steps.tag.outputs.image }}" \
             --region="${{ env.GCP_REGION }}" \
             --service-account="${{ env.RUNTIME_SA }}" \
             --port=8080 \
-            --env-vars-file=/tmp/runtime.env.yaml \
-            --update-env-vars="ROLE=api,LOG_LEVEL=INFO" \
+            --set-env-vars="ROLE=api,LOG_LEVEL=INFO,APP_ENV=production" \
+            --set-secrets="$SECRET_FLAG" \
             --memory=1Gi --cpu=1 \
             --concurrency=80 \
             --min-instances=0 --max-instances=10 \
@@ -131,47 +138,17 @@ jobs:
             --allow-unauthenticated \
             --quiet
 
-      - name: Deploy pdf-worker-heavy (internal)
-        run: |
-          gcloud run deploy pdf-worker-heavy \
-            --image="${{ steps.tag.outputs.image }}" \
-            --region="${{ env.GCP_REGION }}" \
-            --service-account="${{ env.RUNTIME_SA }}" \
-            --env-vars-file=/tmp/runtime.env.yaml \
-            --update-env-vars="ROLE=worker-heavy,LOG_LEVEL=INFO" \
-            --memory=4Gi --cpu=2 \
-            --concurrency=1 \
-            --min-instances=0 --max-instances=5 \
-            --timeout=900 \
-            --no-allow-unauthenticated \
-            --quiet
-
-      - name: Deploy pdf-worker-light (internal)
-        run: |
-          gcloud run deploy pdf-worker-light \
-            --image="${{ steps.tag.outputs.image }}" \
-            --region="${{ env.GCP_REGION }}" \
-            --service-account="${{ env.RUNTIME_SA }}" \
-            --env-vars-file=/tmp/runtime.env.yaml \
-            --update-env-vars="ROLE=worker-light,LOG_LEVEL=INFO" \
-            --memory=2Gi --cpu=1 \
-            --concurrency=8 \
-            --min-instances=0 --max-instances=10 \
-            --timeout=600 \
-            --no-allow-unauthenticated \
-            --quiet
-
       - name: Summary
         run: |
+          URL=$(gcloud run services describe pdf-api --region="${{ env.GCP_REGION }}" --format='value(status.url)')
           {
             echo "## Deployed"
             echo ""
+            echo "- **Service**: pdf-api"
+            echo "- **URL**: $URL"
             echo "- **Image**: \`${{ steps.tag.outputs.image }}\`"
             echo "- **Commit**: \`${{ steps.tag.outputs.sha }}\`"
             echo "- **Region**: ${{ env.GCP_REGION }}"
             echo ""
-            echo "### Services"
-            echo "- pdf-api"
-            echo "- pdf-worker-heavy"
-            echo "- pdf-worker-light"
+            echo "_Workers (heavy/light/emails) and beat remain on the VPS until Phase 3 of the cutover plan._"
           } >> "$GITHUB_STEP_SUMMARY"
