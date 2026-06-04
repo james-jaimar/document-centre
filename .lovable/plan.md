@@ -1,38 +1,79 @@
-# Branch Sent Mail
+# Phase 2 — GCP Cloud Shell setup, then first deploy
 
-Give branch admins their own outbox view, scoped strictly to their branch — mirroring the existing tenant-level `AdminSentMail`, but filtered by `branch_id`.
+Fonts are in git. Next steps run in your browser via **Google Cloud Shell** (no Windows tooling needed).
 
-## Why
-- SMTP accounts are configured per branch (`BranchEmailAccountsPanel`), so each branch is effectively the sender.
-- `email_outbox` already carries both `tenant_id` and `branch_id`, so scoping is clean.
-- Branch staff currently have no visibility into whether their order confirmations / proformas actually went out, are stuck queued, or failed — they have to ask a tenant admin.
+## Step 1 — Open Cloud Shell
 
-## What to build
+1. Go to https://console.cloud.google.com/?project=project-59a14b18-b4df-4c6b-b09
+2. Top-right toolbar → click the **`>_`** terminal icon ("Activate Cloud Shell")
+3. Wait for the shell to provision (~30s)
 
-1. **New page** `src/pages/branch/BranchSentMail.tsx`
-   - Clone of `src/pages/admin/AdminSentMail.tsx`, with these changes:
-     - Pull `branchId` from `useTenantContext()` (or `BranchContext`) in addition to `tenantId`.
-     - Add `.eq("branch_id", branchId)` to the `email_outbox` query.
-     - Same filters (status, category, search), same stat cards, same detail Sheet (HTML / text / metadata tabs).
-     - Same "Cancel queued" action — already safe because RLS will enforce branch scope.
-   - Header copy: "Sent Mail" / "Outgoing email for this branch."
+## Step 2 — Pull the latest repo into Cloud Shell
 
-2. **Route** in `src/App.tsx`
-   - `<Route path="/branch/sent-mail" element={<BranchSentMail />} />`
+```bash
+cd ~
+git clone https://github.com/james-jaimar/document-centre.git || (cd document-centre && git pull)
+cd ~/document-centre
+ls pdf-server/fonts/microsoft pdf-server/fonts/century-gothic | head
+```
 
-3. **Sidebar entry** in `src/components/BranchSidebar.tsx`
-   - Add a "Sent Mail" item with the `Mail` icon, placed near Settings (since it's an operational/ops view, not a customer-facing one).
+You should see the proprietary font files listed. If not, stop and tell me.
 
-4. **RLS sanity check** on `email_outbox`
-   - Verify existing SELECT policy already allows branch members to read their branch's rows. If it currently only checks `tenant_id` membership, tighten/extend so a branch user only sees rows where `branch_id = <their branch>` OR add a branch-scoped policy. (Will confirm and, if needed, propose a small migration as part of implementation — flagged here, not silently changed.)
-   - Same review for the UPDATE policy used by "Cancel queued".
+## Step 3 — Run the GCP setup script
 
-## What NOT to build (out of scope for this round)
-- No resend / retry button (current tenant page doesn't have one either — keep parity).
-- No per-branch quotas, throttling, or analytics charts.
-- No changes to send pipeline, listener, or workers.
+```bash
+bash pdf-server/docker/gcp-setup.sh
+```
 
-## Technical notes
-- Reuse `STATUS_TONE` map and table/sheet structure verbatim — copy-paste is fine here; if a third copy ever appears we extract a shared `<EmailOutboxTable />`.
-- `email_account_id` is already on the row → optional small enhancement: show the account label in the detail sheet by joining `email_accounts`. Low effort, high clarity. Include it.
-- Permissions: gate the route/sidebar item on branch membership roles that should see outgoing mail (Owner, Admin, Sales, Accounts). Hide from Production-only members.
+This is **idempotent** — safe to re-run. It will:
+
+- Enable APIs: `run`, `artifactregistry`, `iam`, `iamcredentials`, `cloudbuild`, `secretmanager`
+- Create Artifact Registry repo `dc-pdf` in `africa-south1`
+- Create runtime service account `dc-pdf-runtime@…`
+- Create deployer service account `github-deployer@…`
+- Create Workload Identity Pool `github-pool` + provider `github-provider`
+- Bind `github-deployer` to the repo `james-jaimar/document-centre` via WIF
+- Grant `roles/run.admin`, `roles/iam.serviceAccountUser`, `roles/artifactregistry.writer` to the deployer
+
+When it finishes, copy the final summary block it prints. Paste it back to me so I can verify the WIF provider string matches what's hard-coded in `.github/workflows/pdf-server-deploy.yml`.
+
+## Step 4 — Trigger the first deploy
+
+Either:
+
+**Option A — empty commit (recommended, cleanest):**
+```bash
+cd ~/document-centre
+git commit --allow-empty -m "ci: trigger first Cloud Run deploy"
+git push origin main
+```
+
+**Option B — manual trigger:**
+1. Go to https://github.com/james-jaimar/document-centre/actions/workflows/pdf-server-deploy.yml
+2. Click **Run workflow** → branch `main` → green button
+
+## Step 5 — Watch the build
+
+- GitHub Actions: https://github.com/james-jaimar/document-centre/actions
+- Expected runtime: 8–14 min (first build pulls Ubuntu 24.04 + LibreOffice + all fonts)
+- Three services will be created in Cloud Run on success: `pdf-api`, `pdf-worker-heavy`, `pdf-worker-light`
+
+## Step 6 — Smoke test pdf-api
+
+After the workflow goes green, in Cloud Shell:
+
+```bash
+PDF_API_URL=$(gcloud run services describe pdf-api --region africa-south1 --format='value(status.url)')
+echo "$PDF_API_URL"
+curl -fsS "$PDF_API_URL/health" || curl -fsS "$PDF_API_URL/"
+```
+
+Paste the output back to me.
+
+---
+
+## What I need from you
+
+Just confirm: **"go"** and I'll switch to build mode if there's anything to update on the Lovable side after Step 6 (env vars in `usePdfApi`, edge function proxy URLs, etc.). For Steps 1–6 themselves, no code changes are needed — they're all Cloud Shell + GitHub Actions, and I'll watch the output you paste back.
+
+If the `gcp-setup.sh` script fails on any step, paste the full error and I'll patch it.
