@@ -3,6 +3,9 @@
 #
 # Cloud Run sets PORT for HTTP services; we honour it for the api role and
 # fall back to API_PORT (default 8000) for local docker run.
+#
+# Celery `-A app.worker.celery_app` matches the systemd units on the live VPS
+# verbatim (see pdf-server/docker/MANIFEST.md → "Systemd unit environment").
 set -euo pipefail
 
 ROLE="${ROLE:-api}"
@@ -17,13 +20,15 @@ case "$ROLE" in
       --port "$PORT" \
       --workers "${UVICORN_WORKERS:-2}" \
       --proxy-headers \
-      --forwarded-allow-ips='*'
+      --forwarded-allow-ips='*' \
+      --timeout-keep-alive 30
     ;;
 
   worker-heavy)
-    exec celery -A app.worker worker \
+    exec celery -A app.worker.celery_app worker \
       -Q documents,imposition,pdf \
       -n "heavy@%h" \
+      -P prefork \
       --concurrency="${CELERY_HEAVY_CONCURRENCY:-2}" \
       --max-tasks-per-child=25 \
       --max-memory-per-child=1500000 \
@@ -31,9 +36,10 @@ case "$ROLE" in
     ;;
 
   worker-light)
-    exec celery -A app.worker worker \
+    exec celery -A app.worker.celery_app worker \
       -Q default,thumbnails \
       -n "light@%h" \
+      -P prefork \
       --concurrency="${CELERY_LIGHT_CONCURRENCY:-4}" \
       --max-tasks-per-child=200 \
       --max-memory-per-child=600000 \
@@ -41,16 +47,28 @@ case "$ROLE" in
     ;;
 
   worker-emails)
-    exec celery -A app.worker worker \
+    exec celery -A app.worker.celery_app worker \
       -Q emails-default,emails-control \
       -n "emails@%h" \
-      --concurrency="${CELERY_EMAILS_CONCURRENCY:-2}" \
+      -P prefork \
+      --concurrency="${CELERY_EMAILS_CONCURRENCY:-16}" \
       --max-tasks-per-child=500 \
+      --max-memory-per-child=400000 \
       --loglevel="${LOG_LEVEL:-INFO}"
     ;;
 
+  listener-emails)
+    # Postgres LISTEN/NOTIFY → primary email dispatch path. Not deployed to
+    # Cloud Run in Phase 2 (stays on VPS); image still ships the role so
+    # Phase 5 cutover only needs an env-var flip.
+    exec python -m app.email.listener
+    ;;
+
   beat)
-    exec celery -A app.worker beat --loglevel="${LOG_LEVEL:-INFO}"
+    # Cloud Run filesystem is read-only except /tmp.
+    exec celery -A app.worker.celery_app beat \
+      --schedule=/tmp/celery/celerybeat-schedule \
+      --loglevel="${LOG_LEVEL:-INFO}"
     ;;
 
   shell)
@@ -58,7 +76,7 @@ case "$ROLE" in
     ;;
 
   *)
-    echo "[entrypoint] unknown ROLE=$ROLE (expected: api|worker-heavy|worker-light|worker-emails|beat|shell)" >&2
+    echo "[entrypoint] unknown ROLE=$ROLE (expected: api|worker-heavy|worker-light|worker-emails|listener-emails|beat|shell)" >&2
     exit 64
     ;;
 esac
