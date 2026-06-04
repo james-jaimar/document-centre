@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
     supabase_url: str = Field(alias='SUPABASE_URL', default='')
     supabase_service_role_key: str = Field(alias='SUPABASE_SERVICE_ROLE_KEY', default='')
-    supabase_storage_bucket: str = Field(alias='SUPABASE_STORAGE_BUCKET', default='documents')
+    supabase_storage_bucket: str = Field(alias='SUPABASE_STORAGE_BUCKET', default='')
 
     storage_mode: str = Field(alias='STORAGE_MODE', default='s3')
     local_storage_path: str = Field(alias='LOCAL_STORAGE_PATH', default='./storage')
