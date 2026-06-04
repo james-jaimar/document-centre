@@ -20,9 +20,14 @@ class Settings(BaseSettings):
     secret_key: str = Field(alias='SECRET_KEY', default='change-me')
 
     database_url: str = Field(alias='DATABASE_URL')
-    redis_url: str = Field(alias='REDIS_URL')
-    celery_broker_url: str = Field(alias='CELERY_BROKER_URL')
-    celery_result_backend: str = Field(alias='CELERY_RESULT_BACKEND')
+    # Redis / Celery are optional in Phase 1 of the Cloud Run cutover:
+    # the API container does not connect to Redis at import time (Celery is
+    # constructed lazily — only .delay() / .control.* actually open sockets).
+    # Workers on the VPS still get the real URLs via systemd env. Defaults
+    # below keep `pdf-api` booting on Cloud Run without Redis configured.
+    redis_url: str = Field(alias='REDIS_URL', default='memory://')
+    celery_broker_url: str = Field(alias='CELERY_BROKER_URL', default='memory://')
+    celery_result_backend: str = Field(alias='CELERY_RESULT_BACKEND', default='cache+memory://')
 
     supabase_url: str = Field(alias='SUPABASE_URL', default='')
     supabase_service_role_key: str = Field(alias='SUPABASE_SERVICE_ROLE_KEY', default='')
