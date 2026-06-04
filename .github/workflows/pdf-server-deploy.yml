@@ -1,0 +1,124 @@
+name: Deploy pdf-server to Cloud Run
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pdf-server/**'
+      - '.github/workflows/pdf-server-deploy.yml'
+  workflow_dispatch:
+    inputs:
+      rollback_sha:
+        description: 'Optional: redeploy a previous commit SHA (40-char hash)'
+        required: false
+        type: string
+
+# Hard-coded for the document-centre-prod-dc project. Update GCP_PROJECT_ID
+# in repository variables if the project ID ever changes.
+env:
+  GCP_PROJECT_ID: project-59a14b18-b4df-4c6b-b09
+  GCP_PROJECT_NUMBER: '622687766375'
+  GCP_REGION: africa-south1
+  AR_REPO: dc-pdf
+  IMAGE_NAME: server
+  WIF_PROVIDER: projects/622687766375/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+  DEPLOY_SA: github-deployer@project-59a14b18-b4df-4c6b-b09.iam.gserviceaccount.com
+  RUNTIME_SA: dc-pdf-runtime@project-59a14b18-b4df-4c6b-b09.iam.gserviceaccount.com
+
+permissions:
+  contents: read
+  id-token: write   # required for Workload Identity Federation
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve image tag
+        id: tag
+        run: |
+          SHA="${{ github.event.inputs.rollback_sha || github.sha }}"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "image=${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPO}/${IMAGE_NAME}:$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to GCP (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SA }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Build image
+        if: github.event.inputs.rollback_sha == ''
+        run: |
+          docker build \
+            -f pdf-server/Dockerfile \
+            -t "${{ steps.tag.outputs.image }}" \
+            .
+
+      - name: Push image
+        if: github.event.inputs.rollback_sha == ''
+        run: docker push "${{ steps.tag.outputs.image }}"
+
+      - name: Deploy pdf-api (HTTP)
+        run: |
+          gcloud run deploy pdf-api \
+            --image="${{ steps.tag.outputs.image }}" \
+            --region="${{ env.GCP_REGION }}" \
+            --service-account="${{ env.RUNTIME_SA }}" \
+            --set-env-vars="ROLE=api,LOG_LEVEL=INFO" \
+            --memory=1Gi --cpu=1 \
+            --concurrency=80 \
+            --min-instances=0 --max-instances=10 \
+            --timeout=300 \
+            --allow-unauthenticated \
+            --quiet
+
+      - name: Deploy pdf-worker-heavy (internal)
+        run: |
+          gcloud run deploy pdf-worker-heavy \
+            --image="${{ steps.tag.outputs.image }}" \
+            --region="${{ env.GCP_REGION }}" \
+            --service-account="${{ env.RUNTIME_SA }}" \
+            --set-env-vars="ROLE=worker-heavy,LOG_LEVEL=INFO" \
+            --memory=4Gi --cpu=2 \
+            --concurrency=1 \
+            --min-instances=0 --max-instances=5 \
+            --timeout=900 \
+            --no-allow-unauthenticated \
+            --quiet
+
+      - name: Deploy pdf-worker-light (internal)
+        run: |
+          gcloud run deploy pdf-worker-light \
+            --image="${{ steps.tag.outputs.image }}" \
+            --region="${{ env.GCP_REGION }}" \
+            --service-account="${{ env.RUNTIME_SA }}" \
+            --set-env-vars="ROLE=worker-light,LOG_LEVEL=INFO" \
+            --memory=2Gi --cpu=1 \
+            --concurrency=8 \
+            --min-instances=0 --max-instances=10 \
+            --timeout=600 \
+            --no-allow-unauthenticated \
+            --quiet
+
+      - name: Summary
+        run: |
+          {
+            echo "## Deployed"
+            echo ""
+            echo "- **Image**: \`${{ steps.tag.outputs.image }}\`"
+            echo "- **Commit**: \`${{ steps.tag.outputs.sha }}\`"
+            echo "- **Region**: ${{ env.GCP_REGION }}"
+            echo ""
+            echo "### Services"
+            echo "- pdf-api"
+            echo "- pdf-worker-heavy"
+            echo "- pdf-worker-light"
+          } >> "$GITHUB_STEP_SUMMARY"

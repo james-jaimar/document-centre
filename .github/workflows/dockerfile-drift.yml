@@ -1,0 +1,47 @@
+name: Dockerfile drift check
+
+on:
+  pull_request:
+    paths:
+      - 'pdf-server/requirements.txt'
+      - 'pdf-server/scripts/install-ubuntu.sh'
+      - 'pdf-server/scripts/install-icc-profiles.sh'
+      - 'pdf-server/scripts/install-pdfcpu.sh'
+      - 'pdf-server/Dockerfile'
+      - 'pdf-server/docker/MANIFEST.md'
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fail if deps changed without Dockerfile/MANIFEST update
+        run: |
+          set -e
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+
+          DEPS_CHANGED=$(git diff --name-only "$BASE" "$HEAD" -- \
+            pdf-server/requirements.txt \
+            pdf-server/scripts/install-ubuntu.sh \
+            pdf-server/scripts/install-icc-profiles.sh \
+            pdf-server/scripts/install-pdfcpu.sh)
+
+          DOCKER_CHANGED=$(git diff --name-only "$BASE" "$HEAD" -- \
+            pdf-server/Dockerfile \
+            pdf-server/docker/MANIFEST.md)
+
+          if [ -n "$DEPS_CHANGED" ] && [ -z "$DOCKER_CHANGED" ]; then
+            echo "::error::Dependency files changed but Dockerfile/MANIFEST were not updated."
+            echo "Changed deps:"
+            echo "$DEPS_CHANGED" | sed 's/^/  - /'
+            echo ""
+            echo "Update pdf-server/Dockerfile and pdf-server/docker/MANIFEST.md, or"
+            echo "touch MANIFEST.md with a comment explaining why no image change is needed."
+            exit 1
+          fi
+
+          echo "✅ Drift check passed."
