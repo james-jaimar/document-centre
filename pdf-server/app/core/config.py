@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     supabase_service_role_key: str = Field(alias='SUPABASE_SERVICE_ROLE_KEY', default='')
     supabase_storage_bucket: str = Field(alias='SUPABASE_STORAGE_BUCKET', default='documents')
 
-    storage_mode: str = Field(alias='STORAGE_MODE', default='supabase')
+    storage_mode: str = Field(alias='STORAGE_MODE', default='s3')
     local_storage_path: str = Field(alias='LOCAL_STORAGE_PATH', default='./storage')
     aws_s3_bucket: str = Field(alias='AWS_S3_BUCKET', default='')
     aws_s3_region: str = Field(alias='AWS_S3_REGION', default='af-south-1')
