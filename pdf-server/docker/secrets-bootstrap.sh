@@ -5,25 +5,35 @@
 # Run interactively in Cloud Shell, once per environment:
 #   bash pdf-server/docker/secrets-bootstrap.sh
 #
-# Idempotent: re-running prompts you to add a new version of each secret
-# (you can press Enter to skip any value you don't want to rotate).
+# Idempotent: re-running adds a new version of any secret you supply a value
+# for, and skips ones you leave blank.
 #
-# Required secrets (will block the workflow if missing):
-#   PDF_DATABASE_URL                  Postgres URL (use Supabase TRANSACTION-mode
-#                                     pooler — port 6543 — for Cloud Run.
+# Storage model: S3 only (af-south-1). Supabase is used purely for Postgres
+# (and a small legacy fallback in storage.py that is unreachable in
+# production). PDF_SUPABASE_URL / PDF_SUPABASE_SERVICE_ROLE_KEY are still
+# required because the FastAPI app instantiates a Supabase client at boot
+# for DB-adjacent calls — not for file storage.
+#
+# Required secrets (workflow blocks deploy if any are missing):
+#   PDF_DATABASE_URL                  Postgres URL. MUST use the Supabase
+#                                     TRANSACTION-mode pooler (port 6543).
+#                                     Cloud Run is ephemeral and will
+#                                     exhaust direct connections (5432).
 #                                     Format: postgresql+psycopg://postgres.<ref>:<password>
-#                                       @aws-0-<region>.pooler.supabase.com:6543/postgres)
+#                                       @aws-0-<region>.pooler.supabase.com:6543/postgres
 #   PDF_SUPABASE_URL                  https://<ref>.supabase.co
 #   PDF_SUPABASE_SERVICE_ROLE_KEY     service_role JWT from Supabase
-#   PDF_SUPABASE_STORAGE_BUCKET       e.g. "documents"
 #   PDF_SECRET_KEY                    any 32+ char random string
 #   PDF_CORS_ORIGINS                  comma-separated, e.g.
 #                                     "https://document-centre.com,https://www.document-centre.com"
+#   PDF_STORAGE_MODE                  must be "s3"
+#   PDF_AWS_S3_BUCKET                 e.g. "jaimar-dev-600743178200-af-south-1-an"
+#   PDF_AWS_S3_REGION                 "af-south-1"
+#   PDF_AWS_ACCESS_KEY_ID             IAM access key with bucket access
+#   PDF_AWS_SECRET_ACCESS_KEY         matching secret
 #
 # Optional (skip with Enter — Cloud Run will simply not mount them):
-#   PDF_STORAGE_MODE                  "supabase" | "s3"
-#   PDF_AWS_S3_BUCKET, PDF_AWS_S3_REGION,
-#   PDF_AWS_ACCESS_KEY_ID, PDF_AWS_SECRET_ACCESS_KEY
+#   PDF_SUPABASE_STORAGE_BUCKET       legacy, unused in S3 mode
 #   PDF_ADMIN_USERNAME, PDF_ADMIN_PASSWORD
 
 set -euo pipefail
@@ -35,17 +45,17 @@ REQUIRED=(
   PDF_DATABASE_URL
   PDF_SUPABASE_URL
   PDF_SUPABASE_SERVICE_ROLE_KEY
-  PDF_SUPABASE_STORAGE_BUCKET
   PDF_SECRET_KEY
   PDF_CORS_ORIGINS
-)
-
-OPTIONAL=(
   PDF_STORAGE_MODE
   PDF_AWS_S3_BUCKET
   PDF_AWS_S3_REGION
   PDF_AWS_ACCESS_KEY_ID
   PDF_AWS_SECRET_ACCESS_KEY
+)
+
+OPTIONAL=(
+  PDF_SUPABASE_STORAGE_BUCKET
   PDF_ADMIN_USERNAME
   PDF_ADMIN_PASSWORD
 )

@@ -9,9 +9,10 @@ name: Deploy pdf-server to Cloud Run
 #
 # Required Secret Manager entries (create once via pdf-server/docker/secrets-bootstrap.sh):
 #   PDF_DATABASE_URL, PDF_SUPABASE_URL, PDF_SUPABASE_SERVICE_ROLE_KEY,
-#   PDF_SUPABASE_STORAGE_BUCKET, PDF_AWS_S3_BUCKET, PDF_AWS_S3_REGION,
-#   PDF_AWS_ACCESS_KEY_ID, PDF_AWS_SECRET_ACCESS_KEY, PDF_STORAGE_MODE,
-#   PDF_SECRET_KEY, PDF_ADMIN_USERNAME, PDF_ADMIN_PASSWORD, PDF_CORS_ORIGINS
+#   PDF_STORAGE_MODE, PDF_AWS_S3_BUCKET, PDF_AWS_S3_REGION,
+#   PDF_AWS_ACCESS_KEY_ID, PDF_AWS_SECRET_ACCESS_KEY,
+#   PDF_SECRET_KEY, PDF_CORS_ORIGINS
+# Optional: PDF_SUPABASE_STORAGE_BUCKET, PDF_ADMIN_USERNAME, PDF_ADMIN_PASSWORD
 
 on:
   push:
@@ -68,7 +69,9 @@ jobs:
       - name: Verify required Secret Manager entries exist
         run: |
           required=(PDF_DATABASE_URL PDF_SUPABASE_URL PDF_SUPABASE_SERVICE_ROLE_KEY \
-                    PDF_SUPABASE_STORAGE_BUCKET PDF_SECRET_KEY PDF_CORS_ORIGINS)
+                    PDF_SECRET_KEY PDF_CORS_ORIGINS PDF_STORAGE_MODE \
+                    PDF_AWS_S3_BUCKET PDF_AWS_S3_REGION \
+                    PDF_AWS_ACCESS_KEY_ID PDF_AWS_SECRET_ACCESS_KEY)
           missing=()
           for s in "${required[@]}"; do
             if ! gcloud secrets describe "$s" --project="${GCP_PROJECT_ID}" >/dev/null 2>&1; then
@@ -101,16 +104,16 @@ jobs:
             "DATABASE_URL=PDF_DATABASE_URL:latest"
             "SUPABASE_URL=PDF_SUPABASE_URL:latest"
             "SUPABASE_SERVICE_ROLE_KEY=PDF_SUPABASE_SERVICE_ROLE_KEY:latest"
-            "SUPABASE_STORAGE_BUCKET=PDF_SUPABASE_STORAGE_BUCKET:latest"
             "SECRET_KEY=PDF_SECRET_KEY:latest"
             "CORS_ORIGINS=PDF_CORS_ORIGINS:latest"
+            "STORAGE_MODE=PDF_STORAGE_MODE:latest"
+            "AWS_S3_BUCKET=PDF_AWS_S3_BUCKET:latest"
+            "AWS_S3_REGION=PDF_AWS_S3_REGION:latest"
+            "AWS_ACCESS_KEY_ID=PDF_AWS_ACCESS_KEY_ID:latest"
+            "AWS_SECRET_ACCESS_KEY=PDF_AWS_SECRET_ACCESS_KEY:latest"
           )
           OPTIONAL=(
-            "STORAGE_MODE=PDF_STORAGE_MODE"
-            "AWS_S3_BUCKET=PDF_AWS_S3_BUCKET"
-            "AWS_S3_REGION=PDF_AWS_S3_REGION"
-            "AWS_ACCESS_KEY_ID=PDF_AWS_ACCESS_KEY_ID"
-            "AWS_SECRET_ACCESS_KEY=PDF_AWS_SECRET_ACCESS_KEY"
+            "SUPABASE_STORAGE_BUCKET=PDF_SUPABASE_STORAGE_BUCKET"
             "ADMIN_USERNAME=PDF_ADMIN_USERNAME"
             "ADMIN_PASSWORD=PDF_ADMIN_PASSWORD"
           )

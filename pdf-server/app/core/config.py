@@ -31,9 +31,9 @@ class Settings(BaseSettings):
 
     supabase_url: str = Field(alias='SUPABASE_URL', default='')
     supabase_service_role_key: str = Field(alias='SUPABASE_SERVICE_ROLE_KEY', default='')
-    supabase_storage_bucket: str = Field(alias='SUPABASE_STORAGE_BUCKET', default='documents')
+    supabase_storage_bucket: str = Field(alias='SUPABASE_STORAGE_BUCKET', default='')
 
-    storage_mode: str = Field(alias='STORAGE_MODE', default='supabase')
+    storage_mode: str = Field(alias='STORAGE_MODE', default='s3')
     local_storage_path: str = Field(alias='LOCAL_STORAGE_PATH', default='./storage')
     aws_s3_bucket: str = Field(alias='AWS_S3_BUCKET', default='')
     aws_s3_region: str = Field(alias='AWS_S3_REGION', default='af-south-1')
@@ -93,7 +93,5 @@ class Settings(BaseSettings):
     cors_origins: str = Field(alias='CORS_ORIGINS', default='http://localhost:5173')
     admin_username: str = Field(alias='ADMIN_USERNAME', default='admin')
     admin_password: str = Field(alias='ADMIN_PASSWORD', default='admin123')
-
-settings = Settings()
 
 settings = Settings()

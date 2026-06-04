@@ -4,6 +4,9 @@
 **Region:** `africa-south1` (Johannesburg).
 **Runtime config:** GCP Secret Manager (no values in GitHub).
 **Email listener:** stays on the VPS.
+**Storage:** S3 only (`af-south-1`). The `supabase` branch in
+`pdf-server/app/services/storage.py` is dead and slated for removal in a
+follow-up.
 **Redis:** none. Target broker is Cloud Tasks (introduced in Phase 2).
 
 ## Target architecture
@@ -23,7 +26,7 @@ Frontend / Edge Functions
                 │
    ┌────────────┴────────────┐
    │  Supabase Postgres      │  ◄── reused; no Cloud SQL
-   │  Supabase Storage / S3  │
+   │  AWS S3 (af-south-1)    │  ◄── single source of truth for files
    └─────────────────────────┘
 
 Tiny VPS (kept):
@@ -35,17 +38,41 @@ Tiny VPS (kept):
 ## Phase 1 — Get pdf-api green on Cloud Run (this week)
 
 ### Code changes (done in this commit)
-1. `pdf-server/app/core/config.py` — `REDIS_URL` / `CELERY_BROKER_URL` /
-   `CELERY_RESULT_BACKEND` now default to `memory://` so the API container
-   boots on Cloud Run without Redis. Celery is constructed lazily; the API
-   never opens a socket to a broker.
+1. `pdf-server/app/core/config.py`:
+   - `REDIS_URL` / `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` default
+     to `memory://` so the API container boots on Cloud Run without
+     Redis. Celery is constructed lazily; the API never opens a socket
+     to a broker.
+   - `STORAGE_MODE` default flipped from `supabase` → `s3` (production
+     reality — Supabase storage path is dead code).
+   - `SUPABASE_STORAGE_BUCKET` default cleared (no longer meaningful).
+   - Removed duplicate `settings = Settings()` instantiation.
 2. `.github/workflows/pdf-server-deploy.yml` rewritten:
    - Deploys **only** `pdf-api` (worker services removed for Phase 1).
    - Runtime env mounted via `--set-secrets` from Secret Manager.
-   - Required-secrets check now reads Secret Manager (not GitHub Secrets).
-   - Optional secrets (AWS / admin creds) are auto-skipped if absent.
+   - Required-secrets check enforces the S3 credential block alongside
+     DB + Supabase-DB-client secrets; `PDF_SUPABASE_STORAGE_BUCKET` is
+     optional only.
 3. `pdf-server/docker/secrets-bootstrap.sh` — interactive one-time script
-   that creates the Secret Manager entries and grants the runtime SA access.
+   that creates the Secret Manager entries and grants the runtime SA
+   access. Header documents the S3-only storage model; required prompts
+   include `PDF_STORAGE_MODE` + AWS creds.
+
+### Required secrets (Phase 1)
+| Secret | Notes |
+|---|---|
+| `PDF_DATABASE_URL` | **Supabase TRANSACTION-mode pooler (port 6543).** Direct 5432 will exhaust on Cloud Run. |
+| `PDF_SUPABASE_URL` | `https://<ref>.supabase.co` — used by the Supabase client for DB-adjacent calls (not storage). |
+| `PDF_SUPABASE_SERVICE_ROLE_KEY` | service_role JWT. |
+| `PDF_SECRET_KEY` | 32+ char random. |
+| `PDF_CORS_ORIGINS` | comma-separated allowed origins. |
+| `PDF_STORAGE_MODE` | `s3` |
+| `PDF_AWS_S3_BUCKET` | `jaimar-dev-600743178200-af-south-1-an` |
+| `PDF_AWS_S3_REGION` | `af-south-1` |
+| `PDF_AWS_ACCESS_KEY_ID` | IAM key with bucket access (copy from VPS systemd env). |
+| `PDF_AWS_SECRET_ACCESS_KEY` | matching secret. |
+
+Optional: `PDF_SUPABASE_STORAGE_BUCKET` (legacy/unused), `PDF_ADMIN_USERNAME`, `PDF_ADMIN_PASSWORD`.
 
 ### Manual steps for you (in order)
 1. In **Cloud Shell** (`https://shell.cloud.google.com`) with project
@@ -55,9 +82,7 @@ Tiny VPS (kept):
    cd document-centre
    bash pdf-server/docker/secrets-bootstrap.sh
    ```
-   When prompted, paste values for the required secrets. **`PDF_DATABASE_URL`
-   must use the Supabase transaction-mode pooler (port 6543)** — Cloud Run
-   instances are ephemeral and will exhaust direct connections.
+   Paste each required value when prompted (see table above).
 2. Push to `main` (or click **Run workflow** on the action) — it builds,
    pushes the image, and deploys `pdf-api`. The job summary prints the
    Cloud Run URL.
@@ -74,6 +99,17 @@ Tiny VPS (kept):
 - Cloud Run `pdf-api` healthy.
 - Edge functions can be flipped to it without behavioural changes.
 - VPS still authoritative for all Celery work + email listener.
+
+### Follow-up cleanup (separate PR)
+`pdf-server/app/services/storage.py` still:
+- Imports `boto3` twice (once guarded, once unguarded).
+- Constructs a module-level `s3_client` with hardcoded bucket/region,
+  bypassing `settings`.
+- Keeps a full Supabase storage branch that is unreachable in
+  production.
+
+Worth a dedicated cleanup PR — kept out of Phase 1 to keep the diff
+reviewable.
 
 ## Phase 2 — Cloud Tasks dispatcher (next)
 - Add `app/dispatch/cloud_tasks.py` wrapper: `dispatcher.enqueue(name, payload, queue)`.
@@ -112,9 +148,13 @@ Only `email-listener` remains on it. Migrate to Hetzner CX11 (1 vCPU /
 | Deploy SA | `github-deployer@…iam.gserviceaccount.com` |
 | Runtime SA | `dc-pdf-runtime@…iam.gserviceaccount.com` |
 | WIF provider | `projects/622687766375/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
+| S3 bucket | `jaimar-dev-600743178200-af-south-1-an` (`af-south-1`) |
 
 ## Notes / gotchas
 
+- **Storage is S3-only** (`af-south-1`). The `supabase` branch in
+  `storage.py` is dead and slated for removal in a follow-up. Defaults
+  in `config.py` now reflect this (`STORAGE_MODE=s3`).
 - **Pooler port 6543**: required for Supabase Postgres from Cloud Run.
   Session-mode pooler (5432) will exhaust the connection slot pool.
 - **Cloud Run filesystem is read-only** except `/tmp` — `pdf_cache_dir`
