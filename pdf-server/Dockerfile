@@ -133,13 +133,15 @@ RUN bash /app/scripts/install-icc-profiles.sh || true \
     && mkdir -p /app/storage /tmp/printforge /tmp/celery \
     && chmod +x /app/scripts/*.sh
 
-# Default env (overridden per Cloud Run service)
+# Default env (overridden per Cloud Run service).
+# Cloud Run injects PORT=8080 at runtime; entrypoint honours $PORT first and
+# falls back to API_PORT for local docker run.
 ENV ROLE=api \
     API_HOST=0.0.0.0 \
-    API_PORT=8000 \
+    API_PORT=8080 \
     LOG_LEVEL=INFO
 
-EXPOSE 8000
+EXPOSE 8080
 
 # tini → entrypoint dispatches on $ROLE
 ENTRYPOINT ["/usr/bin/tini", "--", "/app/scripts/entrypoint.sh"]
