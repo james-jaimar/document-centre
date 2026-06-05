@@ -65,27 +65,6 @@ case "$ROLE" in
     esac
     ;;
 
-  worker-light)
-    exec celery -A app.worker.celery_app worker \
-      -Q default,thumbnails \
-      -n "light@%h" \
-      -P prefork \
-      --concurrency="${CELERY_LIGHT_CONCURRENCY:-4}" \
-      --max-tasks-per-child=200 \
-      --max-memory-per-child=600000 \
-      --loglevel="${LOG_LEVEL:-INFO}"
-    ;;
-
-  worker-emails)
-    exec celery -A app.worker.celery_app worker \
-      -Q emails-default,emails-control \
-      -n "emails@%h" \
-      -P prefork \
-      --concurrency="${CELERY_EMAILS_CONCURRENCY:-16}" \
-      --max-tasks-per-child=500 \
-      --max-memory-per-child=400000 \
-      --loglevel="${LOG_LEVEL:-INFO}"
-    ;;
 
   listener-emails)
     # Postgres LISTEN/NOTIFY → primary email dispatch path. Not deployed to
