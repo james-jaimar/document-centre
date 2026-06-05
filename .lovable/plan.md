@@ -2,24 +2,39 @@
 
 ## Status
 
-- IAM unblock done: deploy SA has `roles/secretmanager.viewer`. Verify-secrets step passes.
-- Earlier Cloud Run startup failure was caused by `requests` missing from `pdf-server/requirements.txt`; `app/web/routes.py` imports `app/tasks/cloudprinter_tasks.py`, which imports `requests`.
-- Current failed stage is `Deploy pdf-api (HTTP)`: Cloud Run creates the revision, then reports that the container did not become healthy on `PORT=8080`. Use revision logs for the exact runtime traceback; do not treat the generic PORT message as root cause by itself.
+- IAM unblock done.
+- `requests` dependency added (previous import-time crash).
+- Latest failure is in the local **Container boot smoke test**: container starts, prints `[entrypoint] starting role=api port=8080`, then curl gets `Connection reset by peer` and the container exits before `/health` answers.
+- We do not yet have the real Python traceback, so we are not guessing root cause. The smoke test now needs to print logs reliably.
 
-## Fix shipped
+## Fix shipped this iteration
 
-- `pdf-server/requirements.txt` — added `requests==2.32.3`.
-- `.github/workflows/pdf-server-deploy.yml` — added a container boot smoke test that starts the built image with `ROLE=api`, `PORT=8080`, dummy runtime env, and requires `GET /health` locally before deploy. It prints container logs on failure, catching missing deps, uvicorn worker crashes, static-path issues, and port binding failures before a 5-minute Cloud Run rollout timeout.
+`.github/workflows/pdf-server-deploy.yml` — smoke test hardened:
+- `UVICORN_WORKERS=1` so a worker crash surfaces in main process logs instead of being swallowed by the prefork supervisor.
+- `LOG_LEVEL=debug`, `PYTHONUNBUFFERED=1`, `APP_DEBUG=true`.
+- Adds `SECRET_KEY` and `CORS_ORIGINS` dummy env so settings validation never blocks startup.
+- `dump_logs()` always runs via `trap EXIT`, prints a clearly-delimited block, and the exit-code branch also prints `docker inspect .State.ExitCode`.
+- Health-probe redirects curl stderr so the only error you see in the workflow log is the real container traceback.
 
-## Cloud Run startup log command
+## Next run — what to look for
 
-Replace the revision name with the failed revision from GitHub Actions:
+The "Container boot smoke test" step output will contain a block:
+
+```
+===== docker logs (pdf-api smoke) =====
+... full uvicorn/Python output ...
+===== end docker logs =====
+```
+
+That block is the source of truth. Paste it back if it still fails — only then do we patch the underlying crash.
+
+## Cloud Run startup log command (still useful if a revision boots in CR but fails health)
 
 ```bash
 gcloud logging read \
-  'resource.type="cloud_run_revision" AND resource.labels.service_name="pdf-api" AND resource.labels.revision_name="pdf-api-00003-8ml"' \
+  'resource.type="cloud_run_revision" AND resource.labels.service_name="pdf-api"' \
   --project=project-59a14b18-b4df-4c6b-b09 \
-  --limit=100 \
+  --limit=200 \
   --format='value(timestamp,severity,textPayload,jsonPayload.message)'
 ```
 
@@ -32,6 +47,6 @@ gcloud logging read \
 
 1. Verify secrets step passes.
 2. Build + push succeeds.
-3. Container boot smoke test returns `/health` locally on `PORT=8080`.
+3. Container boot smoke test returns `/health` locally on `PORT=8080` (or prints a real traceback we can act on).
 4. `Deploy pdf-api (HTTP)` succeeds; summary prints the Cloud Run URL.
 5. `curl -fsS "$URL/health"` returns 200.
