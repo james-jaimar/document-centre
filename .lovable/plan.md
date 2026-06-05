@@ -1,164 +1,74 @@
-# GCP Cloud Run cutover — pdf-server
+# Fix: deploy workflow can't see the Secret Manager entries
 
-**Status:** Phase 1 in progress.
-**Region:** `africa-south1` (Johannesburg).
-**Runtime config:** GCP Secret Manager (no values in GitHub).
-**Email listener:** stays on the VPS.
-**Storage:** S3 only (`af-south-1`). The `supabase` branch in
-`pdf-server/app/services/storage.py` is dead and slated for removal in a
-follow-up.
-**Redis:** none. Target broker is Cloud Tasks (introduced in Phase 2).
+## Root cause
 
-## Target architecture
+The "Missing Secret Manager entries" error is misleading. The secrets **do exist** — you confirmed they were created. The check fails because `gcloud secrets describe` requires the **caller** (the deploy SA, `github-deployer@…`) to have read permission on each secret.
 
-```text
-Frontend / Edge Functions
-        │  HTTPS
-        ▼
-┌──────────────────────── GCP Cloud Run (africa-south1) ────────┐
-│  pdf-api         FastAPI sync endpoints  ◄── Phase 1 (now)    │
-│  pdf-worker      HTTP endpoints invoked by Cloud Tasks        │
-│  email-sender    SMTP outbound, invoked by Cloud Tasks        │
-└───────────────▲───────────────────────────▲───────────────────┘
-                │                           │
-        Cloud Tasks (queues)        Cloud Scheduler (cron)
-                ▲
-                │
-   ┌────────────┴────────────┐
-   │  Supabase Postgres      │  ◄── reused; no Cloud SQL
-   │  AWS S3 (af-south-1)    │  ◄── single source of truth for files
-   └─────────────────────────┘
+`secrets-bootstrap.sh` only grants `roles/secretmanager.secretAccessor` to the **runtime SA** (`dc-pdf-runtime@…`), which is correct for Cloud Run to mount the secrets at runtime — but the deploy SA was never granted anything, so it can't even see they exist. From its perspective they all look missing.
 
-Tiny VPS (kept):
-  └─ email-listener   (Postgres LISTEN/NOTIFY → enqueue)
-  └─ celery beat      (until Phase 4)
-  └─ celery workers   (until Phase 3)
+The same problem will hit the `--set-secrets` step's optional-secret probe immediately after, so we need to fix it before the workflow can succeed.
+
+## Fix
+
+### 1. One-time IAM grant (you, in Cloud Shell — ~10 seconds)
+
+Grant the deploy SA project-wide read access to Secret Manager metadata + values it needs to mount:
+
+```bash
+gcloud projects add-iam-policy-binding project-59a14b18-b4df-4c6b-b09 \
+  --member="serviceAccount:github-deployer@project-59a14b18-b4df-4c6b-b09.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.viewer"
 ```
 
-## Phase 1 — Get pdf-api green on Cloud Run (this week)
+`viewer` is enough for `describe` (the check) and for Cloud Run's `--set-secrets` to validate the reference at deploy time. The runtime SA keeps its narrower `secretAccessor` binding so it can actually read the values when the container boots.
 
-### Code changes (done in this commit)
-1. `pdf-server/app/core/config.py`:
-   - `REDIS_URL` / `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` default
-     to `memory://` so the API container boots on Cloud Run without
-     Redis. Celery is constructed lazily; the API never opens a socket
-     to a broker.
-   - `STORAGE_MODE` default flipped from `supabase` → `s3` (production
-     reality — Supabase storage path is dead code).
-   - `SUPABASE_STORAGE_BUCKET` default cleared (no longer meaningful).
-   - Removed duplicate `settings = Settings()` instantiation.
-2. `.github/workflows/pdf-server-deploy.yml` rewritten:
-   - Deploys **only** `pdf-api` (worker services removed for Phase 1).
-   - Runtime env mounted via `--set-secrets` from Secret Manager.
-   - Required-secrets check enforces the S3 credential block alongside
-     DB + Supabase-DB-client secrets; `PDF_SUPABASE_STORAGE_BUCKET` is
-     optional only.
-3. `pdf-server/docker/secrets-bootstrap.sh` — interactive one-time script
-   that creates the Secret Manager entries and grants the runtime SA
-   access. Header documents the S3-only storage model; required prompts
-   include `PDF_STORAGE_MODE` + AWS creds.
+### 2. Update `secrets-bootstrap.sh` so this doesn't recur
 
-### Required secrets (Phase 1)
-| Secret | Notes |
-|---|---|
-| `PDF_DATABASE_URL` | **Supabase TRANSACTION-mode pooler (port 6543).** Direct 5432 will exhaust on Cloud Run. |
-| `PDF_SUPABASE_URL` | `https://<ref>.supabase.co` — used by the Supabase client for DB-adjacent calls (not storage). |
-| `PDF_SUPABASE_SERVICE_ROLE_KEY` | service_role JWT. |
-| `PDF_SECRET_KEY` | 32+ char random. |
-| `PDF_CORS_ORIGINS` | comma-separated allowed origins. |
-| `PDF_STORAGE_MODE` | `s3` |
-| `PDF_AWS_S3_BUCKET` | `jaimar-dev-600743178200-af-south-1-an` |
-| `PDF_AWS_S3_REGION` | `af-south-1` |
-| `PDF_AWS_ACCESS_KEY_ID` | IAM key with bucket access (copy from VPS systemd env). |
-| `PDF_AWS_SECRET_ACCESS_KEY` | matching secret. |
+Add the deploy SA grant to the bootstrap script's per-secret IAM block, alongside the existing runtime SA grant:
 
-Optional: `PDF_SUPABASE_STORAGE_BUCKET` (legacy/unused), `PDF_ADMIN_USERNAME`, `PDF_ADMIN_PASSWORD`.
+```bash
+# existing:
+gcloud secrets add-iam-policy-binding "$name" \
+  --member="serviceAccount:${RUNTIME_SA}" \
+  --role="roles/secretmanager.secretAccessor" ...
 
-### Manual steps for you (in order)
-1. In **Cloud Shell** (`https://shell.cloud.google.com`) with project
-   `project-59a14b18-b4df-4c6b-b09` selected:
-   ```bash
-   git clone https://github.com/james-jaimar/document-centre.git
-   cd document-centre
-   bash pdf-server/docker/secrets-bootstrap.sh
-   ```
-   Paste each required value when prompted (see table above).
-2. Push to `main` (or click **Run workflow** on the action) — it builds,
-   pushes the image, and deploys `pdf-api`. The job summary prints the
-   Cloud Run URL.
-3. Smoke test:
-   ```bash
-   curl -fsS "$URL/health"
-   ```
-4. Update the `DOCUMENT_CENTRE_API_URL` secret on the `pdf-api` Supabase
-   Edge Function to point at the new Cloud Run URL. Edge functions and
-   frontend code stay identical.
-5. Leave the VPS running in parallel — nothing is decommissioned yet.
+# add:
+gcloud secrets add-iam-policy-binding "$name" \
+  --member="serviceAccount:${DEPLOY_SA}" \
+  --role="roles/secretmanager.viewer" ...
+```
 
-### Exit criteria
-- Cloud Run `pdf-api` healthy.
-- Edge functions can be flipped to it without behavioural changes.
-- VPS still authoritative for all Celery work + email listener.
+Plus a `DEPLOY_SA="${DEPLOY_SA:-github-deployer@${PROJECT_ID}.iam.gserviceaccount.com}"` at the top. Idempotent — safe to re-run.
 
-### Follow-up cleanup (separate PR)
-`pdf-server/app/services/storage.py` still:
-- Imports `boto3` twice (once guarded, once unguarded).
-- Constructs a module-level `s3_client` with hardcoded bucket/region,
-  bypassing `settings`.
-- Keeps a full Supabase storage branch that is unreachable in
-  production.
+### 3. Improve the workflow error message
 
-Worth a dedicated cleanup PR — kept out of Phase 1 to keep the diff
-reviewable.
+Change the "verify required Secret Manager entries" step so a permission failure is distinguishable from a genuinely missing secret. Today it lumps both into "missing". New behaviour:
 
-## Phase 2 — Cloud Tasks dispatcher (next)
-- Add `app/dispatch/cloud_tasks.py` wrapper: `dispatcher.enqueue(name, payload, queue)`.
-- Stand up `pdf-worker` Cloud Run service exposing `POST /tasks/{name}`.
-- Feature flag `DISPATCHER_BACKEND=celery|cloud_tasks` per call site.
-- Provision Cloud Tasks queues: `documents`, `imposition`, `pdf`, `thumbnails`, `default`, `emails-default`.
+- If `gcloud secrets describe` fails, capture stderr.
+- If stderr contains `PERMISSION_DENIED`, print a clear hint: *"Deploy SA lacks secretmanager.viewer — run the grant from `pdf-server/docker/secrets-bootstrap.sh` or the README."*
+- Otherwise treat as missing as today.
 
-## Phase 3 — Per-task migration (lowest-risk first)
-1. `thumbnails` → 2. preflight → 3. pikepdf/pypdf → 4. `email-sender`
-→ 5. LibreOffice conversion → 6. imposition / print-ready (60-min Cloud
-Run timeout, 4 GB / 2 vCPU).
+### 4. (Optional, same PR) Bump Node 20 actions warning
 
-When zero `@celery.task` decorators remain, stop VPS Celery workers.
+GitHub deprecation notice in the run is informational only — `actions/checkout@v4`, `google-github-actions/auth@v2`, `setup-gcloud@v2` are all current major versions and the maintainers will ship Node 24 builds before the September 2026 deadline. **No code change needed now.** Mentioning only so you know it's not contributing to the failure.
 
-## Phase 4 — Cloud Scheduler replaces beat
-Cron jobs:
-- `ops.snapshot_storage` (hourly)
-- `ops.cleanup_tmp` (daily 03:30)
-- `email.scan_outbox` (every minute — safety net; LISTEN/NOTIFY primary)
-- `email.release_stuck` (every 5 min)
+## Files changed
 
-Each is an authenticated HTTP POST to `pdf-worker`.
+- `pdf-server/docker/secrets-bootstrap.sh` — add `DEPLOY_SA` var + second `add-iam-policy-binding` per secret.
+- `.github/workflows/pdf-server-deploy.yml` — improve the verify step's error reporting.
+- `.lovable/plan.md` — note the IAM split (runtime SA = accessor, deploy SA = viewer) in the Phase 1 reference table.
 
-## Phase 5 — Downsize VPS
-Only `email-listener` remains on it. Migrate to Hetzner CX11 (1 vCPU /
-2 GB, €5/mo) or smallest equivalent.
+No application code or config defaults change.
 
-## Reference
+## Order of operations
 
-| Resource | Value |
-|---|---|
-| GCP project ID | `project-59a14b18-b4df-4c6b-b09` |
-| Project # | `622687766375` |
-| Region | `africa-south1` |
-| Artifact Registry repo | `dc-pdf` |
-| Deploy SA | `github-deployer@…iam.gserviceaccount.com` |
-| Runtime SA | `dc-pdf-runtime@…iam.gserviceaccount.com` |
-| WIF provider | `projects/622687766375/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
-| S3 bucket | `jaimar-dev-600743178200-af-south-1-an` (`af-south-1`) |
+1. You run the `gcloud projects add-iam-policy-binding …` command above in Cloud Shell.
+2. I make the three file edits.
+3. You re-run the workflow (or push, since this commit will touch `pdf-server/**`).
+4. Verify step passes, image builds, `pdf-api` deploys, job summary shows the Cloud Run URL.
 
-## Notes / gotchas
+## Exit criteria
 
-- **Storage is S3-only** (`af-south-1`). The `supabase` branch in
-  `storage.py` is dead and slated for removal in a follow-up. Defaults
-  in `config.py` now reflect this (`STORAGE_MODE=s3`).
-- **Pooler port 6543**: required for Supabase Postgres from Cloud Run.
-  Session-mode pooler (5432) will exhaust the connection slot pool.
-- **Cloud Run filesystem is read-only** except `/tmp` — `pdf_cache_dir`
-  defaults to `/var/cache/document-centre/pdf-cache`; workers running on
-  Cloud Run (Phase 3) will need this overridden to `/tmp/pdf-cache`.
-- **No Redis anywhere** in the target state. Cloud Tasks is the broker.
-  Phase 1 ships `memory://` defaults purely so import doesn't fail.
+- Workflow run reaches the "Deploy pdf-api" step and succeeds.
+- `gcloud run services describe pdf-api --region=africa-south1` returns a healthy URL.
+- `curl -fsS "$URL/health"` returns 200.
