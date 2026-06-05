@@ -2,23 +2,23 @@
 
 ## Status
 
-- GCP IAM unblock applied manually: `github-deployer@…` now has `roles/secretmanager.viewer` on the project. The "PERMISSION_DENIED" failure is resolved at the GCP level.
-- Repo changes below make this self-healing so a fresh setup or a new secret added later won't reintroduce the same failure.
+- IAM unblock done: deploy SA has `roles/secretmanager.viewer`. Verify-secrets step passes.
+- Cloud Run revision was failing to start on `PORT=8080` because `app/web/routes.py` imports `app/tasks/cloudprinter_tasks.py`, which `import requests` — and `requests` was missing from `pdf-server/requirements.txt`. That crashed uvicorn before it could bind.
+
+## Fix shipped
+
+- `pdf-server/requirements.txt` — added `requests==2.32.3`.
+- `.github/workflows/pdf-server-deploy.yml` — added an "Import smoke test" step that runs `python -c "import app.main"` inside the freshly built image with dummy env vars. Catches missing-dep / import-time crashes in ~10s instead of waiting ~5 min for Cloud Run revision creation to time out.
 
 ## IAM split (reference)
 
-- **Deploy SA** `github-deployer@…` — `roles/artifactregistry.writer`, `roles/run.admin`, `roles/iam.serviceAccountUser`, `roles/secretmanager.viewer`. Used by GitHub Actions to build, push, deploy, and validate `--set-secrets` refs.
-- **Runtime SA** `dc-pdf-runtime@…` — `roles/secretmanager.secretAccessor`, `roles/cloudtasks.enqueuer`, `roles/logging.logWriter`. Used by Cloud Run at container boot to read secret values.
-
-## Repo changes shipped
-
-- `pdf-server/docker/gcp-setup.sh` — deploy SA now also gets `roles/secretmanager.viewer` during one-shot bootstrap.
-- `pdf-server/docker/secrets-bootstrap.sh` — added `--iam-only` mode so IAM can be re-applied to existing secrets without re-entering values.
-- `.github/workflows/pdf-server-deploy.yml` — PERMISSION_DENIED error now points to the three concrete fixes (script `--iam-only`, full gcp-setup, or the one-liner). Added `defaults.run.shell: bash`.
+- **Deploy SA** `github-deployer@…` — `artifactregistry.writer`, `run.admin`, `iam.serviceAccountUser`, `secretmanager.viewer`.
+- **Runtime SA** `dc-pdf-runtime@…` — `secretmanager.secretAccessor`, `cloudtasks.enqueuer`, `logging.logWriter`.
 
 ## Exit criteria
 
-1. Re-run of the workflow passes the "Verify required Secret Manager entries exist" step.
-2. Build + push of the image succeeds.
-3. `Deploy pdf-api (HTTP)` succeeds; job summary shows the Cloud Run URL.
-4. `curl -fsS "$URL/health"` returns 200.
+1. Verify secrets step passes.
+2. Build + push succeeds.
+3. Import smoke test passes.
+4. `Deploy pdf-api (HTTP)` succeeds; summary prints the Cloud Run URL.
+5. `curl -fsS "$URL/health"` returns 200.

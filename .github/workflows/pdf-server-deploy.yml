@@ -111,6 +111,22 @@ jobs:
             -t "${{ steps.tag.outputs.image }}" \
             .
 
+      - name: Import smoke test (catch missing deps before Cloud Run rollout)
+        if: github.event.inputs.rollback_sha == ''
+        run: |
+          # Import the FastAPI app inside the built image. If a module is
+          # missing or any top-level import raises, this fails in seconds
+          # instead of after a 5-minute Cloud Run revision timeout.
+          # Provides harmless dummy env so settings construction succeeds.
+          docker run --rm \
+            -e DATABASE_URL="postgresql+psycopg://u:p@127.0.0.1:5432/db" \
+            -e STORAGE_MODE=s3 \
+            -e AWS_S3_BUCKET=smoke -e AWS_S3_REGION=af-south-1 \
+            -e AWS_ACCESS_KEY_ID=smoke -e AWS_SECRET_ACCESS_KEY=smoke \
+            --entrypoint /opt/venv/bin/python \
+            "${{ steps.tag.outputs.image }}" \
+            -c "import app.main; print('import ok:', app.main.app.title)"
+
       - name: Push image
         if: github.event.inputs.rollback_sha == ''
         run: docker push "${{ steps.tag.outputs.image }}"
