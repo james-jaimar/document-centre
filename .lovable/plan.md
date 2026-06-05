@@ -3,32 +3,22 @@
 ## Status
 
 - IAM unblock done.
-- `requests` dependency added (previous import-time crash).
-- Latest failure is in the local **Container boot smoke test**: container starts, prints `[entrypoint] starting role=api port=8080`, then curl gets `Connection reset by peer` and the container exits before `/health` answers.
-- We do not yet have the real Python traceback, so we are not guessing root cause. The smoke test now needs to print logs reliably.
+- `requests` dependency added.
+- Latest failure was a **false positive** in the smoke test: the liveness check used `docker ps --format '{{.ID}}' | grep "^$cid"`, but `docker run -d` returns the full ID while `docker ps` prints the short form, so the grep never matched and the workflow killed a healthy still-starting container with `Exit code: 0` and no traceback.
 
 ## Fix shipped this iteration
 
-`.github/workflows/pdf-server-deploy.yml` — smoke test hardened:
-- `UVICORN_WORKERS=1` so a worker crash surfaces in main process logs instead of being swallowed by the prefork supervisor.
-- `LOG_LEVEL=debug`, `PYTHONUNBUFFERED=1`, `APP_DEBUG=true`.
-- Adds `SECRET_KEY` and `CORS_ORIGINS` dummy env so settings validation never blocks startup.
-- `dump_logs()` always runs via `trap EXIT`, prints a clearly-delimited block, and the exit-code branch also prints `docker inspect .State.ExitCode`.
-- Health-probe redirects curl stderr so the only error you see in the workflow log is the real container traceback.
+`.github/workflows/pdf-server-deploy.yml` — smoke test liveness check rewritten:
+- Use `docker inspect -f '{{.State.Running}}'` instead of `docker ps | grep`.
+- On true exit, print `.State.Status` + `.State.ExitCode` in one line.
+- `dump_logs()` trap unchanged — full container logs always print at the end.
 
-## Next run — what to look for
+## Next run — what to expect
 
-The "Container boot smoke test" step output will contain a block:
+- If the container is healthy, `/health OK` prints within ~6 s and the deploy proceeds.
+- If it truly crashes, the docker-logs block now contains the real uvicorn/Python traceback. Paste that back and we patch the underlying crash.
 
-```
-===== docker logs (pdf-api smoke) =====
-... full uvicorn/Python output ...
-===== end docker logs =====
-```
-
-That block is the source of truth. Paste it back if it still fails — only then do we patch the underlying crash.
-
-## Cloud Run startup log command (still useful if a revision boots in CR but fails health)
+## Cloud Run startup log command (post-deploy diagnosis)
 
 ```bash
 gcloud logging read \
@@ -47,6 +37,6 @@ gcloud logging read \
 
 1. Verify secrets step passes.
 2. Build + push succeeds.
-3. Container boot smoke test returns `/health` locally on `PORT=8080` (or prints a real traceback we can act on).
+3. Container boot smoke test returns `/health` locally on `PORT=8080` (or prints a real traceback).
 4. `Deploy pdf-api (HTTP)` succeeds; summary prints the Cloud Run URL.
 5. `curl -fsS "$URL/health"` returns 200.
