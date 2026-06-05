@@ -1,42 +1,40 @@
-## Goal
-Get `pdf-api` deploying successfully to Cloud Run after the local Docker smoke test now passes but Cloud Run still fails readiness on `PORT=8080`.
+## Current blocker
 
-## Diagnosis from current evidence
-- The image builds and the GitHub local smoke test reaches `/health`, so the container can boot with dummy env locally.
-- Cloud Run fails only during revision startup, which means the remaining difference is the Cloud Run runtime environment or startup timing.
-- The deployment currently runs uvicorn with its default `UVICORN_WORKERS=2`, while the smoke test forces `UVICORN_WORKERS=1`. On Cloud Run with `--cpu=1`, multiple uvicorn workers can materially slow or block startup, especially with the heavy PDF stack image.
-- The workflow still does not automatically print Cloud Run revision logs after deploy failure, so each failure lacks the real server-side startup logs.
+The Cloud Run `pdf-api` revision still fails to listen on `PORT=8080`, but the GitHub Actions workflow cannot show the real Python/startup traceback because the deploy service account is missing `roles/logging.viewer`. The previous run ended with:
 
-## Implementation plan
-1. **Make Cloud Run match the passing smoke test for API startup**
-   - Update `.github/workflows/pdf-server-deploy.yml` deploy env vars from:
-     - `ROLE=api,LOG_LEVEL=INFO,APP_ENV=production`
-   - to include:
-     - `UVICORN_WORKERS=1`
-     - `PYTHONUNBUFFERED=1`
-   - This keeps the API process single-worker on 1 vCPU, matching the known-good boot smoke test and Cloud Run Python best practice.
+```
+ERROR: (gcloud.logging.read) PERMISSION_DENIED: Permission denied for all log views.
+```
 
-2. **Add Cloud Run startup log dump on deploy failure**
-   - Wrap the `gcloud run deploy pdf-api ...` command so if it fails, the workflow runs:
-     - `gcloud logging read` filtered to `service_name="pdf-api"`
-     - limit around 100–200 recent entries
-     - include timestamp, severity, and message/text payload
-   - This means the next failure will show the actual Cloud Run-side traceback/import/startup error in GitHub Actions instead of only the generic Cloud Run readiness message.
+Until that IAM grant is in place, every Cloud Run failure looks the same and the actual root cause stays hidden.
 
-3. **Optionally extend Cloud Run startup budget without hiding crashes**
-   - Keep `--timeout=300` for request timeout.
-   - Add `--startup-probe` only if supported cleanly by the installed `gcloud` version, targeting `/health` on port `8080` with a longer initial tolerance.
-   - If `gcloud run deploy --startup-probe` syntax is not stable in this environment, skip this and rely on single-worker startup plus logs.
+## Required one-time fix (Cloud Shell)
 
-4. **Update `.lovable/plan.md`**
-   - Record the current state: local smoke test passes, Cloud Run readiness fails.
-   - Record the runtime-difference fix: Cloud Run now uses one uvicorn worker.
-   - Record the new diagnostic behavior: deploy failures print Cloud Run logs automatically.
+```bash
+gcloud projects add-iam-policy-binding project-59a14b18-b4df-4c6b-b09 \
+  --member=serviceAccount:github-deployer@project-59a14b18-b4df-4c6b-b09.iam.gserviceaccount.com \
+  --role=roles/logging.viewer \
+  --condition=None
+```
+
+Equivalent shortcuts:
+- `bash pdf-server/docker/gcp-setup.sh` (now includes `roles/logging.viewer`).
+- `bash pdf-server/docker/secrets-bootstrap.sh --iam-only` (also re-applies `roles/secretmanager.viewer` and `roles/logging.viewer` on the deploy SA).
+
+## Workflow changes shipped
+
+1. `pdf-server/docker/gcp-setup.sh` — adds `roles/logging.viewer` to the deploy SA role list.
+2. `pdf-server/docker/secrets-bootstrap.sh` — `--iam-only` mode now also grants project-level `roles/secretmanager.viewer` and `roles/logging.viewer` to the deploy SA.
+3. `.github/workflows/pdf-server-deploy.yml`
+   - New step "Verify deploy SA can read Cloud Run logs" runs a 1-row `gcloud logging read` and fails fast with the exact grant command if `PERMISSION_DENIED`.
+   - Existing post-deploy log dump remains so any future failure prints the actual revision logs.
+
+## What is intentionally NOT being changed yet
+
+- No further uvicorn / Cloud Run / startup-probe tweaks. The local Docker smoke test passes, so the only honest next step is to read the real Cloud Run logs before guessing.
+- Already-applied runtime safeguards stay: `UVICORN_WORKERS=1`, `PYTHONUNBUFFERED=1`, `--cpu-boost`, `--timeout=300`.
 
 ## Expected next run
-- Best case: Cloud Run revision starts, deploy succeeds, and `/health` returns 200.
-- If it still fails: GitHub Actions will now include the Cloud Run startup logs needed to identify the exact Python/runtime error.
 
-## Files to change
-- `.github/workflows/pdf-server-deploy.yml`
-- `.lovable/plan.md`
+- Best case: revision boots, `/health` returns 200, deploy succeeds.
+- Otherwise: the GitHub Actions log will contain the actual Cloud Run startup error (import-time exception, missing env, S3 client init, DB URL, etc.), which becomes the next concrete fix.
