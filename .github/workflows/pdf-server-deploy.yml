@@ -246,17 +246,76 @@ jobs:
             exit $deploy_rc
           fi
 
+      - name: Deploy HTTP workers (Cloud Tasks targets)
+        run: |
+          # Same image, different ROLE. Each service gets its own scaling
+          # envelope. Cloud Tasks pushes /internal/tasks/* requests here.
+          # NOT --allow-unauthenticated — only the cloud-tasks-invoker SA
+          # (created by gcp-tasks-bootstrap.sh) may invoke. WORKER_SELF_URL
+          # is set in a second pass below once the URL exists.
+          SECRET_FLAG="DATABASE_URL=PDF_DATABASE_URL:latest,\
+SUPABASE_URL=PDF_SUPABASE_URL:latest,\
+SUPABASE_SERVICE_ROLE_KEY=PDF_SUPABASE_SERVICE_ROLE_KEY:latest,\
+SECRET_KEY=PDF_SECRET_KEY:latest,\
+CORS_ORIGINS=PDF_CORS_ORIGINS:latest,\
+STORAGE_MODE=PDF_STORAGE_MODE:latest,\
+AWS_S3_BUCKET=PDF_AWS_S3_BUCKET:latest,\
+AWS_S3_REGION=PDF_AWS_S3_REGION:latest,\
+AWS_ACCESS_KEY_ID=PDF_AWS_ACCESS_KEY_ID:latest,\
+AWS_SECRET_ACCESS_KEY=PDF_AWS_SECRET_ACCESS_KEY:latest"
+
+          deploy_worker() {
+            local name="$1" role="$2" cpu="$3" mem="$4" max="$5"
+            gcloud run deploy "$name" \
+              --image="${{ steps.tag.outputs.image }}" \
+              --region="${{ env.GCP_REGION }}" \
+              --service-account="${{ env.RUNTIME_SA }}" \
+              --port=8080 \
+              --set-env-vars="ROLE=${role},LOG_LEVEL=INFO,APP_ENV=production,UVICORN_WORKERS=1,PYTHONUNBUFFERED=1" \
+              --set-secrets="$SECRET_FLAG" \
+              --memory="$mem" --cpu="$cpu" \
+              --cpu-boost \
+              --concurrency=1 \
+              --min-instances=0 --max-instances="$max" \
+              --timeout=900 \
+              --no-allow-unauthenticated \
+              --quiet
+
+            # Second pass: set WORKER_SELF_URL so OIDC verification can match audience.
+            url=$(gcloud run services describe "$name" --region="${{ env.GCP_REGION }}" --format='value(status.url)')
+            gcloud run services update "$name" \
+              --region="${{ env.GCP_REGION }}" \
+              --update-env-vars="WORKER_SELF_URL=$url" --quiet
+          }
+
+          deploy_worker pdf-worker-heavy  worker-heavy-http  2 4Gi  5
+          deploy_worker pdf-worker-light  worker-light-http  1 1Gi  20
+          deploy_worker pdf-worker-emails worker-emails-http 1 512Mi 10
+
+      - name: Set BEAT_SELF_URL on pdf-api
+        run: |
+          api_url=$(gcloud run services describe pdf-api --region="${{ env.GCP_REGION }}" --format='value(status.url)')
+          gcloud run services update pdf-api \
+            --region="${{ env.GCP_REGION }}" \
+            --update-env-vars="BEAT_SELF_URL=$api_url" --quiet
+
       - name: Summary
         run: |
           URL=$(gcloud run services describe pdf-api --region="${{ env.GCP_REGION }}" --format='value(status.url)')
+          H=$(gcloud run services describe pdf-worker-heavy  --region="${{ env.GCP_REGION }}" --format='value(status.url)' 2>/dev/null || echo "-")
+          L=$(gcloud run services describe pdf-worker-light  --region="${{ env.GCP_REGION }}" --format='value(status.url)' 2>/dev/null || echo "-")
+          E=$(gcloud run services describe pdf-worker-emails --region="${{ env.GCP_REGION }}" --format='value(status.url)' 2>/dev/null || echo "-")
           {
             echo "## Deployed"
             echo ""
-            echo "- **Service**: pdf-api"
-            echo "- **URL**: $URL"
+            echo "- **pdf-api**: $URL"
+            echo "- **pdf-worker-heavy**: $H"
+            echo "- **pdf-worker-light**: $L"
+            echo "- **pdf-worker-emails**: $E"
             echo "- **Image**: \`${{ steps.tag.outputs.image }}\`"
             echo "- **Commit**: \`${{ steps.tag.outputs.sha }}\`"
             echo "- **Region**: ${{ env.GCP_REGION }}"
             echo ""
-            echo "_Workers (heavy/light/emails) and beat remain on the VPS until Phase 3 of the cutover plan._"
+            echo "_First-time setup: run \`bash pdf-server/docker/gcp-tasks-bootstrap.sh\` in Cloud Shell to create Cloud Tasks queues, the invoker SA, and Cloud Scheduler jobs._"
+            echo "_QUEUE_BACKEND defaults to \`celery\` — flip to \`cloud_tasks\` on pdf-api once every call site has been migrated to \`app.core.queue.enqueue\`._"
           } >> "$GITHUB_STEP_SUMMARY"
