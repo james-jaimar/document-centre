@@ -1,28 +1,52 @@
-## Plan
+# Phase 1 deploy — current state
 
-1. **Make the smoke test print the real startup failure**
-   - Update `.github/workflows/pdf-server-deploy.yml` so the container boot smoke test waits briefly after an early exit before failing.
-   - Ensure it always prints full container logs before returning `Container exited before /health became ready`.
-   - This should show the Python traceback instead of only `[entrypoint] starting role=api port=8080`.
+## Status
 
-2. **Fix the likely import-time task mismatch**
-   - In `pdf-server/app/web/routes.py`, correct the task imports to match the actual files present under `pdf-server/app/tasks/`:
-     - `document_tasks.py`
-     - `operation_tasks.py`
-     - `production_tasks.py`
-     - `cloudprinter_tasks.py`
-   - The current imports reference `app.tasks.operation_tasks` and `app.tasks.production_tasks`, but `app/worker.py` still includes `app.tasks.ops_tasks`; this split should be consistent so the API and Celery image boot paths do not fail differently.
+- IAM unblock done.
+- `requests` dependency added (previous import-time crash).
+- Latest failure is in the local **Container boot smoke test**: container starts, prints `[entrypoint] starting role=api port=8080`, then curl gets `Connection reset by peer` and the container exits before `/health` answers.
+- We do not yet have the real Python traceback, so we are not guessing root cause. The smoke test now needs to print logs reliably.
 
-3. **Remove API startup dependency on Celery worker modules where safe**
-   - Keep route behaviour the same, but avoid importing every heavy Celery task module at FastAPI startup if possible.
-   - Prefer importing task objects lazily inside the route handlers that enqueue them, or centralise safe task access in a small helper.
-   - This keeps `/health` able to boot even when worker-only dependencies or optional runtime settings are not needed by the HTTP service.
+## Fix shipped this iteration
 
-4. **Patch any concrete startup error revealed by logs**
-   - If the improved smoke-test logs reveal a specific missing dependency/module/config value, patch that directly.
-   - Do not infer a root cause from the generic connection reset; use the actual container traceback.
+`.github/workflows/pdf-server-deploy.yml` — smoke test hardened:
+- `UVICORN_WORKERS=1` so a worker crash surfaces in main process logs instead of being swallowed by the prefork supervisor.
+- `LOG_LEVEL=debug`, `PYTHONUNBUFFERED=1`, `APP_DEBUG=true`.
+- Adds `SECRET_KEY` and `CORS_ORIGINS` dummy env so settings validation never blocks startup.
+- `dump_logs()` always runs via `trap EXIT`, prints a clearly-delimited block, and the exit-code branch also prints `docker inspect .State.ExitCode`.
+- Health-probe redirects curl stderr so the only error you see in the workflow log is the real container traceback.
 
-5. **Update `.lovable/plan.md`**
-   - Record this new failure stage: the local container boot smoke test fails before deploy.
-   - Add the expected diagnostic output: full `docker logs` from the failed smoke-test container.
-   - Update exit criteria so the next rerun must show `/health` passing locally before Cloud Run deploy starts.
+## Next run — what to look for
+
+The "Container boot smoke test" step output will contain a block:
+
+```
+===== docker logs (pdf-api smoke) =====
+... full uvicorn/Python output ...
+===== end docker logs =====
+```
+
+That block is the source of truth. Paste it back if it still fails — only then do we patch the underlying crash.
+
+## Cloud Run startup log command (still useful if a revision boots in CR but fails health)
+
+```bash
+gcloud logging read \
+  'resource.type="cloud_run_revision" AND resource.labels.service_name="pdf-api"' \
+  --project=project-59a14b18-b4df-4c6b-b09 \
+  --limit=200 \
+  --format='value(timestamp,severity,textPayload,jsonPayload.message)'
+```
+
+## IAM split (reference)
+
+- **Deploy SA** `github-deployer@…` — `artifactregistry.writer`, `run.admin`, `iam.serviceAccountUser`, `secretmanager.viewer`.
+- **Runtime SA** `dc-pdf-runtime@…` — `secretmanager.secretAccessor`, `cloudtasks.enqueuer`, `logging.logWriter`.
+
+## Exit criteria
+
+1. Verify secrets step passes.
+2. Build + push succeeds.
+3. Container boot smoke test returns `/health` locally on `PORT=8080` (or prints a real traceback we can act on).
+4. `Deploy pdf-api (HTTP)` succeeds; summary prints the Cloud Run URL.
+5. `curl -fsS "$URL/health"` returns 200.
