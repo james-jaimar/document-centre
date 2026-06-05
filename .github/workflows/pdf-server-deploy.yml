@@ -195,19 +195,35 @@ jobs:
           done
           SECRET_FLAG=$(IFS=,; echo "${SECRETS[*]}")
 
+          set +e
           gcloud run deploy pdf-api \
             --image="${{ steps.tag.outputs.image }}" \
             --region="${{ env.GCP_REGION }}" \
             --service-account="${{ env.RUNTIME_SA }}" \
             --port=8080 \
-            --set-env-vars="ROLE=api,LOG_LEVEL=INFO,APP_ENV=production" \
+            --set-env-vars="ROLE=api,LOG_LEVEL=INFO,APP_ENV=production,UVICORN_WORKERS=1,PYTHONUNBUFFERED=1" \
             --set-secrets="$SECRET_FLAG" \
             --memory=1Gi --cpu=1 \
+            --cpu-boost \
             --concurrency=80 \
             --min-instances=0 --max-instances=10 \
             --timeout=300 \
             --allow-unauthenticated \
             --quiet
+          deploy_rc=$?
+          set -e
+          if [ $deploy_rc -ne 0 ]; then
+            echo "::error::gcloud run deploy failed (rc=$deploy_rc). Dumping recent Cloud Run logs for pdf-api:"
+            echo "===== cloud run logs (pdf-api, last 200) ====="
+            gcloud logging read \
+              'resource.type="cloud_run_revision" AND resource.labels.service_name="pdf-api"' \
+              --project="${GCP_PROJECT_ID}" \
+              --limit=200 \
+              --order=desc \
+              --format='value(timestamp,severity,textPayload,jsonPayload.message)' || true
+            echo "===== end cloud run logs ====="
+            exit $deploy_rc
+          fi
 
       - name: Summary
         run: |

@@ -1,42 +1,42 @@
-# Phase 1 deploy — current state
+## Goal
+Get `pdf-api` deploying successfully to Cloud Run after the local Docker smoke test now passes but Cloud Run still fails readiness on `PORT=8080`.
 
-## Status
+## Diagnosis from current evidence
+- The image builds and the GitHub local smoke test reaches `/health`, so the container can boot with dummy env locally.
+- Cloud Run fails only during revision startup, which means the remaining difference is the Cloud Run runtime environment or startup timing.
+- The deployment currently runs uvicorn with its default `UVICORN_WORKERS=2`, while the smoke test forces `UVICORN_WORKERS=1`. On Cloud Run with `--cpu=1`, multiple uvicorn workers can materially slow or block startup, especially with the heavy PDF stack image.
+- The workflow still does not automatically print Cloud Run revision logs after deploy failure, so each failure lacks the real server-side startup logs.
 
-- IAM unblock done.
-- `requests` dependency added.
-- Latest failure was a **false positive** in the smoke test: the liveness check used `docker ps --format '{{.ID}}' | grep "^$cid"`, but `docker run -d` returns the full ID while `docker ps` prints the short form, so the grep never matched and the workflow killed a healthy still-starting container with `Exit code: 0` and no traceback.
+## Implementation plan
+1. **Make Cloud Run match the passing smoke test for API startup**
+   - Update `.github/workflows/pdf-server-deploy.yml` deploy env vars from:
+     - `ROLE=api,LOG_LEVEL=INFO,APP_ENV=production`
+   - to include:
+     - `UVICORN_WORKERS=1`
+     - `PYTHONUNBUFFERED=1`
+   - This keeps the API process single-worker on 1 vCPU, matching the known-good boot smoke test and Cloud Run Python best practice.
 
-## Fix shipped this iteration
+2. **Add Cloud Run startup log dump on deploy failure**
+   - Wrap the `gcloud run deploy pdf-api ...` command so if it fails, the workflow runs:
+     - `gcloud logging read` filtered to `service_name="pdf-api"`
+     - limit around 100–200 recent entries
+     - include timestamp, severity, and message/text payload
+   - This means the next failure will show the actual Cloud Run-side traceback/import/startup error in GitHub Actions instead of only the generic Cloud Run readiness message.
 
-`.github/workflows/pdf-server-deploy.yml` — smoke test liveness check rewritten:
-- Use `docker inspect -f '{{.State.Running}}'` instead of `docker ps | grep`.
-- On true exit, print `.State.Status` + `.State.ExitCode` in one line.
-- `dump_logs()` trap unchanged — full container logs always print at the end.
+3. **Optionally extend Cloud Run startup budget without hiding crashes**
+   - Keep `--timeout=300` for request timeout.
+   - Add `--startup-probe` only if supported cleanly by the installed `gcloud` version, targeting `/health` on port `8080` with a longer initial tolerance.
+   - If `gcloud run deploy --startup-probe` syntax is not stable in this environment, skip this and rely on single-worker startup plus logs.
 
-## Next run — what to expect
+4. **Update `.lovable/plan.md`**
+   - Record the current state: local smoke test passes, Cloud Run readiness fails.
+   - Record the runtime-difference fix: Cloud Run now uses one uvicorn worker.
+   - Record the new diagnostic behavior: deploy failures print Cloud Run logs automatically.
 
-- If the container is healthy, `/health OK` prints within ~6 s and the deploy proceeds.
-- If it truly crashes, the docker-logs block now contains the real uvicorn/Python traceback. Paste that back and we patch the underlying crash.
+## Expected next run
+- Best case: Cloud Run revision starts, deploy succeeds, and `/health` returns 200.
+- If it still fails: GitHub Actions will now include the Cloud Run startup logs needed to identify the exact Python/runtime error.
 
-## Cloud Run startup log command (post-deploy diagnosis)
-
-```bash
-gcloud logging read \
-  'resource.type="cloud_run_revision" AND resource.labels.service_name="pdf-api"' \
-  --project=project-59a14b18-b4df-4c6b-b09 \
-  --limit=200 \
-  --format='value(timestamp,severity,textPayload,jsonPayload.message)'
-```
-
-## IAM split (reference)
-
-- **Deploy SA** `github-deployer@…` — `artifactregistry.writer`, `run.admin`, `iam.serviceAccountUser`, `secretmanager.viewer`.
-- **Runtime SA** `dc-pdf-runtime@…` — `secretmanager.secretAccessor`, `cloudtasks.enqueuer`, `logging.logWriter`.
-
-## Exit criteria
-
-1. Verify secrets step passes.
-2. Build + push succeeds.
-3. Container boot smoke test returns `/health` locally on `PORT=8080` (or prints a real traceback).
-4. `Deploy pdf-api (HTTP)` succeeds; summary prints the Cloud Run URL.
-5. `curl -fsS "$URL/health"` returns 200.
+## Files to change
+- `.github/workflows/pdf-server-deploy.yml`
+- `.lovable/plan.md`
