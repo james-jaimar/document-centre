@@ -134,9 +134,20 @@ if [ "$IAM_ONLY" = "1" ]; then
   for s in "${REQUIRED[@]}"; do iam_only "$s"; done
   for s in "${OPTIONAL[@]}"; do iam_only "$s"; done
   echo
+  echo "── Project-level IAM for deploy SA (diagnostics + secrets) ─────"
+  for role in roles/secretmanager.viewer roles/logging.viewer; do
+    gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+      --member="serviceAccount:${DEPLOY_SA}" \
+      --role="$role" \
+      --condition=None >/dev/null && \
+      echo "  ✓ $role granted to ${DEPLOY_SA}" || \
+      echo "  ✗ failed to grant $role to ${DEPLOY_SA}"
+  done
+  echo
   echo "Done. Re-run the GitHub Actions workflow."
   exit 0
 fi
+
 
 echo "── Required secrets ────────────────────────────────────────────"
 for s in "${REQUIRED[@]}"; do upsert "$s" "$s" required; done
