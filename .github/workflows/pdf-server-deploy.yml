@@ -103,6 +103,27 @@ jobs:
             exit 1
           fi
 
+
+      - name: Verify deploy SA can read Cloud Run logs
+        run: |
+          # Without roles/logging.viewer the post-deploy log dump returns
+          # PERMISSION_DENIED and hides the real Cloud Run startup error.
+          # Fail fast with the exact grant command instead.
+          if ! err=$(gcloud logging read \
+                'resource.type="cloud_run_revision" AND resource.labels.service_name="pdf-api"' \
+                --project="${GCP_PROJECT_ID}" --limit=1 --format='value(timestamp)' 2>&1); then
+            if echo "$err" | grep -qi 'PERMISSION_DENIED\|does not have permission'; then
+              echo "::error::Deploy SA lacks roles/logging.viewer — Cloud Run startup logs cannot be read."
+              echo "::error::Run ONE of (in Cloud Shell):"
+              echo "::error::  A) bash pdf-server/docker/gcp-setup.sh"
+              echo "::error::  B) gcloud projects add-iam-policy-binding ${GCP_PROJECT_ID} \\"
+              echo "::error::       --member=serviceAccount:${DEPLOY_SA} \\"
+              echo "::error::       --role=roles/logging.viewer --condition=None"
+              exit 1
+            fi
+            echo "::warning::Unexpected error probing Cloud Run logs: $err"
+          fi
+
       - name: Build image
         if: github.event.inputs.rollback_sha == ''
         run: |
