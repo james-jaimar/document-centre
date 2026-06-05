@@ -24,3 +24,8 @@ qrcode[pil]==7.4.2
 aiosmtplib==3.0.2
 prometheus-client==0.21.0
 requests==2.32.3
+# Phase 2: GCP-native task queue (Cloud Tasks + Cloud Scheduler).
+# Imported lazily — only loaded when QUEUE_BACKEND=cloud_tasks or the worker
+# HTTP routes verify a Cloud Tasks/Scheduler OIDC token.
+google-cloud-tasks==2.16.4
+google-auth==2.35.0
