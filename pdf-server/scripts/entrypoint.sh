@@ -85,7 +85,7 @@ case "$ROLE" in
     ;;
 
   *)
-    echo "[entrypoint] unknown ROLE=$ROLE (expected: api|worker-heavy|worker-light|worker-emails|listener-emails|beat|shell)" >&2
+    echo "[entrypoint] unknown ROLE=$ROLE (expected: api|worker-heavy|worker-light|worker-emails|worker-heavy-http|worker-light-http|worker-emails-http|listener-emails|beat|shell)" >&2
     exit 64
     ;;
 esac
