@@ -147,9 +147,11 @@ jobs:
               cat /tmp/pdf-api-health.json
               exit 0
             fi
-            if ! docker ps --format '{{.ID}}' | grep -q "^$cid"; then
-              echo "::error::Container exited before /health became ready"
-              echo "Exit code: $(docker inspect -f '{{.State.ExitCode}}' "$cid" 2>/dev/null || echo unknown)"
+            running=$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || echo "missing")
+            if [ "$running" != "true" ]; then
+              status=$(docker inspect -f '{{.State.Status}}' "$cid" 2>/dev/null || echo unknown)
+              exit_code=$(docker inspect -f '{{.State.ExitCode}}' "$cid" 2>/dev/null || echo unknown)
+              echo "::error::Container exited before /health became ready (status=$status, exit_code=$exit_code)"
               exit 1
             fi
             sleep 2
