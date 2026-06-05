@@ -24,38 +24,47 @@ case "$ROLE" in
       --timeout-keep-alive 30
     ;;
 
-  worker-heavy)
-    exec celery -A app.worker.celery_app worker \
-      -Q documents,imposition,pdf \
-      -n "heavy@%h" \
-      -P prefork \
-      --concurrency="${CELERY_HEAVY_CONCURRENCY:-2}" \
-      --max-tasks-per-child=25 \
-      --max-memory-per-child=1500000 \
-      --loglevel="${LOG_LEVEL:-INFO}"
+  worker-heavy|worker-light|worker-emails|worker-heavy-http|worker-light-http|worker-emails-http)
+    # The *-http roles serve Cloud Tasks push requests via FastAPI's
+    # /internal/tasks/* router (mounted in app/main.py). Identical container,
+    # different ROLE — Cloud Run gives each its own scaling envelope.
+    case "$ROLE" in
+      worker-heavy-http|worker-light-http|worker-emails-http)
+        exec uvicorn app.main:app \
+          --host "${API_HOST:-0.0.0.0}" \
+          --port "$PORT" \
+          --workers "${UVICORN_WORKERS:-1}" \
+          --proxy-headers \
+          --forwarded-allow-ips='*' \
+          --timeout-keep-alive 30
+        ;;
+    esac
+    # Legacy Celery worker roles (VPS). Kept for fallback during cutover.
+    case "$ROLE" in
+      worker-heavy)
+        exec celery -A app.worker.celery_app worker \
+          -Q documents,imposition,pdf -n "heavy@%h" -P prefork \
+          --concurrency="${CELERY_HEAVY_CONCURRENCY:-2}" \
+          --max-tasks-per-child=25 --max-memory-per-child=1500000 \
+          --loglevel="${LOG_LEVEL:-INFO}"
+        ;;
+      worker-light)
+        exec celery -A app.worker.celery_app worker \
+          -Q default,thumbnails -n "light@%h" -P prefork \
+          --concurrency="${CELERY_LIGHT_CONCURRENCY:-4}" \
+          --max-tasks-per-child=200 --max-memory-per-child=600000 \
+          --loglevel="${LOG_LEVEL:-INFO}"
+        ;;
+      worker-emails)
+        exec celery -A app.worker.celery_app worker \
+          -Q emails-default,emails-control -n "emails@%h" -P prefork \
+          --concurrency="${CELERY_EMAILS_CONCURRENCY:-16}" \
+          --max-tasks-per-child=500 --max-memory-per-child=400000 \
+          --loglevel="${LOG_LEVEL:-INFO}"
+        ;;
+    esac
     ;;
 
-  worker-light)
-    exec celery -A app.worker.celery_app worker \
-      -Q default,thumbnails \
-      -n "light@%h" \
-      -P prefork \
-      --concurrency="${CELERY_LIGHT_CONCURRENCY:-4}" \
-      --max-tasks-per-child=200 \
-      --max-memory-per-child=600000 \
-      --loglevel="${LOG_LEVEL:-INFO}"
-    ;;
-
-  worker-emails)
-    exec celery -A app.worker.celery_app worker \
-      -Q emails-default,emails-control \
-      -n "emails@%h" \
-      -P prefork \
-      --concurrency="${CELERY_EMAILS_CONCURRENCY:-16}" \
-      --max-tasks-per-child=500 \
-      --max-memory-per-child=400000 \
-      --loglevel="${LOG_LEVEL:-INFO}"
-    ;;
 
   listener-emails)
     # Postgres LISTEN/NOTIFY → primary email dispatch path. Not deployed to
@@ -76,7 +85,7 @@ case "$ROLE" in
     ;;
 
   *)
-    echo "[entrypoint] unknown ROLE=$ROLE (expected: api|worker-heavy|worker-light|worker-emails|listener-emails|beat|shell)" >&2
+    echo "[entrypoint] unknown ROLE=$ROLE (expected: api|worker-heavy|worker-light|worker-emails|worker-heavy-http|worker-light-http|worker-emails-http|listener-emails|beat|shell)" >&2
     exit 64
     ;;
 esac

@@ -1,29 +1,85 @@
-## Plan
+# Plan: GCP-native pdf-server (Phase 2 shipped)
 
-Fix the Cloud Run startup failure by making the API tolerate legacy `postgresql://` / `postgres://` database URLs while continuing to use the already-installed Psycopg 3 driver.
+## What landed in this pass
 
-### Changes
+### A. Custom domain one-pager
+- `pdf-server/docker/CUSTOM_DOMAIN.md` — step-by-step for mapping
+  `api.document-centre.com` → Cloud Run `pdf-api` in `africa-south1`,
+  with CNAME, smoke test, secret flip, and troubleshooting.
 
-1. **Normalize the SQLAlchemy database URL at config time**
-   - In `pdf-server/app/core/config.py`, add a small helper that converts:
-     - `postgresql://...` → `postgresql+psycopg://...`
-     - `postgres://...` → `postgresql+psycopg://...`
-   - Leave explicit driver URLs unchanged, especially `postgresql+psycopg://...`.
+### B. GCP-native workers infrastructure
+- `pdf-server/app/core/queue.py` — `enqueue(name, *args, queue=..., **kw)`
+  switches on `QUEUE_BACKEND={celery|cloud_tasks}`. Cloud Tasks path uses
+  the `cloud-tasks-invoker` SA to push OIDC-signed HTTP requests at the
+  right worker URL.
+- `pdf-server/app/tasks/registry.py` — single `TASK_REGISTRY` mapping task
+  name → callable, shared by the queue dispatcher and the HTTP worker.
+- `pdf-server/app/web/tasks_routes.py` — `POST /internal/tasks/{name}`,
+  OIDC-verified, runs the registered task. Mounted only when
+  `ROLE in {worker-{heavy,light,emails}-http}`.
+- `pdf-server/app/web/beat_routes.py` — `POST /internal/beat/{job}` for
+  Cloud Scheduler (`snapshot-storage`, `cleanup-tmp`,
+  `email-scan-outbox`, `email-release-stuck`). Mounted on `pdf-api`.
+- `pdf-server/scripts/entrypoint.sh` — adds `worker-heavy-http`,
+  `worker-light-http`, `worker-emails-http` roles (uvicorn). Legacy
+  Celery roles kept for VPS fallback.
+- `pdf-server/app/main.py` — ROLE-gated router mounting.
+- `pdf-server/requirements.txt` — adds `google-cloud-tasks`, `google-auth`
+  (lazy-imported, doesn't affect Celery-mode boot).
+- `pdf-server/docker/gcp-tasks-bootstrap.sh` — idempotent: enables APIs,
+  creates `cloud-tasks-invoker` SA, four Cloud Tasks queues with tuned
+  retry/rate, grants `roles/run.invoker`, creates the four Scheduler jobs.
+- `.github/workflows/pdf-server-deploy.yml` — after `pdf-api`, deploys
+  `pdf-worker-heavy/light/emails` from the same image with the right ROLE
+  and a two-pass `WORKER_SELF_URL` so OIDC audience matches. Sets
+  `BEAT_SELF_URL` on `pdf-api`.
 
-2. **Use the normalized URL for SQLAlchemy**
-   - Keep `pdf-server/app/db/session.py` as-is if `settings.database_url` becomes normalized.
-   - This prevents SQLAlchemy from defaulting to the `psycopg2` dialect, which is what caused:
-     `ModuleNotFoundError: No module named 'psycopg2'`.
+## Architecture
 
-3. **Update deployment guidance**
-   - Add a note to the GCP bootstrap/deploy docs/comments that `PDF_DATABASE_URL` may be pasted as a plain Supabase pooler URL, but the app normalizes it internally.
-   - Keep recommending the transaction pooler on port `6543` for Cloud Run.
+```text
+Cloud Run (scale 0→N, all in africa-south1):
+  pdf-api              FastAPI public + /internal/beat/*
+  pdf-worker-heavy     /internal/tasks/*  (documents, imposition, pdf)
+  pdf-worker-light     /internal/tasks/*  (default, thumbnails)
+  pdf-worker-emails    /internal/tasks/*  (emails-default, emails-control)
 
-4. **Local verification**
-   - Run a targeted Python import/config check with sample URLs to confirm SQLAlchemy selects the Psycopg 3 dialect and no longer imports `psycopg2`.
+Cloud Tasks queues (no Redis, no Memorystore):
+  documents-heavy → pdf-worker-heavy
+  documents-light → pdf-worker-light
+  emails-default  → pdf-worker-emails
+  emails-control  → pdf-worker-emails
 
-### Why this is the smallest safe fix
+Cloud Scheduler (replaces Celery beat):
+  ops-snapshot-storage-hourly → pdf-api /internal/beat/snapshot-storage
+  ops-cleanup-tmp-daily       → pdf-api /internal/beat/cleanup-tmp
+  email-scan-outbox-30s       → pdf-api /internal/beat/email-scan-outbox
+  email-release-stuck-5m      → pdf-api /internal/beat/email-release-stuck
 
-- The image already installs `psycopg[binary]`, not `psycopg2`.
-- The failure shows SQLAlchemy is using its default `postgresql://` driver path, which imports `psycopg2`.
-- Normalizing the URL avoids adding another DB driver and keeps the project aligned with the existing Python 3.12/Psycopg 3 stack.
+VPS (optional, Phase 2.5):
+  listener-emails — Postgres LISTEN/NOTIFY for sub-second email push.
+  Cloud Scheduler 1-min scan is the safety net if you keep it on VPS or
+  drop it entirely.
+```
+
+## Manual steps you need to take (in this order)
+
+1. **Push to main** so the workflow deploys the three new worker services.
+2. **Cloud Shell**: `bash pdf-server/docker/gcp-tasks-bootstrap.sh`
+3. **Custom domain**: follow `pdf-server/docker/CUSTOM_DOMAIN.md`, then
+   update Supabase secret `DOCUMENT_CENTRE_API_URL`.
+4. **Flip QUEUE_BACKEND to cloud_tasks** on pdf-api (Cloud Run env var)
+   *after* the call-site rewrite in Phase 2.1 (below).
+
+## Phase 2.1 (next pass — call-site rewrite)
+
+Every `task.delay(...)` / `task.apply_async(...)` in `app/web/routes.py`,
+`app/email/listener.py`, `app/tasks/email_tasks.py`,
+`app/tasks/document_tasks.py`, `app/tasks/operation_tasks.py` needs to
+become `enqueue("task_name", *args, queue="...", **kwargs)`. ~25 sites,
+mechanical, deferred so this PR stays reviewable. Until that lands,
+`QUEUE_BACKEND` stays on `celery` and the infra above is dormant.
+
+## What's intentionally NOT removed
+
+- The Celery app, beat config, and VPS systemd units stay until Phase 5,
+  so we can fall back at any time by flipping `QUEUE_BACKEND` back.
