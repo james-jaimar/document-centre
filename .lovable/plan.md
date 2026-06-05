@@ -1,5 +1,13 @@
 # Plan: GCP-native pdf-server (Phase 2 shipped)
 
+> **Custom domain note (2026-06):** The original plan used
+> `gcloud beta run domain-mappings`, but that flow is **unavailable in
+> `africa-south1`**. Replaced with a Global External Application Load Balancer
+> + Serverless NEG (Global LB, HTTP→HTTPS redirect, Cloud Armor deferred,
+> Cloud Run ingress locked to `internal-and-cloud-load-balancing` after
+> cutover). See `pdf-server/docker/CUSTOM_DOMAIN.md` and
+> `pdf-server/docker/gcp-lb-bootstrap.sh`.
+
 ## What landed in this pass
 
 ### A. Custom domain one-pager
