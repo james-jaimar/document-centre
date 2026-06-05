@@ -80,8 +80,10 @@ gcloud iam workload-identity-pools providers create-oidc "$WIF_PROVIDER" \
   2>/dev/null || echo "  (provider exists — skipping)"
 
 say "5/6 Granting IAM roles"
-# Deploy SA can push to Artifact Registry, deploy Cloud Run, and act-as runtime SA
-for role in roles/artifactregistry.writer roles/run.admin roles/iam.serviceAccountUser; do
+# Deploy SA can push to Artifact Registry, deploy Cloud Run, act-as runtime SA,
+# and inspect Secret Manager entries (needed for `gcloud secrets describe` in
+# the verify step and for `gcloud run deploy --set-secrets` to validate refs).
+for role in roles/artifactregistry.writer roles/run.admin roles/iam.serviceAccountUser roles/secretmanager.viewer; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
     --member="serviceAccount:${DEPLOY_SA_EMAIL}" \
     --role="$role" \
