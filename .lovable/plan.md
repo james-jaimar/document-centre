@@ -1,42 +1,30 @@
-## Goal
-Get `pdf-api` deploying successfully to Cloud Run after the local Docker smoke test now passes but Cloud Run still fails readiness on `PORT=8080`.
+## Plan
 
-## Diagnosis from current evidence
-- The image builds and the GitHub local smoke test reaches `/health`, so the container can boot with dummy env locally.
-- Cloud Run fails only during revision startup, which means the remaining difference is the Cloud Run runtime environment or startup timing.
-- The deployment currently runs uvicorn with its default `UVICORN_WORKERS=2`, while the smoke test forces `UVICORN_WORKERS=1`. On Cloud Run with `--cpu=1`, multiple uvicorn workers can materially slow or block startup, especially with the heavy PDF stack image.
-- The workflow still does not automatically print Cloud Run revision logs after deploy failure, so each failure lacks the real server-side startup logs.
+1. **Fix the immediate diagnostic blocker**
+   - Update `pdf-server/docker/gcp-setup.sh` so the GitHub deploy service account gets `roles/logging.viewer` in addition to its existing deploy roles.
+   - Update `pdf-server/docker/secrets-bootstrap.sh --iam-only` so it can also re-apply the missing project-level IAM needed for diagnostics, not just Secret Manager bindings.
+   - Update the workflow’s deploy-failure block to handle `gcloud logging read` permission denial cleanly and print the exact Cloud Shell command to grant the role:
+     ```bash
+     gcloud projects add-iam-policy-binding project-59a14b18-b4df-4c6b-b09 \
+       --member=serviceAccount:github-deployer@project-59a14b18-b4df-4c6b-b09.iam.gserviceaccount.com \
+       --role=roles/logging.viewer \
+       --condition=None
+     ```
 
-## Implementation plan
-1. **Make Cloud Run match the passing smoke test for API startup**
-   - Update `.github/workflows/pdf-server-deploy.yml` deploy env vars from:
-     - `ROLE=api,LOG_LEVEL=INFO,APP_ENV=production`
-   - to include:
-     - `UVICORN_WORKERS=1`
-     - `PYTHONUNBUFFERED=1`
-   - This keeps the API process single-worker on 1 vCPU, matching the known-good boot smoke test and Cloud Run Python best practice.
+2. **Add a pre-deploy logging permission check**
+   - Before deployment, run a small `gcloud logging read --limit=1` check.
+   - If it fails with `PERMISSION_DENIED`, fail early with the grant command above.
+   - This avoids waiting through a full Cloud Run rollout just to discover that the workflow still cannot print the real startup logs.
 
-2. **Add Cloud Run startup log dump on deploy failure**
-   - Wrap the `gcloud run deploy pdf-api ...` command so if it fails, the workflow runs:
-     - `gcloud logging read` filtered to `service_name="pdf-api"`
-     - limit around 100–200 recent entries
-     - include timestamp, severity, and message/text payload
-   - This means the next failure will show the actual Cloud Run-side traceback/import/startup error in GitHub Actions instead of only the generic Cloud Run readiness message.
+3. **Keep runtime changes minimal until logs are visible**
+   - Do not guess at the Cloud Run startup root cause yet: the current failure only proves the container is not listening on `PORT=8080` in Cloud Run, and the revision logs are currently blocked by IAM.
+   - Keep the already-added `UVICORN_WORKERS=1`, `PYTHONUNBUFFERED=1`, and `--cpu-boost` settings.
+   - Do not add more startup-time workarounds until the Cloud Run logs show whether this is import-time Python failure, secret/env parsing, S3 client initialization, database URL issue, or pure slow startup.
 
-3. **Optionally extend Cloud Run startup budget without hiding crashes**
-   - Keep `--timeout=300` for request timeout.
-   - Add `--startup-probe` only if supported cleanly by the installed `gcloud` version, targeting `/health` on port `8080` with a longer initial tolerance.
-   - If `gcloud run deploy --startup-probe` syntax is not stable in this environment, skip this and rely on single-worker startup plus logs.
+4. **Document the new next step**
+   - Update `.lovable/plan.md` to record that the current blocker is missing `roles/logging.viewer` on the deploy service account.
+   - Add the required Cloud Shell command and the expected next run behavior: either deployment succeeds, or the GitHub Actions log finally includes the Cloud Run traceback needed for the real fix.
 
-4. **Update `.lovable/plan.md`**
-   - Record the current state: local smoke test passes, Cloud Run readiness fails.
-   - Record the runtime-difference fix: Cloud Run now uses one uvicorn worker.
-   - Record the new diagnostic behavior: deploy failures print Cloud Run logs automatically.
+## Expected result
 
-## Expected next run
-- Best case: Cloud Run revision starts, deploy succeeds, and `/health` returns 200.
-- If it still fails: GitHub Actions will now include the Cloud Run startup logs needed to identify the exact Python/runtime error.
-
-## Files to change
-- `.github/workflows/pdf-server-deploy.yml`
-- `.lovable/plan.md`
+After this change and one IAM grant, the next GitHub Actions run should no longer end with `PERMISSION_DENIED: Permission denied for all log views`. If Cloud Run still fails startup, the workflow should print the actual revision logs so we can fix the real container startup error instead of guessing.
