@@ -20,6 +20,22 @@ class Settings(BaseSettings):
     secret_key: str = Field(alias='SECRET_KEY', default='change-me')
 
     database_url: str = Field(alias='DATABASE_URL')
+
+    def model_post_init(self, __context) -> None:
+        # Normalize plain Postgres URLs to use the installed Psycopg 3 driver.
+        # The image ships psycopg[binary] (v3) — NOT psycopg2 — so without the
+        # explicit "+psycopg" driver, SQLAlchemy defaults to psycopg2 and
+        # boot fails with ModuleNotFoundError: No module named 'psycopg2'.
+        url = self.database_url
+        if url.startswith('postgresql://'):
+            object.__setattr__(self, 'database_url',
+                               'postgresql+psycopg://' + url[len('postgresql://'):])
+        elif url.startswith('postgres://'):
+            object.__setattr__(self, 'database_url',
+                               'postgresql+psycopg://' + url[len('postgres://'):])
+        elif url.startswith('postgresql+psycopg2://'):
+            object.__setattr__(self, 'database_url',
+                               'postgresql+psycopg://' + url[len('postgresql+psycopg2://'):])
     # Redis / Celery are optional in Phase 1 of the Cloud Run cutover:
     # the API container does not connect to Redis at import time (Celery is
     # constructed lazily — only .delay() / .control.* actually open sockets).
