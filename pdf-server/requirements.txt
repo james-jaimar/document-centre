@@ -23,3 +23,4 @@ boto3==1.35.36
 qrcode[pil]==7.4.2
 aiosmtplib==3.0.2
 prometheus-client==0.21.0
+requests==2.32.3
