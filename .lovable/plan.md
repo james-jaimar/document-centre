@@ -1,41 +1,42 @@
-## Plan
+# Phase 1 deploy — current state
 
-The latest failure is caused by the GitHub Actions smoke test, not by a proven FastAPI crash.
+## Status
 
-The check currently does this:
+- IAM unblock done.
+- `requests` dependency added.
+- Latest failure was a **false positive** in the smoke test: the liveness check used `docker ps --format '{{.ID}}' | grep "^$cid"`, but `docker run -d` returns the full ID while `docker ps` prints the short form, so the grep never matched and the workflow killed a healthy still-starting container with `Exit code: 0` and no traceback.
+
+## Fix shipped this iteration
+
+`.github/workflows/pdf-server-deploy.yml` — smoke test liveness check rewritten:
+- Use `docker inspect -f '{{.State.Running}}'` instead of `docker ps | grep`.
+- On true exit, print `.State.Status` + `.State.ExitCode` in one line.
+- `dump_logs()` trap unchanged — full container logs always print at the end.
+
+## Next run — what to expect
+
+- If the container is healthy, `/health OK` prints within ~6 s and the deploy proceeds.
+- If it truly crashes, the docker-logs block now contains the real uvicorn/Python traceback. Paste that back and we patch the underlying crash.
+
+## Cloud Run startup log command (post-deploy diagnosis)
 
 ```bash
-cid=$(docker run -d ...)
-docker ps --format '{{.ID}}' | grep -q "^$cid"
+gcloud logging read \
+  'resource.type="cloud_run_revision" AND resource.labels.service_name="pdf-api"' \
+  --project=project-59a14b18-b4df-4c6b-b09 \
+  --limit=200 \
+  --format='value(timestamp,severity,textPayload,jsonPayload.message)'
 ```
 
-`docker run -d` returns the full container ID, while `docker ps --format '{{.ID}}'` returns the shortened ID. That makes the grep fail immediately, so the workflow falsely reports:
+## IAM split (reference)
 
-```text
-Container exited before /health became ready
-Exit code: 0
-```
+- **Deploy SA** `github-deployer@…` — `artifactregistry.writer`, `run.admin`, `iam.serviceAccountUser`, `secretmanager.viewer`.
+- **Runtime SA** `dc-pdf-runtime@…` — `secretmanager.secretAccessor`, `cloudtasks.enqueuer`, `logging.logWriter`.
 
-The container is likely still starting when the workflow kills it in cleanup, which explains why logs only show:
+## Exit criteria
 
-```text
-[entrypoint] starting role=api port=8080
-```
-
-## Changes to make
-
-1. Update `.github/workflows/pdf-server-deploy.yml`
-   - Replace the brittle `docker ps | grep` liveness check with `docker inspect -f '{{.State.Running}}' "$cid"`.
-   - Print `.State.Status`, `.State.Running`, and `.State.ExitCode` only when the container is genuinely not running.
-   - Keep the existing `/health` loop and docker-log dump.
-
-2. Update `.lovable/plan.md`
-   - Record this as a smoke-test bug: truncated Docker IDs caused a false early failure.
-   - Update the next-run expectation: the smoke test should now wait up to 90 seconds for `/health`, or print a real traceback only if the container actually exits.
-
-## Validation
-
-- Check the workflow syntax markers after editing.
-- The next GitHub Actions run should either:
-  - pass `/health OK`, then deploy Cloud Run, or
-  - if the app truly crashes, show real uvicorn/Python logs instead of the current false `Exit code: 0` message.
+1. Verify secrets step passes.
+2. Build + push succeeds.
+3. Container boot smoke test returns `/health` locally on `PORT=8080` (or prints a real traceback).
+4. `Deploy pdf-api (HTTP)` succeeds; summary prints the Cloud Run URL.
+5. `curl -fsS "$URL/health"` returns 200.
