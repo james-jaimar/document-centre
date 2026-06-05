@@ -1,24 +1,28 @@
-# Phase 1 deploy — current state
+## Goal
+Make the `pdf-api` Cloud Run revision boot successfully on `PORT=8080`.
 
-## Status
+## Confirmed from the pasted GitHub log
+The workflow now reaches `Deploy pdf-api (HTTP)`, so the earlier Secret Manager/IAM gate is past. The current failure is Cloud Run rejecting the new revision because the container never starts listening on `PORT=8080` within the startup window.
 
-- GCP IAM unblock applied manually: `github-deployer@…` now has `roles/secretmanager.viewer` on the project. The "PERMISSION_DENIED" failure is resolved at the GCP level.
-- Repo changes below make this self-healing so a fresh setup or a new secret added later won't reintroduce the same failure.
+## Likely code-level issue found
+`pdf-server/app/web/routes.py` imports `app.tasks.cloudprinter_tasks` during FastAPI startup. That module imports `requests`, but `pdf-server/requirements.txt` does not include `requests`. In the Cloud Run image this can crash uvicorn before it binds to port 8080.
 
-## IAM split (reference)
+## Implementation plan
+1. Update `pdf-server/requirements.txt`
+   - Add a pinned `requests` dependency, matching the existing pinned dependency style.
 
-- **Deploy SA** `github-deployer@…` — `roles/artifactregistry.writer`, `roles/run.admin`, `roles/iam.serviceAccountUser`, `roles/secretmanager.viewer`. Used by GitHub Actions to build, push, deploy, and validate `--set-secrets` refs.
-- **Runtime SA** `dc-pdf-runtime@…` — `roles/secretmanager.secretAccessor`, `roles/cloudtasks.enqueuer`, `roles/logging.logWriter`. Used by Cloud Run at container boot to read secret values.
+2. Add a local/import smoke check to the deploy workflow before building/deploying
+   - Add a lightweight step that catches Python import/startup dependency errors before waiting several minutes for Cloud Run revision creation to fail.
+   - Keep it scoped to `pdf-server` startup only.
 
-## Repo changes shipped
+3. Improve deployment diagnostics
+   - Add `--startup-probe`/startup timeout settings only if the app is legitimately slow after import issues are fixed.
+   - Do not mask real import crashes by only extending timeout.
 
-- `pdf-server/docker/gcp-setup.sh` — deploy SA now also gets `roles/secretmanager.viewer` during one-shot bootstrap.
-- `pdf-server/docker/secrets-bootstrap.sh` — added `--iam-only` mode so IAM can be re-applied to existing secrets without re-entering values.
-- `.github/workflows/pdf-server-deploy.yml` — PERMISSION_DENIED error now points to the three concrete fixes (script `--iam-only`, full gcp-setup, or the one-liner). Added `defaults.run.shell: bash`.
+4. Update `.lovable/plan.md`
+   - Record the new failure stage and recovery path: Cloud Run container startup, not IAM/secrets.
 
-## Exit criteria
-
-1. Re-run of the workflow passes the "Verify required Secret Manager entries exist" step.
-2. Build + push of the image succeeds.
-3. `Deploy pdf-api (HTTP)` succeeds; job summary shows the Cloud Run URL.
-4. `curl -fsS "$URL/health"` returns 200.
+## Validation after implementation
+- Push/rerun workflow.
+- Expected progression: build succeeds, deploy creates a healthy revision, summary prints Cloud Run URL.
+- Then verify: `curl -fsS "$URL/health"` returns `200` with `status: ok`.
