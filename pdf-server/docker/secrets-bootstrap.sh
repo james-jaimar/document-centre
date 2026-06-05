@@ -40,6 +40,7 @@ set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:-project-59a14b18-b4df-4c6b-b09}"
 RUNTIME_SA="${RUNTIME_SA:-dc-pdf-runtime@${PROJECT_ID}.iam.gserviceaccount.com}"
+DEPLOY_SA="${DEPLOY_SA:-github-deployer@${PROJECT_ID}.iam.gserviceaccount.com}"
 
 REQUIRED=(
   PDF_DATABASE_URL
@@ -91,10 +92,15 @@ upsert() {
       --replication-policy=automatic --data-file=- >/dev/null
     echo "  ✓ created $name"
   fi
-  # Grant runtime SA access (idempotent)
+  # Grant runtime SA read access to the secret value (idempotent)
   gcloud secrets add-iam-policy-binding "$name" \
     --member="serviceAccount:${RUNTIME_SA}" \
     --role="roles/secretmanager.secretAccessor" \
+    --condition=None >/dev/null 2>&1 || true
+  # Grant deploy SA viewer so the workflow can `describe` + `--set-secrets` (idempotent)
+  gcloud secrets add-iam-policy-binding "$name" \
+    --member="serviceAccount:${DEPLOY_SA}" \
+    --role="roles/secretmanager.viewer" \
     --condition=None >/dev/null 2>&1 || true
 }
 

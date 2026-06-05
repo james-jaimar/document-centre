@@ -73,11 +73,22 @@ jobs:
                     PDF_AWS_S3_BUCKET PDF_AWS_S3_REGION \
                     PDF_AWS_ACCESS_KEY_ID PDF_AWS_SECRET_ACCESS_KEY)
           missing=()
+          denied=()
           for s in "${required[@]}"; do
-            if ! gcloud secrets describe "$s" --project="${GCP_PROJECT_ID}" >/dev/null 2>&1; then
+            err=$(gcloud secrets describe "$s" --project="${GCP_PROJECT_ID}" 2>&1 >/dev/null) && continue
+            if echo "$err" | grep -qi 'PERMISSION_DENIED\|does not have permission'; then
+              denied+=("$s")
+            else
               missing+=("$s")
             fi
           done
+          if [ ${#denied[@]} -gt 0 ]; then
+            echo "::error::Deploy SA cannot read these secrets (PERMISSION_DENIED): ${denied[*]}"
+            echo "::error::Grant viewer access by re-running pdf-server/docker/secrets-bootstrap.sh,"
+            echo "::error::or run once: gcloud projects add-iam-policy-binding ${GCP_PROJECT_ID} \\"
+            echo "::error::  --member=serviceAccount:${DEPLOY_SA} --role=roles/secretmanager.viewer"
+            exit 1
+          fi
           if [ ${#missing[@]} -gt 0 ]; then
             echo "::error::Missing Secret Manager entries: ${missing[*]}"
             echo "Create them by running: bash pdf-server/docker/secrets-bootstrap.sh"
