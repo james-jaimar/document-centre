@@ -41,6 +41,12 @@ permissions:
   contents: read
   id-token: write   # required for Workload Identity Federation
 
+# Silence the Node 20 deprecation warning on the runner. Safe to remove once
+# google-github-actions/* ship Node 24 builds.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -84,9 +90,11 @@ jobs:
           done
           if [ ${#denied[@]} -gt 0 ]; then
             echo "::error::Deploy SA cannot read these secrets (PERMISSION_DENIED): ${denied[*]}"
-            echo "::error::Grant viewer access by re-running pdf-server/docker/secrets-bootstrap.sh,"
-            echo "::error::or run once: gcloud projects add-iam-policy-binding ${GCP_PROJECT_ID} \\"
-            echo "::error::  --member=serviceAccount:${DEPLOY_SA} --role=roles/secretmanager.viewer"
+            echo "::error::Fix with ONE of (run in Cloud Shell):"
+            echo "::error::  A) bash pdf-server/docker/secrets-bootstrap.sh --iam-only"
+            echo "::error::  B) bash pdf-server/docker/gcp-setup.sh"
+            echo "::error::  C) gcloud projects add-iam-policy-binding ${GCP_PROJECT_ID} \\"
+            echo "::error::       --member=serviceAccount:${DEPLOY_SA} --role=roles/secretmanager.viewer"
             exit 1
           fi
           if [ ${#missing[@]} -gt 0 ]; then
