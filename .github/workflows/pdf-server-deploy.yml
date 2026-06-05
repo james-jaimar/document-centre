@@ -111,21 +111,40 @@ jobs:
             -t "${{ steps.tag.outputs.image }}" \
             .
 
-      - name: Import smoke test (catch missing deps before Cloud Run rollout)
+      - name: Container boot smoke test (catch startup failures before Cloud Run rollout)
         if: github.event.inputs.rollback_sha == ''
         run: |
-          # Import the FastAPI app inside the built image. If a module is
-          # missing or any top-level import raises, this fails in seconds
-          # instead of after a 5-minute Cloud Run revision timeout.
-          # Provides harmless dummy env so settings construction succeeds.
-          docker run --rm \
+          # Start the same ROLE=api entrypoint Cloud Run uses, bind PORT=8080,
+          # and require /health to answer before deploying. This catches
+          # missing deps, uvicorn worker crashes, static-path issues, and port
+          # binding failures locally with useful container logs.
+          cid=$(docker run -d \
+            -e ROLE=api \
+            -e PORT=8080 \
             -e DATABASE_URL="postgresql+psycopg://u:p@127.0.0.1:5432/db" \
             -e STORAGE_MODE=s3 \
             -e AWS_S3_BUCKET=smoke -e AWS_S3_REGION=af-south-1 \
             -e AWS_ACCESS_KEY_ID=smoke -e AWS_SECRET_ACCESS_KEY=smoke \
-            --entrypoint /opt/venv/bin/python \
-            "${{ steps.tag.outputs.image }}" \
-            -c "import app.main; print('import ok:', app.main.app.title)"
+            -p 127.0.0.1:8080:8080 \
+            "${{ steps.tag.outputs.image }}")
+
+          cleanup() { docker logs "$cid" || true; docker rm -f "$cid" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+
+          for i in {1..45}; do
+            if curl -fsS http://127.0.0.1:8080/health >/tmp/pdf-api-health.json; then
+              cat /tmp/pdf-api-health.json
+              exit 0
+            fi
+            if ! docker ps --format '{{.ID}}' | grep -q "^$cid"; then
+              echo "::error::Container exited before /health became ready"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "::error::Container did not answer /health on PORT=8080 within 90s"
+          exit 1
 
       - name: Push image
         if: github.event.inputs.rollback_sha == ''
