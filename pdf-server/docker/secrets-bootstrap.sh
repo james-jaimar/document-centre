@@ -40,6 +40,7 @@ set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:-project-59a14b18-b4df-4c6b-b09}"
 RUNTIME_SA="${RUNTIME_SA:-dc-pdf-runtime@${PROJECT_ID}.iam.gserviceaccount.com}"
+DEPLOY_SA="${DEPLOY_SA:-github-deployer@${PROJECT_ID}.iam.gserviceaccount.com}"
 
 REQUIRED=(
   PDF_DATABASE_URL
