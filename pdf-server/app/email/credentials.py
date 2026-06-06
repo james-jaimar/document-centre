@@ -102,3 +102,61 @@ def get_account_creds(sb: Client, account_id: str, *, force_refresh: bool = Fals
 
 def invalidate(account_id: str) -> None:
     _CACHE.pop(account_id, None)
+
+
+def resolve_account_id_for_row(
+    sb: Client,
+    *,
+    tenant_id: Optional[str],
+    branch_id: Optional[str],
+) -> Optional[str]:
+    """Mirror of the edge dispatcher's account fallback chain.
+
+    Returns the id of the first usable SMTP account, in order:
+      1. branch default SMTP
+      2. any branch active SMTP
+      3. tenant-wide default SMTP (no branch)
+      4. any tenant-wide active SMTP
+      5. any active SMTP for the tenant
+    Returns None if no SMTP account is configured. The Python worker
+    does not yet implement Graph/OAuth transports, so those rows are
+    intentionally skipped here and will surface as `no_email_account`.
+    """
+    if not tenant_id:
+        return None
+
+    res = (
+        sb.table("email_accounts")
+        .select("id,branch_id,is_default,transport,is_active")
+        .eq("tenant_id", tenant_id)
+        .eq("is_active", True)
+        .eq("transport", "smtp")
+        .execute()
+    )
+    accounts = res.data or []
+    if not accounts:
+        return None
+
+    def _pick(predicate) -> Optional[str]:
+        for a in accounts:
+            if predicate(a):
+                return a["id"]
+        return None
+
+    if branch_id:
+        picked = _pick(lambda a: a.get("branch_id") == branch_id and a.get("is_default"))
+        if picked:
+            return picked
+        picked = _pick(lambda a: a.get("branch_id") == branch_id)
+        if picked:
+            return picked
+
+    picked = _pick(lambda a: not a.get("branch_id") and a.get("is_default"))
+    if picked:
+        return picked
+    picked = _pick(lambda a: not a.get("branch_id"))
+    if picked:
+        return picked
+
+    return accounts[0]["id"]
+
