@@ -160,15 +160,34 @@ create_or_update_scheduler "email-release-stuck-5m"       "*/5 * * * *" "${API_U
 # tolerates the gap and Phase 2 keeps the VPS LISTEN/NOTIFY listener as
 # the push path for sub-second email delivery.
 
-log "Done. Worker URLs:"
+log "Verifying pdf-api Cloud Run env (required vars for Cloud Tasks mode)"
+REQUIRED_ENV=(QUEUE_BACKEND GCP_PROJECT_ID GCP_REGION GCP_TASKS_REGION TASKS_INVOKER_SA WORKER_URL_HEAVY WORKER_URL_LIGHT WORKER_URL_EMAILS BEAT_SELF_URL)
+current_env="$(gcloud run services describe "$API_SERVICE" --region="$REGION" --project="$PROJECT_ID" \
+  --format='value(spec.template.spec.containers[0].env.list())' 2>/dev/null || true)"
+missing_env=()
+for v in "${REQUIRED_ENV[@]}"; do
+  if ! grep -qw "$v" <<<"$current_env"; then
+    missing_env+=("$v")
+  fi
+done
+if [ ${#missing_env[@]} -gt 0 ]; then
+  echo "::warning::pdf-api is missing env vars: ${missing_env[*]}"
+  echo "Re-run the GitHub Actions deploy workflow to set them."
+else
+  log "pdf-api env looks correct ✓"
+fi
+
+log "Scheduler jobs in $TASKS_REGION:"
+gcloud scheduler jobs list --location="$TASKS_REGION" --project="$PROJECT_ID" \
+  --format='table(name.basename(),schedule,state)' 2>/dev/null || true
+
+log "Done. Summary:"
 echo "  WORKER_URL_HEAVY=$HEAVY_URL"
 echo "  WORKER_URL_LIGHT=$LIGHT_URL"
 echo "  WORKER_URL_EMAILS=$EMAILS_URL"
 echo "  TASKS_INVOKER_SA=$INVOKER_SA"
 echo "  GCP_REGION=$REGION         # Cloud Run (compute)"
 echo "  GCP_TASKS_REGION=$TASKS_REGION  # Cloud Tasks + Scheduler"
-echo "  QUEUE_BACKEND=cloud_tasks  # required — Celery fallback has no broker on Cloud Run"
+echo "  QUEUE_BACKEND=cloud_tasks  # required on pdf-api"
 echo ""
-echo "Set these on the pdf-api Cloud Run service via Secret Manager or --set-env-vars."
-echo "QUEUE_BACKEND MUST be cloud_tasks in this environment; the legacy Celery path"
-echo "expects a Redis broker that does not exist on Cloud Run and will fail uploads."
+echo "Next: see pdf-server/docs/GCP_CUTOVER.md for VPS decommission steps."
