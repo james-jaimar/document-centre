@@ -17,6 +17,7 @@ from app.services.files import Workspace, unique_name
 from app.services.pdf_ops import pdf_ops, RasterizationIncompleteError
 from app.services.derived_files import derived_file_repo
 from app.core.config import settings
+from app.core.queue import enqueue
 
 storage = StorageService()
 
