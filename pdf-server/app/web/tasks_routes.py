@@ -60,6 +60,23 @@ def _verify_oidc(request: Request) -> None:
         raise HTTPException(status_code=401, detail=f"unexpected issuer: {issuer}")
 
 
+def _cloud_tasks_headers(request: Request) -> dict[str, str]:
+    """Extract Cloud Tasks diagnostic headers — present only on push tasks."""
+    keys = (
+        "x-cloudtasks-queuename",
+        "x-cloudtasks-taskname",
+        "x-cloudtasks-taskretrycount",
+        "x-cloudtasks-taskexecutioncount",
+        "x-cloudtasks-tasketa",
+    )
+    out: dict[str, str] = {}
+    for k in keys:
+        v = request.headers.get(k)
+        if v is not None:
+            out[k] = v
+    return out
+
+
 @tasks_router.post("/{task_name}")
 async def run_task(task_name: str, request: Request) -> dict[str, Any]:
     _verify_oidc(request)
@@ -76,14 +93,71 @@ async def run_task(task_name: str, request: Request) -> dict[str, Any]:
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
 
-    log.info("running task=%s args=%s kwargs=%s", task_name, args, list(kwargs.keys()))
+    ct_headers = _cloud_tasks_headers(request)
+    retry_count = ct_headers.get("x-cloudtasks-taskretrycount", "0")
+    exec_count = ct_headers.get("x-cloudtasks-taskexecutioncount", "0")
+
+    log.info(
+        "running task=%s retry=%s exec=%s args=%s kwargs=%s",
+        task_name, retry_count, exec_count, args, list(kwargs.keys()),
+    )
+
+    # Idempotency guard for retried tasks: if Cloud Tasks fires a second
+    # attempt while the first is still running (or already finished), skip
+    # the duplicate work. The first positional arg pattern is (asset_id,
+    # job_id, ...) for every task in this codebase; the optional job_id
+    # kwarg covers the chained variants.
+    if int(retry_count) > 0:
+        job_id = kwargs.get("job_id")
+        if job_id is None and len(args) >= 2:
+            job_id = args[1]
+        if isinstance(job_id, str) and len(job_id) >= 8:
+            try:
+                from app.db.session import SessionLocal
+                from sqlalchemy import text as _text
+                _db = SessionLocal()
+                try:
+                    row = _db.execute(
+                        _text("select status, started_at from jobs where id = :id"),
+                        {"id": job_id},
+                    ).first()
+                finally:
+                    _db.close()
+                if row is not None:
+                    status, started_at = row[0], row[1]
+                    if status in ("completed", "cancelled"):
+                        log.warning(
+                            "task %s skipped — job %s already %s (retry=%s)",
+                            task_name, job_id, status, retry_count,
+                        )
+                        return {"ok": True, "task": task_name, "skipped": status}
+                    if status == "running" and started_at is not None:
+                        from datetime import datetime, timezone, timedelta
+                        # If the previous attempt started recently AND
+                        # we're seeing a retry, the original is probably
+                        # still in flight — refuse rather than start a
+                        # duplicate. Stale "running" rows older than 15
+                        # min fall through and re-execute.
+                        try:
+                            age = datetime.now(timezone.utc) - started_at
+                        except Exception:
+                            age = timedelta(seconds=0)
+                        if age < timedelta(minutes=15):
+                            log.warning(
+                                "task %s skipped — job %s already running %ds (retry=%s)",
+                                task_name, job_id, int(age.total_seconds()), retry_count,
+                            )
+                            return {"ok": True, "task": task_name, "skipped": "in_flight"}
+            except Exception as guard_exc:  # noqa: BLE001
+                log.warning("idempotency guard check failed: %s", guard_exc)
+
     # Celery tasks are callable as plain functions via .run / .__call__.
     # We support both Celery tasks and bare callables.
     runner = getattr(fn, "run", fn)
     try:
         result = runner(*args, **kwargs)
     except Exception as e:  # noqa: BLE001
-        log.exception("task %s failed", task_name)
+        log.exception("task %s failed (retry=%s)", task_name, retry_count)
         # Returning 500 tells Cloud Tasks to retry per the queue's retry config.
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}") from e
 
