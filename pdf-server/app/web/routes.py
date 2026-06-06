@@ -307,8 +307,8 @@ def op_cmyk(payload: CmykRequest, db: Session = Depends(get_db)):
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "cmyk_pdf", "documents", body)
-    task = cmyk_pdf.delay(asset_id, job_id, payload.icc_profile)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("cmyk_pdf", asset_id, job_id, payload.icc_profile, queue="documents")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
