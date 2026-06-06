@@ -1,63 +1,59 @@
-# Fix: grant runtime SA permission to impersonate the Cloud Tasks invoker SA
+## What the new error means
 
-## Progress so far
+The upload is now failing at a different layer: the Document Centre API is still using the legacy Celery enqueue path during PDF inspection.
 
-- ✅ DB password fix worked — `psycopg` now connects to Supabase pooler.
-- ❌ Enqueue still fails, but with a **different, more specific** error:
+The visible stack points to:
 
-```
-google.api_core.exceptions.PermissionDenied: 403
-The principal (user or service account) lacks IAM permission
-"iam.serviceAccounts.actAs" for the resource
-"cloud-tasks-invoker@project-59a14b18-b4df-4c6b-b09.iam.gserviceaccount.com"
+```text
+/app/app/core/queue.py, line 122, in enqueue
+result = task.apply_async(...)
 ```
 
-## What's actually happening
+That line only runs when `QUEUE_BACKEND` is not set to `cloud_tasks`. So the current failure is not the earlier database-password issue and not the earlier `iam.serviceAccounts.actAs` issue. It is trying to enqueue the inspection job through Celery/Kombu instead of Cloud Tasks.
 
-When `pdf-api` enqueues a Cloud Task it tells Cloud Tasks: *"when you push this task to `pdf-worker-light`, attach an OIDC token signed as `cloud-tasks-invoker`."* That requires the **runtime SA** (`dc-pdf-runtime`, which `pdf-api` runs as) to be allowed to impersonate the **invoker SA** (`cloud-tasks-invoker`).
+Do I know what the issue is? Yes: `pdf-api` needs `QUEUE_BACKEND=cloud_tasks` in Cloud Run now that upload inspection uses `app.core.queue.enqueue(...)`.
 
-`gcp-tasks-bootstrap.sh` granted `roles/run.invoker` **on the worker services** to `cloud-tasks-invoker` (so the workers accept its token), but it never granted `dc-pdf-runtime` permission to **act-as** `cloud-tasks-invoker`. That's the missing link.
+## Immediate production recovery
 
-## The fix (one Cloud Shell command)
-
-Grant `roles/iam.serviceAccountTokenCreator` on the invoker SA to the runtime SA. This is a resource-level binding — minimum privilege, scoped to just that one SA.
+Run this in Cloud Shell:
 
 ```bash
 PROJECT_ID=project-59a14b18-b4df-4c6b-b09
-RUNTIME_SA=dc-pdf-runtime@${PROJECT_ID}.iam.gserviceaccount.com
-INVOKER_SA=cloud-tasks-invoker@${PROJECT_ID}.iam.gserviceaccount.com
+REGION=africa-south1
 
-gcloud iam service-accounts add-iam-policy-binding "$INVOKER_SA" \
+gcloud run services update pdf-api \
   --project="$PROJECT_ID" \
-  --member="serviceAccount:${RUNTIME_SA}" \
-  --role="roles/iam.serviceAccountTokenCreator"
+  --region="$REGION" \
+  --update-env-vars="QUEUE_BACKEND=cloud_tasks"
 ```
 
-`serviceAccountTokenCreator` (not just `serviceAccountUser`) is the correct role because the Cloud Tasks client library mints an OIDC token under the hood — that requires token-creator, not plain `actAs`.
+Then wait about 60 seconds and retry the same PDF upload.
 
-No Cloud Run revision bump needed. IAM propagates in ~30–60s.
+## Codebase fix I will make after approval
 
-## Verify
+1. Update `.github/workflows/pdf-server-deploy.yml`
+   - Add `QUEUE_BACKEND=cloud_tasks` to the `pdf-api` deploy/update environment so future deploys do not silently revert to Celery.
+   - Update the stale workflow comments that currently say `QUEUE_BACKEND` stays as `celery`.
 
-1. Wait ~60s.
-2. Retry the upload in the Document Centre demo. The `Inspecting PDF…` step should complete instead of erroring.
-3. Optional sanity:
-   ```bash
-   gcloud run services logs read pdf-worker-light --region=africa-south1 --limit=20
-   ```
-   You should see a `POST /tasks/run` arrive.
+2. Update `pdf-server/docker/gcp-tasks-bootstrap.sh`
+   - Include `QUEUE_BACKEND=cloud_tasks` in the printed final env guidance.
+   - Keep the existing invoker/IAM setup intact.
 
-## Codify it so a fresh project doesn't hit this again
+3. Add a lightweight guard/diagnostic if appropriate
+   - Make Cloud Tasks mode fail with a clearer message if the required Cloud Tasks env vars are missing, instead of falling back into confusing Celery/Kombu traces.
 
-Once verified, append the same binding to `pdf-server/docker/gcp-tasks-bootstrap.sh`, right after the existing `roles/run.invoker` block:
+## Why this should fix the current screenshot
 
-```bash
-log "Granting roles/iam.serviceAccountTokenCreator on $INVOKER_SA to dc-pdf-runtime (so pdf-api can mint OIDC tokens for Cloud Tasks)"
-RUNTIME_SA="dc-pdf-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
-gcloud iam service-accounts add-iam-policy-binding "$INVOKER_SA" \
-  --project="$PROJECT_ID" \
-  --member="serviceAccount:${RUNTIME_SA}" \
-  --role="roles/iam.serviceAccountTokenCreator" --quiet
+The screenshot shows the upload reached `Inspecting PDF...` and then the API crashed while enqueuing the inspection task. With `QUEUE_BACKEND=cloud_tasks`, that same enqueue call will use `google.cloud.tasks` and the worker URLs/invoker service account already configured in the previous steps, instead of trying to contact the old Celery broker.
+
+```xml
+<presentation-actions>
+  <presentation-open-history>View History</presentation-open-history>
+</presentation-actions>
 ```
 
-No app code changes, no migrations, no secret edits.
+```xml
+<presentation-actions>
+<presentation-link url="https://docs.lovable.dev/tips-tricks/troubleshooting">Troubleshooting docs</presentation-link>
+</presentation-actions>
+```
