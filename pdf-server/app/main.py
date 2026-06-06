@@ -51,4 +51,20 @@ def local_file(storage_path: str):
 
 @app.get('/health')
 def health():
-    return {'status': 'ok', 'service': settings.app_name, 'env': settings.app_env}
+    # Expose non-secret runtime facts so cutover/config drift is visible
+    # without trawling Cloud Run env pages. Useful when previews go slow:
+    # if `queue_backend` is not 'cloud_tasks' on a worker, generate_previews
+    # will silently take the wrong (Celery fan-out) path.
+    import os as _os
+    return {
+        'status': 'ok',
+        'service': settings.app_name,
+        'env': settings.app_env,
+        'role': _os.getenv('ROLE', 'api'),
+        'queue_backend': _os.getenv('QUEUE_BACKEND', 'celery'),
+        'cpu_count': _os.cpu_count(),
+        'render_cpu_concurrency': settings.render_cpu_concurrency,
+        'render_io_concurrency': settings.render_io_concurrency,
+        'render_batch_threshold': settings.render_batch_threshold,
+        'render_fanout_enabled': settings.render_fanout_enabled,
+    }

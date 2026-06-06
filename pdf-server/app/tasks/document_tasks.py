@@ -778,18 +778,29 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                 # the VPS achieved — so force it on under Cloud Tasks regardless
                 # of RENDER_FANOUT_ENABLED. Keep fan-out available for local
                 # Celery dev where workers are already warm.
+                # Belt-and-braces: disable fan-out whenever we're running on
+                # Cloud Run (QUEUE_BACKEND=cloud_tasks OR ROLE=worker-*-http).
+                # Either signal alone is enough — so even if env drift leaves
+                # QUEUE_BACKEND unset on a worker, the ROLE check still keeps
+                # us on the in-process path that matches the old VPS Celery
+                # prefork behaviour.
                 _queue_backend = os.getenv("QUEUE_BACKEND", "celery").lower()
+                _role = os.getenv("ROLE", "").lower()
+                _on_cloud_run = (
+                    _queue_backend == "cloud_tasks"
+                    or (_role.startswith("worker-") and _role.endswith("-http"))
+                )
                 fanout_active = (
                     FANOUT_ENABLED
-                    and _queue_backend != "cloud_tasks"
+                    and not _on_cloud_run
                     and len(remaining) >= 2
                 )
-                if not fanout_active and len(remaining) >= 2 and FANOUT_ENABLED and _queue_backend == "cloud_tasks":
+                if not fanout_active and len(remaining) >= 2 and FANOUT_ENABLED and _on_cloud_run:
                     logger.info(
-                        "generate_previews: fan-out disabled under cloud_tasks "
-                        "(would dispatch %d per-page tasks via HTTP push). "
-                        "Using in-process ThreadPoolExecutor instead.",
-                        len(remaining),
+                        "generate_previews: fan-out disabled on Cloud Run "
+                        "(queue_backend=%s role=%s, would dispatch %d per-page "
+                        "tasks via HTTP push). Using in-process ThreadPoolExecutor.",
+                        _queue_backend, _role, len(remaining),
                     )
                 if fanout_active:
                     # Upload the prepared (possibly cropped) PDF once so
