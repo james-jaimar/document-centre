@@ -18,19 +18,35 @@ HERE = pathlib.Path(__file__).resolve().parent
 PDF_SERVER = HERE.parent
 APP = PDF_SERVER / "app"
 
-sys.path.insert(0, str(PDF_SERVER))
+def _parse_registry() -> set[str]:
+    """Extract TASK_REGISTRY keys via AST (avoids importing heavy task modules)."""
+    src = (APP / "tasks" / "registry.py").read_text()
+    tree = ast.parse(src)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name) and t.id == "TASK_REGISTRY" and isinstance(node.value, ast.Dict):
+                    return {k.value for k in node.value.keys if isinstance(k, ast.Constant)}
+    return set()
 
-# Stub out heavy optional deps before importing the registry. We only need the
-# names and queue map; we don't execute any task code.
-import types  # noqa: E402
 
-for mod in ("celery", "celery.schedules"):
-    if mod not in sys.modules:
-        m = types.ModuleType(mod)
-        sys.modules[mod] = m
+def _parse_queue_map() -> set[str]:
+    src = (APP / "core" / "queue.py").read_text()
+    tree = ast.parse(src)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "QUEUE_TO_CLOUD_TASKS_QUEUE":
+            if isinstance(node.value, ast.Dict):
+                return {k.value for k in node.value.keys if isinstance(k, ast.Constant)}
+        if isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name) and t.id == "QUEUE_TO_CLOUD_TASKS_QUEUE" and isinstance(node.value, ast.Dict):
+                    return {k.value for k in node.value.keys if isinstance(k, ast.Constant)}
+    return set()
 
-from app.core.queue import QUEUE_TO_CLOUD_TASKS_QUEUE  # noqa: E402
-from app.tasks.registry import TASK_REGISTRY  # noqa: E402
+
+TASK_REGISTRY = _parse_registry()
+QUEUE_TO_CLOUD_TASKS_QUEUE = _parse_queue_map()
+
 
 
 def find_enqueue_calls(root: pathlib.Path):
