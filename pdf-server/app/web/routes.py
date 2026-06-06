@@ -297,8 +297,8 @@ def op_grayscale(payload: GrayscaleRequest, db: Session = Depends(get_db)):
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "grayscale_pdf", "documents", body)
-    task = grayscale_pdf.delay(asset_id, job_id)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("grayscale_pdf", asset_id, job_id, queue="documents")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
