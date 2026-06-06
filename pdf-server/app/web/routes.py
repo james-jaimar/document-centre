@@ -131,8 +131,8 @@ def create_asset(payload: AssetCreate, db: Session = Depends(get_db)):
 
     if payload.auto_queue:
         job_id = job_repo.create_job(db, asset_id, "normalize_asset", "documents", {})
-        task = normalize_asset.delay(asset_id, job_id)
-        job_repo.set_celery_task_id(db, job_id, task.id)
+        task_id = enqueue("normalize_asset", asset_id, job_id, queue="documents")
+        job_repo.set_celery_task_id(db, job_id, task_id)
         job_ids.append(job_id)
 
     return {"asset_id": asset_id, "job_ids": job_ids, "inline_inspect": inline}
