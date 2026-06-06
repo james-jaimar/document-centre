@@ -52,22 +52,22 @@ fi
 
 log "Creating Cloud Tasks queues (if missing)"
 for q in "${QUEUES[@]}"; do
-  if ! gcloud tasks queues describe "$q" --location="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
-    gcloud tasks queues create "$q" --location="$REGION" --project="$PROJECT_ID"
+  if ! gcloud tasks queues describe "$q" --location="$TASKS_REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
+    gcloud tasks queues create "$q" --location="$TASKS_REGION" --project="$PROJECT_ID"
   fi
 done
 
 # Per-queue rate / retry tuning.
-gcloud tasks queues update documents-heavy --location="$REGION" --project="$PROJECT_ID" \
+gcloud tasks queues update documents-heavy --location="$TASKS_REGION" --project="$PROJECT_ID" \
   --max-dispatches-per-second=5 --max-concurrent-dispatches=10 \
   --max-attempts=5 --min-backoff=10s --max-backoff=600s --quiet
-gcloud tasks queues update documents-light --location="$REGION" --project="$PROJECT_ID" \
+gcloud tasks queues update documents-light --location="$TASKS_REGION" --project="$PROJECT_ID" \
   --max-dispatches-per-second=20 --max-concurrent-dispatches=40 \
   --max-attempts=5 --min-backoff=5s --max-backoff=300s --quiet
-gcloud tasks queues update emails-default --location="$REGION" --project="$PROJECT_ID" \
+gcloud tasks queues update emails-default --location="$TASKS_REGION" --project="$PROJECT_ID" \
   --max-dispatches-per-second=10 --max-concurrent-dispatches=20 \
   --max-attempts=8 --min-backoff=30s --max-backoff=3600s --quiet
-gcloud tasks queues update emails-control --location="$REGION" --project="$PROJECT_ID" \
+gcloud tasks queues update emails-control --location="$TASKS_REGION" --project="$PROJECT_ID" \
   --max-dispatches-per-second=2 --max-concurrent-dispatches=2 \
   --max-attempts=3 --min-backoff=10s --max-backoff=120s --quiet
 
@@ -109,12 +109,12 @@ gcloud run services add-iam-policy-binding "$API_SERVICE" \
 
 create_or_update_scheduler() {
   local name="$1" schedule="$2" url="$3"
-  if gcloud scheduler jobs describe "$name" --location="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
-    gcloud scheduler jobs update http "$name" --location="$REGION" --project="$PROJECT_ID" \
+  if gcloud scheduler jobs describe "$name" --location="$TASKS_REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
+    gcloud scheduler jobs update http "$name" --location="$TASKS_REGION" --project="$PROJECT_ID" \
       --schedule="$schedule" --uri="$url" --http-method=POST \
       --oidc-service-account-email="$INVOKER_SA" --oidc-token-audience="${url%/internal/*}" --quiet
   else
-    gcloud scheduler jobs create http "$name" --location="$REGION" --project="$PROJECT_ID" \
+    gcloud scheduler jobs create http "$name" --location="$TASKS_REGION" --project="$PROJECT_ID" \
       --schedule="$schedule" --uri="$url" --http-method=POST \
       --oidc-service-account-email="$INVOKER_SA" --oidc-token-audience="${url%/internal/*}" --quiet
   fi
