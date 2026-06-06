@@ -622,8 +622,8 @@ def op_pad_pages(payload: PadPagesRequest, db: Session = Depends(get_db)):
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "pad_pages", "documents", body)
-    task = pad_pages_pdf.delay(asset_id, job_id, payload.multiple)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("pad_pages_pdf", asset_id, job_id, payload.multiple, queue="documents")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
