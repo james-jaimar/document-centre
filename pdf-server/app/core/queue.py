@@ -18,7 +18,10 @@ Both modes share the same task name → callable registry in
 Env vars (Cloud Tasks mode):
   QUEUE_BACKEND=cloud_tasks
   GCP_PROJECT_ID=project-59a14b18-b4df-4c6b-b09
-  GCP_REGION=africa-south1
+  GCP_REGION=africa-south1        # Cloud Run (compute) region
+  GCP_TASKS_REGION=europe-west1   # Cloud Tasks + Scheduler region
+                                  # (Tasks/Scheduler not offered in africa-south1;
+                                  #  falls back to GCP_REGION if unset)
   TASKS_INVOKER_SA=cloud-tasks-invoker@<project>.iam.gserviceaccount.com
   WORKER_URL_HEAVY=https://pdf-worker-heavy-<hash>.run.app
   WORKER_URL_LIGHT=https://pdf-worker-light-<hash>.run.app
@@ -80,7 +83,9 @@ def _cloud_tasks_enqueue(
     from google.cloud import tasks_v2  # type: ignore
 
     project = os.environ["GCP_PROJECT_ID"]
-    region = os.environ["GCP_REGION"]
+    # Tasks/Scheduler region is independent of compute region (africa-south1
+    # doesn't host Cloud Tasks). Fall back to GCP_REGION for back-compat.
+    region = os.getenv("GCP_TASKS_REGION") or os.environ["GCP_REGION"]
     invoker_sa = os.environ["TASKS_INVOKER_SA"]
     queue_id = QUEUE_TO_CLOUD_TASKS_QUEUE[queue]
     worker_url = _resolve_worker_url(queue)
