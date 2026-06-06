@@ -288,7 +288,7 @@ jobs:
               --region="${{ env.GCP_REGION }}" \
               --service-account="${{ env.RUNTIME_SA }}" \
               --port=8080 \
-              --set-env-vars="ROLE=${role},LOG_LEVEL=INFO,APP_ENV=production,UVICORN_WORKERS=1,PYTHONUNBUFFERED=1,QUEUE_BACKEND=cloud_tasks,GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }},GCP_TASKS_REGION=${{ env.GCP_TASKS_REGION }}" \
+              --set-env-vars="ROLE=${role},LOG_LEVEL=INFO,APP_ENV=production,UVICORN_WORKERS=1,PYTHONUNBUFFERED=1,QUEUE_BACKEND=cloud_tasks,GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }},GCP_TASKS_REGION=${{ env.GCP_TASKS_REGION }},CLOUD_TASKS_DISPATCH_DEADLINE_SECONDS=900,S3_MAX_POOL_CONNECTIONS=32" \
               --set-secrets="$SECRET_FLAG" \
               --memory="$mem" --cpu="$cpu" \
               --cpu-boost \
