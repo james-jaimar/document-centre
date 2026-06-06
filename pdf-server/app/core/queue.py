@@ -81,6 +81,7 @@ def _cloud_tasks_enqueue(
 ) -> str:
     # Imported lazily so the legacy/Celery path never loads google-cloud-tasks.
     from google.cloud import tasks_v2  # type: ignore
+    from google.protobuf import duration_pb2  # type: ignore
 
     project = os.environ["GCP_PROJECT_ID"]
     # Tasks/Scheduler region is independent of compute region (africa-south1
@@ -105,6 +106,18 @@ def _cloud_tasks_enqueue(
             },
         }
     }
+    # Cloud Tasks default dispatch deadline is 10 min, but it will RETRY the
+    # task if the worker takes longer than the value set here. Heavy renders
+    # legitimately take 1-3 min on cold containers; without an explicit
+    # deadline matching the Cloud Run --timeout=900, Cloud Tasks fires a
+    # second concurrent attempt while the first is still working — which is
+    # exactly the duplicate-render pattern observed in job_events for the
+    # 8-page Postnet upload.
+    try:
+        deadline_seconds = int(os.getenv("CLOUD_TASKS_DISPATCH_DEADLINE_SECONDS", "900"))
+    except ValueError:
+        deadline_seconds = 900
+    task["dispatch_deadline"] = duration_pb2.Duration(seconds=max(60, deadline_seconds))
     try:
         response = client.create_task(request={"parent": parent, "task": task})
     except Exception as exc:  # noqa: BLE001
@@ -117,7 +130,10 @@ def _cloud_tasks_enqueue(
             f"Check that the pdf-api runtime SA has roles/cloudtasks.enqueuer on the project AND "
             f"roles/iam.serviceAccountUser on {invoker_sa}."
         ) from exc
-    log.info("enqueued cloud task name=%s queue=%s task=%s", task_name, queue_id, response.name)
+    log.info(
+        "enqueued cloud task name=%s queue=%s deadline=%ds task=%s",
+        task_name, queue_id, deadline_seconds, response.name,
+    )
     return response.name
 
 
