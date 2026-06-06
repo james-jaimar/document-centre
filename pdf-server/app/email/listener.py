@@ -63,10 +63,10 @@ def _handle_signal(signum, _frame):
 
 
 def _dispatch_scan() -> None:
-    """Lazy import so Celery app is only built when first needed."""
-    from app.tasks.email_tasks import scan_outbox
+    """Enqueue a scan_outbox task via the queue abstraction (Celery or Cloud Tasks)."""
+    from app.core.queue import enqueue
     try:
-        scan_outbox.apply_async(queue="emails-control")
+        enqueue("scan_outbox", queue="emails-control")
     except Exception:  # noqa: BLE001
         log.exception("failed to dispatch scan_outbox")
 
