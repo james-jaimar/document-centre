@@ -458,20 +458,44 @@ def _record_page(
     preview_storage: str,
     thumb_storage: str,
 ):
-    """Idempotently record both derived_files rows for a page."""
+    """Idempotently record both derived_files rows for a page in ONE
+    bulk upsert. Replaces two separate select+update+commit cycles per
+    page (the per-page DB bottleneck observed on Cloud Run)."""
+    prev_w = prev_h = thumb_w = thumb_h = None
+    try:
+        with Image.open(image_path) as im:
+            prev_w, prev_h = im.size
+    except Exception:
+        pass
+    try:
+        with Image.open(thumb_image) as im:
+            thumb_w, thumb_h = im.size
+    except Exception:
+        pass
     _retry_with_backoff(
-        lambda: _record_preview(
-            db, asset_id, job_id, 'preview_page', preview_storage,
-            image_path, page=page, size_label='preview',
+        lambda: derived_file_repo.bulk_upsert_page_files(
+            db, asset_id=asset_id, job_id=job_id, rows=[
+                {
+                    'kind': 'preview_page',
+                    'storage_path': preview_storage,
+                    'media_type': 'image/png',
+                    'page': page,
+                    'width': prev_w,
+                    'height': prev_h,
+                    'metadata': {'size': 'preview'},
+                },
+                {
+                    'kind': 'thumbnail_page',
+                    'storage_path': thumb_storage,
+                    'media_type': 'image/png',
+                    'page': page,
+                    'width': thumb_w,
+                    'height': thumb_h,
+                    'metadata': {'size': 'thumbnail'},
+                },
+            ],
         ),
-        label='db_record_preview', page=page,
-    )
-    _retry_with_backoff(
-        lambda: _record_preview(
-            db, asset_id, job_id, 'thumbnail_page', thumb_storage,
-            thumb_image, page=page, size_label='thumbnail',
-        ),
-        label='db_record_thumbnail', page=page,
+        label='db_bulk_record_page', page=page,
     )
 
 
