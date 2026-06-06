@@ -550,8 +550,8 @@ def render_pages(asset_id: str, payload: RenderPagesRequest, db: Session = Depen
 
     body = {"pages": target_pages}
     job_id = job_repo.create_job(db, asset_id, "render_specific_pages", "thumbnails", body)
-    task = render_specific_pages.delay(asset_id, job_id, target_pages)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("render_specific_pages", asset_id, job_id, target_pages, queue="thumbnails")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id, "missing_pages": target_pages}
 
 
