@@ -18,16 +18,35 @@ HERE = pathlib.Path(__file__).resolve().parent
 PDF_SERVER = HERE.parent
 APP = PDF_SERVER / "app"
 
-def _parse_registry() -> set[str]:
-    """Extract TASK_REGISTRY keys via AST (avoids importing heavy task modules)."""
-    src = (APP / "tasks" / "registry.py").read_text()
-    tree = ast.parse(src)
+def _dict_keys_of(path: pathlib.Path, var: str) -> set[str]:
+    """Return literal string keys of a top-level dict assignment (handles Assign and AnnAssign)."""
+    tree = ast.parse(path.read_text())
     for node in ast.walk(tree):
+        targets = []
+        value = None
         if isinstance(node, ast.Assign):
-            for t in node.targets:
-                if isinstance(t, ast.Name) and t.id == "TASK_REGISTRY" and isinstance(node.value, ast.Dict):
-                    return {k.value for k in node.value.keys if isinstance(k, ast.Constant)}
+            targets = node.targets
+            value = node.value
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+            value = node.value
+        else:
+            continue
+        if value is None or not isinstance(value, ast.Dict):
+            continue
+        for t in targets:
+            if isinstance(t, ast.Name) and t.id == var:
+                return {k.value for k in value.keys if isinstance(k, ast.Constant)}
     return set()
+
+
+def _parse_registry() -> set[str]:
+    return _dict_keys_of(APP / "tasks" / "registry.py", "TASK_REGISTRY")
+
+
+def _parse_queue_map() -> set[str]:
+    return _dict_keys_of(APP / "core" / "queue.py", "QUEUE_TO_CLOUD_TASKS_QUEUE")
+
 
 
 def _parse_queue_map() -> set[str]:
