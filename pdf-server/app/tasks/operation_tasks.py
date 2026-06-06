@@ -11,6 +11,7 @@ from app.services.storage import StorageService
 from app.services.files import Workspace, cache_get, cache_put, unique_name
 from app.services.pdf_ops import pdf_ops
 from app.services.derived_files import derived_file_repo
+from app.core.queue import enqueue
 
 storage = StorageService()
 logger = logging.getLogger(__name__)
