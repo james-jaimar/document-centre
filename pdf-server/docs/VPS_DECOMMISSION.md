@@ -64,7 +64,20 @@ from Secret Manager.
 
 Replace `<PDF_API_URL>` and `<EMAIL_NOTIFY_TOKEN>` with real values, then
 run in the Supabase SQL editor (NOT a migration — the trigger contains
-project-specific URL and secret):
+project-specific URL and secret).
+
+> **CRITICAL:** `<PDF_API_URL>` MUST include the `https://` scheme
+> (e.g. `https://api.document-centre.com`). `pg_net.http_post` silently
+> drops calls when the scheme is missing — no row appears in
+> `net._http_response` and emails will only be sent by the 1-minute
+> Cloud Scheduler safety net.
+
+> **Troubleshooting:** if emails enqueue but never arrive, check in this
+> order:
+>   1. `SELECT status, error_message, last_error_code FROM email_outbox ORDER BY queued_at DESC LIMIT 10;`
+>   2. `SELECT status_code, error_msg FROM net._http_response ORDER BY created DESC LIMIT 10;`
+>   3. Cloud Run logs for `pdf-worker-emails`.
+
 
 ```sql
 -- Ensure pg_net is available (already enabled on Document Centre's project).

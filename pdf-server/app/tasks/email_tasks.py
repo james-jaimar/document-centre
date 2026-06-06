@@ -85,9 +85,24 @@ def send_email(self, row: Dict[str, Any]) -> str:
 
     account_id = row.get("email_account_id")
     if not account_id:
-        repo.mark_failed(sb, outbox_id, error="no_email_account", error_code="config_missing")
-        email_failed_total.labels(reason="config_missing").inc()
-        return "config_missing"
+        # Fallback: resolve from tenant/branch (mirrors edge dispatcher).
+        from app.email.credentials import resolve_account_id_for_row
+        account_id = resolve_account_id_for_row(
+            sb,
+            tenant_id=row.get("tenant_id"),
+            branch_id=row.get("branch_id"),
+        )
+        if not account_id:
+            repo.mark_failed(sb, outbox_id, error="no_email_account", error_code="config_missing")
+            email_failed_total.labels(reason="config_missing").inc()
+            return "config_missing"
+        # Best-effort: persist resolved account for audit.
+        try:
+            sb.table("email_outbox").update({"email_account_id": account_id}).eq("id", outbox_id).execute()
+        except Exception:  # noqa: BLE001
+            pass
+        row["email_account_id"] = account_id
+
 
     try:
         creds = get_account_creds(sb, account_id)

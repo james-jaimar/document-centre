@@ -1,68 +1,117 @@
-# Retire VPS & supercharge thumbnail performance
+# Plan: fix Cloud Run email delivery after webhook cutover
 
-## ✅ Done in this branch
+## What is working now
 
-### Part 1 — Webhook-based email trigger (replaces VPS LISTEN/NOTIFY)
-- New endpoint: `POST /internal/email/notify` on `pdf-api`
-  (`pdf-server/app/web/beat_routes.py` → `email_push_router`)
-- Shared-secret auth via `X-Webhook-Token` header (Supabase Database
-  Webhooks cannot sign Google OIDC tokens, so a shared secret is used
-  instead of OIDC — the side-effect is bounded to one enqueue).
-- Wired into `pdf-server/app/main.py`.
-- Deploy workflow mounts `EMAIL_NOTIFY_TOKEN` from GCP Secret Manager
-  (`PDF_EMAIL_NOTIFY_TOKEN`, optional — deploys don't break without it).
+The Supabase webhook is healthy:
 
-### Part 2 — Thumbnail worker scaled up
-- `pdf-worker-light`: **1 vCPU/1 GiB → 4 vCPU/4 GiB**
-  (`.github/workflows/pdf-server-deploy.yml`)
-- Render code is **already parallel**:
-  `ThreadPoolExecutor(max_workers=os.cpu_count() - 1)` plus a batch
-  Ghostscript path for ≤200 pages. Bumping CPU auto-scales the pool.
-- Cost: ~neutral per job (Cloud Run bills vCPU-seconds; 4× CPU rate ×
-  ¼ wall-clock ≈ same total).
-- Expected user-visible speedup on 40–100 page uploads: ~3–4× faster.
+```text
+email_outbox insert
+  → pg_net POST https://api.document-centre.com/internal/email/notify
+  → HTTP 200
+  → Cloud Task enqueued to emails-control
+  → pdf-worker-emails wakes up
+```
 
-## ⚠️ Manual steps the user must run
+I confirmed a fresh webhook response:
 
-1. **Create the GCP secret** (one-off, in Cloud Shell):
-   ```bash
-   TOKEN=$(openssl rand -hex 32)
-   echo "$TOKEN"   # save — needed for the SQL trigger
-   printf '%s' "$TOKEN" | gcloud secrets create PDF_EMAIL_NOTIFY_TOKEN \
-     --project=project-59a14b18-b4df-4c6b-b09 --data-file=-
-   gcloud secrets add-iam-policy-binding PDF_EMAIL_NOTIFY_TOKEN \
-     --project=project-59a14b18-b4df-4c6b-b09 \
-     --member="serviceAccount:dc-pdf-runtime@project-59a14b18-b4df-4c6b-b09.iam.gserviceaccount.com" \
-     --role="roles/secretmanager.secretAccessor"
-   ```
+```text
+status_code: 200
+content: { ok: true, enqueued: .../queues/emails-control/tasks/... }
+```
 
-2. **Re-run the GitHub Action** so pdf-api picks up the new secret AND
-   pdf-worker-light deploys with 4 CPU.
+## What is failing
 
-3. **Install the Supabase trigger** — paste the SQL from
-   `pdf-server/docs/VPS_DECOMMISSION.md` (section 3) into the Supabase
-   SQL editor, with the pdf-api URL and the token substituted in.
+The latest order email rows are being marked:
 
-4. **Verify** (see `VPS_DECOMMISSION.md` section 4): send a test email,
-   confirm `email_outbox` status flips within a few seconds and
-   `net._http_response` shows 200.
+```text
+status: failed
+error_message: no_email_account
+last_error_code: config_missing
+email_account_id: null
+```
 
-5. **After 24h burn-in**: disable the VPS service and cancel the VPS
-   (commands in `VPS_DECOMMISSION.md` section 5).
+The row that failed was for:
 
-## Measurement to do after deploy
+```text
+tenant_id: c0000000-0000-0000-0000-000000000002
+branch_id: 50af6453-1a97-4a1a-bf5b-e3c5b12cf66c
+subject: Proforma Invoice for order INV-00070
+recipient: jimmybhawkins@gmail.com
+```
 
-Upload representative PDFs (10, 50, 100 pages) and record:
-- Time-to-first-thumbnail
-- Time-to-all-thumbnails
-- Compare against pre-deploy baseline
+There is now an active branch SMTP account for that exact branch:
 
-If 4 CPU isn't enough, bump `pdf-worker-light` to 8 vCPU/8 GiB
-(Cloud Run ceiling is 8 vCPU / 32 GiB per instance) — one-line change
-in the deploy workflow.
+```text
+from: hello@jaimar.dev
+branch: 50af6453-1a97-4a1a-bf5b-e3c5b12cf66c
+transport: smtp
+active/default: true
+```
 
-## Files changed
-- `pdf-server/app/web/beat_routes.py` — new `email_push_router` + auth
-- `pdf-server/app/main.py` — mount the new router
-- `.github/workflows/pdf-server-deploy.yml` — light worker resources + secret
-- `pdf-server/docs/VPS_DECOMMISSION.md` — full runbook (new)
+But the failed outbox rows were inserted with `email_account_id = null`, and the new Python Cloud Run worker currently treats that as fatal.
+
+## Root cause
+
+The old Supabase Edge Function dispatcher (`email-dispatcher`) had fallback logic:
+
+1. use the explicit account if present
+2. otherwise find branch default
+3. otherwise tenant default
+4. otherwise any tenant account
+5. otherwise platform Graph fallback
+
+The new Cloud Run Python worker does **not** yet mirror that fallback. It only sends when `email_account_id` is already present on the outbox row.
+
+Also, the enqueue helper intentionally returns `null` for tenants whose `email_send_method` is unset/defaulted to `platform`, so order emails can still enter the queue without a specific account. That was fine with the old dispatcher, but not with the new worker.
+
+## Fix
+
+### 1. Add account fallback resolution to Cloud Run email worker
+
+Update `pdf-server/app/email/credentials.py` or a small helper beside it so the Python worker can resolve credentials from an outbox row when `email_account_id` is null:
+
+```text
+row.email_account_id
+  → branch-scoped default SMTP account
+  → any branch-scoped SMTP account
+  → tenant-wide default SMTP account
+  → any tenant SMTP account
+  → platform Graph fallback only when Graph is implemented
+```
+
+For now, because Python worker only supports SMTP, it should pick an active SMTP account and skip Graph accounts cleanly.
+
+### 2. Use fallback in `send_email`
+
+Update `pdf-server/app/tasks/email_tasks.py`:
+
+- if `row.email_account_id` exists: use it as today
+- if missing: resolve a usable SMTP account from `tenant_id` + `branch_id`
+- if still none: fail with `no_email_account` as today
+- optionally write the resolved `email_account_id` back onto the outbox row for audit clarity
+
+### 3. Keep webhook logic unchanged
+
+The webhook is now confirmed working. No further changes needed there.
+
+### 4. Prevent repeat confusion in docs
+
+Update `pdf-server/docs/VPS_DECOMMISSION.md` with two clarifications:
+
+- webhook URL must include `https://`
+- after cutover, failed sends should be checked in `email_outbox.error_message` / `last_error_code`, not only `net._http_response`
+
+## Verification after implementation
+
+1. Re-run GitHub Action to deploy the Python worker.
+2. Send/resend the test order email.
+3. Confirm new `email_outbox` row resolves an account and reaches either:
+   - `status = sent`, with `sent_at` filled, or
+   - a real SMTP error if credentials are wrong.
+4. Confirm no new `no_email_account` failures.
+
+## Files to change
+
+- `pdf-server/app/email/credentials.py`
+- `pdf-server/app/tasks/email_tasks.py`
+- `pdf-server/docs/VPS_DECOMMISSION.md`
