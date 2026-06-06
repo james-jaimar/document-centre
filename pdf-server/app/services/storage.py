@@ -12,6 +12,47 @@ except ImportError:
 
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
+
+
+class S3AccessError(RuntimeError):
+    """Friendly S3 error with classification (permission / missing / region / unknown)."""
+
+    def __init__(self, kind: str, message: str, *, bucket: str, key: str, status: int | None = None):
+        super().__init__(message)
+        self.kind = kind
+        self.bucket = bucket
+        self.key = key
+        self.status = status
+
+
+def _classify_s3_error(op: str, key: str, exc: Exception) -> S3AccessError:
+    bucket = settings.aws_s3_bucket
+    region = settings.aws_s3_region
+    status = None
+    code = None
+    if isinstance(exc, ClientError):
+        status = exc.response.get('ResponseMetadata', {}).get('HTTPStatusCode')
+        code = exc.response.get('Error', {}).get('Code')
+    if status == 403 or code in {'AccessDenied', 'Forbidden', '403'}:
+        msg = (
+            f"S3 {op} permission denied for bucket={bucket!r} key={key!r} "
+            f"region={region!r}. The Cloud Run AWS key (PDF_AWS_ACCESS_KEY_ID / "
+            f"PDF_AWS_SECRET_ACCESS_KEY in GCP Secret Manager) needs s3:GetObject "
+            f"(and s3:PutObject/DeleteObject) on arn:aws:s3:::{bucket}/*."
+        )
+        return S3AccessError('permission_denied', msg, bucket=bucket, key=key, status=403)
+    if status == 404 or code in {'NoSuchKey', '404', 'NoSuchBucket'}:
+        msg = f"S3 {op}: object not found at bucket={bucket!r} key={key!r}."
+        return S3AccessError('not_found', msg, bucket=bucket, key=key, status=404)
+    if code in {'PermanentRedirect', 'AuthorizationHeaderMalformed', 'IllegalLocationConstraintException'}:
+        msg = f"S3 {op}: bucket/region mismatch (bucket={bucket!r} configured region={region!r}). Detail: {exc}"
+        return S3AccessError('region_mismatch', msg, bucket=bucket, key=key, status=status)
+    return S3AccessError('unknown', f"S3 {op} failed for bucket={bucket!r} key={key!r}: {type(exc).__name__}: {exc}",
+                          bucket=bucket, key=key, status=status)
+
+
+
 
 s3_client = boto3.client(
     's3',
@@ -71,8 +112,48 @@ class StorageService:
 
 
     # ------------------------------------------------------------------ #
+    # Diagnostics
+    # ------------------------------------------------------------------ #
+
+    def diagnose(self, storage_path: str | None = None) -> dict:
+        """Return non-secret S3 diagnostics. Optionally HEAD a specific key."""
+        info: dict = {
+            'mode': self.mode,
+            'bucket': settings.aws_s3_bucket,
+            'region': settings.aws_s3_region,
+            'access_key_fingerprint': (settings.aws_access_key_id[:4] + '…' + settings.aws_access_key_id[-4:])
+                if settings.aws_access_key_id else None,
+            'has_secret_key': bool(settings.aws_secret_access_key),
+        }
+        if self.mode != 's3' or self._s3 is None:
+            info['probe'] = {'skipped': 'not_s3_mode'}
+            return info
+        if storage_path:
+            try:
+                resp = self._s3.head_object(Bucket=settings.aws_s3_bucket, Key=storage_path)
+                info['probe'] = {
+                    'key': storage_path,
+                    'status': 'ok',
+                    'content_length': resp.get('ContentLength'),
+                    'content_type': resp.get('ContentType'),
+                    'etag': resp.get('ETag'),
+                }
+            except Exception as exc:  # noqa: BLE001
+                err = _classify_s3_error('head_object', storage_path, exc)
+                info['probe'] = {
+                    'key': storage_path,
+                    'status': 'error',
+                    'kind': err.kind,
+                    'http_status': err.status,
+                    'message': str(err),
+                }
+        return info
+
+    # ------------------------------------------------------------------ #
     # Download
     # ------------------------------------------------------------------ #
+
+
 
     def download(self, storage_path: str, local_path: Path) -> Path:
         local_path.parent.mkdir(parents=True, exist_ok=True)
@@ -92,8 +173,11 @@ class StorageService:
 
         if self.mode == 's3':
             assert self._s3 is not None
-            with open(local_path, 'wb') as f:
-                self._s3.download_fileobj(settings.aws_s3_bucket, storage_path, f)
+            try:
+                with open(local_path, 'wb') as f:
+                    self._s3.download_fileobj(settings.aws_s3_bucket, storage_path, f)
+            except Exception as exc:  # noqa: BLE001
+                raise _classify_s3_error('download', storage_path, exc) from exc
             return local_path
 
         # supabase
@@ -117,12 +201,15 @@ class StorageService:
 
         if self.mode == 's3':
             assert self._s3 is not None
-            self._s3.upload_file(
-                str(local_path),
-                settings.aws_s3_bucket,
-                storage_path,
-                ExtraArgs={'ContentType': media_type},
-            )
+            try:
+                self._s3.upload_file(
+                    str(local_path),
+                    settings.aws_s3_bucket,
+                    storage_path,
+                    ExtraArgs={'ContentType': media_type},
+                )
+            except Exception as exc:  # noqa: BLE001
+                raise _classify_s3_error('upload', storage_path, exc) from exc
             return storage_path
 
         # supabase

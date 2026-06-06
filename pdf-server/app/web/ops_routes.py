@@ -58,6 +58,20 @@ def ops_system():
     return ops_service.system()
 
 
+# ─── S3 diagnostic (admin-only via pdf-api edge proxy) ────────────
+@ops_router.get("/diagnostics/s3")
+def ops_diagnostics_s3(key: str | None = Query(default=None)):
+    """Return non-secret S3 config + optional HEAD probe for a key.
+
+    Use to debug 403/404 mismatches between the uploader and the Cloud Run
+    runtime. Never returns the secret key, only a fingerprint.
+    """
+    from app.services.storage import StorageService
+    return StorageService().diagnose(key)
+
+
+
+
 # ─── compact "task manager" live snapshot ─────────────────────────
 # Designed for 1-2s polling from the Ops Overview page. One round trip
 # returns host CPU/mem, total broker queue depth and per-worker live

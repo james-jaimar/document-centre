@@ -1,90 +1,112 @@
-# Plan: Complete GCP cutover (Cloud Tasks + Cloud Scheduler)
+## What is actually failing now
 
-Two parallel goals:
-1. **Make uploads work** — finish the Cloud Tasks IAM cutover so `POST /v1/assets/{id}/inspect` stops 500'ing.
-2. **Retire VPS Celery beat** — move the periodic-job scheduling onto Cloud Scheduler so the VPS only runs the email LISTEN/NOTIFY listener.
+The current error is no longer the Cloud Tasks enqueue/IAM problem. The inspect job is being created and run, then failing inside the worker when it tries to read the uploaded PDF from S3:
 
----
-
-## Part A — Finish Cloud Tasks cutover
-
-### A1. Verify & apply the IAM grants (Cloud Shell, one-time)
-The code-side fixes from the previous turn are deployed. What's still missing is the live IAM binding on the project. Run in Cloud Shell:
-
-```bash
-PROJECT_ID=project-59a14b18-b4df-4c6b-b09
-RUNTIME_SA=dc-pdf-runtime@${PROJECT_ID}.iam.gserviceaccount.com
-INVOKER_SA=cloud-tasks-invoker@${PROJECT_ID}.iam.gserviceaccount.com
-
-# actAs permission for OIDC enqueue
-gcloud iam service-accounts add-iam-policy-binding "$INVOKER_SA" \
-  --project="$PROJECT_ID" \
-  --member="serviceAccount:${RUNTIME_SA}" \
-  --role="roles/iam.serviceAccountUser" --quiet
-
-# CreateTask permission
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:${RUNTIME_SA}" \
-  --role="roles/cloudtasks.enqueuer" --condition=None --quiet
+```text
+pdf-server/app/tasks/document_tasks.py:239 -> storage.download(...)
+pdf-server/app/services/storage.py:96 -> boto3 download_fileobj(...)
+botocore.exceptions.ClientError: 403 HeadObject Forbidden
 ```
 
-Or simpler: re-run `bash pdf-server/docker/gcp-tasks-bootstrap.sh` — it's idempotent and already contains both grants.
+So the issue is: **the Cloud Run PDF runtime can’t `HeadObject/GetObject` the S3 object that the browser successfully uploaded.**
 
-### A2. Confirm Cloud Run env on `pdf-api`
-Ensure `pdf-api` service has:
-- `QUEUE_BACKEND=cloud_tasks`
-- `GCP_PROJECT_ID`, `GCP_REGION=africa-south1`, `GCP_TASKS_REGION=europe-west1`
-- `TASKS_INVOKER_SA=cloud-tasks-invoker@…`
-- `WORKER_URL_HEAVY`, `WORKER_URL_LIGHT`, `WORKER_URL_EMAILS`
+Most likely cause: the frontend upload signer (`supabase/functions/s3-storage`) and the Cloud Run PDF server (`PDF_AWS_*` secrets in GCP Secret Manager) are not using the same working S3 permissions, bucket, region, or object-prefix policy.
 
-Add a small verification block to `gcp-tasks-bootstrap.sh` that prints the current `pdf-api` env so we can diff against the required vars.
+## Plan
 
-### A3. End-to-end validation
-After grants propagate (~60s):
-- Upload a PDF in the UI → `POST /v1/assets/{id}/inspect` returns 200.
-- Cloud Tasks console shows a task created in `documents-light`.
-- `pdf-worker-light` logs show the task delivered + processed.
+### 1. Verify the live S3 configuration used by both sides
 
----
+Check these are aligned:
 
-## Part B — Cloud Scheduler job-creation script (retire VPS beat)
+- Supabase `s3-storage` connection used for upload signing
+- GCP Secret Manager values mounted into Cloud Run:
+  - `PDF_STORAGE_MODE=s3`
+  - `PDF_AWS_S3_BUCKET`
+  - `PDF_AWS_S3_REGION`
+  - `PDF_AWS_ACCESS_KEY_ID`
+  - `PDF_AWS_SECRET_ACCESS_KEY`
 
-### B1. Audit current beat jobs
-Read `pdf-server/app/web/beat_routes.py` and current Celery beat schedule (systemd unit + any `beat_schedule` in code) to enumerate every periodic job, its cron expression, and target endpoint.
+Expected bucket from the current code/docs is:
 
-### B2. Extend `gcp-tasks-bootstrap.sh`
-The script already creates 4 scheduler jobs (`ops-snapshot-storage-hourly`, `ops-cleanup-tmp-daily`, `email-scan-outbox-30s`, `email-release-stuck-5m`). Audit reveals whether more are needed. For each missing job, add a `create_or_update_scheduler` call with:
-- Stable name (`<area>-<verb>-<cadence>`)
-- Cron expression matching current Celery beat
-- POST to `${API_URL}/internal/beat/<endpoint>`
-- OIDC auth via `cloud-tasks-invoker`
+```text
+jaimar-dev-600743178200-af-south-1-an
+```
 
-### B3. Protect `/internal/beat/*` endpoints
-Verify `beat_routes.py` either:
-- requires OIDC token from `cloud-tasks-invoker`, or
-- is mounted behind Cloud Run's `--no-allow-unauthenticated` with IAM invoker check.
+Expected object key that failed:
 
-If currently open, add a lightweight bearer/OIDC check using the existing pattern in `tasks_routes.py`.
+```text
+tenants/72347b5f-ca94-4e25-9235-5bd2e554beeb/uploads/16602492-a84e-414b-af5c-c6a0d86e2bc9/469ed46d-0876-46a8-9e2c-c7f99beb4586/8pp_A4.pdf
+```
 
-### B4. VPS decommission of beat
-- Disable & stop `document-centre-beat.service` on the VPS (manual command, documented in plan).
-- Leave email listener service running (still needed for sub-second LISTEN/NOTIFY push).
-- Document the kept-vs-removed services in `pdf-server/docs/` (new short note).
+### 2. Fix AWS IAM/S3 permissions for the Cloud Run PDF key
 
-### B5. Validation
-- Run `gcloud scheduler jobs list --location=europe-west1` and confirm all expected jobs exist.
-- Manually trigger one job (`gcloud scheduler jobs run ops-cleanup-tmp-daily …`) and check `pdf-api` logs for the hit.
-- Watch for 24h that all periodic jobs fire on schedule before removing the VPS beat unit permanently.
+The IAM user/access key stored in `PDF_AWS_ACCESS_KEY_ID` must allow at least:
 
----
+```json
+{
+  "Effect": "Allow",
+  "Action": [
+    "s3:GetObject",
+    "s3:PutObject",
+    "s3:DeleteObject"
+  ],
+  "Resource": "arn:aws:s3:::jaimar-dev-600743178200-af-south-1-an/*"
+}
+```
 
-## Files touched
+And if the policy is scoped by prefix, it must include:
 
-- `pdf-server/docker/gcp-tasks-bootstrap.sh` — extend scheduler section with any missing jobs from audit; add env-verification block for pdf-api.
-- `pdf-server/app/web/beat_routes.py` — add OIDC/auth guard if missing.
-- `pdf-server/docs/GCP_CUTOVER.md` (new) — short doc listing scheduler jobs, what runs where, and the VPS decommission steps.
-- `.lovable/plan.md` — replace with this plan.
+```text
+tenants/*
+```
 
-## Out of scope
-- Moving the email LISTEN/NOTIFY listener off the VPS (stays for sub-second push latency, as previously agreed).
-- Any worker code changes — the workers already speak HTTP via `tasks_routes.py`.
+If the bucket policy has any explicit deny conditions, confirm they do not block the Cloud Run key/user.
+
+### 3. Update GCP Secret Manager if the Cloud Run key is wrong/stale
+
+If the AWS key in GCP is not the same key that can read the uploaded objects, add a new secret version for:
+
+- `PDF_AWS_ACCESS_KEY_ID`
+- `PDF_AWS_SECRET_ACCESS_KEY`
+- and, if needed, `PDF_AWS_S3_BUCKET` / `PDF_AWS_S3_REGION`
+
+Then redeploy or update the Cloud Run services so `pdf-api`, `pdf-worker-heavy`, and `pdf-worker-light` all pick up the latest secret versions.
+
+### 4. Add a small runtime S3 diagnostic to prevent blind debugging next time
+
+Implement a safe internal diagnostic in the PDF server that reports only non-secret facts:
+
+- storage mode
+- bucket name
+- region
+- caller/access-key fingerprint only, not the secret
+- whether `HeadObject` succeeds for a supplied key
+- clear classification: missing object vs permission denied vs wrong region/bucket
+
+This should be admin/internal only and must not expose credentials.
+
+### 5. Improve error reporting for future upload failures
+
+Change the worker’s storage download failure handling so job errors say something actionable like:
+
+```text
+S3 read failed: permission denied for bucket=<bucket>, key=<key>. Check PDF_AWS_* credentials and bucket policy.
+```
+
+instead of surfacing raw `botocore` tracebacks to the customer upload UI.
+
+### 6. Validate end-to-end
+
+After the permissions/secrets are corrected:
+
+1. Upload the same PDF again.
+2. Confirm `POST /v1/assets` succeeds.
+3. Confirm `POST /v1/assets/{id}/inspect` creates the job.
+4. Confirm the job reaches `completed`, not `failed`.
+5. Confirm thumbnails/previews continue without S3 read/write errors.
+
+## Technical notes
+
+- Cloud Tasks appears to be delivering now; otherwise the job would stay queued or `/inspect` would 500 during enqueue.
+- The current failure is specifically S3 `HeadObject`, which has the same permission requirements as object read access.
+- AWS documentation confirms S3 `403 Forbidden` means access is explicitly or implicitly denied, and Boto3 `head_object` behaves like a metadata-only object read.
