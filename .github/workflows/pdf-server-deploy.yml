@@ -275,7 +275,7 @@ jobs:
           SECRET_FLAG=$(IFS=,; echo "${SECRETS[*]}")
 
           deploy_worker() {
-            local name="$1" role="$2" cpu="$3" mem="$4" max="$5"
+            local name="$1" role="$2" cpu="$3" mem="$4" max="$5" min="${6:-0}"
             gcloud run deploy "$name" \
               --image="${{ steps.tag.outputs.image }}" \
               --region="${{ env.GCP_REGION }}" \
@@ -286,7 +286,7 @@ jobs:
               --memory="$mem" --cpu="$cpu" \
               --cpu-boost \
               --concurrency=1 \
-              --min-instances=0 --max-instances="$max" \
+              --min-instances="$min" --max-instances="$max" \
               --timeout=900 \
               --no-allow-unauthenticated \
               --quiet
@@ -302,9 +302,14 @@ jobs:
           # Light worker: customer-facing thumbnail render. Already parallel
           # via ThreadPoolExecutor(max_workers=os.cpu_count()-1) — bumping
           # CPU/RAM linearly speeds up wall-clock at ~neutral cost (Cloud
-          # Run bills vCPU-seconds).
+          # Run bills vCPU-seconds). Fan-out is force-disabled under Cloud
+          # Tasks (see generate_previews) so the whole job runs inside
+          # ONE container — this CPU/RAM allocation matters.
           deploy_worker pdf-worker-light  worker-light-http  4 4Gi  20
-          deploy_worker pdf-worker-emails worker-emails-http 1 512Mi 10
+          # Emails: bumped max-instances 10 → 20 and pinned min=1 so the
+          # first email after a quiet period doesn't pay a cold start.
+          # 512 MiB × 1 min-instance ≈ trivial cost vs. SMTP latency saved.
+          deploy_worker pdf-worker-emails worker-emails-http 1 512Mi 20 1
 
 
       - name: Wire Cloud Tasks env vars on pdf-api
