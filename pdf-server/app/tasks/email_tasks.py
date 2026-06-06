@@ -42,7 +42,7 @@ def scan_outbox() -> int:
     if not rows:
         return 0
     for row in rows:
-        send_email.apply_async(args=[row], queue="emails-default")
+        enqueue("send_email", row, queue="emails-default")
     log.info("scan_outbox dispatched=%d", len(rows))
     return len(rows)
 
