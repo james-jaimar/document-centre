@@ -639,8 +639,8 @@ def op_assemble_print_ready(payload: JobArtefactRequest, db: Session = Depends(g
     """
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, None, "assemble_print_ready", "documents", body)
-    task = assemble_print_ready_for_job.delay(str(payload.job_id), job_id, bool(payload.force))
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("assemble_print_ready_for_job", str(payload.job_id), job_id, bool(payload.force), queue="documents")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
