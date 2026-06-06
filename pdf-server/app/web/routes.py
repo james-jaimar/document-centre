@@ -592,7 +592,8 @@ def op_prepare_for_product(payload: PrepareForProductRequest, db: Session = Depe
             },
         )
 
-    task = prepare_for_product.delay(
+    task_id = enqueue(
+        "prepare_for_product",
         asset_id,
         job_id,
         payload.dominant_orientation,
@@ -605,8 +606,9 @@ def op_prepare_for_product(payload: PrepareForProductRequest, db: Session = Depe
         payload.chain_generate_previews,
         payload.chain_render_box,
         preview_job_id,
+        queue="documents",
     )
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id, "preview_job_id": preview_job_id}
 
 
