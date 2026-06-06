@@ -24,6 +24,7 @@ from app.email.credentials import CredentialError, get_account_creds
 from app.email.metrics import email_failed_total, email_send_seconds, email_sent_total
 from app.email.smtp_client import PermanentSmtpError, TransientSmtpError, send_smtp
 from app.worker import celery_app
+from app.core.queue import enqueue
 
 log = logging.getLogger("email.tasks")
 
@@ -41,7 +42,7 @@ def scan_outbox() -> int:
     if not rows:
         return 0
     for row in rows:
-        send_email.apply_async(args=[row], queue="emails-default")
+        enqueue("send_email", row, queue="emails-default")
     log.info("scan_outbox dispatched=%d", len(rows))
     return len(rows)
 

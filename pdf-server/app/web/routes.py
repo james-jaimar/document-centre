@@ -65,6 +65,7 @@ from app.tasks.production_tasks import (
     assemble_imposed_sheet_for_job,
     render_job_ticket_for_job,
 )
+from app.core.queue import enqueue
 
 api_router = APIRouter()
 storage = StorageService()
@@ -130,8 +131,8 @@ def create_asset(payload: AssetCreate, db: Session = Depends(get_db)):
 
     if payload.auto_queue:
         job_id = job_repo.create_job(db, asset_id, "normalize_asset", "documents", {})
-        task = normalize_asset.delay(asset_id, job_id)
-        job_repo.set_celery_task_id(db, job_id, task.id)
+        task_id = enqueue("normalize_asset", asset_id, job_id, queue="documents")
+        job_repo.set_celery_task_id(db, job_id, task_id)
         job_ids.append(job_id)
 
     return {"asset_id": asset_id, "job_ids": job_ids, "inline_inspect": inline}
@@ -237,8 +238,8 @@ def queue_asset_inspection(
         raise HTTPException(404, "Asset not found")
 
     job_id = job_repo.create_job(db, asset_id, "inspect_asset", "default", {"force": force})
-    task = inspect_asset.delay(asset_id, job_id, force)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("inspect_asset", asset_id, job_id, force, queue="default")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id, "force": force}
 
 
@@ -286,8 +287,8 @@ def op_rotate(payload: RotateRequest, db: Session = Depends(get_db)):
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "rotate_pdf", "documents", body)
-    task = rotate_pdf.delay(asset_id, job_id, payload.angle)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("rotate_pdf", asset_id, job_id, payload.angle, queue="documents")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
@@ -296,8 +297,8 @@ def op_grayscale(payload: GrayscaleRequest, db: Session = Depends(get_db)):
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "grayscale_pdf", "documents", body)
-    task = grayscale_pdf.delay(asset_id, job_id)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("grayscale_pdf", asset_id, job_id, queue="documents")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
@@ -306,8 +307,8 @@ def op_cmyk(payload: CmykRequest, db: Session = Depends(get_db)):
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "cmyk_pdf", "documents", body)
-    task = cmyk_pdf.delay(asset_id, job_id, payload.icc_profile)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("cmyk_pdf", asset_id, job_id, payload.icc_profile, queue="documents")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
@@ -316,7 +317,8 @@ def op_resize(payload: ResizeRequest, db: Session = Depends(get_db)):
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "resize_pdf", "documents", body)
-    task = resize_pdf.delay(
+    task_id = enqueue(
+        "resize_pdf",
         asset_id,
         job_id,
         payload.width_mm,
@@ -324,8 +326,9 @@ def op_resize(payload: ResizeRequest, db: Session = Depends(get_db)):
         payload.fit_mode,
         payload.dominant_orientation,
         payload.respect_trim_box,
+        queue="documents",
     )
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
@@ -334,15 +337,17 @@ def op_nup(payload: NupRequest, db: Session = Depends(get_db)):
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "nup_pdf", "imposition", body)
-    task = nup_pdf.delay(
+    task_id = enqueue(
+        "nup_pdf",
         asset_id,
         job_id,
         payload.columns,
         payload.rows,
         payload.page_width_mm,
         payload.page_height_mm,
+        queue="imposition",
     )
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
@@ -351,7 +356,8 @@ def op_impose_sheet(payload: SheetImposeRequest, db: Session = Depends(get_db)):
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "impose_sheet_pdf", "imposition", body)
-    task = impose_sheet_pdf.delay(
+    task_id = enqueue(
+        "impose_sheet_pdf",
         asset_id,
         job_id,
         payload.columns,
@@ -363,9 +369,10 @@ def op_impose_sheet(payload: SheetImposeRequest, db: Session = Depends(get_db)):
         payload.outer_margin_mm,
         payload.show_crop_marks,
         payload.show_bleed_outline,
-	payload.result_upload_url,
+        payload.result_upload_url,
+        queue="imposition",
     )
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
@@ -374,8 +381,8 @@ def op_booklet(payload: BookletRequest, db: Session = Depends(get_db)):
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "booklet_pdf", "imposition", body)
-    task = booklet_pdf.delay(asset_id, job_id, payload.sheet_width_mm, payload.sheet_height_mm)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("booklet_pdf", asset_id, job_id, payload.sheet_width_mm, payload.sheet_height_mm, queue="imposition")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
@@ -384,8 +391,8 @@ def op_merge(payload: MergeRequest, db: Session = Depends(get_db)):
     asset_ids = [str(aid) for aid in payload.asset_ids]
     body = {"asset_ids": asset_ids, "output_filename": payload.output_filename}
     job_id = job_repo.create_job(db, None, "merge_pdfs", "documents", body)
-    task = merge_pdfs.delay(asset_ids, job_id, payload.output_filename)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("merge_pdfs", asset_ids, job_id, payload.output_filename, queue="documents")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
@@ -420,8 +427,8 @@ def op_generate_previews(payload: GeneratePreviewsRequest, db: Session = Depends
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "generate_previews", "thumbnails", body)
-    task = generate_previews.delay(asset_id, job_id, payload.render_box)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("generate_previews", asset_id, job_id, payload.render_box, queue="thumbnails")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 @api_router.post("/operations/convert-office")
@@ -435,8 +442,8 @@ def op_convert_office(payload: ConvertOfficeRequest, db: Session = Depends(get_d
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "convert_office", "documents", body)
-    task = convert_office.delay(asset_id, job_id)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("convert_office", asset_id, job_id, queue="documents")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
@@ -452,8 +459,8 @@ def op_normalize_orientation(payload: NormalizeOrientationRequest, db: Session =
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "normalize_orientation", "default", body)
-    task = normalize_orientation.delay(asset_id, job_id, payload.dominant)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("normalize_orientation", asset_id, job_id, payload.dominant, queue="default")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
@@ -494,7 +501,8 @@ def op_print_ready(payload: PrintReadyRequest, db: Session = Depends(get_db)):
             },
         )
 
-    task = print_ready.delay(
+    task_id = enqueue(
+        "print_ready",
         asset_id,
         job_id,
         payload.intent,
@@ -503,8 +511,9 @@ def op_print_ready(payload: PrintReadyRequest, db: Session = Depends(get_db)):
         payload.chain_render_box,
         preview_job_id,
         payload.dominant_orientation,
+        queue="documents",
     )
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id, "preview_job_id": preview_job_id}
 
 
@@ -541,8 +550,8 @@ def render_pages(asset_id: str, payload: RenderPagesRequest, db: Session = Depen
 
     body = {"pages": target_pages}
     job_id = job_repo.create_job(db, asset_id, "render_specific_pages", "thumbnails", body)
-    task = render_specific_pages.delay(asset_id, job_id, target_pages)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("render_specific_pages", asset_id, job_id, target_pages, queue="thumbnails")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id, "missing_pages": target_pages}
 
 
@@ -583,7 +592,8 @@ def op_prepare_for_product(payload: PrepareForProductRequest, db: Session = Depe
             },
         )
 
-    task = prepare_for_product.delay(
+    task_id = enqueue(
+        "prepare_for_product",
         asset_id,
         job_id,
         payload.dominant_orientation,
@@ -596,8 +606,9 @@ def op_prepare_for_product(payload: PrepareForProductRequest, db: Session = Depe
         payload.chain_generate_previews,
         payload.chain_render_box,
         preview_job_id,
+        queue="documents",
     )
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id, "preview_job_id": preview_job_id}
 
 
@@ -611,8 +622,8 @@ def op_pad_pages(payload: PadPagesRequest, db: Session = Depends(get_db)):
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "pad_pages", "documents", body)
-    task = pad_pages_pdf.delay(asset_id, job_id, payload.multiple)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("pad_pages_pdf", asset_id, job_id, payload.multiple, queue="documents")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
@@ -628,8 +639,8 @@ def op_assemble_print_ready(payload: JobArtefactRequest, db: Session = Depends(g
     """
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, None, "assemble_print_ready", "documents", body)
-    task = assemble_print_ready_for_job.delay(str(payload.job_id), job_id, bool(payload.force))
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("assemble_print_ready_for_job", str(payload.job_id), job_id, bool(payload.force), queue="documents")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
@@ -656,8 +667,8 @@ def op_assemble_imposed_sheet(payload: JobArtefactRequest, db: Session = Depends
         )
 
     job_id = job_repo.create_job(db, None, "assemble_imposed_sheet", "imposition", body)
-    task = assemble_imposed_sheet_for_job.delay(str(payload.job_id), job_id)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("assemble_imposed_sheet_for_job", str(payload.job_id), job_id, queue="imposition")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
@@ -666,8 +677,8 @@ def op_render_job_ticket(payload: JobArtefactRequest, db: Session = Depends(get_
     """Render a 1-page A4 operator ticket (header, specs, files, QR, sign-off)."""
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, None, "render_job_ticket", "documents", body)
-    task = render_job_ticket_for_job.delay(str(payload.job_id), job_id)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("render_job_ticket_for_job", str(payload.job_id), job_id, queue="documents")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
@@ -696,5 +707,5 @@ def op_cloudprinter_render(
     if not hmac.compare_digest(token, expected):
         raise HTTPException(401, "Invalid token")
 
-    task = cloudprinter_render.delay(payload.model_dump(mode="json"))
-    return CloudprinterRenderResponse(render_job_id=task.id, status="queued")
+    task_id = enqueue("cloudprinter_render", payload.model_dump(mode="json"), queue="thumbnails")
+    return CloudprinterRenderResponse(render_job_id=task_id, status="queued")

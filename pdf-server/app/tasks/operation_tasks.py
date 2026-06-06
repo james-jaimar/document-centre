@@ -11,6 +11,7 @@ from app.services.storage import StorageService
 from app.services.files import Workspace, cache_get, cache_put, unique_name
 from app.services.pdf_ops import pdf_ops
 from app.services.derived_files import derived_file_repo
+from app.core.queue import enqueue
 
 storage = StorageService()
 logger = logging.getLogger(__name__)
@@ -594,12 +595,10 @@ def _maybe_chain_generate_previews(
     """
     if not chain or not pre_allocated_job_id:
         return
-    # Local import to avoid circular module load — both tasks live in the
-    # same package and Celery imports them lazily.
-    from app.tasks.document_tasks import generate_previews
+    # No direct import needed — enqueue() dispatches by name via the registry.
     try:
-        task = generate_previews.delay(asset_id, pre_allocated_job_id, render_box)
-        job_repo.set_celery_task_id(db, pre_allocated_job_id, task.id)
+        task_id = enqueue("generate_previews", asset_id, pre_allocated_job_id, render_box, queue="thumbnails")
+        job_repo.set_celery_task_id(db, pre_allocated_job_id, task_id)
     except Exception as exc:
         try:
             job_repo.mark_failed(db, pre_allocated_job_id, f"chain enqueue failed: {exc}")
