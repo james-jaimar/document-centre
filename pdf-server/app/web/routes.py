@@ -391,8 +391,8 @@ def op_merge(payload: MergeRequest, db: Session = Depends(get_db)):
     asset_ids = [str(aid) for aid in payload.asset_ids]
     body = {"asset_ids": asset_ids, "output_filename": payload.output_filename}
     job_id = job_repo.create_job(db, None, "merge_pdfs", "documents", body)
-    task = merge_pdfs.delay(asset_ids, job_id, payload.output_filename)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("merge_pdfs", asset_ids, job_id, payload.output_filename, queue="documents")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
