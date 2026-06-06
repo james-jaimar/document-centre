@@ -75,20 +75,20 @@ export function useTenantFromHost() {
 
     const resolve = async () => {
       setLoading(true);
-      try {
-        await runOnce();
-      } catch (e) {
-        // Transient network error — retry once after a short back-off
-        // so a single ERR_FAILED doesn't blank the entire app.
-        await new Promise((r) => setTimeout(r, 250));
+      const backoffs = [0, 250, 750, 1500];
+      let lastErr: unknown = null;
+      for (let i = 0; i < backoffs.length; i++) {
+        if (backoffs[i] > 0) await new Promise((r) => setTimeout(r, backoffs[i]));
         try {
           await runOnce();
-        } catch (e2) {
-          console.warn("[useTenantFromHost] tenant lookup failed", e2);
+          lastErr = null;
+          break;
+        } catch (e) {
+          lastErr = e;
         }
-      } finally {
-        setLoading(false);
       }
+      if (lastErr) console.warn("[useTenantFromHost] tenant lookup failed after retries", lastErr);
+      setLoading(false);
     };
 
     resolve();
@@ -96,3 +96,4 @@ export function useTenantFromHost() {
 
   return { tenant, loading, matched };
 }
+
