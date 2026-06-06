@@ -1,81 +1,133 @@
-## Findings from the live job
+## What I found from the actual Postnet upload
 
-- The active Postnet 24-page asset is `50f5abba-0139-4ad0-bc66-ef7f98c2f500`, preview job `64686803-75ae-4e3c-aaaf-15ce0c1e2045`.
-- It is not doing one clean 24-page render. The same job is restarting repeatedly:
-  - `18:19:32` render starts
-  - `18:20:45` salvage starts
-  - `18:21:33` render starts again
-  - `18:22:47` salvage starts again
-  - `18:23:28` render starts again
-  - `18:24:42` salvage starts again
-- Derived files are accumulating page-by-page across retries, which matches the slow `6/24`, `7/24`, `8/24` behaviour you are seeing.
-- The key discrepancy is in deployment config: `QUEUE_BACKEND=cloud_tasks` and the Cloud Tasks worker URLs are pinned only on `pdf-api`, not on the HTTP worker services. So when `pdf-worker-light` actually runs `generate_previews`, it can still default to Celery mode and take the old fan-out/retry path instead of the intended single-container 4-vCPU batch/in-process path.
-- This also affects emails: `scan_outbox` runs on `pdf-worker-emails` and enqueues `send_email`; without Cloud Tasks env on the worker, it can fall back to the wrong queue backend.
+The slow 8-page A4 upload is not primarily Ghostscript CPU time.
+
+Actual production rows show:
+
+- Asset: `ced3d7c3-4779-4031-b31b-69b5fb6a5490`
+- `prepare_for_product`: **14.1s** total
+- `generate_previews`: **112.6s** total from job creation to completion
+- Successful render result reports:
+  - `download_pdf`: **498ms**
+  - `ghostscript_batch`: **1.585s**
+  - `batch_total`: **16.5s**
+- But the same preview job had an earlier render attempt that started, wrote pages, entered salvage, then a later attempt re-ran the same job. That means the delay is coming from **Cloud Tasks/Cloud Run retry/cold-start/IO/DB recording behaviour**, not the 4-vCPU rasterizer failing to rasterize quickly.
+
+Current upload map:
+
+```text
+Browser file upload
+  -> s3-storage sign-upload
+  -> direct S3 PUT
+  -> documents insert
+  -> pdf-api /v1/assets inline inspect
+  -> optional normalize_orientation
+  -> prepare_for_product on heavy worker
+  -> chained generate_previews on light worker
+  -> Ghostscript batch rasterize
+  -> PIL thumbnail downscale
+  -> S3 upload preview + thumbnail per page
+  -> derived_files rows per page
+  -> UI polls jobs + derived files
+```
 
 ## Plan
 
-### 1. Fix Cloud Run worker environment parity
-Update `.github/workflows/pdf-server-deploy.yml` so after worker URLs are resolved, the deploy updates **all** Cloud Run services with the same queue backend values:
+### 1. Make Cloud Tasks retries visible and safe
 
-- `pdf-api`
-- `pdf-worker-heavy`
-- `pdf-worker-light`
-- `pdf-worker-emails`
+Update `pdf-server/app/core/queue.py` and `pdf-server/app/web/tasks_routes.py` to:
 
-Shared values:
+- Set an explicit Cloud Tasks dispatch deadline matching the worker timeout, so long-but-valid render requests are not retried prematurely.
+- Capture Cloud Tasks headers (`X-CloudTasks-TaskRetryCount`, `X-CloudTasks-TaskExecutionCount`, task name, queue name) in logs/job events.
+- Prevent duplicate concurrent execution of the same `job_id` when Cloud Tasks retries while a worker is still alive.
+- Add a stale-running guard so genuinely abandoned jobs can still be retried instead of getting stuck forever.
 
-```text
-QUEUE_BACKEND=cloud_tasks
-GCP_PROJECT_ID=...
-GCP_REGION=africa-south1
-GCP_TASKS_REGION=europe-west1
-TASKS_INVOKER_SA=...
-WORKER_URL_HEAVY=...
-WORKER_URL_LIGHT=...
-WORKER_URL_EMAILS=...
-```
+### 2. Add real per-stage render timings
 
-Keep each worker's own `WORKER_SELF_URL` as well, so OIDC verification still works.
+Update `pdf-server/app/tasks/document_tasks.py` to record timings for:
 
-### 2. Belt-and-braces guard in `generate_previews`
-Harden `pdf-server/app/tasks/document_tasks.py` so fan-out is disabled not only when `QUEUE_BACKEND=cloud_tasks`, but also whenever the service role is an HTTP worker (`ROLE=worker-*-http`).
-
-That means even if someone forgets an env var later, `pdf-worker-light` will not accidentally dispatch per-page render tasks via the old Celery-style fan-out path.
-
-### 3. Improve diagnostics for the next upload
-Add lightweight job events/logs around the preview phases so the next 24-page test tells us exactly where time went:
-
-- batch rasterisation start/finish
-- batch uploaded/recorded count
-- in-process fallback start/finish
+- Cloud task attempt number
+- PDF download/cache source
+- render-box preparation
+- Ghostscript batch time
+- thumbnail downscale time
+- S3 upload time per page
+- DB record time per page/batch
 - salvage start/finish
-- final timing metadata on success or failure
+- total wall-clock time
 
-No frontend change needed for this; it is for Cloud Logging / `job_events` evidence.
+This will make the next upload explain itself without guessing from sparse progress messages.
 
-### 4. Confirm worker health exposes the right runtime mode
-Extend the existing `/health` response to include safe non-secret runtime facts:
+### 3. Remove the per-page DB commit bottleneck
+
+Update `pdf-server/app/services/derived_files.py` and add a migration to:
+
+- Add a unique partial index for one `preview_page` and one `thumbnail_page` per `(asset_id, page)`.
+- Add a bulk upsert method for per-page derived files.
+- Use one DB transaction for a batch of page records instead of 16+ individual select/update/commit cycles for an 8-page PDF.
+
+This targets the observed gap where Ghostscript is ~1.6s but the page write/upload/record phase stretches into many seconds.
+
+### 4. Harden and speed S3 uploads/downloads
+
+Update `pdf-server/app/services/storage.py` to:
+
+- Configure the boto3 S3 client with explicit connect/read timeouts.
+- Increase the connection pool for parallel preview uploads.
+- Use bounded retry behaviour so one stuck thumbnail upload cannot silently hold the whole render for a minute.
+- Log object size + upload duration for preview/thumbnail files.
+
+Also switch preview-page upload order to favour thumbnails first where safe, so the UI gets usable page progress earlier.
+
+### 5. Restore VPS-style warm workers
+
+Update `.github/workflows/pdf-server-deploy.yml` to keep the customer-facing workers warm:
+
+- `pdf-worker-light`: `min-instances=1` so thumbnail rendering does not pay a cold start.
+- Consider `pdf-worker-heavy`: `min-instances=1` if the 10–15s prepare step is still part of the critical upload path.
+
+This matches the VPS behaviour where the light Celery workers were always resident.
+
+### 6. Reduce unnecessary preview blocking for clean A4 PDFs
+
+For clean PDF uploads that already match the product and do not need an advisory:
+
+- Render customer thumbnails from the inspected/normalized PDF immediately.
+- Move `prepare_for_product` out of the blocking preview path where it is not required for the visual preview.
+- Keep print-ready preparation for the production/order artefact path, or run it asynchronously after the preview is already usable.
+
+This removes the extra ~14s currently paid before rendering, without weakening the final production file flow.
+
+### 7. Add a regression check
+
+Add a small backend smoke script/test that processes a known 8-page A4 PDF and prints:
 
 ```text
-role
-queue_backend
-cpu_count
-render_cpu_concurrency
-render_io_concurrency
-render_batch_threshold
+upload/register time
+prepare time
+render total
+ghostscript time
+s3 time
+db record time
+pages rendered
+retry count
 ```
 
-This makes future cutover drift immediately visible without digging through Cloud Run env pages.
+Acceptance target for the 8-page A4 case:
 
-### 5. Validation after deploy
-After the GitHub Action redeploys:
+- No duplicate render attempt.
+- No salvage for normal pages.
+- Ghostscript batch remains under a few seconds.
+- End-to-end visible preview target: roughly **30–60s**, with first thumbnail much sooner.
 
-- Upload the same 24-page PDF on Postnet.
-- Expected behaviour: one `generate_previews` run, no repeated render/salvage cycles, target under ~60–90 seconds.
-- Confirm `job_events` shows either:
-  - batch path rendered `24/24`, or
-  - in-process pass completed once, not multiple Cloud Tasks retries.
-- Confirm `pdf-worker-emails` can enqueue `send_email` through Cloud Tasks, so the email path is not silently using the wrong backend.
+## Files to change
 
-## Optional immediate recovery
-Once the deploy is live, the current stuck/partial job should be abandoned and the asset should be re-rendered cleanly rather than waiting for Cloud Tasks retries to drip-feed pages.
+- `.github/workflows/pdf-server-deploy.yml`
+- `pdf-server/app/core/queue.py`
+- `pdf-server/app/web/tasks_routes.py`
+- `pdf-server/app/tasks/document_tasks.py`
+- `pdf-server/app/services/derived_files.py`
+- `pdf-server/app/services/storage.py`
+- Supabase migration for the derived-file uniqueness/upsert support
+- Optional smoke-test script under `pdf-server/scripts/`
+
