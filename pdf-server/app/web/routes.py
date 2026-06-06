@@ -707,5 +707,5 @@ def op_cloudprinter_render(
     if not hmac.compare_digest(token, expected):
         raise HTTPException(401, "Invalid token")
 
-    task = cloudprinter_render.delay(payload.model_dump(mode="json"))
-    return CloudprinterRenderResponse(render_job_id=task.id, status="queued")
+    task_id = enqueue("cloudprinter_render", payload.model_dump(mode="json"), queue="thumbnails")
+    return CloudprinterRenderResponse(render_job_id=task_id, status="queued")
