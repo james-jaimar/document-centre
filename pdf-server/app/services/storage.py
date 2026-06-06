@@ -12,6 +12,47 @@ except ImportError:
 
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
+
+
+class S3AccessError(RuntimeError):
+    """Friendly S3 error with classification (permission / missing / region / unknown)."""
+
+    def __init__(self, kind: str, message: str, *, bucket: str, key: str, status: int | None = None):
+        super().__init__(message)
+        self.kind = kind
+        self.bucket = bucket
+        self.key = key
+        self.status = status
+
+
+def _classify_s3_error(op: str, key: str, exc: Exception) -> S3AccessError:
+    bucket = settings.aws_s3_bucket
+    region = settings.aws_s3_region
+    status = None
+    code = None
+    if isinstance(exc, ClientError):
+        status = exc.response.get('ResponseMetadata', {}).get('HTTPStatusCode')
+        code = exc.response.get('Error', {}).get('Code')
+    if status == 403 or code in {'AccessDenied', 'Forbidden', '403'}:
+        msg = (
+            f"S3 {op} permission denied for bucket={bucket!r} key={key!r} "
+            f"region={region!r}. The Cloud Run AWS key (PDF_AWS_ACCESS_KEY_ID / "
+            f"PDF_AWS_SECRET_ACCESS_KEY in GCP Secret Manager) needs s3:GetObject "
+            f"(and s3:PutObject/DeleteObject) on arn:aws:s3:::{bucket}/*."
+        )
+        return S3AccessError('permission_denied', msg, bucket=bucket, key=key, status=403)
+    if status == 404 or code in {'NoSuchKey', '404', 'NoSuchBucket'}:
+        msg = f"S3 {op}: object not found at bucket={bucket!r} key={key!r}."
+        return S3AccessError('not_found', msg, bucket=bucket, key=key, status=404)
+    if code in {'PermanentRedirect', 'AuthorizationHeaderMalformed', 'IllegalLocationConstraintException'}:
+        msg = f"S3 {op}: bucket/region mismatch (bucket={bucket!r} configured region={region!r}). Detail: {exc}"
+        return S3AccessError('region_mismatch', msg, bucket=bucket, key=key, status=status)
+    return S3AccessError('unknown', f"S3 {op} failed for bucket={bucket!r} key={key!r}: {type(exc).__name__}: {exc}",
+                          bucket=bucket, key=key, status=status)
+
+
+
 
 s3_client = boto3.client(
     's3',
