@@ -1,38 +1,50 @@
-## Problem
+## Goal
 
-Cloud Tasks (and Cloud Scheduler) are not offered in `africa-south1`. The bootstrap script hard-codes `REGION=africa-south1` for both Cloud Run *and* the queues, so `gcloud tasks queues create` fails immediately.
+Make `.github/workflows/pdf-server-deploy.yml` set every env var `pdf-api` needs to flip `QUEUE_BACKEND=cloud_tasks`, so no manual `gcloud run services update` is ever required after a deploy. `WORKER_SELF_URL` (workers) and `BEAT_SELF_URL` (api) are already wired — only the Cloud Tasks enqueue side is missing.
 
-Cloud Run services must stay in `africa-south1` (latency, existing LB/NEG, custom domain wiring all documented in `CUSTOM_DOMAIN.md`). Cloud Tasks can push to Cloud Run cross-region with no functional penalty — only the queue control plane needs a supported region.
+## What's missing today
 
-## Fix: split compute region from tasks region
+`pdf-api` needs these at runtime when `enqueue()` is in `cloud_tasks` mode (see `pdf-server/app/core/queue.py`):
 
-Introduce a second region variable used only for Cloud Tasks queues + Cloud Scheduler jobs. Default it to `europe-west1` (closest fully-supported Tasks/Scheduler region to ZA; same choice we'd document for ops).
+- `TASKS_INVOKER_SA` — the `cloud-tasks-invoker@…` SA created by `gcp-tasks-bootstrap.sh`
+- `WORKER_URL_HEAVY` / `WORKER_URL_LIGHT` / `WORKER_URL_EMAILS` — push targets per logical queue
 
-### 1. `pdf-server/docker/gcp-tasks-bootstrap.sh`
-- Add `TASKS_REGION="${GCP_TASKS_REGION:-europe-west1}"` alongside the existing `REGION`.
-- Use `TASKS_REGION` for every `gcloud tasks queues …` and `gcloud scheduler jobs …` call.
-- Keep `REGION` (africa-south1) for `gcloud run services describe` and the `run.invoker` IAM bindings.
-- Print `TASKS_REGION` in the final summary block so the operator copies it into pdf-api env.
+Today they have to be set by hand after each deploy because the worker URLs aren't known until the worker deploy step finishes.
 
-### 2. `pdf-server/app/core/queue.py`
-- Read `GCP_TASKS_REGION` (fallback to `GCP_REGION` for back-compat) when building the queue path in `_cloud_tasks_enqueue`.
-- Update the docstring env-var block to list both `GCP_REGION` (compute) and `GCP_TASKS_REGION` (queues/scheduler).
+## Change
 
-### 3. `.github/workflows/pdf-server-deploy.yml`
-- Add `GCP_TASKS_REGION: europe-west1` to the top-level `env:` block (line ~33).
-- Pass it into the `pdf-api` deploy step's `--set-env-vars` so `enqueue()` can build the correct queue path once `QUEUE_BACKEND=cloud_tasks` is flipped on. (Workers don't need it — they only receive HTTP pushes.)
+Add a new step after **"Deploy HTTP workers"** and before **"Set BEAT_SELF_URL on pdf-api"** that consolidates both pdf-api second-pass updates into one call:
 
-No other files touched. No behavior change while `QUEUE_BACKEND=celery` (default). The bootstrap script becomes idempotent and re-runnable.
+```yaml
+- name: Wire Cloud Tasks env vars on pdf-api
+  run: |
+    api_url=$(gcloud run services describe pdf-api          --region="${{ env.GCP_REGION }}" --format='value(status.url)')
+    heavy_url=$(gcloud run services describe pdf-worker-heavy  --region="${{ env.GCP_REGION }}" --format='value(status.url)')
+    light_url=$(gcloud run services describe pdf-worker-light  --region="${{ env.GCP_REGION }}" --format='value(status.url)')
+    emails_url=$(gcloud run services describe pdf-worker-emails --region="${{ env.GCP_REGION }}" --format='value(status.url)')
+    invoker_sa="cloud-tasks-invoker@${{ env.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
 
-## Operator step after merge
-
-Re-run from Cloud Shell:
+    gcloud run services update pdf-api \
+      --region="${{ env.GCP_REGION }}" \
+      --update-env-vars="BEAT_SELF_URL=${api_url},TASKS_INVOKER_SA=${invoker_sa},WORKER_URL_HEAVY=${heavy_url},WORKER_URL_LIGHT=${light_url},WORKER_URL_EMAILS=${emails_url}" \
+      --quiet
 ```
-bash gcp-tasks-bootstrap.sh
-```
-The `cloud-tasks-invoker` SA and any partial state from today's failed run are already present and will be reused (script is idempotent).
 
-## Out of scope
+Then **delete** the now-redundant `Set BEAT_SELF_URL on pdf-api` step (lines 302-307) — it's folded into the single update above to avoid two consecutive revisions of `pdf-api`.
 
-- No change to Cloud Run region, LB, NEG, or custom domain config.
-- No change to Phase 2.1 task code; this only unblocks the queue/scheduler control plane.
+## What stays unchanged
+
+- `QUEUE_BACKEND` is NOT set here. It stays at the default `celery` until you flip it manually (or in a follow-up PR) — exactly as the existing summary note already promises.
+- Worker deploy step keeps its own `WORKER_SELF_URL` second pass — that's per-worker and can't be folded in.
+- `gcp-tasks-bootstrap.sh` still needs to be run once in Cloud Shell to create the invoker SA + queues; the workflow only references the SA by name.
+- No changes to `pdf-server/app/core/queue.py` or the bootstrap script.
+
+## Safety
+
+- The new step runs only after all four services exist, so all `describe` calls resolve.
+- Idempotent: re-running the workflow just rewrites the same env values.
+- If `QUEUE_BACKEND=celery` (current default), the new env vars are inert — they're only read by `_cloud_tasks_enqueue`.
+
+## Files touched
+
+- `.github/workflows/pdf-server-deploy.yml` — add one step, remove one step.
