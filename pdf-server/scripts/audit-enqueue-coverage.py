@@ -49,18 +49,6 @@ def _parse_queue_map() -> set[str]:
 
 
 
-def _parse_queue_map() -> set[str]:
-    src = (APP / "core" / "queue.py").read_text()
-    tree = ast.parse(src)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "QUEUE_TO_CLOUD_TASKS_QUEUE":
-            if isinstance(node.value, ast.Dict):
-                return {k.value for k in node.value.keys if isinstance(k, ast.Constant)}
-        if isinstance(node, ast.Assign):
-            for t in node.targets:
-                if isinstance(t, ast.Name) and t.id == "QUEUE_TO_CLOUD_TASKS_QUEUE" and isinstance(node.value, ast.Dict):
-                    return {k.value for k in node.value.keys if isinstance(k, ast.Constant)}
-    return set()
 
 
 TASK_REGISTRY = _parse_registry()
