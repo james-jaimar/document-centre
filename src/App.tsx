@@ -20,6 +20,7 @@ import { StorefrontRedirect } from "@/components/StorefrontRedirect";
 import { AppEntryRedirect } from "@/components/AppEntryRedirect";
 import { SubdomainWrapper, useSubdomainTenant } from "@/components/SubdomainRouter";
 import BranchSlugRoute from "@/components/BranchSlugRoute";
+import { isPlatformHost } from "@/lib/tenantUrl";
 
 import MarketingLanding from "@/pages/MarketingLanding";
 import Try from "@/pages/Try";
