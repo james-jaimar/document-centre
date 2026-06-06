@@ -1,49 +1,68 @@
-## What I found
+# Retire VPS & supercharge thumbnail performance
 
-- The latest preview job did complete successfully in the backend:
-  - `generate_previews` job `60dc3374-e8ce-482b-8ef4-9902864ac81c`
-  - Status: `completed`
-  - Rendered `24/24` pages
-- The document row is still `document_status = processing` with `preflight_data.awaiting_review = true` and no `thumbnail_urls` saved.
-- The uploaded PDF is detected as **US Letter** (`215.9 × 279.4mm`), while the product/session appears to expect an SA/ISO size, so the app correctly flags a size advisory. But the current flow can leave the upload modal saying “Rendering pages…” instead of cleanly transitioning to “Review needed” / closing.
+## ✅ Done in this branch
 
-## Root issue to fix
+### Part 1 — Webhook-based email trigger (replaces VPS LISTEN/NOTIFY)
+- New endpoint: `POST /internal/email/notify` on `pdf-api`
+  (`pdf-server/app/web/beat_routes.py` → `email_push_router`)
+- Shared-secret auth via `X-Webhook-Token` header (Supabase Database
+  Webhooks cannot sign Google OIDC tokens, so a shared secret is used
+  instead of OIDC — the side-effect is bounded to one enqueue).
+- Wired into `pdf-server/app/main.py`.
+- Deploy workflow mounts `EMAIL_NOTIFY_TOKEN` from GCP Secret Manager
+  (`PDF_EMAIL_NOTIFY_TOKEN`, optional — deploys don't break without it).
 
-There are two frontend flow problems:
+### Part 2 — Thumbnail worker scaled up
+- `pdf-worker-light`: **1 vCPU/1 GiB → 4 vCPU/4 GiB**
+  (`.github/workflows/pdf-server-deploy.yml`)
+- Render code is **already parallel**:
+  `ThreadPoolExecutor(max_workers=os.cpu_count() - 1)` plus a batch
+  Ghostscript path for ≤200 pages. Bumping CPU auto-scales the pool.
+- Cost: ~neutral per job (Cloud Run bills vCPU-seconds; 4× CPU rate ×
+  ¼ wall-clock ≈ same total).
+- Expected user-visible speedup on 40–100 page uploads: ~3–4× faster.
 
-1. **Advisory-state uploads are not finalised cleanly**
-   - When a size advisory is present, the code leaves the document as `processing` with `awaiting_review=true`.
-   - That is valid for the document list, but the upload modal should not keep behaving like active rendering is still happening.
+## ⚠️ Manual steps the user must run
 
-2. **Preallocated preview-job polling can wait on the wrong state**
-   - `prepare_for_product` may pre-create a `preview_job_id` before it actually enqueues the render task.
-   - The frontend polls that preallocated job directly. If the chain is not dispatched as expected, the UI can sit at 75% for a long time even though later/manual preview generation may complete.
+1. **Create the GCP secret** (one-off, in Cloud Shell):
+   ```bash
+   TOKEN=$(openssl rand -hex 32)
+   echo "$TOKEN"   # save — needed for the SQL trigger
+   printf '%s' "$TOKEN" | gcloud secrets create PDF_EMAIL_NOTIFY_TOKEN \
+     --project=project-59a14b18-b4df-4c6b-b09 --data-file=-
+   gcloud secrets add-iam-policy-binding PDF_EMAIL_NOTIFY_TOKEN \
+     --project=project-59a14b18-b4df-4c6b-b09 \
+     --member="serviceAccount:dc-pdf-runtime@project-59a14b18-b4df-4c6b-b09.iam.gserviceaccount.com" \
+     --role="roles/secretmanager.secretAccessor"
+   ```
 
-## Implementation plan
+2. **Re-run the GitHub Action** so pdf-api picks up the new secret AND
+   pdf-worker-light deploys with 4 CPU.
 
-1. **Update upload finalisation in `src/hooks/useDocumentUpload.ts`**
-   - For advisory uploads, mark the upload modal item as done once the advisory metadata is saved.
-   - Keep the document row as `processing` + `awaiting_review=true` so the file card still shows “Review needed”.
-   - Use status text like `Review needed` instead of `Rendering pages…`.
+3. **Install the Supabase trigger** — paste the SQL from
+   `pdf-server/docs/VPS_DECOMMISSION.md` (section 3) into the Supabase
+   SQL editor, with the pdf-api URL and the token substituted in.
 
-2. **Harden the preview-render step**
-   - If a prechained preview job id is missing or remains non-running too long, fall back to explicitly calling `generatePreviews(assetId, renderBox)`.
-   - This prevents the frontend from being trapped polling a preallocated job that was never dispatched.
+4. **Verify** (see `VPS_DECOMMISSION.md` section 4): send a test email,
+   confirm `email_outbox` status flips within a few seconds and
+   `net._http_response` shows 200.
 
-3. **Make thumbnail persistence recover from already-rendered previews**
-   - After `generate_previews` completes, always re-read `derived_files` and write `documents.thumbnail_urls` when all pages exist.
-   - If the backend has already rendered all pages but the document row was not updated, the frontend can self-heal without another upload.
+5. **After 24h burn-in**: disable the VPS service and cancel the VPS
+   (commands in `VPS_DECOMMISSION.md` section 5).
 
-4. **Add better timeout/error handling for polling**
-   - Keep normal jobs polling long enough for real work.
-   - Add a shorter guard for preallocated chained preview jobs so the fallback starts quickly instead of waiting for minutes.
+## Measurement to do after deploy
 
-5. **Validation**
-   - Re-check the affected document/asset state in Supabase after the change.
-   - Confirm new uploads either:
-     - finish and show thumbnails, or
-     - finish the modal and show “Review needed” for US Letter/custom-size advisory files.
+Upload representative PDFs (10, 50, 100 pages) and record:
+- Time-to-first-thumbnail
+- Time-to-all-thumbnails
+- Compare against pre-deploy baseline
 
-## Immediate state note
+If 4 CPU isn't enough, bump `pdf-worker-light` to 8 vCPU/8 GiB
+(Cloud Run ceiling is 8 vCPU / 32 GiB per instance) — one-line change
+in the deploy workflow.
 
-The current uploaded file is not lost: its backend asset is rendered and ready. The visible stuck state is the app failing to transition/persist the document UI state after that processing path.
+## Files changed
+- `pdf-server/app/web/beat_routes.py` — new `email_push_router` + auth
+- `pdf-server/app/main.py` — mount the new router
+- `.github/workflows/pdf-server-deploy.yml` — light worker resources + secret
+- `pdf-server/docs/VPS_DECOMMISSION.md` — full runbook (new)

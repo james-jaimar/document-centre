@@ -208,6 +208,10 @@ jobs:
             "SUPABASE_STORAGE_BUCKET=PDF_SUPABASE_STORAGE_BUCKET"
             "ADMIN_USERNAME=PDF_ADMIN_USERNAME"
             "ADMIN_PASSWORD=PDF_ADMIN_PASSWORD"
+            # Shared secret used by the Supabase Database Webhook that
+            # replaces the VPS LISTEN/NOTIFY listener. Optional so deploys
+            # don't break before the secret is created.
+            "EMAIL_NOTIFY_TOKEN=PDF_EMAIL_NOTIFY_TOKEN"
           )
           SECRETS=("${BASE_SECRETS[@]}")
           for entry in "${OPTIONAL[@]}"; do
@@ -295,7 +299,11 @@ jobs:
           }
 
           deploy_worker pdf-worker-heavy  worker-heavy-http  2 4Gi  5
-          deploy_worker pdf-worker-light  worker-light-http  1 1Gi  20
+          # Light worker: customer-facing thumbnail render. Already parallel
+          # via ThreadPoolExecutor(max_workers=os.cpu_count()-1) — bumping
+          # CPU/RAM linearly speeds up wall-clock at ~neutral cost (Cloud
+          # Run bills vCPU-seconds).
+          deploy_worker pdf-worker-light  worker-light-http  4 4Gi  20
           deploy_worker pdf-worker-emails worker-emails-http 1 512Mi 10
 
 
