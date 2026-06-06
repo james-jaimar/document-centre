@@ -299,12 +299,24 @@ jobs:
           deploy_worker pdf-worker-emails worker-emails-http 1 512Mi 10
 
 
-      - name: Set BEAT_SELF_URL on pdf-api
+      - name: Wire Cloud Tasks env vars on pdf-api
         run: |
-          api_url=$(gcloud run services describe pdf-api --region="${{ env.GCP_REGION }}" --format='value(status.url)')
+          # Single second-pass update on pdf-api: BEAT_SELF_URL (for OIDC
+          # audience on beat endpoints) + the Cloud Tasks enqueue config
+          # (TASKS_INVOKER_SA + per-queue worker URLs). Folded into one
+          # `gcloud run services update` so we only burn one extra revision.
+          # QUEUE_BACKEND stays at the default `celery` — flip manually
+          # once every call site uses app.core.queue.enqueue.
+          api_url=$(gcloud run services describe pdf-api          --region="${{ env.GCP_REGION }}" --format='value(status.url)')
+          heavy_url=$(gcloud run services describe pdf-worker-heavy  --region="${{ env.GCP_REGION }}" --format='value(status.url)')
+          light_url=$(gcloud run services describe pdf-worker-light  --region="${{ env.GCP_REGION }}" --format='value(status.url)')
+          emails_url=$(gcloud run services describe pdf-worker-emails --region="${{ env.GCP_REGION }}" --format='value(status.url)')
+          invoker_sa="cloud-tasks-invoker@${{ env.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
+
           gcloud run services update pdf-api \
             --region="${{ env.GCP_REGION }}" \
-            --update-env-vars="BEAT_SELF_URL=$api_url" --quiet
+            --update-env-vars="BEAT_SELF_URL=${api_url},TASKS_INVOKER_SA=${invoker_sa},WORKER_URL_HEAVY=${heavy_url},WORKER_URL_LIGHT=${light_url},WORKER_URL_EMAILS=${emails_url}" \
+            --quiet
 
       - name: Summary
         run: |
