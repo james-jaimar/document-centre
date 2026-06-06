@@ -171,7 +171,9 @@ async function request<T>(
   const edgeFnUrl = `${SUPABASE_URL}/functions/v1/pdf-api`;
   const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
 
-  console.log(`[doc-centre] ${method} ${path}`);
+  if (import.meta.env.VITE_DOC_CENTRE_DEBUG === "true") {
+    console.log(`[doc-centre] ${method} ${path}`);
+  }
 
   const requestBody = JSON.stringify({
     path,
