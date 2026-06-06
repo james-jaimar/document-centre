@@ -40,10 +40,8 @@ export function useTenantFromHost() {
       return;
     }
 
-    const resolve = async () => {
-      setLoading(true);
-
-      // Check if it's a platform subdomain: {slug}.document-centre.com
+    const runOnce = async () => {
+      // Platform subdomain: {slug}.document-centre.com
       if (hostname.endsWith(`.${PLATFORM_DOMAIN}`)) {
         const slug = hostname.replace(`.${PLATFORM_DOMAIN}`, "");
         if (slug && !slug.includes(".")) {
@@ -53,17 +51,15 @@ export function useTenantFromHost() {
             .eq("slug", slug)
             .eq("is_active", true)
             .maybeSingle();
-
           if (data) {
             setTenant(data as HostTenant);
             setMatched(true);
           }
         }
-        setLoading(false);
         return;
       }
 
-      // Check if it's a custom domain (match either apex or www. form)
+      // Custom domain (apex or www. form)
       const candidates = Array.from(new Set([rawHost, hostname]));
       const { data } = await supabase
         .from("tenants")
@@ -71,13 +67,28 @@ export function useTenantFromHost() {
         .in("custom_domain", candidates)
         .eq("is_active", true)
         .maybeSingle();
-
       if (data) {
         setTenant(data as HostTenant);
         setMatched(true);
       }
+    };
 
-      setLoading(false);
+    const resolve = async () => {
+      setLoading(true);
+      try {
+        await runOnce();
+      } catch (e) {
+        // Transient network error — retry once after a short back-off
+        // so a single ERR_FAILED doesn't blank the entire app.
+        await new Promise((r) => setTimeout(r, 250));
+        try {
+          await runOnce();
+        } catch (e2) {
+          console.warn("[useTenantFromHost] tenant lookup failed", e2);
+        }
+      } finally {
+        setLoading(false);
+      }
     };
 
     resolve();

@@ -4,7 +4,7 @@ import CustomerHeader from "@/components/CustomerHeader";
 import CustomerFooter from "@/components/CustomerFooter";
 import { PanelLeftOpen } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { useMemo, useEffect, useRef } from "react";
+import { useMemo, useEffect, useRef, useState } from "react";
 import { SidebarCollapseProvider, useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { supabase } from "@/integrations/supabase/client";
 import { hasTenantSignOutFlag, clearTenantSignOutFlag } from "@/lib/tenantSignOut";
@@ -58,7 +58,18 @@ function CustomerLayoutInner() {
   // slug is present in the URL we must wait for BOTH — otherwise the layout
   // paints with default Document Centre colours before the tenant record
   // arrives, producing a visible dark-sidebar / generic-header flash.
-  const brandingReady = !slug || (!tenantLoading && !brandingLoading);
+  //
+  // Safety: cap the wait at 4 s so a single failed tenant/branding fetch can
+  // never blank the entire storefront. After the timeout we proceed with
+  // default styling rather than stay on the splash forever.
+  const [brandingTimedOut, setBrandingTimedOut] = useState(false);
+  const baseReady = !slug || (!tenantLoading && !brandingLoading);
+  useEffect(() => {
+    if (baseReady) return;
+    const t = setTimeout(() => setBrandingTimedOut(true), 4000);
+    return () => clearTimeout(t);
+  }, [baseReady]);
+  const brandingReady = baseReady || brandingTimedOut;
 
   // Dynamic favicon
   useEffect(() => {

@@ -1,133 +1,49 @@
-## What I found from the actual Postnet upload
+## Root cause
 
-The slow 8-page A4 upload is not primarily Ghostscript CPU time.
+The Postnet/Document Centre Demo storefronts went blank because `SubdomainWrapper` (which wraps the *entire* route tree in `App.tsx`) renders only a full-screen spinner while `useTenantFromHost().loading === true`. That hook does:
 
-Actual production rows show:
-
-- Asset: `ced3d7c3-4779-4031-b31b-69b5fb6a5490`
-- `prepare_for_product`: **14.1s** total
-- `generate_previews`: **112.6s** total from job creation to completion
-- Successful render result reports:
-  - `download_pdf`: **498ms**
-  - `ghostscript_batch`: **1.585s**
-  - `batch_total`: **16.5s**
-- But the same preview job had an earlier render attempt that started, wrote pages, entered salvage, then a later attempt re-ran the same job. That means the delay is coming from **Cloud Tasks/Cloud Run retry/cold-start/IO/DB recording behaviour**, not the 4-vCPU rasterizer failing to rasterize quickly.
-
-Current upload map:
-
-```text
-Browser file upload
-  -> s3-storage sign-upload
-  -> direct S3 PUT
-  -> documents insert
-  -> pdf-api /v1/assets inline inspect
-  -> optional normalize_orientation
-  -> prepare_for_product on heavy worker
-  -> chained generate_previews on light worker
-  -> Ghostscript batch rasterize
-  -> PIL thumbnail downscale
-  -> S3 upload preview + thumbnail per page
-  -> derived_files rows per page
-  -> UI polls jobs + derived files
+```ts
+const { data } = await supabase.from("tenants")...maybeSingle();
+...
+setLoading(false);
 ```
 
-## Plan
+with **no try/catch**. The Supabase request to `/rest/v1/tenants?custom_domain=in.(...)` failed with `net::ERR_FAILED` (confirmed in the browser network log just now — the GET errored while the OPTIONS preflight 204'd separately). The throw bypassed `setLoading(false)`, so the spinner sticks forever. No frontend code was changed in the recent deploy — this is a long-standing fragility that a transient network blip exposed today.
 
-### 1. Make Cloud Tasks retries visible and safe
+`useTenantFromSlug` and `useTenantBranding` have the exact same shape and feed `CustomerLayout`'s `brandingReady` gate, so they can also blank the page on a single failed fetch.
 
-Update `pdf-server/app/core/queue.py` and `pdf-server/app/web/tasks_routes.py` to:
+## Fix
 
-- Set an explicit Cloud Tasks dispatch deadline matching the worker timeout, so long-but-valid render requests are not retried prematurely.
-- Capture Cloud Tasks headers (`X-CloudTasks-TaskRetryCount`, `X-CloudTasks-TaskExecutionCount`, task name, queue name) in logs/job events.
-- Prevent duplicate concurrent execution of the same `job_id` when Cloud Tasks retries while a worker is still alive.
-- Add a stale-running guard so genuinely abandoned jobs can still be retried instead of getting stuck forever.
+Make the three tenant bootstrap hooks fail-safe: they must always settle `loading=false`, even when the network call throws, and they should retry once on transient errors before giving up. The UI should fall through to "no tenant matched" instead of an infinite spinner.
 
-### 2. Add real per-stage render timings
+### 1. `src/hooks/useTenantFromHost.ts`
+- Wrap the entire `resolve()` body in `try { … } catch (e) { console.warn(...) } finally { setLoading(false) }`.
+- Add a single silent retry (250 ms back-off) for network-class errors before the catch.
+- On final failure, leave `matched=false, tenant=null` so the app falls through to path-based routing / marketing landing.
 
-Update `pdf-server/app/tasks/document_tasks.py` to record timings for:
+### 2. `src/hooks/useTenantFromSlug.ts`
+- Same try/catch/finally pattern around the fetch.
+- Single retry on network error.
+- On failure: keep any cached `tenant` from localStorage if present; only surface `error` when there is no cache to render from.
 
-- Cloud task attempt number
-- PDF download/cache source
-- render-box preparation
-- Ghostscript batch time
-- thumbnail downscale time
-- S3 upload time per page
-- DB record time per page/batch
-- salvage start/finish
-- total wall-clock time
+### 3. `src/hooks/useTenantBranding.ts` (verify; likely already a `useQuery` with built-in retry — confirm `retry: 1` and `staleTime` so a failure doesn't permanently lock `brandingReady=false`).
 
-This will make the next upload explain itself without guessing from sparse progress messages.
+### 4. `src/components/CustomerLayout.tsx`
+- `brandingReady` currently waits on both `tenantLoading` *and* `brandingLoading`. Add a safety timeout (e.g. 4 s) so even if branding never resolves, the layout proceeds with default styling rather than staying on the splash forever.
 
-### 3. Remove the per-page DB commit bottleneck
+### 5. `src/components/SubdomainRouter.tsx`
+- Add the same 4 s safety timeout to the SubdomainWrapper loading guard so a stuck host lookup can never blank the entire app — render children with `matched=false` after the timeout.
 
-Update `pdf-server/app/services/derived_files.py` and add a migration to:
+## Out of scope
 
-- Add a unique partial index for one `preview_page` and one `thumbnail_page` per `(asset_id, page)`.
-- Add a bulk upsert method for per-page derived files.
-- Use one DB transaction for a batch of page records instead of 16+ individual select/update/commit cycles for an 8-page PDF.
+- No backend, pdf-server, or migration changes.
+- No change to the storefront-tenant header interceptor (it correctly no-ops when no tenant is set, and the preflight log confirms it wasn't the cause).
+- No change to routing or auth.
 
-This targets the observed gap where Ghostscript is ~1.6s but the page write/upload/record phase stretches into many seconds.
+## Verification
 
-### 4. Harden and speed S3 uploads/downloads
+1. Reload `/t/postnet` in preview — page should render (header + sidebar) within ~2 s.
+2. In DevTools, block requests to `lcvdhtaqoumyokjqaqfw.supabase.co/rest/v1/tenants*` and reload — the app should still render (fall through to default theme / no-tenant state) instead of showing an infinite spinner.
+3. `postnet.document-centre.com` on production after Amplify redeploy — same behaviour.
 
-Update `pdf-server/app/services/storage.py` to:
-
-- Configure the boto3 S3 client with explicit connect/read timeouts.
-- Increase the connection pool for parallel preview uploads.
-- Use bounded retry behaviour so one stuck thumbnail upload cannot silently hold the whole render for a minute.
-- Log object size + upload duration for preview/thumbnail files.
-
-Also switch preview-page upload order to favour thumbnails first where safe, so the UI gets usable page progress earlier.
-
-### 5. Restore VPS-style warm workers
-
-Update `.github/workflows/pdf-server-deploy.yml` to keep the customer-facing workers warm:
-
-- `pdf-worker-light`: `min-instances=1` so thumbnail rendering does not pay a cold start.
-- Consider `pdf-worker-heavy`: `min-instances=1` if the 10–15s prepare step is still part of the critical upload path.
-
-This matches the VPS behaviour where the light Celery workers were always resident.
-
-### 6. Reduce unnecessary preview blocking for clean A4 PDFs
-
-For clean PDF uploads that already match the product and do not need an advisory:
-
-- Render customer thumbnails from the inspected/normalized PDF immediately.
-- Move `prepare_for_product` out of the blocking preview path where it is not required for the visual preview.
-- Keep print-ready preparation for the production/order artefact path, or run it asynchronously after the preview is already usable.
-
-This removes the extra ~14s currently paid before rendering, without weakening the final production file flow.
-
-### 7. Add a regression check
-
-Add a small backend smoke script/test that processes a known 8-page A4 PDF and prints:
-
-```text
-upload/register time
-prepare time
-render total
-ghostscript time
-s3 time
-db record time
-pages rendered
-retry count
-```
-
-Acceptance target for the 8-page A4 case:
-
-- No duplicate render attempt.
-- No salvage for normal pages.
-- Ghostscript batch remains under a few seconds.
-- End-to-end visible preview target: roughly **30–60s**, with first thumbnail much sooner.
-
-## Files to change
-
-- `.github/workflows/pdf-server-deploy.yml`
-- `pdf-server/app/core/queue.py`
-- `pdf-server/app/web/tasks_routes.py`
-- `pdf-server/app/tasks/document_tasks.py`
-- `pdf-server/app/services/derived_files.py`
-- `pdf-server/app/services/storage.py`
-- Supabase migration for the derived-file uniqueness/upsert support
-- Optional smoke-test script under `pdf-server/scripts/`
-
+Expected outcome: no transient Supabase error can ever leave the app on a blank loading spinner again.
