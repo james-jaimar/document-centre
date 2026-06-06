@@ -225,7 +225,7 @@ jobs:
             --region="${{ env.GCP_REGION }}" \
             --service-account="${{ env.RUNTIME_SA }}" \
             --port=8080 \
-            --set-env-vars="ROLE=api,LOG_LEVEL=INFO,APP_ENV=production,UVICORN_WORKERS=1,PYTHONUNBUFFERED=1,GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }},GCP_TASKS_REGION=${{ env.GCP_TASKS_REGION }}" \
+            --set-env-vars="ROLE=api,LOG_LEVEL=INFO,APP_ENV=production,UVICORN_WORKERS=1,PYTHONUNBUFFERED=1,QUEUE_BACKEND=cloud_tasks,GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }},GCP_TASKS_REGION=${{ env.GCP_TASKS_REGION }}" \
             --set-secrets="$SECRET_FLAG" \
             --memory=1Gi --cpu=1 \
             --cpu-boost \
@@ -305,8 +305,8 @@ jobs:
           # audience on beat endpoints) + the Cloud Tasks enqueue config
           # (TASKS_INVOKER_SA + per-queue worker URLs). Folded into one
           # `gcloud run services update` so we only burn one extra revision.
-          # QUEUE_BACKEND stays at the default `celery` — flip manually
-          # once every call site uses app.core.queue.enqueue.
+          # QUEUE_BACKEND=cloud_tasks is set in the initial deploy step so
+          # app.core.queue.enqueue routes through Cloud Tasks (not Celery).
           api_url=$(gcloud run services describe pdf-api          --region="${{ env.GCP_REGION }}" --format='value(status.url)')
           heavy_url=$(gcloud run services describe pdf-worker-heavy  --region="${{ env.GCP_REGION }}" --format='value(status.url)')
           light_url=$(gcloud run services describe pdf-worker-light  --region="${{ env.GCP_REGION }}" --format='value(status.url)')
@@ -315,7 +315,7 @@ jobs:
 
           gcloud run services update pdf-api \
             --region="${{ env.GCP_REGION }}" \
-            --update-env-vars="BEAT_SELF_URL=${api_url},TASKS_INVOKER_SA=${invoker_sa},WORKER_URL_HEAVY=${heavy_url},WORKER_URL_LIGHT=${light_url},WORKER_URL_EMAILS=${emails_url}" \
+            --update-env-vars="BEAT_SELF_URL=${api_url},TASKS_INVOKER_SA=${invoker_sa},WORKER_URL_HEAVY=${heavy_url},WORKER_URL_LIGHT=${light_url},WORKER_URL_EMAILS=${emails_url},QUEUE_BACKEND=cloud_tasks" \
             --quiet
 
       - name: Summary
@@ -336,5 +336,5 @@ jobs:
             echo "- **Region**: ${{ env.GCP_REGION }}"
             echo ""
             echo "_First-time setup: run \`bash pdf-server/docker/gcp-tasks-bootstrap.sh\` in Cloud Shell to create Cloud Tasks queues, the invoker SA, and Cloud Scheduler jobs._"
-            echo "_QUEUE_BACKEND defaults to \`celery\` — flip to \`cloud_tasks\` on pdf-api once every call site has been migrated to \`app.core.queue.enqueue\`._"
+            echo "_QUEUE_BACKEND is pinned to \`cloud_tasks\` on pdf-api so \`app.core.queue.enqueue\` pushes via Cloud Tasks (not Celery/Redis)._"
           } >> "$GITHUB_STEP_SUMMARY"

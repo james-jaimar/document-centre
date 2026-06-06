@@ -117,6 +117,16 @@ def enqueue(task_name: str, *args: Any, queue: str = "default", **kwargs: Any) -
 
     # Legacy Celery path. Resolve the task via the registry to avoid a
     # mass-rename of every `task.delay(...)` call site in Phase 2.
+    #
+    # On Cloud Run there is no Redis broker, so falling through to Celery
+    # produces a confusing kombu ChannelPromise traceback. Fail fast with
+    # an actionable message when running in a managed (non-Celery) env.
+    if os.getenv("GCP_PROJECT_ID") and not os.getenv("CELERY_BROKER_URL", "").startswith(("redis://", "amqp://")):
+        raise RuntimeError(
+            f"enqueue({task_name!r}) called with QUEUE_BACKEND={QUEUE_BACKEND!r} but "
+            "no Celery broker is configured. Set QUEUE_BACKEND=cloud_tasks on the "
+            "pdf-api Cloud Run service (see pdf-server/docker/gcp-tasks-bootstrap.sh)."
+        )
     from app.tasks.registry import TASK_REGISTRY
     task = TASK_REGISTRY[task_name]
     result = task.apply_async(args=list(args), kwargs=dict(kwargs), queue=queue)
