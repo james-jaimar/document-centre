@@ -31,6 +31,9 @@ env:
   GCP_PROJECT_ID: project-59a14b18-b4df-4c6b-b09
   GCP_PROJECT_NUMBER: '622687766375'
   GCP_REGION: africa-south1
+  # Cloud Tasks + Cloud Scheduler are not offered in africa-south1.
+  # Queue control plane lives in europe-west1; pushes back into africa-south1 Cloud Run.
+  GCP_TASKS_REGION: europe-west1
   AR_REPO: dc-pdf
   IMAGE_NAME: server
   WIF_PROVIDER: projects/622687766375/locations/global/workloadIdentityPools/github-pool/providers/github-provider
@@ -222,7 +225,7 @@ jobs:
             --region="${{ env.GCP_REGION }}" \
             --service-account="${{ env.RUNTIME_SA }}" \
             --port=8080 \
-            --set-env-vars="ROLE=api,LOG_LEVEL=INFO,APP_ENV=production,UVICORN_WORKERS=1,PYTHONUNBUFFERED=1" \
+            --set-env-vars="ROLE=api,LOG_LEVEL=INFO,APP_ENV=production,UVICORN_WORKERS=1,PYTHONUNBUFFERED=1,GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }},GCP_TASKS_REGION=${{ env.GCP_TASKS_REGION }}" \
             --set-secrets="$SECRET_FLAG" \
             --memory=1Gi --cpu=1 \
             --cpu-boost \

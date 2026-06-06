@@ -18,7 +18,12 @@
 set -euo pipefail
 
 PROJECT_ID="${GCP_PROJECT_ID:-project-59a14b18-b4df-4c6b-b09}"
+# Compute region (Cloud Run services).
 REGION="${GCP_REGION:-africa-south1}"
+# Tasks/Scheduler region. Cloud Tasks + Cloud Scheduler are NOT offered in
+# africa-south1, so the queue control plane lives in europe-west1 and pushes
+# cross-region into Cloud Run. Override via GCP_TASKS_REGION if needed.
+TASKS_REGION="${GCP_TASKS_REGION:-europe-west1}"
 INVOKER_SA_NAME="cloud-tasks-invoker"
 INVOKER_SA="${INVOKER_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 
