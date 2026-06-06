@@ -381,8 +381,8 @@ def op_booklet(payload: BookletRequest, db: Session = Depends(get_db)):
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "booklet_pdf", "imposition", body)
-    task = booklet_pdf.delay(asset_id, job_id, payload.sheet_width_mm, payload.sheet_height_mm)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("booklet_pdf", asset_id, job_id, payload.sheet_width_mm, payload.sheet_height_mm, queue="imposition")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
