@@ -276,12 +276,19 @@ jobs:
 
           deploy_worker() {
             local name="$1" role="$2" cpu="$3" mem="$4" max="$5" min="${6:-0}"
+            # NOTE: QUEUE_BACKEND=cloud_tasks must be on workers too — not just
+            # pdf-api. Without it, generate_previews on pdf-worker-light defaults
+            # to the Celery fan-out path and an enqueue() call from inside a
+            # worker task (e.g. scan_outbox → send_email) tries to use Redis,
+            # which doesn't exist on Cloud Run. Symptom: 24-page preview job
+            # restarts/salvages in a loop because per-page "render_one_page"
+            # dispatches go nowhere.
             gcloud run deploy "$name" \
               --image="${{ steps.tag.outputs.image }}" \
               --region="${{ env.GCP_REGION }}" \
               --service-account="${{ env.RUNTIME_SA }}" \
               --port=8080 \
-              --set-env-vars="ROLE=${role},LOG_LEVEL=INFO,APP_ENV=production,UVICORN_WORKERS=1,PYTHONUNBUFFERED=1" \
+              --set-env-vars="ROLE=${role},LOG_LEVEL=INFO,APP_ENV=production,UVICORN_WORKERS=1,PYTHONUNBUFFERED=1,QUEUE_BACKEND=cloud_tasks,GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }},GCP_TASKS_REGION=${{ env.GCP_TASKS_REGION }}" \
               --set-secrets="$SECRET_FLAG" \
               --memory="$mem" --cpu="$cpu" \
               --cpu-boost \
@@ -312,24 +319,33 @@ jobs:
           deploy_worker pdf-worker-emails worker-emails-http 1 512Mi 20 1
 
 
-      - name: Wire Cloud Tasks env vars on pdf-api
+      - name: Wire Cloud Tasks env vars on pdf-api AND workers
         run: |
-          # Single second-pass update on pdf-api: BEAT_SELF_URL (for OIDC
-          # audience on beat endpoints) + the Cloud Tasks enqueue config
-          # (TASKS_INVOKER_SA + per-queue worker URLs). Folded into one
-          # `gcloud run services update` so we only burn one extra revision.
-          # QUEUE_BACKEND=cloud_tasks is set in the initial deploy step so
-          # app.core.queue.enqueue routes through Cloud Tasks (not Celery).
+          # pdf-api gets BEAT_SELF_URL (for OIDC audience on beat endpoints)
+          # + the Cloud Tasks enqueue config (TASKS_INVOKER_SA + per-queue
+          # worker URLs). Workers ALSO get the enqueue config so any task
+          # that calls enqueue() from inside a worker (e.g. scan_outbox →
+          # send_email, normalize_asset → generate_previews) can push via
+          # Cloud Tasks rather than falling back to Celery/Redis.
           api_url=$(gcloud run services describe pdf-api          --region="${{ env.GCP_REGION }}" --format='value(status.url)')
           heavy_url=$(gcloud run services describe pdf-worker-heavy  --region="${{ env.GCP_REGION }}" --format='value(status.url)')
           light_url=$(gcloud run services describe pdf-worker-light  --region="${{ env.GCP_REGION }}" --format='value(status.url)')
           emails_url=$(gcloud run services describe pdf-worker-emails --region="${{ env.GCP_REGION }}" --format='value(status.url)')
           invoker_sa="cloud-tasks-invoker@${{ env.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
 
+          shared_tasks_env="TASKS_INVOKER_SA=${invoker_sa},WORKER_URL_HEAVY=${heavy_url},WORKER_URL_LIGHT=${light_url},WORKER_URL_EMAILS=${emails_url},QUEUE_BACKEND=cloud_tasks"
+
           gcloud run services update pdf-api \
             --region="${{ env.GCP_REGION }}" \
-            --update-env-vars="BEAT_SELF_URL=${api_url},TASKS_INVOKER_SA=${invoker_sa},WORKER_URL_HEAVY=${heavy_url},WORKER_URL_LIGHT=${light_url},WORKER_URL_EMAILS=${emails_url},QUEUE_BACKEND=cloud_tasks" \
+            --update-env-vars="BEAT_SELF_URL=${api_url},${shared_tasks_env}" \
             --quiet
+
+          for worker in pdf-worker-heavy pdf-worker-light pdf-worker-emails; do
+            gcloud run services update "$worker" \
+              --region="${{ env.GCP_REGION }}" \
+              --update-env-vars="$shared_tasks_env" \
+              --quiet
+          done
 
       - name: Summary
         run: |
