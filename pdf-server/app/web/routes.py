@@ -337,15 +337,17 @@ def op_nup(payload: NupRequest, db: Session = Depends(get_db)):
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "nup_pdf", "imposition", body)
-    task = nup_pdf.delay(
+    task_id = enqueue(
+        "nup_pdf",
         asset_id,
         job_id,
         payload.columns,
         payload.rows,
         payload.page_width_mm,
         payload.page_height_mm,
+        queue="imposition",
     )
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
