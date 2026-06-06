@@ -92,8 +92,11 @@ class StorageService:
 
         if self.mode == 's3':
             assert self._s3 is not None
-            with open(local_path, 'wb') as f:
-                self._s3.download_fileobj(settings.aws_s3_bucket, storage_path, f)
+            try:
+                with open(local_path, 'wb') as f:
+                    self._s3.download_fileobj(settings.aws_s3_bucket, storage_path, f)
+            except Exception as exc:  # noqa: BLE001
+                raise _classify_s3_error('download', storage_path, exc) from exc
             return local_path
 
         # supabase
