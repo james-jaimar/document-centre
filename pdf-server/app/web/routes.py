@@ -317,7 +317,8 @@ def op_resize(payload: ResizeRequest, db: Session = Depends(get_db)):
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "resize_pdf", "documents", body)
-    task = resize_pdf.delay(
+    task_id = enqueue(
+        "resize_pdf",
         asset_id,
         job_id,
         payload.width_mm,
@@ -325,8 +326,9 @@ def op_resize(payload: ResizeRequest, db: Session = Depends(get_db)):
         payload.fit_mode,
         payload.dominant_orientation,
         payload.respect_trim_box,
+        queue="documents",
     )
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
