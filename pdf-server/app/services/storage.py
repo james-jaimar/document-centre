@@ -54,12 +54,34 @@ def _classify_s3_error(op: str, key: str, exc: Exception) -> S3AccessError:
 
 
 
-s3_client = boto3.client(
-    's3',
-    region_name='af-south-1',
-    endpoint_url='https://s3.af-south-1.amazonaws.com',
-    config=Config(signature_version='s3v4', s3={'addressing_style': 'virtual'}),
-)
+def _build_s3_client(region: str, access_key: str | None = None, secret_key: str | None = None):
+    """Build a boto3 S3 client tuned for parallel preview uploads.
+
+    Defaults:
+      - connect_timeout=5s, read_timeout=30s (was unset → 60s+ default)
+      - max_pool_connections=32 (was 10) so the per-page upload pool
+        (render_io_concurrency=8) doesn't starve other workers.
+      - retries={'mode': 'standard', 'max_attempts': 3} so a single
+        S3 hiccup retries inside boto instead of failing the whole task.
+    """
+    cfg = Config(
+        signature_version='s3v4',
+        s3={'addressing_style': 'virtual'},
+        connect_timeout=int(os.getenv('S3_CONNECT_TIMEOUT', '5')),
+        read_timeout=int(os.getenv('S3_READ_TIMEOUT', '30')),
+        max_pool_connections=int(os.getenv('S3_MAX_POOL_CONNECTIONS', '32')),
+        retries={'mode': 'standard', 'max_attempts': 3},
+    )
+    kwargs: dict = {'region_name': region, 'config': cfg}
+    if access_key and secret_key:
+        kwargs['aws_access_key_id'] = access_key
+        kwargs['aws_secret_access_key'] = secret_key
+    else:
+        kwargs['endpoint_url'] = f'https://s3.{region}.amazonaws.com'
+    return boto3.client('s3', **kwargs)
+
+
+s3_client = _build_s3_client('af-south-1')
 S3_BUCKET = 'jaimar-dev-600743178200-af-south-1-an'
 
 
@@ -77,11 +99,10 @@ class StorageService:
         if self.mode == 's3':
             if boto3 is None:
                 raise RuntimeError('boto3 is required for S3 storage mode. Install it: pip install boto3')
-            self._s3 = boto3.client(
-                's3',
-                region_name=settings.aws_s3_region,
-                aws_access_key_id=settings.aws_access_key_id,
-                aws_secret_access_key=settings.aws_secret_access_key,
+            self._s3 = _build_s3_client(
+                settings.aws_s3_region,
+                access_key=settings.aws_access_key_id,
+                secret_key=settings.aws_secret_access_key,
             )
 
     # ------------------------------------------------------------------ #
