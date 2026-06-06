@@ -788,9 +788,17 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                         )
 
                     # Poll derived_files until all pages land or we time out.
+                    # Two exit conditions besides "all done":
+                    #   (a) hard deadline (render_fanout_timeout_seconds)
+                    #   (b) stall guard: if no new pages land for
+                    #       render_fanout_stall_seconds, bail out early so
+                    #       the salvage pass can recover the missing pages
+                    #       instead of sitting through the full timeout.
                     poll_interval = max(0.05, settings.render_fanout_poll_interval_ms / 1000.0)
                     deadline = time.monotonic() + max(10, settings.render_fanout_timeout_seconds)
+                    stall_window = max(5, getattr(settings, 'render_fanout_stall_seconds', 30))
                     last_event_count = len(completed_pages)
+                    last_progress_at = time.monotonic()
                     target = set(remaining)
                     while True:
                         present = derived_file_repo.pages_present(db, asset_id, 'preview_page') \
@@ -802,30 +810,39 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                             files_created.append({'kind': 'thumbnail_page', 'page': page_num, 'storage_path': None})
 
                         completed_count = len(completed_pages)
-                        if completed_count != last_event_count and (
-                            completed_count % 5 == 0 or completed_count == page_count
-                        ):
-                            page_evt = job_event_repo.start(
-                                db, job_id=job_id, asset_id=asset_id,
-                                task_name='generate_previews', queue_name='thumbnails',
-                                worker_name=self.request.hostname if self.request else None,
-                                stage='page_batch',
-                                metadata={'rendered': completed_count, 'total': page_count},
-                                message=f'Rendered {completed_count} of {page_count} pages',
-                            )
-                            if page_evt is not None:
-                                job_event_repo.finish(db, page_evt.id, message='', metadata={'rendered': completed_count, 'total': page_count})
+                        if completed_count != last_event_count:
+                            last_progress_at = time.monotonic()
+                            if completed_count % 5 == 0 or completed_count == page_count:
+                                page_evt = job_event_repo.start(
+                                    db, job_id=job_id, asset_id=asset_id,
+                                    task_name='generate_previews', queue_name='thumbnails',
+                                    worker_name=self.request.hostname if self.request else None,
+                                    stage='page_batch',
+                                    metadata={'rendered': completed_count, 'total': page_count},
+                                    message=f'Rendered {completed_count} of {page_count} pages',
+                                )
+                                if page_evt is not None:
+                                    job_event_repo.finish(db, page_evt.id, message='', metadata={'rendered': completed_count, 'total': page_count})
                             last_event_count = completed_count
 
                         if target.issubset(completed_pages):
                             break
-                        if time.monotonic() > deadline:
+                        now = time.monotonic()
+                        if now > deadline:
                             logger.warning(
                                 "generate_previews: fan-out timeout asset=%s missing=%s",
                                 asset_id, sorted(target - completed_pages),
                             )
                             break
+                        if (now - last_progress_at) > stall_window:
+                            logger.warning(
+                                "generate_previews: fan-out stalled %ss asset=%s missing=%s — falling through to salvage",
+                                int(now - last_progress_at), asset_id,
+                                sorted(target - completed_pages),
+                            )
+                            break
                         time.sleep(poll_interval)
+
 
                     # Cleanup the temp prepared PDF — best effort.
                     try:

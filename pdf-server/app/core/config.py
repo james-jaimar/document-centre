@@ -88,6 +88,11 @@ class Settings(BaseSettings):
     render_fanout_enabled: bool = Field(alias='RENDER_FANOUT_ENABLED', default=True)
     render_fanout_poll_interval_ms: int = Field(alias='RENDER_FANOUT_POLL_INTERVAL_MS', default=200)
     render_fanout_timeout_seconds: int = Field(alias='RENDER_FANOUT_TIMEOUT_SECONDS', default=300)
+    # Stall guard: if no new page lands within this many seconds, abandon
+    # the fan-out wait and let the salvage pass recover the gaps. Without
+    # this, a stuck subtask (e.g. recycled Cloud Run worker) could hold up
+    # the whole job until render_fanout_timeout_seconds expires.
+    render_fanout_stall_seconds: int = Field(alias='RENDER_FANOUT_STALL_SECONDS', default=30)
 
     # Single-process batch render: when page_count <= this threshold, run
     # ONE Ghostscript invocation for the whole document (avoiding N×
