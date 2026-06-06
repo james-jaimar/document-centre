@@ -120,11 +120,23 @@ gcloud run services add-iam-policy-binding "$API_SERVICE" \
   --member="serviceAccount:${INVOKER_SA}" \
   --role="roles/run.invoker" --quiet
 
-log "Granting roles/iam.serviceAccountTokenCreator on $INVOKER_SA to $RUNTIME_SA (Cloud Tasks OIDC enqueue)"
+log "Resolved pdf-api runtime service account: $RUNTIME_SA"
+log "Granting roles/iam.serviceAccountUser on $INVOKER_SA to $RUNTIME_SA (Cloud Tasks CreateTask needs actAs on the OIDC SA)"
+gcloud iam service-accounts add-iam-policy-binding "$INVOKER_SA" \
+  --project="$PROJECT_ID" \
+  --member="serviceAccount:${RUNTIME_SA}" \
+  --role="roles/iam.serviceAccountUser" --quiet
+
+log "Also granting roles/iam.serviceAccountTokenCreator (belt-and-braces for OIDC token minting)"
 gcloud iam service-accounts add-iam-policy-binding "$INVOKER_SA" \
   --project="$PROJECT_ID" \
   --member="serviceAccount:${RUNTIME_SA}" \
   --role="roles/iam.serviceAccountTokenCreator" --quiet
+
+log "Granting roles/cloudtasks.enqueuer on project to $RUNTIME_SA (CreateTask permission)"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:${RUNTIME_SA}" \
+  --role="roles/cloudtasks.enqueuer" --condition=None --quiet >/dev/null
 
 create_or_update_scheduler() {
   local name="$1" schedule="$2" url="$3"

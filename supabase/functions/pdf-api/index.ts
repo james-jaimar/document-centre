@@ -127,10 +127,28 @@ Deno.serve(async (req) => {
 
     console.log(`pdf-api: upstream responded ${upstream.status} ${upstream.statusText} for ${httpMethod} ${path}`);
 
-    // Forward the response
+    // Forward the response. If the upstream returned an error with a raw
+    // Python traceback (text/plain), wrap it in JSON so the UI doesn't show
+    // a giant red wall of stack frames.
     const responseText = await upstream.text();
     if (upstream.status >= 400) {
-      console.log(`pdf-api: upstream error body: ${responseText.slice(0, 500)}`);
+      console.log(`pdf-api: upstream error body: ${responseText.slice(0, 1000)}`);
+      const contentType = upstream.headers.get("content-type") ?? "";
+      const looksLikeJson = contentType.includes("application/json") ||
+        responseText.trim().startsWith("{") || responseText.trim().startsWith("[");
+      if (!looksLikeJson) {
+        // First line of the traceback is usually the most actionable.
+        const firstLine = responseText.split("\n").find((l) => l.trim().length > 0) ?? "PDF service error";
+        const summary = firstLine.length > 240 ? firstLine.slice(0, 237) + "..." : firstLine;
+        return new Response(
+          JSON.stringify({
+            error: `PDF service error (${upstream.status}): ${summary}`,
+            source: "edge_upstream_error",
+            upstream_status: upstream.status,
+          }),
+          { status: upstream.status, headers: jsonHeaders },
+        );
+      }
     }
     return new Response(responseText, {
       status: upstream.status,

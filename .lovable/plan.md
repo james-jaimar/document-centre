@@ -1,59 +1,50 @@
-## What the new error means
+Do I know what the issue is? Yes, enough to plan the fix.
 
-The upload is now failing at a different layer: the Document Centre API is still using the legacy Celery enqueue path during PDF inspection.
+What is happening:
+- The file upload itself is succeeding: `POST /v1/assets` returns `200 OK`.
+- The failure is the next step: `POST /v1/assets/{asset_id}/inspect` returns `500`.
+- That endpoint calls `enqueue("inspect_asset", ...)` in `pdf-server/app/web/routes.py`, which now enters the Google Cloud Tasks path in `pdf-server/app/core/queue.py`.
+- The new traceback starts inside `google/api_core/grpc_helpers.py`, so this is no longer the old Celery/Kombu failure. It is Cloud Tasks task creation failing.
+- The current bootstrap grants `roles/iam.serviceAccountTokenCreator` on `cloud-tasks-invoker` to `dc-pdf-runtime`, but the error class we have been chasing (`iam.serviceAccounts.actAs`) requires `roles/iam.serviceAccountUser` on the OIDC service account used in the task. TokenCreator is not the same permission.
 
-The visible stack points to:
+Plan:
+1. Fix the GCP bootstrap IAM grant
+   - Update `pdf-server/docker/gcp-tasks-bootstrap.sh` to grant `roles/iam.serviceAccountUser` on `cloud-tasks-invoker@...` to the actual runtime service account for `pdf-api`.
+   - Keep the existing TokenCreator grant only if useful, but make `serviceAccountUser` the required grant for Cloud Tasks OIDC enqueue.
+   - Add a clear verification line so the script prints the exact runtime service account it resolved.
 
-```text
-/app/app/core/queue.py, line 122, in enqueue
-result = task.apply_async(...)
-```
+2. Add a deployment guard
+   - Update the GitHub workflow notes/summary so this IAM grant is explicit in the Cloud Tasks setup instructions.
+   - This prevents future redeploys from reintroducing the same missing-permission problem.
 
-That line only runs when `QUEUE_BACKEND` is not set to `cloud_tasks`. So the current failure is not the earlier database-password issue and not the earlier `iam.serviceAccounts.actAs` issue. It is trying to enqueue the inspection job through Celery/Kombu instead of Cloud Tasks.
+3. Improve PDF API diagnostics
+   - Wrap `client.create_task(...)` in `pdf-server/app/core/queue.py` so Google Cloud errors are logged and returned as a concise actionable error instead of a huge FastAPI traceback.
+   - Include queue id, task name, runtime project/region, and the invoker service account in the server log.
 
-Do I know what the issue is? Yes: `pdf-api` needs `QUEUE_BACKEND=cloud_tasks` in Cloud Run now that upload inspection uses `app.core.queue.enqueue(...)`.
+4. Stop leaking raw Python tracebacks to the customer UI
+   - Adjust `supabase/functions/pdf-api/index.ts` so upstream `500` text tracebacks are converted into a safe JSON error for the app.
+   - The UI should show “PDF inspection could not be queued” rather than the red traceback panel.
 
-## Immediate production recovery
-
-Run this in Cloud Shell:
+5. After implementation, run lightweight validation
+   - Syntax-check the changed Bash, Python, and Edge Function files.
+   - Then you’ll need to rerun the bootstrap in Cloud Shell once, or run the equivalent IAM grant directly:
 
 ```bash
 PROJECT_ID=project-59a14b18-b4df-4c6b-b09
-REGION=africa-south1
+RUNTIME_SA=dc-pdf-runtime@${PROJECT_ID}.iam.gserviceaccount.com
+INVOKER_SA=cloud-tasks-invoker@${PROJECT_ID}.iam.gserviceaccount.com
 
-gcloud run services update pdf-api \
+gcloud iam service-accounts add-iam-policy-binding "$INVOKER_SA" \
   --project="$PROJECT_ID" \
-  --region="$REGION" \
-  --update-env-vars="QUEUE_BACKEND=cloud_tasks"
+  --member="serviceAccount:${RUNTIME_SA}" \
+  --role="roles/iam.serviceAccountUser" \
+  --quiet
 ```
 
-Then wait about 60 seconds and retry the same PDF upload.
-
-## Codebase fix I will make after approval
-
-1. Update `.github/workflows/pdf-server-deploy.yml`
-   - Add `QUEUE_BACKEND=cloud_tasks` to the `pdf-api` deploy/update environment so future deploys do not silently revert to Celery.
-   - Update the stale workflow comments that currently say `QUEUE_BACKEND` stays as `celery`.
-
-2. Update `pdf-server/docker/gcp-tasks-bootstrap.sh`
-   - Include `QUEUE_BACKEND=cloud_tasks` in the printed final env guidance.
-   - Keep the existing invoker/IAM setup intact.
-
-3. Add a lightweight guard/diagnostic if appropriate
-   - Make Cloud Tasks mode fail with a clearer message if the required Cloud Tasks env vars are missing, instead of falling back into confusing Celery/Kombu traces.
-
-## Why this should fix the current screenshot
-
-The screenshot shows the upload reached `Inspecting PDF...` and then the API crashed while enqueuing the inspection task. With `QUEUE_BACKEND=cloud_tasks`, that same enqueue call will use `google.cloud.tasks` and the worker URLs/invoker service account already configured in the previous steps, instead of trying to contact the old Celery broker.
-
-```xml
 <presentation-actions>
   <presentation-open-history>View History</presentation-open-history>
 </presentation-actions>
-```
 
-```xml
 <presentation-actions>
 <presentation-link url="https://docs.lovable.dev/tips-tricks/troubleshooting">Troubleshooting docs</presentation-link>
 </presentation-actions>
-```

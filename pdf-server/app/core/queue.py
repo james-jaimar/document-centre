@@ -105,7 +105,18 @@ def _cloud_tasks_enqueue(
             },
         }
     }
-    response = client.create_task(request={"parent": parent, "task": task})
+    try:
+        response = client.create_task(request={"parent": parent, "task": task})
+    except Exception as exc:  # noqa: BLE001
+        log.error(
+            "cloud_tasks create_task failed task=%s queue=%s project=%s region=%s invoker_sa=%s worker_url=%s err=%s",
+            task_name, queue_id, project, region, invoker_sa, worker_url, exc,
+        )
+        raise RuntimeError(
+            f"Cloud Tasks enqueue failed for {task_name!r} on queue {queue_id!r}: {type(exc).__name__}: {exc}. "
+            f"Check that the pdf-api runtime SA has roles/cloudtasks.enqueuer on the project AND "
+            f"roles/iam.serviceAccountUser on {invoker_sa}."
+        ) from exc
     log.info("enqueued cloud task name=%s queue=%s task=%s", task_name, queue_id, response.name)
     return response.name
 
