@@ -65,6 +65,7 @@ from app.tasks.production_tasks import (
     assemble_imposed_sheet_for_job,
     render_job_ticket_for_job,
 )
+from app.core.queue import enqueue
 
 api_router = APIRouter()
 storage = StorageService()
