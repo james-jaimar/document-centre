@@ -834,8 +834,9 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                     last_progress_at = time.monotonic()
                     target = set(remaining)
                     while True:
-                        present = derived_file_repo.pages_present(db, asset_id, 'preview_page') \
-                                  & derived_file_repo.pages_present(db, asset_id, 'thumbnail_page')
+                        # Single query for both kinds — was two pages_present()
+                        # round-trips per poll tick.
+                        present = derived_file_repo.pages_present_both(db, asset_id)
                         landed = (present & target) - completed_pages
                         for page_num in sorted(landed):
                             completed_pages.add(page_num)
