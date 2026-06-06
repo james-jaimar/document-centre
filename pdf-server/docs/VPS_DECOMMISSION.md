@@ -159,3 +159,30 @@ Cloud Scheduler `email-scan-outbox` job (every 1 min) is a sufficient
 fallback in the meantime. Both the webhook and the listener can run
 simultaneously without producing duplicate sends because
 `claim_email_batch()` uses `FOR UPDATE SKIP LOCKED`.
+
+## VPS ↔ Cloud Run runtime differences (cheat sheet)
+
+Behavioural gaps to be aware of when debugging — none of them are code
+bugs, they're consequences of the runtime topology change.
+
+| Concern | VPS (Celery + Redis) | Cloud Run + Cloud Tasks |
+| --- | --- | --- |
+| Worker warmth | 8 prefork children always resident on `light` | `--concurrency=1`, instances cold-start on demand |
+| Per-page render fan-out | Instant pickup by warm children | One Cloud Run cold start per page → very slow |
+| PDF handoff cache | Shared `/var/cache/document-centre/pdf-cache` between heavy + light | Separate ephemeral FS per service — cache always misses |
+| Email push path | Long-lived `LISTEN email_enqueued` process | `pg_net.http_post` Database Webhook → `/internal/email/notify` |
+| Email safety-net sweep | Celery beat every 30s | Cloud Scheduler every 1 min (`email-scan-outbox`) |
+| Stuck-claim recovery | Celery beat every 5 min | Cloud Scheduler every 5 min (`email-release-stuck`) |
+| Beat scheduler | `celery beat` in-process schedule | Cloud Scheduler jobs created by `gcp-tasks-bootstrap.sh` |
+| `print(...)` visibility | journalctl captured everything | Only `logger.*` lands in Cloud Logging |
+
+### Render fan-out is force-disabled under Cloud Tasks
+
+`pdf-server/app/tasks/document_tasks.py::generate_previews` checks
+`QUEUE_BACKEND` at runtime — when it's `cloud_tasks`, fan-out is
+disabled regardless of `RENDER_FANOUT_ENABLED`, and the in-process
+`ThreadPoolExecutor` path runs all remaining pages inside the one warm
+container. This mirrors the VPS prefork behaviour and avoids paying
+N cold starts. Keep `pdf-worker-light` at `--cpu=4 --memory=4Gi` so the
+thread pool actually has 4 vCPUs to spread across.
+
