@@ -238,8 +238,8 @@ def queue_asset_inspection(
         raise HTTPException(404, "Asset not found")
 
     job_id = job_repo.create_job(db, asset_id, "inspect_asset", "default", {"force": force})
-    task = inspect_asset.delay(asset_id, job_id, force)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("inspect_asset", asset_id, job_id, force, queue="default")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id, "force": force}
 
 
