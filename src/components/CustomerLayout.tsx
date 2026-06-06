@@ -4,7 +4,7 @@ import CustomerHeader from "@/components/CustomerHeader";
 import CustomerFooter from "@/components/CustomerFooter";
 import { PanelLeftOpen } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { useMemo, useEffect, useRef } from "react";
+import { useMemo, useEffect, useRef, useState } from "react";
 import { SidebarCollapseProvider, useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { supabase } from "@/integrations/supabase/client";
 import { hasTenantSignOutFlag, clearTenantSignOutFlag } from "@/lib/tenantSignOut";
