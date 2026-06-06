@@ -58,24 +58,41 @@ export function useTenantFromSlug() {
       setLoading(true);
     }
 
-    (async () => {
-      setError(null);
+    const fetchOnce = async () => {
       const { data, error: err } = await supabase
         .from("tenants")
         .select("id, name, slug, logo_url, custom_domain, is_demo")
         .eq("slug", slug)
         .eq("is_active", true)
         .maybeSingle();
+      if (err) throw err;
+      return data as SlugTenant | null;
+    };
 
-      if (err) {
-        setError(err.message);
-      } else if (!data) {
-        setError("Storefront not found");
-      } else {
-        setTenant(data as SlugTenant);
-        writeCache(slug, data as SlugTenant);
+    (async () => {
+      setError(null);
+      try {
+        let data: SlugTenant | null = null;
+        try {
+          data = await fetchOnce();
+        } catch (e) {
+          // Single retry on transient network error
+          await new Promise((r) => setTimeout(r, 250));
+          data = await fetchOnce();
+        }
+        if (!data) {
+          // Only surface "not found" when we have no cached tenant to render from
+          if (!cached) setError("Storefront not found");
+        } else {
+          setTenant(data);
+          writeCache(slug, data);
+        }
+      } catch (e: any) {
+        console.warn("[useTenantFromSlug] lookup failed", e);
+        if (!cached) setError(e?.message ?? "Network error");
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     })();
   }, [slug]);
 
