@@ -253,16 +253,19 @@ jobs:
           # NOT --allow-unauthenticated — only the cloud-tasks-invoker SA
           # (created by gcp-tasks-bootstrap.sh) may invoke. WORKER_SELF_URL
           # is set in a second pass below once the URL exists.
-          SECRET_FLAG="DATABASE_URL=PDF_DATABASE_URL:latest,\
-SUPABASE_URL=PDF_SUPABASE_URL:latest,\
-SUPABASE_SERVICE_ROLE_KEY=PDF_SUPABASE_SERVICE_ROLE_KEY:latest,\
-SECRET_KEY=PDF_SECRET_KEY:latest,\
-CORS_ORIGINS=PDF_CORS_ORIGINS:latest,\
-STORAGE_MODE=PDF_STORAGE_MODE:latest,\
-AWS_S3_BUCKET=PDF_AWS_S3_BUCKET:latest,\
-AWS_S3_REGION=PDF_AWS_S3_REGION:latest,\
-AWS_ACCESS_KEY_ID=PDF_AWS_ACCESS_KEY_ID:latest,\
-AWS_SECRET_ACCESS_KEY=PDF_AWS_SECRET_ACCESS_KEY:latest"
+          SECRETS=(
+            "DATABASE_URL=PDF_DATABASE_URL:latest"
+            "SUPABASE_URL=PDF_SUPABASE_URL:latest"
+            "SUPABASE_SERVICE_ROLE_KEY=PDF_SUPABASE_SERVICE_ROLE_KEY:latest"
+            "SECRET_KEY=PDF_SECRET_KEY:latest"
+            "CORS_ORIGINS=PDF_CORS_ORIGINS:latest"
+            "STORAGE_MODE=PDF_STORAGE_MODE:latest"
+            "AWS_S3_BUCKET=PDF_AWS_S3_BUCKET:latest"
+            "AWS_S3_REGION=PDF_AWS_S3_REGION:latest"
+            "AWS_ACCESS_KEY_ID=PDF_AWS_ACCESS_KEY_ID:latest"
+            "AWS_SECRET_ACCESS_KEY=PDF_AWS_SECRET_ACCESS_KEY:latest"
+          )
+          SECRET_FLAG=$(IFS=,; echo "${SECRETS[*]}")
 
           deploy_worker() {
             local name="$1" role="$2" cpu="$3" mem="$4" max="$5"
@@ -291,6 +294,7 @@ AWS_SECRET_ACCESS_KEY=PDF_AWS_SECRET_ACCESS_KEY:latest"
           deploy_worker pdf-worker-heavy  worker-heavy-http  2 4Gi  5
           deploy_worker pdf-worker-light  worker-light-http  1 1Gi  20
           deploy_worker pdf-worker-emails worker-emails-http 1 512Mi 10
+
 
       - name: Set BEAT_SELF_URL on pdf-api
         run: |
