@@ -83,6 +83,64 @@ class DerivedFileRepository:
         """), params)
         db.commit()
 
+    def bulk_upsert_page_files(
+        self,
+        db: Session,
+        *,
+        asset_id: str,
+        job_id: str | None,
+        rows: list[dict],
+    ) -> int:
+        """Insert/update many per-page preview/thumbnail rows in ONE
+        transaction using the (asset_id, kind, page) unique partial index.
+
+        Each row dict must contain: kind, storage_path, media_type, page,
+        width, height, metadata (dict). Replaces N individual select +
+        update + commit cycles from create_file() — the per-page bottleneck
+        observed on multi-page uploads.
+
+        Returns the number of rows processed.
+        """
+        if not rows:
+            return 0
+        sql = text(
+            """
+            insert into derived_files
+                (asset_id, job_id, kind, storage_path, media_type,
+                 page, width, height, metadata)
+            values
+                (:asset_id, :job_id, :kind, :storage_path, :media_type,
+                 :page, :width, :height, cast(:metadata as jsonb))
+            on conflict (asset_id, kind, page)
+              where kind in ('preview_page', 'thumbnail_page')
+                and page is not null
+            do update set
+                job_id       = excluded.job_id,
+                storage_path = excluded.storage_path,
+                media_type   = excluded.media_type,
+                width        = excluded.width,
+                height       = excluded.height,
+                metadata     = excluded.metadata
+            """
+        )
+        params = [
+            {
+                'asset_id': asset_id,
+                'job_id': job_id,
+                'kind': r['kind'],
+                'storage_path': r['storage_path'],
+                'media_type': r.get('media_type', 'image/png'),
+                'page': r.get('page'),
+                'width': r.get('width'),
+                'height': r.get('height'),
+                'metadata': json.dumps(r.get('metadata') or {}),
+            }
+            for r in rows
+        ]
+        db.execute(sql, params)
+        db.commit()
+        return len(params)
+
     def list_for_asset(self, db: Session, asset_id: str):
         rows = db.execute(text('select * from derived_files where asset_id=:asset_id order by created_at desc, page asc nulls last'), {'asset_id': asset_id}).mappings().all()
         return [dict(r) for r in rows]
@@ -96,6 +154,23 @@ class DerivedFileRepository:
             where asset_id = :asset_id and kind = :kind and page is not null
             """
         ), {'asset_id': asset_id, 'kind': kind}).all()
+        return {int(r[0]) for r in rows}
+
+    def pages_present_both(self, db: Session, asset_id: str) -> set[int]:
+        """Single query that returns pages with BOTH preview_page and
+        thumbnail_page recorded. Replaces two pages_present() round-trips
+        in the fan-out polling loop."""
+        rows = db.execute(text(
+            """
+            select page
+              from derived_files
+             where asset_id = :asset_id
+               and kind in ('preview_page', 'thumbnail_page')
+               and page is not null
+             group by page
+             having count(distinct kind) = 2
+            """
+        ), {'asset_id': asset_id}).all()
         return {int(r[0]) for r in rows}
 
     def clear_page_renders(self, db: Session, asset_id: str) -> int:
