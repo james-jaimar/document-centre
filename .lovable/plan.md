@@ -1,112 +1,49 @@
-## What is actually failing now
+## What I found
 
-The current error is no longer the Cloud Tasks enqueue/IAM problem. The inspect job is being created and run, then failing inside the worker when it tries to read the uploaded PDF from S3:
+- The latest preview job did complete successfully in the backend:
+  - `generate_previews` job `60dc3374-e8ce-482b-8ef4-9902864ac81c`
+  - Status: `completed`
+  - Rendered `24/24` pages
+- The document row is still `document_status = processing` with `preflight_data.awaiting_review = true` and no `thumbnail_urls` saved.
+- The uploaded PDF is detected as **US Letter** (`215.9 × 279.4mm`), while the product/session appears to expect an SA/ISO size, so the app correctly flags a size advisory. But the current flow can leave the upload modal saying “Rendering pages…” instead of cleanly transitioning to “Review needed” / closing.
 
-```text
-pdf-server/app/tasks/document_tasks.py:239 -> storage.download(...)
-pdf-server/app/services/storage.py:96 -> boto3 download_fileobj(...)
-botocore.exceptions.ClientError: 403 HeadObject Forbidden
-```
+## Root issue to fix
 
-So the issue is: **the Cloud Run PDF runtime can’t `HeadObject/GetObject` the S3 object that the browser successfully uploaded.**
+There are two frontend flow problems:
 
-Most likely cause: the frontend upload signer (`supabase/functions/s3-storage`) and the Cloud Run PDF server (`PDF_AWS_*` secrets in GCP Secret Manager) are not using the same working S3 permissions, bucket, region, or object-prefix policy.
+1. **Advisory-state uploads are not finalised cleanly**
+   - When a size advisory is present, the code leaves the document as `processing` with `awaiting_review=true`.
+   - That is valid for the document list, but the upload modal should not keep behaving like active rendering is still happening.
 
-## Plan
+2. **Preallocated preview-job polling can wait on the wrong state**
+   - `prepare_for_product` may pre-create a `preview_job_id` before it actually enqueues the render task.
+   - The frontend polls that preallocated job directly. If the chain is not dispatched as expected, the UI can sit at 75% for a long time even though later/manual preview generation may complete.
 
-### 1. Verify the live S3 configuration used by both sides
+## Implementation plan
 
-Check these are aligned:
+1. **Update upload finalisation in `src/hooks/useDocumentUpload.ts`**
+   - For advisory uploads, mark the upload modal item as done once the advisory metadata is saved.
+   - Keep the document row as `processing` + `awaiting_review=true` so the file card still shows “Review needed”.
+   - Use status text like `Review needed` instead of `Rendering pages…`.
 
-- Supabase `s3-storage` connection used for upload signing
-- GCP Secret Manager values mounted into Cloud Run:
-  - `PDF_STORAGE_MODE=s3`
-  - `PDF_AWS_S3_BUCKET`
-  - `PDF_AWS_S3_REGION`
-  - `PDF_AWS_ACCESS_KEY_ID`
-  - `PDF_AWS_SECRET_ACCESS_KEY`
+2. **Harden the preview-render step**
+   - If a prechained preview job id is missing or remains non-running too long, fall back to explicitly calling `generatePreviews(assetId, renderBox)`.
+   - This prevents the frontend from being trapped polling a preallocated job that was never dispatched.
 
-Expected bucket from the current code/docs is:
+3. **Make thumbnail persistence recover from already-rendered previews**
+   - After `generate_previews` completes, always re-read `derived_files` and write `documents.thumbnail_urls` when all pages exist.
+   - If the backend has already rendered all pages but the document row was not updated, the frontend can self-heal without another upload.
 
-```text
-jaimar-dev-600743178200-af-south-1-an
-```
+4. **Add better timeout/error handling for polling**
+   - Keep normal jobs polling long enough for real work.
+   - Add a shorter guard for preallocated chained preview jobs so the fallback starts quickly instead of waiting for minutes.
 
-Expected object key that failed:
+5. **Validation**
+   - Re-check the affected document/asset state in Supabase after the change.
+   - Confirm new uploads either:
+     - finish and show thumbnails, or
+     - finish the modal and show “Review needed” for US Letter/custom-size advisory files.
 
-```text
-tenants/72347b5f-ca94-4e25-9235-5bd2e554beeb/uploads/16602492-a84e-414b-af5c-c6a0d86e2bc9/469ed46d-0876-46a8-9e2c-c7f99beb4586/8pp_A4.pdf
-```
+## Immediate state note
 
-### 2. Fix AWS IAM/S3 permissions for the Cloud Run PDF key
-
-The IAM user/access key stored in `PDF_AWS_ACCESS_KEY_ID` must allow at least:
-
-```json
-{
-  "Effect": "Allow",
-  "Action": [
-    "s3:GetObject",
-    "s3:PutObject",
-    "s3:DeleteObject"
-  ],
-  "Resource": "arn:aws:s3:::jaimar-dev-600743178200-af-south-1-an/*"
-}
-```
-
-And if the policy is scoped by prefix, it must include:
-
-```text
-tenants/*
-```
-
-If the bucket policy has any explicit deny conditions, confirm they do not block the Cloud Run key/user.
-
-### 3. Update GCP Secret Manager if the Cloud Run key is wrong/stale
-
-If the AWS key in GCP is not the same key that can read the uploaded objects, add a new secret version for:
-
-- `PDF_AWS_ACCESS_KEY_ID`
-- `PDF_AWS_SECRET_ACCESS_KEY`
-- and, if needed, `PDF_AWS_S3_BUCKET` / `PDF_AWS_S3_REGION`
-
-Then redeploy or update the Cloud Run services so `pdf-api`, `pdf-worker-heavy`, and `pdf-worker-light` all pick up the latest secret versions.
-
-### 4. Add a small runtime S3 diagnostic to prevent blind debugging next time
-
-Implement a safe internal diagnostic in the PDF server that reports only non-secret facts:
-
-- storage mode
-- bucket name
-- region
-- caller/access-key fingerprint only, not the secret
-- whether `HeadObject` succeeds for a supplied key
-- clear classification: missing object vs permission denied vs wrong region/bucket
-
-This should be admin/internal only and must not expose credentials.
-
-### 5. Improve error reporting for future upload failures
-
-Change the worker’s storage download failure handling so job errors say something actionable like:
-
-```text
-S3 read failed: permission denied for bucket=<bucket>, key=<key>. Check PDF_AWS_* credentials and bucket policy.
-```
-
-instead of surfacing raw `botocore` tracebacks to the customer upload UI.
-
-### 6. Validate end-to-end
-
-After the permissions/secrets are corrected:
-
-1. Upload the same PDF again.
-2. Confirm `POST /v1/assets` succeeds.
-3. Confirm `POST /v1/assets/{id}/inspect` creates the job.
-4. Confirm the job reaches `completed`, not `failed`.
-5. Confirm thumbnails/previews continue without S3 read/write errors.
-
-## Technical notes
-
-- Cloud Tasks appears to be delivering now; otherwise the job would stay queued or `/inspect` would 500 during enqueue.
-- The current failure is specifically S3 `HeadObject`, which has the same permission requirements as object read access.
-- AWS documentation confirms S3 `403 Forbidden` means access is explicitly or implicitly denied, and Boto3 `head_object` behaves like a metadata-only object read.
+The current uploaded file is not lost: its backend asset is rendered and ready. The visible stuck state is the app failing to transition/persist the document UI state after that processing path.
