@@ -117,6 +117,50 @@ export default function OrderFiles() {
   const updateSection = useUpdateSection();
   const deleteSection = useDeleteSection();
 
+  // Self-heal stuck documents: if a previous upload session ended (modal
+  // closed, page reloaded, etc.) before the document row was flipped to
+  // 'ready', reconcile against backend state. Only patches docs where the
+  // backend already has every page rendered AND the doc is not awaiting
+  // user review. No-ops otherwise.
+  const reconcileAttemptedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!documents || documents.length === 0) return;
+    const stuck = documents.filter((d) => {
+      if (d.document_status !== "processing") return false;
+      if (!d.backend_asset_id) return false;
+      const pf = (d.preflight_data as Record<string, unknown> | null) ?? {};
+      if (pf.awaiting_review === true) return false;
+      const key = `${d.id}:${d.backend_asset_id}`;
+      if (reconcileAttemptedRef.current.has(key)) return false;
+      return true;
+    });
+    if (stuck.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      let healedAny = false;
+      for (const d of stuck) {
+        const key = `${d.id}:${d.backend_asset_id}`;
+        reconcileAttemptedRef.current.add(key);
+        const healed = await reconcileStuckDocument({
+          id: d.id,
+          document_status: d.document_status,
+          backend_asset_id: d.backend_asset_id,
+          preflight_data: d.preflight_data,
+          thumbnail_urls: d.thumbnail_urls,
+        });
+        if (healed) healedAny = true;
+        if (cancelled) return;
+      }
+      if (healedAny) {
+        await refetchDocuments?.();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [documents, refetchDocuments]);
+
+
   // Helper: ensure an order exists before uploading, returns the orderItemId
   // When skipNavigate is true the caller is responsible for navigating after
   // its own async work completes (used by the fromDoc clone flow).
