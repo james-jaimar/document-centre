@@ -42,3 +42,20 @@ export function buildTenantPath(
   const clean = rest.replace(/^\//, "");
   return `/t/${slug}/${branch}${clean}`.replace(/\/$/, "");
 }
+
+/**
+ * Returns true if the hostname is the platform/marketing host (or a local/preview
+ * host that should behave like one). Any other hostname is treated as a tenant
+ * host (custom domain or {slug}.document-centre.com) where the Document Centre
+ * marketing landing must NEVER render.
+ */
+export function isPlatformHost(hostname: string): boolean {
+  const h = hostname.replace(/^www\./, "");
+  if (h === "document-centre.com") return true;
+  if (h === "localhost" || h === "127.0.0.1") return true;
+  if (h.endsWith(".lovable.app")) return true;
+  if (h.endsWith(".lovable.dev")) return true;
+  if (h.endsWith(".lovableproject.com")) return true;
+  if (h.endsWith(".jaimar.dev")) return true;
+  return false;
+}
