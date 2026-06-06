@@ -1,49 +1,79 @@
-## What I found
+# Retire VPS & supercharge thumbnail performance
 
-- The latest preview job did complete successfully in the backend:
-  - `generate_previews` job `60dc3374-e8ce-482b-8ef4-9902864ac81c`
-  - Status: `completed`
-  - Rendered `24/24` pages
-- The document row is still `document_status = processing` with `preflight_data.awaiting_review = true` and no `thumbnail_urls` saved.
-- The uploaded PDF is detected as **US Letter** (`215.9 × 279.4mm`), while the product/session appears to expect an SA/ISO size, so the app correctly flags a size advisory. But the current flow can leave the upload modal saying “Rendering pages…” instead of cleanly transitioning to “Review needed” / closing.
+## Part 1 — Replace VPS email listener with Supabase Database Webhook
 
-## Root issue to fix
+**Goal:** eliminate the `document-centre-listener-emails` systemd service and shut down the VPS. 30–60s email latency is acceptable.
 
-There are two frontend flow problems:
+### Steps
 
-1. **Advisory-state uploads are not finalised cleanly**
-   - When a size advisory is present, the code leaves the document as `processing` with `awaiting_review=true`.
-   - That is valid for the document list, but the upload modal should not keep behaving like active rendering is still happening.
+1. **Add endpoint** `POST /internal/email/notify` on `pdf-api`
+   - Enqueues a `scan_outbox` Cloud Task on `emails-control` (same path the VPS listener uses today).
+   - OIDC-protected, matching the existing `/internal/beat/*` routes.
+   - Idempotent — bursts collapse to one scan via Cloud Tasks dedupe.
 
-2. **Preallocated preview-job polling can wait on the wrong state**
-   - `prepare_for_product` may pre-create a `preview_job_id` before it actually enqueues the render task.
-   - The frontend polls that preallocated job directly. If the chain is not dispatched as expected, the UI can sit at 75% for a long time even though later/manual preview generation may complete.
+2. **Create Supabase Database Webhook**
+   - Trigger: `AFTER INSERT ON public.email_outbox`
+   - Target: `https://<pdf-api-url>/internal/email/notify`
+   - Auth: bearer token via `pg_net` headers.
+   - Replaces the existing `notify_email_dispatcher` `pg_notify` trigger.
 
-## Implementation plan
+3. **Cutover**
+   - Deploy endpoint → enable webhook → verify a few test sends.
+   - Cloud Scheduler `email-scan-outbox` (1 min) stays as safety net.
+   - No parallel burn-in needed — both paths claim through `claim_email_batch` with `FOR UPDATE SKIP LOCKED`, so dupes are impossible.
 
-1. **Update upload finalisation in `src/hooks/useDocumentUpload.ts`**
-   - For advisory uploads, mark the upload modal item as done once the advisory metadata is saved.
-   - Keep the document row as `processing` + `awaiting_review=true` so the file card still shows “Review needed”.
-   - Use status text like `Review needed` instead of `Rendering pages…`.
+4. **Decommission VPS**
+   - `systemctl disable --now document-centre-listener-emails.service`
+   - Cancel VPS, update `pdf-server/docs/GCP_CUTOVER.md`.
 
-2. **Harden the preview-render step**
-   - If a prechained preview job id is missing or remains non-running too long, fall back to explicitly calling `generatePreviews(assetId, renderBox)`.
-   - This prevents the frontend from being trapped polling a preallocated job that was never dispatched.
+## Part 2 — Thumbnail performance: verify parallelism, then throw CPU at it
 
-3. **Make thumbnail persistence recover from already-rendered previews**
-   - After `generate_previews` completes, always re-read `derived_files` and write `documents.thumbnail_urls` when all pages exist.
-   - If the backend has already rendered all pages but the document row was not updated, the frontend can self-heal without another upload.
+**Strategy:** Cloud Run bills vCPU-seconds. If thumbnail rendering parallelises across CPUs, doubling CPU halves wall-clock time at ~same cost. So the right order is **measure first, then scale**.
 
-4. **Add better timeout/error handling for polling**
-   - Keep normal jobs polling long enough for real work.
-   - Add a shorter guard for preallocated chained preview jobs so the fallback starts quickly instead of waiting for minutes.
+### Step 1 — Audit the thumbnail render path (read-only investigation)
 
-5. **Validation**
-   - Re-check the affected document/asset state in Supabase after the change.
-   - Confirm new uploads either:
-     - finish and show thumbnails, or
-     - finish the modal and show “Review needed” for US Letter/custom-size advisory files.
+Trace `generate_previews` in `pdf-server/app/tasks/` to answer:
+- Does it render pages with a process pool / thread pool, or a `for` loop?
+- Does each page render shell out to Ghostscript/pdftoppm one-at-a-time, or batch?
+- Is S3 upload of finished thumbnails serial or concurrent?
 
-## Immediate state note
+This audit drives the decision. No code changes in step 1.
 
-The current uploaded file is not lost: its backend asset is rendered and ready. The visible stuck state is the app failing to transition/persist the document UI state after that processing path.
+### Step 2 — If sequential, parallelise it first
+
+Convert the per-page loop to a `concurrent.futures.ProcessPoolExecutor` sized to `os.cpu_count()`. Each child process renders one page. Ghostscript is single-threaded per invocation, so process pool > thread pool here.
+
+### Step 3 — Scale `pdf-worker-light` aggressively
+
+Once parallelism is confirmed, update `.github/workflows/pdf-server-deploy.yml`:
+
+| Setting | Current | Proposed | Rationale |
+|---|---|---|---|
+| `--cpu` | 1 | **4** | 4 pages render in parallel; wall-clock ÷ 4 |
+| `--memory` | 1Gi | **4Gi** | Headroom for 4 concurrent Ghostscript processes |
+| `--concurrency` | 1 | 1 | One job per container — full CPU per job |
+| `--max-instances` | 20 | 20 | Unchanged |
+| `--min-instances` | 0 | 0 | Cold start acceptable; saves flat cost |
+
+**Cost expectation:** roughly cost-neutral per job (4× CPU rate × ¼ duration). Customer waits ~¼ as long for thumbnails.
+
+### Step 4 — Measure
+
+Upload representative test PDFs (10, 50, 100 pages) before and after. Record:
+- Time-to-first-thumbnail
+- Time-to-all-thumbnails
+- Cloud Run billing for the same workload (GCP Console → Billing → Cloud Run line item)
+
+If 4 CPU isn't enough, bump to 8. The ceiling on Cloud Run is 8 vCPU / 32 GiB per instance.
+
+### What we deliberately skip
+
+- **`min-instances=1`** — user is fine with cold start; saves ~€8–12/month.
+- **Heavy / API / email worker changes** — they're sized correctly for their workloads.
+
+## Technical notes
+
+- New endpoint lives in `pdf-server/app/web/` (sibling to `beat_routes.py`), reuses existing OIDC verification.
+- Supabase webhook uses `supabase_functions.http_request` via `pg_net`.
+- Parallelisation pattern: `ProcessPoolExecutor(max_workers=os.cpu_count())` around the per-page render fn.
+- Both parts are independent — can ship in either order.
