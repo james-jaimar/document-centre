@@ -7,6 +7,7 @@ Mounted on the pdf-api service only.
 """
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 from typing import Any
@@ -19,8 +20,10 @@ from app.tasks.registry import resolve
 log = logging.getLogger("beat_routes")
 
 beat_router = APIRouter(prefix="/internal/beat", tags=["internal"])
+email_push_router = APIRouter(prefix="/internal/email", tags=["internal"])
 
 _EXPECTED_AUDIENCE = os.getenv("BEAT_SELF_URL")
+_EMAIL_NOTIFY_TOKEN = os.getenv("EMAIL_NOTIFY_TOKEN", "")
 
 
 def _verify_oidc(request: Request) -> None:
