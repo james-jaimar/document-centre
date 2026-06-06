@@ -287,8 +287,8 @@ def op_rotate(payload: RotateRequest, db: Session = Depends(get_db)):
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "rotate_pdf", "documents", body)
-    task = rotate_pdf.delay(asset_id, job_id, payload.angle)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("rotate_pdf", asset_id, job_id, payload.angle, queue="documents")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
