@@ -459,8 +459,8 @@ def op_normalize_orientation(payload: NormalizeOrientationRequest, db: Session =
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "normalize_orientation", "default", body)
-    task = normalize_orientation.delay(asset_id, job_id, payload.dominant)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("normalize_orientation", asset_id, job_id, payload.dominant, queue="default")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
