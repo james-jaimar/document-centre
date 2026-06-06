@@ -208,6 +208,10 @@ jobs:
             "SUPABASE_STORAGE_BUCKET=PDF_SUPABASE_STORAGE_BUCKET"
             "ADMIN_USERNAME=PDF_ADMIN_USERNAME"
             "ADMIN_PASSWORD=PDF_ADMIN_PASSWORD"
+            # Shared secret used by the Supabase Database Webhook that
+            # replaces the VPS LISTEN/NOTIFY listener. Optional so deploys
+            # don't break before the secret is created.
+            "EMAIL_NOTIFY_TOKEN=PDF_EMAIL_NOTIFY_TOKEN"
           )
           SECRETS=("${BASE_SECRETS[@]}")
           for entry in "${OPTIONAL[@]}"; do
