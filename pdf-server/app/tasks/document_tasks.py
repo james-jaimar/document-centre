@@ -779,11 +779,13 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                         len(remaining), prepared_storage_path,
                     )
                     for p in remaining:
-                        render_one_page.apply_async(kwargs=dict(
+                        enqueue(
+                            "render_one_page",
+                            queue="thumbnails",
                             asset_id=asset_id, job_id=job_id, page=p,
                             prepared_storage_path=prepared_storage_path,
                             prefix=prefix, dpi=settings.preview_dpi,
-                        ))
+                        )
 
                     # Poll derived_files until all pages land or we time out.
                     poll_interval = max(0.05, settings.render_fanout_poll_interval_ms / 1000.0)
