@@ -25,8 +25,10 @@ if IS_API:
     app.include_router(email_webhooks_router)
     app.mount('/static', StaticFiles(directory='app/static'), name='static')
     # Cloud Scheduler beat endpoints (replaces Celery beat).
-    from app.web.beat_routes import beat_router
+    from app.web.beat_routes import beat_router, email_push_router
     app.include_router(beat_router)
+    # Supabase Database Webhook push endpoint (replaces VPS LISTEN/NOTIFY).
+    app.include_router(email_push_router)
 
 if IS_HTTP_WORKER:
     # Cloud Tasks → worker push endpoints.
