@@ -112,8 +112,48 @@ class StorageService:
 
 
     # ------------------------------------------------------------------ #
+    # Diagnostics
+    # ------------------------------------------------------------------ #
+
+    def diagnose(self, storage_path: str | None = None) -> dict:
+        """Return non-secret S3 diagnostics. Optionally HEAD a specific key."""
+        info: dict = {
+            'mode': self.mode,
+            'bucket': settings.aws_s3_bucket,
+            'region': settings.aws_s3_region,
+            'access_key_fingerprint': (settings.aws_access_key_id[:4] + '…' + settings.aws_access_key_id[-4:])
+                if settings.aws_access_key_id else None,
+            'has_secret_key': bool(settings.aws_secret_access_key),
+        }
+        if self.mode != 's3' or self._s3 is None:
+            info['probe'] = {'skipped': 'not_s3_mode'}
+            return info
+        if storage_path:
+            try:
+                resp = self._s3.head_object(Bucket=settings.aws_s3_bucket, Key=storage_path)
+                info['probe'] = {
+                    'key': storage_path,
+                    'status': 'ok',
+                    'content_length': resp.get('ContentLength'),
+                    'content_type': resp.get('ContentType'),
+                    'etag': resp.get('ETag'),
+                }
+            except Exception as exc:  # noqa: BLE001
+                err = _classify_s3_error('head_object', storage_path, exc)
+                info['probe'] = {
+                    'key': storage_path,
+                    'status': 'error',
+                    'kind': err.kind,
+                    'http_status': err.status,
+                    'message': str(err),
+                }
+        return info
+
+    # ------------------------------------------------------------------ #
     # Download
     # ------------------------------------------------------------------ #
+
+
 
     def download(self, storage_path: str, local_path: Path) -> Path:
         local_path.parent.mkdir(parents=True, exist_ok=True)
