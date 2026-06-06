@@ -356,7 +356,8 @@ def op_impose_sheet(payload: SheetImposeRequest, db: Session = Depends(get_db)):
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "impose_sheet_pdf", "imposition", body)
-    task = impose_sheet_pdf.delay(
+    task_id = enqueue(
+        "impose_sheet_pdf",
         asset_id,
         job_id,
         payload.columns,
@@ -368,9 +369,10 @@ def op_impose_sheet(payload: SheetImposeRequest, db: Session = Depends(get_db)):
         payload.outer_margin_mm,
         payload.show_crop_marks,
         payload.show_bleed_outline,
-	payload.result_upload_url,
+        payload.result_upload_url,
+        queue="imposition",
     )
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
