@@ -201,12 +201,15 @@ class StorageService:
 
         if self.mode == 's3':
             assert self._s3 is not None
-            self._s3.upload_file(
-                str(local_path),
-                settings.aws_s3_bucket,
-                storage_path,
-                ExtraArgs={'ContentType': media_type},
-            )
+            try:
+                self._s3.upload_file(
+                    str(local_path),
+                    settings.aws_s3_bucket,
+                    storage_path,
+                    ExtraArgs={'ContentType': media_type},
+                )
+            except Exception as exc:  # noqa: BLE001
+                raise _classify_s3_error('upload', storage_path, exc) from exc
             return storage_path
 
         # supabase
