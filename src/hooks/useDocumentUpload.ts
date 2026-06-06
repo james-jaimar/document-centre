@@ -115,9 +115,60 @@ export async function renderDocumentThumbnails(
     const enq = await generatePreviews(assetId, box ?? undefined);
     cropJobId = enq.job_id;
   }
+  // Resolve expected page count once so the in-flight progress reporter can
+  // show "Rendering pages… (X/N)" while the server job is still running.
+  // Some backends only flip the job to "completed" after every page is
+  // recorded, so without an in-flight progress signal the modal sits at
+  // 75% for the full render duration (can be many minutes on cold starts).
+  let inFlightExpected = 0;
+  try {
+    const a0 = await getAsset(assetId);
+    inFlightExpected = a0.page_count ?? 0;
+  } catch {
+    inFlightExpected = 0;
+  }
+
+  let lastReportedFound = -1;
+  let derivedPollPromise: Promise<void> | null = null;
+  const pollDerivedOnce = async () => {
+    if (!inFlightExpected || derivedPollPromise) return;
+    derivedPollPromise = (async () => {
+      try {
+        const dfs = await getDerivedFiles(assetId);
+        let found = 0;
+        const seen = new Set<number>();
+        for (const f of dfs) {
+          if (f.kind === "thumbnail_page" && f.page != null && !seen.has(f.page)) {
+            seen.add(f.page);
+            found++;
+          }
+        }
+        if (found !== lastReportedFound) {
+          lastReportedFound = found;
+          const pct = 65 + (found / inFlightExpected) * 25;
+          onProgress(
+            found > 0
+              ? `Rendering pages… (${found}/${inFlightExpected})`
+              : "Rendering pages…",
+            Math.min(92, pct),
+          );
+        }
+      } catch {
+        /* non-fatal */
+      } finally {
+        derivedPollPromise = null;
+      }
+    })();
+  };
+
   await pollJob(cropJobId, (job) => {
     if (job.status === "pending") onProgress("Queued — waiting for server…", 65);
-    else if (job.status === "running") onProgress("Rendering pages…", 75);
+    else if (job.status === "running") {
+      // Trigger a derived-files poll in parallel so the user sees granular
+      // page progress while the server task continues. Fire-and-forget — we
+      // don't block the status poll loop on this lookup.
+      void pollDerivedOnce();
+    }
   });
 
   // Poll for derived files to appear (rasterization writes them async)
@@ -282,6 +333,80 @@ export async function renderDocumentThumbnails(
     .eq("id", docId);
 
   return thumbnailPaths;
+}
+
+/**
+ * Self-heal: if the upload modal was closed (or the page reloaded) before
+ * the document row got its thumbnails / "ready" flip, but the backend
+ * actually finished rendering, finalise the row in place. Safe to call
+ * from a useEffect — it no-ops unless the backend state genuinely covers
+ * every page of the asset.
+ *
+ * Skips docs that are awaiting user review (size advisory) so we don't
+ * stomp the "Review needed" chip.
+ */
+export async function reconcileStuckDocument(doc: {
+  id: string;
+  document_status: string | null;
+  backend_asset_id: string | null;
+  preflight_data: unknown;
+  thumbnail_urls: unknown;
+}): Promise<boolean> {
+  if (doc.document_status !== "processing") return false;
+  if (!doc.backend_asset_id) return false;
+  const pf = (doc.preflight_data as Record<string, unknown> | null) ?? {};
+  if (pf.awaiting_review === true) return false;
+  if (Array.isArray(doc.thumbnail_urls) && doc.thumbnail_urls.length > 0) {
+    return false;
+  }
+
+  try {
+    const asset = await getAsset(doc.backend_asset_id);
+    const expected = asset.page_count ?? 0;
+    if (!expected || asset.status !== "ready") return false;
+
+    const derivedFiles = await getDerivedFiles(doc.backend_asset_id);
+    const targetAspect =
+      asset.width_pt && asset.height_pt
+        ? Number(asset.width_pt) / Number(asset.height_pt)
+        : null;
+    const thumbnailPaths = pickBestPerPage(
+      derivedFiles,
+      asset.thumbnail_storage_path,
+      asset.preview_storage_path,
+      expected,
+      targetAspect,
+    );
+    const found = thumbnailPaths.filter(Boolean).length;
+    if (found < expected) return false;
+
+    clearSignedUrlCache(thumbnailPaths.filter(Boolean));
+
+    const nextPreflight: Record<string, unknown> = { ...pf };
+    delete nextPreflight.thumbnail_gaps;
+    delete nextPreflight.orientation_mismatch;
+    const processedPath =
+      asset.normalized_storage_path ?? asset.source_storage_path;
+    if (processedPath) nextPreflight.processed_file_path = processedPath;
+
+    await supabase
+      .from("documents")
+      .update({
+        thumbnail_urls: thumbnailPaths,
+        document_status: "ready",
+        preflight_data: nextPreflight as any,
+      })
+      .eq("id", doc.id)
+      .eq("document_status", "processing");
+
+    console.info(
+      `[reconcileStuckDocument] healed doc=${doc.id} pages=${expected}`,
+    );
+    return true;
+  } catch (err) {
+    console.warn(`[reconcileStuckDocument] doc=${doc.id} failed:`, err);
+    return false;
+  }
 }
 
 /**
