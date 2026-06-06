@@ -1,5 +1,6 @@
 from __future__ import annotations
 import logging
+import os
 logger = logging.getLogger(__name__)
 import random
 import time
@@ -768,7 +769,28 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             if page_count and page_count > 1:
                 remaining = [p for p in range(2, page_count + 1) if p not in completed_pages]
 
-                fanout_active = FANOUT_ENABLED and len(remaining) >= 2
+                # Cloud Tasks fan-out is a regression vs the VPS Celery prefork
+                # pool: each per-page task becomes an HTTP push that has to spin
+                # up its own Cloud Run instance (concurrency=1, cold-start, fresh
+                # S3 download). Empirically this turns a 24-page job into a
+                # 6-minute wait-and-salvage dance. The in-process ThreadPoolExecutor
+                # path uses all 4 vCPUs of one warm light worker — exactly what
+                # the VPS achieved — so force it on under Cloud Tasks regardless
+                # of RENDER_FANOUT_ENABLED. Keep fan-out available for local
+                # Celery dev where workers are already warm.
+                _queue_backend = os.getenv("QUEUE_BACKEND", "celery").lower()
+                fanout_active = (
+                    FANOUT_ENABLED
+                    and _queue_backend != "cloud_tasks"
+                    and len(remaining) >= 2
+                )
+                if not fanout_active and len(remaining) >= 2 and FANOUT_ENABLED and _queue_backend == "cloud_tasks":
+                    logger.info(
+                        "generate_previews: fan-out disabled under cloud_tasks "
+                        "(would dispatch %d per-page tasks via HTTP push). "
+                        "Using in-process ThreadPoolExecutor instead.",
+                        len(remaining),
+                    )
                 if fanout_active:
                     # Upload the prepared (possibly cropped) PDF once so
                     # subtasks don't each re-download + re-crop the source.
