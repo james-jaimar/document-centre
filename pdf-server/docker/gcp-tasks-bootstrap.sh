@@ -26,6 +26,7 @@ REGION="${GCP_REGION:-africa-south1}"
 TASKS_REGION="${GCP_TASKS_REGION:-europe-west1}"
 INVOKER_SA_NAME="cloud-tasks-invoker"
 INVOKER_SA="${INVOKER_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+DEFAULT_RUNTIME_SA="dc-pdf-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
 
 API_SERVICE="pdf-api"
 WORKER_HEAVY="pdf-worker-heavy"
@@ -77,10 +78,22 @@ resolve_url() {
     --format='value(status.url)' 2>/dev/null || true
 }
 
+resolve_service_account() {
+  local svc="$1"
+  local service_account
+  service_account="$(gcloud run services describe "$svc" --region="$REGION" --project="$PROJECT_ID" \
+    --format='value(spec.template.spec.serviceAccountName)' 2>/dev/null || true)"
+  if [ -z "$service_account" ]; then
+    service_account="$DEFAULT_RUNTIME_SA"
+  fi
+  printf '%s' "$service_account"
+}
+
 API_URL="$(resolve_url "$API_SERVICE")"
 HEAVY_URL="$(resolve_url "$WORKER_HEAVY")"
 LIGHT_URL="$(resolve_url "$WORKER_LIGHT")"
 EMAILS_URL="$(resolve_url "$WORKER_EMAILS")"
+RUNTIME_SA="${PDF_API_RUNTIME_SA:-$(resolve_service_account "$API_SERVICE")}" 
 
 missing=()
 [ -z "$API_URL" ]    && missing+=("$API_SERVICE")
@@ -106,6 +119,12 @@ gcloud run services add-iam-policy-binding "$API_SERVICE" \
   --region="$REGION" --project="$PROJECT_ID" \
   --member="serviceAccount:${INVOKER_SA}" \
   --role="roles/run.invoker" --quiet
+
+log "Granting roles/iam.serviceAccountTokenCreator on $INVOKER_SA to $RUNTIME_SA (Cloud Tasks OIDC enqueue)"
+gcloud iam service-accounts add-iam-policy-binding "$INVOKER_SA" \
+  --project="$PROJECT_ID" \
+  --member="serviceAccount:${RUNTIME_SA}" \
+  --role="roles/iam.serviceAccountTokenCreator" --quiet
 
 create_or_update_scheduler() {
   local name="$1" schedule="$2" url="$3"
