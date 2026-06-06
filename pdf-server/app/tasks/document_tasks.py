@@ -173,8 +173,8 @@ def normalize_asset(self, asset_id: str, job_id: str):
                 db, asset_id, 'generate_previews', 'thumbnails',
                 {'render_box': default_render_box} if default_render_box else {},
             )
-            task = generate_previews.delay(asset_id, preview_job_id, default_render_box)
-            job_repo.set_celery_task_id(db, preview_job_id, task.id)
+            task_id = enqueue("generate_previews", asset_id, preview_job_id, default_render_box, queue="thumbnails")
+            job_repo.set_celery_task_id(db, preview_job_id, task_id)
             return {'asset_id': asset_id, 'normalized_storage_path': storage_path, 'preview_job_id': preview_job_id}
     except Exception as exc:
         if evt:
