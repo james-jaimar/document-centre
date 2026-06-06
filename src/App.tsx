@@ -156,6 +156,8 @@ function customerRoutes() {
 
 function AppRoutes() {
   const { matched } = useSubdomainTenant();
+  const onPlatformHost =
+    typeof window === "undefined" ? true : isPlatformHost(window.location.hostname);
 
   return (
     <Routes>
