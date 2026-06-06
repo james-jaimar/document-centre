@@ -20,6 +20,7 @@ import { StorefrontRedirect } from "@/components/StorefrontRedirect";
 import { AppEntryRedirect } from "@/components/AppEntryRedirect";
 import { SubdomainWrapper, useSubdomainTenant } from "@/components/SubdomainRouter";
 import BranchSlugRoute from "@/components/BranchSlugRoute";
+import { isPlatformHost } from "@/lib/tenantUrl";
 
 import MarketingLanding from "@/pages/MarketingLanding";
 import Try from "@/pages/Try";
@@ -156,6 +157,8 @@ function customerRoutes() {
 
 function AppRoutes() {
   const { matched } = useSubdomainTenant();
+  const onPlatformHost =
+    typeof window === "undefined" ? true : isPlatformHost(window.location.hostname);
 
   return (
     <Routes>
@@ -207,7 +210,7 @@ function AppRoutes() {
       )}
 
       {/* Platform marketing landing — only when NOT on a tenant custom domain */}
-      {!matched && <Route path="/" element={<MarketingLanding />} />}
+      {!matched && onPlatformHost && <Route path="/" element={<MarketingLanding />} />}
 
       {/* Legacy /dashboard redirects to slug-based URL */}
       <Route path="/dashboard/*" element={<ProtectedRoute><StorefrontRedirect /></ProtectedRoute>} />

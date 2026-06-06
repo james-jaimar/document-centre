@@ -1,49 +1,42 @@
 ## Root cause
 
-The Postnet/Document Centre Demo storefronts went blank because `SubdomainWrapper` (which wraps the *entire* route tree in `App.tsx`) renders only a full-screen spinner while `useTenantFromHost().loading === true`. That hook does:
+The DB is correct — `tenants.custom_domain = 'postnetprintcentre.com'` maps to the `postnet` tenant. The regression is purely frontend.
 
-```ts
-const { data } = await supabase.from("tenants")...maybeSingle();
-...
-setLoading(false);
+In the previous round I added a **4-second safety timeout** to `SubdomainWrapper` so a failed/slow `useTenantFromHost` lookup would stop blanking the app. That timeout flips `loading → false` while leaving `matched = false`. The route table then matches:
+
+```tsx
+{!matched && <Route path="/" element={<MarketingLanding />} />}
 ```
 
-with **no try/catch**. The Supabase request to `/rest/v1/tenants?custom_domain=in.(...)` failed with `net::ERR_FAILED` (confirmed in the browser network log just now — the GET errored while the OPTIONS preflight 204'd separately). The throw bypassed `setLoading(false)`, so the spinner sticks forever. No frontend code was changed in the recent deploy — this is a long-standing fragility that a transient network blip exposed today.
+…and renders the Document Centre marketing landing at `https://postnetprintcentre.com/`. So when the Supabase REST call to `tenants?custom_domain=in.(postnetprintcentre.com)` is slow or fails (the console shows `TypeError: Failed to fetch` on Supabase REST), the user sees the wrong brand instead of the Postnet storefront.
 
-`useTenantFromSlug` and `useTenantBranding` have the exact same shape and feed `CustomerLayout`'s `brandingReady` gate, so they can also blank the page on a single failed fetch.
+### Did the Cloud Tasks retry logging change cause this?
+
+No. Those edits are entirely server-side (`pdf-server/app/core/queue.py`, `tasks_routes.py`, `derived_files.py`, deploy workflow). They cannot reach the browser bundle.
+
+What did affect the frontend was the **separate** "blank storefront" fix in the same message: the new 4 s timeout in `SubdomainWrapper`/`CustomerLayout` plus the `try/catch/finally` in `useTenantFromHost`. Together they convert "infinite spinner on tenant fetch failure" into "fall through to whatever route matches `matched=false`" — which on a custom domain is the Document Centre marketing page. The Cloud Tasks work happened in the same chat turn, which is why it looks correlated, but it isn't.
 
 ## Fix
 
-Make the three tenant bootstrap hooks fail-safe: they must always settle `loading=false`, even when the network call throws, and they should retry once on transient errors before giving up. The UI should fall through to "no tenant matched" instead of an infinite spinner.
+1. **`src/lib/tenantUrl.ts`** — add `isPlatformHost(hostname)` returning true only for `document-centre.com`, `www.document-centre.com`, `localhost`, `127.0.0.1`, and `*.lovable.app` / `*.lovable.dev` / `*.jaimar.dev` (mirroring the skip-list in `useTenantFromHost`). Any other hostname is treated as a tenant host.
 
-### 1. `src/hooks/useTenantFromHost.ts`
-- Wrap the entire `resolve()` body in `try { … } catch (e) { console.warn(...) } finally { setLoading(false) }`.
-- Add a single silent retry (250 ms back-off) for network-class errors before the catch.
-- On final failure, leave `matched=false, tenant=null` so the app falls through to path-based routing / marketing landing.
+2. **`src/components/SubdomainRouter.tsx`** — compute `isPlatformHost` once at mount.
+   - If we're on a tenant host (custom domain or subdomain), **never bail out to the marketing tree**. Keep showing the spinner while loading; if the lookup ultimately fails or returns no row, render a small inline "Storefront is loading…" / retry panel instead of falling through. No 4 s timeout for tenant hosts.
+   - If we're on the platform host, keep the 4 s safety timeout (its original purpose: don't blank `document-centre.com`).
 
-### 2. `src/hooks/useTenantFromSlug.ts`
-- Same try/catch/finally pattern around the fetch.
-- Single retry on network error.
-- On failure: keep any cached `tenant` from localStorage if present; only surface `error` when there is no cache to render from.
+3. **`src/App.tsx`** — wrap the `<Route path="/" element={<MarketingLanding />} />` line with a check on `isPlatformHost(window.location.hostname)` as a second line of defence, so even a future regression cannot serve Document Centre branding on someone else's domain.
 
-### 3. `src/hooks/useTenantBranding.ts` (verify; likely already a `useQuery` with built-in retry — confirm `retry: 1` and `staleTime` so a failure doesn't permanently lock `brandingReady=false`).
+4. **`src/hooks/useTenantFromHost.ts`** — increase resilience for custom domains: do 3 retries with 250 ms / 750 ms / 1.5 s back-off (still inside `try/finally` so the spinner releases). Log a single `console.warn` on final failure. No behaviour change for platform hosts.
 
-### 4. `src/components/CustomerLayout.tsx`
-- `brandingReady` currently waits on both `tenantLoading` *and* `brandingLoading`. Add a safety timeout (e.g. 4 s) so even if branding never resolves, the layout proceeds with default styling rather than staying on the splash forever.
-
-### 5. `src/components/SubdomainRouter.tsx`
-- Add the same 4 s safety timeout to the SubdomainWrapper loading guard so a stuck host lookup can never blank the entire app — render children with `matched=false` after the timeout.
-
-## Out of scope
-
-- No backend, pdf-server, or migration changes.
-- No change to the storefront-tenant header interceptor (it correctly no-ops when no tenant is set, and the preflight log confirms it wasn't the cause).
-- No change to routing or auth.
+5. No backend, no migration, no pdf-server changes.
 
 ## Verification
 
-1. Reload `/t/postnet` in preview — page should render (header + sidebar) within ~2 s.
-2. In DevTools, block requests to `lcvdhtaqoumyokjqaqfw.supabase.co/rest/v1/tenants*` and reload — the app should still render (fall through to default theme / no-tenant state) instead of showing an infinite spinner.
-3. `postnet.document-centre.com` on production after Amplify redeploy — same behaviour.
+- Reload `https://postnetprintcentre.com/` → must show the Postnet storefront (or a "Storefront loading…" panel if Supabase is genuinely down), never the Document Centre marketing site.
+- Reload `https://document-centre.com/` → must still show `MarketingLanding`.
+- Reload `/t/postnet` on the preview → unchanged.
+- Block the Supabase tenants REST call in devtools and reload on a custom domain → see the loading/retry panel, not Document Centre.
 
-Expected outcome: no transient Supabase error can ever leave the app on a blank loading spinner again.
+## Scope
+
+Pure frontend fix in 4 files. No DB writes, no edge-function changes, no pdf-server changes. The earlier `useTenantFromSlug` / `CustomerLayout` timeouts are kept as-is — they only affect the `/t/:slug` flow which is not the source of this incident.
