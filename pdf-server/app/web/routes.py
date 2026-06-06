@@ -442,8 +442,8 @@ def op_convert_office(payload: ConvertOfficeRequest, db: Session = Depends(get_d
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "convert_office", "documents", body)
-    task = convert_office.delay(asset_id, job_id)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("convert_office", asset_id, job_id, queue="documents")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 
