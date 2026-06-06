@@ -17,6 +17,11 @@ from typing import Any, Callable, Dict
 from app.tasks.document_tasks import (
     normalize_asset,
     inspect_asset,
+    generate_previews,
+    render_specific_pages,
+    render_one_page,
+)
+from app.tasks.operation_tasks import (
     rotate_pdf,
     grayscale_pdf,
     cmyk_pdf,
@@ -25,16 +30,13 @@ from app.tasks.document_tasks import (
     impose_sheet_pdf,
     booklet_pdf,
     merge_pdfs,
-    generate_previews,
     convert_office,
     normalize_orientation,
     print_ready,
-    render_specific_pages,
     prepare_for_product,
     pad_pages_pdf,
-    render_one_page,
 )
-from app.tasks.operation_tasks import generate_previews as op_generate_previews  # noqa: F401
+
 
 # Production pipeline
 from app.tasks.production_tasks import (
