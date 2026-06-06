@@ -427,8 +427,8 @@ def op_generate_previews(payload: GeneratePreviewsRequest, db: Session = Depends
     asset_id = str(payload.asset_id)
     body = payload.model_dump(mode="json")
     job_id = job_repo.create_job(db, asset_id, "generate_previews", "thumbnails", body)
-    task = generate_previews.delay(asset_id, job_id, payload.render_box)
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    task_id = enqueue("generate_previews", asset_id, job_id, payload.render_box, queue="thumbnails")
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id}
 
 @api_router.post("/operations/convert-office")
