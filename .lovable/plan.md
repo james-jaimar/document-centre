@@ -117,3 +117,21 @@ After Fix A: upload a 24-page PDF and confirm `generate_previews` finishes in < 
 After Fix B: insert a row directly into `email_outbox` with `status='queued'` and no webhook trigger; confirm Cloud Scheduler picks it up within 60 s.
 
 After Fix F: send 5 emails in a tight loop and confirm all 5 land within 30 s.
+
+---
+
+## Implementation status (this turn)
+
+- **Fix A — DONE.** `pdf-server/app/tasks/document_tasks.py`: `generate_previews` now reads `QUEUE_BACKEND` and force-disables fan-out under `cloud_tasks`. The in-process `ThreadPoolExecutor` path runs all remaining pages inside one warm light-worker container. Eliminates the cold-start-per-page penalty and the 5-min wait-and-salvage dance.
+- **Fix B — already in place.** Cloud Scheduler job `email-scan-outbox-30s` (every 1 min) hits `/internal/beat/email-scan-outbox` → `enqueue("scan_outbox")`. `email-release-stuck-5m` covers stuck-claim recovery. No code change needed.
+- **Fix C — verified, no gaps.** Beat schedule (`pdf-server/app/worker.py`) has 4 entries (`ops.snapshot_storage`, `ops.cleanup_tmp`, `email.scan_outbox`, `email.release_stuck`); `gcp-tasks-bootstrap.sh` creates a matching Cloud Scheduler job for every one. Documented the mapping in `VPS_DECOMMISSION.md`.
+- **Fix D — verified, no gaps.** Audited every `enqueue()` call site: only `documents / imposition / pdf / default / thumbnails / emails-default / emails-control` are used; all present in `QUEUE_TO_WORKER_ENV`. No `ops` queue references.
+- **Fix E — deferred.** PDF handoff cache is a no-op miss on Cloud Run but harmless; leaving alone to avoid touching the heavy/light hot path mid-incident. Re-evaluate after Fix A validation.
+- **Fix F — DONE.** `.github/workflows/pdf-server-deploy.yml`: `pdf-worker-emails` now `--max-instances=20 --min-instances=1` (was 10/0). First email after a quiet period no longer pays a cold start.
+- **Fix G — partial.** Added `logger.info(...)` line when fan-out is bypassed (visible in Cloud Logging). Broader `print → logger` sweep deferred.
+
+## Next steps for user
+
+1. Re-run the GitHub Actions deploy workflow — picks up Fix A (code) and Fix F (worker scaling).
+2. Upload a multi-page PDF and confirm thumbnails finish in ~60–90 s instead of 6 min (look for `fan-out disabled under cloud_tasks` in Cloud Logging).
+3. Send a test email — should land within seconds now that the emails worker has `min-instances=1`.
