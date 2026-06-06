@@ -501,7 +501,8 @@ def op_print_ready(payload: PrintReadyRequest, db: Session = Depends(get_db)):
             },
         )
 
-    task = print_ready.delay(
+    task_id = enqueue(
+        "print_ready",
         asset_id,
         job_id,
         payload.intent,
@@ -510,8 +511,9 @@ def op_print_ready(payload: PrintReadyRequest, db: Session = Depends(get_db)):
         payload.chain_render_box,
         preview_job_id,
         payload.dominant_orientation,
+        queue="documents",
     )
-    job_repo.set_celery_task_id(db, job_id, task.id)
+    job_repo.set_celery_task_id(db, job_id, task_id)
     return {"job_id": job_id, "preview_job_id": preview_job_id}
 
 
