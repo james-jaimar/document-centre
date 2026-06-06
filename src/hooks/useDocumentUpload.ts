@@ -350,7 +350,7 @@ export async function reconcileStuckDocument(doc: {
   document_status: string | null;
   backend_asset_id: string | null;
   preflight_data: unknown;
-  thumbnail_urls: string[] | null;
+  thumbnail_urls: unknown;
 }): Promise<boolean> {
   if (doc.document_status !== "processing") return false;
   if (!doc.backend_asset_id) return false;
