@@ -18,7 +18,12 @@
 set -euo pipefail
 
 PROJECT_ID="${GCP_PROJECT_ID:-project-59a14b18-b4df-4c6b-b09}"
+# Compute region (Cloud Run services).
 REGION="${GCP_REGION:-africa-south1}"
+# Tasks/Scheduler region. Cloud Tasks + Cloud Scheduler are NOT offered in
+# africa-south1, so the queue control plane lives in europe-west1 and pushes
+# cross-region into Cloud Run. Override via GCP_TASKS_REGION if needed.
+TASKS_REGION="${GCP_TASKS_REGION:-europe-west1}"
 INVOKER_SA_NAME="cloud-tasks-invoker"
 INVOKER_SA="${INVOKER_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 
@@ -47,22 +52,22 @@ fi
 
 log "Creating Cloud Tasks queues (if missing)"
 for q in "${QUEUES[@]}"; do
-  if ! gcloud tasks queues describe "$q" --location="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
-    gcloud tasks queues create "$q" --location="$REGION" --project="$PROJECT_ID"
+  if ! gcloud tasks queues describe "$q" --location="$TASKS_REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
+    gcloud tasks queues create "$q" --location="$TASKS_REGION" --project="$PROJECT_ID"
   fi
 done
 
 # Per-queue rate / retry tuning.
-gcloud tasks queues update documents-heavy --location="$REGION" --project="$PROJECT_ID" \
+gcloud tasks queues update documents-heavy --location="$TASKS_REGION" --project="$PROJECT_ID" \
   --max-dispatches-per-second=5 --max-concurrent-dispatches=10 \
   --max-attempts=5 --min-backoff=10s --max-backoff=600s --quiet
-gcloud tasks queues update documents-light --location="$REGION" --project="$PROJECT_ID" \
+gcloud tasks queues update documents-light --location="$TASKS_REGION" --project="$PROJECT_ID" \
   --max-dispatches-per-second=20 --max-concurrent-dispatches=40 \
   --max-attempts=5 --min-backoff=5s --max-backoff=300s --quiet
-gcloud tasks queues update emails-default --location="$REGION" --project="$PROJECT_ID" \
+gcloud tasks queues update emails-default --location="$TASKS_REGION" --project="$PROJECT_ID" \
   --max-dispatches-per-second=10 --max-concurrent-dispatches=20 \
   --max-attempts=8 --min-backoff=30s --max-backoff=3600s --quiet
-gcloud tasks queues update emails-control --location="$REGION" --project="$PROJECT_ID" \
+gcloud tasks queues update emails-control --location="$TASKS_REGION" --project="$PROJECT_ID" \
   --max-dispatches-per-second=2 --max-concurrent-dispatches=2 \
   --max-attempts=3 --min-backoff=10s --max-backoff=120s --quiet
 
@@ -104,12 +109,12 @@ gcloud run services add-iam-policy-binding "$API_SERVICE" \
 
 create_or_update_scheduler() {
   local name="$1" schedule="$2" url="$3"
-  if gcloud scheduler jobs describe "$name" --location="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
-    gcloud scheduler jobs update http "$name" --location="$REGION" --project="$PROJECT_ID" \
+  if gcloud scheduler jobs describe "$name" --location="$TASKS_REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
+    gcloud scheduler jobs update http "$name" --location="$TASKS_REGION" --project="$PROJECT_ID" \
       --schedule="$schedule" --uri="$url" --http-method=POST \
       --oidc-service-account-email="$INVOKER_SA" --oidc-token-audience="${url%/internal/*}" --quiet
   else
-    gcloud scheduler jobs create http "$name" --location="$REGION" --project="$PROJECT_ID" \
+    gcloud scheduler jobs create http "$name" --location="$TASKS_REGION" --project="$PROJECT_ID" \
       --schedule="$schedule" --uri="$url" --http-method=POST \
       --oidc-service-account-email="$INVOKER_SA" --oidc-token-audience="${url%/internal/*}" --quiet
   fi
@@ -129,6 +134,8 @@ echo "  WORKER_URL_HEAVY=$HEAVY_URL"
 echo "  WORKER_URL_LIGHT=$LIGHT_URL"
 echo "  WORKER_URL_EMAILS=$EMAILS_URL"
 echo "  TASKS_INVOKER_SA=$INVOKER_SA"
+echo "  GCP_REGION=$REGION         # Cloud Run (compute)"
+echo "  GCP_TASKS_REGION=$TASKS_REGION  # Cloud Tasks + Scheduler"
 echo ""
 echo "Set these on the pdf-api Cloud Run service via Secret Manager or --set-env-vars,"
 echo "and set QUEUE_BACKEND=cloud_tasks once every task call site has been migrated."
