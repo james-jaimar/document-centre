@@ -1687,9 +1687,11 @@ class PdfOps:
         missing = sorted(expected - present_pages)
 
         logger.info(
-            "mutool_render: pages=%d-%d fmt=%s ext=%s dpi=%s rc=%d "
+            "mutool_render: pages=%d-%d fmt=%s ext=%s dpi=%s threads=%d band=%d rc=%d "
             "elapsed_ms=%d timed_out=%s produced=%d missing=%s",
             first_page, last_page, effective_fmt, ext, dpi,
+            threads if (threads > 0 and band_h > 0) else 1,
+            band_h if (threads > 0 and band_h > 0) else 0,
             returncode, elapsed_ms, timed_out, len(produced), missing,
         )
 
