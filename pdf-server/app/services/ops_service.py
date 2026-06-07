@@ -119,17 +119,19 @@ class OpsService:
                     queue_names.add(rk)
 
         depths = self._broker_depths(sorted(queue_names))
+        gcp_stats = self._cloud_tasks_queue_stats()
 
         rows = []
         for q in sorted(queue_names):
+            cloud = gcp_stats.get(q, {})
             rows.append(
                 {
                     "name": q,
-                    "depth": depths.get(q, 0),
+                    "depth": cloud.get("tasks_count", depths.get(q, 0)),
                     "active": sum(
                         1 for tasks in active.values() for t in (tasks or [])
                         if ((t.get("delivery_info") or {}).get("routing_key") == q)
-                    ),
+                    ) or cloud.get("concurrent_dispatches_count", 0),
                     "reserved": sum(
                         1 for tasks in reserved.values() for t in (tasks or [])
                         if ((t.get("delivery_info") or {}).get("routing_key") == q)
@@ -138,10 +140,46 @@ class OpsService:
                         1 for tasks in scheduled.values() for t in (tasks or [])
                         if (((t.get("request") or {}).get("delivery_info") or {}).get("routing_key") == q)
                     ),
+                    "cloud_tasks": cloud or None,
                 }
             )
-        total_depth = sum(depths.values())
-        return {"queues": rows, "total_depth": total_depth}
+        total_depth = sum(int(r.get("depth") or 0) for r in rows)
+        return {"queues": rows, "total_depth": total_depth, "backend": settings.__dict__.get("queue_backend", None) or __import__('os').getenv("QUEUE_BACKEND", "celery")}
+
+    def _cloud_tasks_queue_stats(self) -> dict[str, dict]:
+        """Direct Cloud Tasks queue stats, when running in GCP mode.
+
+        This gives the ops dashboard GCP-native depth/dispatch data instead
+        of relying on Celery inspect, which is empty in Cloud Tasks mode.
+        """
+        import os
+        if os.getenv("QUEUE_BACKEND", "celery").lower() != "cloud_tasks":
+            return {}
+        try:
+            from google.cloud import tasks_v2  # type: ignore
+            from google.protobuf import field_mask_pb2  # type: ignore
+            from app.core.queue import QUEUE_TO_CLOUD_TASKS_QUEUE
+
+            project = os.environ["GCP_PROJECT_ID"]
+            region = os.getenv("GCP_TASKS_REGION") or os.environ["GCP_REGION"]
+            client = tasks_v2.CloudTasksClient()
+            read_mask = field_mask_pb2.FieldMask(paths=["stats"])
+            out: dict[str, dict] = {}
+            for logical, queue_id in QUEUE_TO_CLOUD_TASKS_QUEUE.items():
+                name = client.queue_path(project, region, queue_id)
+                q = client.get_queue(request={"name": name, "read_mask": read_mask})
+                stats = q.stats
+                oldest = getattr(stats, "oldest_estimated_arrival_time", None)
+                out[logical] = {
+                    "queue_id": queue_id,
+                    "tasks_count": int(getattr(stats, "tasks_count", 0) or 0),
+                    "concurrent_dispatches_count": int(getattr(stats, "concurrent_dispatches_count", 0) or 0),
+                    "executed_last_minute_count": int(getattr(stats, "executed_last_minute_count", 0) or 0),
+                    "oldest_estimated_arrival_time": oldest.isoformat() if oldest else None,
+                }
+            return out
+        except Exception as exc:  # noqa: BLE001
+            return {q: {"error": str(exc)} for q in _KNOWN_QUEUES}
 
     # ─── workers ──────────────────────────────────────────────────
     def workers(self) -> dict:
