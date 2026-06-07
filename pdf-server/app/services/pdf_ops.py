@@ -31,7 +31,104 @@ class RasterizationIncompleteError(RuntimeError):
         )
         self.missing_pages = missing_pages
 
+
+class MutoolRenderError(RuntimeError):
+    """Raised when ``mutool draw`` did not produce the full expected page set.
+
+    Carries enough forensic context (command, returncode, stderr tail, files
+    produced, missing pages) to diagnose why the fast preview path failed
+    without trawling Cloud Run logs.
+    """
+
+    def __init__(
+        self,
+        *,
+        cmd: list[str],
+        returncode: int,
+        stderr: str,
+        stdout: str,
+        produced: list[str],
+        missing_pages: list[int],
+    ) -> None:
+        self.cmd = cmd
+        self.returncode = returncode
+        self.stderr = stderr or ""
+        self.stdout = stdout or ""
+        self.produced = produced
+        self.missing_pages = missing_pages
+        stderr_tail = (self.stderr.strip().splitlines() or [""])[-3:]
+        super().__init__(
+            "mutool render incomplete: rc={rc} missing={miss} produced={prod} stderr={se!r}".format(
+                rc=returncode,
+                miss=missing_pages,
+                prod=len(produced),
+                se=" | ".join(stderr_tail),
+            )
+        )
+
+
 ICC_DIR = Path("/opt/document-centre-api/icc")
+
+
+# ---------------------------------------------------------------------------
+# MuPDF runtime probe
+# ---------------------------------------------------------------------------
+# `mutool draw` accepts different format tokens depending on the build
+# (`jpeg`, `jpg`, `png`, ...). Rather than guess, probe at runtime once and
+# cache the working `-F` token + output extension. If MuPDF can't render
+# JPEG at all on this container, the probe falls back to PNG so the
+# customer pipeline still works (just larger files).
+_MUTOOL_PROBE_CACHE: dict[str, tuple[str, str]] = {}
+
+
+def _mutool_probe(mutool: str) -> tuple[str, str]:
+    """Return (format_token, file_extension) that this `mutool` actually
+    produces. Tries `jpeg` then `jpg` then `png`. Probes by rendering a
+    1-page pikepdf-generated PDF into /tmp and checking the output file
+    exists with non-zero size. Result is cached per mutool path."""
+    cached = _MUTOOL_PROBE_CACHE.get(mutool)
+    if cached:
+        return cached
+    import tempfile
+    # Build a tiny in-memory 1-page PDF (no external deps).
+    with tempfile.TemporaryDirectory(prefix="mupdf-probe-") as tmp:
+        tmp_dir = Path(tmp)
+        src = tmp_dir / "probe.pdf"
+        try:
+            buf = BytesIO()
+            c = canvas.Canvas(str(buf))
+            c.drawString(72, 720, "probe")
+            c.showPage()
+            c.save()
+            src.write_bytes(buf.getvalue())
+        except Exception as exc:
+            logger.warning("mutool probe: could not build probe PDF: %s", exc)
+            _MUTOOL_PROBE_CACHE[mutool] = ("png", "png")
+            return _MUTOOL_PROBE_CACHE[mutool]
+
+        candidates: list[tuple[str, str]] = [("jpeg", "jpg"), ("jpg", "jpg"), ("png", "png")]
+        for fmt, ext in candidates:
+            out = tmp_dir / f"out-1.{ext}"
+            cmd = [mutool, "draw", "-F", fmt, "-r", "72", "-o", str(tmp_dir / f"out-%d.{ext}"), str(src), "1"]
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            except Exception as exc:
+                logger.warning("mutool probe %s failed to spawn: %s", fmt, exc)
+                continue
+            ok = proc.returncode == 0 and out.exists() and out.stat().st_size > 0
+            if ok:
+                logger.info("mutool probe: format=%s ext=%s OK (mutool=%s)", fmt, ext, mutool)
+                _MUTOOL_PROBE_CACHE[mutool] = (fmt, ext)
+                return _MUTOOL_PROBE_CACHE[mutool]
+            else:
+                logger.warning(
+                    "mutool probe: format=%s rc=%s stderr=%s",
+                    fmt, proc.returncode, (proc.stderr or "").strip()[:200],
+                )
+    # Last resort — assume PNG; let the caller fail loudly if even that breaks.
+    _MUTOOL_PROBE_CACHE[mutool] = ("png", "png")
+    return _MUTOOL_PROBE_CACHE[mutool]
+
 
 
 # ---------------------------------------------------------------------------
