@@ -63,9 +63,14 @@ class Settings(BaseSettings):
     mutool_bin: str = Field(alias='MUTOOL_BIN', default='mutool')
 
     thumbnail_dpi: int = Field(alias='THUMBNAIL_DPI', default=96)
-    # Preview DPI was 130 (≈1075×1520px for A4). Dropped to 96 (≈790×1120px)
-    # — still sharp on retina screens, ~45% fewer pixels through GS + S3.
-    preview_dpi: int = Field(alias='PREVIEW_DPI', default=96)
+    # Preview DPI: 150 gives ~1240×1754px for A4 — sharp on 27" / retina
+    # screens (≈2× CSS pixels for a 700–900px flip-book page) while still
+    # half the bytes of the old 200+ DPI PNG path. Rendered via MuPDF
+    # (`mutool draw`) directly to JPEG q90 to skip the Ghostscript PNG +
+    # Pillow re-encode round-trip that used to dominate render time.
+    preview_dpi: int = Field(alias='PREVIEW_DPI', default=150)
+    preview_format: str = Field(alias='PREVIEW_FORMAT', default='jpeg')
+    preview_jpeg_quality: int = Field(alias='PREVIEW_JPEG_QUALITY', default=90)
     max_upload_mb: int = Field(alias='MAX_UPLOAD_MB', default=250)
 
     # Preview pipeline resilience tunables. Each per-page step (rasterize +
@@ -87,7 +92,10 @@ class Settings(BaseSettings):
     # thumbnails queue so a single upload uses ALL light-worker children
     # (default 4) in parallel instead of one in-process thread pool.
     # Falls back to the in-process two-pool design when disabled.
-    render_fanout_enabled: bool = Field(alias='RENDER_FANOUT_ENABLED', default=True)
+    # Cloud Tasks fan-out is a regression vs a single warm worker on
+    # Cloud Run (each per-page subtask becomes a cold HTTP push +
+    # re-download). Default OFF; in-process batch + thread pools win.
+    render_fanout_enabled: bool = Field(alias='RENDER_FANOUT_ENABLED', default=False)
     render_fanout_poll_interval_ms: int = Field(alias='RENDER_FANOUT_POLL_INTERVAL_MS', default=200)
     render_fanout_timeout_seconds: int = Field(alias='RENDER_FANOUT_TIMEOUT_SECONDS', default=300)
     # Stall guard: if no new page lands within this many seconds, abandon
