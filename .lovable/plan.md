@@ -59,3 +59,27 @@ Based on a full trace of the 8-page upload you just ran. Two subagents walked th
 - Parallel "fast previews from source PDF" while CMYK runs in background — still on the list, but the duplicate-work + timeout fixes above unblock the current hang risk first.
 
 Approve and I'll implement, then you can throw the 24-pager at it for a clean comparison.
+
+---
+
+## Shipped this turn
+
+Backend (`pdf-server/app/services/pdf_ops.py`):
+- Added `timeout=` to BOTH Ghostscript subprocess calls (single-page and multi-page batch) using the same `10 + 2*pages` capped at 180s shape that mutool already uses.
+- `rasterize_pages_mutool` now clears any stale `<base>-*.<ext>` files from the output directory BEFORE invoking mutool, eliminating the stale-file masking case where a partial prior run could hide a missing page.
+- Bumped the present-page size threshold from `> 0` to `>= 200 bytes` so near-empty corrupt outputs are correctly flagged as missing.
+
+Backend (`pdf-server/app/tasks/document_tasks.py`):
+- `render_specific_pages` now does a surgical per-page `rasterize_one_page_mutool` retry for any page the bounding-box batch failed to produce, before declaring pages failed. Mirrors the surgical retry already in `generate_previews`. Sparse gaps like `[3, 47]` no longer re-render the bounding box twice.
+- Added a `>= 200 bytes` check at the upload gate too.
+
+Frontend (`src/hooks/useDocumentUpload.ts`):
+- Unified the in-flight and post-job progress formulas to `65 + (found/total) * 30` capped at 95%. The bar is now monotonic across the job→derived-files transition.
+- Reduced client-side `RECOVERY_ATTEMPTS` from 2 to 1 — backend salvage already handles the gap, the second client pass was duplicate work.
+
+## Deferred (next turn, in priority order)
+1. Parallel "fast previews from source PDF" while CMYK runs in background.
+2. Collapse the dual polling stream (`getJob` + `getDerivedFiles`) into a single source of truth (job metadata).
+3. Dedupe the `getAsset` calls around `finalizeOrientationAndPrintReady` by threading the asset through.
+4. Gate the client-side per-page `normalize_orientation` jobs (let `prepare_for_product` handle it server-side).
+5. Extend smoke test with stale-file injection + simulated timeout scenarios.
