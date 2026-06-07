@@ -754,245 +754,187 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             completed_pages: set[int] = set()
             page_storage: dict[int, tuple[str, str]] = {}
 
-            # ─── Batch fast path (MuPDF → JPEG) ───────────────────────
-            # ONE `mutool draw` invocation for the full page range, then
-            # downscale + upload + record concurrently. MuPDF is 2–4×
-            # faster than Ghostscript for "PDF → pixels" and writes
-            # straight to JPEG q90 (no PNG re-encode round-trip).
+            # ─── Batch render (Ghostscript → JPEG, single invocation) ──
+            # PDF → JPEG in ONE `gs` call. Locally benchmarked at ~3.5s for
+            # an 8-page 17 MB CMYK A4 brochure with transparency. The old
+            # MuPDF batch + fast-path + retry maze ran the same file in
+            # >60s because mutool's painter stalls on transparency groups
+            # and we were piping through PNG → Pillow → JPEG anyway.
+            #
+            # Pipeline:
+            #   1. gs PDF→JPEG for pages 1..N (primary).
+            #   2. Single-page gs retry for any page the batch dropped.
+            #   3. Per-page mutool last-resort salvage (in case gs itself
+            #      refuses a malformed page).
+            # Then downscale + upload + DB-record concurrently.
             batch_threshold = max(1, settings.render_batch_threshold)
             batch_eligible = (
                 page_count
                 and page_count <= batch_threshold
                 and page_count >= 1
             )
-            # Discover what `mutool draw` will actually emit on this
-            # container (some builds accept `jpeg`, others only `jpg`,
-            # and a few have JPEG disabled entirely). The probe is
-            # cached process-wide so this is a one-off cost.
-            _effective_fmt, preview_ext = mutool_effective_format(settings.preview_format)
-            preview_media_type = 'image/jpeg' if preview_ext == 'jpg' else 'image/png'
+            renderer = (
+                getattr(settings, "preview_renderer", "ghostscript") or "ghostscript"
+            ).lower()
+            preview_ext = 'jpg'
+            preview_media_type = 'image/jpeg'
+
             if batch_eligible:
                 t_batch = time.monotonic()
-                mutool_diagnostic: dict | None = None
+                renderer_diagnostic: dict | None = None
+                still_missing_after_retry: list[int] = []
 
-                # ── Single-image-page fast path ─────────────────────────
-                # Many "image-heavy" customer PDFs (scans, exported decks,
-                # photo books) are one full-page raster per page. Extract
-                # and downscale those directly — skips MuPDF entirely and
-                # cuts wall-clock from tens of seconds per page to <1s.
-                # Pages that aren't single-image fall through to mutool.
-                fast_path_pages: set[int] = set()
-                t_fast = time.monotonic()
-                # Approx pixel size at preview_dpi for the longest A-series
-                # edge (A0 long side at 150 DPI ≈ 7016 px). Bound to give
-                # the downscaler something sane to aim at.
-                target_long_edge = max(800, int(settings.preview_dpi * 14))
-                try:
-                    fp_workers = max(1, settings.render_cpu_concurrency)
-                    with ThreadPoolExecutor(max_workers=fp_workers) as fp_pool:
-                        fp_futures = {
-                            fp_pool.submit(
-                                extract_single_image_page,
-                                src,
-                                p,
-                                preview_dir / f"page-{p:03d}.jpg",
-                                target_long_edge,
-                                settings.preview_jpeg_quality,
-                            ): p
-                            for p in range(1, page_count + 1)
-                        }
-                        for fut in as_completed(fp_futures):
-                            p = fp_futures[fut]
-                            try:
-                                if fut.result():
-                                    fast_path_pages.add(p)
-                            except Exception as fp_exc:
-                                logger.info(
-                                    "fast_path: page %d errored (%s) — will use mutool",
-                                    p, fp_exc,
-                                )
-                    _stamp('fast_path_single_image', t_fast)
-                    if fast_path_pages:
-                        logger.info(
-                            "generate_previews: fast path handled %d/%d pages (asset=%s)",
-                            len(fast_path_pages), page_count, asset_id,
-                        )
-                except Exception as fp_exc:
-                    logger.warning(
-                        "generate_previews: fast path scan failed asset=%s: %s",
-                        asset_id, fp_exc,
-                    )
-
-                # Only ask MuPDF to render pages the fast path missed.
-                mutool_pages = [p for p in range(1, page_count + 1) if p not in fast_path_pages]
-                try:
-                    t_gs = time.monotonic()
-                    # Contract: rasterize_pages_mutool wants a contiguous
-                    # range. If the fast path covered a non-contiguous
-                    # subset, render each remaining page individually in
-                    # parallel rather than re-rendering already-done pages.
-                    if not mutool_pages:
-                        logger.info(
-                            "generate_previews: all %d pages handled by fast path — skipping mutool batch",
-                            page_count,
-                        )
-                    elif (
-                        mutool_pages
-                        and mutool_pages[-1] - mutool_pages[0] + 1 == len(mutool_pages)
-                    ):
+                if renderer == "mutool":
+                    # Legacy path kept behind the flag — exercises the
+                    # original MuPDF batch (handy for A/B if we ever need
+                    # to compare a regression).
+                    _eff_fmt, preview_ext = mutool_effective_format(settings.preview_format)
+                    preview_media_type = 'image/jpeg' if preview_ext == 'jpg' else 'image/png'
+                    try:
+                        t_r = time.monotonic()
                         pdf_ops.rasterize_pages_mutool(
                             src, preview_dir / 'page', dpi=settings.preview_dpi,
-                            first_page=mutool_pages[0], last_page=mutool_pages[-1],
+                            first_page=1, last_page=page_count,
                             fmt=settings.preview_format,
                             quality=settings.preview_jpeg_quality,
                         )
-                    else:
-                        pp_workers = max(1, settings.render_cpu_concurrency)
-                        errors: list[MutoolRenderError] = []
-                        with ThreadPoolExecutor(max_workers=pp_workers) as pp_pool:
-                            pp_futs = {
-                                pp_pool.submit(
-                                    pdf_ops.rasterize_one_page_mutool,
-                                    src, preview_dir / 'page',
-                                    dpi=settings.preview_dpi,
-                                    page=pn, fmt=settings.preview_format,
-                                ): pn for pn in mutool_pages
-                            }
-                            for fut in as_completed(pp_futs):
-                                try:
-                                    fut.result()
-                                except MutoolRenderError as e2:
-                                    errors.append(e2)
-                        if errors:
-                            # Aggregate into one MutoolRenderError so the
-                            # downstream diagnostic + salvage path runs.
-                            missing = sorted({m for e in errors for m in e.missing_pages})
-                            raise MutoolRenderError(
-                                cmd=errors[0].cmd,
-                                returncode=errors[0].returncode,
-                                stderr="; ".join((e.stderr or "")[-200:] for e in errors),
-                                stdout="",
-                                produced=[],
-                                missing_pages=missing,
-                            )
-                    _stamp('mutool_batch', t_gs)
-                    _stamp('mutool_batch', t_gs)
-                except MutoolRenderError as exc:
-                    # Capture forensic detail BEFORE the per-page retry so
-                    # we can tell whether each retry also missed a page,
-                    # and which pages MuPDF specifically refused.
-                    try:
-                        src_bytes = src.stat().st_size if hasattr(src, 'stat') else None
-                    except Exception:
-                        src_bytes = None
-                    mutool_diagnostic = {
-                        'first_attempt': {
-                            'returncode': exc.returncode,
+                        _stamp('render_batch_mutool', t_r)
+                    except MutoolRenderError as exc:
+                        renderer_diagnostic = {
+                            'engine': 'mutool',
                             'missing_pages': exc.missing_pages,
-                            'produced': len(exc.produced),
+                            'returncode': exc.returncode,
                             'stderr_tail': "\n".join(
                                 (exc.stderr or "").strip().splitlines()[-5:]
                             ),
-                            'cmd': exc.cmd,
+                        }
+                        still_missing_after_retry = list(exc.missing_pages)
+                else:
+                    # PRIMARY PATH — Ghostscript direct-to-JPEG.
+                    try:
+                        t_r = time.monotonic()
+                        pdf_ops.rasterize_pages_ghostscript_jpeg(
+                            src, preview_dir / 'page',
+                            dpi=settings.preview_dpi,
+                            first_page=1, last_page=page_count,
+                            quality=settings.preview_jpeg_quality,
+                        )
+                        _stamp('render_batch_gs', t_r)
+                    except RasterizationIncompleteError as exc:
+                        try:
+                            src_bytes = src.stat().st_size if hasattr(src, 'stat') else None
+                        except Exception:
+                            src_bytes = None
+                        renderer_diagnostic = {
+                            'engine': 'ghostscript',
+                            'missing_pages': list(exc.missing_pages),
                             'src_bytes': src_bytes,
                             'page_count': page_count,
-                            'fast_path_pages': sorted(fast_path_pages),
                             'preview_dpi': settings.preview_dpi,
+                            'preview_jpeg_quality': settings.preview_jpeg_quality,
                         }
-                    }
-                    logger.warning(
-                        "mutool batch incomplete asset=%s missing=%s rc=%s — retrying ONLY the missing pages individually",
-                        asset_id, exc.missing_pages, exc.returncode,
-                    )
-                    # Surgical per-page retries — do NOT re-render the
-                    # pages that already succeeded. Run them concurrently
-                    # so a 4 vCPU light worker actually uses all 4 cores
-                    # (each `mutool draw` subprocess pins one core); the
-                    # old serial loop was the main cause of "five missing
-                    # pages → minutes of wall-clock retry".
-                    retry_results: list[dict] = []
-                    still_missing: list[int] = []
-                    if exc.missing_pages:
-                        t_retry = time.monotonic()
-                        retry_workers = max(
-                            1, min(len(exc.missing_pages), settings.render_cpu_concurrency)
+                        logger.warning(
+                            "gs batch incomplete asset=%s missing=%s — running single-page gs retry",
+                            asset_id, exc.missing_pages,
                         )
 
-                        def _retry_one(page_num: int):
+                        # Single-page gs retry, in parallel.
+                        retry_pages = list(exc.missing_pages)
+                        retry_workers = max(
+                            1, min(len(retry_pages) or 1, settings.render_cpu_concurrency)
+                        )
+
+                        def _gs_retry_one(pn: int):
                             t0 = time.monotonic()
                             try:
-                                pdf_ops.rasterize_one_page_mutool(
+                                pdf_ops.rasterize_one_page_ghostscript_jpeg(
                                     src, preview_dir / 'page',
-                                    dpi=settings.preview_dpi,
-                                    page=page_num,
-                                    fmt=settings.preview_format,
+                                    dpi=settings.preview_dpi, page=pn,
+                                    quality=settings.preview_jpeg_quality,
                                 )
-                                return {
-                                    'page': page_num, 'ok': True,
-                                    'elapsed_ms': int((time.monotonic() - t0) * 1000),
-                                }
-                            except MutoolRenderError as e2:
-                                return {
-                                    'page': page_num, 'ok': False,
-                                    'returncode': e2.returncode,
-                                    'stderr_tail': "\n".join(
-                                        (e2.stderr or "").strip().splitlines()[-3:]
-                                    ),
-                                    'elapsed_ms': int((time.monotonic() - t0) * 1000),
-                                }
-                            except Exception as e2:  # noqa: BLE001
-                                return {
-                                    'page': page_num, 'ok': False,
-                                    'error': f"{type(e2).__name__}: {e2}",
-                                    'elapsed_ms': int((time.monotonic() - t0) * 1000),
-                                }
+                                return {'page': pn, 'ok': True,
+                                        'elapsed_ms': int((time.monotonic() - t0) * 1000)}
+                            except Exception as e2:
+                                return {'page': pn, 'ok': False,
+                                        'error': f"{type(e2).__name__}: {e2}",
+                                        'elapsed_ms': int((time.monotonic() - t0) * 1000)}
 
-                        with ThreadPoolExecutor(max_workers=retry_workers) as retry_pool:
-                            for res in retry_pool.map(_retry_one, exc.missing_pages):
+                        retry_results: list[dict] = []
+                        t_retry = time.monotonic()
+                        with ThreadPoolExecutor(max_workers=retry_workers) as rp:
+                            for res in rp.map(_gs_retry_one, retry_pages):
                                 retry_results.append(res)
                                 if not res.get('ok'):
-                                    still_missing.append(res['page'])
-                        _stamp('mutool_per_page_retry', t_retry)
-                        mutool_diagnostic['retry'] = {
-                            'mode': 'per_page_parallel',
-                            'workers': retry_workers,
-                            'attempted': list(exc.missing_pages),
-                            'still_missing': still_missing,
+                                    still_missing_after_retry.append(res['page'])
+                        _stamp('render_gs_retry', t_retry)
+                        renderer_diagnostic['gs_retry'] = {
+                            'attempted': retry_pages,
+                            'still_missing': still_missing_after_retry,
                             'results': retry_results,
-                            'ok': not still_missing,
                         }
-                        if still_missing:
-                            logger.error(
-                                "mutool per-page retry STILL missing pages asset=%s missing=%s — salvage pass will run",
-                                asset_id, still_missing,
+
+                        # Last-resort: mutool for anything gs refused.
+                        if still_missing_after_retry:
+                            logger.warning(
+                                "gs retry STILL missing asset=%s pages=%s — trying mutool salvage",
+                                asset_id, still_missing_after_retry,
                             )
+                            mutool_salvaged: list[int] = []
+                            t_mutool = time.monotonic()
+                            for pn in list(still_missing_after_retry):
+                                try:
+                                    pdf_ops.rasterize_one_page_mutool(
+                                        src, preview_dir / 'page',
+                                        dpi=settings.preview_dpi, page=pn,
+                                        fmt='jpeg',
+                                    )
+                                    mutool_salvaged.append(pn)
+                                except Exception as e3:
+                                    logger.warning(
+                                        "mutool salvage failed asset=%s page=%d: %s",
+                                        asset_id, pn, e3,
+                                    )
+                            _stamp('render_mutool_salvage', t_mutool)
+                            renderer_diagnostic['mutool_salvage'] = {
+                                'attempted': list(still_missing_after_retry),
+                                'recovered': mutool_salvaged,
+                            }
+                            still_missing_after_retry = [
+                                p for p in still_missing_after_retry
+                                if p not in mutool_salvaged
+                            ]
+                    except Exception as exc:
+                        logger.warning(
+                            "gs batch raised unexpected error asset=%s: %s",
+                            asset_id, exc,
+                        )
+                        renderer_diagnostic = {
+                            'engine': 'ghostscript',
+                            'unexpected_error': f"{type(exc).__name__}: {exc}",
+                        }
 
-                except Exception as exc:
-                    logger.warning(
-                        "mutool batch raised unexpected error asset=%s: %s — falling back",
-                        asset_id, exc,
-                    )
-                    mutool_diagnostic = {'unexpected_error': f"{type(exc).__name__}: {exc}"}
-
-                if mutool_diagnostic is not None:
-                    # Surface the failure in the admin UI without trawling
-                    # logs. evt is fire-and-forget — if it can't be written
-                    # we still continue rendering.
+                if renderer_diagnostic is not None:
+                    # Surface the failure detail in the admin UI.
                     diag_evt = job_event_repo.start(
                         db, job_id=job_id, asset_id=asset_id,
                         task_name='generate_previews', queue_name='thumbnails',
                         worker_name=self.request.hostname if self.request else None,
-                        stage='mutool_failed',
-                        metadata={**mutool_diagnostic, 'runtime': _runtime_meta()},
-                        message='mutool render produced incomplete page set',
+                        stage='render_incomplete',
+                        metadata={**renderer_diagnostic, 'runtime': _runtime_meta()},
+                        message=(
+                            'Primary renderer dropped pages; gaps filled by retry/salvage'
+                            if not still_missing_after_retry
+                            else f"Pages still missing after retry: {still_missing_after_retry}"
+                        ),
                     )
                     if diag_evt is not None:
-                        job_event_repo.finish(db, diag_evt.id, status='failed',
-                                              message='mutool incomplete')
+                        job_event_repo.finish(
+                            db, diag_evt.id,
+                            status='failed' if still_missing_after_retry else 'done',
+                            message='render_incomplete',
+                        )
 
-                # Whatever MuPDF managed to write (full set or partial), pick
-                # it up, downscale and upload. Anything still missing after
-                # this drains into the existing in-process / salvage paths.
+                # Downscale → upload → record everything that landed on disk.
                 try:
                     cpu_workers = max(1, settings.render_cpu_concurrency)
                     io_workers = max(1, settings.render_io_concurrency)
@@ -1051,13 +993,16 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                                 })
                     _stamp('batch_total', t_batch)
                     logger.info(
-                        "generate_previews: batch path (mutool) asset=%s rendered=%d/%d ext=%s timings_ms=%s",
-                        asset_id, len(completed_pages), page_count, preview_ext, timings,
+                        "generate_previews: batch path (%s) asset=%s rendered=%d/%d ext=%s timings_ms=%s",
+                        renderer, asset_id, len(completed_pages), page_count,
+                        preview_ext, timings,
                     )
                 except Exception as exc:
                     logger.warning(
                         "generate_previews: batch upload/record path failed (will fall back): %s", exc,
                     )
+
+
 
 
             # ─── Page-1 fast path (skipped if batch already covered it) ─
