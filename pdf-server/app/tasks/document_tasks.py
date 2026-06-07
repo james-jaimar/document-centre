@@ -1449,7 +1449,63 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             # unhappy path, but still wildly faster than the old fully
             # sequential loop (we saw a 247 s salvage in production).
             missing = sorted(expected_pages - completed_pages)
-            salvage_missing = [p for p in missing if p not in renderer_terminal_missing]
+            record_missing = [p for p in missing if p in local_rasterized_pages]
+            if record_missing:
+                logger.warning(
+                    "generate_previews: retrying record-only pages asset=%s pages=%s errors=%s",
+                    asset_id, record_missing,
+                    {p: record_missing_errors.get(p) for p in record_missing},
+                )
+                record_evt = job_event_repo.start(
+                    db, job_id=job_id, asset_id=asset_id,
+                    task_name='generate_previews', queue_name='thumbnails',
+                    worker_name=self.request.hostname if self.request else None,
+                    stage='record_existing',
+                    metadata={
+                        'pages': record_missing,
+                        'previous_errors': {str(p): record_missing_errors.get(p) for p in record_missing},
+                    },
+                    message=f'Recording {len(record_missing)} already-rendered page(s)…',
+                )
+                recorded, record_failed = _record_existing_preview_pages(
+                    db,
+                    asset_id=asset_id,
+                    job_id=job_id,
+                    prefix=prefix,
+                    preview_dir=preview_dir,
+                    thumb_dir=thumb_dir,
+                    pages=record_missing,
+                    preview_ext=preview_ext,
+                    preview_media_type=preview_media_type,
+                )
+                record_missing_errors.update(record_failed)
+                for p, (prev_sp, thumb_sp) in sorted(recorded.items()):
+                    page_storage[p] = (prev_sp, thumb_sp)
+                    completed_pages.add(p)
+                    files_created.append({'kind': 'preview_page', 'page': p, 'storage_path': prev_sp})
+                    files_created.append({'kind': 'thumbnail_page', 'page': p, 'storage_path': thumb_sp})
+                    _emit_page_progress(
+                        db,
+                        job_id=job_id,
+                        asset_id=asset_id,
+                        task_name='generate_previews',
+                        worker_name=self.request.hostname if self.request else None,
+                        completed_count=len(completed_pages),
+                        page_count=page_count,
+                    )
+                if record_evt is not None:
+                    job_event_repo.finish(
+                        db, record_evt.id,
+                        status='done' if len(recorded) == len(record_missing) else 'failed',
+                        metadata={
+                            'recorded': sorted(recorded),
+                            'failed': {str(p): record_missing_errors.get(p) for p in record_missing if p not in recorded},
+                        },
+                        message='Record-existing pass complete',
+                    )
+
+            missing = sorted(expected_pages - completed_pages)
+            salvage_missing = [p for p in missing if p not in renderer_terminal_missing and p not in local_rasterized_pages]
             if salvage_missing and settings.preview_salvage_enabled:
                 logger.warning(
                     "generate_previews: salvage pass for asset=%s pages=%s",
@@ -1478,7 +1534,11 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                         for p in salvage_missing
                     }
                     io_futures = {}
-                    for cpu_fut in as_completed(cpu_futures):
+                    for cpu_fut in _completed_or_timed_out(
+                        cpu_futures,
+                        timeout_seconds=_future_timeout(len(cpu_futures), phase='cpu'),
+                        label='salvage CPU phase',
+                    ):
                         page_num = cpu_futures[cpu_fut]
                         try:
                             image_path, thumb_image, prev_ext, prev_mt = cpu_fut.result()
@@ -1492,7 +1552,11 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                             preview_ext=prev_ext, preview_media_type=prev_mt,
                         )] = (page_num, image_path, thumb_image, prev_mt)
 
-                    for io_fut in as_completed(io_futures):
+                    for io_fut in _completed_or_timed_out(
+                        io_futures,
+                        timeout_seconds=_future_timeout(len(io_futures), phase='io'),
+                        label='salvage IO phase',
+                    ):
                         page_num, image_path, thumb_image, prev_mt = io_futures[io_fut]
                         try:
                             prev_sp, thumb_sp = io_fut.result()
