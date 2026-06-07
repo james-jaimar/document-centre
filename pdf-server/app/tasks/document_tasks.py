@@ -54,6 +54,14 @@ def _runtime_meta() -> dict:
     admin asset inspector can prove which Cloud Run revision / worker /
     queue backend handled a render without trawling logs."""
     from app.core.config import settings as _s
+    try:
+        thread_ok = mutool_threading_supported()
+    except Exception:
+        thread_ok = None
+    try:
+        eff_fmt, eff_ext = mutool_effective_format(_s.preview_format)
+    except Exception:
+        eff_fmt, eff_ext = (None, None)
     return {
         'k_service': os.getenv('K_SERVICE'),
         'k_revision': os.getenv('K_REVISION'),
@@ -65,6 +73,9 @@ def _runtime_meta() -> dict:
         'cpu_count': os.cpu_count(),
         'mutool_threads': getattr(_s, 'mutool_render_threads', None),
         'mutool_band_height': getattr(_s, 'mutool_band_height', None),
+        'mutool_threading_supported': thread_ok,
+        'mutool_effective_format': eff_fmt,
+        'mutool_effective_ext': eff_ext,
         'render_cpu_concurrency': getattr(_s, 'render_cpu_concurrency', None),
         'render_io_concurrency': getattr(_s, 'render_io_concurrency', None),
     }
