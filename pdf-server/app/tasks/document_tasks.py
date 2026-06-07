@@ -21,6 +21,7 @@ from app.services.pdf_ops import (
     RasterizationIncompleteError,
     MutoolRenderError,
     mutool_effective_format,
+    mutool_threading_supported,
 )
 from app.services.derived_files import derived_file_repo
 from app.core.config import settings
