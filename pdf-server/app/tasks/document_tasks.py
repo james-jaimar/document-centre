@@ -637,9 +637,14 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             queue_name='thumbnails',
             worker_name=self.request.hostname if self.request else None,
             stage='render',
-            metadata={'page_count': page_count, 'dpi': settings.preview_dpi},
+            metadata={
+                'page_count': page_count,
+                'dpi': settings.preview_dpi,
+                'runtime': _runtime_meta(),
+            },
             message=f'Rendering {page_count or "?"} page(s)…',
         )
+
 
         timings: dict[str, int] = {}
 
