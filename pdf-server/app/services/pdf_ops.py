@@ -1673,7 +1673,11 @@ class PdfOps:
         ]
 
         if timeout_seconds is None:
-            timeout_seconds = min(180.0, 10.0 + 2.0 * page_count)
+            # Image-heavy A4 pages can take 10–15s each through MuPDF on
+            # Cloud Run vCPUs. The old budget (10 + 2*N capped 180) killed
+            # batches before they could finish on raster-heavy PDFs and
+            # forced the per-page retry path with "missing pages" errors.
+            timeout_seconds = min(600.0, 60.0 + 15.0 * page_count)
 
         def _run_mutool(cmd_to_run, timeout):
             t = time.monotonic()
