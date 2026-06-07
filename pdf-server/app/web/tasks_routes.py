@@ -16,6 +16,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
+from app.core.config import settings
 from app.tasks.registry import resolve
 
 log = logging.getLogger("tasks_routes")
@@ -107,7 +108,12 @@ async def run_task(task_name: str, request: Request) -> dict[str, Any]:
     # the duplicate work. The first positional arg pattern is (asset_id,
     # job_id, ...) for every task in this codebase; the optional job_id
     # kwarg covers the chained variants.
-    if int(retry_count) > 0:
+    try:
+        retry_num = int(retry_count)
+    except ValueError:
+        retry_num = 0
+
+    if retry_num > 0:
         job_id = kwargs.get("job_id")
         if job_id is None and len(args) >= 2:
             job_id = args[1]
@@ -133,21 +139,38 @@ async def run_task(task_name: str, request: Request) -> dict[str, Any]:
                         return {"ok": True, "task": task_name, "skipped": status}
                     if status == "running" and started_at is not None:
                         from datetime import datetime, timezone, timedelta
-                        # If the previous attempt started recently AND
-                        # we're seeing a retry, the original is probably
-                        # still in flight — refuse rather than start a
-                        # duplicate. Stale "running" rows older than 15
-                        # min fall through and re-execute.
+                        # If the previous attempt started recently AND we're
+                        # seeing a retry, the original may still be in flight.
+                        # Do NOT return 200 here: acknowledging a retry deletes
+                        # the Cloud Task, and if the original worker was killed
+                        # after marking the job running, the job stays stuck
+                        # forever with partial derived_files. Return a retryable
+                        # 503 until the original finishes or the running marker
+                        # becomes stale enough to re-execute safely.
                         try:
+                            if started_at.tzinfo is None:
+                                started_at = started_at.replace(tzinfo=timezone.utc)
                             age = datetime.now(timezone.utc) - started_at
                         except Exception:
                             age = timedelta(seconds=0)
-                        if age < timedelta(minutes=15):
+                        preview_task = task_name in {"generate_previews", "render_specific_pages", "render_one_page"}
+                        grace_seconds = (
+                            settings.cloud_tasks_preview_running_grace_seconds
+                            if preview_task
+                            else settings.cloud_tasks_running_grace_seconds
+                        )
+                        if age < timedelta(seconds=max(30, grace_seconds)):
                             log.warning(
-                                "task %s skipped — job %s already running %ds (retry=%s)",
-                                task_name, job_id, int(age.total_seconds()), retry_count,
+                                "task %s retry deferred — job %s already running %ds "
+                                "(retry=%s grace=%ss)",
+                                task_name, job_id, int(age.total_seconds()), retry_count, grace_seconds,
                             )
-                            return {"ok": True, "task": task_name, "skipped": "in_flight"}
+                            raise HTTPException(
+                                status_code=503,
+                                detail=f"job {job_id} already running; retry later",
+                            )
+            except HTTPException:
+                raise
             except Exception as guard_exc:  # noqa: BLE001
                 log.warning("idempotency guard check failed: %s", guard_exc)
 

@@ -1200,6 +1200,14 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
             'failed': failed,
             'pages_rendered': len(recovered),
         }
+        if failed:
+            msg = f"Failed to re-render {len(failed)} page(s): {failed}"
+            job_repo.mark_failed(db, job_id, msg)
+            if evt_overall:
+                job_event_repo.fail(db, evt_overall.id, message=msg)
+                evt_overall = None
+            raise RuntimeError(msg)
+
         job_repo.mark_done(db, job_id, result)
         if evt_overall:
             job_event_repo.finish(

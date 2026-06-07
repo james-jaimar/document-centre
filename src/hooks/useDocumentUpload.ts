@@ -128,7 +128,10 @@ export async function renderDocumentThumbnails(
     inFlightExpected = 0;
   }
 
-  let lastReportedFound = -1;
+  const RENDER_STALL_MS = 90_000;
+  const RENDER_STALL_ERROR = "render_job_stalled_no_page_progress";
+  let lastReportedFound = inFlightExpected > 0 ? 0 : -1;
+  let lastRenderProgressAt = Date.now();
   let derivedPollPromise: Promise<void> | null = null;
   const pollDerivedOnce = async () => {
     if (!inFlightExpected || derivedPollPromise) return;
@@ -144,6 +147,7 @@ export async function renderDocumentThumbnails(
           }
         }
         if (found !== lastReportedFound) {
+          if (found > lastReportedFound) lastRenderProgressAt = Date.now();
           lastReportedFound = found;
           const pct = 65 + (found / inFlightExpected) * 25;
           onProgress(
@@ -161,15 +165,41 @@ export async function renderDocumentThumbnails(
     })();
   };
 
-  await pollJob(cropJobId, (job) => {
-    if (job.status === "pending") onProgress("Queued — waiting for server…", 65);
-    else if (job.status === "running") {
-      // Trigger a derived-files poll in parallel so the user sees granular
-      // page progress while the server task continues. Fire-and-forget — we
-      // don't block the status poll loop on this lookup.
-      void pollDerivedOnce();
+  let renderJobStalled = false;
+  try {
+    await pollJob(cropJobId, (job) => {
+      if (job.status === "pending") onProgress("Queued — waiting for server…", 65);
+      else if (job.status === "running") {
+        // Trigger a derived-files poll in parallel so the user sees granular
+        // page progress while the server task continues. Fire-and-forget — we
+        // don't block the status poll loop on this lookup.
+        void pollDerivedOnce();
+        if (
+          inFlightExpected > 0 &&
+          lastReportedFound >= 0 &&
+          lastReportedFound < inFlightExpected &&
+          Date.now() - lastRenderProgressAt > RENDER_STALL_MS
+        ) {
+          throw new Error(RENDER_STALL_ERROR);
+        }
+      }
+    });
+  } catch (err: any) {
+    const msg = err?.message ?? String(err ?? "");
+    if (msg.includes(RENDER_STALL_ERROR) || /Incomplete render|missing/i.test(msg)) {
+      renderJobStalled = true;
+      console.warn(
+        `[renderDocumentThumbnails] asset=${assetId} render job did not complete cleanly; attempting page recovery:`,
+        msg,
+      );
+    } else {
+      throw err;
     }
-  });
+  }
+
+  if (renderJobStalled) {
+    onProgress("Recovering missing pages…", 88);
+  }
 
   // Poll for derived files to appear (rasterization writes them async)
   const asset = await getAsset(assetId);

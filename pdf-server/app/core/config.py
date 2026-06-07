@@ -102,6 +102,13 @@ class Settings(BaseSettings):
     # subtask) and is only worthwhile for very large books.
     render_batch_threshold: int = Field(alias='RENDER_BATCH_THRESHOLD', default=200)
 
+    # Cloud Tasks retry idempotency guard. If a retry arrives while a job is
+    # marked running, keep the task retryable for this grace period instead of
+    # acknowledging it as success. Preview renders get a shorter window so a
+    # killed light-worker does not leave customer uploads stuck for minutes.
+    cloud_tasks_running_grace_seconds: int = Field(alias='CLOUD_TASKS_RUNNING_GRACE_SECONDS', default=300)
+    cloud_tasks_preview_running_grace_seconds: int = Field(alias='CLOUD_TASKS_PREVIEW_RUNNING_GRACE_SECONDS', default=180)
+
     # Shared on-disk PDF cache. Workers (heavy + light) all co-locate on
     # the same host, so we can hand the prepared PDF over the local disk
     # instead of round-tripping through S3 between prepare_for_product
