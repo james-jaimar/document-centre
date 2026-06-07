@@ -471,6 +471,57 @@ class OpsService:
             db.rollback()
             return {"asset_id": asset_id, "asset": None, "jobs": [], "derived_files": [], "events": []}
 
+    def cloud_run_logs(self, *, search: str, minutes: int = 60, limit: int = 100) -> dict:
+        """Read recent Cloud Run logs directly from GCP Cloud Logging.
+
+        Uses the Cloud Run service account's Application Default Credentials;
+        requires `roles/logging.viewer` (or equivalent) on the GCP project.
+        """
+        if not search:
+            return {"entries": [], "error": "search required"}
+        project = os.getenv("GCP_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT")
+        if not project:
+            return {"entries": [], "error": "GCP_PROJECT_ID/GOOGLE_CLOUD_PROJECT is not set"}
+
+        start = datetime.now(timezone.utc) - timedelta(minutes=max(1, minutes))
+        safe_search = search.replace('"', '\\"')
+        log_filter = (
+            'resource.type="cloud_run_revision" '
+            f'timestamp >= "{start.isoformat()}" '
+            f'("{safe_search}")'
+        )
+        try:
+            import google.auth  # type: ignore
+            from google.auth.transport.requests import AuthorizedSession  # type: ignore
+
+            creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+            session = AuthorizedSession(creds)
+            resp = session.post(
+                "https://logging.googleapis.com/v2/entries:list",
+                json={
+                    "resourceNames": [f"projects/{project}"],
+                    "filter": log_filter,
+                    "orderBy": "timestamp desc",
+                    "pageSize": max(1, min(limit, 500)),
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            raw = resp.json().get("entries", [])
+            entries = []
+            for e in raw:
+                payload = e.get("textPayload") or e.get("jsonPayload") or e.get("protoPayload") or {}
+                entries.append({
+                    "timestamp": e.get("timestamp"),
+                    "severity": e.get("severity"),
+                    "service": ((e.get("resource") or {}).get("labels") or {}).get("service_name"),
+                    "revision": ((e.get("resource") or {}).get("labels") or {}).get("revision_name"),
+                    "payload": payload,
+                })
+            return {"project": project, "filter": log_filter, "entries": entries}
+        except Exception as exc:  # noqa: BLE001
+            return {"project": project, "filter": log_filter, "entries": [], "error": f"{type(exc).__name__}: {exc}"}
+
     # ─── metrics ─────────────────────────────────────────────────
     def stage_metrics(self, db: Session, hours: int = 24) -> dict:
         try:
