@@ -30,10 +30,22 @@ case "$ROLE" in
     # different ROLE — Cloud Run gives each its own scaling envelope.
     case "$ROLE" in
       worker-heavy-http|worker-light-http|worker-emails-http)
+        # Default uvicorn worker count by role:
+        #   light  → 4 (matches 4 vCPU Cloud Run shape; allows concurrent
+        #            render jobs instead of serialising every upload behind
+        #            a single uvicorn process)
+        #   heavy  → 1 (large memory footprint per job; keep single-process)
+        #   emails → 2 (light per-request work, modest concurrency)
+        # All overridable via UVICORN_WORKERS env var on the service.
+        case "$ROLE" in
+          worker-light-http)   _DEFAULT_WORKERS=4 ;;
+          worker-emails-http)  _DEFAULT_WORKERS=2 ;;
+          *)                   _DEFAULT_WORKERS=1 ;;
+        esac
         exec uvicorn app.main:app \
           --host "${API_HOST:-0.0.0.0}" \
           --port "$PORT" \
-          --workers "${UVICORN_WORKERS:-1}" \
+          --workers "${UVICORN_WORKERS:-$_DEFAULT_WORKERS}" \
           --proxy-headers \
           --forwarded-allow-ips='*' \
           --timeout-keep-alive 30

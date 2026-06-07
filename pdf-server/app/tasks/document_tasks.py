@@ -1168,24 +1168,91 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
             preview_dir.mkdir(parents=True, exist_ok=True)
             thumb_dir.mkdir(parents=True, exist_ok=True)
 
-            for page_num in wanted:
-                try:
-                    image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
-                        src_pdf=src, preview_dir=preview_dir, thumb_dir=thumb_dir,
-                        prefix=prefix, page=page_num, dpi=settings.preview_dpi,
-                    )
-                    _record_page(
-                        db, asset_id=asset_id, job_id=job_id, page=page_num,
-                        image_path=image_path, thumb_image=thumb_image,
-                        preview_storage=prev_sp, thumb_storage=thumb_sp,
-                    )
-                    recovered.append(page_num)
-                except Exception as exc:
-                    logger.error(
-                        "render_specific_pages: page %d failed: %s",
-                        page_num, exc,
-                    )
-                    failed.append(page_num)
+            # ── Batch path ────────────────────────────────────────────
+            # Mirror generate_previews: ONE Ghostscript invocation across
+            # the requested page range, then downscale + upload + record
+            # in parallel via the existing CPU/IO thread pools. Avoids the
+            # ~500ms–1s GS cold-start overhead that the previous per-page
+            # loop paid for every missing page.
+            batch_dir = preview_dir / 'batch'
+            batch_dir.mkdir(parents=True, exist_ok=True)
+            wanted_set = set(wanted)
+            lo, hi = min(wanted), max(wanted)
+            try:
+                pdf_ops.rasterize_preview(
+                    src, batch_dir / 'page', dpi=settings.preview_dpi,
+                    first_page=lo, last_page=hi,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "render_specific_pages: batch rasterize %d-%d failed, "
+                    "falling back to per-page: %s", lo, hi, exc,
+                )
+                # Fallback: original per-page loop so we never regress
+                # behaviour when the batch path explodes.
+                for page_num in wanted:
+                    try:
+                        image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
+                            src_pdf=src, preview_dir=preview_dir, thumb_dir=thumb_dir,
+                            prefix=prefix, page=page_num, dpi=settings.preview_dpi,
+                        )
+                        _record_page(
+                            db, asset_id=asset_id, job_id=job_id, page=page_num,
+                            image_path=image_path, thumb_image=thumb_image,
+                            preview_storage=prev_sp, thumb_storage=thumb_sp,
+                        )
+                        recovered.append(page_num)
+                    except Exception as inner:
+                        logger.error(
+                            "render_specific_pages: page %d failed: %s",
+                            page_num, inner,
+                        )
+                        failed.append(page_num)
+            else:
+                cpu_workers = max(1, settings.render_cpu_concurrency)
+                io_workers = max(1, settings.render_io_concurrency)
+                with ThreadPoolExecutor(max_workers=cpu_workers) as cpu_pool, \
+                     ThreadPoolExecutor(max_workers=io_workers) as io_pool:
+                    thumb_futures = {}
+                    for p in wanted:
+                        image_path = batch_dir / f"page-{p:03d}.png"
+                        if not image_path.exists():
+                            failed.append(p)
+                            continue
+                        thumb_image = thumb_dir / f"page-{p:03d}.png"
+                        thumb_futures[cpu_pool.submit(
+                            pdf_ops.downscale_to_thumbnail,
+                            image_path, thumb_image, 360,
+                        )] = (p, image_path, thumb_image)
+
+                    upload_futures = {}
+                    for fut in as_completed(thumb_futures):
+                        p, image_path, thumb_image = thumb_futures[fut]
+                        try:
+                            fut.result()
+                        except Exception as exc:
+                            logger.warning("recovery downscale page %d failed: %s", p, exc)
+                            failed.append(p)
+                            continue
+                        upload_futures[io_pool.submit(
+                            _upload_page_io,
+                            prefix=prefix, page=p,
+                            image_path=image_path, thumb_image=thumb_image,
+                        )] = (p, image_path, thumb_image)
+
+                    for fut in as_completed(upload_futures):
+                        p, image_path, thumb_image = upload_futures[fut]
+                        try:
+                            prev_sp, thumb_sp = fut.result()
+                            _record_page(
+                                db, asset_id=asset_id, job_id=job_id, page=p,
+                                image_path=image_path, thumb_image=thumb_image,
+                                preview_storage=prev_sp, thumb_storage=thumb_sp,
+                            )
+                            recovered.append(p)
+                        except Exception as exc:
+                            logger.warning("recovery IO/record page %d failed: %s", p, exc)
+                            failed.append(p)
 
         # If the asset now has every page, promote it back to 'ready'.
         present_previews = derived_file_repo.pages_present(db, asset_id, 'preview_page')
