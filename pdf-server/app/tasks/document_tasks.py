@@ -1239,7 +1239,14 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             #  (b) IN-PROCESS (FANOUT_ENABLED=false): the original two-pool
             #      ThreadPoolExecutor design — pinned to one worker child.
             if page_count and page_count > 1:
-                remaining = [p for p in range(2, page_count + 1) if p not in completed_pages]
+                # Only rasterize pages that do not already have a valid local
+                # batch image. Pages with a local preview but failed upload/DB
+                # remain record_missing; re-rendering them wastes minutes and
+                # hides the actual failing phase.
+                remaining = [
+                    p for p in range(2, page_count + 1)
+                    if p not in completed_pages and p not in local_rasterized_pages
+                ]
 
                 # Cloud Tasks fan-out is a regression vs the VPS Celery prefork
                 # pool: each per-page task becomes an HTTP push that has to spin
