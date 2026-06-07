@@ -918,7 +918,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                 pass
             else:
                 try:
-                    image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
+                    image_path, thumb_image, prev_sp, thumb_sp, prev_ext, prev_mt = _render_one_page(
                         src_pdf=src, preview_dir=preview_dir, thumb_dir=thumb_dir,
                         prefix=prefix, page=1, dpi=settings.preview_dpi,
                     )
@@ -926,6 +926,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                         db, asset_id=asset_id, job_id=job_id, page=1,
                         image_path=image_path, thumb_image=thumb_image,
                         preview_storage=prev_sp, thumb_storage=thumb_sp,
+                        preview_media_type=prev_mt,
                     )
                     preview_path = prev_sp
                     thumb_path = thumb_sp
