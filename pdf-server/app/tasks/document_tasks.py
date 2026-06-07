@@ -772,6 +772,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             expected_pages: set[int] = set(range(1, page_count + 1)) if page_count else set()
             completed_pages: set[int] = set()
             page_storage: dict[int, tuple[str, str]] = {}
+            renderer_terminal_missing: set[int] = set()
 
             # ─── Batch render (Ghostscript → JPEG, single invocation) ──
             # PDF → JPEG in ONE `gs` call. Locally benchmarked at ~3.5s for
@@ -941,6 +942,8 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                                 'reason': 'PREVIEW_MUTOOL_SALVAGE_ENABLED=false',
                                 'still_missing': list(still_missing_after_retry),
                             }
+                        if still_missing_after_retry:
+                            renderer_terminal_missing.update(still_missing_after_retry)
                     except Exception as exc:
                         logger.warning(
                             "gs batch raised unexpected error asset=%s: %s",
@@ -1305,18 +1308,19 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             # unhappy path, but still wildly faster than the old fully
             # sequential loop (we saw a 247 s salvage in production).
             missing = sorted(expected_pages - completed_pages)
-            if missing and settings.preview_salvage_enabled:
+            salvage_missing = [p for p in missing if p not in renderer_terminal_missing]
+            if salvage_missing and settings.preview_salvage_enabled:
                 logger.warning(
                     "generate_previews: salvage pass for asset=%s pages=%s",
-                    asset_id, missing,
+                    asset_id, salvage_missing,
                 )
                 salvage_evt = job_event_repo.start(
                     db, job_id=job_id, asset_id=asset_id,
                     task_name='generate_previews', queue_name='thumbnails',
                     worker_name=self.request.hostname if self.request else None,
                     stage='salvage',
-                    metadata={'missing': missing},
-                    message=f'Salvaging {len(missing)} missing page(s)…',
+                    metadata={'missing': salvage_missing, 'renderer_terminal_missing': sorted(renderer_terminal_missing)},
+                    message=f'Salvaging {len(salvage_missing)} missing page(s)…',
                 )
 
                 salvage_cpu = max(1, min(2, settings.render_cpu_concurrency))
@@ -1330,7 +1334,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                             src_pdf=src, preview_dir=preview_dir,
                             thumb_dir=thumb_dir, page=p, dpi=settings.preview_dpi,
                         ): p
-                        for p in missing
+                        for p in salvage_missing
                     }
                     io_futures = {}
                     for cpu_fut in as_completed(cpu_futures):
@@ -1370,8 +1374,13 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                     job_event_repo.finish(
                         db, salvage_evt.id,
                         metadata={'recovered': sorted(completed_pages & set(missing))},
-                        message='Salvage pass complete',
+                            message='Salvage pass complete',
                     )
+            elif renderer_terminal_missing:
+                logger.warning(
+                    "generate_previews: skipping salvage for renderer-terminal pages asset=%s pages=%s",
+                    asset_id, sorted(renderer_terminal_missing),
+                )
 
 
             # ─── Verify & finalise ─────────────────────────────────────
