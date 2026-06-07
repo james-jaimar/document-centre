@@ -48,6 +48,21 @@ def _db() -> Session:
     return SessionLocal()
 
 
+def _runtime_meta() -> dict:
+    """Non-secret runtime facts for embedding in job_events.metadata so the
+    admin asset inspector can prove which Cloud Run revision / worker /
+    queue backend handled a render without trawling logs."""
+    return {
+        'k_service': os.getenv('K_SERVICE'),
+        'k_revision': os.getenv('K_REVISION'),
+        'k_configuration': os.getenv('K_CONFIGURATION'),
+        'role': os.getenv('ROLE'),
+        'queue_backend': os.getenv('QUEUE_BACKEND', 'celery'),
+        'gcp_region': os.getenv('GCP_REGION'),
+        'gcp_tasks_region': os.getenv('GCP_TASKS_REGION'),
+    }
+
+
 def _tenant_prefix(source_path: str | None) -> str:
     """Extract 'tenants/{id}/' prefix from source_storage_path, or return ''."""
     if source_path and source_path.startswith("tenants/"):
@@ -55,6 +70,7 @@ def _tenant_prefix(source_path: str | None) -> str:
         if len(parts) >= 2:
             return f"tenants/{parts[1]}/"
     return ""
+
 
 
 def _download_pdf_with_cache(storage_path: str, local_path, *, asset_id: str, timings: dict[str, int] | None = None) -> None:
