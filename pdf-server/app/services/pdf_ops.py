@@ -25,11 +25,34 @@ class RasterizationIncompleteError(RuntimeError):
     after per-page retries. Carries the list of missing 1-based page numbers
     so the caller can decide whether to salvage them another way."""
 
-    def __init__(self, missing_pages: list[int]):
+    def __init__(
+        self,
+        missing_pages: list[int],
+        *,
+        returncode: int | None = None,
+        stderr: str = "",
+        stdout: str = "",
+        elapsed_ms: int | None = None,
+        timed_out: bool = False,
+        produced: list[str] | None = None,
+        cmd: list[str] | None = None,
+    ):
         super().__init__(
             f"Ghostscript produced an incomplete page set; missing pages: {missing_pages}"
         )
         self.missing_pages = missing_pages
+        self.returncode = returncode
+        self.stderr = stderr or ""
+        self.stdout = stdout or ""
+        self.elapsed_ms = elapsed_ms
+        self.timed_out = timed_out
+        self.produced = produced or []
+        self.cmd = cmd or []
+
+
+def _gs_thread_flags() -> list[str]:
+    threads = max(1, int(getattr(settings, "preview_gs_threads", 1) or 1))
+    return [f"-dNumRenderingThreads={threads}"] if threads > 1 else []
 
 
 class MutoolRenderError(RuntimeError):
@@ -1681,9 +1704,7 @@ class PdfOps:
                 "-dNOPAUSE",
                 "-dBATCH",
                 "-dSAFER",
-                # Multi-thread the rasteriser. On a 4 vCPU host this gives
-                # ~30-50% faster wall-clock for multi-page renders.
-                "-dNumRenderingThreads=4",
+                *_gs_thread_flags(),
                 f"-r{dpi}",
                 f"-sDEVICE={device}",
                 f"-sOutputFile={target}",
