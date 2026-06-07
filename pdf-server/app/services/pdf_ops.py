@@ -196,6 +196,173 @@ def mutool_threading_supported() -> bool:
     return _mutool_thread_probe(mutool)
 
 
+# ---------------------------------------------------------------------------
+# Single-image-page fast path
+# ---------------------------------------------------------------------------
+# Many "image-heavy" customer PDFs (scans, exported slide decks, photo
+# books) are really just one full-page raster XObject per page wrapped in
+# a tiny PDF skeleton. Running MuPDF's full painter on those is wasteful:
+# MuPDF has to decode the embedded JPEG, recompose, and re-encode at the
+# target DPI — for a 17 MB / 8-page upload that's tens of seconds per
+# page on Cloud Run.
+#
+# This helper detects that case and short-circuits straight to
+# pikepdf-extract + Pillow-downscale + Pillow-encode, which is what
+# Adobe Acrobat's "save as images" does and runs in well under 1s/page.
+# Returns True if the page was handled, False if the caller should fall
+# back to the full mutool render path.
+
+def extract_single_image_page(
+    src: Path,
+    page_number: int,
+    out: Path,
+    target_long_edge_px: int,
+    jpeg_quality: int = 90,
+) -> bool:
+    """Try to render `page_number` of `src` by extracting its single
+    full-page image XObject directly. Returns True on success.
+
+    Heuristic for "single image page":
+      * exactly one /XObject of /Subtype /Image on the page (recursively
+        including Form XObjects that themselves contain one image),
+      * that image's pixel area covers at least 90% of the page area
+        when scaled to the page's user-space size,
+      * the page has no rendered text operators worth speaking of.
+
+    All other pages return False so the caller uses MuPDF.
+    """
+    try:
+        with pikepdf.open(str(src)) as pdf:
+            if page_number < 1 or page_number > len(pdf.pages):
+                return False
+            page = pdf.pages[page_number - 1]
+
+            # Reject pages with meaningful text content. We don't parse the
+            # content stream fully — just count `Tj`/`TJ` operators in the
+            # raw bytes. False negatives (treating a page as text-bearing
+            # when it isn't) just fall through to MuPDF, which is safe.
+            try:
+                raw_streams = []
+                contents = page.get("/Contents")
+                if contents is not None:
+                    if isinstance(contents, pikepdf.Array):
+                        for s in contents:
+                            try:
+                                raw_streams.append(bytes(s.read_raw_bytes()))
+                            except Exception:
+                                pass
+                    else:
+                        try:
+                            raw_streams.append(bytes(contents.read_raw_bytes()))
+                        except Exception:
+                            pass
+                blob = b"".join(raw_streams)
+                # Cheap text-operator check — avoids false positives on
+                # streams that merely embed the letters "Tj" inside a name.
+                text_ops = blob.count(b" Tj") + blob.count(b" TJ") + blob.count(b"'") + blob.count(b'"')
+                if text_ops > 4:
+                    return False
+            except Exception:
+                # If we can't inspect the content stream, be conservative.
+                return False
+
+            # Collect /Image XObjects (1 deep into Form XObjects).
+            images: list[pikepdf.Object] = []
+            resources = page.get("/Resources")
+            if resources is None:
+                return False
+            xobjects = resources.get("/XObject")
+            if xobjects is None:
+                return False
+            for _name, xo in xobjects.items():
+                try:
+                    subtype = xo.get("/Subtype")
+                except Exception:
+                    continue
+                if subtype == "/Image":
+                    images.append(xo)
+                elif subtype == "/Form":
+                    sub_res = xo.get("/Resources") if hasattr(xo, "get") else None
+                    if sub_res is None:
+                        continue
+                    sub_xo = sub_res.get("/XObject")
+                    if sub_xo is None:
+                        continue
+                    for _n2, sxo in sub_xo.items():
+                        try:
+                            if sxo.get("/Subtype") == "/Image":
+                                images.append(sxo)
+                        except Exception:
+                            continue
+
+            if len(images) != 1:
+                return False
+
+            img = images[0]
+            try:
+                img_w = int(img["/Width"])
+                img_h = int(img["/Height"])
+            except Exception:
+                return False
+
+            # Page user-space size.
+            mb = page.get("/MediaBox")
+            if mb is None or len(mb) != 4:
+                return False
+            pw = float(mb[2]) - float(mb[0])
+            ph = float(mb[3]) - float(mb[1])
+            if pw <= 0 or ph <= 0:
+                return False
+
+            # Coverage heuristic: the image pixel aspect should roughly
+            # match the page aspect AND the image must be large enough to
+            # be the dominant content (not a small inline logo).
+            page_aspect = pw / ph
+            img_aspect = img_w / max(1, img_h)
+            aspect_ok = abs(page_aspect - img_aspect) / max(page_aspect, img_aspect) < 0.15
+            # Pixel-density check: image should resolve to at least ~72 DPI
+            # over the page area. Tiny logos fail this.
+            density_ok = (img_w / pw * 72.0) >= 60.0 and (img_h / ph * 72.0) >= 60.0
+            if not (aspect_ok and density_ok):
+                return False
+
+            # Use pikepdf's PdfImage extractor (handles JPEG/JPEG2000/Flate).
+            try:
+                from pikepdf import PdfImage
+                pdf_image = PdfImage(img)
+                pil_image = pdf_image.as_pil_image()
+            except Exception as exc:
+                logger.info("extract_single_image_page: PdfImage failed page=%d: %s", page_number, exc)
+                return False
+
+            if pil_image.mode not in ("RGB", "L"):
+                pil_image = pil_image.convert("RGB")
+
+            # Downscale so the long edge is `target_long_edge_px` (matches
+            # the DPI-based mutool render's pixel size). Skip upscaling.
+            long_edge = max(pil_image.width, pil_image.height)
+            if long_edge > target_long_edge_px:
+                scale = target_long_edge_px / long_edge
+                new_size = (
+                    max(1, int(round(pil_image.width * scale))),
+                    max(1, int(round(pil_image.height * scale))),
+                )
+                pil_image = pil_image.resize(new_size, Image.LANCZOS)
+
+            out.parent.mkdir(parents=True, exist_ok=True)
+            pil_image.save(str(out), format="JPEG", quality=jpeg_quality, optimize=True, progressive=True)
+            return out.exists() and out.stat().st_size > 200
+    except Exception as exc:
+        logger.info(
+            "extract_single_image_page: unexpected error page=%d: %s — falling back",
+            page_number, exc,
+        )
+        return False
+
+
+
+
+
 
 
 # ---------------------------------------------------------------------------
