@@ -139,6 +139,66 @@ export interface OpsStorageLive {
   disk?: { total: number; used: number; free: number };
 }
 
+// ─── GCP-native types ─────────────────────────────────────────────
+export interface GcpCloudRunService {
+  service: string;
+  cpu_utilization: number | null;       // 0..1
+  memory_utilization: number | null;    // 0..1
+  instance_count: number | null;
+  request_count_1m: number | null;
+  request_latency_p95_ms: number | null;
+  startup_latency_ms: number | null;
+}
+
+export interface GcpCloudTasksQueue {
+  id: string;
+  logical?: string;
+  tasks_count?: number;
+  concurrent_dispatches?: number;
+  executed_last_minute?: number;
+  oldest_eta?: string | null;
+  error?: string;
+}
+
+export interface GcpLiveSnapshot {
+  captured_at: number;
+  project?: string;
+  region?: string | null;
+  tasks_region?: string | null;
+  error?: string;
+  cloud_run: {
+    region?: string | null;
+    services: GcpCloudRunService[];
+    totals?: { instance_count?: number; request_count_1m?: number };
+    error?: string;
+  };
+  cloud_tasks: {
+    queues: GcpCloudTasksQueue[];
+    total_pending: number;
+    total_in_flight: number;
+    backend?: string;
+  };
+  recent_jobs: { minutes: number; ok: number; failed: number; running: number };
+}
+
+export interface GcpLogEntry {
+  timestamp: string;
+  severity?: string;
+  service?: string;
+  revision?: string;
+  payload: unknown;
+}
+
+export interface OpsReconcileResult {
+  scanned: number;
+  reconciled: number;
+  still_running: number;
+  sample?: Array<{ id: string; stage: string; age_seconds: number; reason: string }>;
+  error?: string;
+}
+
+
+
 export interface OpsStorageHistoryRow {
   captured_at: string;
   s3_object_count: number | null;
@@ -218,6 +278,19 @@ export const opsApi = {
   healthFull: () => call<OpsHealthFull>("v1/ops/health/full"),
   system: () => call<OpsSystem>("v1/ops/system"),
   live: () => call<OpsLiveSnapshot>("v1/ops/live"),
+
+  // GCP-native
+  gcpLive: () => call<GcpLiveSnapshot>("v1/ops/gcp/live"),
+  gcpLogs: (q: { service?: string; severity?: string; minutes?: number; limit?: number; search?: string } = {}) =>
+    call<{ entries: GcpLogEntry[]; error?: string; filter?: string }>(
+      "v1/ops/gcp/logs", "GET", undefined,
+      { service: q.service, severity: q.severity, minutes: q.minutes, limit: q.limit, search: q.search },
+    ),
+  reconcileJobs: (graceSeconds?: number) =>
+    call<OpsReconcileResult>("v1/ops/jobs/reconcile", "POST", undefined,
+      graceSeconds ? { grace_seconds: graceSeconds } : undefined),
+
+
 
   processes: async (limit = 15): Promise<OpsProcess[]> => {
     const res = await call<Dict>("v1/ops/system/processes", "GET", undefined, { limit });

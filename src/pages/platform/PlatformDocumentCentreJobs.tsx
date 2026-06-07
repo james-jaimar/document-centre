@@ -12,8 +12,9 @@ import {
 } from "@/components/ui/table";
 import { opsApi, type OpsJob } from "@/lib/opsApi";
 import { toast } from "sonner";
-import { Ban, Eye, RefreshCw } from "lucide-react";
+import { AlertTriangle, Ban, Eye, RefreshCw, Wrench } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+
 
 const STATUS_OPTIONS = ["all", "queued", "started", "completed", "failed", "retry"];
 
@@ -40,12 +41,38 @@ export default function PlatformDocumentCentreJobs() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const reconcile = useMutation({
+    mutationFn: () => opsApi.reconcileJobs(),
+    onSuccess: (r) => {
+      toast.success(`Reconciled ${r.reconciled} / ${r.scanned} running jobs (${r.still_running} still in grace)`);
+      qc.invalidateQueries({ queryKey: ["ops", "jobs"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Count jobs that have been "running" / "started" for > 15 min — these are
+  // the likely-orphaned rows the reconciler will sweep.
+  const stuckCount = (jobs.data ?? []).filter((j) => {
+    if (j.status !== "running" && j.status !== "started") return false;
+    const t = j.started_at ?? j.created_at;
+    if (!t) return false;
+    return (Date.now() - new Date(t).getTime()) / 1000 > 15 * 60;
+  }).length;
+
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h2 className="text-lg font-semibold">Jobs</h2>
-          <p className="text-sm text-muted-foreground">Recent processing jobs across all tenants.</p>
+        <div className="flex items-center gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Jobs</h2>
+            <p className="text-sm text-muted-foreground">Recent processing jobs across all tenants.</p>
+          </div>
+          {stuckCount > 0 && (
+            <Badge variant="destructive" className="gap-1">
+              <AlertTriangle className="h-3 w-3" />
+              {stuckCount} stuck &gt; 15min
+            </Badge>
+          )}
         </div>
         <div className="flex gap-2 items-center">
           <Select value={status} onValueChange={setStatus}>
@@ -58,8 +85,19 @@ export default function PlatformDocumentCentreJobs() {
           <Button size="sm" variant="outline" onClick={() => jobs.refetch()}>
             <RefreshCw className="h-4 w-4" />
           </Button>
+          <Button
+            size="sm"
+            variant={stuckCount > 0 ? "destructive" : "outline"}
+            onClick={() => {
+              if (confirm("Mark all running job_events older than the grace period as failed?")) reconcile.mutate();
+            }}
+            disabled={reconcile.isPending}
+          >
+            <Wrench className="h-4 w-4 mr-1" /> Reconcile stuck
+          </Button>
         </div>
       </div>
+
 
       <Card>
         <CardContent className="p-0">

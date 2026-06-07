@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -6,47 +6,41 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { opsApi } from "@/lib/opsApi";
-import { toast } from "sonner";
-import { Plus, Minus, Power, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
+
+function pct(v: number | null | undefined): string {
+  if (v == null) return "—";
+  return `${(v * 100).toFixed(0)}%`;
+}
+
+function ms(v: number | null | undefined): string {
+  if (v == null) return "—";
+  if (v < 1000) return `${v.toFixed(0)}ms`;
+  return `${(v / 1000).toFixed(2)}s`;
+}
 
 export default function PlatformDocumentCentreWorkers() {
-  const qc = useQueryClient();
-  const workers = useQuery({ queryKey: ["ops", "workers"], queryFn: opsApi.workers, refetchInterval: 15000, refetchIntervalInBackground: false });
-
-  const ping = useMutation({
-    mutationFn: opsApi.pingWorkers,
-    onSuccess: () => { toast.success("Ping sent"); qc.invalidateQueries({ queryKey: ["ops", "workers"] }); },
-    onError: (e: Error) => toast.error(e.message),
+  const live = useQuery({
+    queryKey: ["ops", "gcp", "live"],
+    queryFn: opsApi.gcpLive,
+    refetchInterval: 10000,
+    refetchIntervalInBackground: false,
   });
 
-  const grow = useMutation({
-    mutationFn: ({ name, n }: { name: string; n: number }) => opsApi.poolGrow(name, n),
-    onSuccess: () => { toast.success("Pool grown"); qc.invalidateQueries({ queryKey: ["ops", "workers"] }); },
-    onError: (e: Error) => toast.error(e.message),
-  });
-  const shrink = useMutation({
-    mutationFn: ({ name, n }: { name: string; n: number }) => opsApi.poolShrink(name, n),
-    onSuccess: () => { toast.success("Pool shrunk"); qc.invalidateQueries({ queryKey: ["ops", "workers"] }); },
-    onError: (e: Error) => toast.error(e.message),
-  });
-  const shutdown = useMutation({
-    mutationFn: (name: string) => opsApi.shutdownWorker(name),
-    onSuccess: () => { toast.success("Worker shutdown signal sent"); qc.invalidateQueries({ queryKey: ["ops", "workers"] }); },
-    onError: (e: Error) => toast.error(e.message),
-  });
+  const services = live.data?.cloud_run?.services ?? [];
 
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold">Workers</h2>
-          <p className="text-sm text-muted-foreground">Celery worker pools — pool size, queues, status.</p>
+          <h2 className="text-lg font-semibold">Cloud Run services</h2>
+          <p className="text-sm text-muted-foreground">
+            Live CPU, memory, instance count and request latency per Cloud Run service. Region: <code>{live.data?.cloud_run?.region ?? live.data?.region ?? "—"}</code>
+          </p>
         </div>
-        <div className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={() => ping.mutate()} disabled={ping.isPending}>
-            <RefreshCw className="h-4 w-4 mr-2" /> Ping all
-          </Button>
-        </div>
+        <Button size="sm" variant="outline" onClick={() => live.refetch()}>
+          <RefreshCw className="h-4 w-4 mr-2" /> Refresh
+        </Button>
       </div>
 
       <Card>
@@ -54,50 +48,47 @@ export default function PlatformDocumentCentreWorkers() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Worker</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Active</TableHead>
-                <TableHead className="text-right">Pool</TableHead>
-                <TableHead>Queues</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>Service</TableHead>
+                <TableHead className="text-right">Instances</TableHead>
+                <TableHead className="text-right">CPU</TableHead>
+                <TableHead className="text-right">Memory</TableHead>
+                <TableHead className="text-right">Req / min</TableHead>
+                <TableHead className="text-right">p95</TableHead>
+                <TableHead className="text-right">Cold start</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {workers.data?.map((w) => (
-                <TableRow key={w.name}>
-                  <TableCell className="font-mono text-xs">{w.name}</TableCell>
-                  <TableCell>
-                    <Badge variant={w.status === "online" ? "default" : "destructive"}>{w.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">{w.active}</TableCell>
-                  <TableCell className="text-right">{w.pool_size}</TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      {w.queues.map((q) => <Badge key={q} variant="secondary" className="text-xs">{q}</Badge>)}
-                    </div>
-                  </TableCell>
+              {services.map((s) => (
+                <TableRow key={s.service}>
+                  <TableCell className="font-mono text-xs">{s.service}</TableCell>
+                  <TableCell className="text-right">{s.instance_count?.toFixed(0) ?? "—"}</TableCell>
                   <TableCell className="text-right">
-                    <Button size="sm" variant="ghost" onClick={() => grow.mutate({ name: w.name, n: 1 })}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => shrink.mutate({ name: w.name, n: 1 })}>
-                      <Minus className="h-4 w-4" />
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => {
-                      if (confirm(`Shutdown ${w.name}? Active tasks will be drained.`)) shutdown.mutate(w.name);
-                    }} className="text-destructive">
-                      <Power className="h-4 w-4" />
-                    </Button>
+                    <Badge variant={(s.cpu_utilization ?? 0) > 0.7 ? "destructive" : "secondary"}>{pct(s.cpu_utilization)}</Badge>
                   </TableCell>
+                  <TableCell className="text-right">{pct(s.memory_utilization)}</TableCell>
+                  <TableCell className="text-right">{s.request_count_1m?.toFixed(0) ?? "—"}</TableCell>
+                  <TableCell className="text-right text-xs">{ms(s.request_latency_p95_ms)}</TableCell>
+                  <TableCell className="text-right text-xs">{ms(s.startup_latency_ms)}</TableCell>
                 </TableRow>
               ))}
-              {workers.data?.length === 0 && (
-                <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">No workers online</TableCell></TableRow>
+              {services.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                    {live.data?.cloud_run?.error
+                      ? `Monitoring error: ${live.data.cloud_run.error}`
+                      : <>No services. Set <code>OPS_CLOUD_RUN_SERVICES</code> on pdf-api and grant <code>roles/monitoring.viewer</code>.</>}
+                  </TableCell>
+                </TableRow>
               )}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+
+      <p className="text-xs text-muted-foreground">
+        Scaling, restarts and concurrency are managed by Cloud Run itself —
+        adjust via <code>gcloud run services update {"<service>"}</code> or the GCP console; this view is read-only.
+      </p>
     </div>
   );
 }

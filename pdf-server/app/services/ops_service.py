@@ -701,4 +701,379 @@ class OpsService:
         }
 
 
+    # ─── GCP-native live snapshot ────────────────────────────────
+    def _gcp_project(self) -> str | None:
+        return os.getenv("GCP_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT")
+
+    def _cloud_run_services(self) -> list[str]:
+        raw = (getattr(settings, "ops_cloud_run_services", "") or "").strip()
+        if not raw:
+            return []
+        return [s.strip() for s in raw.split(",") if s.strip()]
+
+    def _monitoring_session(self):
+        """Return a google-auth AuthorizedSession or None if ADC unavailable."""
+        try:
+            import google.auth  # type: ignore
+            from google.auth.transport.requests import AuthorizedSession  # type: ignore
+            creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+            return AuthorizedSession(creds)
+        except Exception:
+            return None
+
+    def _monitoring_series(self, session, project: str, *, metric_type: str,
+                           service_filter: str | None, aligner: str,
+                           reducer: str | None, minutes: int = 5,
+                           group_by: list[str] | None = None) -> list[dict]:
+        """Call Cloud Monitoring projects.timeSeries.list and return raw points."""
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(minutes=max(1, minutes))
+        filter_parts = [f'metric.type = "{metric_type}"']
+        if service_filter:
+            filter_parts.append(service_filter)
+        params = {
+            "filter": " AND ".join(filter_parts),
+            "interval.startTime": start.isoformat().replace("+00:00", "Z"),
+            "interval.endTime": end.isoformat().replace("+00:00", "Z"),
+            "aggregation.alignmentPeriod": "60s",
+            "aggregation.perSeriesAligner": aligner,
+        }
+        if reducer:
+            params["aggregation.crossSeriesReducer"] = reducer
+            for gb in group_by or []:
+                params.setdefault("aggregation.groupByFields", []).append(gb)
+        try:
+            resp = session.get(
+                f"https://monitoring.googleapis.com/v3/projects/{project}/timeSeries",
+                params=params,
+                timeout=8,
+            )
+            resp.raise_for_status()
+            return resp.json().get("timeSeries", []) or []
+        except Exception:
+            return []
+
+    @staticmethod
+    def _latest_point_value(series_list: list[dict]) -> float | None:
+        for s in series_list:
+            pts = s.get("points") or []
+            if not pts:
+                continue
+            v = pts[0].get("value") or {}
+            for k in ("doubleValue", "int64Value"):
+                if k in v:
+                    try:
+                        return float(v[k])
+                    except Exception:
+                        pass
+            dist = v.get("distributionValue") or {}
+            mean = dist.get("mean")
+            if mean is not None:
+                try:
+                    return float(mean)
+                except Exception:
+                    pass
+        return None
+
+    @staticmethod
+    def _distribution_p95(series_list: list[dict]) -> float | None:
+        # Cloud Monitoring returns a histogram. Approximate p95 from
+        # bucketCounts + bucketOptions. Falls back to mean if shape unknown.
+        for s in series_list:
+            pts = s.get("points") or []
+            if not pts:
+                continue
+            dist = (pts[0].get("value") or {}).get("distributionValue") or {}
+            counts = dist.get("bucketCounts") or []
+            opts = dist.get("bucketOptions") or {}
+            total = sum(int(c) for c in counts)
+            if not total:
+                continue
+            target = total * 0.95
+            running = 0
+            # Build bucket upper bounds.
+            bounds: list[float] = []
+            if "explicitBuckets" in opts:
+                bounds = list(opts["explicitBuckets"].get("bounds") or [])
+            elif "exponentialBuckets" in opts:
+                eb = opts["exponentialBuckets"]
+                scale = float(eb.get("scale", 1.0))
+                gf = float(eb.get("growthFactor", 2.0))
+                n = int(eb.get("numFiniteBuckets", len(counts) - 1))
+                bounds = [scale * (gf ** i) for i in range(n + 1)]
+            elif "linearBuckets" in opts:
+                lb = opts["linearBuckets"]
+                offset = float(lb.get("offset", 0.0))
+                width = float(lb.get("width", 1.0))
+                n = int(lb.get("numFiniteBuckets", len(counts) - 1))
+                bounds = [offset + width * i for i in range(n + 1)]
+            if not bounds:
+                mean = dist.get("mean")
+                return float(mean) if mean is not None else None
+            for i, c in enumerate(counts):
+                running += int(c)
+                if running >= target:
+                    if i < len(bounds):
+                        return float(bounds[i])
+                    return float(bounds[-1])
+            return float(bounds[-1])
+        return None
+
+    def _service_filter(self, services: list[str]) -> str:
+        if not services:
+            return ""
+        quoted = " OR ".join(f'"{s}"' for s in services)
+        return f'resource.labels.service_name = one_of({quoted})'
+
+    def _gcp_cloud_run(self, session, project: str, services: list[str]) -> dict:
+        if not session or not services:
+            return {"services": [], "totals": {}, "error": "session_unavailable" if not session else "no_services"}
+
+        per_service: dict[str, dict] = {s: {"service": s} for s in services}
+
+        def _annotate(metric_type: str, key: str, aligner: str, reducer: str = "REDUCE_MEAN", *, p95: bool = False):
+            for svc in services:
+                series = self._monitoring_series(
+                    session, project,
+                    metric_type=metric_type,
+                    service_filter=f'resource.labels.service_name = "{svc}"',
+                    aligner=aligner,
+                    reducer=reducer,
+                    minutes=5,
+                    group_by=["resource.labels.service_name"],
+                )
+                if not series:
+                    per_service[svc][key] = None
+                    continue
+                per_service[svc][key] = self._distribution_p95(series) if p95 else self._latest_point_value(series)
+
+        # CPU and memory utilization (0..1, fraction)
+        _annotate("run.googleapis.com/container/cpu/utilizations", "cpu_utilization", "ALIGN_MEAN")
+        _annotate("run.googleapis.com/container/memory/utilizations", "memory_utilization", "ALIGN_MEAN")
+        # Instance count (separate by state via group_by — we just take total mean for now)
+        _annotate("run.googleapis.com/container/instance_count", "instance_count", "ALIGN_MEAN", "REDUCE_SUM")
+        # Request count over last 1m and request latency p95
+        _annotate("run.googleapis.com/request_count", "request_count_1m", "ALIGN_DELTA", "REDUCE_SUM")
+        _annotate("run.googleapis.com/request_latencies", "request_latency_p95_ms", "ALIGN_DELTA", "REDUCE_MEAN", p95=True)
+        _annotate("run.googleapis.com/container/startup_latencies", "startup_latency_ms", "ALIGN_MEAN", "REDUCE_MEAN")
+
+        services_out = list(per_service.values())
+        totals = {
+            "instance_count": sum((s.get("instance_count") or 0) for s in services_out),
+            "request_count_1m": sum((s.get("request_count_1m") or 0) for s in services_out),
+        }
+        return {"services": services_out, "totals": totals, "region": os.getenv("GCP_REGION")}
+
+    def _gcp_cloud_tasks_snapshot(self) -> dict:
+        stats = self._cloud_tasks_queue_stats()
+        queues = []
+        total_pending = 0
+        total_in_flight = 0
+        for logical, info in stats.items():
+            if "error" in info:
+                queues.append({"id": logical, "error": info["error"]})
+                continue
+            tc = int(info.get("tasks_count") or 0)
+            cd = int(info.get("concurrent_dispatches_count") or 0)
+            total_pending += tc
+            total_in_flight += cd
+            queues.append({
+                "id": info.get("queue_id") or logical,
+                "logical": logical,
+                "tasks_count": tc,
+                "concurrent_dispatches": cd,
+                "executed_last_minute": int(info.get("executed_last_minute_count") or 0),
+                "oldest_eta": info.get("oldest_estimated_arrival_time"),
+            })
+        return {
+            "queues": queues,
+            "total_pending": total_pending,
+            "total_in_flight": total_in_flight,
+            "backend": os.getenv("QUEUE_BACKEND", "celery"),
+        }
+
+    def _recent_jobs_summary(self, db: Session, minutes: int = 5) -> dict:
+        cutoff = _utcnow() - timedelta(minutes=minutes)
+        try:
+            rows = list(db.execute(
+                select(JobEvent.status, func.count())
+                .where(JobEvent.started_at >= cutoff)
+                .group_by(JobEvent.status)
+            ).all())
+        except _MISSING_SCHEMA_ERRORS:
+            db.rollback()
+            return {"minutes": minutes, "ok": 0, "failed": 0, "running": 0}
+        out = {"minutes": minutes, "ok": 0, "failed": 0, "running": 0}
+        for status, count in rows:
+            if status == "failed":
+                out["failed"] += int(count)
+            elif status == "running":
+                out["running"] += int(count)
+            else:
+                out["ok"] += int(count)
+        return out
+
+    def gcp_live(self, db: Session) -> dict:
+        project = self._gcp_project()
+        services = self._cloud_run_services()
+        if not project:
+            return {
+                "captured_at": int(_time.time()),
+                "error": "GCP_PROJECT_ID not set",
+                "cloud_run": {"services": []},
+                "cloud_tasks": self._gcp_cloud_tasks_snapshot(),
+                "recent_jobs": self._recent_jobs_summary(db),
+            }
+        session = self._monitoring_session()
+        return {
+            "captured_at": int(_time.time()),
+            "project": project,
+            "region": os.getenv("GCP_REGION"),
+            "tasks_region": os.getenv("GCP_TASKS_REGION") or os.getenv("GCP_REGION"),
+            "cloud_run": self._gcp_cloud_run(session, project, services),
+            "cloud_tasks": self._gcp_cloud_tasks_snapshot(),
+            "recent_jobs": self._recent_jobs_summary(db),
+        }
+
+    def gcp_logs(self, *, service: str | None = None, severity: str | None = None,
+                 minutes: int = 30, limit: int = 100, search: str | None = None) -> dict:
+        project = self._gcp_project()
+        if not project:
+            return {"entries": [], "error": "GCP_PROJECT_ID not set"}
+        start = datetime.now(timezone.utc) - timedelta(minutes=max(1, minutes))
+        parts = ['resource.type="cloud_run_revision"',
+                 f'timestamp >= "{start.isoformat()}"']
+        if service:
+            parts.append(f'resource.labels.service_name = "{service}"')
+        if severity:
+            parts.append(f'severity >= {severity.upper()}')
+        if search:
+            safe = search.replace('"', '\\"')
+            parts.append(f'("{safe}")')
+        log_filter = " ".join(parts)
+        try:
+            session = self._monitoring_session()
+            if session is None:
+                return {"entries": [], "filter": log_filter, "error": "ADC unavailable"}
+            resp = session.post(
+                "https://logging.googleapis.com/v2/entries:list",
+                json={
+                    "resourceNames": [f"projects/{project}"],
+                    "filter": log_filter,
+                    "orderBy": "timestamp desc",
+                    "pageSize": max(1, min(limit, 500)),
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            raw = resp.json().get("entries", [])
+            entries = []
+            for e in raw:
+                payload = e.get("textPayload") or e.get("jsonPayload") or e.get("protoPayload") or {}
+                entries.append({
+                    "timestamp": e.get("timestamp"),
+                    "severity": e.get("severity"),
+                    "service": ((e.get("resource") or {}).get("labels") or {}).get("service_name"),
+                    "revision": ((e.get("resource") or {}).get("labels") or {}).get("revision_name"),
+                    "payload": payload,
+                })
+            return {"project": project, "filter": log_filter, "entries": entries}
+        except Exception as exc:  # noqa: BLE001
+            return {"project": project, "filter": log_filter, "entries": [], "error": f"{type(exc).__name__}: {exc}"}
+
+    # ─── stuck-job reconciler ─────────────────────────────────────
+    def reconcile_running_jobs(self, db: Session, *, grace_seconds: int | None = None,
+                               actor: dict | None = None) -> dict:
+        """Mark `running` job_events that have exceeded their grace as failed.
+
+        Per-stage grace:
+        - generate_previews: settings.ops_reconcile_previews_grace_seconds
+        - everything else:   settings.ops_reconcile_grace_seconds
+        Rows older than settings.ops_reconcile_ceiling_seconds are always failed.
+        """
+        now = _utcnow()
+        default_grace = grace_seconds if grace_seconds and grace_seconds > 0 else settings.ops_reconcile_grace_seconds
+        previews_grace = settings.ops_reconcile_previews_grace_seconds
+        ceiling = settings.ops_reconcile_ceiling_seconds
+
+        scanned = 0
+        reconciled: list[dict] = []
+        still_running: list[dict] = []
+        try:
+            rows = list(db.execute(
+                select(JobEvent)
+                .where(JobEvent.status == "running")
+                .order_by(JobEvent.started_at.asc())
+                .limit(500)
+            ).scalars().all())
+        except _MISSING_SCHEMA_ERRORS:
+            db.rollback()
+            return {"scanned": 0, "reconciled": 0, "still_running": 0, "sample": [], "error": "schema missing"}
+
+        scanned = len(rows)
+        for ev in rows:
+            started = ev.started_at
+            if started is None:
+                continue
+            age = (now - started).total_seconds()
+            stage = (ev.stage or "").lower()
+            grace = previews_grace if "preview" in stage else default_grace
+            force = age >= ceiling
+            if not force and age < grace:
+                still_running.append({"id": str(ev.id), "stage": stage, "age_seconds": int(age)})
+                continue
+            duration_ms = max(0, int(age * 1000))
+            reason = (
+                "reconciled: hard ceiling exceeded — no terminal event"
+                if force
+                else f"reconciled: exceeded {int(grace)}s grace for stage={stage or '?'} — no terminal event"
+            )
+            ev.status = "failed"
+            ev.finished_at = now
+            ev.duration_ms = duration_ms
+            existing = ev.message or ""
+            ev.message = (existing + ("\n" if existing else "") + reason)[:2000]
+            reconciled.append({
+                "id": str(ev.id),
+                "job_id": ev.job_id,
+                "task_name": ev.task_name,
+                "stage": stage,
+                "age_seconds": int(age),
+                "reason": "ceiling" if force else "grace",
+            })
+            try:
+                db.add(OpsAuditLog(
+                    actor_id=(actor or {}).get("user_id"),
+                    actor_email=(actor or {}).get("email"),
+                    actor_role=(actor or {}).get("role"),
+                    action="job_event.reconcile",
+                    target_type="job_event",
+                    target_id=str(ev.id),
+                    tenant_id=ev.tenant_id,
+                    app_id=ev.app_id,
+                    status="ok",
+                    message=reason,
+                    request_payload={"grace_seconds": int(grace), "age_seconds": int(age)},
+                    response_payload={"new_status": "failed", "duration_ms": duration_ms},
+                ))
+            except Exception:
+                # Audit failure must not block reconcile.
+                pass
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            return {"scanned": scanned, "reconciled": 0, "still_running": len(still_running),
+                    "sample": reconciled[:25], "error": "commit failed"}
+
+        return {
+            "scanned": scanned,
+            "reconciled": len(reconciled),
+            "still_running": len(still_running),
+            "sample": reconciled[:25],
+            "still_running_sample": still_running[:25],
+        }
+
+
 ops_service = OpsService()
+

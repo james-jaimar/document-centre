@@ -2,32 +2,46 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { opsApi, type OpsLiveSnapshot } from "@/lib/opsApi";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { opsApi, type GcpLiveSnapshot } from "@/lib/opsApi";
 import { useOpsStream } from "@/hooks/useOpsStream";
-import { Activity, Cpu, HardDrive, Layers, Server } from "lucide-react";
-
-function fmtBytes(n: number | null | undefined): string {
-  if (n == null) return "—";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let v = n; let i = 0;
-  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
-  return `${v.toFixed(1)} ${units[i]}`;
-}
+import { Activity, Cloud, Cpu, HardDrive, Layers, RefreshCw } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 
 const REFRESH_OPTIONS: Array<{ label: string; ms: number | false }> = [
-  { label: "1s", ms: 1000 },
   { label: "2s", ms: 2000 },
   { label: "5s", ms: 5000 },
   { label: "15s", ms: 15000 },
+  { label: "30s", ms: 30000 },
   { label: "Paused", ms: false },
 ];
 
-const STORAGE_KEY = "ops-overview-refresh-ms";
+const STORAGE_KEY = "ops-overview-refresh-ms-gcp";
 
-/** Tiny inline SVG sparkline (no chart lib). */
-function Sparkline({ data, height = 32, color = "hsl(var(--primary))", max }: { data: number[]; height?: number; color?: string; max?: number }) {
+const SEVERITIES = ["DEFAULT", "INFO", "WARNING", "ERROR", "CRITICAL"];
+
+function pct(v: number | null | undefined): string {
+  if (v == null) return "—";
+  return `${(v * 100).toFixed(0)}%`;
+}
+
+function ms(v: number | null | undefined): string {
+  if (v == null) return "—";
+  if (v < 1000) return `${v.toFixed(0)}ms`;
+  return `${(v / 1000).toFixed(2)}s`;
+}
+
+function ago(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  try { return formatDistanceToNow(new Date(iso), { addSuffix: true }); } catch { return iso; }
+}
+
+function Sparkline({ data, height = 28, color = "hsl(var(--primary))", max }: { data: number[]; height?: number; color?: string; max?: number }) {
   if (data.length === 0) return <div style={{ height }} />;
   const w = 200;
   const m = max ?? Math.max(1, ...data);
@@ -42,72 +56,98 @@ function Sparkline({ data, height = 32, color = "hsl(var(--primary))", max }: { 
 
 export default function PlatformDocumentCentreOverview() {
   const [refreshMs, setRefreshMs] = useState<number | false>(() => {
-    if (typeof window === "undefined") return 2000;
+    if (typeof window === "undefined") return 5000;
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === "false") return false;
     const n = stored ? parseInt(stored, 10) : NaN;
-    return Number.isFinite(n) ? n : 2000;
+    return Number.isFinite(n) ? n : 5000;
   });
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, refreshMs === false ? "false" : String(refreshMs));
-    } catch { /* ignore */ }
+    try { localStorage.setItem(STORAGE_KEY, refreshMs === false ? "false" : String(refreshMs)); } catch { /* ignore */ }
   }, [refreshMs]);
 
-  // ── Fast live snapshot (the new endpoint) ────────────────────
   const live = useQuery({
-    queryKey: ["ops", "live"],
-    queryFn: opsApi.live,
+    queryKey: ["ops", "gcp", "live"],
+    queryFn: opsApi.gcpLive,
     refetchInterval: refreshMs === false ? false : refreshMs,
     refetchIntervalInBackground: false,
   });
 
-  // ── Slower auxiliary queries ─────────────────────────────────
-  const health = useQuery({ queryKey: ["ops", "health"], queryFn: opsApi.healthFull, refetchInterval: 30000, refetchIntervalInBackground: false });
-  const queues = useQuery({ queryKey: ["ops", "queues"], queryFn: opsApi.queues, refetchInterval: 10000, refetchIntervalInBackground: false });
-  const storage = useQuery({ queryKey: ["ops", "storage"], queryFn: opsApi.storageLive, refetchInterval: 60000, refetchIntervalInBackground: false });
-  const system = useQuery({ queryKey: ["ops", "system"], queryFn: opsApi.system, refetchInterval: 30000, refetchIntervalInBackground: false });
   const { recentJobs } = useOpsStream();
 
-  // ── In-memory ring buffers for sparklines (last 60 samples) ──
-  const cpuHistRef = useRef<number[]>([]);
-  const depthHistRef = useRef<number[]>([]);
+  // Per-service sparkline buffers
+  const cpuHistRef = useRef<Record<string, number[]>>({});
+  const reqHistRef = useRef<Record<string, number[]>>({});
   const [, forceRerender] = useState(0);
 
   useEffect(() => {
-    if (!live.data) return;
-    cpuHistRef.current = [...cpuHistRef.current, live.data.cpu?.percent ?? 0].slice(-60);
-    depthHistRef.current = [...depthHistRef.current, live.data.queue_depth_total ?? 0].slice(-60);
+    const snap = live.data;
+    if (!snap?.cloud_run?.services) return;
+    for (const s of snap.cloud_run.services) {
+      cpuHistRef.current[s.service] = [...(cpuHistRef.current[s.service] ?? []), (s.cpu_utilization ?? 0) * 100].slice(-60);
+      reqHistRef.current[s.service] = [...(reqHistRef.current[s.service] ?? []), s.request_count_1m ?? 0].slice(-60);
+    }
     forceRerender((n) => n + 1);
   }, [live.dataUpdatedAt, live.data]);
 
-  const snap: OpsLiveSnapshot | undefined = live.data;
+  // ── Logs panel state ───────────────────────────────────────────
+  const services = useMemo(() => live.data?.cloud_run?.services?.map((s) => s.service) ?? [], [live.data]);
+  const [logService, setLogService] = useState<string>("all");
+  const [logSeverity, setLogSeverity] = useState<string>("WARNING");
+  const [logSearch, setLogSearch] = useState<string>("");
+
+  const logs = useQuery({
+    queryKey: ["ops", "gcp", "logs", logService, logSeverity, logSearch],
+    queryFn: () => opsApi.gcpLogs({
+      service: logService === "all" ? undefined : logService,
+      severity: logSeverity || undefined,
+      search: logSearch || undefined,
+      minutes: 30,
+      limit: 80,
+    }),
+    refetchInterval: 15000,
+    refetchIntervalInBackground: false,
+  });
+
+  const snap: GcpLiveSnapshot | undefined = live.data;
   const sampleAge = snap?.captured_at ? Math.max(0, Date.now() / 1000 - snap.captured_at) : null;
 
-  const cores = snap?.cpu?.core_count ?? system.data?.cpu?.cores;
+  const totalInstances = snap?.cloud_run?.totals?.instance_count ?? 0;
+  const meanCpu = useMemo(() => {
+    const vals = (snap?.cloud_run?.services ?? []).map((s) => s.cpu_utilization).filter((v): v is number => v != null);
+    if (vals.length === 0) return null;
+    return vals.reduce((a, b) => a + b, 0) / vals.length;
+  }, [snap]);
+  const meanMem = useMemo(() => {
+    const vals = (snap?.cloud_run?.services ?? []).map((s) => s.memory_utilization).filter((v): v is number => v != null);
+    if (vals.length === 0) return null;
+    return vals.reduce((a, b) => a + b, 0) / vals.length;
+  }, [snap]);
 
   return (
     <div className="space-y-6 p-6">
-      {/* ── Header with refresh control ─────────────────────────── */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Document Centre Ops</h1>
+          <h1 className="text-2xl font-bold">Document Centre — GCP Live</h1>
           <p className="text-xs text-muted-foreground">
             {snap ? (
-              <>Host CPU sampled {sampleAge != null ? `${sampleAge.toFixed(1)}s ago` : "—"} · {cores ?? "—"} cores · refresh every {refreshMs === false ? "paused" : `${refreshMs}ms`}</>
+              <>
+                Cloud Run · {snap.region ?? "?"} · Tasks · {snap.tasks_region ?? "?"} · sampled {sampleAge != null ? `${sampleAge.toFixed(1)}s ago` : "—"} · refresh {refreshMs === false ? "paused" : `${refreshMs}ms`}
+                {snap.error ? <span className="text-destructive"> · {snap.error}</span> : null}
+              </>
             ) : "Connecting…"}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Refresh</span>
+          <Button size="sm" variant="outline" onClick={() => live.refetch()}>
+            <RefreshCw className="h-4 w-4" />
+          </Button>
           <Select
             value={refreshMs === false ? "false" : String(refreshMs)}
             onValueChange={(v) => setRefreshMs(v === "false" ? false : parseInt(v, 10))}
           >
-            <SelectTrigger className="w-[110px] h-8">
-              <SelectValue />
-            </SelectTrigger>
+            <SelectTrigger className="w-[110px] h-8"><SelectValue /></SelectTrigger>
             <SelectContent>
               {REFRESH_OPTIONS.map((o) => (
                 <SelectItem key={o.label} value={o.ms === false ? "false" : String(o.ms)}>{o.label}</SelectItem>
@@ -117,160 +157,180 @@ export default function PlatformDocumentCentreOverview() {
         </div>
       </div>
 
-      {/* ── KPI tiles ───────────────────────────────────────────── */}
+      {/* KPI tiles */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">CPU</CardTitle><Cpu className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Cloud Run instances</CardTitle><Cloud className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{snap?.cpu?.percent != null ? `${snap.cpu.percent.toFixed(0)}%` : "—"}</div>
-            <p className="text-xs text-muted-foreground">{cores ?? "—"} cores · load {system.data?.cpu?.load?.[0]?.toFixed(2) ?? "—"}</p>
-            <div className="mt-2"><Sparkline data={cpuHistRef.current} max={100} /></div>
+            <div className="text-2xl font-bold">{totalInstances?.toFixed(0) ?? "—"}</div>
+            <p className="text-xs text-muted-foreground">{snap?.cloud_run?.services?.length ?? 0} services tracked</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Memory</CardTitle><Server className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Mean CPU</CardTitle><Cpu className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{snap?.memory?.percent != null ? `${snap.memory.percent.toFixed(0)}%` : "—"}</div>
-            <p className="text-xs text-muted-foreground">{fmtBytes(snap?.memory?.used)} / {fmtBytes(snap?.memory?.total)}</p>
-            <Progress value={snap?.memory?.percent ?? 0} className="mt-2 h-1.5" />
+            <div className="text-2xl font-bold">{pct(meanCpu)}</div>
+            <Progress value={(meanCpu ?? 0) * 100} className="mt-2 h-1.5" />
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Disk</CardTitle><HardDrive className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Mean memory</CardTitle><HardDrive className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{system.data?.disk?.percent?.toFixed(0) ?? "—"}%</div>
-            <p className="text-xs text-muted-foreground">{fmtBytes(system.data?.disk?.used)} used · {fmtBytes(storage.data?.s3?.bytes)} on S3</p>
+            <div className="text-2xl font-bold">{pct(meanMem)}</div>
+            <Progress value={(meanMem ?? 0) * 100} className="mt-2 h-1.5" />
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Queue depth</CardTitle><Layers className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Cloud Tasks pending</CardTitle><Layers className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{snap?.queue_depth_total ?? 0}</div>
-            <p className="text-xs text-muted-foreground">{queues.data?.length ?? 0} queues · waiting in broker</p>
-            <div className="mt-2"><Sparkline data={depthHistRef.current} color="hsl(var(--destructive))" /></div>
+            <div className="text-2xl font-bold">{snap?.cloud_tasks?.total_pending ?? 0}</div>
+            <p className="text-xs text-muted-foreground">{snap?.cloud_tasks?.total_in_flight ?? 0} in flight · {snap?.cloud_tasks?.queues?.length ?? 0} queues</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* ── Live workers (Task-Manager view) ────────────────────── */}
+      {/* Cloud Run services */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Activity className="h-4 w-4" />Live workers
-            <span className="text-xs font-normal text-muted-foreground ml-2">
-              psutil per-process CPU & RSS · {snap?.workers?.length ?? 0} workers · {snap?.workers?.reduce((a, w) => a + w.child_count, 0) ?? 0} children
-            </span>
+            <Cloud className="h-4 w-4" />Cloud Run services
+            {snap?.cloud_run?.error ? <span className="text-xs font-normal text-destructive ml-2">{snap.cloud_run.error}</span> : null}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {(!snap?.workers || snap.workers.length === 0) ? (
-            <p className="text-sm text-muted-foreground">No Celery workers visible on this host. Check that the worker systemd units are running.</p>
+          {(snap?.cloud_run?.services ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">No services. Set <code>OPS_CLOUD_RUN_SERVICES</code> and grant <code>roles/monitoring.viewer</code> to the Cloud Run service account.</p>
           ) : (
-            <div className="space-y-3">
-              {snap.workers.map((w) => {
-                const cpuMax = (cores ?? 1) * 100;
-                const cpuPct = Math.min(100, ((w.cpu_percent ?? 0) / cpuMax) * 100);
-                return (
-                  <div key={w.pid} className="space-y-1">
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2">
-                        <Badge variant={w.active_tasks > 0 ? "default" : "secondary"} className="text-xs">{w.name}</Badge>
-                        <span className="text-xs text-muted-foreground font-mono">pid {w.pid} · {w.child_count} children · {w.active_tasks} active</span>
-                      </div>
-                      <div className="text-xs font-mono">
-                        <span className={w.cpu_percent > cpuMax * 0.5 ? "text-primary font-semibold" : ""}>{w.cpu_percent.toFixed(0)}% CPU</span>
-                        <span className="text-muted-foreground"> · {fmtBytes(w.rss_bytes)}</span>
-                      </div>
+            <div className="space-y-4">
+              {snap!.cloud_run.services.map((s) => (
+                <div key={s.service} className="space-y-1">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <Badge variant={(s.cpu_utilization ?? 0) > 0.7 ? "default" : "secondary"} className="text-xs font-mono">{s.service}</Badge>
+                      <span className="text-xs text-muted-foreground font-mono">
+                        instances {s.instance_count?.toFixed(0) ?? "—"} · req/min {s.request_count_1m?.toFixed(0) ?? "—"} · p95 {ms(s.request_latency_p95_ms)} · cold {ms(s.startup_latency_ms)}
+                      </span>
                     </div>
-                    <Progress value={cpuPct} className="h-1.5" />
-                    {w.children.length > 0 && (
-                      <div className="pl-4 mt-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-0.5 text-xs font-mono text-muted-foreground">
-                        {w.children.map((c) => (
-                          <div key={c.pid} className="flex justify-between">
-                            <span>pid {c.pid} <span className="opacity-60">[{c.status}]</span></span>
-                            <span>{c.cpu_percent.toFixed(0)}% · {fmtBytes(c.rss_bytes)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <div className="text-xs font-mono">
+                      <span className={(s.cpu_utilization ?? 0) > 0.7 ? "text-primary font-semibold" : ""}>CPU {pct(s.cpu_utilization)}</span>
+                      <span className="text-muted-foreground"> · MEM {pct(s.memory_utilization)}</span>
+                    </div>
                   </div>
-                );
-              })}
+                  <div className="grid grid-cols-2 gap-2">
+                    <Sparkline data={cpuHistRef.current[s.service] ?? []} max={100} />
+                    <Sparkline data={reqHistRef.current[s.service] ?? []} color="hsl(var(--destructive))" />
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* ── Queues table ───────────────────────────────────────── */}
+      {/* Cloud Tasks queues */}
       <Card>
-        <CardHeader><CardTitle className="text-base">Queues (live broker depth)</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">Cloud Tasks queues</CardTitle></CardHeader>
         <CardContent>
           <div className="space-y-1 text-sm">
-            {snap && Object.keys(snap.queue_depths ?? {}).length > 0 ? (
-              Object.entries(snap.queue_depths).map(([name, depth]) => {
-                const q = queues.data?.find((x) => x.name === name);
-                return (
-                  <div key={name} className="flex items-center justify-between py-1 border-b border-border/50 last:border-0">
-                    <span className="font-mono text-xs">{name}</span>
-                    <div className="flex items-center gap-3 text-xs font-mono">
-                      <span>depth <span className={depth > 0 ? "text-destructive font-semibold" : ""}>{depth}</span></span>
-                      <span className="text-muted-foreground">consumers {q?.consumers ?? 0}</span>
-                    </div>
+            {(snap?.cloud_tasks?.queues ?? []).length === 0 ? (
+              <p className="text-muted-foreground">No queues visible. Confirm <code>QUEUE_BACKEND=cloud_tasks</code> and that the runtime service account has <code>roles/cloudtasks.viewer</code>.</p>
+            ) : snap!.cloud_tasks.queues.map((q) => {
+              const oldestAge = q.oldest_eta ? (Date.now() - new Date(q.oldest_eta).getTime()) / 1000 : null;
+              return (
+                <div key={q.id} className="flex items-center justify-between py-1.5 border-b border-border/50 last:border-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs">{q.id}</span>
+                    {q.error ? <Badge variant="destructive" className="text-xs">{q.error}</Badge> : null}
                   </div>
-                );
-              })
-            ) : <p className="text-muted-foreground">No queues.</p>}
+                  <div className="flex items-center gap-3 text-xs font-mono">
+                    <span>pending <span className={(q.tasks_count ?? 0) > 0 ? "text-destructive font-semibold" : ""}>{q.tasks_count ?? 0}</span></span>
+                    <span className="text-muted-foreground">in-flight {q.concurrent_dispatches ?? 0}</span>
+                    <span className="text-muted-foreground">exec/min {q.executed_last_minute ?? 0}</span>
+                    {oldestAge != null ? (
+                      <Badge variant={oldestAge > 300 ? "destructive" : "secondary"} className="text-xs">
+                        oldest {Math.round(oldestAge)}s
+                      </Badge>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </CardContent>
       </Card>
 
-      {/* ── Health + recent jobs ───────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Recent jobs */}
         <Card>
-          <CardHeader><CardTitle className="text-base">Health probes</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            {health.data?.probes
-              ? Object.entries(health.data.probes).flatMap(([name, p]: [string, any]) => {
-                  if (p && typeof p === "object" && "ok" in p) {
-                    return [(
-                      <div key={name} className="flex items-center justify-between text-sm">
-                        <span className="font-mono">{name}</span>
-                        <Badge variant={p.ok ? "default" : "destructive"}>{p.ok ? "OK" : "FAIL"}{p.latency_ms != null ? ` · ${p.latency_ms}ms` : ""}</Badge>
-                      </div>
-                    )];
-                  }
-                  if (p && typeof p === "object") {
-                    return Object.entries(p).map(([child, cp]: [string, any]) => (
-                      <div key={`${name}.${child}`} className="flex items-center justify-between text-sm">
-                        <span className="font-mono text-muted-foreground">{name}.<span className="text-foreground">{child}</span></span>
-                        <Badge variant={cp?.ok ? "default" : "destructive"}>{cp?.ok ? "OK" : "FAIL"}{cp?.latency_ms != null ? ` · ${cp.latency_ms}ms` : ""}</Badge>
-                      </div>
-                    ));
-                  }
-                  return [];
-                })
-              : <p className="text-sm text-muted-foreground">{health.isLoading ? "Loading…" : "No probe data"}</p>}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Activity className="h-4 w-4" />Recent jobs</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Activity className="h-4 w-4" />Recent jobs ({snap?.recent_jobs?.minutes ?? 5}m)</CardTitle></CardHeader>
           <CardContent>
-            <div className="space-y-1 max-h-80 overflow-y-auto text-sm">
+            <div className="flex gap-4 text-sm mb-3">
+              <span>OK <Badge variant="default" className="ml-1">{snap?.recent_jobs?.ok ?? 0}</Badge></span>
+              <span>Failed <Badge variant="destructive" className="ml-1">{snap?.recent_jobs?.failed ?? 0}</Badge></span>
+              <span>Running <Badge variant="secondary" className="ml-1">{snap?.recent_jobs?.running ?? 0}</Badge></span>
+            </div>
+            <div className="space-y-1 max-h-64 overflow-y-auto text-sm">
               {recentJobs.slice(0, 30).map((j) => (
                 <div key={j.id} className="flex items-center justify-between gap-2 py-1 border-b border-border/50 last:border-0">
                   <span className="font-mono text-xs truncate flex-1">{j.operation}</span>
                   <Badge variant={j.status === "completed" ? "default" : j.status === "failed" ? "destructive" : "secondary"} className="text-xs">{j.status}</Badge>
                 </div>
               ))}
-              {recentJobs.length === 0 && <p className="text-muted-foreground">No recent jobs.</p>}
+              {recentJobs.length === 0 && <p className="text-muted-foreground">No recent jobs streaming.</p>}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Live Cloud Run logs */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Cloud Run logs</CardTitle>
+            <div className="flex flex-wrap items-center gap-2 pt-2">
+              <Select value={logService} onValueChange={setLogService}>
+                <SelectTrigger className="w-44 h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All services</SelectItem>
+                  {services.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={logSeverity} onValueChange={setLogSeverity}>
+                <SelectTrigger className="w-36 h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {SEVERITIES.map((s) => <SelectItem key={s} value={s}>≥ {s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Input placeholder="Search…" value={logSearch} onChange={(e) => setLogSearch(e.target.value)} className="h-8 text-xs w-40" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1 max-h-80 overflow-y-auto text-xs font-mono">
+              {logs.data?.error ? (
+                <p className="text-destructive">{logs.data.error}</p>
+              ) : (logs.data?.entries ?? []).length === 0 ? (
+                <p className="text-muted-foreground">No matching entries in the last 30 min.</p>
+              ) : logs.data!.entries.map((e, i) => {
+                const text = typeof e.payload === "string" ? e.payload : JSON.stringify(e.payload).slice(0, 240);
+                return (
+                  <div key={`${e.timestamp}-${i}`} className="py-1 border-b border-border/30 last:border-0">
+                    <div className="flex justify-between text-[10px] text-muted-foreground">
+                      <span>{e.service ?? "—"} · {e.revision ?? "—"}</span>
+                      <span>
+                        <Badge variant={e.severity === "ERROR" || e.severity === "CRITICAL" ? "destructive" : "secondary"} className="text-[10px] mr-1">{e.severity ?? "?"}</Badge>
+                        {ago(e.timestamp)}
+                      </span>
+                    </div>
+                    <div className="whitespace-pre-wrap break-words">{text}</div>
+                  </div>
+                );
+              })}
             </div>
           </CardContent>
         </Card>
@@ -278,4 +338,3 @@ export default function PlatformDocumentCentreOverview() {
     </div>
   );
 }
-
