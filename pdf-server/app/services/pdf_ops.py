@@ -2099,7 +2099,7 @@ class PdfOps:
             "-dSAFER",
             "-dBATCH",
             "-dNOPAUSE",
-            "-dNumRenderingThreads=4",
+            *_gs_thread_flags(),
             "-sDEVICE=jpeg",
             f"-dJPEGQ={int(quality)}",
             f"-r{dpi}",
@@ -2110,10 +2110,8 @@ class PdfOps:
         ]
 
         if timeout_seconds is None:
-            # 30s base + 4s/page, capped at 300s. Local benchmark for an
-            # 8-page 17 MB CMYK A4 is ~3.5s; this leaves generous headroom
-            # for image-heavy A3 / pamphlet posters on a slow vCPU.
-            timeout_seconds = min(300.0, 30.0 + 4.0 * page_count)
+            configured = float(getattr(settings, "preview_gs_batch_timeout_seconds", 90) or 90)
+            timeout_seconds = max(10.0, configured)
 
         t0 = time.monotonic()
         timed_out = False
@@ -2183,7 +2181,16 @@ class PdfOps:
         )
 
         if returncode != 0 or missing or timed_out:
-            raise RasterizationIncompleteError(missing_pages=missing or list(expected))
+            raise RasterizationIncompleteError(
+                missing_pages=missing or list(expected),
+                returncode=returncode,
+                stderr=stderr,
+                stdout=stdout,
+                elapsed_ms=elapsed_ms,
+                timed_out=timed_out,
+                produced=[str(p) for p in produced],
+                cmd=cmd,
+            )
 
         return sorted(produced)
 
@@ -2194,10 +2201,12 @@ class PdfOps:
         dpi: int,
         page: int,
         quality: int = 85,
-        timeout_seconds: float = 60.0,
+        timeout_seconds: float | None = None,
     ) -> Path:
         """Render a SINGLE page with `gs` directly to JPEG. Used by the
         salvage retry pass when the batch missed something."""
+        if timeout_seconds is None:
+            timeout_seconds = float(getattr(settings, "preview_gs_page_timeout_seconds", 20) or 20)
         produced = self.rasterize_pages_ghostscript_jpeg(
             src, out_prefix,
             dpi=dpi, first_page=page, last_page=page,
