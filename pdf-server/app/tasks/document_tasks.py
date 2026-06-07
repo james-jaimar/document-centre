@@ -605,7 +605,7 @@ def render_one_page(
             preview_dir.mkdir(parents=True, exist_ok=True)
             thumb_dir.mkdir(parents=True, exist_ok=True)
 
-            image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
+            image_path, thumb_image, prev_sp, thumb_sp, prev_ext, prev_mt = _render_one_page(
                 src_pdf=src, preview_dir=preview_dir, thumb_dir=thumb_dir,
                 prefix=prefix, page=page, dpi=dpi,
             )
@@ -613,6 +613,7 @@ def render_one_page(
                 db, asset_id=asset_id, job_id=job_id, page=page,
                 image_path=image_path, thumb_image=thumb_image,
                 preview_storage=prev_sp, thumb_storage=thumb_sp,
+                preview_media_type=prev_mt,
             )
             return {'page': page, 'preview_storage_path': prev_sp, 'thumbnail_storage_path': thumb_sp}
     except Exception as exc:
