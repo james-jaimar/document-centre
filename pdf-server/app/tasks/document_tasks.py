@@ -364,16 +364,12 @@ def _render_one_page(
 ):
     """Rasterize → downscale → upload preview + thumbnail for one page.
 
-    Each step is retried independently so a transient S3 hiccup doesn't
-    cause a full re-rasterise of the page. Returns
-    ``(image_path, thumb_image, preview_storage, thumb_storage)``.
+    Prefers MuPDF (JPEG) — it is materially faster than Ghostscript for
+    "PDF page → pixels". Falls back to single-page Ghostscript PNG only
+    if MuPDF genuinely cannot render the page.
 
-    Per-page output isolation: each call writes to its own subdirectory
-    so concurrent ThreadPoolExecutor workers can never overwrite each
-    other's intermediate files (Ghostscript's old default sequential
-    output naming caused parallel workers to clobber ``page-001.png``
-    repeatedly, producing wrong-content uploads and "incomplete render"
-    failures for every page after the first).
+    Returns ``(image_path, thumb_image, preview_storage, thumb_storage,
+    preview_ext, preview_media_type)``.
     """
     page_preview_dir = preview_dir / f"p{page:03d}"
     page_thumb_dir = thumb_dir / f"p{page:03d}"
@@ -381,26 +377,11 @@ def _render_one_page(
     page_thumb_dir.mkdir(parents=True, exist_ok=True)
     out_prefix = page_preview_dir / 'page'
 
-    def _do_rasterize():
-        imgs = pdf_ops.rasterize_preview(
-            src_pdf, out_prefix, dpi=dpi,
-            first_page=page, last_page=page,
-        )
-        # _gs_rasterize_pages now writes directly to <prefix>-<page>.png
-        # for single-page renders, so this is the canonical target.
-        target = page_preview_dir / f"page-{page:03d}.png"
-        if not target.exists():
-            # Defensive fallback in case future changes alter the naming.
-            for img in imgs:
-                if img.stem.endswith(f"-{page:03d}"):
-                    target = img
-                    break
-        if not target.exists():
-            raise RuntimeError(f"rasterize produced no file for page {page}")
-        return target
-
-    image_path = _retry_with_backoff(
-        _do_rasterize, label='rasterize_one_page', page=page,
+    image_path, preview_ext, preview_media_type = _retry_with_backoff(
+        lambda: _rasterize_one_page_best_effort(
+            src_pdf=src_pdf, out_prefix=out_prefix, page=page, dpi=dpi,
+        ),
+        label='rasterize_one_page', page=page,
     )
 
     def _do_downscale():
@@ -412,11 +393,11 @@ def _render_one_page(
         _do_downscale, label='downscale_thumbnail', page=page,
     )
 
-    preview_storage = unique_name(f'{prefix}previews/page-{page:03d}', '.png')
+    preview_storage = unique_name(f'{prefix}previews/page-{page:03d}', f'.{preview_ext}')
     thumb_storage = unique_name(f'{prefix}thumbnails/page-{page:03d}', '.png')
 
     _retry_with_backoff(
-        lambda: storage.upload(image_path, preview_storage, 'image/png'),
+        lambda: storage.upload(image_path, preview_storage, preview_media_type),
         label='upload_preview', page=page,
     )
     _retry_with_backoff(
@@ -424,7 +405,40 @@ def _render_one_page(
         label='upload_thumbnail', page=page,
     )
 
-    return image_path, thumb_image, preview_storage, thumb_storage
+    return image_path, thumb_image, preview_storage, thumb_storage, preview_ext, preview_media_type
+
+
+def _rasterize_one_page_best_effort(
+    *,
+    src_pdf,
+    out_prefix,
+    page: int,
+    dpi: int,
+):
+    """MuPDF-first single-page rasterise. Returns
+    ``(image_path, ext, media_type)``. Falls back to Ghostscript PNG if
+    MuPDF errors on this specific page."""
+    from app.core.config import settings as _s
+    _fmt, ext = mutool_effective_format(_s.preview_format)
+    media_type = 'image/jpeg' if ext == 'jpg' else 'image/png'
+    try:
+        produced = pdf_ops.rasterize_one_page_mutool(
+            src_pdf, out_prefix, dpi=dpi, page=page, fmt=_s.preview_format,
+        )
+        return produced, ext, media_type
+    except Exception as exc:
+        logger.warning(
+            "rasterize_one_page: mutool failed for page %d (%s) — falling back to Ghostscript PNG",
+            page, exc,
+        )
+        pdf_ops.rasterize_preview(
+            src_pdf, out_prefix, dpi=dpi, first_page=page, last_page=page,
+        )
+        target = out_prefix.parent / f"page-{page:03d}.png"
+        if not target.exists():
+            raise RuntimeError(f"rasterize fallback produced no file for page {page}") from exc
+        return target, 'png', 'image/png'
+
 
 
 # ---------------------------------------------------------------------------
