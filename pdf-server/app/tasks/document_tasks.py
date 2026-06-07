@@ -869,14 +869,21 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                         asset_id, exc.missing_pages, exc.returncode,
                     )
                     # Surgical per-page retries — do NOT re-render the
-                    # pages that already succeeded. Each retry is its own
-                    # single-page mutool invocation, which is basically
-                    # immune to the rare batch-mode glitches.
+                    # pages that already succeeded. Run them concurrently
+                    # so a 4 vCPU light worker actually uses all 4 cores
+                    # (each `mutool draw` subprocess pins one core); the
+                    # old serial loop was the main cause of "five missing
+                    # pages → minutes of wall-clock retry".
                     retry_results: list[dict] = []
                     still_missing: list[int] = []
                     if exc.missing_pages:
                         t_retry = time.monotonic()
-                        for page_num in exc.missing_pages:
+                        retry_workers = max(
+                            1, min(len(exc.missing_pages), settings.render_cpu_concurrency)
+                        )
+
+                        def _retry_one(page_num: int):
+                            t0 = time.monotonic()
                             try:
                                 pdf_ops.rasterize_one_page_mutool(
                                     src, preview_dir / 'page',
@@ -884,26 +891,35 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                                     page=page_num,
                                     fmt=settings.preview_format,
                                 )
-                                retry_results.append({'page': page_num, 'ok': True})
-                            except MutoolRenderError as exc2:
-                                retry_results.append({
-                                    'page': page_num,
-                                    'ok': False,
-                                    'returncode': exc2.returncode,
-                                    'stderr_tail': "\n".join(
-                                        (exc2.stderr or "").strip().splitlines()[-3:]
-                                    ),
-                                })
-                                still_missing.append(page_num)
-                            except Exception as exc2:  # noqa: BLE001
-                                retry_results.append({
+                                return {
+                                    'page': page_num, 'ok': True,
+                                    'elapsed_ms': int((time.monotonic() - t0) * 1000),
+                                }
+                            except MutoolRenderError as e2:
+                                return {
                                     'page': page_num, 'ok': False,
-                                    'error': f"{type(exc2).__name__}: {exc2}",
-                                })
-                                still_missing.append(page_num)
+                                    'returncode': e2.returncode,
+                                    'stderr_tail': "\n".join(
+                                        (e2.stderr or "").strip().splitlines()[-3:]
+                                    ),
+                                    'elapsed_ms': int((time.monotonic() - t0) * 1000),
+                                }
+                            except Exception as e2:  # noqa: BLE001
+                                return {
+                                    'page': page_num, 'ok': False,
+                                    'error': f"{type(e2).__name__}: {e2}",
+                                    'elapsed_ms': int((time.monotonic() - t0) * 1000),
+                                }
+
+                        with ThreadPoolExecutor(max_workers=retry_workers) as retry_pool:
+                            for res in retry_pool.map(_retry_one, exc.missing_pages):
+                                retry_results.append(res)
+                                if not res.get('ok'):
+                                    still_missing.append(res['page'])
                         _stamp('mutool_per_page_retry', t_retry)
                         mutool_diagnostic['retry'] = {
-                            'mode': 'per_page',
+                            'mode': 'per_page_parallel',
+                            'workers': retry_workers,
                             'attempted': list(exc.missing_pages),
                             'still_missing': still_missing,
                             'results': retry_results,
