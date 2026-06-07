@@ -2290,6 +2290,8 @@ class PdfOps:
         def _present_pages() -> set[int]:
             present: set[int] = set()
             for p in out_prefix.parent.glob(out_prefix.name + "-*." + fmt):
+                if not _valid_image_file(p):
+                    continue
                 stem = p.stem.rsplit("-", 1)[-1]
                 if stem.isdigit():
                     present.add(int(stem))
