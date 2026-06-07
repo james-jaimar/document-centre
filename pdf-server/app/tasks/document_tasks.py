@@ -806,7 +806,7 @@ def render_one_page(
         db.close()
 
 
-@shared_task(bind=True, queue='thumbnails')
+@shared_task(bind=True, queue='thumbnails', soft_time_limit=600, time_limit=660)
 def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] | None = None):
     """Generate previews + thumbnails for an asset.
 
@@ -1681,7 +1681,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
         db.close()
 
 
-@shared_task(bind=True, queue='thumbnails')
+@shared_task(bind=True, queue='thumbnails', soft_time_limit=300, time_limit=360)
 def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
     """Re-render a specific set of pages for an existing asset.
 
