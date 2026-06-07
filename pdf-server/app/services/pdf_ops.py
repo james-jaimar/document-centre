@@ -2089,6 +2089,10 @@ class PdfOps:
         ext = "jpg"
         base_dir = out_prefix.parent
         base_name = out_prefix.name
+        # Single-page renders skip the sequential->source rename pass by
+        # writing directly to the final filename. This also keeps parallel
+        # per-page retries from colliding on `page-001.jpg`.
+        single_page_direct = (first_page == last_page)
 
         # Clear stale outputs in the target range so a partial prior run
         # can't masquerade as "complete".
@@ -2101,7 +2105,10 @@ class PdfOps:
             except OSError:
                 pass
 
-        pattern = str(out_prefix) + "-%03d." + ext
+        if single_page_direct:
+            pattern = str(base_dir / f"{base_name}-{first_page:03d}.{ext}")
+        else:
+            pattern = str(out_prefix) + "-%03d." + ext
         cmd = [
             settings.ghostscript_bin,
             "-q",
