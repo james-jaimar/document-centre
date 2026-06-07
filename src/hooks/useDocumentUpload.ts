@@ -152,12 +152,17 @@ export async function renderDocumentThumbnails(
         if (found !== lastReportedFound) {
           if (found > lastReportedFound) lastRenderProgressAt = Date.now();
           lastReportedFound = found;
-          const pct = 65 + (found / inFlightExpected) * 25;
+          // Unified progress formula (also used by the post-job loop):
+          // 65% base + up to 30% from page progress, capped at 95%.
+          // Keeping a single formula prevents the bar from jumping
+          // backwards when the job flips to "completed" before all
+          // derived_files rows are flushed.
+          const pct = 65 + (found / inFlightExpected) * 30;
           onProgress(
             found > 0
               ? `Rendering pages… (${found}/${inFlightExpected})`
               : "Rendering pages…",
-            Math.min(92, pct),
+            Math.min(95, pct),
           );
         }
       } catch {
@@ -241,7 +246,9 @@ export async function renderDocumentThumbnails(
       const found = thumbnailPaths.filter(Boolean).length;
       if (found >= expectedPages) break;
 
-      const pct = 75 + (found / expectedPages) * 20;
+      // Match the in-flight formula exactly so the bar is monotonic
+      // across the job→derived-files transition.
+      const pct = 65 + (found / expectedPages) * 30;
       onProgress(`Rendering pages… (${found}/${expectedPages})`, Math.min(95, pct));
 
       await new Promise((r) => setTimeout(r, interval));
@@ -269,7 +276,11 @@ export async function renderDocumentThumbnails(
   // ── Auto-recovery: surgically re-render any missing pages via the
   // /render-pages endpoint. Runs up to 2 passes; each pass triggers the
   // server-side render, polls the job, then polls derived files for ~20s.
-  const RECOVERY_ATTEMPTS = 2;
+  // Single client-side recovery pass — the backend's own salvage path
+  // (document_tasks.generate_previews → render_specific_pages with per-page
+  // mutool retries) already covers most gaps. A second client pass mostly
+  // duplicates work and racks up unnecessary HTTP.
+  const RECOVERY_ATTEMPTS = 1;
   const RECOVERY_POLL_BUDGET_MS = 20_000;
   for (let attempt = 0; attempt < RECOVERY_ATTEMPTS && missing.length > 0; attempt++) {
     onProgress(

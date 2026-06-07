@@ -1470,7 +1470,8 @@ class PdfOps:
                 f"-dLastPage={last_page}",
                 str(src),
             ]
-            subprocess.run(cmd, check=True)
+            # Timeout: GS can wedge on corrupt XObjects/streams.
+            subprocess.run(cmd, check=True, timeout=min(180.0, 12.0))
             return
 
         # Multi-page batch — let GS use its sequential numbering, then
@@ -1491,7 +1492,9 @@ class PdfOps:
         if last_page is not None:
             cmd.append(f"-dLastPage={last_page}")
         cmd.append(str(src))
-        subprocess.run(cmd, check=True)
+        # Timeout: 10s base + 2s/page, cap 180s. Matches mutool path.
+        _gs_pc = max(1, ((last_page or first_page or 1) - (first_page or 1) + 1))
+        subprocess.run(cmd, check=True, timeout=min(180.0, 10.0 + 2.0 * _gs_pc))
 
         # Re-map sequential indices → source page numbers.
         # GS produced files like <prefix>-001.png, -002.png, ... in order,
@@ -1575,6 +1578,18 @@ class PdfOps:
         pattern = str(out_prefix) + "-%03d." + ext
         page_count = max(1, last_page - first_page + 1)
 
+        # Clear any stale matching files from a prior partial run in this
+        # output dir BEFORE invoking mutool. Otherwise the completeness
+        # glob below can see a stale `page-003.<ext>` and falsely report
+        # "all pages present" when this attempt actually skipped page 3.
+        base_dir_pre = out_prefix.parent
+        base_name_pre = out_prefix.name
+        for stale in base_dir_pre.glob(base_name_pre + "-*." + ext):
+            try:
+                stale.unlink()
+            except OSError:
+                pass
+
         cmd = [
             mutool, "draw",
             "-q",                 # quiet — keep stderr for real errors
@@ -1641,13 +1656,18 @@ class PdfOps:
             seq_path.rename(target_path)
 
         produced = sorted(base_dir.glob(base_name + "-*." + ext))
-        # Cross-check: every requested source page must exist AND be non-empty.
+        # Cross-check: every requested source page must exist AND be a
+        # plausible image (>= 200 bytes). A zero-byte or near-empty file
+        # is what we get when mutool aborts mid-page; treating it as
+        # "present" would upload garbage and mark the asset ready with
+        # broken thumbnails.
+        MIN_IMG_BYTES = 200
         present_pages: set[int] = set()
         for p in produced:
             tail = p.stem.rsplit("-", 1)[-1]
             if tail.isdigit():
                 try:
-                    if p.stat().st_size > 0:
+                    if p.stat().st_size >= MIN_IMG_BYTES:
                         present_pages.add(int(tail))
                 except OSError:
                     pass
