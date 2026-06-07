@@ -416,29 +416,57 @@ def _rasterize_one_page_best_effort(
     page: int,
     dpi: int,
 ):
-    """MuPDF-first single-page rasterise. Returns
-    ``(image_path, ext, media_type)``. Falls back to Ghostscript PNG if
-    MuPDF errors on this specific page."""
+    """Single-page rasterise honouring ``settings.preview_renderer``.
+
+    Default ('ghostscript'): render PDF → JPEG in one `gs` call. Falls
+    back to MuPDF JPEG, then to Ghostscript PNG as a last resort.
+    Legacy ('mutool'): preserve the previous MuPDF-first behaviour.
+    Returns ``(image_path, ext, media_type)``.
+    """
     from app.core.config import settings as _s
-    _fmt, ext = mutool_effective_format(_s.preview_format)
-    media_type = 'image/jpeg' if ext == 'jpg' else 'image/png'
-    try:
+    renderer = (getattr(_s, "preview_renderer", "ghostscript") or "ghostscript").lower()
+
+    def _try_gs_jpeg():
+        produced = pdf_ops.rasterize_one_page_ghostscript_jpeg(
+            src_pdf, out_prefix, dpi=dpi, page=page,
+            quality=_s.preview_jpeg_quality,
+        )
+        return produced, "jpg", "image/jpeg"
+
+    def _try_mutool():
         produced = pdf_ops.rasterize_one_page_mutool(
             src_pdf, out_prefix, dpi=dpi, page=page, fmt=_s.preview_format,
         )
+        _fmt, ext = mutool_effective_format(_s.preview_format)
+        media_type = 'image/jpeg' if ext == 'jpg' else 'image/png'
         return produced, ext, media_type
-    except Exception as exc:
-        logger.warning(
-            "rasterize_one_page: mutool failed for page %d (%s) — falling back to Ghostscript PNG",
-            page, exc,
-        )
+
+    def _try_gs_png():
         pdf_ops.rasterize_preview(
             src_pdf, out_prefix, dpi=dpi, first_page=page, last_page=page,
         )
         target = out_prefix.parent / f"page-{page:03d}.png"
         if not target.exists():
-            raise RuntimeError(f"rasterize fallback produced no file for page {page}") from exc
+            raise RuntimeError(f"rasterize fallback produced no file for page {page}")
         return target, 'png', 'image/png'
+
+    if renderer == "mutool":
+        chain = [_try_mutool, _try_gs_jpeg, _try_gs_png]
+    else:
+        chain = [_try_gs_jpeg, _try_mutool, _try_gs_png]
+
+    last_exc: Exception | None = None
+    for attempt in chain:
+        try:
+            return attempt()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "rasterize_one_page: %s failed for page %d (%s) — trying next renderer",
+                attempt.__name__, page, exc,
+            )
+            last_exc = exc
+    assert last_exc is not None
+    raise last_exc
 
 
 
