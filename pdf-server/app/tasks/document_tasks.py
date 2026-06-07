@@ -847,10 +847,20 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                         renderer_diagnostic = {
                             'engine': 'ghostscript',
                             'missing_pages': list(exc.missing_pages),
+                            'returncode': getattr(exc, 'returncode', None),
+                            'timed_out': getattr(exc, 'timed_out', False),
+                            'elapsed_ms': getattr(exc, 'elapsed_ms', None),
+                            'stderr_tail': "\n".join(
+                                (getattr(exc, 'stderr', '') or '').strip().splitlines()[-8:]
+                            ),
+                            'produced': getattr(exc, 'produced', []),
                             'src_bytes': src_bytes,
                             'page_count': page_count,
                             'preview_dpi': settings.preview_dpi,
                             'preview_jpeg_quality': settings.preview_jpeg_quality,
+                            'preview_gs_threads': getattr(settings, 'preview_gs_threads', None),
+                            'preview_gs_batch_timeout_seconds': getattr(settings, 'preview_gs_batch_timeout_seconds', None),
+                            'render_context': render_context,
                         }
                         logger.warning(
                             "gs batch incomplete asset=%s missing=%s — running single-page gs retry",
@@ -892,8 +902,11 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                             'results': retry_results,
                         }
 
-                        # Last-resort: mutool for anything gs refused.
-                        if still_missing_after_retry:
+                        # Last-resort: mutool for anything gs refused. Disabled
+                        # by default for customer previews because the VPS did
+                        # not need this loop and it can turn three missing pages
+                        # into several extra minutes of waiting.
+                        if still_missing_after_retry and getattr(settings, 'preview_mutool_salvage_enabled', False):
                             logger.warning(
                                 "gs retry STILL missing asset=%s pages=%s — trying mutool salvage",
                                 asset_id, still_missing_after_retry,
@@ -922,6 +935,12 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                                 p for p in still_missing_after_retry
                                 if p not in mutool_salvaged
                             ]
+                        elif still_missing_after_retry:
+                            renderer_diagnostic['mutool_salvage'] = {
+                                'skipped': True,
+                                'reason': 'PREVIEW_MUTOOL_SALVAGE_ENABLED=false',
+                                'still_missing': list(still_missing_after_retry),
+                            }
                     except Exception as exc:
                         logger.warning(
                             "gs batch raised unexpected error asset=%s: %s",
