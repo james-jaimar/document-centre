@@ -9,6 +9,11 @@ def _default_render_cpu() -> int:
     return max(1, (os.cpu_count() or 2) - 1)
 
 
+def _default_gs_threads() -> int:
+    """Ghostscript pdf14 transparency is most reliable single-threaded."""
+    return 1
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
 
@@ -78,6 +83,17 @@ class Settings(BaseSettings):
     # previous MuPDF batch path as the primary renderer. Either way the
     # other engine is used as a salvage fallback if the primary drops pages.
     preview_renderer: str = Field(alias='PREVIEW_RENDERER', default='ghostscript')
+    # Ghostscript preview runtime. Keep the default single-threaded because
+    # Illustrator PDFs with transparency groups can regress badly with
+    # -dNumRenderingThreads on small Cloud Run instances; the old VPS path did
+    # not need threaded GS to render the 8pp test file quickly.
+    preview_gs_threads: int = Field(alias='PREVIEW_GS_THREADS', default_factory=_default_gs_threads)
+    preview_gs_batch_timeout_seconds: int = Field(alias='PREVIEW_GS_BATCH_TIMEOUT_SECONDS', default=90)
+    preview_gs_page_timeout_seconds: int = Field(alias='PREVIEW_GS_PAGE_TIMEOUT_SECONDS', default=20)
+    preview_mutool_salvage_enabled: bool = Field(alias='PREVIEW_MUTOOL_SALVAGE_ENABLED', default=False)
+    # "metadata_only" records the PDF Trim/Bleed box but renders the original
+    # PDF. "rewrite_pdf" preserves the previous pikepdf MediaBox rewrite.
+    preview_render_box_mode: str = Field(alias='PREVIEW_RENDER_BOX_MODE', default='metadata_only')
     max_upload_mb: int = Field(alias='MAX_UPLOAD_MB', default=250)
 
     # Preview pipeline resilience tunables. Each per-page step (rasterize +
