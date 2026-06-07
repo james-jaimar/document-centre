@@ -1178,28 +1178,29 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
             preview_dir.mkdir(parents=True, exist_ok=True)
             thumb_dir.mkdir(parents=True, exist_ok=True)
 
-            # ── Batch path ────────────────────────────────────────────
-            # Mirror generate_previews: ONE Ghostscript invocation across
-            # the requested page range, then downscale + upload + record
-            # in parallel via the existing CPU/IO thread pools. Avoids the
-            # ~500ms–1s GS cold-start overhead that the previous per-page
-            # loop paid for every missing page.
+            # ── Batch path (MuPDF → JPEG) ─────────────────────────────
+            # ONE `mutool draw` invocation across the requested page
+            # range, then downscale + upload + record in parallel. Same
+            # engine as generate_previews so behaviour stays consistent.
             batch_dir = preview_dir / 'batch'
             batch_dir.mkdir(parents=True, exist_ok=True)
             wanted_set = set(wanted)
             lo, hi = min(wanted), max(wanted)
+            preview_ext = 'jpg' if settings.preview_format == 'jpeg' else 'png'
+            preview_media_type = 'image/jpeg' if settings.preview_format == 'jpeg' else 'image/png'
             try:
-                pdf_ops.rasterize_preview(
+                pdf_ops.rasterize_pages_mutool(
                     src, batch_dir / 'page', dpi=settings.preview_dpi,
                     first_page=lo, last_page=hi,
+                    fmt=settings.preview_format,
+                    quality=settings.preview_jpeg_quality,
                 )
             except Exception as exc:
                 logger.warning(
                     "render_specific_pages: batch rasterize %d-%d failed, "
                     "falling back to per-page: %s", lo, hi, exc,
                 )
-                # Fallback: original per-page loop so we never regress
-                # behaviour when the batch path explodes.
+                # Fallback: original per-page GS loop (PNG) — never regress.
                 for page_num in wanted:
                     try:
                         image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
@@ -1225,7 +1226,7 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
                      ThreadPoolExecutor(max_workers=io_workers) as io_pool:
                     thumb_futures = {}
                     for p in wanted:
-                        image_path = batch_dir / f"page-{p:03d}.png"
+                        image_path = batch_dir / f"page-{p:03d}.{preview_ext}"
                         if not image_path.exists():
                             failed.append(p)
                             continue
@@ -1248,6 +1249,8 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
                             _upload_page_io,
                             prefix=prefix, page=p,
                             image_path=image_path, thumb_image=thumb_image,
+                            preview_ext=preview_ext,
+                            preview_media_type=preview_media_type,
                         )] = (p, image_path, thumb_image)
 
                     for fut in as_completed(upload_futures):
@@ -1258,6 +1261,7 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
                                 db, asset_id=asset_id, job_id=job_id, page=p,
                                 image_path=image_path, thumb_image=thumb_image,
                                 preview_storage=prev_sp, thumb_storage=thumb_sp,
+                                preview_media_type=preview_media_type,
                             )
                             recovered.append(p)
                         except Exception as exc:
