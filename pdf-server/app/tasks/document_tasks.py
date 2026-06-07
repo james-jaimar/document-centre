@@ -725,9 +725,9 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                     )
                     _stamp('mutool_batch', t_gs)
                 except MutoolRenderError as exc:
-                    # Capture forensic detail BEFORE the in-batch retry so
-                    # we can tell whether the second attempt also missed
-                    # pages, and which pages MuPDF specifically refused.
+                    # Capture forensic detail BEFORE the per-page retry so
+                    # we can tell whether each retry also missed a page,
+                    # and which pages MuPDF specifically refused.
                     mutool_diagnostic = {
                         'first_attempt': {
                             'returncode': exc.returncode,
@@ -740,34 +740,56 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                         }
                     }
                     logger.warning(
-                        "mutool batch incomplete asset=%s missing=%s rc=%s — retrying missing range",
+                        "mutool batch incomplete asset=%s missing=%s rc=%s — retrying ONLY the missing pages individually",
                         asset_id, exc.missing_pages, exc.returncode,
                     )
+                    # Surgical per-page retries — do NOT re-render the
+                    # pages that already succeeded. Each retry is its own
+                    # single-page mutool invocation, which is basically
+                    # immune to the rare batch-mode glitches.
+                    retry_results: list[dict] = []
+                    still_missing: list[int] = []
                     if exc.missing_pages:
-                        try:
-                            t_retry = time.monotonic()
-                            lo, hi = min(exc.missing_pages), max(exc.missing_pages)
-                            pdf_ops.rasterize_pages_mutool(
-                                src, preview_dir / 'page', dpi=settings.preview_dpi,
-                                first_page=lo, last_page=hi,
-                                fmt=settings.preview_format,
-                                quality=settings.preview_jpeg_quality,
-                            )
-                            _stamp('mutool_batch_retry', t_retry)
-                            mutool_diagnostic['retry'] = {'ok': True, 'range': [lo, hi]}
-                        except MutoolRenderError as exc2:
-                            mutool_diagnostic['retry'] = {
-                                'ok': False,
-                                'missing_pages': exc2.missing_pages,
-                                'returncode': exc2.returncode,
-                                'stderr_tail': "\n".join(
-                                    (exc2.stderr or "").strip().splitlines()[-5:]
-                                ),
-                            }
+                        t_retry = time.monotonic()
+                        for page_num in exc.missing_pages:
+                            try:
+                                pdf_ops.rasterize_one_page_mutool(
+                                    src, preview_dir / 'page',
+                                    dpi=settings.preview_dpi,
+                                    page=page_num,
+                                    fmt=settings.preview_format,
+                                )
+                                retry_results.append({'page': page_num, 'ok': True})
+                            except MutoolRenderError as exc2:
+                                retry_results.append({
+                                    'page': page_num,
+                                    'ok': False,
+                                    'returncode': exc2.returncode,
+                                    'stderr_tail': "\n".join(
+                                        (exc2.stderr or "").strip().splitlines()[-3:]
+                                    ),
+                                })
+                                still_missing.append(page_num)
+                            except Exception as exc2:  # noqa: BLE001
+                                retry_results.append({
+                                    'page': page_num, 'ok': False,
+                                    'error': f"{type(exc2).__name__}: {exc2}",
+                                })
+                                still_missing.append(page_num)
+                        _stamp('mutool_per_page_retry', t_retry)
+                        mutool_diagnostic['retry'] = {
+                            'mode': 'per_page',
+                            'attempted': list(exc.missing_pages),
+                            'still_missing': still_missing,
+                            'results': retry_results,
+                            'ok': not still_missing,
+                        }
+                        if still_missing:
                             logger.error(
-                                "mutool retry STILL missing pages asset=%s missing=%s — Ghostscript fallback will run",
-                                asset_id, exc2.missing_pages,
+                                "mutool per-page retry STILL missing pages asset=%s missing=%s — salvage pass will run",
+                                asset_id, still_missing,
                             )
+
                 except Exception as exc:
                     logger.warning(
                         "mutool batch raised unexpected error asset=%s: %s — falling back",
