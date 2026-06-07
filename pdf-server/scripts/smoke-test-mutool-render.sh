@@ -59,9 +59,10 @@ echo "    format=$FMT  ext=$EXT"
 
 PATTERN="$OUT_DIR/page-%03d.$EXT"
 echo "==> Batch rendering pages 1-$PAGES at ${DPI} dpi -> $PATTERN"
+echo "    (matches production command shape: -q -F $FMT -r $DPI, NO -O quality=)"
 T0=$(date +%s%3N)
 set +e
-mutool draw -F "$FMT" -o "$PATTERN" -r "$DPI" "$SRC" "1-$PAGES" \
+mutool draw -q -F "$FMT" -o "$PATTERN" -r "$DPI" "$SRC" "1-$PAGES" \
   >"$WORK/mutool.stdout" 2>"$WORK/mutool.stderr"
 RC=$?
 set -e
@@ -87,5 +88,23 @@ if (( ${#MISSING[@]} > 0 )) || (( ${#EMPTY[@]} > 0 )) || (( RC != 0 )); then
   exit 4
 fi
 
+echo "==> Per-page retry smoke (render each page individually, like the surgical retry path)"
+RETRY_DIR="$WORK/retry"; mkdir -p "$RETRY_DIR"
+for i in $(seq 1 "$PAGES"); do
+  out="$RETRY_DIR/page-${i}.$EXT"
+  if ! mutool draw -q -F "$FMT" -o "$out" -r "$DPI" "$SRC" "$i" \
+      >>"$WORK/retry.stdout" 2>>"$WORK/retry.stderr"; then
+    echo "FAIL: per-page render failed for page $i"
+    tail -n 20 "$WORK/retry.stderr" | sed 's/^/    /'
+    exit 5
+  fi
+  if [[ ! -s "$out" ]]; then
+    echo "FAIL: per-page render produced empty file for page $i"
+    exit 5
+  fi
+done
+
 echo "==> OK: $PAGES/$PAGES pages rendered in ${ELAPSED}ms (avg $((ELAPSED / PAGES))ms/page)"
+echo "==> OK: per-page retry path verified for all $PAGES pages"
 ls -la "$OUT_DIR" | sed 's/^/    /'
+
