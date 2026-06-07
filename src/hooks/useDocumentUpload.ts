@@ -228,26 +228,33 @@ export async function renderDocumentThumbnails(
     targetAspect,
   );
 
-  const MAX_THUMB_POLLS = 45; // ~60s ceiling with adaptive backoff
-  let interval = 150; // adaptive: 150ms → 1000ms ceiling — short docs land in 1-2 polls
+  // generate_previews writes every derived_files row before the job flips
+  // to "completed", so on the happy path the first check above already has
+  // everything. Only enter the poll loop if pages are genuinely missing
+  // (rare — usually only when the stall watchdog fired above).
+  const initialFound = thumbnailPaths.filter(Boolean).length;
+  if (initialFound < expectedPages) {
+    const MAX_THUMB_POLLS = 45; // ~60s ceiling with adaptive backoff
+    let interval = 150; // adaptive: 150ms → 1000ms ceiling
 
-  for (let i = 0; i < MAX_THUMB_POLLS; i++) {
-    const found = thumbnailPaths.filter(Boolean).length;
-    if (found >= expectedPages) break;
+    for (let i = 0; i < MAX_THUMB_POLLS; i++) {
+      const found = thumbnailPaths.filter(Boolean).length;
+      if (found >= expectedPages) break;
 
-    const pct = 75 + (found / expectedPages) * 20;
-    onProgress(`Rendering pages… (${found}/${expectedPages})`, Math.min(95, pct));
+      const pct = 75 + (found / expectedPages) * 20;
+      onProgress(`Rendering pages… (${found}/${expectedPages})`, Math.min(95, pct));
 
-    await new Promise((r) => setTimeout(r, interval));
-    interval = Math.min(Math.round(interval * 1.3), 1000);
-    derivedFiles = await getDerivedFiles(assetId);
-    thumbnailPaths = pickBestPerPage(
-      derivedFiles,
-      asset.thumbnail_storage_path,
-      asset.preview_storage_path,
-      expectedPages,
-      targetAspect,
-    );
+      await new Promise((r) => setTimeout(r, interval));
+      interval = Math.min(Math.round(interval * 1.3), 1000);
+      derivedFiles = await getDerivedFiles(assetId);
+      thumbnailPaths = pickBestPerPage(
+        derivedFiles,
+        asset.thumbnail_storage_path,
+        asset.preview_storage_path,
+        expectedPages,
+        targetAspect,
+      );
+    }
   }
 
   // Compute gaps after the initial polling loop
