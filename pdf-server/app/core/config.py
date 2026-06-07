@@ -99,6 +99,14 @@ class Settings(BaseSettings):
         default_factory=lambda: max(1, min(4, os.cpu_count() or 1)),
     )
     mutool_band_height: int = Field(alias='MUTOOL_BAND_HEIGHT', default=256)
+    # Master switch for `-B/-T` banded threading. On image-heavy PDFs the
+    # bands don't help (MuPDF has to decode the embedded raster before it
+    # can band) and the probe cost is wasted. Set to false to fall back to
+    # plain single-process mutool render — the parallel per-page retry
+    # pool already uses multiple subprocesses for whole-document fan-out.
+    mutool_use_banded_threading: bool = Field(
+        alias='MUTOOL_USE_BANDED_THREADING', default=True,
+    )
 
     # Per-page Celery fan-out: dispatch each page as its own task on the
     # thumbnails queue so a single upload uses ALL light-worker children
