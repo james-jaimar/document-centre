@@ -43,7 +43,6 @@ PATTERN="$OUT_DIR/page-%03d.jpg"
 echo "==> Rendering pages 1-$PAGES at ${DPI} dpi -> $PATTERN"
 T0=$(date +%s%3N)
 gs -q -dSAFER -dBATCH -dNOPAUSE \
-   -dNumRenderingThreads=4 \
    -sDEVICE=jpeg -dJPEGQ=85 \
    -r"$DPI" \
    -dFirstPage=1 -dLastPage="$PAGES" \

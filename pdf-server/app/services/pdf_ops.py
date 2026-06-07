@@ -25,11 +25,34 @@ class RasterizationIncompleteError(RuntimeError):
     after per-page retries. Carries the list of missing 1-based page numbers
     so the caller can decide whether to salvage them another way."""
 
-    def __init__(self, missing_pages: list[int]):
+    def __init__(
+        self,
+        missing_pages: list[int],
+        *,
+        returncode: int | None = None,
+        stderr: str = "",
+        stdout: str = "",
+        elapsed_ms: int | None = None,
+        timed_out: bool = False,
+        produced: list[str] | None = None,
+        cmd: list[str] | None = None,
+    ):
         super().__init__(
             f"Ghostscript produced an incomplete page set; missing pages: {missing_pages}"
         )
         self.missing_pages = missing_pages
+        self.returncode = returncode
+        self.stderr = stderr or ""
+        self.stdout = stdout or ""
+        self.elapsed_ms = elapsed_ms
+        self.timed_out = timed_out
+        self.produced = produced or []
+        self.cmd = cmd or []
+
+
+def _gs_thread_flags() -> list[str]:
+    threads = max(1, int(getattr(settings, "preview_gs_threads", 1) or 1))
+    return [f"-dNumRenderingThreads={threads}"] if threads > 1 else []
 
 
 class MutoolRenderError(RuntimeError):
@@ -1681,9 +1704,7 @@ class PdfOps:
                 "-dNOPAUSE",
                 "-dBATCH",
                 "-dSAFER",
-                # Multi-thread the rasteriser. On a 4 vCPU host this gives
-                # ~30-50% faster wall-clock for multi-page renders.
-                "-dNumRenderingThreads=4",
+                *_gs_thread_flags(),
                 f"-r{dpi}",
                 f"-sDEVICE={device}",
                 f"-sOutputFile={target}",
@@ -1796,7 +1817,16 @@ class PdfOps:
             effective_fmt, ext = probed_fmt, probed_ext
 
         out_prefix.parent.mkdir(parents=True, exist_ok=True)
-        pattern = str(out_prefix) + "-%03d." + ext
+        single_page_direct = page_count == 1
+        if single_page_direct:
+            # Critical: Ghostscript's %03d output counter restarts at 001 for
+            # every invocation. Missing-page retries run in parallel against
+            # the same out_prefix, so using page-%03d.jpg here lets retries for
+            # pages 5/6/7 all fight over page-001.jpg and then rename each
+            # other's output. Write the source page file directly instead.
+            pattern = str(base_dir / f"{base_name}-{first_page:03d}.{ext}")
+        else:
+            pattern = str(out_prefix) + "-%03d." + ext
         page_count = max(1, last_page - first_page + 1)
 
         # Clear any stale matching files from a prior partial run in this
@@ -2078,7 +2108,7 @@ class PdfOps:
             "-dSAFER",
             "-dBATCH",
             "-dNOPAUSE",
-            "-dNumRenderingThreads=4",
+            *_gs_thread_flags(),
             "-sDEVICE=jpeg",
             f"-dJPEGQ={int(quality)}",
             f"-r{dpi}",
@@ -2089,10 +2119,8 @@ class PdfOps:
         ]
 
         if timeout_seconds is None:
-            # 30s base + 4s/page, capped at 300s. Local benchmark for an
-            # 8-page 17 MB CMYK A4 is ~3.5s; this leaves generous headroom
-            # for image-heavy A3 / pamphlet posters on a slow vCPU.
-            timeout_seconds = min(300.0, 30.0 + 4.0 * page_count)
+            configured = float(getattr(settings, "preview_gs_batch_timeout_seconds", 90) or 90)
+            timeout_seconds = max(10.0, configured)
 
         t0 = time.monotonic()
         timed_out = False
@@ -2120,23 +2148,24 @@ class PdfOps:
         # GS's `%03d` is the sequential output index, NOT the source page
         # number — rename so downstream lookups (`page-005.jpg`) work
         # regardless of where the range started.
-        seq_to_src: list[tuple[Path, Path]] = []
-        for i in range(1, page_count + 1):
-            seq_path = base_dir / f"{base_name}-{i:03d}.{ext}"
-            src_page = first_page + i - 1
-            target_path = base_dir / f"{base_name}-{src_page:03d}.{ext}"
-            if seq_path.exists() and seq_path != target_path:
-                seq_to_src.append((seq_path, target_path))
-        for seq_path, target_path in reversed(seq_to_src):
-            if target_path.exists():
+        if not single_page_direct:
+            seq_to_src: list[tuple[Path, Path]] = []
+            for i in range(1, page_count + 1):
+                seq_path = base_dir / f"{base_name}-{i:03d}.{ext}"
+                src_page = first_page + i - 1
+                target_path = base_dir / f"{base_name}-{src_page:03d}.{ext}"
+                if seq_path.exists() and seq_path != target_path:
+                    seq_to_src.append((seq_path, target_path))
+            for seq_path, target_path in reversed(seq_to_src):
+                if target_path.exists():
+                    try:
+                        target_path.unlink()
+                    except OSError:
+                        pass
                 try:
-                    target_path.unlink()
+                    seq_path.rename(target_path)
                 except OSError:
                     pass
-            try:
-                seq_path.rename(target_path)
-            except OSError:
-                pass
 
         # Verify presence + plausible size.
         MIN_IMG_BYTES = 200
@@ -2162,7 +2191,16 @@ class PdfOps:
         )
 
         if returncode != 0 or missing or timed_out:
-            raise RasterizationIncompleteError(missing_pages=missing or list(expected))
+            raise RasterizationIncompleteError(
+                missing_pages=missing or list(expected),
+                returncode=returncode,
+                stderr=stderr,
+                stdout=stdout,
+                elapsed_ms=elapsed_ms,
+                timed_out=timed_out,
+                produced=[str(p) for p in produced],
+                cmd=cmd,
+            )
 
         return sorted(produced)
 
@@ -2173,10 +2211,12 @@ class PdfOps:
         dpi: int,
         page: int,
         quality: int = 85,
-        timeout_seconds: float = 60.0,
+        timeout_seconds: float | None = None,
     ) -> Path:
         """Render a SINGLE page with `gs` directly to JPEG. Used by the
         salvage retry pass when the batch missed something."""
+        if timeout_seconds is None:
+            timeout_seconds = float(getattr(settings, "preview_gs_page_timeout_seconds", 20) or 20)
         produced = self.rasterize_pages_ghostscript_jpeg(
             src, out_prefix,
             dpi=dpi, first_page=page, last_page=page,

@@ -27,6 +27,7 @@ from app.services.pdf_ops import (
 from app.services.derived_files import derived_file_repo
 from app.core.config import settings
 from app.core.queue import enqueue
+from app.core.task_errors import NonRetryableTaskError
 
 
 storage = StorageService()
@@ -79,6 +80,12 @@ def _runtime_meta() -> dict:
         'mutool_effective_ext': eff_ext,
         'render_cpu_concurrency': getattr(_s, 'render_cpu_concurrency', None),
         'render_io_concurrency': getattr(_s, 'render_io_concurrency', None),
+        'preview_renderer': getattr(_s, 'preview_renderer', None),
+        'preview_gs_threads': getattr(_s, 'preview_gs_threads', None),
+        'preview_gs_batch_timeout_seconds': getattr(_s, 'preview_gs_batch_timeout_seconds', None),
+        'preview_gs_page_timeout_seconds': getattr(_s, 'preview_gs_page_timeout_seconds', None),
+        'preview_render_box_mode': getattr(_s, 'preview_render_box_mode', None),
+        'preview_mutool_salvage_enabled': getattr(_s, 'preview_mutool_salvage_enabled', None),
     }
 
 
@@ -676,6 +683,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
     """
     db = _db()
     evt_overall = None
+    render_context: dict = {}
     try:
         job_repo.mark_running(db, job_id)
         asset = asset_repo.get_asset(db, asset_id)
@@ -720,6 +728,10 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             # callers that pass `null` after rotate/resize/print-ready.
             t_box = time.monotonic()
             effective_render_box = render_box
+            render_box_mode = (
+                getattr(settings, 'preview_render_box_mode', 'metadata_only')
+                or 'metadata_only'
+            ).lower()
             if effective_render_box is None:
                 try:
                     effective_render_box = pdf_ops.derive_default_render_box(src)
@@ -729,10 +741,17 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                     )
                     effective_render_box = None
 
-            if effective_render_box is not None:
+            render_context = {
+                'render_box_mode': render_box_mode,
+                'detected_render_box': effective_render_box,
+                'rendered_source': 'original_pdf',
+            }
+
+            if effective_render_box is not None and render_box_mode == 'rewrite_pdf':
                 cropped = ws.path('cropped.pdf')
                 pdf_ops.crop_to_box(src, cropped, effective_render_box)
                 src = cropped
+                render_context['rendered_source'] = 'pikepdf_box_rewrite'
             _stamp('prepare_render_box', t_box)
 
             preview_dir = ws.path('preview')
@@ -753,6 +772,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             expected_pages: set[int] = set(range(1, page_count + 1)) if page_count else set()
             completed_pages: set[int] = set()
             page_storage: dict[int, tuple[str, str]] = {}
+            renderer_terminal_missing: set[int] = set()
 
             # ─── Batch render (Ghostscript → JPEG, single invocation) ──
             # PDF → JPEG in ONE `gs` call. Locally benchmarked at ~3.5s for
@@ -828,10 +848,20 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                         renderer_diagnostic = {
                             'engine': 'ghostscript',
                             'missing_pages': list(exc.missing_pages),
+                            'returncode': getattr(exc, 'returncode', None),
+                            'timed_out': getattr(exc, 'timed_out', False),
+                            'elapsed_ms': getattr(exc, 'elapsed_ms', None),
+                            'stderr_tail': "\n".join(
+                                (getattr(exc, 'stderr', '') or '').strip().splitlines()[-8:]
+                            ),
+                            'produced': getattr(exc, 'produced', []),
                             'src_bytes': src_bytes,
                             'page_count': page_count,
                             'preview_dpi': settings.preview_dpi,
                             'preview_jpeg_quality': settings.preview_jpeg_quality,
+                            'preview_gs_threads': getattr(settings, 'preview_gs_threads', None),
+                            'preview_gs_batch_timeout_seconds': getattr(settings, 'preview_gs_batch_timeout_seconds', None),
+                            'render_context': render_context,
                         }
                         logger.warning(
                             "gs batch incomplete asset=%s missing=%s — running single-page gs retry",
@@ -873,8 +903,11 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                             'results': retry_results,
                         }
 
-                        # Last-resort: mutool for anything gs refused.
-                        if still_missing_after_retry:
+                        # Last-resort: mutool for anything gs refused. Disabled
+                        # by default for customer previews because the VPS did
+                        # not need this loop and it can turn three missing pages
+                        # into several extra minutes of waiting.
+                        if still_missing_after_retry and getattr(settings, 'preview_mutool_salvage_enabled', False):
                             logger.warning(
                                 "gs retry STILL missing asset=%s pages=%s — trying mutool salvage",
                                 asset_id, still_missing_after_retry,
@@ -903,6 +936,14 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                                 p for p in still_missing_after_retry
                                 if p not in mutool_salvaged
                             ]
+                        elif still_missing_after_retry:
+                            renderer_diagnostic['mutool_salvage'] = {
+                                'skipped': True,
+                                'reason': 'PREVIEW_MUTOOL_SALVAGE_ENABLED=false',
+                                'still_missing': list(still_missing_after_retry),
+                            }
+                        if still_missing_after_retry:
+                            renderer_terminal_missing.update(still_missing_after_retry)
                     except Exception as exc:
                         logger.warning(
                             "gs batch raised unexpected error asset=%s: %s",
@@ -1267,18 +1308,19 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             # unhappy path, but still wildly faster than the old fully
             # sequential loop (we saw a 247 s salvage in production).
             missing = sorted(expected_pages - completed_pages)
-            if missing and settings.preview_salvage_enabled:
+            salvage_missing = [p for p in missing if p not in renderer_terminal_missing]
+            if salvage_missing and settings.preview_salvage_enabled:
                 logger.warning(
                     "generate_previews: salvage pass for asset=%s pages=%s",
-                    asset_id, missing,
+                    asset_id, salvage_missing,
                 )
                 salvage_evt = job_event_repo.start(
                     db, job_id=job_id, asset_id=asset_id,
                     task_name='generate_previews', queue_name='thumbnails',
                     worker_name=self.request.hostname if self.request else None,
                     stage='salvage',
-                    metadata={'missing': missing},
-                    message=f'Salvaging {len(missing)} missing page(s)…',
+                    metadata={'missing': salvage_missing, 'renderer_terminal_missing': sorted(renderer_terminal_missing)},
+                    message=f'Salvaging {len(salvage_missing)} missing page(s)…',
                 )
 
                 salvage_cpu = max(1, min(2, settings.render_cpu_concurrency))
@@ -1292,7 +1334,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                             src_pdf=src, preview_dir=preview_dir,
                             thumb_dir=thumb_dir, page=p, dpi=settings.preview_dpi,
                         ): p
-                        for p in missing
+                        for p in salvage_missing
                     }
                     io_futures = {}
                     for cpu_fut in as_completed(cpu_futures):
@@ -1331,9 +1373,14 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                 if salvage_evt is not None:
                     job_event_repo.finish(
                         db, salvage_evt.id,
-                        metadata={'recovered': sorted(completed_pages & set(missing))},
-                        message='Salvage pass complete',
+                        metadata={'recovered': sorted(completed_pages & set(salvage_missing))},
+                            message='Salvage pass complete',
                     )
+            elif renderer_terminal_missing:
+                logger.warning(
+                    "generate_previews: skipping salvage for renderer-terminal pages asset=%s pages=%s",
+                    asset_id, sorted(renderer_terminal_missing),
+                )
 
 
             # ─── Verify & finalise ─────────────────────────────────────
@@ -1360,7 +1407,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                 # whatever it was before so the frontend won't surface
                 # half-rendered previews. The render-pages endpoint can
                 # recover the gaps later.
-                raise RuntimeError(msg)
+                raise NonRetryableTaskError(msg)
 
             asset_repo.update_asset(db, asset_id, {
                 'thumbnail_storage_path': thumb_path or (page_storage.get(1, (None, None))[1]),
@@ -1375,16 +1422,19 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                 'expected_pages': page_count,
                 'files_created': files_created[:20],
                 'timings_ms': timings,
+                'render_context': render_context,
             })
             if evt_overall:
                 job_event_repo.finish(
                     db,
                     evt_overall.id,
-                    metadata={'pages_rendered': pages_rendered, 'expected': page_count},
+                    metadata={'pages_rendered': pages_rendered, 'expected': page_count, 'timings_ms': timings, 'render_context': render_context},
                     message=f'Rendered {pages_rendered} of {page_count} page(s)',
                 )
                 evt_overall = None
             return {'pages_rendered': pages_rendered, 'expected_pages': page_count}
+    except NonRetryableTaskError:
+        raise
     except Exception as exc:
         if evt_overall:
             try:
