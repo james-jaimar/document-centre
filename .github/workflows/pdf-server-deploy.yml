@@ -136,13 +136,17 @@ jobs:
             echo "::warning::Unexpected error probing Cloud Run logs: $err"
           fi
 
-      - name: Build image
+      - name: Build image (with registry layer cache)
         if: github.event.inputs.rollback_sha == ''
-        run: |
-          docker build \
-            -f pdf-server/Dockerfile \
-            -t "${{ steps.tag.outputs.image }}" \
-            .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: pdf-server/Dockerfile
+          tags: ${{ steps.tag.outputs.image }}
+          load: true
+          push: false
+          cache-from: type=registry,ref=${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
 
       - name: Container boot smoke test (catch startup failures before Cloud Run rollout)
         if: github.event.inputs.rollback_sha == ''
