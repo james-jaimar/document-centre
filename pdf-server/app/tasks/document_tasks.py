@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 import random
 import time
 import traceback
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from PIL import Image
 from sqlalchemy.orm import Session
 from celery import shared_task
@@ -443,6 +443,7 @@ def _rasterize_one_page_best_effort(
     def _try_mutool():
         produced = pdf_ops.rasterize_one_page_mutool(
             src_pdf, out_prefix, dpi=dpi, page=page, fmt=_s.preview_format,
+            timeout_seconds=float(getattr(_s, "preview_gs_page_timeout_seconds", 20) or 20),
         )
         _fmt, ext = mutool_effective_format(_s.preview_format)
         media_type = 'image/jpeg' if ext == 'jpg' else 'image/png'
@@ -609,6 +610,150 @@ def _record_page(
     )
 
 
+def _valid_local_image(path) -> bool:
+    try:
+        if not path.exists() or path.stat().st_size < 200:
+            return False
+        with Image.open(path) as im:
+            im.verify()
+        return True
+    except Exception:
+        return False
+
+
+def _local_preview_pages(preview_dir, preview_ext: str, expected_pages: set[int]) -> set[int]:
+    return {
+        p for p in expected_pages
+        if _valid_local_image(preview_dir / f"page-{p:03d}.{preview_ext}")
+    }
+
+
+def _future_timeout(page_count: int, *, phase: str) -> float:
+    page_count = max(1, page_count)
+    if phase == 'cpu':
+        per_page = max(20, int(getattr(settings, 'preview_gs_page_timeout_seconds', 20) or 20) + 35)
+        return float(min(240, max(60, page_count * per_page)))
+    return float(min(180, max(45, page_count * 20)))
+
+
+def _completed_or_timed_out(future_map: dict, *, timeout_seconds: float, label: str) -> list:
+    try:
+        return list(as_completed(future_map, timeout=timeout_seconds))
+    except FuturesTimeoutError:
+        pending_pages = [page for fut, page in future_map.items() if not fut.done()]
+        logger.error(
+            "%s timed out after %.1fs pending_pages=%s",
+            label, timeout_seconds, pending_pages,
+        )
+        for fut in future_map:
+            if not fut.done():
+                fut.cancel()
+        return [fut for fut in future_map if fut.done()]
+
+
+def _emit_page_progress(db, *, job_id: str, asset_id: str, task_name: str, worker_name: str | None, completed_count: int, page_count: int) -> None:
+    if not page_count:
+        return
+    # Small customer uploads need every-page feedback; larger documents keep
+    # the old batching to avoid noisy telemetry.
+    if page_count < 10 or completed_count % 5 == 0 or completed_count == page_count:
+        page_evt = job_event_repo.start(
+            db, job_id=job_id, asset_id=asset_id,
+            task_name=task_name, queue_name='thumbnails',
+            worker_name=worker_name,
+            stage='page_batch',
+            metadata={'rendered': completed_count, 'total': page_count},
+            message=f'Rendered {completed_count} of {page_count} pages',
+        )
+        if page_evt is not None:
+            job_event_repo.finish(
+                db, page_evt.id, message='',
+                metadata={'rendered': completed_count, 'total': page_count},
+            )
+
+
+def _record_existing_preview_pages(
+    db,
+    *,
+    asset_id: str,
+    job_id: str,
+    prefix: str,
+    preview_dir,
+    thumb_dir,
+    pages: list[int],
+    preview_ext: str,
+    preview_media_type: str,
+) -> tuple[dict[int, tuple[str, str]], dict[int, str]]:
+    """Retry thumbnail/upload/DB for pages already rasterized on local disk.
+
+    This is the critical distinction for the 7/8 case: if GS created
+    page-008.jpg, do not render page 8 again. Retry the tail IO/recording work
+    and report that phase explicitly if it fails.
+    """
+    recorded: dict[int, tuple[str, str]] = {}
+    failed: dict[int, str] = {}
+    if not pages:
+        return recorded, failed
+
+    cpu_workers = max(1, min(settings.render_cpu_concurrency, len(pages)))
+    io_workers = max(1, min(settings.render_io_concurrency, len(pages)))
+    with ThreadPoolExecutor(max_workers=cpu_workers) as cpu_pool, \
+         ThreadPoolExecutor(max_workers=io_workers) as io_pool:
+        thumb_futures = {}
+        for p in pages:
+            image_path = preview_dir / f"page-{p:03d}.{preview_ext}"
+            if not _valid_local_image(image_path):
+                failed[p] = 'local preview image missing or invalid'
+                continue
+            thumb_image = thumb_dir / f"page-{p:03d}.png"
+            thumb_futures[cpu_pool.submit(
+                pdf_ops.downscale_to_thumbnail,
+                image_path, thumb_image, 360,
+            )] = (p, image_path, thumb_image)
+
+        upload_futures = {}
+        for fut in _completed_or_timed_out(
+            thumb_futures,
+            timeout_seconds=_future_timeout(len(thumb_futures), phase='cpu'),
+            label='record_existing downscale',
+        ):
+            p, image_path, thumb_image = thumb_futures[fut]
+            try:
+                fut.result()
+            except Exception as exc:
+                failed[p] = f'downscale failed: {exc}'
+                logger.warning("record_existing: downscale page %d failed: %s", p, exc)
+                continue
+            upload_futures[io_pool.submit(
+                _upload_page_io,
+                prefix=prefix, page=p,
+                image_path=image_path, thumb_image=thumb_image,
+                preview_ext=preview_ext,
+                preview_media_type=preview_media_type,
+            )] = (p, image_path, thumb_image)
+
+        for fut in _completed_or_timed_out(
+            upload_futures,
+            timeout_seconds=_future_timeout(len(upload_futures), phase='io'),
+            label='record_existing upload',
+        ):
+            p, image_path, thumb_image = upload_futures[fut]
+            try:
+                prev_sp, thumb_sp = fut.result()
+                _record_page(
+                    db, asset_id=asset_id, job_id=job_id, page=p,
+                    image_path=image_path, thumb_image=thumb_image,
+                    preview_storage=prev_sp, thumb_storage=thumb_sp,
+                    preview_media_type=preview_media_type,
+                )
+            except Exception as exc:
+                failed[p] = f'upload/db record failed: {exc}'
+                logger.warning("record_existing: upload/record page %d failed: %s", p, exc)
+                continue
+            recorded[p] = (prev_sp, thumb_sp)
+    return recorded, failed
+
+
 @shared_task(bind=True, queue='thumbnails')
 def render_one_page(
     self,
@@ -661,7 +806,7 @@ def render_one_page(
         db.close()
 
 
-@shared_task(bind=True, queue='thumbnails')
+@shared_task(bind=True, queue='thumbnails', soft_time_limit=600, time_limit=660)
 def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] | None = None):
     """Generate previews + thumbnails for an asset.
 
@@ -773,6 +918,8 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             completed_pages: set[int] = set()
             page_storage: dict[int, tuple[str, str]] = {}
             renderer_terminal_missing: set[int] = set()
+            local_rasterized_pages: set[int] = set()
+            record_missing_errors: dict[int, str] = {}
 
             # ─── Batch render (Ghostscript → JPEG, single invocation) ──
             # PDF → JPEG in ONE `gs` call. Locally benchmarked at ~3.5s for
@@ -976,67 +1123,51 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                         )
 
                 # Downscale → upload → record everything that landed on disk.
+                # Keep this as a separate "record existing renders" phase so
+                # an upload/DB hiccup does not get mislabeled as Ghostscript
+                # missing a page, and does not force a pointless re-render.
                 try:
-                    cpu_workers = max(1, settings.render_cpu_concurrency)
-                    io_workers = max(1, settings.render_io_concurrency)
-                    with ThreadPoolExecutor(max_workers=cpu_workers) as cpu_pool, \
-                         ThreadPoolExecutor(max_workers=io_workers) as io_pool:
-                        thumb_futures = {}
-                        for p in range(1, page_count + 1):
-                            image_path = preview_dir / f"page-{p:03d}.{preview_ext}"
-                            if not image_path.exists():
-                                continue
-                            thumb_image = thumb_dir / f"page-{p:03d}.png"
-                            thumb_futures[cpu_pool.submit(
-                                pdf_ops.downscale_to_thumbnail,
-                                image_path, thumb_image, 360,
-                            )] = (p, image_path, thumb_image)
-
-                        upload_futures = {}
-                        for fut in as_completed(thumb_futures):
-                            p, image_path, thumb_image = thumb_futures[fut]
-                            try:
-                                fut.result()
-                            except Exception as exc:
-                                logger.warning("batch downscale page %d failed: %s", p, exc)
-                                continue
-                            upload_futures[io_pool.submit(
-                                _upload_page_io,
-                                prefix=prefix, page=p,
-                                image_path=image_path, thumb_image=thumb_image,
-                                preview_ext=preview_ext,
-                                preview_media_type=preview_media_type,
-                            )] = (p, image_path, thumb_image)
-
-                        for fut in as_completed(upload_futures):
-                            p, image_path, thumb_image = upload_futures[fut]
-                            try:
-                                prev_sp, thumb_sp = fut.result()
-                                _record_page(
-                                    db, asset_id=asset_id, job_id=job_id, page=p,
-                                    image_path=image_path, thumb_image=thumb_image,
-                                    preview_storage=prev_sp, thumb_storage=thumb_sp,
-                                    preview_media_type=preview_media_type,
-                                )
-                            except Exception as exc:
-                                logger.warning("batch IO/record page %d failed: %s", p, exc)
-                                continue
-                            page_storage[p] = (prev_sp, thumb_sp)
-                            completed_pages.add(p)
-                            files_created.append({'kind': 'preview_page', 'page': p, 'storage_path': prev_sp})
-                            files_created.append({'kind': 'thumbnail_page', 'page': p, 'storage_path': thumb_sp})
-                            if p == 1:
-                                preview_path = prev_sp
-                                thumb_path = thumb_sp
-                                asset_repo.update_asset(db, asset_id, {
-                                    'thumbnail_storage_path': thumb_path,
-                                    'preview_storage_path': preview_path,
-                                })
+                    local_rasterized_pages = _local_preview_pages(preview_dir, preview_ext, expected_pages)
+                    raster_missing = sorted(expected_pages - local_rasterized_pages)
+                    recorded, record_failed = _record_existing_preview_pages(
+                        db,
+                        asset_id=asset_id,
+                        job_id=job_id,
+                        prefix=prefix,
+                        preview_dir=preview_dir,
+                        thumb_dir=thumb_dir,
+                        pages=sorted(local_rasterized_pages),
+                        preview_ext=preview_ext,
+                        preview_media_type=preview_media_type,
+                    )
+                    record_missing_errors.update(record_failed)
+                    for p, (prev_sp, thumb_sp) in sorted(recorded.items()):
+                        page_storage[p] = (prev_sp, thumb_sp)
+                        completed_pages.add(p)
+                        files_created.append({'kind': 'preview_page', 'page': p, 'storage_path': prev_sp})
+                        files_created.append({'kind': 'thumbnail_page', 'page': p, 'storage_path': thumb_sp})
+                        if p == 1:
+                            preview_path = prev_sp
+                            thumb_path = thumb_sp
+                            asset_repo.update_asset(db, asset_id, {
+                                'thumbnail_storage_path': thumb_path,
+                                'preview_storage_path': preview_path,
+                            })
+                        _emit_page_progress(
+                            db,
+                            job_id=job_id,
+                            asset_id=asset_id,
+                            task_name='generate_previews',
+                            worker_name=self.request.hostname if self.request else None,
+                            completed_count=len(completed_pages),
+                            page_count=page_count,
+                        )
                     _stamp('batch_total', t_batch)
                     logger.info(
-                        "generate_previews: batch path (%s) asset=%s rendered=%d/%d ext=%s timings_ms=%s",
+                        "generate_previews: batch path (%s) asset=%s recorded=%d/%d local_rasterized=%d raster_missing=%s record_missing=%s ext=%s timings_ms=%s",
                         renderer, asset_id, len(completed_pages), page_count,
-                        preview_ext, timings,
+                        len(local_rasterized_pages), raster_missing,
+                        sorted(record_missing_errors), preview_ext, timings,
                     )
                 except Exception as exc:
                     logger.warning(
@@ -1047,7 +1178,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
 
 
             # ─── Page-1 fast path (skipped if batch already covered it) ─
-            if 1 in completed_pages:
+            if 1 in completed_pages or 1 in local_rasterized_pages:
                 pass
             else:
                 try:
@@ -1109,7 +1240,14 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             #  (b) IN-PROCESS (FANOUT_ENABLED=false): the original two-pool
             #      ThreadPoolExecutor design — pinned to one worker child.
             if page_count and page_count > 1:
-                remaining = [p for p in range(2, page_count + 1) if p not in completed_pages]
+                # Only rasterize pages that do not already have a valid local
+                # batch image. Pages with a local preview but failed upload/DB
+                # remain record_missing; re-rendering them wastes minutes and
+                # hides the actual failing phase.
+                remaining = [
+                    p for p in range(2, page_count + 1)
+                    if p not in completed_pages and p not in local_rasterized_pages
+                ]
 
                 # Cloud Tasks fan-out is a regression vs the VPS Celery prefork
                 # pool: each per-page task becomes an HTTP push that has to spin
@@ -1188,17 +1326,15 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                         completed_count = len(completed_pages)
                         if completed_count != last_event_count:
                             last_progress_at = time.monotonic()
-                            if completed_count % 5 == 0 or completed_count == page_count:
-                                page_evt = job_event_repo.start(
-                                    db, job_id=job_id, asset_id=asset_id,
-                                    task_name='generate_previews', queue_name='thumbnails',
-                                    worker_name=self.request.hostname if self.request else None,
-                                    stage='page_batch',
-                                    metadata={'rendered': completed_count, 'total': page_count},
-                                    message=f'Rendered {completed_count} of {page_count} pages',
-                                )
-                                if page_evt is not None:
-                                    job_event_repo.finish(db, page_evt.id, message='', metadata={'rendered': completed_count, 'total': page_count})
+                            _emit_page_progress(
+                                db,
+                                job_id=job_id,
+                                asset_id=asset_id,
+                                task_name='generate_previews',
+                                worker_name=self.request.hostname if self.request else None,
+                                completed_count=completed_count,
+                                page_count=page_count,
+                            )
                             last_event_count = completed_count
 
                         if target.issubset(completed_pages):
@@ -1249,7 +1385,11 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                         }
 
                         io_futures: dict = {}
-                        for cpu_fut in as_completed(cpu_futures):
+                        for cpu_fut in _completed_or_timed_out(
+                            cpu_futures,
+                            timeout_seconds=_future_timeout(len(cpu_futures), phase='cpu'),
+                            label='generate_previews CPU phase',
+                        ):
                             page_num = cpu_futures[cpu_fut]
                             try:
                                 image_path, thumb_image, prev_ext, prev_mt = cpu_fut.result()
@@ -1268,7 +1408,11 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                             )
                             io_futures[io_fut] = (page_num, image_path, thumb_image, prev_mt)
 
-                        for io_fut in as_completed(io_futures):
+                        for io_fut in _completed_or_timed_out(
+                            io_futures,
+                            timeout_seconds=_future_timeout(len(io_futures), phase='io'),
+                            label='generate_previews IO phase',
+                        ):
                             page_num, image_path, thumb_image, prev_mt = io_futures[io_fut]
                             try:
                                 prev_sp, thumb_sp = io_fut.result()
@@ -1291,24 +1435,78 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                             files_created.append({'kind': 'preview_page', 'page': page_num, 'storage_path': prev_sp})
                             files_created.append({'kind': 'thumbnail_page', 'page': page_num, 'storage_path': thumb_sp})
 
-                            if completed_count % 5 == 0 or completed_count == page_count:
-                                page_evt = job_event_repo.start(
-                                    db, job_id=job_id, asset_id=asset_id,
-                                    task_name='generate_previews', queue_name='thumbnails',
-                                    worker_name=self.request.hostname if self.request else None,
-                                    stage='page_batch',
-                                    metadata={'rendered': completed_count, 'total': page_count},
-                                    message=f'Rendered {completed_count} of {page_count} pages',
-                                )
-                                if page_evt is not None:
-                                    job_event_repo.finish(db, page_evt.id, message='', metadata={'rendered': completed_count, 'total': page_count})
+                            _emit_page_progress(
+                                db,
+                                job_id=job_id,
+                                asset_id=asset_id,
+                                task_name='generate_previews',
+                                worker_name=self.request.hostname if self.request else None,
+                                completed_count=completed_count,
+                                page_count=page_count,
+                            )
 
             # ─── Salvage pass: small two-pool retry for any still-missing
             # Salvage runs with tiny pools (cpu=2, io=2) — by definition the
             # unhappy path, but still wildly faster than the old fully
             # sequential loop (we saw a 247 s salvage in production).
             missing = sorted(expected_pages - completed_pages)
-            salvage_missing = [p for p in missing if p not in renderer_terminal_missing]
+            record_missing = [p for p in missing if p in local_rasterized_pages]
+            if record_missing:
+                logger.warning(
+                    "generate_previews: retrying record-only pages asset=%s pages=%s errors=%s",
+                    asset_id, record_missing,
+                    {p: record_missing_errors.get(p) for p in record_missing},
+                )
+                record_evt = job_event_repo.start(
+                    db, job_id=job_id, asset_id=asset_id,
+                    task_name='generate_previews', queue_name='thumbnails',
+                    worker_name=self.request.hostname if self.request else None,
+                    stage='record_existing',
+                    metadata={
+                        'pages': record_missing,
+                        'previous_errors': {str(p): record_missing_errors.get(p) for p in record_missing},
+                    },
+                    message=f'Recording {len(record_missing)} already-rendered page(s)…',
+                )
+                recorded, record_failed = _record_existing_preview_pages(
+                    db,
+                    asset_id=asset_id,
+                    job_id=job_id,
+                    prefix=prefix,
+                    preview_dir=preview_dir,
+                    thumb_dir=thumb_dir,
+                    pages=record_missing,
+                    preview_ext=preview_ext,
+                    preview_media_type=preview_media_type,
+                )
+                record_missing_errors.update(record_failed)
+                for p, (prev_sp, thumb_sp) in sorted(recorded.items()):
+                    page_storage[p] = (prev_sp, thumb_sp)
+                    completed_pages.add(p)
+                    files_created.append({'kind': 'preview_page', 'page': p, 'storage_path': prev_sp})
+                    files_created.append({'kind': 'thumbnail_page', 'page': p, 'storage_path': thumb_sp})
+                    _emit_page_progress(
+                        db,
+                        job_id=job_id,
+                        asset_id=asset_id,
+                        task_name='generate_previews',
+                        worker_name=self.request.hostname if self.request else None,
+                        completed_count=len(completed_pages),
+                        page_count=page_count,
+                    )
+                if record_evt is not None:
+                    job_event_repo.finish(
+                        db, record_evt.id,
+                        status='done' if len(recorded) == len(record_missing) else 'failed',
+                        metadata={
+                            'recorded': sorted(recorded),
+                            'failed': {str(p): record_missing_errors.get(p) for p in record_missing if p not in recorded},
+                        },
+                        message='Record-existing pass complete',
+                    )
+
+            missing = sorted(expected_pages - completed_pages)
+            salvage_missing = [p for p in missing if p not in renderer_terminal_missing and p not in local_rasterized_pages]
             if salvage_missing and settings.preview_salvage_enabled:
                 logger.warning(
                     "generate_previews: salvage pass for asset=%s pages=%s",
@@ -1337,7 +1535,11 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                         for p in salvage_missing
                     }
                     io_futures = {}
-                    for cpu_fut in as_completed(cpu_futures):
+                    for cpu_fut in _completed_or_timed_out(
+                        cpu_futures,
+                        timeout_seconds=_future_timeout(len(cpu_futures), phase='cpu'),
+                        label='salvage CPU phase',
+                    ):
                         page_num = cpu_futures[cpu_fut]
                         try:
                             image_path, thumb_image, prev_ext, prev_mt = cpu_fut.result()
@@ -1351,7 +1553,11 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                             preview_ext=prev_ext, preview_media_type=prev_mt,
                         )] = (page_num, image_path, thumb_image, prev_mt)
 
-                    for io_fut in as_completed(io_futures):
+                    for io_fut in _completed_or_timed_out(
+                        io_futures,
+                        timeout_seconds=_future_timeout(len(io_futures), phase='io'),
+                        label='salvage IO phase',
+                    ):
                         page_num, image_path, thumb_image, prev_mt = io_futures[io_fut]
                         try:
                             prev_sp, thumb_sp = io_fut.result()
@@ -1401,14 +1607,29 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             )
 
             if still_missing:
+                raster_missing = [p for p in still_missing if p not in local_rasterized_pages]
+                record_missing = [p for p in still_missing if p in local_rasterized_pages]
                 msg = (
                     f"Incomplete render: {len(still_missing)} of {page_count} "
-                    f"page(s) missing → {still_missing}"
+                    f"page(s) missing → {still_missing}; "
+                    f"raster_missing={raster_missing}; record_missing={record_missing}"
                 )
                 job_repo.mark_failed(db, job_id, msg)
                 if evt_overall:
                     try:
-                        job_event_repo.fail(db, evt_overall.id, message=msg)
+                        job_event_repo.fail(
+                            db, evt_overall.id,
+                            message=msg,
+                            metadata={
+                                'missing_pages': still_missing,
+                                'raster_missing': raster_missing,
+                                'record_missing': record_missing,
+                                'record_missing_errors': {
+                                    str(p): record_missing_errors.get(p)
+                                    for p in record_missing
+                                },
+                            },
+                        )
                     except Exception:
                         pass
                     evt_overall = None
@@ -1460,7 +1681,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
         db.close()
 
 
-@shared_task(bind=True, queue='thumbnails')
+@shared_task(bind=True, queue='thumbnails', soft_time_limit=300, time_limit=360)
 def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
     """Re-render a specific set of pages for an existing asset.
 
@@ -1544,7 +1765,7 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
             still_missing_after_batch: list[int] = []
             for p in wanted:
                 image_path_check = batch_dir / f"page-{p:03d}.{preview_ext}"
-                if image_path_check.exists() and image_path_check.stat().st_size >= 200:
+                if _valid_local_image(image_path_check):
                     continue
                 try:
                     pdf_ops.rasterize_one_page_ghostscript_jpeg(
@@ -1560,55 +1781,21 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
                     still_missing_after_batch.append(p)
             timings['per_page_retry'] = len(still_missing_after_batch)
 
-            if True:
-
-                cpu_workers = max(1, settings.render_cpu_concurrency)
-                io_workers = max(1, settings.render_io_concurrency)
-                with ThreadPoolExecutor(max_workers=cpu_workers) as cpu_pool, \
-                     ThreadPoolExecutor(max_workers=io_workers) as io_pool:
-                    thumb_futures = {}
-                    for p in wanted:
-                        image_path = batch_dir / f"page-{p:03d}.{preview_ext}"
-                        if not image_path.exists() or image_path.stat().st_size < 200:
-                            failed.append(p)
-                            continue
-                        thumb_image = thumb_dir / f"page-{p:03d}.png"
-                        thumb_futures[cpu_pool.submit(
-                            pdf_ops.downscale_to_thumbnail,
-                            image_path, thumb_image, 360,
-                        )] = (p, image_path, thumb_image)
-
-                    upload_futures = {}
-                    for fut in as_completed(thumb_futures):
-                        p, image_path, thumb_image = thumb_futures[fut]
-                        try:
-                            fut.result()
-                        except Exception as exc:
-                            logger.warning("recovery downscale page %d failed: %s", p, exc)
-                            failed.append(p)
-                            continue
-                        upload_futures[io_pool.submit(
-                            _upload_page_io,
-                            prefix=prefix, page=p,
-                            image_path=image_path, thumb_image=thumb_image,
-                            preview_ext=preview_ext,
-                            preview_media_type=preview_media_type,
-                        )] = (p, image_path, thumb_image)
-
-                    for fut in as_completed(upload_futures):
-                        p, image_path, thumb_image = upload_futures[fut]
-                        try:
-                            prev_sp, thumb_sp = fut.result()
-                            _record_page(
-                                db, asset_id=asset_id, job_id=job_id, page=p,
-                                image_path=image_path, thumb_image=thumb_image,
-                                preview_storage=prev_sp, thumb_storage=thumb_sp,
-                                preview_media_type=preview_media_type,
-                            )
-                            recovered.append(p)
-                        except Exception as exc:
-                            logger.warning("recovery IO/record page %d failed: %s", p, exc)
-                            failed.append(p)
+            local_pages = _local_preview_pages(batch_dir, preview_ext, set(wanted))
+            failed.extend([p for p in wanted if p not in local_pages])
+            recorded, record_failed = _record_existing_preview_pages(
+                db,
+                asset_id=asset_id,
+                job_id=job_id,
+                prefix=prefix,
+                preview_dir=batch_dir,
+                thumb_dir=thumb_dir,
+                pages=sorted(local_pages),
+                preview_ext=preview_ext,
+                preview_media_type=preview_media_type,
+            )
+            recovered.extend(sorted(recorded))
+            failed.extend([p for p in record_failed if p not in recorded])
 
         # If the asset now has every page, promote it back to 'ready'.
         present_previews = derived_file_repo.pages_present(db, asset_id, 'preview_page')

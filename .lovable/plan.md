@@ -1,44 +1,59 @@
-## Problem to fix
+I agree this should not be happening silently. From the code inspection, “missing page” does not necessarily mean Ghostscript skipped page 8 while counting 1–8. Right now the UI treats two different failures as the same thing:
 
-The render now gets to 7/8 quickly, which means the primary Ghostscript batch path is no longer the main bottleneck. The remaining failure is the tail path when one page is missing or not yet recorded: the code falls into slower per-page recovery/upload/DB paths, and the frontend can sit at `Rendering pages… (7/8)` for too long before surfacing a failure or recovery.
+1. Ghostscript did not leave a valid output file for that page.
+2. Ghostscript did render it, but thumbnailing, upload, or the database `derived_files` record failed, so the app cannot see it and reports it as “missing”.
 
-## What I will change
+That second case is likely why it feels nonsensical: the page may exist on disk inside the worker, but because the preview+thumbnail rows were not both recorded, the frontend sees 7/8 and recovery starts.
 
-1. **Keep recovery on the fast Ghostscript path**
-   - Update `render_specific_pages` so missing-page recovery uses the same Ghostscript direct-to-JPEG renderer as `generate_previews`, not the older MuPDF-first batch path.
-   - This matters because the current screenshot is exactly the recovery case: 7 pages are available, 1 page is missing/stalled.
+## Plan
 
-2. **Stop re-rendering pages that already succeeded**
-   - In `generate_previews`, if the batch renderer produced page images on disk but then reported an incomplete page set, upload/record the pages that already exist immediately.
-   - Only the missing page should be retried; the system should not drift into a second full per-page render pass for pages 2..8.
+### 1. Stop re-rendering pages that already exist on disk
+In `generate_previews`, after the batch Ghostscript render, treat each produced page image as the source of truth for raster success.
 
-3. **Make the final verification DB-based, not memory-only**
-   - Before marking a preview job incomplete, query `derived_files` for pages that have both `preview_page` and `thumbnail_page`.
-   - This prevents a page uploaded/recorded by a retry/recovery path from being ignored because `completed_pages` in memory missed it.
+If page 8 exists locally but upload/DB failed, retry upload/recording that same file instead of starting a fresh page-8 render.
 
-4. **Add a short stuck-tail guard**
-   - Add a backend stall guard around the per-page CPU futures so if a single page process hangs, the job fails quickly with the exact missing page instead of waiting through long Cloud Tasks retries.
-   - Keep this scoped to preview rendering; do not change production print-ready generation.
+### 2. Split “render missing” from “recording missing”
+Add explicit tracking for:
 
-5. **Frontend should not wait silently at 7/8**
-   - Reduce the upload modal’s no-progress watchdog from 180s to a tighter preview-specific timeout.
-   - When backend marks the job failed with `Incomplete render`, immediately start the existing `/render-pages` recovery path and show `Recovering missing page…` instead of leaving the user thinking it is hung.
+- `raster_missing`: no valid image file exists after Ghostscript.
+- `record_missing`: image exists, but upload/thumbnail/DB record failed.
 
-6. **Smoke coverage for the exact regression**
-   - Extend the Ghostscript smoke script/Python smoke check so it asserts an 8-page PDF returns 8 distinct page files through `rasterize_pages_ghostscript_jpeg` and the single-page retry path writes to `page-008.jpg` correctly.
+Only `raster_missing` should go through page raster recovery. `record_missing` should go through upload/DB retry only.
 
-## Files I expect to edit
+### 3. Validate output images, not just file size
+In `rasterize_pages_ghostscript_jpeg`, replace the current “file exists and is over 200 bytes” check with a real JPEG validation check using Pillow.
 
-- `pdf-server/app/tasks/document_tasks.py`
-- `pdf-server/app/services/pdf_ops.py`
-- `src/hooks/useDocumentUpload.ts`
-- `pdf-server/scripts/smoke-test-ghostscript-render.sh` or `pdf-server/scripts/benchmark-preview-render.sh`
+That prevents corrupt/truncated files from being counted as rendered, only to fail later in thumbnailing.
+
+### 4. Put hard time limits around the tail path
+Add bounded waits around the CPU and IO futures in `generate_previews` and salvage. A single page must not hold the whole upload hostage for minutes.
+
+If it fails, we should know exactly which phase failed:
+
+```text
+page 8 rasterized OK
+page 8 thumbnail OK
+page 8 preview upload failed
+page 8 DB record failed
+```
+
+### 5. Make progress honest for small documents
+For documents under 10 pages, emit a progress event for every completed page instead of only at 5 and final completion.
+
+This stops the frontend from sitting silently at 7/8 while the backend is actually retrying upload/record/recovery.
+
+### 6. Fix legacy fallback drift from the VPS path
+Remove the hardcoded `-dNumRenderingThreads=4` from the legacy Ghostscript PNG fallback and make it respect `PREVIEW_GS_THREADS=1`.
+
+That avoids a fallback path behaving differently from the tuned Cloud Run/VPS-equivalent Ghostscript path.
+
+### 7. Add targeted smoke coverage
+Extend the Ghostscript smoke test so it verifies:
+
+- 8-page batch render produces 8 valid JPEGs.
+- single-page render of page 8 writes `page-008.jpg`.
+- the validation rejects corrupt/tiny page files.
 
 ## Expected result
 
-For this 8-page test PDF, the user-visible flow should either:
-
-- finish all 8 pages shortly after the fast batch render, or
-- move quickly from `7/8` into explicit one-page recovery, then finish or fail with the exact page number and renderer stderr.
-
-It should no longer sit indefinitely at `Rendering pages… (7/8)`.
+The modal should no longer “hang” at 7/8. If the page rendered but upload/DB failed, it will retry recording the existing page quickly. If the page genuinely failed to rasterize, recovery will say exactly which page and phase failed instead of sitting in a long opaque retry loop.
