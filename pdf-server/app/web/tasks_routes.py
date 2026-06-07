@@ -169,6 +169,8 @@ async def run_task(task_name: str, request: Request) -> dict[str, Any]:
                                 status_code=503,
                                 detail=f"job {job_id} already running; retry later",
                             )
+            except HTTPException:
+                raise
             except Exception as guard_exc:  # noqa: BLE001
                 log.warning("idempotency guard check failed: %s", guard_exc)
 
