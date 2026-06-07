@@ -197,6 +197,10 @@ export async function renderDocumentThumbnails(
     }
   }
 
+  if (renderJobStalled) {
+    onProgress("Recovering missing pages…", 88);
+  }
+
   // Poll for derived files to appear (rasterization writes them async)
   const asset = await getAsset(assetId);
   const expectedPages = asset.page_count ?? 1;
