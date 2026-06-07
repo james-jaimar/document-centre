@@ -443,6 +443,7 @@ def _rasterize_one_page_best_effort(
     def _try_mutool():
         produced = pdf_ops.rasterize_one_page_mutool(
             src_pdf, out_prefix, dpi=dpi, page=page, fmt=_s.preview_format,
+            timeout_seconds=float(getattr(_s, "preview_gs_page_timeout_seconds", 20) or 20),
         )
         _fmt, ext = mutool_effective_format(_s.preview_format)
         media_type = 'image/jpeg' if ext == 'jpg' else 'image/png'
@@ -1177,7 +1178,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
 
 
             # ─── Page-1 fast path (skipped if batch already covered it) ─
-            if 1 in completed_pages:
+            if 1 in completed_pages or 1 in local_rasterized_pages:
                 pass
             else:
                 try:
