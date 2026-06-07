@@ -1734,25 +1734,9 @@ class PdfOps:
         if timeout_seconds is None:
             timeout_seconds = min(180.0, 10.0 + 2.0 * page_count)
 
-        t0 = time.monotonic()
-        try:
-            proc = subprocess.run(
-                cmd, capture_output=True, text=True,
-                timeout=timeout_seconds,
-            )
-            timed_out = False
-            returncode = proc.returncode
-            stderr = proc.stderr or ""
-            stdout = proc.stdout or ""
-        except subprocess.TimeoutExpired as exc:
-            timed_out = True
-            returncode = -1
-            stderr = (
-                (exc.stderr.decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or ""))
-                + f"\n[mutool draw timed out after {timeout_seconds:.0f}s]"
-            )
-            stdout = exc.stdout.decode("utf-8", errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
-        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        # (subprocess.run already happened above via _run_mutool, possibly
+        # twice if the threaded attempt was retried unthreaded.)
+
 
         # Normalise filenames to zero-padded `<prefix>-<NNN>.<ext>` so
         # downstream lookups (`page-001.jpg`, `page-012.jpg`, ...) work
