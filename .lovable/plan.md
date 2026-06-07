@@ -1,67 +1,60 @@
-# Pipeline performance fix plan
+# Pipeline performance + visibility plan (post-CMYK-first decision)
 
-The light Cloud Run worker has 4 vCPUs but only **1 uvicorn process**, so every render job runs serially behind the previous one. Combined with a sequential recovery path, an over-eager 90s stall guard, and rasterizing thumbnails at full preview DPI, an 8-page PDF that should finish in ~15–25s often takes 60s+.
+## Hard constraint — DO NOT VIOLATE
 
-Below are the changes in priority order. Each is small and isolated — nothing rewrites the architecture.
+CMYK conversion must run **before** the customer sees page previews. The whole point of the conversion step is that customers see colours close to the printed output. Bright RGB Word/image exports can shift significantly when converted to CMYK. Showing previews from the raw RGB PDF first would defeat the entire colour-accuracy story.
 
-## 1. Real parallelism on the light worker (biggest win)
+So: no "parallel previews from raw PDF while CMYK runs in background". Order stays: upload → CMYK/prepare → MuPDF preview render → customer sees pages.
 
-**Problem:** `worker-light-http` starts uvicorn with `--workers ${UVICORN_WORKERS:-1}`. One process handles all render tasks. When two uploads land in the same minute the second one waits for the first to fully finish.
+The fix is to make each of those steps fast and observable, not to reorder them.
 
-**Change:** In `pdf-server/scripts/entrypoint.sh`, default `UVICORN_WORKERS` to `4` when `ROLE=worker-light-http` (and leave the env override in place so Cloud Run can tune it). Also set Cloud Run service `--concurrency` to 1 per worker process equivalent (already effectively the case via Cloud Tasks rate limits) so each uvicorn worker handles one task at a time without contending on memory.
+## Goals
 
-This alone should remove the queue-behind-busy-worker stalls the user is observing.
+1. Prove the runtime path (is everything actually on GCP?).
+2. Make MuPDF rendering deterministic and fast — single batch render, no silent Ghostscript fallback.
+3. Cut wasted work in the CMYK/prepare → preview handoff so the customer waits only on real work, not on plumbing.
+4. Give the admin UI real GCP-backed visibility (Cloud Run logs, Cloud Tasks queue stats, per-stage timings) so the next time something hangs we can see exactly where.
 
-## 2. Batch the recovery render path
+## Workstream A — Prove the runtime path
 
-**Problem:** `render_specific_pages` in `pdf-server/app/tasks/document_tasks.py` loops page-by-page and spawns a fresh Ghostscript process per page. An 8-page stall recovery = 8 cold GS starts ≈ +5–8s of pure overhead.
+- Extend `/health` on every Cloud Run service to expose: role, queue_backend, Cloud Run service+revision, mutool/ghostscript/qpdf versions, MuPDF JPEG capability check result.
+- Add an admin-only "PDF backend target" panel in `PlatformDocumentCentreOverview` that calls `pdf-api`'s sanitized diagnostic (upstream host, upstream `/health` result, effective storage bucket/region). Confirms at a glance there is no VPS hop.
+- Update stale comments/docs that still say "VPS" where the runtime is now Cloud Run. Keep legacy fallback docs clearly labelled.
 
-**Change:** Use the same single-GS-batch approach as `generate_previews` (lines ~656–722): one `gs` invocation for `first_page=min(wanted)..last_page=max(wanted)`, then keep only the requested page numbers, then reuse the existing `_upload_page_io` ThreadPoolExecutor for S3 uploads.
+## Workstream B — MuPDF rendering hardening
 
-## 3. Stop rasterizing thumbnails at preview DPI
+- Add a startup self-check that runs `mutool draw -F jpeg` on a tiny built-in 1-page PDF and logs success/failure. Surface result in `/health`.
+- In `rasterize_pages_mutool`, log every invocation with: command shape (no sensitive paths), page range, dpi, fmt/quality, elapsed ms, produced filenames, byte sizes, stderr tail on failure.
+- Enforce completeness immediately after MuPDF batch: expected set must exactly match produced set.
+- If MuPDF batch produces an incomplete set, retry with MuPDF per-page first. Only fall back to Ghostscript if MuPDF per-page also fails. Stamp `fallback_engine=ghostscript` on the job result/event when this happens so it shows up in ops.
 
-**Problem:** `thumbnail_dpi=120` is defined in `pdf-server/app/core/config.py` but never used. Every page is rasterized at `preview_dpi=130` (~1.6 Mpx for A4) and uploaded as the preview, then Pillow downscales the same buffer to a 360px thumbnail and uploads that too. Two S3 uploads per page, double the bytes, more GS memory.
+## Workstream C — Make the existing CMYK-first flow fast
 
-**Change (conservative):** On the upload happy path, render thumbnails only — skip the full-DPI preview upload. The full preview can be generated lazily the first time a user opens the inline viewer, using the existing `render_specific_pages` route. If we want to keep preview-on-upload for now, at minimum wire `thumbnail_dpi` so the preview pass uses ~96 DPI instead of 130 (≈45% fewer pixels and bytes).
+CMYK stays first. The customer-visible work is `prepare_for_product` (CMYK + orient + optional resize) → `generate_previews`. Speed it up by removing waste, not by reordering.
 
-I'll confirm with the user which variant they want before touching this — it slightly changes UX (first viewer open triggers a render).
+- **Disable the shared on-disk PDF cache on Cloud Run.** Heavy and light workers are separate Cloud Run services with separate filesystems — `cache_get` always misses, `cache_put` is wasted IO on heavy. Set `PDF_CACHE_ENABLED=false` on the workers via the deploy workflow. The light worker downloads the prepared PDF from S3 once (same region as the bucket → fast).
+- **Pin `pdf-worker-heavy` to `min-instances=1`** (already in the deploy script) so the first upload of a quiet period doesn't pay a cold start before CMYK even begins. Verify it's actually applied after the next deploy.
+- **Add per-step `timings_ms` to every job result** so we can see, for a specific stuck upload: S3 download, CMYK pass, orient pass, S3 upload, cache hit/miss, MuPDF raster, downscale, S3 upload of pages, DB write. Most of this already exists — finish wiring it through `prepare_for_product` and `generate_previews` end-to-end and surface in `/v1/ops/assets/{id}/pipeline`.
+- **Stop double-rasterizing thumbnails at preview DPI.** `thumbnail_dpi=96` is defined but never used; everything gets MuPDF→JPEG at preview DPI then Pillow downscale. For thumbnails specifically, rasterize once at thumbnail DPI directly — cuts MuPDF time and bytes for the thumbnail track. Keep the full preview render exactly as it is.
+- **Tighten the frontend post-completion poll** in `useDocumentUpload.ts`: after `pollJob` returns `completed`, do **one** `getDerivedFiles` check. Only enter the recovery loop if pages are genuinely missing. Lengthen the in-flight stall watchdog from 90s to 180s so it's a true safety net, not a routine trigger during slow CMYK runs.
 
-## 4. Simplify frontend polling after job completion
+## Workstream D — GCP-native observability inside the admin UI
 
-**Problem:** In `src/hooks/useDocumentUpload.ts`, after the render job reports `completed` the code still enters a 45-iteration derived-files poll loop. The 90s `RENDER_STALL_MS` guard can also fire while pages are arriving normally, triggering up to 2 redundant recovery passes.
+- Grant `roles/logging.viewer` to the `dc-pdf-runtime` runtime SA so the existing `/v1/ops/logs/cloud-run` endpoint can actually read logs at runtime (it currently only works if the SA already has it).
+- Add Cloud Logging filtering by `asset_id`, `job_id`, and Cloud Run service name to the ops UI — not just free-text search.
+- Add Cloud Tasks queue stats + recent task listing so we can see what is queued / dispatching / retrying / running in real time.
 
-**Change:**
-- After `pollJob` returns `completed`, do **one** `getDerivedFiles` call. If page count matches expected, skip the loop entirely.
-- Only enter the recovery loop when pages are genuinely missing after that single check.
-- Increase `RENDER_STALL_MS` from 90s to a value safely above the realistic batch budget (e.g. 180s) so it acts as a true watchdog, not a routine trigger.
+## Workstream E — Deploy regression guards
 
-## 5. Small cleanups (low risk, optional in this pass)
+- In the Cloud Run deploy workflow, after the container builds, render a tiny 2-page test PDF through the exact `mutool draw -F jpeg -O quality=90` command shape used in production. Fail the deploy if it doesn't produce both JPEGs.
+- After deploy, hit `/health` on each Cloud Run service and fail the workflow if `queue_backend != cloud_tasks` or mutool capability check is `false`.
 
-- Remove the dead Celery fanout path in `document_tasks.py:502–550` (already disabled on Cloud Run via `_on_cloud_run`); reduces noise when reading the file.
-- Pass page dimensions out of the rasterize step so `_record_page` doesn't re-open each PNG with Pillow.
-- Drop the duplicate `getAsset` call in `useDocumentUpload.ts` around `finalizeOrientationAndPrintReady`.
+## Validation after implementation
 
-## Files touched
+Upload the same 8-page A4 demo PDF and confirm:
 
-- `pdf-server/scripts/entrypoint.sh` — worker count default
-- `pdf-server/app/tasks/document_tasks.py` — batch recovery, optional DPI wiring
-- `pdf-server/app/core/config.py` — wire `thumbnail_dpi` if we take option 3
-- `src/hooks/useDocumentUpload.ts` — single post-complete derived check, longer stall watchdog
-
-## Not changing (audit confirmed these are correct)
-
-- Batch GS path, `bulk_upsert_page_files`, D-chaining, Cloud Tasks idempotency guard, qpdf linearize fast path, adaptive `pollJob` backoff, `reconcileStuckDocument`. These are working as intended — leave alone.
-
-## Deployment notes
-
-- pdf-server changes go live only after the backend deploy workflow runs.
-- Frontend changes go live on normal publish.
-- Worker-count change requires the Cloud Run service to redeploy and replace instances; expect a brief gap.
-
-## Open question before I build
-
-For item 3 (DPI/upload reduction), do you want:
-**A)** Conservative — keep preview upload on the happy path but drop it from 130→96 DPI (~45% smaller, same UX), or
-**B)** Aggressive — skip the preview upload entirely on upload; generate it lazily when the user first opens the inline viewer (biggest savings, tiny UX delay on first viewer open).
-
-If you don't want to decide now, I'll default to **A**.
+- ops asset pipeline shows `engine=mupdf`, no `fallback_engine`, all 8 pages produced.
+- `timings_ms` shows where every second went (S3, CMYK, MuPDF, upload, DB).
+- ops backend-target panel shows Cloud Run / Cloud Tasks; no VPS URL anywhere.
+- Cloud Run logs can be queried from the admin UI by asset/job id.
+- MuPDF raster step is in seconds, not minutes; total wall clock is dominated by the CMYK pass on the heavy worker, which is the expected and intentional cost of the colour-accuracy guarantee.
