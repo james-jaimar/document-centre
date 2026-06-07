@@ -1730,56 +1730,49 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
             preview_dir.mkdir(parents=True, exist_ok=True)
             thumb_dir.mkdir(parents=True, exist_ok=True)
 
-            # ── Batch path (Ghostscript → JPEG) ───────────────────────
-            # Mirror generate_previews: single GS invocation across the
-            # requested range, then parallel single-page GS retry for any
-            # gaps. The old MuPDF batch path here was the cause of slow
-            # recovery tails (the 7/8 hang) because gs preview pages were
-            # already on disk but we re-rendered with mutool from scratch.
+            # ── Render exactly the requested pages ────────────────────
+            # Earlier versions called rasterize_pages_ghostscript_jpeg
+            # with first=min(wanted), last=max(wanted), which re-rendered
+            # the WHOLE range — including pages we never asked for and that
+            # were already on disk from the original generate_previews run.
+            # On an 8-page doc with page 5 missing that meant re-rendering
+            # pages 1..8 just to recover page 5, which is what produced the
+            # "stuck at 7/8 → Recovering pages 5..8 forever" loop because
+            # a long single-page recovery still has to do all the unrelated
+            # work first.
+            #
+            # Recovery now renders ONE page at a time directly to its final
+            # filename. Each page is a fast (<5s) single-GS invocation and
+            # they're independent, so we run them with a small thread pool.
             batch_dir = preview_dir / 'batch'
             batch_dir.mkdir(parents=True, exist_ok=True)
-            lo, hi = min(wanted), max(wanted)
             preview_ext = 'jpg'
             preview_media_type = 'image/jpeg'
-            try:
-                t_raster = time.monotonic()
-                pdf_ops.rasterize_pages_ghostscript_jpeg(
-                    src, batch_dir / 'page', dpi=settings.preview_dpi,
-                    first_page=lo, last_page=hi,
-                    quality=settings.preview_jpeg_quality,
-                )
-                timings['gs_batch'] = int((time.monotonic() - t_raster) * 1000)
-            except RasterizationIncompleteError as exc:
-                logger.warning(
-                    "render_specific_pages: gs batch %d-%d incomplete missing=%s",
-                    lo, hi, exc.missing_pages,
-                )
-                timings['gs_batch_incomplete'] = len(exc.missing_pages)
-            except Exception as exc:
-                logger.warning(
-                    "render_specific_pages: gs batch %d-%d raised %s — per-page retry will recover",
-                    lo, hi, exc,
-                )
 
-            # Single-page GS retry for any wanted page still missing from disk.
             still_missing_after_batch: list[int] = []
-            for p in wanted:
-                image_path_check = batch_dir / f"page-{p:03d}.{preview_ext}"
-                if _valid_local_image(image_path_check):
-                    continue
+            t_raster = time.monotonic()
+
+            def _render_one(pn: int) -> tuple[int, str | None]:
                 try:
                     pdf_ops.rasterize_one_page_ghostscript_jpeg(
                         src, batch_dir / 'page',
-                        dpi=settings.preview_dpi, page=p,
+                        dpi=settings.preview_dpi, page=pn,
                         quality=settings.preview_jpeg_quality,
                     )
-                except Exception as exc:
-                    logger.warning(
-                        "render_specific_pages: gs per-page retry page %d failed: %s",
-                        p, exc,
-                    )
-                    still_missing_after_batch.append(p)
-            timings['per_page_retry'] = len(still_missing_after_batch)
+                    return pn, None
+                except Exception as exc:  # noqa: BLE001
+                    return pn, f"{type(exc).__name__}: {exc}"
+
+            workers = max(1, min(len(wanted), settings.render_cpu_concurrency))
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                for pn, err in pool.map(_render_one, wanted):
+                    if err is not None:
+                        logger.warning(
+                            "render_specific_pages: page %d failed: %s", pn, err,
+                        )
+                        still_missing_after_batch.append(pn)
+            timings['per_page_render_ms'] = int((time.monotonic() - t_raster) * 1000)
+            timings['per_page_failed'] = len(still_missing_after_batch)
 
             local_pages = _local_preview_pages(batch_dir, preview_ext, set(wanted))
             failed.extend([p for p in wanted if p not in local_pages])
