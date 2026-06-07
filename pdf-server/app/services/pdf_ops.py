@@ -1654,17 +1654,82 @@ class PdfOps:
         # tall bands; `-T <n>` renders bands concurrently. This is the
         # difference between using 1 core and using all 4 vCPUs of a
         # pdf-worker-light Cloud Run instance for a multi-page render.
-        # Set MUTOOL_RENDER_THREADS=0 (or band=0) to fall back to the
-        # original single-threaded invocation.
+        # Only safe when (a) the mupdf-tools build actually accepts the
+        # flags (probed), and (b) we're rendering more than one page —
+        # single-page renders don't benefit and threaded mode on a 1-page
+        # job has been observed to behave oddly on some 1.x builds.
         threads = max(0, int(getattr(settings, 'mutool_render_threads', 0) or 0))
         band_h = max(0, int(getattr(settings, 'mutool_band_height', 0) or 0))
-        if threads > 0 and band_h > 0 and page_count > 0:
+        threading_supported = _mutool_thread_probe(mutool) if (threads > 0 and band_h > 0) else False
+        use_threading = (
+            threads > 0 and band_h > 0 and page_count > 1 and threading_supported
+        )
+        if use_threading:
             cmd += ["-B", str(band_h), "-T", str(threads)]
         cmd += [
             "-o", pattern,
             str(src),
             f"{first_page}-{last_page}",
         ]
+
+        if timeout_seconds is None:
+            timeout_seconds = min(180.0, 10.0 + 2.0 * page_count)
+
+        def _run_mutool(cmd_to_run, timeout):
+            t = time.monotonic()
+            try:
+                _proc = subprocess.run(
+                    cmd_to_run, capture_output=True, text=True, timeout=timeout,
+                )
+                return (
+                    False, _proc.returncode,
+                    _proc.stderr or "", _proc.stdout or "",
+                    int((time.monotonic() - t) * 1000),
+                )
+            except subprocess.TimeoutExpired as _exc:
+                _stderr = (
+                    (_exc.stderr.decode("utf-8", errors="replace") if isinstance(_exc.stderr, bytes) else (_exc.stderr or ""))
+                    + f"\n[mutool draw timed out after {timeout:.0f}s]"
+                )
+                _stdout = _exc.stdout.decode("utf-8", errors="replace") if isinstance(_exc.stdout, bytes) else (_exc.stdout or "")
+                return True, -1, _stderr, _stdout, int((time.monotonic() - t) * 1000)
+
+        timed_out, returncode, stderr, stdout, elapsed_ms = _run_mutool(cmd, timeout_seconds)
+
+        # If the threaded invocation failed with what looks like an option /
+        # usage error, retry ONCE without `-B/-T`. Don't fall straight into
+        # the per-page Ghostscript path because of an mupdf-tools build that
+        # rejects the flags — that's the whole "24-page crawl" symptom.
+        retried_unthreaded = False
+        if use_threading and (returncode != 0 or timed_out):
+            lowered = (stderr or "").lower()
+            looks_like_option_error = (
+                "usage" in lowered
+                or "unrecognised" in lowered
+                or "unknown option" in lowered
+                or "invalid option" in lowered
+                or "-b" in lowered  # mupdf often echoes the offending flag
+                or "-t" in lowered
+            )
+            if looks_like_option_error:
+                # Disable threading for the rest of this process so we don't
+                # keep paying the failed-attempt cost on every subsequent page.
+                _MUTOOL_THREAD_PROBE_CACHE[mutool] = False
+                cmd_unthreaded = [
+                    c for c in cmd
+                    if c not in ("-B", str(band_h), "-T", str(threads))
+                ]
+                logger.warning(
+                    "mutool batch threading failed (rc=%s) — retrying without -B/-T",
+                    returncode,
+                )
+                timed_out, returncode, stderr, stdout, elapsed_ms_retry = _run_mutool(cmd_unthreaded, timeout_seconds)
+                elapsed_ms += elapsed_ms_retry
+                retried_unthreaded = True
+                use_threading = False
+                cmd = cmd_unthreaded
+
+
 
         if timeout_seconds is None:
             timeout_seconds = min(180.0, 10.0 + 2.0 * page_count)
