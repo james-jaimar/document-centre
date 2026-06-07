@@ -128,14 +128,14 @@ export async function renderDocumentThumbnails(
     inFlightExpected = 0;
   }
 
-  // Watchdog only — fires when the server's render job is alive but no new
-  // pages have appeared for this long. Tightened from 180s to 60s so a
-  // single hung page bails into client-side recovery quickly instead of
-  // leaving the user staring at "Rendering pages… (7/8)".
-  const RENDER_STALL_MS = 60_000;
-  const RENDER_STALL_ERROR = "render_job_stalled_no_page_progress";
+  // The client does NOT race the server with a stall watchdog any more.
+  // Earlier versions threw after 60s of no per-page progress and launched
+  // /render-pages while the backend was still working — that's what caused
+  // the "stuck at 7/8 → Recovering" loops, because the recovery job then
+  // collided with the original render. Now we simply poll the backend job
+  // to terminal state. The only thing that triggers client-side recovery
+  // is the server explicitly reporting "Incomplete render".
   let lastReportedFound = inFlightExpected > 0 ? 0 : -1;
-  let lastRenderProgressAt = Date.now();
   let derivedPollPromise: Promise<void> | null = null;
   const pollDerivedOnce = async () => {
     if (!inFlightExpected || derivedPollPromise) return;
@@ -151,13 +151,7 @@ export async function renderDocumentThumbnails(
           }
         }
         if (found !== lastReportedFound) {
-          if (found > lastReportedFound) lastRenderProgressAt = Date.now();
           lastReportedFound = found;
-          // Unified progress formula (also used by the post-job loop):
-          // 65% base + up to 30% from page progress, capped at 95%.
-          // Keeping a single formula prevents the bar from jumping
-          // backwards when the job flips to "completed" before all
-          // derived_files rows are flushed.
           const pct = 65 + (found / inFlightExpected) * 30;
           onProgress(
             found > 0
@@ -179,33 +173,19 @@ export async function renderDocumentThumbnails(
     await pollJob(cropJobId, (job) => {
       if (job.status === "pending") onProgress("Queued — waiting for server…", 65);
       else if (job.status === "running") {
-        // Trigger a derived-files poll in parallel so the user sees granular
-        // page progress while the server task continues. Fire-and-forget — we
-        // don't block the status poll loop on this lookup.
+        // Fire-and-forget derived-files poll for per-page progress UI.
         void pollDerivedOnce();
-        if (
-          inFlightExpected > 0 &&
-          lastReportedFound >= 0 &&
-          lastReportedFound < inFlightExpected &&
-          Date.now() - lastRenderProgressAt > RENDER_STALL_MS
-        ) {
-          throw new Error(RENDER_STALL_ERROR);
-        }
       }
     });
   } catch (err: any) {
     const msg = err?.message ?? String(err ?? "");
-    // Backend now marks the job failed with "Incomplete render: N of M
-    // page(s) missing" when GS + retry can't cover everything. Treat that
-    // as a stall trigger too so the client-side /render-pages recovery
-    // runs instead of bubbling the failure to the user.
-    if (
-      msg.includes(RENDER_STALL_ERROR) ||
-      /Incomplete render|missing pages?|Failed to re-render/i.test(msg)
-    ) {
+    // Backend marks the job failed with "Incomplete render: N of M page(s)
+    // missing" when GS + retry can't cover everything. That — and ONLY that
+    // — is the trigger for client-side surgical recovery.
+    if (/Incomplete render|missing pages?|Failed to re-render/i.test(msg)) {
       renderJobStalled = true;
       console.warn(
-        `[renderDocumentThumbnails] asset=${assetId} render job did not complete cleanly; attempting page recovery:`,
+        `[renderDocumentThumbnails] asset=${assetId} backend reported incomplete render; attempting page recovery:`,
         msg,
       );
     } else {
