@@ -1824,7 +1824,7 @@ class PdfOps:
         dpi: int,
         page: int,
         fmt: str = "jpeg",
-        timeout_seconds: float = 30.0,
+        timeout_seconds: float = 90.0,
     ) -> Path:
         """Render a SINGLE page with ``mutool draw`` and return its path.
 
