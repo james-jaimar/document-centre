@@ -31,8 +31,9 @@ import requests
 from celery import shared_task
 from PIL import Image
 
+from app.core.config import settings
 from app.services.files import Workspace
-from app.services.storage import s3_client, S3_BUCKET
+from app.services.storage import _build_s3_client
 
 logger = logging.getLogger(__name__)
 
