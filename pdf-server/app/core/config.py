@@ -140,8 +140,23 @@ class Settings(BaseSettings):
     pdf_cache_dir: str = Field(alias='PDF_CACHE_DIR', default='/var/cache/document-centre/pdf-cache')
     pdf_cache_max_age_seconds: int = Field(alias='PDF_CACHE_MAX_AGE_SECONDS', default=1800)
 
+    # Stuck-job reconciler. The Cloud Tasks dispatch may have completed,
+    # crashed, or been killed without writing a terminal job_events row. The
+    # reconciler periodically marks rows that have been `running` longer than
+    # the per-stage grace as `failed` so the dashboard tells the truth.
+    ops_reconcile_grace_seconds: int = Field(alias='OPS_RECONCILE_GRACE_SECONDS', default=900)         # 15 min
+    ops_reconcile_previews_grace_seconds: int = Field(alias='OPS_RECONCILE_PREVIEWS_GRACE_SECONDS', default=1800)  # 30 min
+    ops_reconcile_ceiling_seconds: int = Field(alias='OPS_RECONCILE_CEILING_SECONDS', default=7200)    # 2 hours
+
+    # Cloud Run services to expose on the GCP-native ops dashboard. Comma list.
+    ops_cloud_run_services: str = Field(
+        alias='OPS_CLOUD_RUN_SERVICES',
+        default='pdf-api,pdf-worker-light,pdf-worker-heavy',
+    )
+
     cors_origins: str = Field(alias='CORS_ORIGINS', default='http://localhost:5173')
     admin_username: str = Field(alias='ADMIN_USERNAME', default='admin')
     admin_password: str = Field(alias='ADMIN_PASSWORD', default='admin123')
 
 settings = Settings()
+

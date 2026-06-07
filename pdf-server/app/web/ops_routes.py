@@ -185,6 +185,34 @@ def ops_cloud_run_logs(
     return ops_service.cloud_run_logs(search=search, minutes=minutes, limit=limit)
 
 
+# ─── GCP-native ops surface ────────────────────────────────────────
+@ops_router.get("/gcp/live")
+def ops_gcp_live(db: Session = Depends(get_db)):
+    return ops_service.gcp_live(db)
+
+
+@ops_router.get("/gcp/logs")
+def ops_gcp_logs(
+    service: str | None = None,
+    severity: str | None = None,
+    search: str | None = None,
+    minutes: int = Query(default=30, ge=1, le=1440),
+    limit: int = Query(default=100, ge=1, le=500),
+):
+    return ops_service.gcp_logs(service=service, severity=severity,
+                                search=search, minutes=minutes, limit=limit)
+
+
+@ops_router.post("/jobs/reconcile")
+def ops_jobs_reconcile(
+    grace_seconds: int | None = None,
+    db: Session = Depends(get_db),
+    actor: dict = Depends(actor_from_headers),
+):
+    return ops_service.reconcile_running_jobs(db, grace_seconds=grace_seconds, actor=actor)
+
+
+
 # ─── metrics ──────────────────────────────────────────────────────
 @ops_router.get("/metrics/stages")
 def ops_metrics_stages(hours: int = Query(default=24, ge=1, le=720),
