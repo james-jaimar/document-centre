@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
@@ -119,17 +120,19 @@ class OpsService:
                     queue_names.add(rk)
 
         depths = self._broker_depths(sorted(queue_names))
+        gcp_stats = self._cloud_tasks_queue_stats()
 
         rows = []
         for q in sorted(queue_names):
+            cloud = gcp_stats.get(q, {})
             rows.append(
                 {
                     "name": q,
-                    "depth": depths.get(q, 0),
+                    "depth": cloud.get("tasks_count", depths.get(q, 0)),
                     "active": sum(
                         1 for tasks in active.values() for t in (tasks or [])
                         if ((t.get("delivery_info") or {}).get("routing_key") == q)
-                    ),
+                    ) or cloud.get("concurrent_dispatches_count", 0),
                     "reserved": sum(
                         1 for tasks in reserved.values() for t in (tasks or [])
                         if ((t.get("delivery_info") or {}).get("routing_key") == q)
@@ -138,10 +141,51 @@ class OpsService:
                         1 for tasks in scheduled.values() for t in (tasks or [])
                         if (((t.get("request") or {}).get("delivery_info") or {}).get("routing_key") == q)
                     ),
+                    "cloud_tasks": cloud or None,
                 }
             )
-        total_depth = sum(depths.values())
-        return {"queues": rows, "total_depth": total_depth}
+        total_depth = sum(int(r.get("depth") or 0) for r in rows)
+        return {"queues": rows, "total_depth": total_depth, "backend": os.getenv("QUEUE_BACKEND", "celery")}
+
+    def _cloud_tasks_queue_stats(self) -> dict[str, dict]:
+        """Direct Cloud Tasks queue stats, when running in GCP mode.
+
+        This gives the ops dashboard GCP-native depth/dispatch data instead
+        of relying on Celery inspect, which is empty in Cloud Tasks mode.
+        """
+        if os.getenv("QUEUE_BACKEND", "celery").lower() != "cloud_tasks":
+            return {}
+        try:
+            from google.cloud import tasks_v2  # type: ignore
+            from google.protobuf import field_mask_pb2  # type: ignore
+            from app.core.queue import QUEUE_TO_CLOUD_TASKS_QUEUE
+
+            project = os.environ["GCP_PROJECT_ID"]
+            region = os.getenv("GCP_TASKS_REGION") or os.environ["GCP_REGION"]
+            client = tasks_v2.CloudTasksClient()
+            read_mask = field_mask_pb2.FieldMask(paths=["stats"])
+            out: dict[str, dict] = {}
+            for logical, queue_id in QUEUE_TO_CLOUD_TASKS_QUEUE.items():
+                name = client.queue_path(project, region, queue_id)
+                q = client.get_queue(request={"name": name, "read_mask": read_mask})
+                stats = q.stats
+                oldest = getattr(stats, "oldest_estimated_arrival_time", None)
+                oldest_iso = None
+                if oldest:
+                    try:
+                        oldest_iso = oldest.ToDatetime(tzinfo=timezone.utc).isoformat()
+                    except Exception:
+                        oldest_iso = str(oldest)
+                out[logical] = {
+                    "queue_id": queue_id,
+                    "tasks_count": int(getattr(stats, "tasks_count", 0) or 0),
+                    "concurrent_dispatches_count": int(getattr(stats, "concurrent_dispatches_count", 0) or 0),
+                    "executed_last_minute_count": int(getattr(stats, "executed_last_minute_count", 0) or 0),
+                    "oldest_estimated_arrival_time": oldest_iso,
+                }
+            return out
+        except Exception as exc:  # noqa: BLE001
+            return {q: {"error": str(exc)} for q in _KNOWN_QUEUES}
 
     # ─── workers ──────────────────────────────────────────────────
     def workers(self) -> dict:
@@ -368,12 +412,115 @@ class OpsService:
             return {"job_id": job_id, "events": []}
 
     def asset_pipeline(self, db: Session, asset_id: str) -> dict:
+        def _iso(v):
+            return v.isoformat() if hasattr(v, "isoformat") else v
+
         try:
             events = job_event_repo.list_for_asset(db, asset_id=asset_id)
-            return {"asset_id": asset_id, "events": [self._serialize_event(e) for e in events]}
+            asset = db.execute(text("""
+                select id, original_filename, media_type, source_storage_path,
+                       normalized_storage_path, status, page_count, width_pt,
+                       height_pt, thumbnail_storage_path, preview_storage_path,
+                       metadata, created_at, updated_at
+                  from assets
+                 where id = :asset_id
+            """), {"asset_id": asset_id}).mappings().first()
+            jobs = db.execute(text("""
+                select id, operation, queue, status, retries, celery_task_id,
+                       payload, result, error, created_at, started_at,
+                       finished_at, updated_at
+                  from jobs
+                 where asset_id = :asset_id
+                 order by created_at asc
+            """), {"asset_id": asset_id}).mappings().all()
+            derived = db.execute(text("""
+                select kind, page, storage_path, media_type, width, height,
+                       created_at
+                  from derived_files
+                 where asset_id = :asset_id
+                 order by page asc nulls last, kind asc, created_at desc
+            """), {"asset_id": asset_id}).mappings().all()
+
+            cache = {"checked": False, "hit": False}
+            if asset and asset.get("normalized_storage_path"):
+                try:
+                    from app.services.files import cache_get
+                    cached_path = cache_get(asset["normalized_storage_path"])
+                    cache = {"checked": True, "hit": cached_path is not None}
+                    if cached_path is not None:
+                        st = cached_path.stat()
+                        cache.update({"bytes": st.st_size, "mtime": datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat()})
+                except Exception as exc:  # noqa: BLE001
+                    cache = {"checked": True, "hit": False, "error": str(exc)}
+
+            return {
+                "asset_id": asset_id,
+                "asset": {k: _iso(v) for k, v in dict(asset).items()} if asset else None,
+                "jobs": [{k: _iso(v) for k, v in dict(r).items()} for r in jobs],
+                "derived_files": [{k: _iso(v) for k, v in dict(r).items()} for r in derived],
+                "events": [self._serialize_event(e) for e in events],
+                "counts": {
+                    "jobs": len(jobs),
+                    "derived_files": len(derived),
+                    "preview_pages": len({r["page"] for r in derived if r.get("kind") == "preview_page" and r.get("page") is not None}),
+                    "thumbnail_pages": len({r["page"] for r in derived if r.get("kind") == "thumbnail_page" and r.get("page") is not None}),
+                },
+                "cache": cache,
+            }
         except _MISSING_SCHEMA_ERRORS:
             db.rollback()
-            return {"asset_id": asset_id, "events": []}
+            return {"asset_id": asset_id, "asset": None, "jobs": [], "derived_files": [], "events": []}
+
+    def cloud_run_logs(self, *, search: str, minutes: int = 60, limit: int = 100) -> dict:
+        """Read recent Cloud Run logs directly from GCP Cloud Logging.
+
+        Uses the Cloud Run service account's Application Default Credentials;
+        requires `roles/logging.viewer` (or equivalent) on the GCP project.
+        """
+        if not search:
+            return {"entries": [], "error": "search required"}
+        project = os.getenv("GCP_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT")
+        if not project:
+            return {"entries": [], "error": "GCP_PROJECT_ID/GOOGLE_CLOUD_PROJECT is not set"}
+
+        start = datetime.now(timezone.utc) - timedelta(minutes=max(1, minutes))
+        safe_search = search.replace('"', '\\"')
+        log_filter = (
+            'resource.type="cloud_run_revision" '
+            f'timestamp >= "{start.isoformat()}" '
+            f'("{safe_search}")'
+        )
+        try:
+            import google.auth  # type: ignore
+            from google.auth.transport.requests import AuthorizedSession  # type: ignore
+
+            creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+            session = AuthorizedSession(creds)
+            resp = session.post(
+                "https://logging.googleapis.com/v2/entries:list",
+                json={
+                    "resourceNames": [f"projects/{project}"],
+                    "filter": log_filter,
+                    "orderBy": "timestamp desc",
+                    "pageSize": max(1, min(limit, 500)),
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            raw = resp.json().get("entries", [])
+            entries = []
+            for e in raw:
+                payload = e.get("textPayload") or e.get("jsonPayload") or e.get("protoPayload") or {}
+                entries.append({
+                    "timestamp": e.get("timestamp"),
+                    "severity": e.get("severity"),
+                    "service": ((e.get("resource") or {}).get("labels") or {}).get("service_name"),
+                    "revision": ((e.get("resource") or {}).get("labels") or {}).get("revision_name"),
+                    "payload": payload,
+                })
+            return {"project": project, "filter": log_filter, "entries": entries}
+        except Exception as exc:  # noqa: BLE001
+            return {"project": project, "filter": log_filter, "entries": [], "error": f"{type(exc).__name__}: {exc}"}
 
     # ─── metrics ─────────────────────────────────────────────────
     def stage_metrics(self, db: Session, hours: int = 24) -> dict:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
 import shutil
+import time
 import traceback
 from pathlib import Path
 from celery import shared_task
@@ -795,9 +796,13 @@ def prepare_for_product(
 
         prefix = _tenant_prefix(asset.get("source_storage_path"))
         with Workspace() as ws:
+            timings: dict[str, int] = {}
+            t0 = time.monotonic()
             src = _download_asset_pdf(db, asset_id, ws)
+            timings['download_pdf'] = int((time.monotonic() - t0) * 1000)
             out_pdf = ws.path("prepared.pdf")
 
+            t_prepare = time.monotonic()
             stats = pdf_ops.prepare_for_product(
                 src, out_pdf,
                 dominant_orientation=dominant_orientation,
@@ -808,9 +813,12 @@ def prepare_for_product(
                 intent=intent,
                 respect_trim_box=respect_trim_box,
             )
+            timings['prepare_pdf'] = int((time.monotonic() - t_prepare) * 1000)
 
             storage_path = unique_name(f"{prefix}derived/prepared", ".pdf")
+            t_upload = time.monotonic()
             storage.upload(out_pdf, storage_path, "application/pdf")
+            timings['upload_pdf'] = int((time.monotonic() - t_upload) * 1000)
 
             derived_file_repo.create_file(
                 db,
@@ -847,7 +855,9 @@ def prepare_for_product(
             # generate_previews task (running on a different worker on
             # the same host) can skip the S3 download. Best-effort —
             # cache misses fall back to S3 transparently.
-            cache_put(storage_path, out_pdf)
+            t_cache = time.monotonic()
+            cache_ok = cache_put(storage_path, out_pdf)
+            timings['cache_put'] = int((time.monotonic() - t_cache) * 1000)
 
             result = {
                 **stats,
@@ -857,7 +867,10 @@ def prepare_for_product(
                 "width_pt": info["width_pt"],
                 "height_pt": info["height_pt"],
                 "cleared_page_renders": removed,
+                "cache_put": cache_ok,
+                "timings_ms": timings,
             }
+            logger.info("prepare_for_product: asset=%s timings_ms=%s steps=%s cache_put=%s", asset_id, timings, stats.get('steps'), cache_ok)
             job_repo.mark_done(db, job_id, result)
             _maybe_chain_generate_previews(
                 db, asset_id, chain_generate_previews, chain_render_box, chain_job_id,

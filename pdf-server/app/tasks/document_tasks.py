@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
 import os
+import shutil
 logger = logging.getLogger(__name__)
 import random
 import time
@@ -14,7 +15,7 @@ from app.services.assets import asset_repo
 from app.services.jobs import job_repo
 from app.services.job_event_repo import job_event_repo
 from app.services.storage import StorageService
-from app.services.files import Workspace, unique_name
+from app.services.files import Workspace, unique_name, cache_get
 from app.services.pdf_ops import pdf_ops, RasterizationIncompleteError
 from app.services.derived_files import derived_file_repo
 from app.core.config import settings
@@ -48,6 +49,25 @@ def _tenant_prefix(source_path: str | None) -> str:
         if len(parts) >= 2:
             return f"tenants/{parts[1]}/"
     return ""
+
+
+def _download_pdf_with_cache(storage_path: str, local_path, *, asset_id: str, timings: dict[str, int] | None = None) -> None:
+    """Materialise a PDF for rendering, preferring the shared handoff cache."""
+    t0 = time.monotonic()
+    cached = cache_get(storage_path)
+    if cached is not None:
+        try:
+            shutil.copyfile(cached, local_path)
+            if timings is not None:
+                timings['cache_copy_pdf'] = int((time.monotonic() - t0) * 1000)
+            logger.info('pdf_cache: hit asset=%s key=%s', asset_id, storage_path)
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('pdf_cache: copy failed asset=%s key=%s err=%s; falling back to S3', asset_id, storage_path, exc)
+
+    storage.download(storage_path, local_path)
+    if timings is not None:
+        timings['s3_download_pdf'] = int((time.monotonic() - t0) * 1000)
 
 
 def _record_preview(db: Session, asset_id: str, job_id: str, kind: str, storage_path: str, image_path, page: int | None = None, size_label: str | None = None):
@@ -606,9 +626,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
 
         with Workspace() as ws:
             src = ws.path('input.pdf')
-            t_dl = time.monotonic()
-            storage.download(src_path, src)
-            _stamp('download_pdf', t_dl)
+            _download_pdf_with_cache(src_path, src, asset_id=asset_id, timings=timings)
 
             # If caller didn't specify a render_box, auto-derive one from
             # the PDF's own TrimBox/BleedBox so previews show the finished
@@ -731,8 +749,8 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                                 })
                     _stamp('batch_total', t_batch)
                     logger.info(
-                        "generate_previews: batch path (mutool) rendered %d/%d pages in %sms",
-                        len(completed_pages), page_count, timings.get('batch_total'),
+                        "generate_previews: batch path (mutool) asset=%s rendered=%d/%d timings_ms=%s",
+                        asset_id, len(completed_pages), page_count, timings,
                     )
                 except Exception as exc:
                     logger.warning(
@@ -1069,8 +1087,8 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             still_missing = sorted(expected_pages - completed_pages)
 
             logger.info(
-                "generate_previews: asset=%s rendered=%d/%d missing=%s",
-                asset_id, len(completed_pages), page_count, still_missing,
+                "generate_previews: asset=%s rendered=%d/%d missing=%s timings_ms=%s",
+                asset_id, len(completed_pages), page_count, still_missing, timings,
             )
 
             if still_missing:
@@ -1168,10 +1186,11 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
 
         recovered: list[int] = []
         failed: list[int] = []
+        timings: dict[str, int] = {}
 
         with Workspace() as ws:
             src = ws.path('input.pdf')
-            storage.download(src_path, src)
+            _download_pdf_with_cache(src_path, src, asset_id=asset_id, timings=timings)
 
             preview_dir = ws.path('preview')
             thumb_dir = ws.path('thumb')
@@ -1189,12 +1208,14 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
             preview_ext = 'jpg' if settings.preview_format == 'jpeg' else 'png'
             preview_media_type = 'image/jpeg' if settings.preview_format == 'jpeg' else 'image/png'
             try:
+                t_raster = time.monotonic()
                 pdf_ops.rasterize_pages_mutool(
                     src, batch_dir / 'page', dpi=settings.preview_dpi,
                     first_page=lo, last_page=hi,
                     fmt=settings.preview_format,
                     quality=settings.preview_jpeg_quality,
                 )
+                timings['mutool_batch'] = int((time.monotonic() - t_raster) * 1000)
             except Exception as exc:
                 logger.warning(
                     "render_specific_pages: batch rasterize %d-%d failed, "
@@ -1280,6 +1301,7 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
             'recovered': recovered,
             'failed': failed,
             'pages_rendered': len(recovered),
+            'timings_ms': timings,
         }
         if failed:
             msg = f"Failed to re-render {len(failed)} page(s): {failed}"

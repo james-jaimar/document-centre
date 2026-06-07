@@ -1475,6 +1475,24 @@ class PdfOps:
                         padded.unlink()
                     path.rename(padded)
 
+        # MuPDF versions disagree on the meaning of %d when rendering a
+        # sub-range: some write source page numbers (page-006 for `6-8`),
+        # others write a sequential range (page-001..003). The recovery path
+        # requests arbitrary gaps and then looks up source page numbers, so map
+        # any sequential output back onto the requested page numbers.
+        count = last_page - first_page + 1
+        seq_to_src: list[tuple[Path, Path]] = []
+        for i in range(1, count + 1):
+            seq_path = base_dir / f"{base_name}-{i:03d}.{ext}"
+            src_page = first_page + i - 1
+            target_path = base_dir / f"{base_name}-{src_page:03d}.{ext}"
+            if seq_path.exists() and seq_path != target_path and not target_path.exists():
+                seq_to_src.append((seq_path, target_path))
+        for seq_path, target_path in reversed(seq_to_src):
+            if target_path.exists():
+                target_path.unlink()
+            seq_path.rename(target_path)
+
         return sorted(base_dir.glob(base_name + "-*." + ext))
 
     def rasterize_preview(

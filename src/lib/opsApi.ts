@@ -309,6 +309,8 @@ export const opsApi = {
   // Assets
   assetPipeline: (assetId: string) =>
     call<unknown>(`v1/ops/assets/${encodeURIComponent(assetId)}/pipeline`),
+  cloudRunLogs: (search: string, minutes = 60, limit = 100) =>
+    call<unknown>("v1/ops/logs/cloud-run", "GET", undefined, { search, minutes, limit }),
 
   // Metrics — server returns { stages: [...] } / { series: [{timestamp, stages:{...}}] }
   stageMetrics: async (hours = 24): Promise<OpsStageMetric[]> => {
