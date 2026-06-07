@@ -21,6 +21,7 @@ from app.services.pdf_ops import (
     RasterizationIncompleteError,
     MutoolRenderError,
     mutool_effective_format,
+    mutool_threading_supported,
 )
 from app.services.derived_files import derived_file_repo
 from app.core.config import settings
@@ -53,6 +54,14 @@ def _runtime_meta() -> dict:
     admin asset inspector can prove which Cloud Run revision / worker /
     queue backend handled a render without trawling logs."""
     from app.core.config import settings as _s
+    try:
+        thread_ok = mutool_threading_supported()
+    except Exception:
+        thread_ok = None
+    try:
+        eff_fmt, eff_ext = mutool_effective_format(_s.preview_format)
+    except Exception:
+        eff_fmt, eff_ext = (None, None)
     return {
         'k_service': os.getenv('K_SERVICE'),
         'k_revision': os.getenv('K_REVISION'),
@@ -64,6 +73,9 @@ def _runtime_meta() -> dict:
         'cpu_count': os.cpu_count(),
         'mutool_threads': getattr(_s, 'mutool_render_threads', None),
         'mutool_band_height': getattr(_s, 'mutool_band_height', None),
+        'mutool_threading_supported': thread_ok,
+        'mutool_effective_format': eff_fmt,
+        'mutool_effective_ext': eff_ext,
         'render_cpu_concurrency': getattr(_s, 'render_cpu_concurrency', None),
         'render_io_concurrency': getattr(_s, 'render_io_concurrency', None),
     }
@@ -352,16 +364,12 @@ def _render_one_page(
 ):
     """Rasterize → downscale → upload preview + thumbnail for one page.
 
-    Each step is retried independently so a transient S3 hiccup doesn't
-    cause a full re-rasterise of the page. Returns
-    ``(image_path, thumb_image, preview_storage, thumb_storage)``.
+    Prefers MuPDF (JPEG) — it is materially faster than Ghostscript for
+    "PDF page → pixels". Falls back to single-page Ghostscript PNG only
+    if MuPDF genuinely cannot render the page.
 
-    Per-page output isolation: each call writes to its own subdirectory
-    so concurrent ThreadPoolExecutor workers can never overwrite each
-    other's intermediate files (Ghostscript's old default sequential
-    output naming caused parallel workers to clobber ``page-001.png``
-    repeatedly, producing wrong-content uploads and "incomplete render"
-    failures for every page after the first).
+    Returns ``(image_path, thumb_image, preview_storage, thumb_storage,
+    preview_ext, preview_media_type)``.
     """
     page_preview_dir = preview_dir / f"p{page:03d}"
     page_thumb_dir = thumb_dir / f"p{page:03d}"
@@ -369,26 +377,11 @@ def _render_one_page(
     page_thumb_dir.mkdir(parents=True, exist_ok=True)
     out_prefix = page_preview_dir / 'page'
 
-    def _do_rasterize():
-        imgs = pdf_ops.rasterize_preview(
-            src_pdf, out_prefix, dpi=dpi,
-            first_page=page, last_page=page,
-        )
-        # _gs_rasterize_pages now writes directly to <prefix>-<page>.png
-        # for single-page renders, so this is the canonical target.
-        target = page_preview_dir / f"page-{page:03d}.png"
-        if not target.exists():
-            # Defensive fallback in case future changes alter the naming.
-            for img in imgs:
-                if img.stem.endswith(f"-{page:03d}"):
-                    target = img
-                    break
-        if not target.exists():
-            raise RuntimeError(f"rasterize produced no file for page {page}")
-        return target
-
-    image_path = _retry_with_backoff(
-        _do_rasterize, label='rasterize_one_page', page=page,
+    image_path, preview_ext, preview_media_type = _retry_with_backoff(
+        lambda: _rasterize_one_page_best_effort(
+            src_pdf=src_pdf, out_prefix=out_prefix, page=page, dpi=dpi,
+        ),
+        label='rasterize_one_page', page=page,
     )
 
     def _do_downscale():
@@ -400,11 +393,11 @@ def _render_one_page(
         _do_downscale, label='downscale_thumbnail', page=page,
     )
 
-    preview_storage = unique_name(f'{prefix}previews/page-{page:03d}', '.png')
+    preview_storage = unique_name(f'{prefix}previews/page-{page:03d}', f'.{preview_ext}')
     thumb_storage = unique_name(f'{prefix}thumbnails/page-{page:03d}', '.png')
 
     _retry_with_backoff(
-        lambda: storage.upload(image_path, preview_storage, 'image/png'),
+        lambda: storage.upload(image_path, preview_storage, preview_media_type),
         label='upload_preview', page=page,
     )
     _retry_with_backoff(
@@ -412,7 +405,40 @@ def _render_one_page(
         label='upload_thumbnail', page=page,
     )
 
-    return image_path, thumb_image, preview_storage, thumb_storage
+    return image_path, thumb_image, preview_storage, thumb_storage, preview_ext, preview_media_type
+
+
+def _rasterize_one_page_best_effort(
+    *,
+    src_pdf,
+    out_prefix,
+    page: int,
+    dpi: int,
+):
+    """MuPDF-first single-page rasterise. Returns
+    ``(image_path, ext, media_type)``. Falls back to Ghostscript PNG if
+    MuPDF errors on this specific page."""
+    from app.core.config import settings as _s
+    _fmt, ext = mutool_effective_format(_s.preview_format)
+    media_type = 'image/jpeg' if ext == 'jpg' else 'image/png'
+    try:
+        produced = pdf_ops.rasterize_one_page_mutool(
+            src_pdf, out_prefix, dpi=dpi, page=page, fmt=_s.preview_format,
+        )
+        return produced, ext, media_type
+    except Exception as exc:
+        logger.warning(
+            "rasterize_one_page: mutool failed for page %d (%s) — falling back to Ghostscript PNG",
+            page, exc,
+        )
+        pdf_ops.rasterize_preview(
+            src_pdf, out_prefix, dpi=dpi, first_page=page, last_page=page,
+        )
+        target = out_prefix.parent / f"page-{page:03d}.png"
+        if not target.exists():
+            raise RuntimeError(f"rasterize fallback produced no file for page {page}") from exc
+        return target, 'png', 'image/png'
+
 
 
 # ---------------------------------------------------------------------------
@@ -432,9 +458,12 @@ def _render_page_cpu(
 ):
     """CPU-bound phase: rasterize PDF page + downscale to thumbnail.
 
-    Returns (image_path, thumb_image). Each call writes into its own
-    per-page subdir so concurrent workers can never overwrite each
-    other's intermediate files.
+    Prefers MuPDF (JPEG) — falls back to Ghostscript PNG only if MuPDF
+    cannot render this specific page. Using GS as the default per-page
+    path was the cause of the observed "24-page crawl": GS is several
+    times slower than MuPDF for "PDF page → pixels".
+
+    Returns (image_path, thumb_image, preview_ext, preview_media_type).
     """
     page_preview_dir = preview_dir / f"p{page:03d}"
     page_thumb_dir = thumb_dir / f"p{page:03d}"
@@ -442,18 +471,11 @@ def _render_page_cpu(
     page_thumb_dir.mkdir(parents=True, exist_ok=True)
     out_prefix = page_preview_dir / 'page'
 
-    def _do_rasterize():
-        pdf_ops.rasterize_preview(
-            src_pdf, out_prefix, dpi=dpi,
-            first_page=page, last_page=page,
-        )
-        target = page_preview_dir / f"page-{page:03d}.png"
-        if not target.exists():
-            raise RuntimeError(f"rasterize produced no file for page {page}")
-        return target
-
-    image_path = _retry_with_backoff(
-        _do_rasterize, label='rasterize_one_page', page=page,
+    image_path, preview_ext, preview_media_type = _retry_with_backoff(
+        lambda: _rasterize_one_page_best_effort(
+            src_pdf=src_pdf, out_prefix=out_prefix, page=page, dpi=dpi,
+        ),
+        label='rasterize_one_page', page=page,
     )
 
     def _do_downscale():
@@ -464,7 +486,8 @@ def _render_page_cpu(
     thumb_image = _retry_with_backoff(
         _do_downscale, label='downscale_thumbnail', page=page,
     )
-    return image_path, thumb_image
+    return image_path, thumb_image, preview_ext, preview_media_type
+
 
 
 def _upload_page_io(
@@ -582,7 +605,7 @@ def render_one_page(
             preview_dir.mkdir(parents=True, exist_ok=True)
             thumb_dir.mkdir(parents=True, exist_ok=True)
 
-            image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
+            image_path, thumb_image, prev_sp, thumb_sp, prev_ext, prev_mt = _render_one_page(
                 src_pdf=src, preview_dir=preview_dir, thumb_dir=thumb_dir,
                 prefix=prefix, page=page, dpi=dpi,
             )
@@ -590,6 +613,7 @@ def render_one_page(
                 db, asset_id=asset_id, job_id=job_id, page=page,
                 image_path=image_path, thumb_image=thumb_image,
                 preview_storage=prev_sp, thumb_storage=thumb_sp,
+                preview_media_type=prev_mt,
             )
             return {'page': page, 'preview_storage_path': prev_sp, 'thumbnail_storage_path': thumb_sp}
     except Exception as exc:
@@ -894,7 +918,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                 pass
             else:
                 try:
-                    image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
+                    image_path, thumb_image, prev_sp, thumb_sp, prev_ext, prev_mt = _render_one_page(
                         src_pdf=src, preview_dir=preview_dir, thumb_dir=thumb_dir,
                         prefix=prefix, page=1, dpi=settings.preview_dpi,
                     )
@@ -902,6 +926,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                         db, asset_id=asset_id, job_id=job_id, page=1,
                         image_path=image_path, thumb_image=thumb_image,
                         preview_storage=prev_sp, thumb_storage=thumb_sp,
+                        preview_media_type=prev_mt,
                     )
                     preview_path = prev_sp
                     thumb_path = thumb_sp
@@ -1094,7 +1119,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                         for cpu_fut in as_completed(cpu_futures):
                             page_num = cpu_futures[cpu_fut]
                             try:
-                                image_path, thumb_image = cpu_fut.result()
+                                image_path, thumb_image, prev_ext, prev_mt = cpu_fut.result()
                             except Exception as exc:
                                 logger.warning(
                                     "generate_previews: CPU phase page %d failed: %s",
@@ -1106,17 +1131,19 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                                 _upload_page_io,
                                 prefix=prefix, page=page_num,
                                 image_path=image_path, thumb_image=thumb_image,
+                                preview_ext=prev_ext, preview_media_type=prev_mt,
                             )
-                            io_futures[io_fut] = (page_num, image_path, thumb_image)
+                            io_futures[io_fut] = (page_num, image_path, thumb_image, prev_mt)
 
                         for io_fut in as_completed(io_futures):
-                            page_num, image_path, thumb_image = io_futures[io_fut]
+                            page_num, image_path, thumb_image, prev_mt = io_futures[io_fut]
                             try:
                                 prev_sp, thumb_sp = io_fut.result()
                                 _record_page(
                                     db, asset_id=asset_id, job_id=job_id, page=page_num,
                                     image_path=image_path, thumb_image=thumb_image,
                                     preview_storage=prev_sp, thumb_storage=thumb_sp,
+                                    preview_media_type=prev_mt,
                                 )
                             except Exception as exc:
                                 logger.warning(
@@ -1179,7 +1206,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                     for cpu_fut in as_completed(cpu_futures):
                         page_num = cpu_futures[cpu_fut]
                         try:
-                            image_path, thumb_image = cpu_fut.result()
+                            image_path, thumb_image, prev_ext, prev_mt = cpu_fut.result()
                         except Exception as exc:
                             logger.error("salvage CPU page %d failed: %s", page_num, exc)
                             continue
@@ -1187,16 +1214,18 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                             _upload_page_io,
                             prefix=prefix, page=page_num,
                             image_path=image_path, thumb_image=thumb_image,
-                        )] = (page_num, image_path, thumb_image)
+                            preview_ext=prev_ext, preview_media_type=prev_mt,
+                        )] = (page_num, image_path, thumb_image, prev_mt)
 
                     for io_fut in as_completed(io_futures):
-                        page_num, image_path, thumb_image = io_futures[io_fut]
+                        page_num, image_path, thumb_image, prev_mt = io_futures[io_fut]
                         try:
                             prev_sp, thumb_sp = io_fut.result()
                             _record_page(
                                 db, asset_id=asset_id, job_id=job_id, page=page_num,
                                 image_path=image_path, thumb_image=thumb_image,
                                 preview_storage=prev_sp, thumb_storage=thumb_sp,
+                                preview_media_type=prev_mt,
                             )
                         except Exception as exc:
                             logger.error("salvage IO/record page %d failed: %s", page_num, exc)
@@ -1356,7 +1385,7 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
                 # Fallback: original per-page GS loop (PNG) — never regress.
                 for page_num in wanted:
                     try:
-                        image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
+                        image_path, thumb_image, prev_sp, thumb_sp, prev_ext, prev_mt = _render_one_page(
                             src_pdf=src, preview_dir=preview_dir, thumb_dir=thumb_dir,
                             prefix=prefix, page=page_num, dpi=settings.preview_dpi,
                         )
@@ -1364,6 +1393,7 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
                             db, asset_id=asset_id, job_id=job_id, page=page_num,
                             image_path=image_path, thumb_image=thumb_image,
                             preview_storage=prev_sp, thumb_storage=thumb_sp,
+                            preview_media_type=prev_mt,
                         )
                         recovered.append(page_num)
                     except Exception as inner:
