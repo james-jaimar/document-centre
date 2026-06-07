@@ -1519,48 +1519,57 @@ class PdfOps:
         quality: int | None = None,
     ) -> list[Path]:
         """Rasterize a contiguous page range with a SINGLE ``mutool draw``
-        invocation.
+        invocation, then VERIFY every requested page produced a file.
 
         Why MuPDF instead of Ghostscript: ``mutool draw`` is purpose-built
-        for "PDF page → pixels" and is 2–4× faster than GS on multi-page
-        rasterisation with lower RAM. It also uses the source page number
-        directly when ``%d`` appears in ``-o`` — no sequential-vs-source
-        rename dance like ``_gs_rasterize_pages`` has to do.
+        for "PDF page → pixels" and is several times faster than GS on
+        multi-page rasterisation with much lower RAM.
 
-        Output files: ``<prefix>-<NNN>.<ext>`` where NNN is the source
-        page number, zero-padded to 3 digits. Returns the sorted list of
-        files actually produced. Caller is responsible for verifying
-        completeness against the requested range and falling back if
-        anything is missing.
+        Contract: returns the sorted list of output files. Raises
+        :class:`MutoolRenderError` (with the exact command, stderr tail,
+        files produced and missing page numbers) if MuPDF returned a
+        non-zero exit OR did not produce one file per requested page.
+        Callers MUST treat any partial result as a hard failure — silently
+        falling back used to mask the real problem and let Ghostscript run
+        per-page for minutes.
         """
-        ext = "jpg" if fmt == "jpeg" else fmt
+        import shutil as _shutil
+        mutool = _shutil.which(settings.mutool_bin) or settings.mutool_bin
+
+        # Honour the caller's preferred format, but transparently downgrade
+        # to whatever this MuPDF build actually supports.
+        probed_fmt, probed_ext = _mutool_probe(mutool)
+        if fmt == "jpeg" and probed_fmt in ("jpeg", "jpg"):
+            effective_fmt, ext = probed_fmt, probed_ext
+        elif fmt == "png":
+            effective_fmt, ext = "png", "png"
+        else:
+            # Caller asked for something this build can't produce — use the
+            # probed working format.
+            effective_fmt, ext = probed_fmt, probed_ext
+
         out_prefix.parent.mkdir(parents=True, exist_ok=True)
         pattern = str(out_prefix) + "-%03d." + ext
 
-        import shutil as _shutil
-        mutool = _shutil.which(settings.mutool_bin) or settings.mutool_bin
         cmd = [
             mutool, "draw",
-            "-F", fmt,
+            "-F", effective_fmt,
             "-r", str(dpi),
             "-o", pattern,
         ]
-        if fmt == "jpeg" and quality is not None:
+        if effective_fmt in ("jpeg", "jpg") and quality is not None:
             cmd.extend(["-O", f"quality={int(quality)}"])
         cmd.append(str(src))
         cmd.append(f"{first_page}-{last_page}")
 
+        t0 = time.monotonic()
         proc = subprocess.run(cmd, capture_output=True, text=True)
-        if proc.returncode != 0:
-            raise subprocess.CalledProcessError(
-                proc.returncode, cmd,
-                output=proc.stdout, stderr=proc.stderr,
-            )
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
 
         # Normalise filenames to zero-padded `<prefix>-<NNN>.<ext>` so
         # downstream lookups (`page-001.jpg`, `page-012.jpg`, ...) work
         # regardless of whether the mutool build honoured the `%03d`
-        # padding spec or just wrote `<prefix>-<N>.<ext>`.
+        # padding spec or wrote `<prefix>-<N>.<ext>`.
         base_dir = out_prefix.parent
         base_name = out_prefix.name
         for path in list(base_dir.glob(base_name + "-*." + ext)):
@@ -1572,11 +1581,10 @@ class PdfOps:
                         padded.unlink()
                     path.rename(padded)
 
-        # MuPDF versions disagree on the meaning of %d when rendering a
-        # sub-range: some write source page numbers (page-006 for `6-8`),
-        # others write a sequential range (page-001..003). The recovery path
-        # requests arbitrary gaps and then looks up source page numbers, so map
-        # any sequential output back onto the requested page numbers.
+        # MuPDF versions disagree on `%d` for sub-ranges: some emit source
+        # page numbers (page-006 for `6-8`), others emit sequential
+        # (page-001..003). Map sequential output back onto the requested
+        # page numbers so downstream lookup by source page number works.
         count = last_page - first_page + 1
         seq_to_src: list[tuple[Path, Path]] = []
         for i in range(1, count + 1):
@@ -1590,7 +1598,34 @@ class PdfOps:
                 target_path.unlink()
             seq_path.rename(target_path)
 
-        return sorted(base_dir.glob(base_name + "-*." + ext))
+        produced = sorted(base_dir.glob(base_name + "-*." + ext))
+        # Cross-check: every requested source page must exist.
+        present_pages: set[int] = set()
+        for p in produced:
+            tail = p.stem.rsplit("-", 1)[-1]
+            if tail.isdigit():
+                present_pages.add(int(tail))
+        expected = set(range(first_page, last_page + 1))
+        missing = sorted(expected - present_pages)
+
+        logger.info(
+            "mutool_render: pages=%d-%d fmt=%s ext=%s dpi=%s rc=%d elapsed_ms=%d produced=%d missing=%s",
+            first_page, last_page, effective_fmt, ext, dpi,
+            proc.returncode, elapsed_ms, len(produced), missing,
+        )
+
+        if proc.returncode != 0 or missing:
+            raise MutoolRenderError(
+                cmd=cmd,
+                returncode=proc.returncode,
+                stderr=proc.stderr or "",
+                stdout=proc.stdout or "",
+                produced=[str(p) for p in produced],
+                missing_pages=missing,
+            )
+
+        return produced
+
 
     def rasterize_preview(
         self,
