@@ -130,6 +130,52 @@ def _mutool_probe(mutool: str) -> tuple[str, str]:
     return _MUTOOL_PROBE_CACHE[mutool]
 
 
+# Cached probe for whether this `mutool` build accepts `-B <h> -T <n>`.
+# Some Ubuntu mupdf-tools builds reject the flags; we must detect that
+# before relying on them or every render falls into the slow per-page path.
+_MUTOOL_THREAD_PROBE_CACHE: dict[str, bool] = {}
+
+
+def _mutool_thread_probe(mutool: str) -> bool:
+    cached = _MUTOOL_THREAD_PROBE_CACHE.get(mutool)
+    if cached is not None:
+        return cached
+    import tempfile
+    fmt, ext = _mutool_probe(mutool)
+    with tempfile.TemporaryDirectory(prefix="mupdf-thread-probe-") as tmp:
+        tmp_dir = Path(tmp)
+        src = tmp_dir / "probe.pdf"
+        try:
+            buf = BytesIO()
+            c = canvas.Canvas(str(buf))
+            c.drawString(72, 720, "probe")
+            c.showPage()
+            c.save()
+            src.write_bytes(buf.getvalue())
+        except Exception as exc:
+            logger.warning("mutool thread probe: could not build PDF: %s", exc)
+            _MUTOOL_THREAD_PROBE_CACHE[mutool] = False
+            return False
+        cmd = [
+            mutool, "draw", "-q", "-F", fmt, "-r", "72",
+            "-B", "256", "-T", "2",
+            "-o", str(tmp_dir / f"out-%d.{ext}"), str(src), "1",
+        ]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        except Exception as exc:
+            logger.warning("mutool thread probe failed to spawn: %s", exc)
+            _MUTOOL_THREAD_PROBE_CACHE[mutool] = False
+            return False
+        ok = proc.returncode == 0 and (tmp_dir / f"out-1.{ext}").exists()
+        _MUTOOL_THREAD_PROBE_CACHE[mutool] = ok
+        logger.info(
+            "mutool thread probe: -B/-T supported=%s rc=%s stderr=%s",
+            ok, proc.returncode, (proc.stderr or "").strip()[:200],
+        )
+        return ok
+
+
 def mutool_effective_format(preferred: str) -> tuple[str, str]:
     """Public helper for callers that need to know what `mutool draw` will
     actually emit on this container. Returns ``(format_token, file_ext)``.
@@ -140,6 +186,14 @@ def mutool_effective_format(preferred: str) -> tuple[str, str]:
     if preferred == "png":
         return "png", "png"
     return probed_fmt, probed_ext
+
+
+def mutool_threading_supported() -> bool:
+    """Public accessor so callers (job_events metadata, smoke tests) can
+    report whether MuPDF on this container honours ``-B/-T``."""
+    import shutil as _shutil
+    mutool = _shutil.which(settings.mutool_bin) or settings.mutool_bin
+    return _mutool_thread_probe(mutool)
 
 
 
