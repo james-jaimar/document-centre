@@ -1735,8 +1735,9 @@ class PdfOps:
 
 
 
-        if timeout_seconds is None:
-            timeout_seconds = min(180.0, 10.0 + 2.0 * page_count)
+        # (timeout was already initialised above; the second copy here was
+        # left over from an earlier refactor and never re-applied because
+        # `_run_mutool` had already consumed the value.)
 
         # (subprocess.run already happened above via _run_mutool, possibly
         # twice if the threaded attempt was retried unthreaded.)
