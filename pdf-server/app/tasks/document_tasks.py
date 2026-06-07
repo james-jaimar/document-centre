@@ -1367,6 +1367,30 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
                         )
                         failed.append(page_num)
             else:
+                # Surgical per-page retry for any page the batch did not
+                # produce. Mirrors generate_previews so render_specific_pages
+                # never re-renders the bounding box for sparse gaps like
+                # [3, 47] and never silently drops a page either.
+                still_missing_after_batch: list[int] = []
+                for p in wanted:
+                    image_path_check = batch_dir / f"page-{p:03d}.{preview_ext}"
+                    if image_path_check.exists() and image_path_check.stat().st_size >= 200:
+                        continue
+                    try:
+                        pdf_ops.rasterize_one_page_mutool(
+                            src, batch_dir / 'page',
+                            dpi=settings.preview_dpi,
+                            page=p,
+                            fmt=settings.preview_format,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "render_specific_pages: per-page retry page %d failed: %s",
+                            p, exc,
+                        )
+                        still_missing_after_batch.append(p)
+                timings['per_page_retry'] = len(still_missing_after_batch)
+
                 cpu_workers = max(1, settings.render_cpu_concurrency)
                 io_workers = max(1, settings.render_io_concurrency)
                 with ThreadPoolExecutor(max_workers=cpu_workers) as cpu_pool, \
@@ -1374,7 +1398,7 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
                     thumb_futures = {}
                     for p in wanted:
                         image_path = batch_dir / f"page-{p:03d}.{preview_ext}"
-                        if not image_path.exists():
+                        if not image_path.exists() or image_path.stat().st_size < 200:
                             failed.append(p)
                             continue
                         thumb_image = thumb_dir / f"page-{p:03d}.png"
