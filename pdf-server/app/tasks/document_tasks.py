@@ -917,6 +917,8 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             completed_pages: set[int] = set()
             page_storage: dict[int, tuple[str, str]] = {}
             renderer_terminal_missing: set[int] = set()
+            local_rasterized_pages: set[int] = set()
+            record_missing_errors: dict[int, str] = {}
 
             # ─── Batch render (Ghostscript → JPEG, single invocation) ──
             # PDF → JPEG in ONE `gs` call. Locally benchmarked at ~3.5s for
