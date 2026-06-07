@@ -17,6 +17,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 
 from app.core.config import settings
+from app.core.task_errors import NonRetryableTaskError
 from app.tasks.registry import resolve
 
 log = logging.getLogger("tasks_routes")
@@ -179,6 +180,9 @@ async def run_task(task_name: str, request: Request) -> dict[str, Any]:
     runner = getattr(fn, "run", fn)
     try:
         result = runner(*args, **kwargs)
+    except NonRetryableTaskError as e:
+        log.error("task %s failed terminally; acknowledging to stop Cloud Tasks retry: %s", task_name, e)
+        return {"ok": False, "task": task_name, "non_retryable": True, "error": str(e)}
     except Exception as e:  # noqa: BLE001
         log.exception("task %s failed (retry=%s)", task_name, retry_count)
         # Returning 500 tells Cloud Tasks to retry per the queue's retry config.

@@ -27,6 +27,7 @@ from app.services.pdf_ops import (
 from app.services.derived_files import derived_file_repo
 from app.core.config import settings
 from app.core.queue import enqueue
+from app.core.task_errors import NonRetryableTaskError
 
 
 storage = StorageService()
@@ -79,6 +80,12 @@ def _runtime_meta() -> dict:
         'mutool_effective_ext': eff_ext,
         'render_cpu_concurrency': getattr(_s, 'render_cpu_concurrency', None),
         'render_io_concurrency': getattr(_s, 'render_io_concurrency', None),
+        'preview_renderer': getattr(_s, 'preview_renderer', None),
+        'preview_gs_threads': getattr(_s, 'preview_gs_threads', None),
+        'preview_gs_batch_timeout_seconds': getattr(_s, 'preview_gs_batch_timeout_seconds', None),
+        'preview_gs_page_timeout_seconds': getattr(_s, 'preview_gs_page_timeout_seconds', None),
+        'preview_render_box_mode': getattr(_s, 'preview_render_box_mode', None),
+        'preview_mutool_salvage_enabled': getattr(_s, 'preview_mutool_salvage_enabled', None),
     }
 
 
