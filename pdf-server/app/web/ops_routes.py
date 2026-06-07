@@ -176,6 +176,15 @@ def ops_asset_pipeline(asset_id: str, db: Session = Depends(get_db)):
     return ops_service.asset_pipeline(db, asset_id=asset_id)
 
 
+@ops_router.get("/logs/cloud-run")
+def ops_cloud_run_logs(
+    search: str = Query(..., min_length=1),
+    minutes: int = Query(default=60, ge=1, le=1440),
+    limit: int = Query(default=100, ge=1, le=500),
+):
+    return ops_service.cloud_run_logs(search=search, minutes=minutes, limit=limit)
+
+
 # ─── metrics ──────────────────────────────────────────────────────
 @ops_router.get("/metrics/stages")
 def ops_metrics_stages(hours: int = Query(default=24, ge=1, le=720),
