@@ -31,8 +31,9 @@ import requests
 from celery import shared_task
 from PIL import Image
 
+from app.core.config import settings
 from app.services.files import Workspace
-from app.services.storage import s3_client, S3_BUCKET
+from app.services.storage import _build_s3_client
 
 logger = logging.getLogger(__name__)
 
@@ -128,15 +129,21 @@ def cloudprinter_render(self, payload: Dict[str, Any]) -> Dict[str, Any]:
             zip_bytes = zip_buf.getvalue()
             zip_md5 = hashlib.md5(zip_bytes).hexdigest()
             key = f"cloudprinter-renders/{order_id}/{render_job_id}.zip"
-            s3_client.put_object(
-                Bucket=S3_BUCKET,
+            s3 = _build_s3_client(
+                settings.aws_s3_region,
+                access_key=settings.aws_access_key_id,
+                secret_key=settings.aws_secret_access_key,
+            )
+            bucket = settings.aws_s3_bucket
+            s3.put_object(
+                Bucket=bucket,
                 Key=key,
                 Body=zip_bytes,
                 ContentType="application/zip",
             )
-            zip_url = s3_client.generate_presigned_url(
+            zip_url = s3.generate_presigned_url(
                 "get_object",
-                Params={"Bucket": S3_BUCKET, "Key": key},
+                Params={"Bucket": bucket, "Key": key},
                 ExpiresIn=SIGNED_URL_TTL,
             )
 
