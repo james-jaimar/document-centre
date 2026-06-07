@@ -1606,14 +1606,29 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             )
 
             if still_missing:
+                raster_missing = [p for p in still_missing if p not in local_rasterized_pages]
+                record_missing = [p for p in still_missing if p in local_rasterized_pages]
                 msg = (
                     f"Incomplete render: {len(still_missing)} of {page_count} "
-                    f"page(s) missing → {still_missing}"
+                    f"page(s) missing → {still_missing}; "
+                    f"raster_missing={raster_missing}; record_missing={record_missing}"
                 )
                 job_repo.mark_failed(db, job_id, msg)
                 if evt_overall:
                     try:
-                        job_event_repo.fail(db, evt_overall.id, message=msg)
+                        job_event_repo.fail(
+                            db, evt_overall.id,
+                            message=msg,
+                            metadata={
+                                'missing_pages': still_missing,
+                                'raster_missing': raster_missing,
+                                'record_missing': record_missing,
+                                'record_missing_errors': {
+                                    str(p): record_missing_errors.get(p)
+                                    for p in record_missing
+                                },
+                            },
+                        )
                     except Exception:
                         pass
                     evt_overall = None
