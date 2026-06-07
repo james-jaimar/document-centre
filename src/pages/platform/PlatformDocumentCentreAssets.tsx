@@ -140,9 +140,9 @@ export default function PlatformDocumentCentreAssets() {
   const [assetId, setAssetId] = useState("");
   const [submitted, setSubmitted] = useState<string | null>(null);
 
-  const pipeline = useQuery<PipelineResponse>({
+  const pipeline = useQuery({
     queryKey: ["ops", "asset-pipeline", submitted],
-    queryFn: () => opsApi.assetPipeline(submitted!),
+    queryFn: () => opsApi.assetPipeline(submitted!) as Promise<PipelineResponse>,
     enabled: !!submitted,
     refetchInterval: 5000,
   });
