@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
 import os
+import shutil
 logger = logging.getLogger(__name__)
 import random
 import time
@@ -14,7 +15,7 @@ from app.services.assets import asset_repo
 from app.services.jobs import job_repo
 from app.services.job_event_repo import job_event_repo
 from app.services.storage import StorageService
-from app.services.files import Workspace, unique_name
+from app.services.files import Workspace, unique_name, cache_get
 from app.services.pdf_ops import pdf_ops, RasterizationIncompleteError
 from app.services.derived_files import derived_file_repo
 from app.core.config import settings
@@ -48,6 +49,25 @@ def _tenant_prefix(source_path: str | None) -> str:
         if len(parts) >= 2:
             return f"tenants/{parts[1]}/"
     return ""
+
+
+def _download_pdf_with_cache(storage_path: str, local_path, *, asset_id: str, timings: dict[str, int] | None = None) -> None:
+    """Materialise a PDF for rendering, preferring the shared handoff cache."""
+    t0 = time.monotonic()
+    cached = cache_get(storage_path)
+    if cached is not None:
+        try:
+            shutil.copyfile(cached, local_path)
+            if timings is not None:
+                timings['cache_copy_pdf'] = int((time.monotonic() - t0) * 1000)
+            logger.info('pdf_cache: hit asset=%s key=%s', asset_id, storage_path)
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('pdf_cache: copy failed asset=%s key=%s err=%s; falling back to S3', asset_id, storage_path, exc)
+
+    storage.download(storage_path, local_path)
+    if timings is not None:
+        timings['s3_download_pdf'] = int((time.monotonic() - t0) * 1000)
 
 
 def _record_preview(db: Session, asset_id: str, job_id: str, kind: str, storage_path: str, image_path, page: int | None = None, size_label: str | None = None):
