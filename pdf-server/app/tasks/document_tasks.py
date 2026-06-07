@@ -1385,7 +1385,7 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
                 # Fallback: original per-page GS loop (PNG) — never regress.
                 for page_num in wanted:
                     try:
-                        image_path, thumb_image, prev_sp, thumb_sp = _render_one_page(
+                        image_path, thumb_image, prev_sp, thumb_sp, prev_ext, prev_mt = _render_one_page(
                             src_pdf=src, preview_dir=preview_dir, thumb_dir=thumb_dir,
                             prefix=prefix, page=page_num, dpi=settings.preview_dpi,
                         )
@@ -1393,6 +1393,7 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
                             db, asset_id=asset_id, job_id=job_id, page=page_num,
                             image_path=image_path, thumb_image=thumb_image,
                             preview_storage=prev_sp, thumb_storage=thumb_sp,
+                            preview_media_type=prev_mt,
                         )
                         recovered.append(page_num)
                     except Exception as inner:
