@@ -55,6 +55,23 @@ def _gs_thread_flags() -> list[str]:
     return [f"-dNumRenderingThreads={threads}"] if threads > 1 else []
 
 
+def _valid_image_file(path: Path, *, min_bytes: int = 200) -> bool:
+    """Return True only when Pillow can parse the rendered image.
+
+    A size check alone is not enough for preview completeness: a truncated JPEG
+    can be larger than a few hundred bytes, pass the old gate, then fail later
+    during thumbnailing and look like a mysterious "missing page".
+    """
+    try:
+        if path.stat().st_size < min_bytes:
+            return False
+        with Image.open(path) as im:
+            im.verify()
+        return True
+    except Exception:
+        return False
+
+
 class MutoolRenderError(RuntimeError):
     """Raised when ``mutool draw`` did not produce the full expected page set.
 
@@ -1724,7 +1741,7 @@ class PdfOps:
             "-dNOPAUSE",
             "-dBATCH",
             "-dSAFER",
-            "-dNumRenderingThreads=4",
+            *_gs_thread_flags(),
             f"-r{dpi}",
             f"-sDEVICE={device}",
             f"-sOutputFile={pattern}",
@@ -2174,19 +2191,17 @@ class PdfOps:
                 except OSError:
                     pass
 
-        # Verify presence + plausible size.
-        MIN_IMG_BYTES = 200
+        # Verify presence + actual image integrity. Ghostscript can leave a
+        # truncated JPEG on abnormal exit; counting that as complete only moves
+        # the failure downstream into thumbnail/upload and appears as a late
+        # "missing page" in the UI.
         present_pages: set[int] = set()
         produced: list[Path] = []
         for p in range(first_page, last_page + 1):
             cand = base_dir / f"{base_name}-{p:03d}.{ext}"
-            if cand.exists():
-                try:
-                    if cand.stat().st_size >= MIN_IMG_BYTES:
-                        present_pages.add(p)
-                        produced.append(cand)
-                except OSError:
-                    pass
+            if cand.exists() and _valid_image_file(cand):
+                present_pages.add(p)
+                produced.append(cand)
         expected = set(range(first_page, last_page + 1))
         missing = sorted(expected - present_pages)
 
