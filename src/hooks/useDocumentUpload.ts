@@ -128,7 +128,10 @@ export async function renderDocumentThumbnails(
     inFlightExpected = 0;
   }
 
-  const RENDER_STALL_MS = 90_000;
+  // Watchdog only — fires when the server's render job is alive but no new
+  // pages have appeared for this long. Set well above the realistic batch
+  // budget so it is a true safety net, not a routine trigger.
+  const RENDER_STALL_MS = 180_000;
   const RENDER_STALL_ERROR = "render_job_stalled_no_page_progress";
   let lastReportedFound = inFlightExpected > 0 ? 0 : -1;
   let lastRenderProgressAt = Date.now();
