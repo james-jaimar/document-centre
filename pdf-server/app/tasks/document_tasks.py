@@ -1373,7 +1373,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                 if salvage_evt is not None:
                     job_event_repo.finish(
                         db, salvage_evt.id,
-                        metadata={'recovered': sorted(completed_pages & set(missing))},
+                        metadata={'recovered': sorted(completed_pages & set(salvage_missing))},
                             message='Salvage pass complete',
                     )
             elif renderer_terminal_missing:
@@ -1407,7 +1407,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                 # whatever it was before so the frontend won't surface
                 # half-rendered previews. The render-pages endpoint can
                 # recover the gaps later.
-                raise RuntimeError(msg)
+                raise NonRetryableTaskError(msg)
 
             asset_repo.update_asset(db, asset_id, {
                 'thumbnail_storage_path': thumb_path or (page_storage.get(1, (None, None))[1]),
@@ -1422,16 +1422,19 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                 'expected_pages': page_count,
                 'files_created': files_created[:20],
                 'timings_ms': timings,
+                'render_context': render_context,
             })
             if evt_overall:
                 job_event_repo.finish(
                     db,
                     evt_overall.id,
-                    metadata={'pages_rendered': pages_rendered, 'expected': page_count},
+                    metadata={'pages_rendered': pages_rendered, 'expected': page_count, 'timings_ms': timings, 'render_context': render_context},
                     message=f'Rendered {pages_rendered} of {page_count} page(s)',
                 )
                 evt_overall = None
             return {'pages_rendered': pages_rendered, 'expected_pages': page_count}
+    except NonRetryableTaskError:
+        raise
     except Exception as exc:
         if evt_overall:
             try:
