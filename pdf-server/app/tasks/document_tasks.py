@@ -683,6 +683,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
     """
     db = _db()
     evt_overall = None
+    render_context: dict = {}
     try:
         job_repo.mark_running(db, job_id)
         asset = asset_repo.get_asset(db, asset_id)
@@ -727,6 +728,10 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             # callers that pass `null` after rotate/resize/print-ready.
             t_box = time.monotonic()
             effective_render_box = render_box
+            render_box_mode = (
+                getattr(settings, 'preview_render_box_mode', 'metadata_only')
+                or 'metadata_only'
+            ).lower()
             if effective_render_box is None:
                 try:
                     effective_render_box = pdf_ops.derive_default_render_box(src)
@@ -736,10 +741,17 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                     )
                     effective_render_box = None
 
-            if effective_render_box is not None:
+            render_context = {
+                'render_box_mode': render_box_mode,
+                'detected_render_box': effective_render_box,
+                'rendered_source': 'original_pdf',
+            }
+
+            if effective_render_box is not None and render_box_mode == 'rewrite_pdf':
                 cropped = ws.path('cropped.pdf')
                 pdf_ops.crop_to_box(src, cropped, effective_render_box)
                 src = cropped
+                render_context['rendered_source'] = 'pikepdf_box_rewrite'
             _stamp('prepare_render_box', t_box)
 
             preview_dir = ws.path('preview')
