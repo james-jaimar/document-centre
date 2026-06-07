@@ -279,6 +279,19 @@ export const opsApi = {
   system: () => call<OpsSystem>("v1/ops/system"),
   live: () => call<OpsLiveSnapshot>("v1/ops/live"),
 
+  // GCP-native
+  gcpLive: () => call<GcpLiveSnapshot>("v1/ops/gcp/live"),
+  gcpLogs: (q: { service?: string; severity?: string; minutes?: number; limit?: number; search?: string } = {}) =>
+    call<{ entries: GcpLogEntry[]; error?: string; filter?: string }>(
+      "v1/ops/gcp/logs", "GET", undefined,
+      { service: q.service, severity: q.severity, minutes: q.minutes, limit: q.limit, search: q.search },
+    ),
+  reconcileJobs: (graceSeconds?: number) =>
+    call<OpsReconcileResult>("v1/ops/jobs/reconcile", "POST", undefined,
+      graceSeconds ? { grace_seconds: graceSeconds } : undefined),
+
+
+
   processes: async (limit = 15): Promise<OpsProcess[]> => {
     const res = await call<Dict>("v1/ops/system/processes", "GET", undefined, { limit });
     return asArray<OpsProcess>(res.processes);
