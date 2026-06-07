@@ -1411,6 +1411,58 @@ class PdfOps:
                 seq_path.rename(target_path)
 
 
+    def rasterize_pages_mutool(
+        self,
+        src: Path,
+        out_prefix: Path,
+        dpi: int,
+        first_page: int,
+        last_page: int,
+        fmt: str = "jpeg",
+        quality: int | None = None,
+    ) -> list[Path]:
+        """Rasterize a contiguous page range with a SINGLE ``mutool draw``
+        invocation.
+
+        Why MuPDF instead of Ghostscript: ``mutool draw`` is purpose-built
+        for "PDF page → pixels" and is 2–4× faster than GS on multi-page
+        rasterisation with lower RAM. It also uses the source page number
+        directly when ``%d`` appears in ``-o`` — no sequential-vs-source
+        rename dance like ``_gs_rasterize_pages`` has to do.
+
+        Output files: ``<prefix>-<NNN>.<ext>`` where NNN is the source
+        page number, zero-padded to 3 digits. Returns the sorted list of
+        files actually produced. Caller is responsible for verifying
+        completeness against the requested range and falling back if
+        anything is missing.
+        """
+        ext = "jpg" if fmt == "jpeg" else fmt
+        out_prefix.parent.mkdir(parents=True, exist_ok=True)
+        pattern = str(out_prefix) + "-%03d." + ext
+
+        mutool = _shutil.which(settings.mutool_bin) or settings.mutool_bin
+        cmd = [
+            mutool, "draw",
+            "-F", fmt,
+            "-r", str(dpi),
+            "-o", pattern,
+        ]
+        if fmt == "jpeg" and quality is not None:
+            cmd.extend(["-O", f"quality={int(quality)}"])
+        cmd.append(str(src))
+        cmd.append(f"{first_page}-{last_page}")
+
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise subprocess.CalledProcessError(
+                proc.returncode, cmd,
+                output=proc.stdout, stderr=proc.stderr,
+            )
+
+        return sorted(
+            out_prefix.parent.glob(out_prefix.name + "-*." + ext)
+        )
+
     def rasterize_preview(
         self,
         src: Path,
