@@ -170,12 +170,18 @@ class OpsService:
                 q = client.get_queue(request={"name": name, "read_mask": read_mask})
                 stats = q.stats
                 oldest = getattr(stats, "oldest_estimated_arrival_time", None)
+                oldest_iso = None
+                if oldest:
+                    try:
+                        oldest_iso = oldest.ToDatetime(tzinfo=timezone.utc).isoformat()
+                    except Exception:
+                        oldest_iso = str(oldest)
                 out[logical] = {
                     "queue_id": queue_id,
                     "tasks_count": int(getattr(stats, "tasks_count", 0) or 0),
                     "concurrent_dispatches_count": int(getattr(stats, "concurrent_dispatches_count", 0) or 0),
                     "executed_last_minute_count": int(getattr(stats, "executed_last_minute_count", 0) or 0),
-                    "oldest_estimated_arrival_time": oldest.isoformat() if oldest else None,
+                    "oldest_estimated_arrival_time": oldest_iso,
                 }
             return out
         except Exception as exc:  # noqa: BLE001
