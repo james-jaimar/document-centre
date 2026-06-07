@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
@@ -368,12 +368,64 @@ class OpsService:
             return {"job_id": job_id, "events": []}
 
     def asset_pipeline(self, db: Session, asset_id: str) -> dict:
+        def _iso(v):
+            return v.isoformat() if hasattr(v, "isoformat") else v
+
         try:
             events = job_event_repo.list_for_asset(db, asset_id=asset_id)
-            return {"asset_id": asset_id, "events": [self._serialize_event(e) for e in events]}
+            asset = db.execute(text("""
+                select id, original_filename, media_type, source_storage_path,
+                       normalized_storage_path, status, page_count, width_pt,
+                       height_pt, thumbnail_storage_path, preview_storage_path,
+                       metadata, created_at, updated_at
+                  from assets
+                 where id = :asset_id
+            """), {"asset_id": asset_id}).mappings().first()
+            jobs = db.execute(text("""
+                select id, operation, queue, status, retries, celery_task_id,
+                       payload, result, error, created_at, started_at,
+                       finished_at, updated_at
+                  from jobs
+                 where asset_id = :asset_id
+                 order by created_at asc
+            """), {"asset_id": asset_id}).mappings().all()
+            derived = db.execute(text("""
+                select kind, page, storage_path, media_type, width, height,
+                       created_at
+                  from derived_files
+                 where asset_id = :asset_id
+                 order by page asc nulls last, kind asc, created_at desc
+            """), {"asset_id": asset_id}).mappings().all()
+
+            cache = {"checked": False, "hit": False}
+            if asset and asset.get("normalized_storage_path"):
+                try:
+                    from app.services.files import cache_get
+                    cached_path = cache_get(asset["normalized_storage_path"])
+                    cache = {"checked": True, "hit": cached_path is not None}
+                    if cached_path is not None:
+                        st = cached_path.stat()
+                        cache.update({"bytes": st.st_size, "mtime": datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat()})
+                except Exception as exc:  # noqa: BLE001
+                    cache = {"checked": True, "hit": False, "error": str(exc)}
+
+            return {
+                "asset_id": asset_id,
+                "asset": {k: _iso(v) for k, v in dict(asset).items()} if asset else None,
+                "jobs": [{k: _iso(v) for k, v in dict(r).items()} for r in jobs],
+                "derived_files": [{k: _iso(v) for k, v in dict(r).items()} for r in derived],
+                "events": [self._serialize_event(e) for e in events],
+                "counts": {
+                    "jobs": len(jobs),
+                    "derived_files": len(derived),
+                    "preview_pages": len({r["page"] for r in derived if r.get("kind") == "preview_page" and r.get("page") is not None}),
+                    "thumbnail_pages": len({r["page"] for r in derived if r.get("kind") == "thumbnail_page" and r.get("page") is not None}),
+                },
+                "cache": cache,
+            }
         except _MISSING_SCHEMA_ERRORS:
             db.rollback()
-            return {"asset_id": asset_id, "events": []}
+            return {"asset_id": asset_id, "asset": None, "jobs": [], "derived_files": [], "events": []}
 
     # ─── metrics ─────────────────────────────────────────────────
     def stage_metrics(self, db: Session, hours: int = 24) -> dict:
