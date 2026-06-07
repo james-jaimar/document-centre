@@ -650,33 +650,37 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             completed_pages: set[int] = set()
             page_storage: dict[int, tuple[str, str]] = {}
 
-            # ─── Batch fast path ──────────────────────────────────────
-            # When the page count is small/medium, run ONE Ghostscript
-            # invocation for the whole PDF (no per-page GS startup cost),
-            # then downscale + upload + record concurrently. This is the
-            # single biggest win for typical 1–32 page jobs.
+            # ─── Batch fast path (MuPDF → JPEG) ───────────────────────
+            # ONE `mutool draw` invocation for the full page range, then
+            # downscale + upload + record concurrently. MuPDF is 2–4×
+            # faster than Ghostscript for "PDF → pixels" and writes
+            # straight to JPEG q90 (no PNG re-encode round-trip).
             batch_threshold = max(1, settings.render_batch_threshold)
             batch_eligible = (
                 page_count
                 and page_count <= batch_threshold
                 and page_count >= 1
             )
+            preview_ext = 'jpg' if settings.preview_format == 'jpeg' else 'png'
+            preview_media_type = 'image/jpeg' if settings.preview_format == 'jpeg' else 'image/png'
             if batch_eligible:
                 t_batch = time.monotonic()
                 try:
                     t_gs = time.monotonic()
-                    pdf_ops.rasterize_preview(
+                    pdf_ops.rasterize_pages_mutool(
                         src, preview_dir / 'page', dpi=settings.preview_dpi,
                         first_page=1, last_page=page_count,
+                        fmt=settings.preview_format,
+                        quality=settings.preview_jpeg_quality,
                     )
-                    _stamp('ghostscript_batch', t_gs)
+                    _stamp('mutool_batch', t_gs)
                     cpu_workers = max(1, settings.render_cpu_concurrency)
                     io_workers = max(1, settings.render_io_concurrency)
                     with ThreadPoolExecutor(max_workers=cpu_workers) as cpu_pool, \
                          ThreadPoolExecutor(max_workers=io_workers) as io_pool:
                         thumb_futures = {}
                         for p in range(1, page_count + 1):
-                            image_path = preview_dir / f"page-{p:03d}.png"
+                            image_path = preview_dir / f"page-{p:03d}.{preview_ext}"
                             if not image_path.exists():
                                 continue
                             thumb_image = thumb_dir / f"page-{p:03d}.png"
@@ -697,6 +701,8 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                                 _upload_page_io,
                                 prefix=prefix, page=p,
                                 image_path=image_path, thumb_image=thumb_image,
+                                preview_ext=preview_ext,
+                                preview_media_type=preview_media_type,
                             )] = (p, image_path, thumb_image)
 
                         for fut in as_completed(upload_futures):
@@ -707,6 +713,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                                     db, asset_id=asset_id, job_id=job_id, page=p,
                                     image_path=image_path, thumb_image=thumb_image,
                                     preview_storage=prev_sp, thumb_storage=thumb_sp,
+                                    preview_media_type=preview_media_type,
                                 )
                             except Exception as exc:
                                 logger.warning("batch IO/record page %d failed: %s", p, exc)
@@ -724,7 +731,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                                 })
                     _stamp('batch_total', t_batch)
                     logger.info(
-                        "generate_previews: batch path rendered %d/%d pages in %sms",
+                        "generate_previews: batch path (mutool) rendered %d/%d pages in %sms",
                         len(completed_pages), page_count, timings.get('batch_total'),
                     )
                 except Exception as exc:
