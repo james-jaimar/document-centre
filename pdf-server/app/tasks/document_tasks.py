@@ -425,6 +425,8 @@ def _upload_page_io(
     page: int,
     image_path,
     thumb_image,
+    preview_ext: str = 'png',
+    preview_media_type: str = 'image/png',
 ):
     """IO-bound phase: upload preview + thumbnail to S3.
 
@@ -432,11 +434,11 @@ def _upload_page_io(
     main thread after this returns so we don't fight SQLAlchemy session
     threadsafety rules.
     """
-    preview_storage = unique_name(f'{prefix}previews/page-{page:03d}', '.png')
+    preview_storage = unique_name(f'{prefix}previews/page-{page:03d}', f'.{preview_ext}')
     thumb_storage = unique_name(f'{prefix}thumbnails/page-{page:03d}', '.png')
 
     _retry_with_backoff(
-        lambda: storage.upload(image_path, preview_storage, 'image/png'),
+        lambda: storage.upload(image_path, preview_storage, preview_media_type),
         label='upload_preview', page=page,
     )
     _retry_with_backoff(
@@ -457,6 +459,7 @@ def _record_page(
     thumb_image,
     preview_storage: str,
     thumb_storage: str,
+    preview_media_type: str = 'image/png',
 ):
     """Idempotently record both derived_files rows for a page in ONE
     bulk upsert. Replaces two separate select+update+commit cycles per
@@ -478,7 +481,7 @@ def _record_page(
                 {
                     'kind': 'preview_page',
                     'storage_path': preview_storage,
-                    'media_type': 'image/png',
+                    'media_type': preview_media_type,
                     'page': page,
                     'width': prev_w,
                     'height': prev_h,
