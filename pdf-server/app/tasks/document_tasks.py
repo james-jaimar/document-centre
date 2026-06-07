@@ -1384,6 +1384,15 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
 
 
             # ─── Verify & finalise ─────────────────────────────────────
+            # Cross-check in-memory completed_pages against derived_files
+            # so a page recorded by a retry / fan-out worker that landed
+            # outside this process is not incorrectly flagged missing.
+            try:
+                db_present = derived_file_repo.pages_present_both(db, asset_id)
+                if db_present:
+                    completed_pages |= (db_present & expected_pages)
+            except Exception as _verify_exc:
+                logger.warning("generate_previews: db verify failed: %s", _verify_exc)
             still_missing = sorted(expected_pages - completed_pages)
 
             logger.info(
