@@ -1,60 +1,138 @@
-# Pipeline performance + visibility plan (post-CMYK-first decision)
+## What I found so far
 
-## Hard constraint — DO NOT VIOLATE
+- The upload modal reaches `Rendering pages… (1/8)` from `renderDocumentThumbnails()` in `src/hooks/useDocumentUpload.ts`.
+- The no-advisory upload path currently does: browser upload to S3 → `createAsset` inline pikepdf metadata probe → `prepareForProduct` CMYK/orientation work → chained `generate_previews` job → frontend polls derived files.
+- `generate_previews` is meant to use one MuPDF batch call for page counts under `RENDER_BATCH_THRESHOLD=200`, but if that batch path fails or misses files it silently falls back into the older per-page Ghostscript path.
+- The screenshot showing `Rendering pages… (1/8)` strongly suggests the fast MuPDF batch path is not producing/recording the full 8-page set in production, then the fallback path is crawling or getting stuck.
+- I could not query live Supabase job/asset rows because the Supabase tool returned `SUPABASE_FORBIDDEN`; the plan below will add enough in-app/admin diagnostics so we can see the real production/GCP state without guessing.
+- The visible `files/:1 404` needs full request details from a reproduced browser session. Current code searches did not show a direct `/files/1` API call; it may be a route/resource artefact or a bad relative URL, but I will verify before changing it.
 
-CMYK conversion must run **before** the customer sees page previews. The whole point of the conversion step is that customers see colours close to the printed output. Bright RGB Word/image exports can shift significantly when converted to CMYK. Showing previews from the raw RGB PDF first would defeat the entire colour-accuracy story.
+## Plan
 
-So: no "parallel previews from raw PDF while CMYK runs in background". Order stays: upload → CMYK/prepare → MuPDF preview render → customer sees pages.
+### 1. Prove the actual runtime path for this exact upload
 
-The fix is to make each of those steps fast and observable, not to reorder them.
+Add an upload/render trace that can be read from the admin Asset inspector and logs:
 
-## Goals
+- Generate a trace identifier for each upload/render chain.
+- Carry it through:
+  - frontend `createAsset`
+  - `prepareForProduct`
+  - chained `generate_previews`
+  - `render_specific_pages` recovery
+  - job events and job result metadata
+- Record for each job:
+  - Cloud Run service/revision/role
+  - queue backend (`cloud_tasks` vs `celery`)
+  - worker hostname
+  - storage mode/bucket/region
+  - renderer selected (`mutool_batch`, `mutool_range`, `ghostscript_fallback`)
+  - elapsed milliseconds per step
 
-1. Prove the runtime path (is everything actually on GCP?).
-2. Make MuPDF rendering deterministic and fast — single batch render, no silent Ghostscript fallback.
-3. Cut wasted work in the CMYK/prepare → preview handoff so the customer waits only on real work, not on plumbing.
-4. Give the admin UI real GCP-backed visibility (Cloud Run logs, Cloud Tasks queue stats, per-stage timings) so the next time something hangs we can see exactly where.
+This gives us a byte/path audit trail without relying on guesswork.
 
-## Workstream A — Prove the runtime path
+### 2. Fix the likely MuPDF batch escape hatch
 
-- Extend `/health` on every Cloud Run service to expose: role, queue_backend, Cloud Run service+revision, mutool/ghostscript/qpdf versions, MuPDF JPEG capability check result.
-- Add an admin-only "PDF backend target" panel in `PlatformDocumentCentreOverview` that calls `pdf-api`'s sanitized diagnostic (upstream host, upstream `/health` result, effective storage bucket/region). Confirms at a glance there is no VPS hop.
-- Update stale comments/docs that still say "VPS" where the runtime is now Cloud Run. Keep legacy fallback docs clearly labelled.
+Harden `generate_previews` so the fast path is deterministic:
 
-## Workstream B — MuPDF rendering hardening
+- Run one contiguous MuPDF render for `1-N` pages.
+- Verify that every expected output file exists before any fallback path starts.
+- If MuPDF fails, record the exact command, return code, stderr snippet, output file list, and missing pages in the job event/result.
+- Do not silently look “successful” after only page 1.
+- Prefer MuPDF for any recovery/range render too; keep Ghostscript as last-resort only.
 
-- Add a startup self-check that runs `mutool draw -F jpeg` on a tiny built-in 1-page PDF and logs success/failure. Surface result in `/health`.
-- In `rasterize_pages_mutool`, log every invocation with: command shape (no sensitive paths), page range, dpi, fmt/quality, elapsed ms, produced filenames, byte sizes, stderr tail on failure.
-- Enforce completeness immediately after MuPDF batch: expected set must exactly match produced set.
-- If MuPDF batch produces an incomplete set, retry with MuPDF per-page first. Only fall back to Ghostscript if MuPDF per-page also fails. Stamp `fallback_engine=ghostscript` on the job result/event when this happens so it shows up in ops.
+Technical target:
 
-## Workstream C — Make the existing CMYK-first flow fast
+```text
+mutool draw -F <working-jpeg-format> -r 150 -O quality=90 -o page-%03d.<ext> input.pdf 1-8
+```
 
-CMYK stays first. The customer-visible work is `prepare_for_product` (CMYK + orient + optional resize) → `generate_previews`. Speed it up by removing waste, not by reordering.
+Then downscale thumbnails from those files and upload/record all pages.
 
-- **Disable the shared on-disk PDF cache on Cloud Run.** Heavy and light workers are separate Cloud Run services with separate filesystems — `cache_get` always misses, `cache_put` is wasted IO on heavy. Set `PDF_CACHE_ENABLED=false` on the workers via the deploy workflow. The light worker downloads the prepared PDF from S3 once (same region as the bucket → fast).
-- **Pin `pdf-worker-heavy` to `min-instances=1`** (already in the deploy script) so the first upload of a quiet period doesn't pay a cold start before CMYK even begins. Verify it's actually applied after the next deploy.
-- **Add per-step `timings_ms` to every job result** so we can see, for a specific stuck upload: S3 download, CMYK pass, orient pass, S3 upload, cache hit/miss, MuPDF raster, downscale, S3 upload of pages, DB write. Most of this already exists — finish wiring it through `prepare_for_product` and `generate_previews` end-to-end and surface in `/v1/ops/assets/{id}/pipeline`.
-- **Stop double-rasterizing thumbnails at preview DPI.** `thumbnail_dpi=96` is defined but never used; everything gets MuPDF→JPEG at preview DPI then Pillow downscale. For thumbnails specifically, rasterize once at thumbnail DPI directly — cuts MuPDF time and bytes for the thumbnail track. Keep the full preview render exactly as it is.
-- **Tighten the frontend post-completion poll** in `useDocumentUpload.ts`: after `pollJob` returns `completed`, do **one** `getDerivedFiles` check. Only enter the recovery loop if pages are genuinely missing. Lengthen the in-flight stall watchdog from 90s to 180s so it's a true safety net, not a routine trigger during slow CMYK runs.
+### 3. Make MuPDF format detection real, not inferred
 
-## Workstream D — GCP-native observability inside the admin UI
+The `/health` endpoint currently checks whether help text mentions JPEG. That is not enough.
 
-- Grant `roles/logging.viewer` to the `dc-pdf-runtime` runtime SA so the existing `/v1/ops/logs/cloud-run` endpoint can actually read logs at runtime (it currently only works if the SA already has it).
-- Add Cloud Logging filtering by `asset_id`, `job_id`, and Cloud Run service name to the ops UI — not just free-text search.
-- Add Cloud Tasks queue stats + recent task listing so we can see what is queued / dispatching / retrying / running in real time.
+I will change health/smoke validation to actually render a tiny generated PDF through MuPDF using the configured format and quality:
 
-## Workstream E — Deploy regression guards
+- Test `-F jpeg` and/or `-F jpg` as needed.
+- Report the exact accepted format token.
+- Use that accepted token in rendering instead of assuming the deployed MuPDF build accepts `jpeg`.
+- Add a container smoke test that renders an 8-page A4 PDF and asserts page `001` through `008` are produced.
 
-- In the Cloud Run deploy workflow, after the container builds, render a tiny 2-page test PDF through the exact `mutool draw -F jpeg -O quality=90` command shape used in production. Fail the deploy if it doesn't produce both JPEGs.
-- After deploy, hit `/health` on each Cloud Run service and fail the workflow if `queue_backend != cloud_tasks` or mutool capability check is `false`.
+This directly addresses the “MuPDF should chew through this in seconds” expectation.
 
-## Validation after implementation
+### 4. Remove slow fallback loops from the customer-critical path
 
-Upload the same 8-page A4 demo PDF and confirm:
+The current fallback can drift into per-page Ghostscript and salvage behaviour, which is exactly what feels like a crawl.
 
-- ops asset pipeline shows `engine=mupdf`, no `fallback_engine`, all 8 pages produced.
-- `timings_ms` shows where every second went (S3, CMYK, MuPDF, upload, DB).
-- ops backend-target panel shows Cloud Run / Cloud Tasks; no VPS URL anywhere.
-- Cloud Run logs can be queried from the admin UI by asset/job id.
-- MuPDF raster step is in seconds, not minutes; total wall clock is dominated by the CMYK pass on the heavy worker, which is the expected and intentional cost of the colour-accuracy guarantee.
+I will adjust the render contract:
+
+- Primary: one MuPDF batch render.
+- Secondary: one MuPDF range render for missing pages.
+- Final fallback: Ghostscript single-page only when MuPDF explicitly fails a page, with a clear job event naming that fallback.
+- Stop frontend self-recovery from repeatedly creating slow full recovery loops when the server already knows exactly which pages are missing.
+
+The UI should either complete quickly or fail with a specific reason; it should not sit at `1/8` indefinitely.
+
+### 5. Keep CMYK-first intact
+
+I will not move preview rendering before CMYK/print-ready.
+
+The flow remains:
+
+```text
+uploaded PDF
+  → metadata probe
+  → CMYK / print preparation
+  → MuPDF preview images from prepared PDF
+  → customer sees final-colour preview
+```
+
+The optimisation is inside render/prep mechanics and observability, not a reordering of print intent.
+
+### 6. Verify and fix the `files/:1` 404 separately
+
+During reproduction I will capture the full failing request URL and initiator.
+
+Depending on what it is:
+
+- If it is a broken app route, fix the route/navigation.
+- If it is a relative preview/download URL, force absolute signed S3 URLs.
+- If it is only a dev tooling/source-map artefact unrelated to upload, leave it alone and document it.
+
+I will not assume it is related until the full request proves it.
+
+### 7. Prove GCP vs VPS routing
+
+Add/extend diagnostics so the admin dashboard can answer the question directly:
+
+- API `/health`: already exposes Cloud Run service/revision/queue/render settings.
+- Worker job events: include Cloud Run `K_SERVICE`, `K_REVISION`, role, queue backend.
+- Admin Asset inspector: show whether the job ran on `pdf-worker-heavy`, `pdf-worker-light`, or a legacy/VPS/Celery worker.
+- Remove the dead module-level S3 client/hardcoded bucket in `storage.py` so cold-start/storage diagnostics are not polluted.
+
+### 8. Validation after implementation
+
+I will validate with:
+
+- Python compile checks for touched backend files.
+- Container-level smoke test script for an 8-page A4 PDF:
+  - MuPDF render produces 8 JPEG pages.
+  - no Ghostscript fallback on the happy path.
+  - job result includes timings and renderer path.
+- Frontend check that the upload progress can no longer sit silently at `1/8`; it will show real rendered count or a specific server failure reason.
+
+## Files expected to change
+
+- `pdf-server/app/services/pdf_ops.py`
+- `pdf-server/app/tasks/document_tasks.py`
+- `pdf-server/app/tasks/operation_tasks.py`
+- `pdf-server/app/main.py`
+- `pdf-server/app/services/storage.py`
+- `pdf-server/app/services/ops_service.py`
+- `pdf-server/app/web/ops_routes.py`
+- `pdf-server/scripts/*smoke*` or a new render smoke script
+- `src/hooks/useDocumentUpload.ts`
+- `src/lib/documentCentreApi.ts`
+- `src/lib/opsApi.ts`
+- `src/pages/platform/PlatformDocumentCentreAssets.tsx`

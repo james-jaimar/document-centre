@@ -70,18 +70,21 @@ def health():
         except Exception as exc:  # noqa: BLE001
             return {'available': True, 'path': path, 'error': str(exc)}
 
-    # MuPDF JPEG capability — `mutool draw -F jpeg` must work for the
-    # fast preview path. If this is False, generate_previews falls back
-    # to per-page Ghostscript and uploads slow to a crawl.
+    # MuPDF JPEG capability — actually render a tiny PDF and check the
+    # output file exists. A help-text scan is not enough: some MuPDF builds
+    # list `jpeg` in `-h` but fail at runtime, which silently demotes the
+    # whole upload pipeline to slow Ghostscript.
     mutool_jpeg_ok = False
+    mutool_effective: dict = {}
     try:
-        mt = _shutil.which(settings.mutool_bin)
-        if mt:
-            r = _sp.run([mt, 'draw', '-h'], capture_output=True, text=True, timeout=5)
-            out = (r.stdout or '') + (r.stderr or '')
-            mutool_jpeg_ok = 'jpeg' in out.lower() or 'jpg' in out.lower()
-    except Exception:
+        from app.services.pdf_ops import mutool_effective_format
+        fmt, ext = mutool_effective_format('jpeg')
+        mutool_effective = {'format': fmt, 'ext': ext}
+        mutool_jpeg_ok = (fmt in ('jpeg', 'jpg'))
+    except Exception as exc:
+        mutool_effective = {'error': str(exc)}
         mutool_jpeg_ok = False
+
 
     return {
         'status': 'ok',
@@ -116,7 +119,8 @@ def health():
             'dir': settings.pdf_cache_dir,
         },
         'binaries': {
-            'mutool': {**_bin_version(settings.mutool_bin, ['-v']), 'jpeg_supported': mutool_jpeg_ok},
+            'mutool': {**_bin_version(settings.mutool_bin, ['-v']), 'jpeg_supported': mutool_jpeg_ok, 'effective': mutool_effective},
+
             'ghostscript': _bin_version(settings.ghostscript_bin, ['--version']),
             'qpdf': _bin_version(settings.qpdf_bin, ['--version']),
             'pdfcpu': _bin_version(settings.pdfcpu_bin, ['version']),

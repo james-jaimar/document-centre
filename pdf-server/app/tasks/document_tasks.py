@@ -16,10 +16,16 @@ from app.services.jobs import job_repo
 from app.services.job_event_repo import job_event_repo
 from app.services.storage import StorageService
 from app.services.files import Workspace, unique_name, cache_get
-from app.services.pdf_ops import pdf_ops, RasterizationIncompleteError
+from app.services.pdf_ops import (
+    pdf_ops,
+    RasterizationIncompleteError,
+    MutoolRenderError,
+    mutool_effective_format,
+)
 from app.services.derived_files import derived_file_repo
 from app.core.config import settings
 from app.core.queue import enqueue
+
 
 storage = StorageService()
 
@@ -42,6 +48,21 @@ def _db() -> Session:
     return SessionLocal()
 
 
+def _runtime_meta() -> dict:
+    """Non-secret runtime facts for embedding in job_events.metadata so the
+    admin asset inspector can prove which Cloud Run revision / worker /
+    queue backend handled a render without trawling logs."""
+    return {
+        'k_service': os.getenv('K_SERVICE'),
+        'k_revision': os.getenv('K_REVISION'),
+        'k_configuration': os.getenv('K_CONFIGURATION'),
+        'role': os.getenv('ROLE'),
+        'queue_backend': os.getenv('QUEUE_BACKEND', 'celery'),
+        'gcp_region': os.getenv('GCP_REGION'),
+        'gcp_tasks_region': os.getenv('GCP_TASKS_REGION'),
+    }
+
+
 def _tenant_prefix(source_path: str | None) -> str:
     """Extract 'tenants/{id}/' prefix from source_storage_path, or return ''."""
     if source_path and source_path.startswith("tenants/"):
@@ -49,6 +70,7 @@ def _tenant_prefix(source_path: str | None) -> str:
         if len(parts) >= 2:
             return f"tenants/{parts[1]}/"
     return ""
+
 
 
 def _download_pdf_with_cache(storage_path: str, local_path, *, asset_id: str, timings: dict[str, int] | None = None) -> None:
@@ -615,9 +637,14 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             queue_name='thumbnails',
             worker_name=self.request.hostname if self.request else None,
             stage='render',
-            metadata={'page_count': page_count, 'dpi': settings.preview_dpi},
+            metadata={
+                'page_count': page_count,
+                'dpi': settings.preview_dpi,
+                'runtime': _runtime_meta(),
+            },
             message=f'Rendering {page_count or "?"} page(s)…',
         )
+
 
         timings: dict[str, int] = {}
 
@@ -679,10 +706,15 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                 and page_count <= batch_threshold
                 and page_count >= 1
             )
-            preview_ext = 'jpg' if settings.preview_format == 'jpeg' else 'png'
-            preview_media_type = 'image/jpeg' if settings.preview_format == 'jpeg' else 'image/png'
+            # Discover what `mutool draw` will actually emit on this
+            # container (some builds accept `jpeg`, others only `jpg`,
+            # and a few have JPEG disabled entirely). The probe is
+            # cached process-wide so this is a one-off cost.
+            _effective_fmt, preview_ext = mutool_effective_format(settings.preview_format)
+            preview_media_type = 'image/jpeg' if preview_ext == 'jpg' else 'image/png'
             if batch_eligible:
                 t_batch = time.monotonic()
+                mutool_diagnostic: dict | None = None
                 try:
                     t_gs = time.monotonic()
                     pdf_ops.rasterize_pages_mutool(
@@ -692,6 +724,77 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                         quality=settings.preview_jpeg_quality,
                     )
                     _stamp('mutool_batch', t_gs)
+                except MutoolRenderError as exc:
+                    # Capture forensic detail BEFORE the in-batch retry so
+                    # we can tell whether the second attempt also missed
+                    # pages, and which pages MuPDF specifically refused.
+                    mutool_diagnostic = {
+                        'first_attempt': {
+                            'returncode': exc.returncode,
+                            'missing_pages': exc.missing_pages,
+                            'produced': len(exc.produced),
+                            'stderr_tail': "\n".join(
+                                (exc.stderr or "").strip().splitlines()[-5:]
+                            ),
+                            'cmd': exc.cmd,
+                        }
+                    }
+                    logger.warning(
+                        "mutool batch incomplete asset=%s missing=%s rc=%s — retrying missing range",
+                        asset_id, exc.missing_pages, exc.returncode,
+                    )
+                    if exc.missing_pages:
+                        try:
+                            t_retry = time.monotonic()
+                            lo, hi = min(exc.missing_pages), max(exc.missing_pages)
+                            pdf_ops.rasterize_pages_mutool(
+                                src, preview_dir / 'page', dpi=settings.preview_dpi,
+                                first_page=lo, last_page=hi,
+                                fmt=settings.preview_format,
+                                quality=settings.preview_jpeg_quality,
+                            )
+                            _stamp('mutool_batch_retry', t_retry)
+                            mutool_diagnostic['retry'] = {'ok': True, 'range': [lo, hi]}
+                        except MutoolRenderError as exc2:
+                            mutool_diagnostic['retry'] = {
+                                'ok': False,
+                                'missing_pages': exc2.missing_pages,
+                                'returncode': exc2.returncode,
+                                'stderr_tail': "\n".join(
+                                    (exc2.stderr or "").strip().splitlines()[-5:]
+                                ),
+                            }
+                            logger.error(
+                                "mutool retry STILL missing pages asset=%s missing=%s — Ghostscript fallback will run",
+                                asset_id, exc2.missing_pages,
+                            )
+                except Exception as exc:
+                    logger.warning(
+                        "mutool batch raised unexpected error asset=%s: %s — falling back",
+                        asset_id, exc,
+                    )
+                    mutool_diagnostic = {'unexpected_error': f"{type(exc).__name__}: {exc}"}
+
+                if mutool_diagnostic is not None:
+                    # Surface the failure in the admin UI without trawling
+                    # logs. evt is fire-and-forget — if it can't be written
+                    # we still continue rendering.
+                    diag_evt = job_event_repo.start(
+                        db, job_id=job_id, asset_id=asset_id,
+                        task_name='generate_previews', queue_name='thumbnails',
+                        worker_name=self.request.hostname if self.request else None,
+                        stage='mutool_failed',
+                        metadata={**mutool_diagnostic, 'runtime': _runtime_meta()},
+                        message='mutool render produced incomplete page set',
+                    )
+                    if diag_evt is not None:
+                        job_event_repo.finish(db, diag_evt.id, status='failed',
+                                              message='mutool incomplete')
+
+                # Whatever MuPDF managed to write (full set or partial), pick
+                # it up, downscale and upload. Anything still missing after
+                # this drains into the existing in-process / salvage paths.
+                try:
                     cpu_workers = max(1, settings.render_cpu_concurrency)
                     io_workers = max(1, settings.render_io_concurrency)
                     with ThreadPoolExecutor(max_workers=cpu_workers) as cpu_pool, \
@@ -749,13 +852,14 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                                 })
                     _stamp('batch_total', t_batch)
                     logger.info(
-                        "generate_previews: batch path (mutool) asset=%s rendered=%d/%d timings_ms=%s",
-                        asset_id, len(completed_pages), page_count, timings,
+                        "generate_previews: batch path (mutool) asset=%s rendered=%d/%d ext=%s timings_ms=%s",
+                        asset_id, len(completed_pages), page_count, preview_ext, timings,
                     )
                 except Exception as exc:
                     logger.warning(
-                        "generate_previews: batch path failed (will fall back): %s", exc,
+                        "generate_previews: batch upload/record path failed (will fall back): %s", exc,
                     )
+
 
             # ─── Page-1 fast path (skipped if batch already covered it) ─
             if 1 in completed_pages:

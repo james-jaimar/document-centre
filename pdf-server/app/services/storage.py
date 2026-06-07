@@ -82,8 +82,12 @@ def _build_s3_client(region: str, access_key: str | None = None, secret_key: str
     return boto3.client('s3', **kwargs)
 
 
-s3_client = _build_s3_client('af-south-1')
-S3_BUCKET = 'jaimar-dev-600743178200-af-south-1-an'
+# (Removed dead module-level boto3 client + hardcoded bucket. The live
+# client is built lazily by StorageService.__init__ from settings, which
+# pulls credentials from GCP Secret Manager at runtime. Keeping a module-
+# scoped client tried to resolve credentials at import time and added cold-
+# start latency for no benefit.)
+
 
 
 class StorageService:
