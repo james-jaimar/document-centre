@@ -119,7 +119,8 @@ def health():
             'dir': settings.pdf_cache_dir,
         },
         'binaries': {
-            'mutool': {**_bin_version(settings.mutool_bin, ['-v']), 'jpeg_supported': mutool_jpeg_ok},
+            'mutool': {**_bin_version(settings.mutool_bin, ['-v']), 'jpeg_supported': mutool_jpeg_ok, 'effective': mutool_effective},
+
             'ghostscript': _bin_version(settings.ghostscript_bin, ['--version']),
             'qpdf': _bin_version(settings.qpdf_bin, ['--version']),
             'pdfcpu': _bin_version(settings.pdfcpu_bin, ['version']),
