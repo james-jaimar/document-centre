@@ -1440,6 +1440,7 @@ class PdfOps:
         out_prefix.parent.mkdir(parents=True, exist_ok=True)
         pattern = str(out_prefix) + "-%03d." + ext
 
+        import shutil as _shutil
         mutool = _shutil.which(settings.mutool_bin) or settings.mutool_bin
         cmd = [
             mutool, "draw",
