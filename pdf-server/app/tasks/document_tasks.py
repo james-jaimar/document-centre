@@ -1206,7 +1206,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                     for cpu_fut in as_completed(cpu_futures):
                         page_num = cpu_futures[cpu_fut]
                         try:
-                            image_path, thumb_image = cpu_fut.result()
+                            image_path, thumb_image, prev_ext, prev_mt = cpu_fut.result()
                         except Exception as exc:
                             logger.error("salvage CPU page %d failed: %s", page_num, exc)
                             continue
@@ -1214,16 +1214,18 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                             _upload_page_io,
                             prefix=prefix, page=page_num,
                             image_path=image_path, thumb_image=thumb_image,
-                        )] = (page_num, image_path, thumb_image)
+                            preview_ext=prev_ext, preview_media_type=prev_mt,
+                        )] = (page_num, image_path, thumb_image, prev_mt)
 
                     for io_fut in as_completed(io_futures):
-                        page_num, image_path, thumb_image = io_futures[io_fut]
+                        page_num, image_path, thumb_image, prev_mt = io_futures[io_fut]
                         try:
                             prev_sp, thumb_sp = io_fut.result()
                             _record_page(
                                 db, asset_id=asset_id, job_id=job_id, page=page_num,
                                 image_path=image_path, thumb_image=thumb_image,
                                 preview_storage=prev_sp, thumb_storage=thumb_sp,
+                                preview_media_type=prev_mt,
                             )
                         except Exception as exc:
                             logger.error("salvage IO/record page %d failed: %s", page_num, exc)
