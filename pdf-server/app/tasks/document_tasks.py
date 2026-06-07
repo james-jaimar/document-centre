@@ -626,9 +626,7 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
 
         with Workspace() as ws:
             src = ws.path('input.pdf')
-            t_dl = time.monotonic()
-            storage.download(src_path, src)
-            _stamp('download_pdf', t_dl)
+            _download_pdf_with_cache(src_path, src, asset_id=asset_id, timings=timings)
 
             # If caller didn't specify a render_box, auto-derive one from
             # the PDF's own TrimBox/BleedBox so previews show the finished
@@ -751,8 +749,8 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                                 })
                     _stamp('batch_total', t_batch)
                     logger.info(
-                        "generate_previews: batch path (mutool) rendered %d/%d pages in %sms",
-                        len(completed_pages), page_count, timings.get('batch_total'),
+                        "generate_previews: batch path (mutool) asset=%s rendered=%d/%d timings_ms=%s",
+                        asset_id, len(completed_pages), page_count, timings,
                     )
                 except Exception as exc:
                     logger.warning(
@@ -1089,8 +1087,8 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             still_missing = sorted(expected_pages - completed_pages)
 
             logger.info(
-                "generate_previews: asset=%s rendered=%d/%d missing=%s",
-                asset_id, len(completed_pages), page_count, still_missing,
+                "generate_previews: asset=%s rendered=%d/%d missing=%s timings_ms=%s",
+                asset_id, len(completed_pages), page_count, still_missing, timings,
             )
 
             if still_missing:
