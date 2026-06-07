@@ -47,6 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         qpdf \
         poppler-utils \
         poppler-data \
+        mupdf-tools \
         # Image / colour stack
         imagemagick \
         libjpeg-turbo8 \
