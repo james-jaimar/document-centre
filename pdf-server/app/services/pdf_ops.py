@@ -1530,6 +1530,7 @@ class PdfOps:
         last_page: int,
         fmt: str = "jpeg",
         quality: int | None = None,
+        timeout_seconds: float | None = None,
     ) -> list[Path]:
         """Rasterize a contiguous page range with a SINGLE ``mutool draw``
         invocation, then VERIFY every requested page produced a file.
@@ -1545,6 +1546,15 @@ class PdfOps:
         Callers MUST treat any partial result as a hard failure — silently
         falling back used to mask the real problem and let Ghostscript run
         per-page for minutes.
+
+        IMPORTANT: ``quality`` is accepted for backwards compatibility but
+        is no longer forwarded as ``-O quality=N``. Per the MuPDF docs the
+        ``-O`` flag controls overprint simulation (values 0/1/2), and a
+        token like ``quality=90`` is silently ignored or rejected depending
+        on the build. We rely on the default JPEG quality from the writer.
+
+        ``timeout_seconds`` (default: 10s + 2s per page, capped at 180s)
+        prevents a malformed PDF from wedging a worker forever.
         """
         import shutil as _shutil
         mutool = _shutil.which(settings.mutool_bin) or settings.mutool_bin
@@ -1563,20 +1573,39 @@ class PdfOps:
 
         out_prefix.parent.mkdir(parents=True, exist_ok=True)
         pattern = str(out_prefix) + "-%03d." + ext
+        page_count = max(1, last_page - first_page + 1)
 
         cmd = [
             mutool, "draw",
+            "-q",                 # quiet — keep stderr for real errors
             "-F", effective_fmt,
             "-r", str(dpi),
             "-o", pattern,
+            str(src),
+            f"{first_page}-{last_page}",
         ]
-        if effective_fmt in ("jpeg", "jpg") and quality is not None:
-            cmd.extend(["-O", f"quality={int(quality)}"])
-        cmd.append(str(src))
-        cmd.append(f"{first_page}-{last_page}")
+
+        if timeout_seconds is None:
+            timeout_seconds = min(180.0, 10.0 + 2.0 * page_count)
 
         t0 = time.monotonic()
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        try:
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True,
+                timeout=timeout_seconds,
+            )
+            timed_out = False
+            returncode = proc.returncode
+            stderr = proc.stderr or ""
+            stdout = proc.stdout or ""
+        except subprocess.TimeoutExpired as exc:
+            timed_out = True
+            returncode = -1
+            stderr = (
+                (exc.stderr.decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or ""))
+                + f"\n[mutool draw timed out after {timeout_seconds:.0f}s]"
+            )
+            stdout = exc.stdout.decode("utf-8", errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
         elapsed_ms = int((time.monotonic() - t0) * 1000)
 
         # Normalise filenames to zero-padded `<prefix>-<NNN>.<ext>` so
@@ -1612,32 +1641,75 @@ class PdfOps:
             seq_path.rename(target_path)
 
         produced = sorted(base_dir.glob(base_name + "-*." + ext))
-        # Cross-check: every requested source page must exist.
+        # Cross-check: every requested source page must exist AND be non-empty.
         present_pages: set[int] = set()
         for p in produced:
             tail = p.stem.rsplit("-", 1)[-1]
             if tail.isdigit():
-                present_pages.add(int(tail))
+                try:
+                    if p.stat().st_size > 0:
+                        present_pages.add(int(tail))
+                except OSError:
+                    pass
         expected = set(range(first_page, last_page + 1))
         missing = sorted(expected - present_pages)
 
         logger.info(
-            "mutool_render: pages=%d-%d fmt=%s ext=%s dpi=%s rc=%d elapsed_ms=%d produced=%d missing=%s",
+            "mutool_render: pages=%d-%d fmt=%s ext=%s dpi=%s rc=%d "
+            "elapsed_ms=%d timed_out=%s produced=%d missing=%s",
             first_page, last_page, effective_fmt, ext, dpi,
-            proc.returncode, elapsed_ms, len(produced), missing,
+            returncode, elapsed_ms, timed_out, len(produced), missing,
         )
 
-        if proc.returncode != 0 or missing:
+        if returncode != 0 or missing or timed_out:
             raise MutoolRenderError(
                 cmd=cmd,
-                returncode=proc.returncode,
-                stderr=proc.stderr or "",
-                stdout=proc.stdout or "",
+                returncode=returncode,
+                stderr=stderr,
+                stdout=stdout,
                 produced=[str(p) for p in produced],
                 missing_pages=missing,
             )
 
         return produced
+
+    def rasterize_one_page_mutool(
+        self,
+        src: Path,
+        out_prefix: Path,
+        dpi: int,
+        page: int,
+        fmt: str = "jpeg",
+        timeout_seconds: float = 30.0,
+    ) -> Path:
+        """Render a SINGLE page with ``mutool draw`` and return its path.
+
+        Used by the surgical per-page retry loop in ``generate_previews``
+        when the batch render comes back with specific missing pages —
+        single-page invocations are basically immune to the rare batch-mode
+        edge cases that drop pages, and rendering them one-at-a-time avoids
+        re-doing the pages that already succeeded.
+        """
+        produced = self.rasterize_pages_mutool(
+            src, out_prefix, dpi=dpi,
+            first_page=page, last_page=page,
+            fmt=fmt,
+            timeout_seconds=timeout_seconds,
+        )
+        for p in produced:
+            tail = p.stem.rsplit("-", 1)[-1]
+            if tail.isdigit() and int(tail) == page:
+                return p
+        # rasterize_pages_mutool already raised on missing, so this is
+        # defensive only.
+        raise MutoolRenderError(
+            cmd=["mutool", "draw", "(single-page)"],
+            returncode=0,
+            stderr=f"single-page render for {page} returned no matching output",
+            stdout="",
+            produced=[str(p) for p in produced],
+            missing_pages=[page],
+        )
 
 
     def rasterize_preview(
