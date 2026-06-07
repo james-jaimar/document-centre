@@ -853,6 +853,10 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                     # Capture forensic detail BEFORE the per-page retry so
                     # we can tell whether each retry also missed a page,
                     # and which pages MuPDF specifically refused.
+                    try:
+                        src_bytes = src.stat().st_size if hasattr(src, 'stat') else None
+                    except Exception:
+                        src_bytes = None
                     mutool_diagnostic = {
                         'first_attempt': {
                             'returncode': exc.returncode,
@@ -862,6 +866,10 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                                 (exc.stderr or "").strip().splitlines()[-5:]
                             ),
                             'cmd': exc.cmd,
+                            'src_bytes': src_bytes,
+                            'page_count': page_count,
+                            'fast_path_pages': sorted(fast_path_pages),
+                            'preview_dpi': settings.preview_dpi,
                         }
                     }
                     logger.warning(
