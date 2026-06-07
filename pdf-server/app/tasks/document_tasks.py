@@ -746,14 +746,108 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
             if batch_eligible:
                 t_batch = time.monotonic()
                 mutool_diagnostic: dict | None = None
+
+                # ── Single-image-page fast path ─────────────────────────
+                # Many "image-heavy" customer PDFs (scans, exported decks,
+                # photo books) are one full-page raster per page. Extract
+                # and downscale those directly — skips MuPDF entirely and
+                # cuts wall-clock from tens of seconds per page to <1s.
+                # Pages that aren't single-image fall through to mutool.
+                fast_path_pages: set[int] = set()
+                t_fast = time.monotonic()
+                # Approx pixel size at preview_dpi for the longest A-series
+                # edge (A0 long side at 150 DPI ≈ 7016 px). Bound to give
+                # the downscaler something sane to aim at.
+                target_long_edge = max(800, int(settings.preview_dpi * 14))
+                try:
+                    fp_workers = max(1, settings.render_cpu_concurrency)
+                    with ThreadPoolExecutor(max_workers=fp_workers) as fp_pool:
+                        fp_futures = {
+                            fp_pool.submit(
+                                extract_single_image_page,
+                                src,
+                                p,
+                                preview_dir / f"page-{p:03d}.jpg",
+                                target_long_edge,
+                                settings.preview_jpeg_quality,
+                            ): p
+                            for p in range(1, page_count + 1)
+                        }
+                        for fut in as_completed(fp_futures):
+                            p = fp_futures[fut]
+                            try:
+                                if fut.result():
+                                    fast_path_pages.add(p)
+                            except Exception as fp_exc:
+                                logger.info(
+                                    "fast_path: page %d errored (%s) — will use mutool",
+                                    p, fp_exc,
+                                )
+                    _stamp('fast_path_single_image', t_fast)
+                    if fast_path_pages:
+                        logger.info(
+                            "generate_previews: fast path handled %d/%d pages (asset=%s)",
+                            len(fast_path_pages), page_count, asset_id,
+                        )
+                except Exception as fp_exc:
+                    logger.warning(
+                        "generate_previews: fast path scan failed asset=%s: %s",
+                        asset_id, fp_exc,
+                    )
+
+                # Only ask MuPDF to render pages the fast path missed.
+                mutool_pages = [p for p in range(1, page_count + 1) if p not in fast_path_pages]
                 try:
                     t_gs = time.monotonic()
-                    pdf_ops.rasterize_pages_mutool(
-                        src, preview_dir / 'page', dpi=settings.preview_dpi,
-                        first_page=1, last_page=page_count,
-                        fmt=settings.preview_format,
-                        quality=settings.preview_jpeg_quality,
-                    )
+                    # Contract: rasterize_pages_mutool wants a contiguous
+                    # range. If the fast path covered a non-contiguous
+                    # subset, render each remaining page individually in
+                    # parallel rather than re-rendering already-done pages.
+                    if not mutool_pages:
+                        logger.info(
+                            "generate_previews: all %d pages handled by fast path — skipping mutool batch",
+                            page_count,
+                        )
+                    elif (
+                        mutool_pages
+                        and mutool_pages[-1] - mutool_pages[0] + 1 == len(mutool_pages)
+                    ):
+                        pdf_ops.rasterize_pages_mutool(
+                            src, preview_dir / 'page', dpi=settings.preview_dpi,
+                            first_page=mutool_pages[0], last_page=mutool_pages[-1],
+                            fmt=settings.preview_format,
+                            quality=settings.preview_jpeg_quality,
+                        )
+                    else:
+                        pp_workers = max(1, settings.render_cpu_concurrency)
+                        errors: list[MutoolRenderError] = []
+                        with ThreadPoolExecutor(max_workers=pp_workers) as pp_pool:
+                            pp_futs = {
+                                pp_pool.submit(
+                                    pdf_ops.rasterize_one_page_mutool,
+                                    src, preview_dir / 'page',
+                                    dpi=settings.preview_dpi,
+                                    page=pn, fmt=settings.preview_format,
+                                ): pn for pn in mutool_pages
+                            }
+                            for fut in as_completed(pp_futs):
+                                try:
+                                    fut.result()
+                                except MutoolRenderError as e2:
+                                    errors.append(e2)
+                        if errors:
+                            # Aggregate into one MutoolRenderError so the
+                            # downstream diagnostic + salvage path runs.
+                            missing = sorted({m for e in errors for m in e.missing_pages})
+                            raise MutoolRenderError(
+                                cmd=errors[0].cmd,
+                                returncode=errors[0].returncode,
+                                stderr="; ".join((e.stderr or "")[-200:] for e in errors),
+                                stdout="",
+                                produced=[],
+                                missing_pages=missing,
+                            )
+                    _stamp('mutool_batch', t_gs)
                     _stamp('mutool_batch', t_gs)
                 except MutoolRenderError as exc:
                     # Capture forensic detail BEFORE the per-page retry so
