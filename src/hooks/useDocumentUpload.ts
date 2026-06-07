@@ -129,9 +129,10 @@ export async function renderDocumentThumbnails(
   }
 
   // Watchdog only — fires when the server's render job is alive but no new
-  // pages have appeared for this long. Set well above the realistic batch
-  // budget so it is a true safety net, not a routine trigger.
-  const RENDER_STALL_MS = 180_000;
+  // pages have appeared for this long. Tightened from 180s to 60s so a
+  // single hung page bails into client-side recovery quickly instead of
+  // leaving the user staring at "Rendering pages… (7/8)".
+  const RENDER_STALL_MS = 60_000;
   const RENDER_STALL_ERROR = "render_job_stalled_no_page_progress";
   let lastReportedFound = inFlightExpected > 0 ? 0 : -1;
   let lastRenderProgressAt = Date.now();
@@ -194,7 +195,14 @@ export async function renderDocumentThumbnails(
     });
   } catch (err: any) {
     const msg = err?.message ?? String(err ?? "");
-    if (msg.includes(RENDER_STALL_ERROR) || /Incomplete render|missing/i.test(msg)) {
+    // Backend now marks the job failed with "Incomplete render: N of M
+    // page(s) missing" when GS + retry can't cover everything. Treat that
+    // as a stall trigger too so the client-side /render-pages recovery
+    // runs instead of bubbling the failure to the user.
+    if (
+      msg.includes(RENDER_STALL_ERROR) ||
+      /Incomplete render|missing pages?|Failed to re-render/i.test(msg)
+    ) {
       renderJobStalled = true;
       console.warn(
         `[renderDocumentThumbnails] asset=${assetId} render job did not complete cleanly; attempting page recovery:`,
