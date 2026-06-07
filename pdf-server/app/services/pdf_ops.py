@@ -1460,9 +1460,22 @@ class PdfOps:
                 output=proc.stdout, stderr=proc.stderr,
             )
 
-        return sorted(
-            out_prefix.parent.glob(out_prefix.name + "-*." + ext)
-        )
+        # Normalise filenames to zero-padded `<prefix>-<NNN>.<ext>` so
+        # downstream lookups (`page-001.jpg`, `page-012.jpg`, ...) work
+        # regardless of whether the mutool build honoured the `%03d`
+        # padding spec or just wrote `<prefix>-<N>.<ext>`.
+        base_dir = out_prefix.parent
+        base_name = out_prefix.name
+        for path in list(base_dir.glob(base_name + "-*." + ext)):
+            stem_tail = path.stem.rsplit("-", 1)[-1]
+            if stem_tail.isdigit():
+                padded = base_dir / f"{base_name}-{int(stem_tail):03d}.{ext}"
+                if padded != path:
+                    if padded.exists():
+                        padded.unlink()
+                    path.rename(padded)
+
+        return sorted(base_dir.glob(base_name + "-*." + ext))
 
     def rasterize_preview(
         self,
