@@ -14,6 +14,14 @@ export default function PlatformDocumentCentreAssets() {
     queryKey: ["ops", "asset-pipeline", submitted],
     queryFn: () => opsApi.assetPipeline(submitted!),
     enabled: !!submitted,
+    refetchInterval: 5000,
+  });
+
+  const cloudLogs = useQuery({
+    queryKey: ["ops", "cloud-run-logs", submitted],
+    queryFn: () => opsApi.cloudRunLogs(submitted!, 120, 150),
+    enabled: !!submitted,
+    refetchInterval: 10000,
   });
 
   return (
@@ -37,20 +45,37 @@ export default function PlatformDocumentCentreAssets() {
       </Card>
 
       {submitted && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Pipeline · {submitted}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {pipeline.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-            {pipeline.error && <p className="text-sm text-destructive">{(pipeline.error as Error).message}</p>}
-            {pipeline.data != null && (
-              <pre className="text-xs bg-muted p-3 rounded overflow-auto max-h-[600px]">
-                {JSON.stringify(pipeline.data, null, 2)}
-              </pre>
-            )}
-          </CardContent>
-        </Card>
+        <div className="grid gap-6 xl:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Pipeline · {submitted}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {pipeline.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+              {pipeline.error && <p className="text-sm text-destructive">{(pipeline.error as Error).message}</p>}
+              {pipeline.data != null && (
+                <pre className="text-xs bg-muted p-3 rounded overflow-auto max-h-[600px]">
+                  {JSON.stringify(pipeline.data, null, 2)}
+                </pre>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Cloud Run logs · last 2 hours</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {cloudLogs.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+              {cloudLogs.error && <p className="text-sm text-destructive">{(cloudLogs.error as Error).message}</p>}
+              {cloudLogs.data != null && (
+                <pre className="text-xs bg-muted p-3 rounded overflow-auto max-h-[600px]">
+                  {JSON.stringify(cloudLogs.data, null, 2)}
+                </pre>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );
