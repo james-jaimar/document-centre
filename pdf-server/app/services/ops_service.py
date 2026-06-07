@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -144,7 +145,7 @@ class OpsService:
                 }
             )
         total_depth = sum(int(r.get("depth") or 0) for r in rows)
-        return {"queues": rows, "total_depth": total_depth, "backend": settings.__dict__.get("queue_backend", None) or __import__('os').getenv("QUEUE_BACKEND", "celery")}
+        return {"queues": rows, "total_depth": total_depth, "backend": os.getenv("QUEUE_BACKEND", "celery")}
 
     def _cloud_tasks_queue_stats(self) -> dict[str, dict]:
         """Direct Cloud Tasks queue stats, when running in GCP mode.
@@ -152,7 +153,6 @@ class OpsService:
         This gives the ops dashboard GCP-native depth/dispatch data instead
         of relying on Celery inspect, which is empty in Cloud Tasks mode.
         """
-        import os
         if os.getenv("QUEUE_BACKEND", "celery").lower() != "cloud_tasks":
             return {}
         try:
