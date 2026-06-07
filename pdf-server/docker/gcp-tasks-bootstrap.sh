@@ -63,7 +63,7 @@ gcloud tasks queues update documents-heavy --location="$TASKS_REGION" --project=
   --max-dispatches-per-second=5 --max-concurrent-dispatches=10 \
   --max-attempts=5 --min-backoff=10s --max-backoff=600s --quiet
 gcloud tasks queues update documents-light --location="$TASKS_REGION" --project="$PROJECT_ID" \
-  --max-dispatches-per-second=20 --max-concurrent-dispatches=40 \
+  --max-dispatches-per-second=10 --max-concurrent-dispatches=10 \
   --max-attempts=5 --min-backoff=5s --max-backoff=300s --quiet
 gcloud tasks queues update emails-default --location="$TASKS_REGION" --project="$PROJECT_ID" \
   --max-dispatches-per-second=10 --max-concurrent-dispatches=20 \
