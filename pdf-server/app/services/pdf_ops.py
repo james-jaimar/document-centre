@@ -130,6 +130,19 @@ def _mutool_probe(mutool: str) -> tuple[str, str]:
     return _MUTOOL_PROBE_CACHE[mutool]
 
 
+def mutool_effective_format(preferred: str) -> tuple[str, str]:
+    """Public helper for callers that need to know what `mutool draw` will
+    actually emit on this container. Returns ``(format_token, file_ext)``.
+    """
+    import shutil as _shutil
+    mutool = _shutil.which(settings.mutool_bin) or settings.mutool_bin
+    probed_fmt, probed_ext = _mutool_probe(mutool)
+    if preferred == "png":
+        return "png", "png"
+    return probed_fmt, probed_ext
+
+
+
 
 # ---------------------------------------------------------------------------
 # Page-box snapshot / restore helpers
