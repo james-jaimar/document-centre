@@ -22,6 +22,7 @@ from app.services.pdf_ops import (
     MutoolRenderError,
     mutool_effective_format,
     mutool_threading_supported,
+    extract_single_image_page,
 )
 from app.services.derived_files import derived_file_repo
 from app.core.config import settings
