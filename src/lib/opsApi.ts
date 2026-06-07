@@ -279,16 +279,42 @@ export const opsApi = {
   system: () => call<OpsSystem>("v1/ops/system"),
   live: () => call<OpsLiveSnapshot>("v1/ops/live"),
 
-  // GCP-native
-  gcpLive: () => call<GcpLiveSnapshot>("v1/ops/gcp/live"),
+  // GCP-native — tolerate 404 while Cloud Run pdf-api is still being redeployed
+  gcpLive: () =>
+    call<GcpLiveSnapshot>("v1/ops/gcp/live").catch((e: Error) => {
+      if (/\b404\b/.test(e.message)) {
+        return {
+          captured_at: Date.now() / 1000,
+          error: "GCP ops endpoints not yet deployed on Cloud Run (pdf-api needs redeploy).",
+          cloud_run: { services: [] },
+          cloud_tasks: { queues: [], total_pending: 0, total_in_flight: 0 },
+          recent_jobs: { minutes: 15, ok: 0, failed: 0, running: 0 },
+        } as GcpLiveSnapshot;
+      }
+      throw e;
+    }),
   gcpLogs: (q: { service?: string; severity?: string; minutes?: number; limit?: number; search?: string } = {}) =>
     call<{ entries: GcpLogEntry[]; error?: string; filter?: string }>(
       "v1/ops/gcp/logs", "GET", undefined,
       { service: q.service, severity: q.severity, minutes: q.minutes, limit: q.limit, search: q.search },
-    ),
+    ).catch((e: Error) => {
+      if (/\b404\b/.test(e.message)) {
+        return { entries: [], error: "GCP log endpoint not yet deployed on Cloud Run." };
+      }
+      throw e;
+    }),
   reconcileJobs: (graceSeconds?: number) =>
     call<OpsReconcileResult>("v1/ops/jobs/reconcile", "POST", undefined,
-      graceSeconds ? { grace_seconds: graceSeconds } : undefined),
+      graceSeconds ? { grace_seconds: graceSeconds } : undefined)
+      .catch((e: Error) => {
+        if (/\b404\b/.test(e.message)) {
+          return {
+            scanned: 0, reconciled: 0, still_running: 0,
+            error: "Reconcile endpoint not yet deployed on Cloud Run.",
+          } as OpsReconcileResult;
+        }
+        throw e;
+      }),
 
 
 
