@@ -1186,10 +1186,11 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
 
         recovered: list[int] = []
         failed: list[int] = []
+        timings: dict[str, int] = {}
 
         with Workspace() as ws:
             src = ws.path('input.pdf')
-            storage.download(src_path, src)
+            _download_pdf_with_cache(src_path, src, asset_id=asset_id, timings=timings)
 
             preview_dir = ws.path('preview')
             thumb_dir = ws.path('thumb')
@@ -1207,12 +1208,14 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
             preview_ext = 'jpg' if settings.preview_format == 'jpeg' else 'png'
             preview_media_type = 'image/jpeg' if settings.preview_format == 'jpeg' else 'image/png'
             try:
+                t_raster = time.monotonic()
                 pdf_ops.rasterize_pages_mutool(
                     src, batch_dir / 'page', dpi=settings.preview_dpi,
                     first_page=lo, last_page=hi,
                     fmt=settings.preview_format,
                     quality=settings.preview_jpeg_quality,
                 )
+                timings['mutool_batch'] = int((time.monotonic() - t_raster) * 1000)
             except Exception as exc:
                 logger.warning(
                     "render_specific_pages: batch rasterize %d-%d failed, "
@@ -1298,6 +1301,7 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
             'recovered': recovered,
             'failed': failed,
             'pages_rendered': len(recovered),
+            'timings_ms': timings,
         }
         if failed:
             msg = f"Failed to re-render {len(failed)} page(s): {failed}"
