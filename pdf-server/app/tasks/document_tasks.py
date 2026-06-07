@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 import random
 import time
 import traceback
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from PIL import Image
 from sqlalchemy.orm import Session
 from celery import shared_task
@@ -607,6 +607,150 @@ def _record_page(
         ),
         label='db_bulk_record_page', page=page,
     )
+
+
+def _valid_local_image(path) -> bool:
+    try:
+        if not path.exists() or path.stat().st_size < 200:
+            return False
+        with Image.open(path) as im:
+            im.verify()
+        return True
+    except Exception:
+        return False
+
+
+def _local_preview_pages(preview_dir, preview_ext: str, expected_pages: set[int]) -> set[int]:
+    return {
+        p for p in expected_pages
+        if _valid_local_image(preview_dir / f"page-{p:03d}.{preview_ext}")
+    }
+
+
+def _future_timeout(page_count: int, *, phase: str) -> float:
+    page_count = max(1, page_count)
+    if phase == 'cpu':
+        per_page = max(20, int(getattr(settings, 'preview_gs_page_timeout_seconds', 20) or 20) + 35)
+        return float(min(240, max(60, page_count * per_page)))
+    return float(min(180, max(45, page_count * 20)))
+
+
+def _completed_or_timed_out(future_map: dict, *, timeout_seconds: float, label: str) -> list:
+    try:
+        return list(as_completed(future_map, timeout=timeout_seconds))
+    except FuturesTimeoutError:
+        pending_pages = [page for fut, page in future_map.items() if not fut.done()]
+        logger.error(
+            "%s timed out after %.1fs pending_pages=%s",
+            label, timeout_seconds, pending_pages,
+        )
+        for fut in future_map:
+            if not fut.done():
+                fut.cancel()
+        return [fut for fut in future_map if fut.done()]
+
+
+def _emit_page_progress(db, *, job_id: str, asset_id: str, task_name: str, worker_name: str | None, completed_count: int, page_count: int) -> None:
+    if not page_count:
+        return
+    # Small customer uploads need every-page feedback; larger documents keep
+    # the old batching to avoid noisy telemetry.
+    if page_count < 10 or completed_count % 5 == 0 or completed_count == page_count:
+        page_evt = job_event_repo.start(
+            db, job_id=job_id, asset_id=asset_id,
+            task_name=task_name, queue_name='thumbnails',
+            worker_name=worker_name,
+            stage='page_batch',
+            metadata={'rendered': completed_count, 'total': page_count},
+            message=f'Rendered {completed_count} of {page_count} pages',
+        )
+        if page_evt is not None:
+            job_event_repo.finish(
+                db, page_evt.id, message='',
+                metadata={'rendered': completed_count, 'total': page_count},
+            )
+
+
+def _record_existing_preview_pages(
+    db,
+    *,
+    asset_id: str,
+    job_id: str,
+    prefix: str,
+    preview_dir,
+    thumb_dir,
+    pages: list[int],
+    preview_ext: str,
+    preview_media_type: str,
+) -> tuple[dict[int, tuple[str, str]], dict[int, str]]:
+    """Retry thumbnail/upload/DB for pages already rasterized on local disk.
+
+    This is the critical distinction for the 7/8 case: if GS created
+    page-008.jpg, do not render page 8 again. Retry the tail IO/recording work
+    and report that phase explicitly if it fails.
+    """
+    recorded: dict[int, tuple[str, str]] = {}
+    failed: dict[int, str] = {}
+    if not pages:
+        return recorded, failed
+
+    cpu_workers = max(1, min(settings.render_cpu_concurrency, len(pages)))
+    io_workers = max(1, min(settings.render_io_concurrency, len(pages)))
+    with ThreadPoolExecutor(max_workers=cpu_workers) as cpu_pool, \
+         ThreadPoolExecutor(max_workers=io_workers) as io_pool:
+        thumb_futures = {}
+        for p in pages:
+            image_path = preview_dir / f"page-{p:03d}.{preview_ext}"
+            if not _valid_local_image(image_path):
+                failed[p] = 'local preview image missing or invalid'
+                continue
+            thumb_image = thumb_dir / f"page-{p:03d}.png"
+            thumb_futures[cpu_pool.submit(
+                pdf_ops.downscale_to_thumbnail,
+                image_path, thumb_image, 360,
+            )] = (p, image_path, thumb_image)
+
+        upload_futures = {}
+        for fut in _completed_or_timed_out(
+            thumb_futures,
+            timeout_seconds=_future_timeout(len(thumb_futures), phase='cpu'),
+            label='record_existing downscale',
+        ):
+            p, image_path, thumb_image = thumb_futures[fut]
+            try:
+                fut.result()
+            except Exception as exc:
+                failed[p] = f'downscale failed: {exc}'
+                logger.warning("record_existing: downscale page %d failed: %s", p, exc)
+                continue
+            upload_futures[io_pool.submit(
+                _upload_page_io,
+                prefix=prefix, page=p,
+                image_path=image_path, thumb_image=thumb_image,
+                preview_ext=preview_ext,
+                preview_media_type=preview_media_type,
+            )] = (p, image_path, thumb_image)
+
+        for fut in _completed_or_timed_out(
+            upload_futures,
+            timeout_seconds=_future_timeout(len(upload_futures), phase='io'),
+            label='record_existing upload',
+        ):
+            p, image_path, thumb_image = upload_futures[fut]
+            try:
+                prev_sp, thumb_sp = fut.result()
+                _record_page(
+                    db, asset_id=asset_id, job_id=job_id, page=p,
+                    image_path=image_path, thumb_image=thumb_image,
+                    preview_storage=prev_sp, thumb_storage=thumb_sp,
+                    preview_media_type=preview_media_type,
+                )
+            except Exception as exc:
+                failed[p] = f'upload/db record failed: {exc}'
+                logger.warning("record_existing: upload/record page %d failed: %s", p, exc)
+                continue
+            recorded[p] = (prev_sp, thumb_sp)
+    return recorded, failed
 
 
 @shared_task(bind=True, queue='thumbnails')
