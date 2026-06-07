@@ -70,7 +70,14 @@ class Settings(BaseSettings):
     # Pillow re-encode round-trip that used to dominate render time.
     preview_dpi: int = Field(alias='PREVIEW_DPI', default=150)
     preview_format: str = Field(alias='PREVIEW_FORMAT', default='jpeg')
-    preview_jpeg_quality: int = Field(alias='PREVIEW_JPEG_QUALITY', default=90)
+    preview_jpeg_quality: int = Field(alias='PREVIEW_JPEG_QUALITY', default=85)
+    # Primary preview renderer. 'ghostscript' goes PDF → JPEG in a single
+    # `gs -sDEVICE=jpeg -dJPEGQ=N` invocation, which on CMYK / transparency
+    # / Illustrator PDFs is several times faster than `mutool draw` and
+    # matches what Acrobat's "Save as Images" does. 'mutool' keeps the
+    # previous MuPDF batch path as the primary renderer. Either way the
+    # other engine is used as a salvage fallback if the primary drops pages.
+    preview_renderer: str = Field(alias='PREVIEW_RENDERER', default='ghostscript')
     max_upload_mb: int = Field(alias='MAX_UPLOAD_MB', default=250)
 
     # Preview pipeline resilience tunables. Each per-page step (rasterize +

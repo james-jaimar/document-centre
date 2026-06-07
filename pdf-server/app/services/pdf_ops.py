@@ -2026,6 +2026,167 @@ class PdfOps:
             missing_pages=[page],
         )
 
+    # ------------------------------------------------------------------
+    # Ghostscript direct-to-JPEG preview renderer (primary path).
+    # ------------------------------------------------------------------
+    # On real-world customer PDFs (Illustrator-exported brochures with
+    # CMYK images, transparency groups, masks, gradients), `gs` rendering
+    # straight to JPEG is consistently 3–5× faster end-to-end than
+    # `mutool draw` → PNG → Pillow → JPEG. A locally benchmarked 8-page
+    # A4 17 MB file at 150 DPI: gs ≈ 3.5s, poppler ≈ 4.3s, mutool path
+    # (with PNG re-encode) > 60s. Ghostscript also handles transparency
+    # via its in-process compositor, so it doesn't fall off a cliff on
+    # the pages that made mutool wedge.
+    def rasterize_pages_ghostscript_jpeg(
+        self,
+        src: Path,
+        out_prefix: Path,
+        dpi: int,
+        first_page: int,
+        last_page: int,
+        quality: int = 85,
+        timeout_seconds: float | None = None,
+    ) -> list[Path]:
+        """Rasterize a contiguous page range with ONE Ghostscript call,
+        writing JPEGs directly. Files are renamed so the trailing index
+        is the SOURCE page number (not GS's sequential output index).
+
+        Raises :class:`RasterizationIncompleteError` if any requested page
+        is missing or below the minimum image-size threshold after the run.
+        """
+        out_prefix.parent.mkdir(parents=True, exist_ok=True)
+        page_count = max(1, last_page - first_page + 1)
+        ext = "jpg"
+        base_dir = out_prefix.parent
+        base_name = out_prefix.name
+
+        # Clear stale outputs in the target range so a partial prior run
+        # can't masquerade as "complete".
+        for p in range(first_page, last_page + 1):
+            stale = base_dir / f"{base_name}-{p:03d}.{ext}"
+            try:
+                stale.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
+
+        pattern = str(out_prefix) + "-%03d." + ext
+        cmd = [
+            settings.ghostscript_bin,
+            "-q",
+            "-dSAFER",
+            "-dBATCH",
+            "-dNOPAUSE",
+            "-dNumRenderingThreads=4",
+            "-sDEVICE=jpeg",
+            f"-dJPEGQ={int(quality)}",
+            f"-r{dpi}",
+            f"-dFirstPage={first_page}",
+            f"-dLastPage={last_page}",
+            f"-sOutputFile={pattern}",
+            str(src),
+        ]
+
+        if timeout_seconds is None:
+            # 30s base + 4s/page, capped at 300s. Local benchmark for an
+            # 8-page 17 MB CMYK A4 is ~3.5s; this leaves generous headroom
+            # for image-heavy A3 / pamphlet posters on a slow vCPU.
+            timeout_seconds = min(300.0, 30.0 + 4.0 * page_count)
+
+        t0 = time.monotonic()
+        timed_out = False
+        try:
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=timeout_seconds,
+            )
+            returncode = proc.returncode
+            stderr = proc.stderr or ""
+            stdout = proc.stdout or ""
+        except subprocess.TimeoutExpired as exc:
+            timed_out = True
+            returncode = -1
+            stderr = (
+                (exc.stderr.decode("utf-8", errors="replace")
+                 if isinstance(exc.stderr, bytes) else (exc.stderr or ""))
+                + f"\n[gs timed out after {timeout_seconds:.0f}s]"
+            )
+            stdout = (
+                exc.stdout.decode("utf-8", errors="replace")
+                if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+            )
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+
+        # GS's `%03d` is the sequential output index, NOT the source page
+        # number — rename so downstream lookups (`page-005.jpg`) work
+        # regardless of where the range started.
+        seq_to_src: list[tuple[Path, Path]] = []
+        for i in range(1, page_count + 1):
+            seq_path = base_dir / f"{base_name}-{i:03d}.{ext}"
+            src_page = first_page + i - 1
+            target_path = base_dir / f"{base_name}-{src_page:03d}.{ext}"
+            if seq_path.exists() and seq_path != target_path:
+                seq_to_src.append((seq_path, target_path))
+        for seq_path, target_path in reversed(seq_to_src):
+            if target_path.exists():
+                try:
+                    target_path.unlink()
+                except OSError:
+                    pass
+            try:
+                seq_path.rename(target_path)
+            except OSError:
+                pass
+
+        # Verify presence + plausible size.
+        MIN_IMG_BYTES = 200
+        present_pages: set[int] = set()
+        produced: list[Path] = []
+        for p in range(first_page, last_page + 1):
+            cand = base_dir / f"{base_name}-{p:03d}.{ext}"
+            if cand.exists():
+                try:
+                    if cand.stat().st_size >= MIN_IMG_BYTES:
+                        present_pages.add(p)
+                        produced.append(cand)
+                except OSError:
+                    pass
+        expected = set(range(first_page, last_page + 1))
+        missing = sorted(expected - present_pages)
+
+        logger.info(
+            "gs_jpeg_render: pages=%d-%d dpi=%s q=%s rc=%d elapsed_ms=%d "
+            "timed_out=%s produced=%d missing=%s",
+            first_page, last_page, dpi, quality, returncode,
+            elapsed_ms, timed_out, len(produced), missing,
+        )
+
+        if returncode != 0 or missing or timed_out:
+            raise RasterizationIncompleteError(missing_pages=missing or list(expected))
+
+        return sorted(produced)
+
+    def rasterize_one_page_ghostscript_jpeg(
+        self,
+        src: Path,
+        out_prefix: Path,
+        dpi: int,
+        page: int,
+        quality: int = 85,
+        timeout_seconds: float = 60.0,
+    ) -> Path:
+        """Render a SINGLE page with `gs` directly to JPEG. Used by the
+        salvage retry pass when the batch missed something."""
+        produced = self.rasterize_pages_ghostscript_jpeg(
+            src, out_prefix,
+            dpi=dpi, first_page=page, last_page=page,
+            quality=quality, timeout_seconds=timeout_seconds,
+        )
+        for p in produced:
+            tail = p.stem.rsplit("-", 1)[-1]
+            if tail.isdigit() and int(tail) == page:
+                return p
+        raise RasterizationIncompleteError(missing_pages=[page])
 
     def rasterize_preview(
         self,
