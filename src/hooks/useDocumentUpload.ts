@@ -130,7 +130,7 @@ export async function renderDocumentThumbnails(
 
   const RENDER_STALL_MS = 90_000;
   const RENDER_STALL_ERROR = "render_job_stalled_no_page_progress";
-  let lastReportedFound = -1;
+  let lastReportedFound = inFlightExpected > 0 ? 0 : -1;
   let lastRenderProgressAt = Date.now();
   let derivedPollPromise: Promise<void> | null = null;
   const pollDerivedOnce = async () => {
