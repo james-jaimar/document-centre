@@ -1325,17 +1325,15 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                         completed_count = len(completed_pages)
                         if completed_count != last_event_count:
                             last_progress_at = time.monotonic()
-                            if completed_count % 5 == 0 or completed_count == page_count:
-                                page_evt = job_event_repo.start(
-                                    db, job_id=job_id, asset_id=asset_id,
-                                    task_name='generate_previews', queue_name='thumbnails',
-                                    worker_name=self.request.hostname if self.request else None,
-                                    stage='page_batch',
-                                    metadata={'rendered': completed_count, 'total': page_count},
-                                    message=f'Rendered {completed_count} of {page_count} pages',
-                                )
-                                if page_evt is not None:
-                                    job_event_repo.finish(db, page_evt.id, message='', metadata={'rendered': completed_count, 'total': page_count})
+                            _emit_page_progress(
+                                db,
+                                job_id=job_id,
+                                asset_id=asset_id,
+                                task_name='generate_previews',
+                                worker_name=self.request.hostname if self.request else None,
+                                completed_count=completed_count,
+                                page_count=page_count,
+                            )
                             last_event_count = completed_count
 
                         if target.issubset(completed_pages):
@@ -1386,7 +1384,11 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                         }
 
                         io_futures: dict = {}
-                        for cpu_fut in as_completed(cpu_futures):
+                        for cpu_fut in _completed_or_timed_out(
+                            cpu_futures,
+                            timeout_seconds=_future_timeout(len(cpu_futures), phase='cpu'),
+                            label='generate_previews CPU phase',
+                        ):
                             page_num = cpu_futures[cpu_fut]
                             try:
                                 image_path, thumb_image, prev_ext, prev_mt = cpu_fut.result()
@@ -1405,7 +1407,11 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                             )
                             io_futures[io_fut] = (page_num, image_path, thumb_image, prev_mt)
 
-                        for io_fut in as_completed(io_futures):
+                        for io_fut in _completed_or_timed_out(
+                            io_futures,
+                            timeout_seconds=_future_timeout(len(io_futures), phase='io'),
+                            label='generate_previews IO phase',
+                        ):
                             page_num, image_path, thumb_image, prev_mt = io_futures[io_fut]
                             try:
                                 prev_sp, thumb_sp = io_fut.result()
@@ -1428,17 +1434,15 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
                             files_created.append({'kind': 'preview_page', 'page': page_num, 'storage_path': prev_sp})
                             files_created.append({'kind': 'thumbnail_page', 'page': page_num, 'storage_path': thumb_sp})
 
-                            if completed_count % 5 == 0 or completed_count == page_count:
-                                page_evt = job_event_repo.start(
-                                    db, job_id=job_id, asset_id=asset_id,
-                                    task_name='generate_previews', queue_name='thumbnails',
-                                    worker_name=self.request.hostname if self.request else None,
-                                    stage='page_batch',
-                                    metadata={'rendered': completed_count, 'total': page_count},
-                                    message=f'Rendered {completed_count} of {page_count} pages',
-                                )
-                                if page_evt is not None:
-                                    job_event_repo.finish(db, page_evt.id, message='', metadata={'rendered': completed_count, 'total': page_count})
+                            _emit_page_progress(
+                                db,
+                                job_id=job_id,
+                                asset_id=asset_id,
+                                task_name='generate_previews',
+                                worker_name=self.request.hostname if self.request else None,
+                                completed_count=completed_count,
+                                page_count=page_count,
+                            )
 
             # ─── Salvage pass: small two-pool retry for any still-missing
             # Salvage runs with tiny pools (cpu=2, io=2) — by definition the
