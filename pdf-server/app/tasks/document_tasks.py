@@ -458,9 +458,12 @@ def _render_page_cpu(
 ):
     """CPU-bound phase: rasterize PDF page + downscale to thumbnail.
 
-    Returns (image_path, thumb_image). Each call writes into its own
-    per-page subdir so concurrent workers can never overwrite each
-    other's intermediate files.
+    Prefers MuPDF (JPEG) — falls back to Ghostscript PNG only if MuPDF
+    cannot render this specific page. Using GS as the default per-page
+    path was the cause of the observed "24-page crawl": GS is several
+    times slower than MuPDF for "PDF page → pixels".
+
+    Returns (image_path, thumb_image, preview_ext, preview_media_type).
     """
     page_preview_dir = preview_dir / f"p{page:03d}"
     page_thumb_dir = thumb_dir / f"p{page:03d}"
@@ -468,18 +471,11 @@ def _render_page_cpu(
     page_thumb_dir.mkdir(parents=True, exist_ok=True)
     out_prefix = page_preview_dir / 'page'
 
-    def _do_rasterize():
-        pdf_ops.rasterize_preview(
-            src_pdf, out_prefix, dpi=dpi,
-            first_page=page, last_page=page,
-        )
-        target = page_preview_dir / f"page-{page:03d}.png"
-        if not target.exists():
-            raise RuntimeError(f"rasterize produced no file for page {page}")
-        return target
-
-    image_path = _retry_with_backoff(
-        _do_rasterize, label='rasterize_one_page', page=page,
+    image_path, preview_ext, preview_media_type = _retry_with_backoff(
+        lambda: _rasterize_one_page_best_effort(
+            src_pdf=src_pdf, out_prefix=out_prefix, page=page, dpi=dpi,
+        ),
+        label='rasterize_one_page', page=page,
     )
 
     def _do_downscale():
@@ -490,7 +486,8 @@ def _render_page_cpu(
     thumb_image = _retry_with_backoff(
         _do_downscale, label='downscale_thumbnail', page=page,
     )
-    return image_path, thumb_image
+    return image_path, thumb_image, preview_ext, preview_media_type
+
 
 
 def _upload_page_io(
