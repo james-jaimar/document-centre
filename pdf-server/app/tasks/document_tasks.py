@@ -1765,7 +1765,7 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
             still_missing_after_batch: list[int] = []
             for p in wanted:
                 image_path_check = batch_dir / f"page-{p:03d}.{preview_ext}"
-                if image_path_check.exists() and image_path_check.stat().st_size >= 200:
+                if _valid_local_image(image_path_check):
                     continue
                 try:
                     pdf_ops.rasterize_one_page_ghostscript_jpeg(
@@ -1781,55 +1781,21 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
                     still_missing_after_batch.append(p)
             timings['per_page_retry'] = len(still_missing_after_batch)
 
-            if True:
-
-                cpu_workers = max(1, settings.render_cpu_concurrency)
-                io_workers = max(1, settings.render_io_concurrency)
-                with ThreadPoolExecutor(max_workers=cpu_workers) as cpu_pool, \
-                     ThreadPoolExecutor(max_workers=io_workers) as io_pool:
-                    thumb_futures = {}
-                    for p in wanted:
-                        image_path = batch_dir / f"page-{p:03d}.{preview_ext}"
-                        if not image_path.exists() or image_path.stat().st_size < 200:
-                            failed.append(p)
-                            continue
-                        thumb_image = thumb_dir / f"page-{p:03d}.png"
-                        thumb_futures[cpu_pool.submit(
-                            pdf_ops.downscale_to_thumbnail,
-                            image_path, thumb_image, 360,
-                        )] = (p, image_path, thumb_image)
-
-                    upload_futures = {}
-                    for fut in as_completed(thumb_futures):
-                        p, image_path, thumb_image = thumb_futures[fut]
-                        try:
-                            fut.result()
-                        except Exception as exc:
-                            logger.warning("recovery downscale page %d failed: %s", p, exc)
-                            failed.append(p)
-                            continue
-                        upload_futures[io_pool.submit(
-                            _upload_page_io,
-                            prefix=prefix, page=p,
-                            image_path=image_path, thumb_image=thumb_image,
-                            preview_ext=preview_ext,
-                            preview_media_type=preview_media_type,
-                        )] = (p, image_path, thumb_image)
-
-                    for fut in as_completed(upload_futures):
-                        p, image_path, thumb_image = upload_futures[fut]
-                        try:
-                            prev_sp, thumb_sp = fut.result()
-                            _record_page(
-                                db, asset_id=asset_id, job_id=job_id, page=p,
-                                image_path=image_path, thumb_image=thumb_image,
-                                preview_storage=prev_sp, thumb_storage=thumb_sp,
-                                preview_media_type=preview_media_type,
-                            )
-                            recovered.append(p)
-                        except Exception as exc:
-                            logger.warning("recovery IO/record page %d failed: %s", p, exc)
-                            failed.append(p)
+            local_pages = _local_preview_pages(batch_dir, preview_ext, set(wanted))
+            failed.extend([p for p in wanted if p not in local_pages])
+            recorded, record_failed = _record_existing_preview_pages(
+                db,
+                asset_id=asset_id,
+                job_id=job_id,
+                prefix=prefix,
+                preview_dir=batch_dir,
+                thumb_dir=thumb_dir,
+                pages=sorted(local_pages),
+                preview_ext=preview_ext,
+                preview_media_type=preview_media_type,
+            )
+            recovered.extend(sorted(recorded))
+            failed.extend([p for p in record_failed if p not in recorded])
 
         # If the asset now has every page, promote it back to 'ready'.
         present_previews = derived_file_repo.pages_present(db, asset_id, 'preview_page')
