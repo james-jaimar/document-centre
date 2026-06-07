@@ -62,8 +62,10 @@ class Settings(BaseSettings):
     qpdf_bin: str = Field(alias='QPDF_BIN', default='qpdf')
     mutool_bin: str = Field(alias='MUTOOL_BIN', default='mutool')
 
-    thumbnail_dpi: int = Field(alias='THUMBNAIL_DPI', default=120)
-    preview_dpi: int = Field(alias='PREVIEW_DPI', default=130)
+    thumbnail_dpi: int = Field(alias='THUMBNAIL_DPI', default=96)
+    # Preview DPI was 130 (≈1075×1520px for A4). Dropped to 96 (≈790×1120px)
+    # — still sharp on retina screens, ~45% fewer pixels through GS + S3.
+    preview_dpi: int = Field(alias='PREVIEW_DPI', default=96)
     max_upload_mb: int = Field(alias='MAX_UPLOAD_MB', default=250)
 
     # Preview pipeline resilience tunables. Each per-page step (rasterize +
