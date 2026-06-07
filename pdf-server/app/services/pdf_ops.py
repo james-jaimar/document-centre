@@ -1595,6 +1595,18 @@ class PdfOps:
             "-q",                 # quiet — keep stderr for real errors
             "-F", effective_fmt,
             "-r", str(dpi),
+        ]
+        # Parallel banded rendering. `-B <h>` slices each page into h-px
+        # tall bands; `-T <n>` renders bands concurrently. This is the
+        # difference between using 1 core and using all 4 vCPUs of a
+        # pdf-worker-light Cloud Run instance for a multi-page render.
+        # Set MUTOOL_RENDER_THREADS=0 (or band=0) to fall back to the
+        # original single-threaded invocation.
+        threads = max(0, int(getattr(settings, 'mutool_render_threads', 0) or 0))
+        band_h = max(0, int(getattr(settings, 'mutool_band_height', 0) or 0))
+        if threads > 0 and band_h > 0 and page_count > 0:
+            cmd += ["-B", str(band_h), "-T", str(threads)]
+        cmd += [
             "-o", pattern,
             str(src),
             f"{first_page}-{last_page}",
@@ -1675,9 +1687,11 @@ class PdfOps:
         missing = sorted(expected - present_pages)
 
         logger.info(
-            "mutool_render: pages=%d-%d fmt=%s ext=%s dpi=%s rc=%d "
+            "mutool_render: pages=%d-%d fmt=%s ext=%s dpi=%s threads=%d band=%d rc=%d "
             "elapsed_ms=%d timed_out=%s produced=%d missing=%s",
             first_page, last_page, effective_fmt, ext, dpi,
+            threads if (threads > 0 and band_h > 0) else 1,
+            band_h if (threads > 0 and band_h > 0) else 0,
             returncode, elapsed_ms, timed_out, len(produced), missing,
         )
 

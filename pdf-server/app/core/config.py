@@ -88,6 +88,18 @@ class Settings(BaseSettings):
     render_cpu_concurrency: int = Field(alias='RENDER_CPU_CONCURRENCY', default_factory=_default_render_cpu)
     render_io_concurrency: int = Field(alias='RENDER_IO_CONCURRENCY', default=8)
 
+    # MuPDF batch render parallelism. `mutool draw` is single-threaded by
+    # default — on a 4 vCPU Cloud Run worker (pdf-worker-light) with
+    # concurrency=1 this leaves 3 cores idle while we render a 24-page PDF.
+    # `-B <h>` enables banded rendering (h-px tall strips); `-T <n>` renders
+    # bands in parallel. Set MUTOOL_RENDER_THREADS=0 to disable both flags
+    # (legacy single-threaded behaviour).
+    mutool_render_threads: int = Field(
+        alias='MUTOOL_RENDER_THREADS',
+        default_factory=lambda: max(1, min(4, os.cpu_count() or 1)),
+    )
+    mutool_band_height: int = Field(alias='MUTOOL_BAND_HEIGHT', default=256)
+
     # Per-page Celery fan-out: dispatch each page as its own task on the
     # thumbnails queue so a single upload uses ALL light-worker children
     # (default 4) in parallel instead of one in-process thread pool.
