@@ -1660,9 +1660,13 @@ class PdfOps:
         # job has been observed to behave oddly on some 1.x builds.
         threads = max(0, int(getattr(settings, 'mutool_render_threads', 0) or 0))
         band_h = max(0, int(getattr(settings, 'mutool_band_height', 0) or 0))
-        threading_supported = _mutool_thread_probe(mutool) if (threads > 0 and band_h > 0) else False
+        banded_enabled = bool(getattr(settings, 'mutool_use_banded_threading', True))
+        threading_supported = (
+            _mutool_thread_probe(mutool) if (banded_enabled and threads > 0 and band_h > 0) else False
+        )
         use_threading = (
-            threads > 0 and band_h > 0 and page_count > 1 and threading_supported
+            banded_enabled and threads > 0 and band_h > 0
+            and page_count > 1 and threading_supported
         )
         if use_threading:
             cmd += ["-B", str(band_h), "-T", str(threads)]
