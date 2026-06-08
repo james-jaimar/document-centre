@@ -610,6 +610,57 @@ def _record_page(
     )
 
 
+def _record_page_sequential(
+    db,
+    *,
+    asset_id: str,
+    job_id: str,
+    page: int,
+    image_path,
+    thumb_image,
+    preview_storage: str,
+    thumb_storage: str,
+    preview_media_type: str = 'image/jpeg',
+):
+    """Record preview + thumbnail rows without relying on a DB conflict index.
+
+    The safe upload renderer intentionally favours the old VPS-style contract:
+    one page at a time, explicit phase boundaries, and repository-level
+    idempotency. ``bulk_upsert_page_files`` is faster but requires the partial
+    unique index to exist in production; this path must remain stable even if a
+    migration is missing or delayed.
+    """
+    with Image.open(image_path) as im:
+        prev_w, prev_h = im.size
+    with Image.open(thumb_image) as im:
+        thumb_w, thumb_h = im.size
+
+    derived_file_repo.create_file(
+        db,
+        asset_id=asset_id,
+        job_id=job_id,
+        kind='preview_page',
+        storage_path=preview_storage,
+        media_type=preview_media_type,
+        page=page,
+        width=prev_w,
+        height=prev_h,
+        metadata={'size': 'preview'},
+    )
+    derived_file_repo.create_file(
+        db,
+        asset_id=asset_id,
+        job_id=job_id,
+        kind='thumbnail_page',
+        storage_path=thumb_storage,
+        media_type='image/png',
+        page=page,
+        width=thumb_w,
+        height=thumb_h,
+        metadata={'size': 'thumbnail'},
+    )
+
+
 def _valid_local_image(path) -> bool:
     try:
         if not path.exists() or path.stat().st_size < 200:
