@@ -146,10 +146,63 @@ export async function renderDocumentThumbnails(
   // Those rows are partial truth by design; reading them in-flight is what
   // made the modal jump 7/8 → incomplete → 3/8. The backend now owns page
   // sequencing and only completes after every page is verified.
-  await pollJob(cropJobId, (job) => {
-    if (job.status === "pending") onProgress("Queued — waiting for server…", 65);
-    else if (job.status === "running") onProgress("Rendering pages…", 75);
-  });
+  try {
+    await pollJob(cropJobId, (job) => {
+      if (job.status === "pending") onProgress("Queued — waiting for server…", 65);
+      else if (job.status === "running") onProgress("Rendering pages…", 75);
+    });
+  } catch (err) {
+    // Backend failed before it could verify every page. Preserve any known
+    // gaps for the manual re-render action, but do not continue into the
+    // normal finalisation path or stamp partial thumbnails as ready.
+    try {
+      const failedAsset = await getAsset(assetId);
+      const expected = failedAsset.page_count ?? 0;
+      if (expected > 0) {
+        const failedDerived = await getDerivedFiles(assetId);
+        const failedAspect =
+          failedAsset.width_pt && failedAsset.height_pt
+            ? Number(failedAsset.width_pt) / Number(failedAsset.height_pt)
+            : null;
+        const failedPaths = pickBestPerPage(
+          failedDerived,
+          failedAsset.thumbnail_storage_path,
+          failedAsset.preview_storage_path,
+          expected,
+          failedAspect,
+        );
+        const failedMissing = failedPaths
+          .map((path, index) => (path ? null : index + 1))
+          .filter((page): page is number => page != null);
+
+        if (failedMissing.length > 0) {
+          const { data: failedDoc } = await supabase
+            .from("documents")
+            .select("preflight_data")
+            .eq("id", docId)
+            .maybeSingle();
+          const failedPreflight =
+            (failedDoc?.preflight_data as Record<string, unknown> | null) ?? {};
+          const processedPath =
+            failedAsset.normalized_storage_path ?? failedAsset.source_storage_path;
+          await supabase
+            .from("documents")
+            .update({
+              document_status: "error",
+              preflight_data: {
+                ...failedPreflight,
+                thumbnail_gaps: failedMissing,
+                ...(processedPath ? { processed_file_path: processedPath } : {}),
+              } as any,
+            })
+            .eq("id", docId);
+        }
+      }
+    } catch (gapErr) {
+      console.warn("[renderDocumentThumbnails] failed to preserve thumbnail gaps:", gapErr);
+    }
+    throw err;
+  }
 
   onProgress("Finalising previews…", 92);
 
