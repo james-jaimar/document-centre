@@ -91,11 +91,34 @@ class Settings(BaseSettings):
     preview_gs_batch_timeout_seconds: int = Field(alias='PREVIEW_GS_BATCH_TIMEOUT_SECONDS', default=90)
     preview_gs_page_timeout_seconds: int = Field(alias='PREVIEW_GS_PAGE_TIMEOUT_SECONDS', default=20)
     preview_mutool_salvage_enabled: bool = Field(alias='PREVIEW_MUTOOL_SALVAGE_ENABLED', default=False)
-    # Normal customer upload previews use the old VPS-style contract by
-    # default: one backend job renders pages 1..N in order and only completes
-    # after every preview + thumbnail row is recorded. Disable only for
-    # controlled A/B tests of the legacy parallel/fan-out renderer.
-    preview_safe_sequential_enabled: bool = Field(alias='PREVIEW_SAFE_SEQUENTIAL_ENABLED', default=True)
+    # Render-first preview pipeline. The default `batch` path renders all
+    # pages with a single Ghostscript invocation to /tmp, verifies every
+    # file locally, generates thumbnails, uploads previews+thumbnails in a
+    # ThreadPool to deterministic S3 paths, and finally performs ONE bulk
+    # upsert into `derived_files`. No DB or S3 writes happen inside the
+    # render loop — this is what stopped the "7/8 → 3/8 → recovering"
+    # modal regression and the silent prepared-statement errors.
+    #
+    # `parallel` rebuilds the same render with a local-only ProcessPool
+    # (still no S3/DB inside workers) for PDFs where a single GS pass
+    # fails. `sequential` is the legacy VPS-style path kept ONLY as the
+    # final safety net or for emergency rollback via env.
+    preview_pipeline_mode: str = Field(alias='PREVIEW_PIPELINE_MODE', default='batch')
+    preview_force_sequential: bool = Field(alias='PREVIEW_FORCE_SEQUENTIAL', default=False)
+    # Legacy switch — kept so existing .env files do not blow up. Has no
+    # effect on the new dispatcher; use PREVIEW_PIPELINE_MODE / FORCE.
+    preview_safe_sequential_enabled: bool = Field(alias='PREVIEW_SAFE_SEQUENTIAL_ENABLED', default=False)
+    # /tmp guard. The batch path estimates raw render output at
+    # page_count * dpi^2 * 3 bytes (uncompressed RGB); the JPEG-compressed
+    # output is roughly 10× smaller, so the guard uses a conservative
+    # divisor and refuses batch only when free /tmp is below
+    # estimated_bytes * preview_tmp_safety_factor. 8-page 150 DPI JPEGs
+    # use ~3 MB on disk — well under any sane /tmp.
+    preview_tmp_safety_factor: float = Field(alias='PREVIEW_TMP_SAFETY_FACTOR', default=4.0)
+    # Bulk upsert retry. A transient PgBouncer hiccup must NEVER strand
+    # already-uploaded files — the new pipeline retries on a FRESH session.
+    preview_bulk_upsert_max_retries: int = Field(alias='PREVIEW_BULK_UPSERT_MAX_RETRIES', default=4)
+    preview_bulk_upsert_retry_base_ms: int = Field(alias='PREVIEW_BULK_UPSERT_RETRY_BASE_MS', default=200)
     # "metadata_only" records the PDF Trim/Bleed box but renders the original
     # PDF. "rewrite_pdf" preserves the previous pikepdf MediaBox rewrite.
     preview_render_box_mode: str = Field(alias='PREVIEW_RENDER_BOX_MODE', default='metadata_only')
