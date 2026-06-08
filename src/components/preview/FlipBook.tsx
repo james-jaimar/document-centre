@@ -505,7 +505,10 @@ export default function FlipBook({
 
   const scaleX = availableWidth / baseSpreadWidth;
   const scaleY = availableHeight / basePageHeight;
-  const scaleFactor = Math.min(scaleX, scaleY, 1);
+  // Allow upscaling so landscape (top-bound) spreads fill the lightbox
+  // viewport. A 4× cap keeps things sane on ultrawide monitors — preview
+  // JPEGs are rendered at 150 DPI so modest upscaling is still crisp.
+  const scaleFactor = Math.min(scaleX, scaleY, 4);
   const displayedSpreadWidth = baseSpreadWidth * scaleFactor;
   const displayedPageWidth = basePageWidth * scaleFactor;
   const displayedPageHeight = basePageHeight * scaleFactor;
