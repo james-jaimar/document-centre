@@ -288,7 +288,7 @@ jobs:
           SECRET_FLAG=$(IFS=,; echo "${SECRETS[*]}")
 
           deploy_worker() {
-            local name="$1" role="$2" cpu="$3" mem="$4" max="$5" min="${6:-0}"
+            local name="$1" role="$2" cpu="$3" mem="$4" max="$5" min="${6:-0}" extra_env="${7:-}"
             # NOTE: QUEUE_BACKEND=cloud_tasks must be on workers too — not just
             # pdf-api. Without it, generate_previews on pdf-worker-light defaults
             # to the Celery fan-out path and an enqueue() call from inside a
@@ -296,12 +296,24 @@ jobs:
             # which doesn't exist on Cloud Run. Symptom: 24-page preview job
             # restarts/salvages in a loop because per-page "render_one_page"
             # dispatches go nowhere.
+            #
+            # `--set-env-vars` is a FULL REPLACE — anything omitted here gets
+            # dropped on every deploy. The pdf-worker-light batch-pipeline
+            # tunables (PREVIEW_PIPELINE_MODE, PREVIEW_FORCE_SEQUENTIAL,
+            # PREVIEW_GS_THREADS=4, RENDER_CPU_CONCURRENCY=4) are appended
+            # via extra_env at the call site below; do NOT move them into
+            # the shared base unless every worker needs them.
+            local base_env="ROLE=${role},LOG_LEVEL=INFO,APP_ENV=production,UVICORN_WORKERS=1,PYTHONUNBUFFERED=1,QUEUE_BACKEND=cloud_tasks,GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }},GCP_TASKS_REGION=${{ env.GCP_TASKS_REGION }},CLOUD_TASKS_DISPATCH_DEADLINE_SECONDS=900,S3_MAX_POOL_CONNECTIONS=32,PDF_CACHE_ENABLED=true,PDF_CACHE_DIR=/tmp/pdf-cache,PREVIEW_GS_THREADS=1,PREVIEW_GS_BATCH_TIMEOUT_SECONDS=90,PREVIEW_GS_PAGE_TIMEOUT_SECONDS=20,PREVIEW_RENDER_BOX_MODE=metadata_only,PREVIEW_MUTOOL_SALVAGE_ENABLED=false,PREVIEW_PAGE_MAX_RETRIES=1,RENDER_CPU_CONCURRENCY=3,RENDER_IO_CONCURRENCY=8"
+            local env_flag="$base_env"
+            if [ -n "$extra_env" ]; then
+              env_flag="${base_env},${extra_env}"
+            fi
             gcloud run deploy "$name" \
               --image="${{ steps.tag.outputs.image }}" \
               --region="${{ env.GCP_REGION }}" \
               --service-account="${{ env.RUNTIME_SA }}" \
               --port=8080 \
-              --set-env-vars="ROLE=${role},LOG_LEVEL=INFO,APP_ENV=production,UVICORN_WORKERS=1,PYTHONUNBUFFERED=1,QUEUE_BACKEND=cloud_tasks,GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }},GCP_TASKS_REGION=${{ env.GCP_TASKS_REGION }},CLOUD_TASKS_DISPATCH_DEADLINE_SECONDS=900,S3_MAX_POOL_CONNECTIONS=32,PDF_CACHE_ENABLED=true,PDF_CACHE_DIR=/tmp/pdf-cache,PREVIEW_GS_THREADS=1,PREVIEW_GS_BATCH_TIMEOUT_SECONDS=90,PREVIEW_GS_PAGE_TIMEOUT_SECONDS=20,PREVIEW_RENDER_BOX_MODE=metadata_only,PREVIEW_MUTOOL_SALVAGE_ENABLED=false,PREVIEW_PAGE_MAX_RETRIES=1,RENDER_CPU_CONCURRENCY=3,RENDER_IO_CONCURRENCY=8" \
+              --set-env-vars="$env_flag" \
               --set-secrets="$SECRET_FLAG" \
               --memory="$mem" --cpu="$cpu" \
               --cpu-boost \
@@ -316,6 +328,14 @@ jobs:
             gcloud run services update "$name" \
               --region="${{ env.GCP_REGION }}" \
               --update-env-vars="WORKER_SELF_URL=$url" --quiet
+
+            # Move 100% traffic to the revision we just rolled out. The
+            # batchfix recovery had pdf-worker-light pinned to a named
+            # revision; without --to-latest, future deploys would build a
+            # new revision but the old one would keep serving traffic.
+            gcloud run services update-traffic "$name" \
+              --region="${{ env.GCP_REGION }}" \
+              --to-latest --quiet
           }
 
           # Heavy: pin min=1 so prepare_for_product doesn't pay a cold
@@ -323,19 +343,23 @@ jobs:
           # before generate_previews). 2 vCPU × 4 GiB × 1 instance = ~£20/mo
           # for the SLA improvement.
           deploy_worker pdf-worker-heavy  worker-heavy-http  2 4Gi  5 1
-          # Light worker: customer-facing thumbnail render. Already parallel
-          # via ThreadPoolExecutor(max_workers=os.cpu_count()-1) — bumping
-          # CPU/RAM linearly speeds up wall-clock at ~neutral cost (Cloud
-          # Run bills vCPU-seconds). Fan-out is force-disabled under Cloud
-          # Tasks (see generate_previews) so the whole job runs inside
-          # ONE container — this CPU/RAM allocation matters. min=1 keeps
-          # the worker warm so the first thumbnail of a quiet period
-          # doesn't cold-start.
-          deploy_worker pdf-worker-light  worker-light-http  4 4Gi  20 1
+          # Light worker: customer-facing thumbnail render. 4 vCPU × 4 GiB
+          # with concurrency=1 — the batch render-first pipeline uses all
+          # 4 cores via PREVIEW_GS_THREADS=4 + RENDER_CPU_CONCURRENCY=4
+          # and 8 IO threads for parallel S3 uploads. min=1 keeps the
+          # worker warm so the first thumbnail of a quiet period doesn't
+          # cold-start. PREVIEW_PIPELINE_MODE=batch is the render-first
+          # single-GS-invocation path; PREVIEW_FORCE_SEQUENTIAL=false is
+          # the rollback kill-switch (set true to drop back to the legacy
+          # per-page path without redeploying).
+          deploy_worker pdf-worker-light  worker-light-http  4 4Gi  20 1 \
+            "PREVIEW_PIPELINE_MODE=batch,PREVIEW_FORCE_SEQUENTIAL=false,PREVIEW_GS_THREADS=4,RENDER_CPU_CONCURRENCY=4,RENDER_IO_CONCURRENCY=8"
           # Emails: bumped max-instances 10 → 20 and pinned min=1 so the
           # first email after a quiet period doesn't pay a cold start.
           # 512 MiB × 1 min-instance ≈ trivial cost vs. SMTP latency saved.
           deploy_worker pdf-worker-emails worker-emails-http 1 512Mi 20 1
+
+
 
 
       - name: Wire Cloud Tasks env vars on pdf-api AND workers
