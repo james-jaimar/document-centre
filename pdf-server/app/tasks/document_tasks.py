@@ -2084,9 +2084,8 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
             # a long single-page recovery still has to do all the unrelated
             # work first.
             #
-            # Recovery now renders ONE page at a time directly to its final
-            # filename. Each page is a fast (<5s) single-GS invocation and
-            # they're independent, so we run them with a small thread pool.
+            # Recovery now renders and records ONE page at a time. That keeps
+            # manual recovery deterministic too: page N cannot race page N+1.
             batch_dir = preview_dir / 'batch'
             batch_dir.mkdir(parents=True, exist_ok=True)
             preview_ext = 'jpg'
