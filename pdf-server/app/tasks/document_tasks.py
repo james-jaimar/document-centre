@@ -6,8 +6,15 @@ logger = logging.getLogger(__name__)
 import random
 import time
 import traceback
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
+from pathlib import Path
+from concurrent.futures import (
+    ProcessPoolExecutor,
+    ThreadPoolExecutor,
+    TimeoutError as FuturesTimeoutError,
+    as_completed,
+)
 from PIL import Image
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from celery import shared_task
 from app.db.session import SessionLocal
