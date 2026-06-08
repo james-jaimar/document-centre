@@ -194,8 +194,9 @@ export async function renderDocumentThumbnails(
   }
 
   if (renderJobStalled) {
-    onProgress("Recovering missing pages…", 88);
+    onProgress("Render incomplete — finalising…", 92);
   }
+
 
   // Poll for derived files to appear (rasterization writes them async)
   const asset = await getAsset(assetId);
