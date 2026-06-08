@@ -1166,6 +1166,9 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
          ``/v1/assets/{id}/render-pages`` to surgically re-render the gaps
          without re-uploading the original.
     """
+    if getattr(settings, 'preview_safe_sequential_enabled', True):
+        return _generate_previews_sequential(self, asset_id, job_id, render_box)
+
     db = _db()
     evt_overall = None
     render_context: dict = {}
