@@ -91,6 +91,11 @@ class Settings(BaseSettings):
     preview_gs_batch_timeout_seconds: int = Field(alias='PREVIEW_GS_BATCH_TIMEOUT_SECONDS', default=90)
     preview_gs_page_timeout_seconds: int = Field(alias='PREVIEW_GS_PAGE_TIMEOUT_SECONDS', default=20)
     preview_mutool_salvage_enabled: bool = Field(alias='PREVIEW_MUTOOL_SALVAGE_ENABLED', default=False)
+    # Normal customer upload previews use the old VPS-style contract by
+    # default: one backend job renders pages 1..N in order and only completes
+    # after every preview + thumbnail row is recorded. Disable only for
+    # controlled A/B tests of the legacy parallel/fan-out renderer.
+    preview_safe_sequential_enabled: bool = Field(alias='PREVIEW_SAFE_SEQUENTIAL_ENABLED', default=True)
     # "metadata_only" records the PDF Trim/Bleed box but renders the original
     # PDF. "rewrite_pdf" preserves the previous pikepdf MediaBox rewrite.
     preview_render_box_mode: str = Field(alias='PREVIEW_RENDER_BOX_MODE', default='metadata_only')

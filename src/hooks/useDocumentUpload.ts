@@ -142,87 +142,69 @@ export async function renderDocumentThumbnails(
     const enq = await generatePreviews(assetId, box ?? undefined);
     cropJobId = enq.job_id;
   }
-  // Resolve expected page count once so the in-flight progress reporter can
-  // show "Rendering pages… (X/N)" while the server job is still running.
-  // Some backends only flip the job to "completed" after every page is
-  // recorded, so without an in-flight progress signal the modal sits at
-  // 75% for the full render duration (can be many minutes on cold starts).
-  let inFlightExpected = 0;
-  try {
-    const a0 = await getAsset(assetId);
-    inFlightExpected = a0.page_count ?? 0;
-  } catch {
-    inFlightExpected = 0;
-  }
-
-  // The client does NOT race the server with a stall watchdog any more.
-  // Earlier versions threw after 60s of no per-page progress and launched
-  // /render-pages while the backend was still working — that's what caused
-  // the "stuck at 7/8 → Recovering" loops, because the recovery job then
-  // collided with the original render. Now we simply poll the backend job
-  // to terminal state. The only thing that triggers client-side recovery
-  // is the server explicitly reporting "Incomplete render".
-  let lastReportedFound = inFlightExpected > 0 ? 0 : -1;
-  let derivedPollPromise: Promise<void> | null = null;
-  const pollDerivedOnce = async () => {
-    if (!inFlightExpected || derivedPollPromise) return;
-    derivedPollPromise = (async () => {
-      try {
-        const dfs = await getDerivedFiles(assetId);
-        let found = 0;
-        const seen = new Set<number>();
-        for (const f of dfs) {
-          if (f.kind === "thumbnail_page" && f.page != null && !seen.has(f.page)) {
-            seen.add(f.page);
-            found++;
-          }
-        }
-        if (found !== lastReportedFound) {
-          lastReportedFound = found;
-          const pct = 65 + (found / inFlightExpected) * 30;
-          onProgress(
-            found > 0
-              ? `Rendering pages… (${found}/${inFlightExpected})`
-              : "Rendering pages…",
-            Math.min(95, pct),
-          );
-        }
-      } catch {
-        /* non-fatal */
-      } finally {
-        derivedPollPromise = null;
-      }
-    })();
-  };
-
-  let renderJobStalled = false;
+  // Do not poll `derived_files` while the backend job is still running.
+  // Those rows are partial truth by design; reading them in-flight is what
+  // made the modal jump 7/8 → incomplete → 3/8. The backend now owns page
+  // sequencing and only completes after every page is verified.
   try {
     await pollJob(cropJobId, (job) => {
       if (job.status === "pending") onProgress("Queued — waiting for server…", 65);
-      else if (job.status === "running") {
-        // Fire-and-forget derived-files poll for per-page progress UI.
-        void pollDerivedOnce();
-      }
+      else if (job.status === "running") onProgress("Rendering pages…", 75);
     });
-  } catch (err: any) {
-    const msg = err?.message ?? String(err ?? "");
-    // Backend marks the job failed with "Incomplete render: N of M page(s)
-    // missing" when GS + retry can't cover everything. That — and ONLY that
-    // — is the trigger for client-side surgical recovery.
-    if (/Incomplete render|missing pages?|Failed to re-render/i.test(msg)) {
-      renderJobStalled = true;
-      console.warn(
-        `[renderDocumentThumbnails] asset=${assetId} backend reported incomplete render; attempting page recovery:`,
-        msg,
-      );
-    } else {
-      throw err;
+  } catch (err) {
+    // Backend failed before it could verify every page. Preserve any known
+    // gaps for the manual re-render action, but do not continue into the
+    // normal finalisation path or stamp partial thumbnails as ready.
+    try {
+      const failedAsset = await getAsset(assetId);
+      const expected = failedAsset.page_count ?? 0;
+      if (expected > 0) {
+        const failedDerived = await getDerivedFiles(assetId);
+        const failedAspect =
+          failedAsset.width_pt && failedAsset.height_pt
+            ? Number(failedAsset.width_pt) / Number(failedAsset.height_pt)
+            : null;
+        const failedPaths = pickBestPerPage(
+          failedDerived,
+          failedAsset.thumbnail_storage_path,
+          failedAsset.preview_storage_path,
+          expected,
+          failedAspect,
+        );
+        const failedMissing = failedPaths
+          .map((path, index) => (path ? null : index + 1))
+          .filter((page): page is number => page != null);
+
+        if (failedMissing.length > 0) {
+          const { data: failedDoc } = await supabase
+            .from("documents")
+            .select("preflight_data")
+            .eq("id", docId)
+            .maybeSingle();
+          const failedPreflight =
+            (failedDoc?.preflight_data as Record<string, unknown> | null) ?? {};
+          const processedPath =
+            failedAsset.normalized_storage_path ?? failedAsset.source_storage_path;
+          await supabase
+            .from("documents")
+            .update({
+              document_status: "error",
+              preflight_data: {
+                ...failedPreflight,
+                thumbnail_gaps: failedMissing,
+                ...(processedPath ? { processed_file_path: processedPath } : {}),
+              } as any,
+            })
+            .eq("id", docId);
+        }
+      }
+    } catch (gapErr) {
+      console.warn("[renderDocumentThumbnails] failed to preserve thumbnail gaps:", gapErr);
     }
+    throw err;
   }
 
-  if (renderJobStalled) {
-    onProgress("Render incomplete — finalising…", 92);
-  }
+  onProgress("Finalising previews…", 92);
 
 
   // Poll for derived files to appear (rasterization writes them async)
@@ -359,7 +341,7 @@ export async function renderDocumentThumbnails(
       thumbnail_urls: thumbnailPaths,
       page_width_mm: Math.round(pageWidthMm * 10) / 10,
       page_height_mm: Math.round(pageHeightMm * 10) / 10,
-      document_status: "ready",
+      document_status: missing.length > 0 ? "error" : "ready",
       preflight_data: nextPreflight as any,
     })
     .eq("id", docId);
@@ -516,6 +498,7 @@ export async function recoverThumbnailGaps(
     .from("documents")
     .update({
       thumbnail_urls: thumbnailPaths,
+      ...(remainingGaps.length === 0 ? { document_status: "ready" } : {}),
       preflight_data: nextPreflight as any,
     })
     .eq("id", docId);
