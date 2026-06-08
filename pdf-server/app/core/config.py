@@ -168,7 +168,21 @@ class Settings(BaseSettings):
     # and generate_previews. S3 remains the source of truth; the cache is
     # purely advisory. Misses fall back to storage.download.
     pdf_cache_enabled: bool = Field(alias='PDF_CACHE_ENABLED', default=True)
-    pdf_cache_dir: str = Field(alias='PDF_CACHE_DIR', default='/var/cache/document-centre/pdf-cache')
+    # On Cloud Run only /tmp is writable. The old default
+    # /var/cache/document-centre/pdf-cache works on the VPS systemd units but
+    # raises PermissionError on Cloud Run, which silently disables the
+    # prepare→render handoff and makes generate_previews re-download from S3.
+    # PDF_CACHE_DIR can still be overridden via env on the VPS.
+    pdf_cache_dir: str = Field(
+        alias='PDF_CACHE_DIR',
+        default_factory=lambda: os.environ.get(
+            'PDF_CACHE_DIR',
+            '/tmp/document-centre/pdf-cache'
+            if os.environ.get('ROLE', '').endswith('-http')
+            or os.environ.get('QUEUE_BACKEND', '').lower() == 'cloud_tasks'
+            else '/var/cache/document-centre/pdf-cache',
+        ),
+    )
     pdf_cache_max_age_seconds: int = Field(alias='PDF_CACHE_MAX_AGE_SECONDS', default=1800)
 
     # Stuck-job reconciler. The Cloud Tasks dispatch may have completed,
