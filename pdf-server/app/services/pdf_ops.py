@@ -1834,17 +1834,22 @@ class PdfOps:
             effective_fmt, ext = probed_fmt, probed_ext
 
         out_prefix.parent.mkdir(parents=True, exist_ok=True)
+        # Compute page_count and reusable base path bits BEFORE we touch any
+        # variable that depends on them. The previous ordering referenced
+        # `page_count`, `base_dir` and `base_name` before they were defined,
+        # so any MuPDF fallback raised UnboundLocalError before doing useful
+        # work and surfaced as a mysterious "missing page".
+        page_count = max(1, last_page - first_page + 1)
+        base_dir = out_prefix.parent
+        base_name = out_prefix.name
         single_page_direct = page_count == 1
         if single_page_direct:
-            # Critical: Ghostscript's %03d output counter restarts at 001 for
-            # every invocation. Missing-page retries run in parallel against
-            # the same out_prefix, so using page-%03d.jpg here lets retries for
-            # pages 5/6/7 all fight over page-001.jpg and then rename each
-            # other's output. Write the source page file directly instead.
+            # Ghostscript's %03d output counter restarts at 001 for every
+            # invocation. Parallel single-page retries would otherwise fight
+            # over page-001.jpg, so write the source page file directly.
             pattern = str(base_dir / f"{base_name}-{first_page:03d}.{ext}")
         else:
             pattern = str(out_prefix) + "-%03d." + ext
-        page_count = max(1, last_page - first_page + 1)
 
         # Clear any stale matching files from a prior partial run in this
         # output dir BEFORE invoking mutool. Otherwise the completeness
