@@ -864,6 +864,804 @@ def render_one_page(
         db.close()
 
 
+# ============================================================================
+# Render-first preview pipeline (default path).
+#
+# The pipeline is strictly phased:
+#   1. download source PDF                  → /tmp/{workspace}/source.pdf
+#   2. GS BATCH render ALL pages (one proc) → /tmp/{workspace}/previews/page-NNN.jpg
+#   3. verify every file locally + read width/height into MANIFEST
+#   4. thumbnail every page (ThreadPool)    → /tmp/{workspace}/thumbnails/page-NNN.png
+#   5. parallel upload previews+thumbnails to DETERMINISTIC S3 paths
+#      tenants/{...}/assets/{asset}/jobs/{job}/{previews|thumbnails}/page-NNN.{ext}
+#   6. ONE bulk upsert into derived_files (retried on a FRESH session)
+#   7. update asset preview/thumbnail/status, mark job done
+#
+# NO DB or S3 writes happen inside the render loop. Fallbacks (parallel
+# local + sequential) reuse phases 3–7 unchanged so the contract that the
+# upload modal saw — only-promote-on-full-success — is identical across
+# all three paths.
+# ============================================================================
+
+
+_INDEX_ENSURED = False
+
+
+def _ensure_derived_files_index(db) -> None:
+    """Best-effort guarantee that the unique partial index used by
+    ``bulk_upsert_page_files`` exists. Safe to call repeatedly; runs once
+    per worker process. Failures are logged but never block a render —
+    the bulk upsert itself will surface a clearer error if needed."""
+    global _INDEX_ENSURED
+    if _INDEX_ENSURED:
+        return
+    try:
+        db.execute(text(
+            "create unique index if not exists derived_files_asset_kind_page_uniq "
+            "on derived_files (asset_id, kind, page) "
+            "where kind in ('preview_page', 'thumbnail_page') and page is not null"
+        ))
+        db.commit()
+        _INDEX_ENSURED = True
+    except Exception as exc:  # noqa: BLE001
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        logger.warning("_ensure_derived_files_index: could not ensure index: %s", exc)
+
+
+def _dir_size_bytes(root: Path) -> int:
+    total = 0
+    try:
+        for dirpath, _dirnames, filenames in os.walk(root):
+            for fn in filenames:
+                try:
+                    total += os.path.getsize(os.path.join(dirpath, fn))
+                except OSError:
+                    pass
+    except Exception:
+        pass
+    return total
+
+
+def _estimate_render_bytes(page_count: int, dpi: int) -> int:
+    """Conservative estimate of /tmp footprint for a batch render.
+
+    Uncompressed RGB at the configured DPI for an A4 page is the worst
+    case; JPEG q85 typically compresses ~10× and thumbnails are tiny.
+    The /tmp guard divides by 4 (configurable safety factor) to stay
+    well clear of normal 8-page 150 DPI uploads (~3 MB on disk).
+    """
+    a4_w_in, a4_h_in = 8.27, 11.69
+    per_page = int(a4_w_in * dpi) * int(a4_h_in * dpi) * 3
+    return max(1, page_count) * per_page
+
+
+def _check_tmp_space(workspace_root: Path, page_count: int, dpi: int) -> tuple[bool, int, int]:
+    """Returns (ok, free_bytes, estimated_bytes). Conservative — designed
+    NOT to push normal 8-page 150 DPI PDFs into the fallback ladder."""
+    try:
+        free = shutil.disk_usage(workspace_root).free
+    except Exception:
+        return True, 0, 0
+    estimated = _estimate_render_bytes(page_count, dpi)
+    safety = max(1.0, float(getattr(settings, 'preview_tmp_safety_factor', 4.0)))
+    # JPEG output is ~10× smaller than the raw RGB estimate, so dividing
+    # the estimate by 8 before applying the safety factor gives plenty of
+    # headroom for normal uploads while still refusing a 1000-page 300 DPI
+    # render on a near-full /tmp.
+    headroom_needed = int((estimated / 8.0) * safety)
+    return free >= headroom_needed, free, estimated
+
+
+def _read_image_size(path: Path) -> tuple[int, int]:
+    with Image.open(path) as im:
+        return im.size
+
+
+def _build_render_manifest(preview_dir: Path, page_count: int, *, ext: str = 'jpg') -> list[dict]:
+    """Verify every expected preview file exists and is a valid image.
+
+    Returns a manifest sorted by page number. Raises NonRetryableTaskError
+    listing the missing pages if anything is incomplete — the caller
+    decides whether to fall through to the next ladder rung.
+    """
+    manifest: list[dict] = []
+    missing: list[int] = []
+    for page in range(1, page_count + 1):
+        path = preview_dir / f"page-{page:03d}.{ext}"
+        if not _valid_local_image(path):
+            missing.append(page)
+            continue
+        w, h = _read_image_size(path)
+        manifest.append({
+            'page': page,
+            'preview_path': path,
+            'preview_ext': ext,
+            'preview_media_type': 'image/jpeg' if ext in ('jpg', 'jpeg') else 'image/png',
+            'preview_width': w,
+            'preview_height': h,
+        })
+    if missing:
+        raise _RenderIncomplete(missing_pages=missing, page_count=page_count)
+    return manifest
+
+
+class _RenderIncomplete(Exception):
+    """Raised inside the batch path to trigger the fallback ladder.
+    Not a NonRetryableTaskError — the caller decides whether to retry."""
+
+    def __init__(self, missing_pages: list[int], page_count: int):
+        self.missing_pages = missing_pages
+        self.page_count = page_count
+        super().__init__(f"render incomplete: missing {missing_pages} of {page_count}")
+
+
+def _thumbnail_all(manifest: list[dict], thumb_dir: Path) -> None:
+    """Generate one thumbnail per manifest row in a small ThreadPool.
+
+    Pillow releases the GIL during decode/resize so threads are fine
+    here. Workers only touch local disk — no S3, no DB.
+    """
+    thumb_dir.mkdir(parents=True, exist_ok=True)
+    cpu = max(1, min(
+        int(getattr(settings, 'render_cpu_concurrency', 2) or 2),
+        len(manifest),
+    ))
+
+    def _one(row: dict) -> None:
+        page = row['page']
+        out = thumb_dir / f"page-{page:03d}.png"
+        pdf_ops.downscale_to_thumbnail(row['preview_path'], out, target_max_dim=360)
+        if not _valid_local_image(out):
+            raise RuntimeError(f"thumbnail invalid for page {page}")
+        w, h = _read_image_size(out)
+        row['thumb_path'] = out
+        row['thumb_width'] = w
+        row['thumb_height'] = h
+
+    with ThreadPoolExecutor(max_workers=cpu) as pool:
+        futures = [pool.submit(_one, row) for row in manifest]
+        for f in as_completed(futures):
+            f.result()  # propagate the first failure
+
+
+def _deterministic_storage_path(
+    *, prefix: str, kind: str, asset_id: str, job_id: str, page: int, ext: str,
+) -> str:
+    """Same job ⇒ same S3 key. Retries overwrite instead of orphaning files.
+
+    Layout: {tenant_prefix}assets/{asset}/jobs/{job}/{kind}/page-NNN.{ext}
+    """
+    folder = 'previews' if kind == 'preview_page' else 'thumbnails'
+    return (
+        f"{prefix}assets/{asset_id}/jobs/{job_id}/{folder}/"
+        f"page-{page:03d}.{ext}"
+    )
+
+
+def _upload_all(manifest: list[dict], *, prefix: str, asset_id: str, job_id: str) -> list[dict]:
+    """Upload every preview + thumbnail in parallel. No DB writes here.
+
+    Returns a SORTED list of bulk-upsert row dicts ready for
+    ``derived_file_repo.bulk_upsert_page_files``.
+    """
+    io_workers = max(1, min(
+        int(getattr(settings, 'render_io_concurrency', 8) or 8),
+        len(manifest) * 2,
+    ))
+
+    upload_tasks: list[tuple[dict, str, Path, str, str]] = []
+    for row in manifest:
+        preview_storage = _deterministic_storage_path(
+            prefix=prefix, kind='preview_page', asset_id=asset_id, job_id=job_id,
+            page=row['page'], ext=row['preview_ext'],
+        )
+        thumb_storage = _deterministic_storage_path(
+            prefix=prefix, kind='thumbnail_page', asset_id=asset_id, job_id=job_id,
+            page=row['page'], ext='png',
+        )
+        row['preview_storage'] = preview_storage
+        row['thumb_storage'] = thumb_storage
+        upload_tasks.append((row, 'preview_page', row['preview_path'], preview_storage, row['preview_media_type']))
+        upload_tasks.append((row, 'thumbnail_page', row['thumb_path'], thumb_storage, 'image/png'))
+
+    def _do_upload(task):
+        _row, _kind, local_path, dest, media_type = task
+        storage.upload(local_path, dest, media_type)
+
+    with ThreadPoolExecutor(max_workers=io_workers) as pool:
+        futures = [pool.submit(_do_upload, t) for t in upload_tasks]
+        for f in as_completed(futures):
+            f.result()
+
+    # Build deterministic, sorted upsert rows: page asc, then preview before
+    # thumbnail. Stable order is purely cosmetic but helps log diffing.
+    rows: list[dict] = []
+    for row in sorted(manifest, key=lambda r: r['page']):
+        rows.append({
+            'kind': 'preview_page',
+            'page': row['page'],
+            'storage_path': row['preview_storage'],
+            'media_type': row['preview_media_type'],
+            'width': row['preview_width'],
+            'height': row['preview_height'],
+            'metadata': {'size': 'preview'},
+        })
+        rows.append({
+            'kind': 'thumbnail_page',
+            'page': row['page'],
+            'storage_path': row['thumb_storage'],
+            'media_type': 'image/png',
+            'width': row['thumb_width'],
+            'height': row['thumb_height'],
+            'metadata': {'size': 'thumbnail'},
+        })
+    return rows
+
+
+def _bulk_upsert_with_retry(asset_id: str, job_id: str, rows: list[dict]) -> None:
+    """Bulk-upsert all derived_files rows. On failure, close the busted
+    session and retry on a FRESH connection so a transient pooler issue
+    cannot strand already-uploaded files.
+
+    The caller has already verified locally and uploaded everything; this
+    function MUST NOT re-render or re-upload — only re-issue the SQL.
+    """
+    max_retries = max(1, int(getattr(settings, 'preview_bulk_upsert_max_retries', 4) or 4))
+    base_ms = max(50, int(getattr(settings, 'preview_bulk_upsert_retry_base_ms', 200) or 200))
+    last_exc: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        db = SessionLocal()
+        try:
+            _ensure_derived_files_index(db)
+            derived_file_repo.bulk_upsert_page_files(
+                db, asset_id=asset_id, job_id=job_id, rows=rows,
+            )
+            return
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            logger.warning(
+                "bulk_upsert_page_files attempt %d/%d failed for asset=%s: %s",
+                attempt, max_retries, asset_id, exc,
+            )
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+        if attempt < max_retries:
+            delay = (base_ms * (2 ** (attempt - 1))) / 1000.0
+            time.sleep(delay + random.uniform(0, delay * 0.25))
+    assert last_exc is not None
+    raise last_exc
+
+
+def _finalise_uploads_and_record(
+    *,
+    asset_id: str,
+    job_id: str,
+    asset: dict,
+    prefix: str,
+    page_count: int,
+    manifest: list[dict],
+    thumb_dir: Path,
+    workspace_root: Path,
+    timings: dict[str, int],
+    path_taken: str,
+    render_context: dict,
+    evt_id,
+    pages_render_label: str,
+) -> dict:
+    """Shared tail: thumbnail → upload → bulk upsert → mark asset/job done.
+
+    Used by BOTH the batch and parallel-local pipelines so the
+    "only-promote-on-full-success" contract is identical in both. The
+    function takes ownership of its own short-lived DB sessions — the
+    upload pool must never share a session with the upsert retry loop.
+    """
+    # Phase: thumbnail (parallel, local-only)
+    t = time.monotonic()
+    _thumbnail_all(manifest, thumb_dir)
+    timings['thumbnail_ms'] = int((time.monotonic() - t) * 1000)
+
+    # Phase: upload (parallel, no DB writes)
+    t = time.monotonic()
+    rows = _upload_all(manifest, prefix=prefix, asset_id=asset_id, job_id=job_id)
+    timings['upload_ms'] = int((time.monotonic() - t) * 1000)
+
+    # Phase: bulk upsert (single transaction, fresh-session retry)
+    t = time.monotonic()
+    _bulk_upsert_with_retry(asset_id, job_id, rows)
+    timings['db_bulk_upsert_ms'] = int((time.monotonic() - t) * 1000)
+
+    # Phase: asset preview/thumbnail/status update + job done. We use a
+    # fresh session here too so the long-running render session is not
+    # reused for the final write.
+    preview_path = rows[0]['storage_path']  # preview_page, page 1
+    thumb_path = next(
+        r['storage_path'] for r in rows
+        if r['kind'] == 'thumbnail_page' and r['page'] == 1
+    )
+
+    workspace_bytes = _dir_size_bytes(workspace_root)
+    timings['preview_count'] = page_count
+    timings['thumbnail_count'] = page_count
+    timings['workspace_bytes_used'] = workspace_bytes
+    timings['path_taken'] = path_taken
+
+    result = {
+        'thumbnail_storage_path': thumb_path,
+        'preview_storage_path': preview_path,
+        'pages_rendered': page_count,
+        'expected_pages': page_count,
+        'files_created': rows[:20],
+        'timings_ms': timings,
+        'render_context': render_context,
+        'path_taken': path_taken,
+    }
+
+    finalize_db = SessionLocal()
+    try:
+        asset_repo.update_asset(finalize_db, asset_id, {
+            'thumbnail_storage_path': thumb_path,
+            'preview_storage_path': preview_path,
+            'status': 'ready',
+        })
+        job_repo.mark_done(finalize_db, job_id, result)
+        if evt_id is not None:
+            job_event_repo.finish(
+                finalize_db,
+                evt_id,
+                metadata={
+                    'pages_rendered': page_count,
+                    'expected': page_count,
+                    'timings_ms': timings,
+                    'render_context': render_context,
+                    'runtime': _runtime_meta(),
+                    'path_taken': path_taken,
+                },
+                message=f'{pages_render_label} ({path_taken})',
+            )
+    finally:
+        finalize_db.close()
+    return result
+
+
+def _prepare_render_inputs(db, asset_id: str, render_box):
+    """Shared front-half: load asset, resolve render box, ensure page_count.
+
+    Returns ``(asset, prefix, src_path_str, page_count, render_context,
+    effective_render_box, render_box_mode)``. Callers handle the actual
+    file download into a Workspace, since the workspace lifecycle differs
+    slightly between the batch and the parallel-local paths.
+    """
+    asset = asset_repo.get_asset(db, asset_id)
+    if not asset:
+        raise NonRetryableTaskError(f"Asset not found: {asset_id}")
+    prefix = _tenant_prefix(asset.get('source_storage_path'))
+    src_path = asset['normalized_storage_path'] or asset['source_storage_path']
+    page_count = int(asset.get('page_count') or 0)
+    render_box_mode = (
+        getattr(settings, 'preview_render_box_mode', 'metadata_only')
+        or 'metadata_only'
+    ).lower()
+    render_context = {
+        'render_box_mode': render_box_mode,
+        'detected_render_box': render_box,
+        'rendered_source': 'original_pdf',
+    }
+    return asset, prefix, src_path, page_count, render_context, render_box, render_box_mode
+
+
+def _ensure_page_count(db, asset_id: str, src: Path, page_count: int, timings: dict[str, int]) -> int:
+    if page_count > 0:
+        return page_count
+    t = time.monotonic()
+    info = pdf_ops.inspect(src)
+    page_count = int(info.get('page_count') or 0)
+    asset_repo.update_asset(db, asset_id, {
+        'page_count': page_count,
+        'width_pt': info.get('width_pt'),
+        'height_pt': info.get('height_pt'),
+        'boxes': info.get('boxes'),
+    })
+    timings['inspect_for_page_count_ms'] = int((time.monotonic() - t) * 1000)
+    return page_count
+
+
+def _maybe_rewrite_with_box(ws_path_factory, src: Path, render_box, render_context, mode: str) -> Path:
+    if render_box is not None and mode == 'rewrite_pdf':
+        cropped = ws_path_factory('cropped.pdf')
+        pdf_ops.crop_to_box(src, cropped, render_box)
+        render_context['rendered_source'] = 'pikepdf_box_rewrite'
+        return cropped
+    return src
+
+
+def _render_box_or_detect(src: Path, render_box, render_context) -> list[float] | None:
+    if render_box is not None:
+        return render_box
+    try:
+        detected = pdf_ops.derive_default_render_box(src)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("derive_default_render_box failed: %s", exc)
+        detected = None
+    render_context['detected_render_box'] = detected
+    return detected
+
+
+# ---------------------------------------------------------------------------
+# Path A: GS batch render (default)
+# ---------------------------------------------------------------------------
+
+
+def _generate_previews_batch(task, asset_id: str, job_id: str, render_box: list[float] | None = None):
+    """Single Ghostscript invocation renders ALL pages to /tmp; verify,
+    thumbnail, upload, then ONE bulk upsert. Falls back to the parallel
+    local path on incomplete render, then to sequential."""
+    overall_start = time.monotonic()
+    timings: dict[str, int] = {}
+    db = SessionLocal()
+    evt = None
+    worker_name = getattr(getattr(task, 'request', None), 'hostname', None)
+    try:
+        job_repo.mark_running(db, job_id)
+        asset, prefix, src_path, page_count, render_context, _rb, mode = \
+            _prepare_render_inputs(db, asset_id, render_box)
+        render_context['path_taken'] = 'batch'
+
+        evt = job_event_repo.start(
+            db,
+            job_id=job_id,
+            asset_id=asset_id,
+            task_name='generate_previews',
+            queue_name='thumbnails',
+            worker_name=worker_name,
+            stage='render_batch',
+            metadata={
+                'page_count': page_count,
+                'dpi': settings.preview_dpi,
+                'pipeline_mode': 'batch',
+                'runtime': _runtime_meta(),
+            },
+            message=f'Batch rendering {page_count or "?"} page(s)…',
+        )
+        evt_id = evt.id if evt else None
+
+        with Workspace() as ws:
+            src = ws.path('source.pdf')
+            _download_pdf_with_cache(src_path, src, asset_id=asset_id, timings=timings)
+
+            t = time.monotonic()
+            effective_box = _render_box_or_detect(src, render_box, render_context)
+            src = _maybe_rewrite_with_box(ws.path, src, effective_box, render_context, mode)
+            timings['prepare_render_box_ms'] = int((time.monotonic() - t) * 1000)
+
+            page_count = _ensure_page_count(db, asset_id, src, page_count, timings)
+            if page_count <= 0:
+                msg = 'Cannot render previews: page count is unknown'
+                job_repo.mark_failed(db, job_id, msg)
+                if evt_id is not None:
+                    job_event_repo.fail(db, evt_id, message=msg)
+                    evt = None
+                raise NonRetryableTaskError(msg)
+
+            # /tmp guard — designed to allow normal 8-page jobs through.
+            ok, free_b, est_b = _check_tmp_space(ws.root, page_count, settings.preview_dpi)
+            timings['tmp_free_bytes'] = int(free_b)
+            timings['tmp_estimated_bytes'] = int(est_b)
+            if not ok:
+                logger.warning(
+                    "batch render refusing /tmp: free=%d est=%d pages=%d dpi=%d — "
+                    "falling through to parallel-local",
+                    free_b, est_b, page_count, settings.preview_dpi,
+                )
+                # Close current evt so the fallback path opens its own.
+                if evt_id is not None:
+                    job_event_repo.fail(
+                        db, evt_id,
+                        message='batch refused: /tmp space below safety factor',
+                        metadata={'tmp_free_bytes': free_b, 'tmp_estimated_bytes': est_b},
+                    )
+                    evt = None
+                return _generate_previews_parallel_local(
+                    task, asset_id, job_id, render_box,
+                    reason='tmp_guard',
+                )
+
+            preview_dir = ws.path('previews')
+            thumb_dir = ws.path('thumbnails')
+            preview_dir.mkdir(parents=True, exist_ok=True)
+
+            # PHASE 2 — single Ghostscript batch render.
+            t = time.monotonic()
+            try:
+                pdf_ops.rasterize_pages_ghostscript_jpeg(
+                    src,
+                    preview_dir / 'page',
+                    dpi=settings.preview_dpi,
+                    first_page=1,
+                    last_page=page_count,
+                    quality=settings.preview_jpeg_quality,
+                )
+                timings['gs_batch_render_ms'] = int((time.monotonic() - t) * 1000)
+            except RasterizationIncompleteError as exc:
+                timings['gs_batch_render_ms'] = int((time.monotonic() - t) * 1000)
+                logger.warning(
+                    "batch GS render incomplete missing=%s — falling through to parallel-local",
+                    getattr(exc, 'missing_pages', None),
+                )
+                if evt_id is not None:
+                    job_event_repo.fail(
+                        db, evt_id,
+                        message='batch render incomplete; falling back',
+                        metadata={
+                            'missing_pages': getattr(exc, 'missing_pages', None),
+                            'gs_returncode': getattr(exc, 'returncode', None),
+                            'gs_timed_out': getattr(exc, 'timed_out', None),
+                        },
+                    )
+                    evt = None
+                return _generate_previews_parallel_local(
+                    task, asset_id, job_id, render_box,
+                    reason='batch_incomplete',
+                )
+
+            # PHASE 3 — verify locally.
+            t = time.monotonic()
+            try:
+                manifest = _build_render_manifest(preview_dir, page_count, ext='jpg')
+            except _RenderIncomplete as exc:
+                timings['verify_ms'] = int((time.monotonic() - t) * 1000)
+                logger.warning(
+                    "batch render verify failed missing=%s — falling through to parallel-local",
+                    exc.missing_pages,
+                )
+                if evt_id is not None:
+                    job_event_repo.fail(
+                        db, evt_id,
+                        message='batch verify failed; falling back',
+                        metadata={'missing_pages': exc.missing_pages},
+                    )
+                    evt = None
+                return _generate_previews_parallel_local(
+                    task, asset_id, job_id, render_box,
+                    reason='verify_failed',
+                )
+            timings['verify_ms'] = int((time.monotonic() - t) * 1000)
+
+            # Release the long-running session BEFORE the upload/upsert
+            # phases — they own their own short-lived sessions.
+            db.close()
+            db = None  # type: ignore[assignment]
+
+            timings['total_ms_before_tail'] = int((time.monotonic() - overall_start) * 1000)
+
+            result = _finalise_uploads_and_record(
+                asset_id=asset_id, job_id=job_id, asset=asset, prefix=prefix,
+                page_count=page_count, manifest=manifest, thumb_dir=thumb_dir,
+                workspace_root=ws.root, timings=timings,
+                path_taken='batch', render_context=render_context,
+                evt_id=evt_id,
+                pages_render_label=f'Rendered {page_count} of {page_count} page(s)',
+            )
+            evt = None
+            timings['total_ms'] = int((time.monotonic() - overall_start) * 1000)
+            return {'pages_rendered': page_count, 'expected_pages': page_count}
+    except NonRetryableTaskError:
+        raise
+    except Exception as exc:
+        # Last-ditch fall-through to the sequential path. Any failure here
+        # is the original exception; the sequential path will either
+        # succeed and mark the job done, or fail it with a clearer error.
+        logger.exception("batch pipeline crashed; falling through to sequential: %s", exc)
+        if evt is not None:
+            try:
+                db_for_fail = db if db is not None else SessionLocal()
+                job_event_repo.fail(db_for_fail, evt.id, message=f'batch crashed: {exc}')
+                if db is None:
+                    db_for_fail.close()
+            except Exception:
+                pass
+            evt = None
+        try:
+            return _generate_previews_sequential(task, asset_id, job_id, render_box)
+        except Exception as final_exc:
+            logger.exception("sequential fallback also failed: %s", final_exc)
+            raise
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+
+# ---------------------------------------------------------------------------
+# Path B: per-page parallel render — LOCAL ONLY. Workers MUST NOT touch
+# S3 or the DB. Phases 3–7 are identical to the batch path.
+# ---------------------------------------------------------------------------
+
+
+def _render_one_page_subprocess(args: tuple) -> dict:
+    """Worker entry point for the ProcessPoolExecutor fallback.
+
+    Renders ONE page to a deterministic local path with Ghostscript and
+    returns the path. Pickleable inputs only. NEVER touches S3 or the DB.
+    """
+    src_str, preview_dir_str, page, dpi, quality, timeout = args
+    from app.services.pdf_ops import pdf_ops as _ops
+    preview_dir = Path(preview_dir_str)
+    preview_dir.mkdir(parents=True, exist_ok=True)
+    produced = _ops.rasterize_one_page_ghostscript_jpeg(
+        Path(src_str),
+        preview_dir / 'page',
+        dpi=dpi,
+        page=page,
+        quality=quality,
+        timeout_seconds=timeout,
+    )
+    return {'page': page, 'path': str(produced)}
+
+
+def _generate_previews_parallel_local(
+    task, asset_id: str, job_id: str,
+    render_box: list[float] | None = None,
+    *, reason: str = 'explicit',
+):
+    """Per-page parallel render using ProcessPoolExecutor. Workers ONLY
+    render to local disk — uploads + DB are coordinator-only via the
+    shared finalise tail."""
+    overall_start = time.monotonic()
+    timings: dict[str, int] = {'fallback_reason': 0}
+    db = SessionLocal()
+    evt = None
+    worker_name = getattr(getattr(task, 'request', None), 'hostname', None)
+    try:
+        job_repo.mark_running(db, job_id)
+        asset, prefix, src_path, page_count, render_context, _rb, mode = \
+            _prepare_render_inputs(db, asset_id, render_box)
+        render_context['path_taken'] = 'parallel'
+        render_context['fallback_reason'] = reason
+
+        evt = job_event_repo.start(
+            db,
+            job_id=job_id,
+            asset_id=asset_id,
+            task_name='generate_previews',
+            queue_name='thumbnails',
+            worker_name=worker_name,
+            stage='render_parallel',
+            metadata={
+                'page_count': page_count,
+                'dpi': settings.preview_dpi,
+                'pipeline_mode': 'parallel',
+                'fallback_reason': reason,
+                'runtime': _runtime_meta(),
+            },
+            message=f'Parallel-local rendering {page_count or "?"} page(s)…',
+        )
+        evt_id = evt.id if evt else None
+
+        with Workspace() as ws:
+            src = ws.path('source.pdf')
+            _download_pdf_with_cache(src_path, src, asset_id=asset_id, timings=timings)
+
+            t = time.monotonic()
+            effective_box = _render_box_or_detect(src, render_box, render_context)
+            src = _maybe_rewrite_with_box(ws.path, src, effective_box, render_context, mode)
+            timings['prepare_render_box_ms'] = int((time.monotonic() - t) * 1000)
+
+            page_count = _ensure_page_count(db, asset_id, src, page_count, timings)
+            if page_count <= 0:
+                msg = 'Cannot render previews: page count is unknown'
+                job_repo.mark_failed(db, job_id, msg)
+                if evt_id is not None:
+                    job_event_repo.fail(db, evt_id, message=msg)
+                    evt = None
+                raise NonRetryableTaskError(msg)
+
+            preview_dir = ws.path('previews')
+            thumb_dir = ws.path('thumbnails')
+            preview_dir.mkdir(parents=True, exist_ok=True)
+
+            cpu = max(1, min(
+                int(getattr(settings, 'render_cpu_concurrency', 2) or 2),
+                page_count,
+            ))
+            page_timeout = max(
+                30.0,
+                float(getattr(settings, 'preview_gs_page_timeout_seconds', 20) or 20) + 25,
+            )
+
+            t = time.monotonic()
+            tasks = [
+                (str(src), str(preview_dir), p, settings.preview_dpi,
+                 settings.preview_jpeg_quality, page_timeout)
+                for p in range(1, page_count + 1)
+            ]
+            failed: list[tuple[int, str]] = []
+            with ProcessPoolExecutor(max_workers=cpu) as pool:
+                fut_to_page = {pool.submit(_render_one_page_subprocess, t_args): t_args[2] for t_args in tasks}
+                for fut in as_completed(fut_to_page):
+                    page = fut_to_page[fut]
+                    try:
+                        fut.result()
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("parallel-local: page %d failed: %s", page, exc)
+                        failed.append((page, str(exc)))
+            timings['parallel_render_ms'] = int((time.monotonic() - t) * 1000)
+
+            # PHASE 3 — verify.
+            t = time.monotonic()
+            try:
+                manifest = _build_render_manifest(preview_dir, page_count, ext='jpg')
+            except _RenderIncomplete as exc:
+                timings['verify_ms'] = int((time.monotonic() - t) * 1000)
+                logger.warning(
+                    "parallel-local verify failed missing=%s failed_workers=%s — falling through to sequential",
+                    exc.missing_pages, failed,
+                )
+                if evt_id is not None:
+                    job_event_repo.fail(
+                        db, evt_id,
+                        message='parallel-local verify failed; falling back to sequential',
+                        metadata={'missing_pages': exc.missing_pages, 'worker_failures': failed},
+                    )
+                    evt = None
+                return _generate_previews_sequential(task, asset_id, job_id, render_box)
+            timings['verify_ms'] = int((time.monotonic() - t) * 1000)
+
+            db.close()
+            db = None  # type: ignore[assignment]
+
+            timings['total_ms_before_tail'] = int((time.monotonic() - overall_start) * 1000)
+
+            _finalise_uploads_and_record(
+                asset_id=asset_id, job_id=job_id, asset=asset, prefix=prefix,
+                page_count=page_count, manifest=manifest, thumb_dir=thumb_dir,
+                workspace_root=ws.root, timings=timings,
+                path_taken='parallel', render_context=render_context,
+                evt_id=evt_id,
+                pages_render_label=f'Rendered {page_count} of {page_count} page(s)',
+            )
+            evt = None
+            timings['total_ms'] = int((time.monotonic() - overall_start) * 1000)
+            return {'pages_rendered': page_count, 'expected_pages': page_count}
+    except NonRetryableTaskError:
+        raise
+    except Exception as exc:
+        logger.exception("parallel-local pipeline crashed; falling through to sequential: %s", exc)
+        if evt is not None:
+            try:
+                db_for_fail = db if db is not None else SessionLocal()
+                job_event_repo.fail(db_for_fail, evt.id, message=f'parallel-local crashed: {exc}')
+                if db is None:
+                    db_for_fail.close()
+            except Exception:
+                pass
+            evt = None
+        try:
+            return _generate_previews_sequential(task, asset_id, job_id, render_box)
+        except Exception as final_exc:
+            logger.exception("sequential fallback also failed: %s", final_exc)
+            raise
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+
+
+
 def _generate_previews_sequential(task, asset_id: str, job_id: str, render_box: list[float] | None = None):
     """VPS-style safe preview generation for normal customer uploads.
 
