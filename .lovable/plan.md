@@ -1,149 +1,78 @@
-## What I found
+## Plan: restore the VPS-style render contract
 
-**Do I know what the issue is?** Yes, enough to stop the loop: the current system is no longer the simple VPS flow.
+You are right: this is too complicated for normal customer uploads. The current code no longer behaves like the VPS path. It renders, retries, records, polls, salvages, and exposes partial page counts while work is still in motion. That is why the UI can jump forward, declare incomplete, then jump back to 3/8.
 
-On the VPS, thumbnailing was effectively:
-
-```text
-prepared PDF → one Ghostscript render → files exist → upload/record → ready
-```
-
-The current code says “VPS-style” in comments, but it actually does this:
+The fix should be a deliberate stability rollback for the upload preview path.
 
 ```text
-prepared PDF
-→ Ghostscript batch render
-→ single-page retry
-→ optional MuPDF fallback
-→ concurrent thumbnail downscale/upload/database recording
-→ record-only retry
-→ salvage render
-→ frontend may call render-pages again
-→ render-pages starts another recovery task
+Current normal upload path
+PDF → batch render → retry missing pages → thumbnail/upload/DB in parallel
+    → optional fan-out/salvage → frontend polls partial derived_files
+    → frontend/manual render-pages recovery
+
+Target safe path
+PDF → one owned backend job → pages 1..N in order
+    → validate each page image
+    → create/upload/record preview + thumbnail
+    → verify DB has every page
+    → only then mark ready/done
 ```
 
-So when the UI says **“missing page”**, it does **not necessarily mean Ghostscript skipped page 5**. It means the app cannot currently see both required database records for that page: `preview_page` and `thumbnail_page`. The JPEG may have rendered but failed later during thumbnailing, upload, database recording, polling, or recovery.
+## What I found in the code
 
-## Concrete problems found in the code
+- `generate_previews` is explicitly a multi-layer recovery pipeline, not a simple VPS renderer.
+- The frontend still watches partial `derived_files` rows during the job, so progress can show transient states that are not the final truth.
+- The backend has multiple paths that can classify a page as “missing”: raster missing, thumbnail missing, upload missing, DB record missing, or polling not seeing the row yet.
+- The Cloud Run/runtime path is not the old VPS worker model: HTTP workers, Cloud Tasks, `/tmp` filesystem constraints, different worker counts, different timeouts.
+- The unique derived-files index exists in migrations, but I could not prove from this session that production has it applied.
 
-1. **The pipeline still has competing recovery layers**
-   - `generate_previews` already retries/salvages missing pages server-side.
-   - `useDocumentUpload.ts` then runs another client-side `renderPages(assetId, missing)` pass if derived files are still missing.
-   - That is why the modal can move to **“Recovering missing pages…”** even after the backend has already tried to recover.
+## Implementation steps
 
-2. **The current flow is concurrent, not sequential like the VPS**
-   - Batch render is followed by concurrent downscale/upload/DB work.
-   - Recovery renders multiple pages in a `ThreadPoolExecutor`.
-   - Cloud Run / Cloud Tasks adds cold starts, retries, dispatch deadlines, and separate ephemeral filesystems.
-   - This is materially different from one warm VPS worker doing the job in order.
+1. **Add a Safe VPS Mode for `generate_previews`**
+   - For normal customer upload previews, route through a single backend-owned path.
+   - Use one workspace and one source PDF.
+   - Render pages `1..page_count` in deterministic order.
+   - No fan-out, no in-upload `render-pages`, no competing recovery layer.
 
-3. **There is a real fallback bug**
-   - In `pdf-server/app/services/pdf_ops.py`, `rasterize_pages_mutool()` uses `page_count` before assigning it.
-   - If Ghostscript fails and the code falls to MuPDF, that fallback can fail immediately before doing useful work.
+2. **Make page processing sequential and phase-explicit**
+   - For each expected page:
+     - confirm rendered preview exists and is a valid image
+     - create thumbnail
+     - upload preview
+     - upload thumbnail
+     - record both rows
+   - If page 5 fails, record whether it failed at `raster`, `thumbnail`, `upload`, or `record` instead of the vague “missing page”.
 
-4. **The deployment assumptions are inconsistent**
-   - Some docs say `pdf-worker-light` should be **4 vCPU / 4Gi / concurrency 1** for render reliability.
-   - Another runtime table says **1 CPU / 2Gi / concurrency 8**.
-   - If production is closer to the second shape, it can absolutely explain fast initial progress followed by tail-end stalls under concurrent render/upload/database pressure.
+3. **Stop frontend progress from reading partial truth**
+   - During upload, the modal should not infer final page completeness from partial `derived_files` rows.
+   - Show monotonic backend stages only: queued, rendering, finalising, done/failed.
+   - No jumping from 7/8 to incomplete to 3/8.
 
-5. **The database recording path relies on a specific unique index**
-   - The migration exists in the repo, but my Supabase read access is currently forbidden, so I could not prove whether production has it applied.
-   - If missing or stale in production, `ON CONFLICT` upserts for page thumbnails can fail and appear as “missing pages”.
+4. **Keep recovery, but remove it from the happy path**
+   - Keep `/render-pages` as a manual/admin tool.
+   - Make it exact and sequential: render only the requested pages, then validate/upload/record them.
+   - Do not let it race the original upload render.
 
-## Why this did not happen on the VPS
+5. **Align runtime defaults with the old VPS behaviour**
+   - Ensure the PDF cache path is Cloud Run-safe (`/tmp/...`) when running HTTP workers.
+   - Reduce light HTTP worker concurrency for render jobs so multiple PDFs do not fight for Ghostscript/Pillow memory inside one instance.
+   - Increase page-level Ghostscript timeout enough for heavy Illustrator/transparency pages.
 
-Because the VPS had fewer moving parts:
+6. **Add one regression smoke test for the case you hit**
+   - 8-page A5 PDF.
+   - Scale/normalise to A4.
+   - Run safe preview generation.
+   - Assert 8 `preview_page` and 8 `thumbnail_page` rows.
+   - Assert no automatic frontend recovery is invoked.
 
-- warm resident workers rather than cold HTTP task invocations
-- local disk handoff rather than service-to-service storage/cache misses
-- no Cloud Tasks retry race
-- simpler worker topology
-- fewer concurrent render/upload/record stages
-- fewer places where “rendered image exists” could be separated from “page is recorded and visible to the app”
+7. **Verify production before calling it fixed**
+   - Confirm `derived_files_asset_kind_page_uniq` exists in production.
+   - Pull latest failed `generate_previews` job/event rows for the failing asset.
+   - Confirm worker env/runtime values match the safe-mode assumptions.
 
-Ghostscript is probably not randomly deciding to skip page 5. The application now has too many surrounding layers that can cause page 5 to be **reported** missing.
+## Expected result
 
-## Stabilisation plan
-
-### 1. Put customer uploads into “safe VPS mode” first
-
-For normal customer uploads under the batch threshold:
-
-```text
-prepared PDF
-→ one Ghostscript JPEG render into a fresh temp directory
-→ validate every page image exists and opens with Pillow
-→ create thumbnails
-→ upload preview + thumbnail files
-→ bulk-record all pages
-→ verify DB has every page
-→ mark ready
-```
-
-No frontend recovery. No fan-out. No per-page parallel recovery during the primary happy path. Reliability first; speed optimisation later.
-
-### 2. Make “missing” mean one exact thing
-
-Split final failure into explicit phases:
-
-- `raster_missing`: Ghostscript did not produce a valid local image
-- `thumbnail_missing`: thumbnail creation failed
-- `upload_missing`: storage upload failed
-- `record_missing`: database row missing
-
-Then the UI/admin view can say what actually failed instead of just **“missing pages”**.
-
-### 3. Fix the real fallback bug
-
-Update `rasterize_pages_mutool()` so `page_count` is assigned before use, then make page recovery use:
-
-```text
-Ghostscript single-page render
-→ if that fails, MuPDF single-page fallback
-→ validate image
-→ upload/record
-```
-
-### 4. Stop automatic frontend recovery during upload
-
-Change the modal so it does not silently enter **“Recovering missing pages…”** as part of the normal upload flow.
-
-If the backend fails after its own server-side recovery, show a clear failed state with the exact missing phase and job id, plus a manual retry action.
-
-### 5. Add production checks before calling this fixed
-
-Add or run read-only checks for:
-
-- `derived_files_asset_kind_page_uniq` exists in production
-- latest failed `generate_previews` / `render_specific_pages` job rows
-- latest `job_events` for the failing asset
-- Cloud Run worker CPU/memory/concurrency/env values
-- Cloud Tasks `documents-light` retry/concurrency settings
-
-### 6. Add the exact regression test you just hit
-
-Create a smoke test for:
-
-```text
-8-page A5 PDF
-→ prepare/scale to A4
-→ generate previews
-→ assert 8 preview_page rows
-→ assert 8 thumbnail_page rows
-→ assert asset ready
-→ force page 5 recovery
-→ assert only page 5 is re-rendered
-```
-
-## Implementation order
-
-1. Fix the MuPDF `page_count` bug.
-2. Simplify `generate_previews` to one primary server-owned render contract for normal uploads.
-3. Make recovery exact and backend-owned.
-4. Remove upload-modal auto-recovery messaging/calls from the happy path.
-5. Add phase-specific job events.
-6. Add the 8-page A5→A4 smoke test.
-7. Verify production schema/runtime settings before declaring it solved.
+Normal uploads behave like the VPS again: one backend job owns the render, pages are handled deterministically, and the UI only reports final verified state rather than reacting to intermediate partial rows.
 
 <presentation-actions>
   <presentation-open-history>View History</presentation-open-history>
