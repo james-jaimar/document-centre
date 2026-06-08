@@ -194,8 +194,9 @@ export async function renderDocumentThumbnails(
   }
 
   if (renderJobStalled) {
-    onProgress("Recovering missing pages…", 88);
+    onProgress("Render incomplete — finalising…", 92);
   }
+
 
   // Poll for derived files to appear (rasterization writes them async)
   const asset = await getAsset(assetId);
@@ -261,57 +262,22 @@ export async function renderDocumentThumbnails(
 
   let missing = computeMissing(thumbnailPaths);
 
-  // ── Auto-recovery: surgically re-render any missing pages via the
-  // /render-pages endpoint. Runs up to 2 passes; each pass triggers the
-  // server-side render, polls the job, then polls derived files for ~20s.
-  // Single client-side recovery pass — the backend's own salvage path
-  // (document_tasks.generate_previews → render_specific_pages with per-page
-  // mutool retries) already covers most gaps. A second client pass mostly
-  // duplicates work and racks up unnecessary HTTP.
-  const RECOVERY_ATTEMPTS = 1;
-  const RECOVERY_POLL_BUDGET_MS = 20_000;
-  for (let attempt = 0; attempt < RECOVERY_ATTEMPTS && missing.length > 0; attempt++) {
-    onProgress(
-      `Recovering ${missing.length} missing page${missing.length === 1 ? "" : "s"}…`,
-      90,
-    );
-    try {
-      const { job_id } = await renderPages(assetId, missing);
-      if (job_id) {
-        await pollJob(job_id);
-      }
-    } catch (recoveryErr: any) {
-      console.warn(
-        `[renderDocumentThumbnails] asset=${assetId} recovery attempt ${attempt + 1} failed:`,
-        recoveryErr,
-      );
-    }
-
-    // Poll for derived files to flush after the salvage pass.
-    const deadline = Date.now() + RECOVERY_POLL_BUDGET_MS;
-    let recoveryInterval = 500;
-    while (Date.now() < deadline) {
-      derivedFiles = await getDerivedFiles(assetId);
-      thumbnailPaths = pickBestPerPage(
-        derivedFiles,
-        asset.thumbnail_storage_path,
-        asset.preview_storage_path,
-        expectedPages,
-        targetAspect,
-      );
-      missing = computeMissing(thumbnailPaths);
-      if (missing.length === 0) break;
-      await new Promise((r) => setTimeout(r, recoveryInterval));
-      recoveryInterval = Math.min(Math.round(recoveryInterval * 1.5), 2000);
-    }
-  }
-
+  // NOTE: client-side auto-recovery (calling /render-pages while the
+  // upload modal is still open) has been removed. It was racing the
+  // backend's own salvage pass and producing the "Recovering missing
+  // pages…" loop the user was seeing. The backend's generate_previews
+  // task already owns server-side recovery; if it cannot complete the
+  // render, we surface that as an explicit failure and rely on the
+  // manual "Re-render missing pages" affordance (recoverThumbnailGaps)
+  // from the file list, NOT a silent retry inside the upload flow.
   if (missing.length > 0) {
     console.warn(
-      `[renderDocumentThumbnails] asset=${assetId} still missing thumbnails after recovery:`,
+      `[renderDocumentThumbnails] asset=${assetId} still missing thumbnails after backend render:`,
       missing,
     );
   }
+
+
 
   // Compute final dimensions: prefer the trim/crop box when provided
   // (caller is intentionally trimming), otherwise fall back to the asset's
