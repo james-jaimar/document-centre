@@ -1276,10 +1276,18 @@ def _ensure_page_count(db, asset_id: str, src: Path, page_count: int, timings: d
 
 
 def _maybe_rewrite_with_box(ws_path_factory, src: Path, render_box, render_context, mode: str) -> Path:
-    if render_box is not None and mode == 'rewrite_pdf':
+    # The previous `metadata_only` mode was a no-op for raster previews —
+    # Ghostscript was never asked to honour TrimBox, so bleed/crop marks
+    # leaked into the JPEGs. We now ALWAYS rewrite the PDF to the effective
+    # render box when one is present, regardless of mode. The mode value is
+    # still recorded in render_context for traceability.
+    render_context['render_box_applied'] = False
+    if render_box is not None:
         cropped = ws_path_factory('cropped.pdf')
         pdf_ops.crop_to_box(src, cropped, render_box)
         render_context['rendered_source'] = 'pikepdf_box_rewrite'
+        render_context['render_box_applied'] = True
+        render_context['render_box'] = list(render_box)
         return cropped
     return src
 
