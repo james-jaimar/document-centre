@@ -1,90 +1,45 @@
-# Render-first preview pipeline — SHIPPED
+## Two independent fixes
 
-## What changed (this PR)
+### 1. Bleed / crop marks showing inside flipbook pages
 
-**Root cause (confirmed by production job metadata):** the dispatcher in
-`pdf-server/app/tasks/document_tasks.py` was hard-routing every render through
-`_generate_previews_sequential`, which interleaved render → thumbnail → upload →
-DB write per page inside a single loop. 4 vCPUs sat idle and 8 pages took ~47s
-because of per-page S3/DB latency, not Ghostscript.
+**Cause.** When an asset is normalised we call `derive_default_render_box()` and detect a TrimBox/BleedBox smaller than the MediaBox. That box is passed through to `generate_previews`, but the new batch pipeline only physically crops the source PDF when `preview_render_box_mode == 'rewrite_pdf'`. The default mode is `metadata_only`, so the detected box is stored on the job but **never applied** to the Ghostscript rasterisation — the JPEG previews are rendered to the full MediaBox, bleed and crop marks included.
 
-The pipeline has been rewritten with strict phase separation. **No DB or S3
-writes happen inside the render loop in any path.**
+That also explains the "jumps to uncropped" behaviour: the eyeglass shows a thumbnail that was rendered earlier under the old pipeline (cropped), then the flipbook loads the freshly-generated full-size preview (uncropped).
 
-### New default: `batch`
+**Fix (server, `pdf-server/app/tasks/document_tasks.py`).**
+
+1. In `_maybe_rewrite_with_box`, crop the working PDF with `pdf_ops.crop_to_box` **whenever an effective render box is present**, regardless of `preview_render_box_mode`. The `metadata_only` mode was a no-op for raster previews; it only made sense when GS was asked to honour TrimBox via `-dUseTrimBox`, which we never wired up.
+2. Apply the same rewrite in both `_generate_previews_batch` and `_generate_previews_parallel_local` so the fallback paths produce trimmed JPEGs too. The sequential path already crops via `crop_to_box`, so it stays as-is.
+3. Record `render_box_applied: true|false` and the box itself in the job event metadata so we can verify per-job in the platform Jobs view.
+4. Re-run preview generation for this specific asset (NPC113 Annual Report) as a one-off after deploy by enqueueing a new `generate_previews` job from the platform Jobs page — no migration needed.
+
+No DB schema change. No change to `derive_default_render_box` or `crop_to_box` themselves — they already handle landscape + `/Rotate` correctly.
+
+### 2. Full-screen landscape flipbook only uses ~50% of the viewport
+
+**Cause.** `src/components/preview/FlipBook.tsx` computes:
+
 ```text
-1. download source PDF
-2. ONE Ghostscript invocation renders all pages to /tmp
-3. verify every file locally (Pillow) → in-memory manifest
-4. thumbnail every page (ThreadPool, local-only)
-5. upload previews+thumbnails in parallel to DETERMINISTIC S3 paths
-6. ONE bulk upsert into derived_files (retried on a FRESH session)
-7. update asset preview/thumbnail/status + mark job done
+scaleFactor = Math.min(scaleX, scaleY, 1)
 ```
 
-### Fallback ladder
-1. **`batch`** (default) — `_generate_previews_batch`
-2. **`parallel`** — `_generate_previews_parallel_local`: ProcessPoolExecutor
-   renders pages in parallel **locally**. Workers never touch S3 or the DB.
-   Same finalise tail.
-3. **`sequential`** — `_generate_previews_sequential` (legacy VPS-style),
-   kept ONLY for final safety + emergency rollback via env.
+The `, 1` cap prevents the fixed 400px-wide internal page from scaling **up**. On a 1920×1080 lightbox (passed in at 0.95 × 0.92 of the window), `scaleX` ≈ 2.18 and `scaleY` ≈ 3.3, but both are clamped to 1 — so a landscape spread renders at 800px wide on a 1920px screen ≈ 42% utilisation.
 
-### Env flags
-- `PREVIEW_PIPELINE_MODE` = `batch` (default) | `parallel` | `sequential` — force a specific path for testing.
-- `PREVIEW_FORCE_SEQUENTIAL=true` — emergency rollback, wins over MODE.
-- `PREVIEW_BULK_UPSERT_MAX_RETRIES` / `PREVIEW_BULK_UPSERT_RETRY_BASE_MS` — tune the fresh-session retry.
-- `PREVIEW_TMP_SAFETY_FACTOR` — conservative `/tmp` guard. Default 4.0 leaves normal 8-page 150 DPI uploads untouched.
+**Fix (frontend, `src/components/preview/FlipBook.tsx`).**
 
-### Deterministic S3 layout (NEW)
-Retries overwrite the same key — no orphaned files:
-```
-{tenant_prefix}assets/{asset_id}/jobs/{job_id}/previews/page-NNN.jpg
-{tenant_prefix}assets/{asset_id}/jobs/{job_id}/thumbnails/page-NNN.png
-```
+1. Replace `Math.min(scaleX, scaleY, 1)` with `Math.min(scaleX, scaleY)` so the spread fills the available area on both axes.
+2. Add a generous safety cap (e.g. `Math.min(scaleX, scaleY, 4)`) just to avoid pathological cases on ultrawide monitors — JPEG previews are rendered at 150 DPI so 3-4× upscale is still visually fine.
+3. No change to `PreviewLightbox.tsx` — its 0.95 / 0.92 envelope is already correct; the bottleneck was the flipbook cap.
 
-### Database
-- New migration `pdf-server/migrations/2026_06_08_preview_pipeline.sql` creates
-  the unique partial index `derived_files_asset_kind_page_uniq` that the bulk
-  upsert relies on. **Apply on Supabase before next deploy** (a Lovable migration
-  was attempted but blocked by Supabase permissions in this session).
-- Defensive: the worker also runs `CREATE UNIQUE INDEX IF NOT EXISTS` once per
-  process at first use, so a missing migration cannot strand uploads.
-- `pdf-server/app/db/session.py` already has `prepare_threshold=None` and
-  `pool_recycle=1800` from the previous fix — that is what makes the single
-  bulk upsert safe under PgBouncer transaction pooling.
+After this change, a landscape A4 lightbox spread will fill ≈85-90% of the viewport width on a 1920px screen.
 
-### Metadata recorded on every render
-Final `job_events.metadata.timings_ms` contains:
-`download_pdf_ms`, `prepare_render_box_ms`, `gs_batch_render_ms` (or
-`parallel_render_ms`), `verify_ms`, `thumbnail_ms`, `upload_ms`,
-`db_bulk_upsert_ms`, `total_ms`, `preview_count`, `thumbnail_count`,
-`workspace_bytes_used`, `path_taken`, `tmp_free_bytes`, `tmp_estimated_bytes`.
-Plus `runtime` block from `_runtime_meta()` carries `k_revision`,
-`k_service`, `cpu_count`, `render_cpu_concurrency`, `render_io_concurrency`,
-`preview_gs_threads`, etc.
+### Out of scope (flag for follow-up if needed)
 
-### Promotion contract (unchanged from previous fix, now enforced in shared tail)
-The job is only marked `done` and the asset only promoted to `ready` AFTER:
-render ✅ verify ✅ thumbnail ✅ upload ✅ bulk upsert ✅ asset paths updated ✅.
-Any earlier failure leaves the asset at its prior status and the modal sees
-a clear `failed` job — never partial `derived_files` rows.
+- PDFs that have **visible crop-mark artwork baked into the content stream** but no smaller TrimBox cannot be detected by `derive_default_render_box`. If the NPC113 file turns out to be like that (TrimBox == MediaBox), the server fix alone won't help — we'd need a separate "user-specified bleed" or content-based crop detection feature. I can investigate the actual file's boxes after deploy if the issue persists.
+- `PdfPageView` (used by `LooseSheetsPreview`, not the flipbook) renders via pdf.js, which honours CropBox not TrimBox. Bound-document flipbooks don't use it, so this is not relevant to the reported issue.
 
-## Files changed
-- `pdf-server/app/tasks/document_tasks.py` — new batch + parallel-local pipelines, shared finalise tail, dispatcher updated.
-- `pdf-server/app/core/config.py` — `preview_pipeline_mode`, `preview_force_sequential`, `/tmp` guard + bulk-upsert retry tunables. Legacy `preview_safe_sequential_enabled` is no longer read by the dispatcher.
-- `pdf-server/migrations/2026_06_08_preview_pipeline.sql` — unique partial index.
-- `pdf-server/scripts/smoke-test-batch-preview.sh` — end-to-end smoke test.
+### Verification
 
-## Verification
-- Python syntax compiles clean for all changed modules.
-- After deploying `pdf-worker-light` to Cloud Run:
-  1. Re-upload the 8-page A5 PDF that previously took ~47s.
-  2. Read `job_events.metadata` for the new job and confirm:
-     - `path_taken=batch`
-     - `gs_batch_render_ms` ≪ 11s
-     - `total_ms` ≪ 15s
-     - `preview_count == thumbnail_count == 8`
-     - 16 rows in `derived_files` for that asset.
-  3. Set `PREVIEW_PIPELINE_MODE=parallel` and repeat — confirm `path_taken=parallel`, same row counts.
-  4. Set `PREVIEW_FORCE_SEQUENTIAL=true` and repeat — confirm rollback path still works end-to-end.
+- After deploy: re-trigger previews for the NPC113 asset; confirm new preview JPEGs are trimmed (open one directly from the platform Jobs > Assets panel).
+- Open the same doc in the customer lightbox: spread should fill ~85% of the viewport and show no crop marks.
+- Smoke-test a portrait A4 booklet that has no TrimBox to confirm `render_box_applied: false` and rendering is unchanged.
