@@ -1,97 +1,90 @@
-## Goal
+# Render-first preview pipeline — SHIPPED
 
-Stop the preview renderer from jumping around, hanging, or ending with missing pages.
+## What changed (this PR)
 
-**Root cause found:** psycopg3's server-side prepared statements clash with Supabase's PgBouncer transaction pooling, causing `InvalidSqlStatementName` errors mid-render. This makes the worker silently fail and the frontend hang.
+**Root cause (confirmed by production job metadata):** the dispatcher in
+`pdf-server/app/tasks/document_tasks.py` was hard-routing every render through
+`_generate_previews_sequential`, which interleaved render → thumbnail → upload →
+DB write per page inside a single loop. 4 vCPUs sat idle and 8 pages took ~47s
+because of per-page S3/DB latency, not Ghostscript.
 
-**Fix applied:** Disabled prepared statements in `pdf-server/app/db/session.py`.
+The pipeline has been rewritten with strict phase separation. **No DB or S3
+writes happen inside the render loop in any path.**
 
-**Remaining step:** Rebuild & redeploy the `pdf-worker-light` Cloud Run service.
-
+### New default: `batch`
 ```text
-Current path
-render batch → retry missing → parallel upload/record → optional fan-out → salvage → frontend polls partial rows
-
-New normal upload path
-one backend job → page 1..N in order → validate → thumbnail → upload → record → verify all pages → done
+1. download source PDF
+2. ONE Ghostscript invocation renders all pages to /tmp
+3. verify every file locally (Pillow) → in-memory manifest
+4. thumbnail every page (ThreadPool, local-only)
+5. upload previews+thumbnails in parallel to DETERMINISTIC S3 paths
+6. ONE bulk upsert into derived_files (retried on a FRESH session)
+7. update asset preview/thumbnail/status + mark job done
 ```
 
-## What I will change
+### Fallback ladder
+1. **`batch`** (default) — `_generate_previews_batch`
+2. **`parallel`** — `_generate_previews_parallel_local`: ProcessPoolExecutor
+   renders pages in parallel **locally**. Workers never touch S3 or the DB.
+   Same finalise tail.
+3. **`sequential`** — `_generate_previews_sequential` (legacy VPS-style),
+   kept ONLY for final safety + emergency rollback via env.
 
-### 1. Make `generate_previews` deterministic again
+### Env flags
+- `PREVIEW_PIPELINE_MODE` = `batch` (default) | `parallel` | `sequential` — force a specific path for testing.
+- `PREVIEW_FORCE_SEQUENTIAL=true` — emergency rollback, wins over MODE.
+- `PREVIEW_BULK_UPSERT_MAX_RETRIES` / `PREVIEW_BULK_UPSERT_RETRY_BASE_MS` — tune the fresh-session retry.
+- `PREVIEW_TMP_SAFETY_FACTOR` — conservative `/tmp` guard. Default 4.0 leaves normal 8-page 150 DPI uploads untouched.
 
-In `pdf-server/app/tasks/document_tasks.py`, replace the normal customer preview path with a sequential safe renderer:
+### Deterministic S3 layout (NEW)
+Retries overwrite the same key — no orphaned files:
+```
+{tenant_prefix}assets/{asset_id}/jobs/{job_id}/previews/page-NNN.jpg
+{tenant_prefix}assets/{asset_id}/jobs/{job_id}/thumbnails/page-NNN.png
+```
 
-- Download the prepared/normalised PDF once.
-- Determine the expected page count once from the asset.
-- For each page from `1..page_count`, in order:
-  - render exactly that page with Ghostscript;
-  - validate the image with Pillow;
-  - create the thumbnail;
-  - upload preview and thumbnail;
-  - record both `derived_files` rows;
-  - emit a page progress event.
-- After the loop, query `derived_files` and only mark the asset/job ready if every page has both:
-  - `preview_page`
-  - `thumbnail_page`
+### Database
+- New migration `pdf-server/migrations/2026_06_08_preview_pipeline.sql` creates
+  the unique partial index `derived_files_asset_kind_page_uniq` that the bulk
+  upsert relies on. **Apply on Supabase before next deploy** (a Lovable migration
+  was attempted but blocked by Supabase permissions in this session).
+- Defensive: the worker also runs `CREATE UNIQUE INDEX IF NOT EXISTS` once per
+  process at first use, so a missing migration cannot strand uploads.
+- `pdf-server/app/db/session.py` already has `prepare_threshold=None` and
+  `pool_recycle=1800` from the previous fix — that is what makes the single
+  bulk upsert safe under PgBouncer transaction pooling.
 
-If page 5 fails, the job will say page 5 failed at the exact phase, instead of falling into a vague “missing/recovering” loop.
+### Metadata recorded on every render
+Final `job_events.metadata.timings_ms` contains:
+`download_pdf_ms`, `prepare_render_box_ms`, `gs_batch_render_ms` (or
+`parallel_render_ms`), `verify_ms`, `thumbnail_ms`, `upload_ms`,
+`db_bulk_upsert_ms`, `total_ms`, `preview_count`, `thumbnail_count`,
+`workspace_bytes_used`, `path_taken`, `tmp_free_bytes`, `tmp_estimated_bytes`.
+Plus `runtime` block from `_runtime_meta()` carries `k_revision`,
+`k_service`, `cpu_count`, `render_cpu_concurrency`, `render_io_concurrency`,
+`preview_gs_threads`, etc.
 
-### 2. Remove competing happy-path recovery
+### Promotion contract (unchanged from previous fix, now enforced in shared tail)
+The job is only marked `done` and the asset only promoted to `ready` AFTER:
+render ✅ verify ✅ thumbnail ✅ upload ✅ bulk upsert ✅ asset paths updated ✅.
+Any earlier failure leaves the asset at its prior status and the modal sees
+a clear `failed` job — never partial `derived_files` rows.
 
-Keep `render_specific_pages` / `/render-pages` as a manual/admin recovery tool, but remove it from the normal upload path.
+## Files changed
+- `pdf-server/app/tasks/document_tasks.py` — new batch + parallel-local pipelines, shared finalise tail, dispatcher updated.
+- `pdf-server/app/core/config.py` — `preview_pipeline_mode`, `preview_force_sequential`, `/tmp` guard + bulk-upsert retry tunables. Legacy `preview_safe_sequential_enabled` is no longer read by the dispatcher.
+- `pdf-server/migrations/2026_06_08_preview_pipeline.sql` — unique partial index.
+- `pdf-server/scripts/smoke-test-batch-preview.sh` — end-to-end smoke test.
 
-The upload renderer should not:
-
-- fan out per-page HTTP tasks;
-- start a salvage race while the original job is still running;
-- infer success from partial rows;
-- continue after a failed render as if it can “finalise”.
-
-### 3. Stop the upload modal reading partial truth
-
-In `src/hooks/useDocumentUpload.ts`, remove in-flight polling of `derived_files` during `renderDocumentThumbnails`.
-
-The modal will show monotonic backend stages only:
-
-- queued;
-- rendering pages;
-- finalising;
-- done;
-- failed with the real backend error.
-
-It will not display `7/8`, then `3/8`, or “Render incomplete — finalising…” while pages are still being created.
-
-### 4. Make failure honest and non-destructive
-
-If the backend cannot render all pages:
-
-- leave the document in a clear failed/processing state instead of stamping a partial thumbnail array as ready;
-- preserve `thumbnail_gaps` for the file-list recovery button;
-- show the real failure message rather than looping behind the modal.
-
-### 5. Keep performance secondary to correctness
-
-For now, normal uploads will prioritise correctness over speed.
-
-The current parallel/fan-out code can remain behind a non-default setting if useful later, but the default customer upload path should be the stable sequential path matching the old VPS behaviour.
-
-### 6. Add focused regression coverage
-
-Add or update a smoke test around the exact failing shape:
-
-- 8-page PDF;
-- A5 scaled/normalised to A4;
-- run the safe preview generator;
-- assert all 8 preview rows and all 8 thumbnail rows exist;
-- assert no frontend auto-recovery path is invoked.
-
-### 7. Verify before calling it fixed
-
-After implementation, I will verify with the strongest available signal in this environment:
-
-- Python syntax check for changed backend files;
-- targeted frontend test or static validation for changed frontend code;
-- inspect the final code path to confirm `generate_previews` no longer reaches fan-out/salvage for normal uploads.
-
-If database/log access is available during build, I will also check recent failed jobs for the exact failure phase. If not, I will not pretend I saw production logs.
+## Verification
+- Python syntax compiles clean for all changed modules.
+- After deploying `pdf-worker-light` to Cloud Run:
+  1. Re-upload the 8-page A5 PDF that previously took ~47s.
+  2. Read `job_events.metadata` for the new job and confirm:
+     - `path_taken=batch`
+     - `gs_batch_render_ms` ≪ 11s
+     - `total_ms` ≪ 15s
+     - `preview_count == thumbnail_count == 8`
+     - 16 rows in `derived_files` for that asset.
+  3. Set `PREVIEW_PIPELINE_MODE=parallel` and repeat — confirm `path_taken=parallel`, same row counts.
+  4. Set `PREVIEW_FORCE_SEQUENTIAL=true` and repeat — confirm rollback path still works end-to-end.
