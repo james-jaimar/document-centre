@@ -498,6 +498,7 @@ export async function recoverThumbnailGaps(
     .from("documents")
     .update({
       thumbnail_urls: thumbnailPaths,
+      ...(remainingGaps.length === 0 ? { document_status: "ready" } : {}),
       preflight_data: nextPreflight as any,
     })
     .eq("id", docId);
