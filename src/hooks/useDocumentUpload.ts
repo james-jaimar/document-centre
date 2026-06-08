@@ -341,7 +341,7 @@ export async function renderDocumentThumbnails(
       thumbnail_urls: thumbnailPaths,
       page_width_mm: Math.round(pageWidthMm * 10) / 10,
       page_height_mm: Math.round(pageHeightMm * 10) / 10,
-      document_status: "ready",
+      document_status: missing.length > 0 ? "error" : "ready",
       preflight_data: nextPreflight as any,
     })
     .eq("id", docId);
