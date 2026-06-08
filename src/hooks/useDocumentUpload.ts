@@ -94,7 +94,34 @@ export async function renderDocumentThumbnails(
     prechainedJobId?: string | null;
   },
 ): Promise<string[]> {
-  const onProgress = opts?.onProgress ?? (() => {});
+  const rawOnProgress = opts?.onProgress ?? (() => {});
+
+  // Monotonic progress guard. The render flow has several stages that each
+  // compute a percentage from "pages found so far / total". If a later stage
+  // briefly observes fewer pages than an earlier one (e.g. cache miss, signed
+  // URL refresh, or the post-job poll re-counting from 0) the modal must NOT
+  // visibly walk backwards. We also suppress any "(X/N)" text whose X is
+  // lower than the highest X we've shown so far.
+  let highestPct = 0;
+  let highestFound = -1;
+  const onProgress = (msg: string, pct: number) => {
+    let outMsg = msg;
+    const m = /\((\d+)\/(\d+)\)/.exec(msg);
+    if (m) {
+      const found = parseInt(m[1], 10);
+      if (Number.isFinite(found)) {
+        if (found < highestFound) {
+          // Strip the regressing count rather than display "3/8" after "7/8".
+          outMsg = msg.replace(/\s*\(\d+\/\d+\)\s*/, " ").trim();
+        } else {
+          highestFound = found;
+        }
+      }
+    }
+    const outPct = pct > highestPct ? pct : highestPct;
+    highestPct = outPct;
+    rawOnProgress(outMsg, outPct);
+  };
 
   onProgress("Rendering pages…", 60);
 
