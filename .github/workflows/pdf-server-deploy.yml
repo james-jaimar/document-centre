@@ -390,23 +390,106 @@ jobs:
               --quiet
           done
 
-      - name: Summary
+      - name: Verify live revisions, env, and summarise
         run: |
-          URL=$(gcloud run services describe pdf-api --region="${{ env.GCP_REGION }}" --format='value(status.url)')
-          H=$(gcloud run services describe pdf-worker-heavy  --region="${{ env.GCP_REGION }}" --format='value(status.url)' 2>/dev/null || echo "-")
-          L=$(gcloud run services describe pdf-worker-light  --region="${{ env.GCP_REGION }}" --format='value(status.url)' 2>/dev/null || echo "-")
-          E=$(gcloud run services describe pdf-worker-emails --region="${{ env.GCP_REGION }}" --format='value(status.url)' 2>/dev/null || echo "-")
+          # Litmus tests run on every deploy:
+          #   1. status.traffic[0].revisionName == status.latestReadyRevisionName
+          #      (no orphan deploys serving stale code)
+          #   2. pdf-worker-light's LIVE revision exposes the batch-pipeline
+          #      env (PREVIEW_PIPELINE_MODE=batch, PREVIEW_FORCE_SEQUENTIAL=false,
+          #      PREVIEW_GS_THREADS=4, RENDER_CPU_CONCURRENCY=4,
+          #      RENDER_IO_CONCURRENCY=8, ROLE=worker-light-http,
+          #      QUEUE_BACKEND=cloud_tasks)
+          # Both fail the job with the exact fix command if they drift.
+          set -e
+          REGION="${{ env.GCP_REGION }}"
+
+          declare -A LIVE_REV LIVE_URL LIVE_IMAGE LIVE_DIGEST
+          fail=0
+
+          for svc in pdf-api pdf-worker-heavy pdf-worker-light pdf-worker-emails; do
+            latest=$(gcloud run services describe "$svc" --region="$REGION" \
+              --format='value(status.latestReadyRevisionName)')
+            live=$(gcloud run services describe "$svc" --region="$REGION" \
+              --format='value(status.traffic[0].revisionName)')
+            url=$(gcloud run services describe "$svc" --region="$REGION" \
+              --format='value(status.url)')
+            LIVE_REV[$svc]="$live"
+            LIVE_URL[$svc]="$url"
+            if [ "$live" != "$latest" ]; then
+              echo "::error::Service $svc is serving $live but latestReadyRevisionName=$latest."
+              echo "::error::Fix: gcloud run services update-traffic $svc --region=$REGION --to-latest"
+              fail=1
+            fi
+            # Capture the image (with digest if pinned) of the LIVE revision.
+            img=$(gcloud run revisions describe "$live" --region="$REGION" \
+              --format='value(spec.containers[0].image)' 2>/dev/null || echo "-")
+            LIVE_IMAGE[$svc]="$img"
+            digest=$(gcloud run revisions describe "$live" --region="$REGION" \
+              --format='value(status.imageDigest)' 2>/dev/null || echo "-")
+            LIVE_DIGEST[$svc]="$digest"
+          done
+
+          # Verify pdf-worker-light env on the LIVE revision.
+          light_live="${LIVE_REV[pdf-worker-light]}"
+          env_json=$(gcloud run revisions describe "$light_live" --region="$REGION" --format=json)
+          required_env=(
+            "PREVIEW_PIPELINE_MODE=batch"
+            "PREVIEW_FORCE_SEQUENTIAL=false"
+            "PREVIEW_GS_THREADS=4"
+            "RENDER_CPU_CONCURRENCY=4"
+            "RENDER_IO_CONCURRENCY=8"
+            "ROLE=worker-light-http"
+            "QUEUE_BACKEND=cloud_tasks"
+          )
+          declare -A LIVE_LIGHT_ENV
+          for kv in "${required_env[@]}"; do
+            key="${kv%%=*}"
+            want="${kv#*=}"
+            got=$(echo "$env_json" | jq -r --arg k "$key" '.spec.containers[0].env[]? | select(.name==$k) | .value // ""')
+            LIVE_LIGHT_ENV[$key]="$got"
+            if [ "$got" != "$want" ]; then
+              echo "::error::pdf-worker-light env drift: $key=$got (expected $want) on $light_live"
+              echo "::error::Fix: re-run this workflow, or:"
+              echo "::error::  gcloud run services update pdf-worker-light --region=$REGION \\"
+              echo "::error::    --update-env-vars='$kv'"
+              fail=1
+            fi
+          done
+
           {
             echo "## Deployed"
             echo ""
-            echo "- **pdf-api**: $URL"
-            echo "- **pdf-worker-heavy**: $H"
-            echo "- **pdf-worker-light**: $L"
-            echo "- **pdf-worker-emails**: $E"
-            echo "- **Image**: \`${{ steps.tag.outputs.image }}\`"
+            echo "- **Image (built)**: \`${{ steps.tag.outputs.image }}\`"
             echo "- **Commit**: \`${{ steps.tag.outputs.sha }}\`"
-            echo "- **Region**: ${{ env.GCP_REGION }}"
+            echo "- **Region**: $REGION"
+            echo ""
+            echo "### Live revisions (traffic = latestReadyRevisionName)"
+            echo ""
+            echo "| Service | Live revision | URL | Live image |"
+            echo "| --- | --- | --- | --- |"
+            for svc in pdf-api pdf-worker-heavy pdf-worker-light pdf-worker-emails; do
+              echo "| \`$svc\` | \`${LIVE_REV[$svc]}\` | ${LIVE_URL[$svc]} | \`${LIVE_IMAGE[$svc]}\` |"
+            done
+            echo ""
+            echo "### pdf-worker-light batch-pipeline env (LIVE revision \`${LIVE_REV[pdf-worker-light]}\`)"
+            echo ""
+            echo "| Key | Live value |"
+            echo "| --- | --- |"
+            for kv in "${required_env[@]}"; do
+              key="${kv%%=*}"
+              echo "| \`$key\` | \`${LIVE_LIGHT_ENV[$key]}\` |"
+            done
+            echo ""
+            if [ "${LIVE_DIGEST[pdf-worker-light]}" != "-" ] && [ -n "${LIVE_DIGEST[pdf-worker-light]}" ]; then
+              echo "_pdf-worker-light image digest: \`${LIVE_DIGEST[pdf-worker-light]}\`_"
+            fi
             echo ""
             echo "_First-time setup: run \`bash pdf-server/docker/gcp-tasks-bootstrap.sh\` in Cloud Shell to create Cloud Tasks queues, the invoker SA, and Cloud Scheduler jobs._"
-            echo "_QUEUE_BACKEND is pinned to \`cloud_tasks\` on pdf-api so \`app.core.queue.enqueue\` pushes via Cloud Tasks (not Celery/Redis)._"
           } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::Post-deploy verification failed — see annotations above."
+            exit 1
+          fi
+
