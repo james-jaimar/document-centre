@@ -1,6 +1,12 @@
 ## Goal
 
-Stop the preview renderer from jumping around or ending with missing pages by replacing the current multi-layer render/retry/fan-out path with a simple VPS-style safe path for normal uploads.
+Stop the preview renderer from jumping around, hanging, or ending with missing pages.
+
+**Root cause found:** psycopg3's server-side prepared statements clash with Supabase's PgBouncer transaction pooling, causing `InvalidSqlStatementName` errors mid-render. This makes the worker silently fail and the frontend hang.
+
+**Fix applied:** Disabled prepared statements in `pdf-server/app/db/session.py`.
+
+**Remaining step:** Rebuild & redeploy the `pdf-worker-light` Cloud Run service.
 
 ```text
 Current path
