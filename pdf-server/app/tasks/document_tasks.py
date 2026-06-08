@@ -1971,8 +1971,17 @@ def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] 
          ``/v1/assets/{id}/render-pages`` to surgically re-render the gaps
          without re-uploading the original.
     """
-    if getattr(settings, 'preview_safe_sequential_enabled', True):
+    # Dispatcher: render-first batch is the default. PREVIEW_FORCE_SEQUENTIAL
+    # is the emergency env-level rollback. PREVIEW_PIPELINE_MODE forces a
+    # specific path for controlled testing — values: batch | parallel | sequential.
+    if getattr(settings, 'preview_force_sequential', False):
         return _generate_previews_sequential(self, asset_id, job_id, render_box)
+    mode = (getattr(settings, 'preview_pipeline_mode', 'batch') or 'batch').lower()
+    if mode == 'sequential':
+        return _generate_previews_sequential(self, asset_id, job_id, render_box)
+    if mode == 'parallel':
+        return _generate_previews_parallel_local(self, asset_id, job_id, render_box, reason='forced_mode')
+    return _generate_previews_batch(self, asset_id, job_id, render_box)
 
     db = _db()
     evt_overall = None
