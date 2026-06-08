@@ -857,6 +857,295 @@ def render_one_page(
         db.close()
 
 
+def _generate_previews_sequential(task, asset_id: str, job_id: str, render_box: list[float] | None = None):
+    """VPS-style safe preview generation for normal customer uploads.
+
+    One backend job owns the whole render. Pages are processed 1..N in order,
+    and the job is only completed after every page has both preview + thumbnail
+    rows recorded. This deliberately avoids the newer batch/fan-out/salvage
+    layers that exposed partial state to the upload UI.
+    """
+    db = _db()
+    evt_overall = None
+    render_context: dict = {}
+    try:
+        job_repo.mark_running(db, job_id)
+        asset = asset_repo.get_asset(db, asset_id)
+        if not asset:
+            raise NonRetryableTaskError(f"Asset not found: {asset_id}")
+
+        prefix = _tenant_prefix(asset.get('source_storage_path'))
+        src_path = asset['normalized_storage_path'] or asset['source_storage_path']
+        page_count = int(asset.get('page_count') or 0)
+        worker_name = getattr(getattr(task, 'request', None), 'hostname', None)
+
+        evt_overall = job_event_repo.start(
+            db,
+            job_id=job_id,
+            asset_id=asset_id,
+            task_name='generate_previews',
+            queue_name='thumbnails',
+            worker_name=worker_name,
+            stage='render_sequential',
+            metadata={
+                'page_count': page_count,
+                'dpi': settings.preview_dpi,
+                'safe_mode': True,
+                'runtime': _runtime_meta(),
+            },
+            message=f'Rendering {page_count or "?"} page(s) sequentially…',
+        )
+
+        timings: dict[str, int] = {}
+
+        def _stamp(label: str, t_start: float) -> None:
+            timings[label] = int((time.monotonic() - t_start) * 1000)
+
+        with Workspace() as ws:
+            src = ws.path('input.pdf')
+            _download_pdf_with_cache(src_path, src, asset_id=asset_id, timings=timings)
+
+            t_box = time.monotonic()
+            effective_render_box = render_box
+            render_box_mode = (
+                getattr(settings, 'preview_render_box_mode', 'metadata_only')
+                or 'metadata_only'
+            ).lower()
+            if effective_render_box is None:
+                try:
+                    effective_render_box = pdf_ops.derive_default_render_box(src)
+                except Exception as exc:
+                    logger.warning(
+                        "generate_previews_safe: derive_default_render_box failed: %s", exc,
+                    )
+                    effective_render_box = None
+
+            render_context = {
+                'render_box_mode': render_box_mode,
+                'detected_render_box': effective_render_box,
+                'rendered_source': 'original_pdf',
+                'safe_mode': 'sequential',
+            }
+
+            if effective_render_box is not None and render_box_mode == 'rewrite_pdf':
+                cropped = ws.path('cropped.pdf')
+                pdf_ops.crop_to_box(src, cropped, effective_render_box)
+                src = cropped
+                render_context['rendered_source'] = 'pikepdf_box_rewrite'
+            _stamp('prepare_render_box', t_box)
+
+            if not page_count:
+                t_inspect = time.monotonic()
+                info = pdf_ops.inspect(src)
+                page_count = int(info.get('page_count') or 0)
+                asset_repo.update_asset(db, asset_id, {
+                    'page_count': page_count,
+                    'width_pt': info.get('width_pt'),
+                    'height_pt': info.get('height_pt'),
+                    'boxes': info.get('boxes'),
+                })
+                _stamp('inspect_for_page_count', t_inspect)
+
+            if page_count <= 0:
+                msg = 'Cannot render previews: page count is unknown'
+                job_repo.mark_failed(db, job_id, msg)
+                if evt_overall:
+                    job_event_repo.fail(db, evt_overall.id, message=msg)
+                    evt_overall = None
+                raise NonRetryableTaskError(msg)
+
+            preview_dir = ws.path('preview')
+            thumb_dir = ws.path('thumb')
+            preview_dir.mkdir(parents=True, exist_ok=True)
+            thumb_dir.mkdir(parents=True, exist_ok=True)
+
+            completed_pages: set[int] = set()
+            page_storage: dict[int, tuple[str, str]] = {}
+            files_created: list[dict] = []
+            preview_path: str | None = None
+            thumb_path: str | None = None
+            t_pages = time.monotonic()
+
+            page_timeout = max(
+                30.0,
+                float(getattr(settings, 'preview_gs_page_timeout_seconds', 20) or 20),
+            )
+
+            for page in range(1, page_count + 1):
+                phase = 'raster'
+                try:
+                    image_path = _retry_with_backoff(
+                        lambda page=page: pdf_ops.rasterize_one_page_ghostscript_jpeg(
+                            src,
+                            preview_dir / 'page',
+                            dpi=settings.preview_dpi,
+                            page=page,
+                            quality=settings.preview_jpeg_quality,
+                            timeout_seconds=page_timeout,
+                        ),
+                        label='safe_rasterize_page',
+                        page=page,
+                    )
+                    if not _valid_local_image(image_path):
+                        raise RuntimeError('rendered preview image is missing or invalid')
+
+                    phase = 'thumbnail'
+                    thumb_image = thumb_dir / f"page-{page:03d}.png"
+                    _retry_with_backoff(
+                        lambda: pdf_ops.downscale_to_thumbnail(
+                            image_path, thumb_image, target_max_dim=360,
+                        ),
+                        label='safe_downscale_thumbnail',
+                        page=page,
+                    )
+                    if not _valid_local_image(thumb_image):
+                        raise RuntimeError('thumbnail image is missing or invalid')
+
+                    phase = 'upload_preview'
+                    preview_storage = unique_name(f'{prefix}previews/page-{page:03d}', '.jpg')
+                    _retry_with_backoff(
+                        lambda: storage.upload(image_path, preview_storage, 'image/jpeg'),
+                        label='safe_upload_preview',
+                        page=page,
+                    )
+
+                    phase = 'upload_thumbnail'
+                    thumb_storage = unique_name(f'{prefix}thumbnails/page-{page:03d}', '.png')
+                    _retry_with_backoff(
+                        lambda: storage.upload(thumb_image, thumb_storage, 'image/png'),
+                        label='safe_upload_thumbnail',
+                        page=page,
+                    )
+
+                    phase = 'record'
+                    _retry_with_backoff(
+                        lambda: _record_page_sequential(
+                            db,
+                            asset_id=asset_id,
+                            job_id=job_id,
+                            page=page,
+                            image_path=image_path,
+                            thumb_image=thumb_image,
+                            preview_storage=preview_storage,
+                            thumb_storage=thumb_storage,
+                            preview_media_type='image/jpeg',
+                        ),
+                        label='safe_record_page',
+                        page=page,
+                    )
+
+                    if page == 1:
+                        preview_path = preview_storage
+                        thumb_path = thumb_storage
+                        asset_repo.update_asset(db, asset_id, {
+                            'thumbnail_storage_path': thumb_path,
+                            'preview_storage_path': preview_path,
+                        })
+
+                    page_storage[page] = (preview_storage, thumb_storage)
+                    completed_pages.add(page)
+                    files_created.append({'kind': 'preview_page', 'page': page, 'storage_path': preview_storage})
+                    files_created.append({'kind': 'thumbnail_page', 'page': page, 'storage_path': thumb_storage})
+                    _emit_page_progress(
+                        db,
+                        job_id=job_id,
+                        asset_id=asset_id,
+                        task_name='generate_previews',
+                        worker_name=worker_name,
+                        completed_count=len(completed_pages),
+                        page_count=page_count,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    msg = f"Preview render failed on page {page}/{page_count} during {phase}: {exc}"
+                    logger.exception("generate_previews_safe: %s", msg)
+                    job_repo.mark_failed(db, job_id, msg)
+                    if evt_overall:
+                        job_event_repo.fail(
+                            db,
+                            evt_overall.id,
+                            message=msg,
+                            metadata={
+                                'failed_page': page,
+                                'failed_phase': phase,
+                                'completed_pages': sorted(completed_pages),
+                                'page_count': page_count,
+                                'render_context': render_context,
+                            },
+                        )
+                        evt_overall = None
+                    raise NonRetryableTaskError(msg) from exc
+
+            _stamp('render_pages_sequential', t_pages)
+
+            expected_pages = set(range(1, page_count + 1))
+            db_present = derived_file_repo.pages_present_both(db, asset_id)
+            still_missing = sorted(expected_pages - (db_present & expected_pages))
+            if still_missing:
+                msg = f"Incomplete render after sequential verification: missing pages {still_missing} of {page_count}"
+                job_repo.mark_failed(db, job_id, msg)
+                if evt_overall:
+                    job_event_repo.fail(
+                        db,
+                        evt_overall.id,
+                        message=msg,
+                        metadata={
+                            'missing_pages': still_missing,
+                            'completed_pages': sorted(completed_pages),
+                            'db_present': sorted(db_present & expected_pages),
+                            'render_context': render_context,
+                        },
+                    )
+                    evt_overall = None
+                raise NonRetryableTaskError(msg)
+
+            asset_repo.update_asset(db, asset_id, {
+                'thumbnail_storage_path': thumb_path or (page_storage.get(1, (None, None))[1]),
+                'preview_storage_path': preview_path or (page_storage.get(1, (None, None))[0]),
+                'status': 'ready',
+            })
+            pages_rendered = len(completed_pages)
+            result = {
+                'thumbnail_storage_path': thumb_path,
+                'preview_storage_path': preview_path,
+                'pages_rendered': pages_rendered,
+                'expected_pages': page_count,
+                'files_created': files_created[:20],
+                'timings_ms': timings,
+                'render_context': render_context,
+                'safe_mode': 'sequential',
+            }
+            job_repo.mark_done(db, job_id, result)
+            if evt_overall:
+                job_event_repo.finish(
+                    db,
+                    evt_overall.id,
+                    metadata={
+                        'pages_rendered': pages_rendered,
+                        'expected': page_count,
+                        'timings_ms': timings,
+                        'render_context': render_context,
+                    },
+                    message=f'Rendered {pages_rendered} of {page_count} page(s)',
+                )
+                evt_overall = None
+            return {'pages_rendered': pages_rendered, 'expected_pages': page_count}
+    except NonRetryableTaskError:
+        raise
+    except Exception as exc:
+        if evt_overall:
+            try:
+                job_event_repo.fail(db, evt_overall.id, message=str(exc))
+            except Exception:
+                pass
+        try:
+            job_repo.mark_failed(db, job_id, traceback.format_exc())
+        except Exception:
+            pass
+        raise exc
+    finally:
+        db.close()
+
+
 @shared_task(bind=True, queue='thumbnails', soft_time_limit=600, time_limit=660)
 def generate_previews(self, asset_id: str, job_id: str, render_box: list[float] | None = None):
     """Generate previews + thumbnails for an asset.
