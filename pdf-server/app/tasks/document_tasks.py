@@ -2092,46 +2092,72 @@ def render_specific_pages(self, asset_id: str, job_id: str, pages: list[int]):
             preview_ext = 'jpg'
             preview_media_type = 'image/jpeg'
 
-            still_missing_after_batch: list[int] = []
             t_raster = time.monotonic()
-
-            def _render_one(pn: int) -> tuple[int, str | None]:
+            for pn in wanted:
+                phase = 'raster'
                 try:
-                    pdf_ops.rasterize_one_page_ghostscript_jpeg(
-                        src, batch_dir / 'page',
-                        dpi=settings.preview_dpi, page=pn,
-                        quality=settings.preview_jpeg_quality,
+                    image_path = _retry_with_backoff(
+                        lambda pn=pn: pdf_ops.rasterize_one_page_ghostscript_jpeg(
+                            src, batch_dir / 'page',
+                            dpi=settings.preview_dpi, page=pn,
+                            quality=settings.preview_jpeg_quality,
+                            timeout_seconds=max(
+                                30.0,
+                                float(getattr(settings, 'preview_gs_page_timeout_seconds', 20) or 20),
+                            ),
+                        ),
+                        label='render_specific_rasterize_page', page=pn,
                     )
-                    return pn, None
+                    if not _valid_local_image(image_path):
+                        raise RuntimeError('rendered preview image is missing or invalid')
+
+                    phase = 'thumbnail'
+                    thumb_image = thumb_dir / f"page-{pn:03d}.png"
+                    _retry_with_backoff(
+                        lambda: pdf_ops.downscale_to_thumbnail(image_path, thumb_image, 360),
+                        label='render_specific_downscale_thumbnail', page=pn,
+                    )
+                    if not _valid_local_image(thumb_image):
+                        raise RuntimeError('thumbnail image is missing or invalid')
+
+                    phase = 'upload_preview'
+                    preview_storage = unique_name(f'{prefix}previews/page-{pn:03d}', f'.{preview_ext}')
+                    _retry_with_backoff(
+                        lambda: storage.upload(image_path, preview_storage, preview_media_type),
+                        label='render_specific_upload_preview', page=pn,
+                    )
+
+                    phase = 'upload_thumbnail'
+                    thumb_storage = unique_name(f'{prefix}thumbnails/page-{pn:03d}', '.png')
+                    _retry_with_backoff(
+                        lambda: storage.upload(thumb_image, thumb_storage, 'image/png'),
+                        label='render_specific_upload_thumbnail', page=pn,
+                    )
+
+                    phase = 'record'
+                    _retry_with_backoff(
+                        lambda: _record_page_sequential(
+                            db,
+                            asset_id=asset_id,
+                            job_id=job_id,
+                            page=pn,
+                            image_path=image_path,
+                            thumb_image=thumb_image,
+                            preview_storage=preview_storage,
+                            thumb_storage=thumb_storage,
+                            preview_media_type=preview_media_type,
+                        ),
+                        label='render_specific_record_page', page=pn,
+                    )
+                    recovered.append(pn)
                 except Exception as exc:  # noqa: BLE001
-                    return pn, f"{type(exc).__name__}: {exc}"
-
-            workers = max(1, min(len(wanted), settings.render_cpu_concurrency))
-            with ThreadPoolExecutor(max_workers=workers) as pool:
-                for pn, err in pool.map(_render_one, wanted):
-                    if err is not None:
-                        logger.warning(
-                            "render_specific_pages: page %d failed: %s", pn, err,
-                        )
-                        still_missing_after_batch.append(pn)
+                    logger.warning(
+                        "render_specific_pages: page %d failed during %s: %s",
+                        pn, phase, exc,
+                    )
+                    failed.append(pn)
             timings['per_page_render_ms'] = int((time.monotonic() - t_raster) * 1000)
-            timings['per_page_failed'] = len(still_missing_after_batch)
-
-            local_pages = _local_preview_pages(batch_dir, preview_ext, set(wanted))
-            failed.extend([p for p in wanted if p not in local_pages])
-            recorded, record_failed = _record_existing_preview_pages(
-                db,
-                asset_id=asset_id,
-                job_id=job_id,
-                prefix=prefix,
-                preview_dir=batch_dir,
-                thumb_dir=thumb_dir,
-                pages=sorted(local_pages),
-                preview_ext=preview_ext,
-                preview_media_type=preview_media_type,
-            )
-            recovered.extend(sorted(recorded))
-            failed.extend([p for p in record_failed if p not in recorded])
+            timings['per_page_failed'] = len(failed)
 
         # If the asset now has every page, promote it back to 'ready'.
         present_previews = derived_file_repo.pages_present(db, asset_id, 'preview_page')
