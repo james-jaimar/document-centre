@@ -373,11 +373,12 @@ export function EmailAccountsTab() {
             )}
           </CardContent>
         </Card>
-      )}
+
+
 
       {/* ── Microsoft 365 / Outlook OAuth Connection ── */}
-      {sendMethod === "own_smtp" && (
-        <Card>
+      <Card>
+
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Mail className="h-4 w-4" />
@@ -446,12 +447,12 @@ export function EmailAccountsTab() {
             )}
           </CardContent>
         </Card>
-      )}
 
-      {/* ── SMTP Accounts (only when own_smtp) ── */}
 
-      {sendMethod === "own_smtp" && (
-        <Card>
+
+      {/* ── SMTP Accounts ── */}
+      <Card>
+
           <CardHeader className="flex-row items-start justify-between gap-4">
             <div>
               <CardTitle>SMTP Email Accounts</CardTitle>
@@ -518,7 +519,8 @@ export function EmailAccountsTab() {
             )}
           </CardContent>
         </Card>
-      )}
+
+
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent className="max-w-lg">
