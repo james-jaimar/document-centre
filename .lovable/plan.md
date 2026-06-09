@@ -1,45 +1,84 @@
-## Two independent fixes
+# Restore per-tenant email on Cloud Run
 
-### 1. Bleed / crop marks showing inside flipbook pages
+Goal: make `pdf-worker-emails` send via SMTP, Microsoft Graph, and Gmail OAuth — same fallback chain the retired edge dispatcher used — so Postnet Sandton (SMTP/Graph) and the Document Centre demo (Outlook/Graph) start sending again without any new infra or third-party service.
 
-**Cause.** When an asset is normalised we call `derive_default_render_box()` and detect a TrimBox/BleedBox smaller than the MediaBox. That box is passed through to `generate_previews`, but the new batch pipeline only physically crops the source PDF when `preview_render_box_mode == 'rewrite_pdf'`. The default mode is `metadata_only`, so the detected box is stored on the job but **never applied** to the Ghostscript rasterisation — the JPEG previews are rendered to the full MediaBox, bleed and crop marks included.
+## What changes
 
-That also explains the "jumps to uncropped" behaviour: the eyeglass shows a thumbnail that was rendered earlier under the old pipeline (cropped), then the flipbook loads the freshly-generated full-size preview (uncropped).
+### 1. New transport clients (Python port of edge code)
 
-**Fix (server, `pdf-server/app/tasks/document_tasks.py`).**
+- `pdf-server/app/email/graph_client.py`
+  - `get_access_token(creds)` → POST `login.microsoftonline.com/{tenant}/oauth2/v2.0/token` (client_credentials).
+  - `send_graph(creds, row, attachments, ...)` → POST `graph.microsoft.com/v1.0/users/{sender}/sendMail`.
+  - Map errors: `401/403` → `PermanentSmtpError` (auth, do not retry); `429` → `TransientSmtpError` with Retry-After; other 5xx/network → `TransientSmtpError`.
+  - Returns the `x-ms-request-id` header as `message_id`.
 
-1. In `_maybe_rewrite_with_box`, crop the working PDF with `pdf_ops.crop_to_box` **whenever an effective render box is present**, regardless of `preview_render_box_mode`. The `metadata_only` mode was a no-op for raster previews; it only made sense when GS was asked to honour TrimBox via `-dUseTrimBox`, which we never wired up.
-2. Apply the same rewrite in both `_generate_previews_batch` and `_generate_previews_parallel_local` so the fallback paths produce trimmed JPEGs too. The sequential path already crops via `crop_to_box`, so it stays as-is.
-3. Record `render_box_applied: true|false` and the box itself in the job event metadata so we can verify per-job in the platform Jobs view.
-4. Re-run preview generation for this specific asset (NPC113 Annual Report) as a one-off after deploy by enqueueing a new `generate_previews` job from the platform Jobs page — no migration needed.
+- `pdf-server/app/email/gmail_client.py`
+  - `refresh_access_token(creds)` → POST `oauth2.googleapis.com/token` (refresh_token grant).
+  - `build_rfc2822(...)` → identical MIME assembly to the TS version (text/html, multipart/related for inline cids, multipart/mixed for regular attachments).
+  - `send_gmail(...)` → POST `gmail.googleapis.com/gmail/v1/users/me/messages/send` with base64url `raw`.
+  - Same 401/403/429 → permanent/transient mapping.
 
-No DB schema change. No change to `derive_default_render_box` or `crop_to_box` themselves — they already handle landscape + `/Rotate` correctly.
+Both use `httpx` (already in `requirements.txt`); no new dependencies.
 
-### 2. Full-screen landscape flipbook only uses ~50% of the viewport
+### 2. Credential layer
 
-**Cause.** `src/components/preview/FlipBook.tsx` computes:
+`pdf-server/app/email/credentials.py`:
+- `AccountCreds = Union[SmtpCreds, GraphCreds, GmailCreds]` (add `kind` discriminator already present).
+- `_build_from_row` branches on `transport` (`smtp` / `graph` / `gmail_oauth`) and reads the right vault secret IDs (`graph_client_secret_id`, `oauth_refresh_token_secret_id`) via the existing `read_email_account_secret` RPC.
+- `resolve_account_id_for_row`: drop the `transport == 'smtp'` filter so Graph/Gmail rows are picked up. Keep the branch → tenant fallback chain.
+- Gmail client_id/secret come from worker env: `GMAIL_OAUTH_CLIENT_ID`, `GMAIL_OAUTH_CLIENT_SECRET` (same env names the edge fn used).
 
-```text
-scaleFactor = Math.min(scaleX, scaleY, 1)
+### 3. Dispatch shim
+
+`pdf-server/app/tasks/email_tasks.py` → in `send_email`, after `get_account_creds`:
+```python
+if creds.kind == "smtp":   send_smtp(...)
+elif creds.kind == "graph": send_graph(...)
+elif creds.kind == "gmail_oauth": send_gmail(...)
 ```
+Reuse the existing `account_slot` concurrency wrapper, metrics, retry logic, and mark_sent/mark_failed paths unchanged.
 
-The `, 1` cap prevents the fixed 400px-wide internal page from scaling **up**. On a 1920×1080 lightbox (passed in at 0.95 × 0.92 of the window), `scaleX` ≈ 2.18 and `scaleY` ≈ 3.3, but both are clamped to 1 — so a landscape spread renders at 800px wide on a 1920px screen ≈ 42% utilisation.
+### 4. Remove duplicate-dispatcher race
 
-**Fix (frontend, `src/components/preview/FlipBook.tsx`).**
+Three edge functions still fire-and-forget POST to `email-dispatcher` after enqueueing:
+- `supabase/functions/send-email/index.ts:72`
+- `supabase/functions/send-order-email/index.ts:506`
+- `supabase/functions/submit-contact/index.ts:201`
 
-1. Replace `Math.min(scaleX, scaleY, 1)` with `Math.min(scaleX, scaleY)` so the spread fills the available area on both axes.
-2. Add a generous safety cap (e.g. `Math.min(scaleX, scaleY, 4)`) just to avoid pathological cases on ultrawide monitors — JPEG previews are rendered at 150 DPI so 3-4× upscale is still visually fine.
-3. No change to `PreviewLightbox.tsx` — its 0.95 / 0.92 envelope is already correct; the bottleneck was the flipbook cap.
+Replace each with a fire-and-forget POST to the Cloud Run worker's existing beat route (`POST {PDF_API_URL}/beat/scan-email-outbox` with `EMAIL_NOTIFY_TOKEN`) so a freshly enqueued row sends within ~1 s instead of waiting for the 30 s scheduler tick. If `PDF_API_URL` or token env is missing, just skip — the scheduler picks it up.
 
-After this change, a landscape A4 lightbox spread will fill ≈85-90% of the viewport width on a 1920px screen.
+### 5. Worker env
 
-### Out of scope (flag for follow-up if needed)
+Add to `pdf-worker-emails` in `.github/workflows/pdf-server-deploy.yml`:
+- `GMAIL_OAUTH_CLIENT_ID` and `GMAIL_OAUTH_CLIENT_SECRET` as Secret Manager refs (same secret names already used by the edge fn — needs verification that they exist as GCP secrets; if not, user adds them).
+- No other env changes required.
 
-- PDFs that have **visible crop-mark artwork baked into the content stream** but no smaller TrimBox cannot be detected by `derive_default_render_box`. If the NPC113 file turns out to be like that (TrimBox == MediaBox), the server fix alone won't help — we'd need a separate "user-specified bleed" or content-based crop detection feature. I can investigate the actual file's boxes after deploy if the issue persists.
-- `PdfPageView` (used by `LooseSheetsPreview`, not the flipbook) renders via pdf.js, which honours CropBox not TrimBox. Bound-document flipbooks don't use it, so this is not relevant to the reported issue.
+### 6. Decommission edge dispatcher (deferred, opt-in)
 
-### Verification
+Not done in this pass. Once Postnet Sandton and DC demo send successfully on the new path, follow `docs/VPS_DECOMMISSION.md` §6 to drop the `notify_email_dispatcher` trigger + cron and delete the `email-dispatcher` function. Until then it remains as a no-op safety net (rows are claimed by whichever dispatcher gets there first; with the kicks removed in step 4 that will be Python).
 
-- After deploy: re-trigger previews for the NPC113 asset; confirm new preview JPEGs are trimmed (open one directly from the platform Jobs > Assets panel).
-- Open the same doc in the customer lightbox: spread should fill ~85% of the viewport and show no crop marks.
-- Smoke-test a portrait A4 booklet that has no TrimBox to confirm `render_box_applied: false` and rendering is unchanged.
+## Out of scope
+
+- No UI changes.
+- No new tests beyond a manual send to Postnet Sandton + DC demo after deploy.
+- No switch to SendGrid/Resend/Mailgun.
+- No schema changes (the `email_accounts` columns the edge fn read already exist).
+
+## Post-deploy verification
+
+1. `gcloud run services describe pdf-worker-emails ... --format='yaml(status.traffic,status.latestReadyRevisionName)'` — live revision matches latest.
+2. Send a test order on Postnet Sandton → row in `email_outbox` goes `pending → sent` within 5 s; `provider` column shows `graph`; `message_id` populated.
+3. Same on the DC demo (hello@documentcentre.com / Graph).
+4. Send a row on a tenant configured with Gmail OAuth (if available) → `provider=gmail_oauth`, `message_id` is a Gmail message id.
+5. Confirm `email_failed_total{reason="config_missing"}` stops climbing.
+
+## Files touched
+
+- new: `pdf-server/app/email/graph_client.py`
+- new: `pdf-server/app/email/gmail_client.py`
+- edited: `pdf-server/app/email/credentials.py`
+- edited: `pdf-server/app/tasks/email_tasks.py`
+- edited: `supabase/functions/send-email/index.ts`
+- edited: `supabase/functions/send-order-email/index.ts`
+- edited: `supabase/functions/submit-contact/index.ts`
+- edited: `.github/workflows/pdf-server-deploy.yml` (Gmail OAuth env for emails worker)
