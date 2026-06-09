@@ -9,9 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Plus, Send, Trash2, AlertCircle, CheckCircle2, Mail, ShieldCheck } from "lucide-react";
+import {
+  Plus, Send, Trash2, AlertCircle, CheckCircle2, Mail, ShieldCheck, Loader2,
+} from "lucide-react";
 
-interface SmtpAccount {
+interface EmailAccount {
   id: string;
   tenant_id: string;
   branch_id: string | null;
@@ -27,7 +29,8 @@ interface SmtpAccount {
   is_active: boolean;
   last_verified_at: string | null;
   last_error: string | null;
-  transport: string;
+  transport: "smtp" | "gmail_oauth" | "graph" | "graph_oauth";
+  oauth_email: string | null;
 }
 
 const blank = (tenantId: string, branchId: string) => ({
@@ -53,11 +56,13 @@ interface Props {
 }
 
 export function BranchEmailAccountsPanel({ tenantId, branchId }: Props) {
-  const [accounts, setAccounts] = useState<SmtpAccount[]>([]);
+  const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<any | null>(null);
   const [testRecipient, setTestRecipient] = useState("");
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [connectingGmail, setConnectingGmail] = useState(false);
+  const [connectingMicrosoft, setConnectingMicrosoft] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -73,6 +78,10 @@ export function BranchEmailAccountsPanel({ tenantId, branchId }: Props) {
   };
 
   useEffect(() => { if (tenantId && branchId) load(); /* eslint-disable-next-line */ }, [tenantId, branchId]);
+
+  const gmailAccount = accounts.find((a) => a.transport === "gmail_oauth");
+  const microsoftAccount = accounts.find((a) => a.transport === "graph_oauth");
+  const smtpAccounts = accounts.filter((a) => a.transport === "smtp");
 
   const save = async () => {
     if (!editing) return;
@@ -125,87 +134,279 @@ export function BranchEmailAccountsPanel({ tenantId, branchId }: Props) {
     load();
   };
 
+  const runOAuthPopup = async (
+    fnName: "gmail-oauth-connect" | "microsoft-oauth-connect",
+    messageType: "gmail-oauth-callback" | "microsoft-oauth-callback",
+    providerLabel: string,
+    setConnecting: (v: boolean) => void,
+  ) => {
+    setConnecting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke(fnName, {
+        body: { action: "authorize", tenant_id: tenantId, branch_id: branchId },
+      });
+      if (error || data?.error) {
+        toast.error(error?.message || data?.error);
+        setConnecting(false);
+        return;
+      }
+      const popup = window.open(data.authorize_url, `${fnName}-oauth`, "width=600,height=700,scrollbars=yes");
+      const pollInterval = setInterval(async () => {
+        if (popup?.closed) {
+          clearInterval(pollInterval);
+          setConnecting(false);
+          await load();
+        }
+      }, 1000);
+      const handleMessage = async (event: MessageEvent) => {
+        if (event.data?.type === messageType) {
+          clearInterval(pollInterval);
+          popup?.close();
+          window.removeEventListener("message", handleMessage);
+          setConnecting(false);
+          if (event.data.success) {
+            toast.success(`${providerLabel} connected: ${event.data.email}`);
+          } else {
+            toast.error(event.data.error || `${providerLabel} connection failed`);
+          }
+          await load();
+        }
+      };
+      window.addEventListener("message", handleMessage);
+    } catch (e) {
+      toast.error((e as Error).message);
+      setConnecting(false);
+    }
+  };
+
+  const connectGmail = () =>
+    runOAuthPopup("gmail-oauth-connect", "gmail-oauth-callback", "Gmail", setConnectingGmail);
+  const connectMicrosoft = () =>
+    runOAuthPopup("microsoft-oauth-connect", "microsoft-oauth-callback", "Microsoft 365", setConnectingMicrosoft);
+
+  const disconnectOAuth = async (
+    fnName: "gmail-oauth-connect" | "microsoft-oauth-connect",
+    account: EmailAccount | undefined,
+    providerLabel: string,
+  ) => {
+    if (!account) return;
+    if (!confirm(`Disconnect ${providerLabel}? Emails will no longer be sent via this account.`)) return;
+    const { data, error } = await supabase.functions.invoke(fnName, {
+      body: { action: "disconnect", account_id: account.id },
+    });
+    if (error || (data as any)?.error) {
+      toast.error(error?.message || (data as any)?.error);
+      return;
+    }
+    toast.success(`${providerLabel} disconnected`);
+    load();
+  };
+
   return (
-    <Card>
-      <CardHeader className="flex-row items-start justify-between gap-4">
-        <div>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Mail className="h-4 w-4" /> Branch Email (SMTP)
+    <div className="space-y-6">
+      <div className="rounded-lg border border-border bg-muted/30 p-4">
+        <h3 className="text-base font-semibold mb-1">How this branch sends email</h3>
+        <p className="text-sm text-muted-foreground">
+          Connect one mailbox below (Gmail, Microsoft 365, or SMTP). All order, quote, and
+          notification emails from this branch will be sent from it. If nothing is configured,
+          emails fall back to the Document Centre platform sender.
+        </p>
+      </div>
+
+      {/* Gmail OAuth */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Mail className="h-4 w-4" /> Connect Gmail
           </CardTitle>
           <CardDescription>
-            These credentials are used only to send emails from this branch (order confirmations, proformas, etc.).
-            They are encrypted, stored securely, and never visible to other branches.
+            Send from Gmail or Google Workspace. Just sign in — no SMTP configuration needed.
           </CardDescription>
-        </div>
-        <Button onClick={() => setEditing(blank(tenantId, branchId))}>
-          <Plus className="h-4 w-4 mr-1" /> Add account
-        </Button>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-start gap-2 rounded-md bg-muted/40 border p-3 text-xs text-muted-foreground">
-          <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-emerald-600" />
-          <div>
-            Use a dedicated mailbox (e.g. <code>orders@yourbranch.co.za</code>). For Gmail/Google Workspace, generate an "App password" in your Google account security settings.
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Label className="text-xs whitespace-nowrap">Test recipient:</Label>
-          <Input
-            type="email"
-            placeholder="you@example.com"
-            value={testRecipient}
-            onChange={(e) => setTestRecipient(e.target.value)}
-            className="max-w-xs"
-          />
-        </div>
-
-        {loading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        ) : accounts.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No email accounts yet. Add one to start sending from this branch.</p>
-        ) : (
-          <div className="grid gap-3">
-            {accounts.map((a) => (
-              <div key={a.id} className="rounded-lg border p-4 flex flex-col gap-2">
-                <div className="flex items-start justify-between gap-2 flex-wrap">
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium">{a.label}</span>
-                      {a.is_default && <Badge variant="default">Default</Badge>}
-                      {!a.is_active && <Badge variant="outline">Disabled</Badge>}
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {a.from_name} &lt;{a.from_email}&gt; · {a.smtp_host}:{a.smtp_port} ({a.smtp_secure})
+        </CardHeader>
+        <CardContent>
+          {gmailAccount ? (
+            <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-red-50 flex items-center justify-center">
+                  <Mail className="h-5 w-5 text-red-600" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{gmailAccount.oauth_email}</span>
+                    <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 gap-1">
+                      <CheckCircle2 className="h-3 w-3" /> Connected
+                    </Badge>
+                  </div>
+                  {gmailAccount.last_error && (
+                    <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> {gmailAccount.last_error}
                     </p>
-                    {a.last_error ? (
-                      <p className="text-xs text-destructive mt-1 flex items-center gap-1">
-                        <AlertCircle className="h-3 w-3" /> {a.last_error}
-                      </p>
-                    ) : a.last_verified_at ? (
-                      <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                        <CheckCircle2 className="h-3 w-3 text-green-600" /> Verified {new Date(a.last_verified_at).toLocaleString()}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="flex gap-1">
-                    <Button size="sm" variant="outline" onClick={() => test(a.id)} disabled={testingId === a.id}>
-                      <Send className="h-3 w-3 mr-1" /> {testingId === a.id ? "Sending…" : "Test"}
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => setEditing({ ...a, smtp_password: "" })}>Edit</Button>
-                    <Button size="sm" variant="ghost" onClick={() => remove(a.id)}><Trash2 className="h-4 w-4" /></Button>
-                  </div>
+                  )}
                 </div>
               </div>
-            ))}
+              <Button variant="outline" size="sm" onClick={() => disconnectOAuth("gmail-oauth-connect", gmailAccount, "Gmail")}>
+                Disconnect
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-start gap-3">
+              <p className="text-sm text-muted-foreground">
+                Authorize Document Centre to send from this branch's Gmail mailbox. We only request send permission — we never read your inbox.
+              </p>
+              <Button onClick={connectGmail} disabled={connectingGmail} className="gap-2">
+                {connectingGmail ? <Loader2 className="h-4 w-4 animate-spin" /> : (
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                  </svg>
+                )}
+                Connect with Google
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Microsoft OAuth */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Mail className="h-4 w-4" /> Connect Microsoft 365 / Outlook
+          </CardTitle>
+          <CardDescription>
+            Send from Microsoft 365 or Outlook.com. Just sign in — no SMTP configuration needed.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {microsoftAccount ? (
+            <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-blue-50 flex items-center justify-center">
+                  <Mail className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{microsoftAccount.oauth_email}</span>
+                    <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 gap-1">
+                      <CheckCircle2 className="h-3 w-3" /> Connected
+                    </Badge>
+                  </div>
+                  {microsoftAccount.last_error && (
+                    <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> {microsoftAccount.last_error}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => disconnectOAuth("microsoft-oauth-connect", microsoftAccount, "Microsoft 365")}>
+                Disconnect
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-start gap-3">
+              <p className="text-sm text-muted-foreground">
+                Authorize Document Centre to send from this branch's Microsoft 365 or Outlook mailbox. We only request send permission.
+              </p>
+              <Button onClick={connectMicrosoft} disabled={connectingMicrosoft} className="gap-2">
+                {connectingMicrosoft ? <Loader2 className="h-4 w-4 animate-spin" /> : (
+                  <svg viewBox="0 0 23 23" className="h-4 w-4" xmlns="http://www.w3.org/2000/svg">
+                    <path fill="#f35325" d="M1 1h10v10H1z"/>
+                    <path fill="#81bc06" d="M12 1h10v10H12z"/>
+                    <path fill="#05a6f0" d="M1 12h10v10H1z"/>
+                    <path fill="#ffba08" d="M12 12h10v10H12z"/>
+                  </svg>
+                )}
+                Sign in with Microsoft
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* SMTP */}
+      <Card>
+        <CardHeader className="flex-row items-start justify-between gap-4">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Mail className="h-4 w-4" /> SMTP Mailbox
+            </CardTitle>
+            <CardDescription>
+              For mailboxes that don't use Gmail or Microsoft (e.g. cPanel, custom mail server).
+              Credentials are encrypted and only used to send from this branch.
+            </CardDescription>
           </div>
-        )}
-      </CardContent>
+          <Button onClick={() => setEditing(blank(tenantId, branchId))}>
+            <Plus className="h-4 w-4 mr-1" /> Add account
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-start gap-2 rounded-md bg-muted/40 border p-3 text-xs text-muted-foreground">
+            <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-emerald-600" />
+            <div>
+              Use a dedicated mailbox (e.g. <code>orders@yourbranch.co.za</code>). For Gmail App Passwords, use the Connect Gmail option above instead.
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Label className="text-xs whitespace-nowrap">Test recipient:</Label>
+            <Input
+              type="email"
+              placeholder="you@example.com"
+              value={testRecipient}
+              onChange={(e) => setTestRecipient(e.target.value)}
+              className="max-w-xs"
+            />
+          </div>
+
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : smtpAccounts.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No SMTP accounts. Add one, or connect Gmail/Microsoft above.</p>
+          ) : (
+            <div className="grid gap-3">
+              {smtpAccounts.map((a) => (
+                <div key={a.id} className="rounded-lg border p-4 flex flex-col gap-2">
+                  <div className="flex items-start justify-between gap-2 flex-wrap">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium">{a.label}</span>
+                        {a.is_default && <Badge variant="default">Default</Badge>}
+                        {!a.is_active && <Badge variant="outline">Disabled</Badge>}
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {a.from_name} &lt;{a.from_email}&gt; · {a.smtp_host}:{a.smtp_port} ({a.smtp_secure})
+                      </p>
+                      {a.last_error ? (
+                        <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" /> {a.last_error}
+                        </p>
+                      ) : a.last_verified_at ? (
+                        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3 text-green-600" /> Verified {new Date(a.last_verified_at).toLocaleString()}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="outline" onClick={() => test(a.id)} disabled={testingId === a.id}>
+                        <Send className="h-3 w-3 mr-1" /> {testingId === a.id ? "Sending…" : "Test"}
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setEditing({ ...a, smtp_password: "" })}>Edit</Button>
+                      <Button size="sm" variant="ghost" onClick={() => remove(a.id)}><Trash2 className="h-4 w-4" /></Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editing?.id ? "Edit account" : "New branch email account"}</DialogTitle>
+            <DialogTitle>{editing?.id ? "Edit account" : "New branch SMTP account"}</DialogTitle>
           </DialogHeader>
           {editing && (
             <div className="grid gap-3">
@@ -230,7 +431,7 @@ export function BranchEmailAccountsPanel({ tenantId, branchId }: Props) {
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2 grid gap-1.5">
                   <Label>SMTP host *</Label>
-                  <Input value={editing.smtp_host} onChange={(e) => setEditing({ ...editing, smtp_host: e.target.value })} placeholder="smtp.gmail.com" />
+                  <Input value={editing.smtp_host} onChange={(e) => setEditing({ ...editing, smtp_host: e.target.value })} placeholder="smtp.example.com" />
                 </div>
                 <div className="grid gap-1.5">
                   <Label>Port *</Label>
@@ -276,6 +477,6 @@ export function BranchEmailAccountsPanel({ tenantId, branchId }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Card>
+    </div>
   );
 }
