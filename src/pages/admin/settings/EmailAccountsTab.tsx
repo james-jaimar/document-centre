@@ -95,13 +95,8 @@ export function EmailAccountsTab() {
 
   useEffect(() => { load(); }, [tenantId]);
 
-  const setSendMethod = (method: SendMethod) => {
-    upsertSetting.mutate({
-      category: "email",
-      setting_key: "email_send_method",
-      setting_value: method,
-    });
-  };
+
+
 
   const saveSystemFields = () => {
     const updates: Parameters<typeof upsertSetting.mutate>[0][] = [];
