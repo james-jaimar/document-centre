@@ -301,6 +301,26 @@ export function EmailAccountsTab() {
         </CardContent>
       </Card>
 
+      {isMultiBranch ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Mail className="h-4 w-4" /> Branch mailboxes
+            </CardTitle>
+            <CardDescription>
+              This tenant has multiple branches. Mailboxes (Gmail, Microsoft 365, SMTP) are
+              configured per branch — each branch sends order, quote, and notification emails
+              from its own mailbox.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild variant="outline">
+              <Link to="/admin/branches">Open Branches → Settings → Email</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+      <>
       {/* ── Gmail OAuth Connection ── */}
       <Card>
 
