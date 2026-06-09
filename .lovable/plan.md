@@ -1,54 +1,76 @@
-## Problem
+# Tenant vs Branch email setup — clean split
 
-`email_outbox` rows fail with `error_message='no_email_account'` even when the branch has a valid, active, default SMTP account. PostNet Sandton's INV-00085 proforma is the current example (branch `50af6453…`, account `97950a99…` is correctly configured).
+## What you're seeing
 
-## Root cause
+- **Tenant → Email Accounts** today shows: the *Send via Document Centre / Send via your own domain* toggle, system name/note, **and** three full mailbox setup cards (Gmail, Microsoft 365, SMTP list).
+- **Branch → Settings → Email** today shows: SMTP only. No Gmail, no Microsoft.
+- The Microsoft 365 / Outlook (Graph OAuth) connector **does** already exist on the tenant page — it's just below the fold under the Gmail card. The wiring (`microsoft-oauth-connect` edge function + `transport='graph_oauth'`) is built and the worker can already send from it. We have not test-fired it yet.
 
-`supabase/functions/_shared/email-queue.ts` (`resolveEmailAccount`, lines 74-88) gates branch/tenant SMTP lookup behind `tenant_settings.email_send_method`:
+The confusion is real: for a multi-branch tenant (PostNet) the tenant itself never sends customer email — every order is branch-scoped — so mailbox setup at tenant level is noise.
 
-- Default (or unset) → `"platform"` → resolver returns `null` immediately, ignoring all configured tenant/branch SMTP accounts.
-- Only `"own_smtp"` lets the lookup proceed.
+## The split
 
-The PostNet Sandton tenant has no `email_send_method` row, so the resolver returned `null`. The worker fallback (`resolve_account_id_for_row` in `credentials.py`) doesn't check this setting, but only if the worker is on the post-Jun-6 image. Either way the design is wrong: any tenant that adds SMTP without flipping the toggle silently fails.
+### Tenant Email Accounts page (`/admin/settings` → Email Accounts)
 
-## Fix
+Strip down to just policy + identity:
 
-Make resolution implicit. If the tenant/branch has a configured active account, use it. The `email_send_method` toggle becomes unnecessary — having an account *is* the signal.
+1. **System Emails** toggle: *Send via Document Centre* ↔ *Send via your own domain*.
+   - If "Document Centre" → all outbound email uses the platform Graph fallback. Branch mailboxes are ignored even if configured.
+   - If "your own domain" → resolver uses branch mailbox; falls back to platform if none configured. A short helper line tells the admin: *"Set up each branch's mailbox in Branch Settings → Email."* with a link to the branches list.
+2. **Email Identity** (system name / note) — unchanged.
+3. **Remove** the Gmail card, Microsoft card, and SMTP account list from this page. (For tenants that have only one branch, or no branches at all, we keep them visible — see "Single-branch tenants" below.)
 
-### Code changes
+### Branch Settings → Email (`/admin/branches/:id` → Email tab, and Branch Portal → Settings → Email)
 
-1. **`supabase/functions/_shared/email-queue.ts`** — delete the `email_send_method` gate (lines 71-88). Order of resolution becomes:
-   1. explicit `email_account_id` (validated active)
-   2. branch default (active)
-   3. any active account on the branch
-   4. tenant-level default (no branch)
-   5. any active tenant-level account
-   6. platform Graph fallback (existing tail logic at lines 125-135)
+Add Gmail + Microsoft cards alongside the existing SMTP panel, mirroring the layout from the current tenant page:
 
-2. **`pdf-server/app/email/credentials.py`** — `resolve_account_id_for_row` already mirrors steps 2-5. Add step 6 (platform Graph fallback) so the worker behaves identically when an outbox row lands without `email_account_id`.
-
-3. **`src/pages/admin/settings/EmailAccountsTab.tsx`** — remove the platform-vs-own-SMTP toggle (lines 54-104 plus its UI). The page now simply says "active accounts are used in this order: branch default → tenant default → platform fallback". One less footgun during onboarding.
-
-4. **Migration** — backfill: drop any stale `email_send_method` rows so the resolver stops reading them. (Setting is no longer read after change 1.)
-
-### Recovery for the stuck PostNet row
-
-After deploying, re-queue `f74828a0-86f6-4dc0-861d-fc47ec3236d4`:
-```sql
-update email_outbox
-set status='queued', attempts=0, error_message=null, last_error_code=null,
-    locked_at=null, locked_by=null, worker_lease_until=null,
-    next_attempt_at=now()
-where id='f74828a0-86f6-4dc0-861d-fc47ec3236d4';
+```text
+┌─ Gmail (OAuth) ─────────────────── [Connect with Google] ─┐
+│  connected: orders@sandtoncity.postnet.co.za              │
+└───────────────────────────────────────────────────────────┘
+┌─ Microsoft 365 / Outlook ────── [Sign in with Microsoft] ─┐
+│  not connected                                            │
+└───────────────────────────────────────────────────────────┘
+┌─ SMTP ───────────────────────────────── [+ Add account] ──┐
+│  (existing branch SMTP list — unchanged)                  │
+└───────────────────────────────────────────────────────────┘
 ```
 
-### Deploy
+Resolution order (already implemented in `_shared/email-queue.ts` and `credentials.py`):
+branch default → any branch mailbox → tenant-level default → any tenant-level → platform fallback.
 
-- `supabase--deploy_edge_functions`: every function that imports `_shared/email-queue.ts` (`email-dispatcher`, `send-email`, `send-order-email`, `send-test-email`, `manage-user`, `request-password-reset`).
-- Worker change ships on next `pdf-server` Cloud Run deploy.
+### Single-branch tenants
 
-### Why this is safe
+A tenant with exactly one branch (or zero branches) doesn't really need a separate Branch settings trip. For those:
+- Keep Gmail/Microsoft/SMTP cards visible on the **tenant** Email Accounts page, scoped to that lone branch under the hood.
+- Multi-branch tenants (`branches.length > 1`): cards hidden on tenant page, only visible per-branch.
 
-- DC tenant (Graph): no branch-level account exists, no tenant-level SMTP — resolver falls through to the existing Graph fallback at the end. Same behaviour.
-- PostNet Sandton (SMTP): branch default is now picked up immediately. Fixes the bug.
-- Any future tenant: drop in an SMTP/Gmail/Graph account, mark active+default, done. No hidden toggle to remember.
+The check is a simple `useBranches(tenantId).data?.length` in `EmailAccountsTab.tsx`.
+
+## Backend work
+
+The OAuth initiators need to know which branch the account belongs to.
+
+**`supabase/functions/gmail-oauth-connect/index.ts`** and **`supabase/functions/microsoft-oauth-connect/index.ts`**:
+- Accept optional `branch_id` on the initiate POST.
+- Encode into the OAuth `state` blob.
+- On callback insert into `email_accounts`, stamp `branch_id` when present.
+- Listing / default-toggle / disconnect queries: scope by `(tenant_id, branch_id IS NULL)` for tenant-level and `(tenant_id, branch_id = $X)` for branch-level so a tenant Gmail row and a branch Gmail row don't collide.
+- Permission check: allow tenant admins **or** members of the target branch (`tenant_memberships` for that branch with admin/owner role).
+
+Deploy both functions after edits. No DB migration — `email_accounts.branch_id` already exists.
+
+## Microsoft 365 — testing
+
+The Microsoft Graph OAuth path is built but unverified end-to-end. After the branch panel ships, I'll:
+1. Connect a Microsoft account from a test branch.
+2. Send a test email through the branch's **Test** button.
+3. Confirm `email_outbox` shows `provider=graph_oauth` and `status=sent` within ~5 s.
+
+If anything's off, the fix is isolated to `graph_oauth_client.py` and the `microsoft-oauth-connect` edge function — no schema changes.
+
+## Out of scope
+
+- Document Centre's own tenant Graph (app-only `transport='graph'`) row — leaves it alone, that's the platform fallback for tenants that pick "Send via Document Centre".
+- Edge resolver / Cloud Run worker — already branch-aware.
+- Auth/recovery emails — unaffected; those continue to use the platform sender.
