@@ -4,38 +4,29 @@ The Supabase vault stores SMTP/OAuth secrets, decrypted via the existing
 `read_email_account_secret(p_secret_id)` RPC (same one the edge dispatcher
 uses). We mirror its behaviour by calling the RPC through the Supabase
 service-role client — no need to re-implement vault crypto in Python.
+
+Supports three transports, matching the retired edge dispatcher:
+- smtp           → SmtpCreds (aiosmtplib)
+- graph          → GraphCreds (Microsoft Graph sendMail)
+- gmail_oauth    → GmailCreds (Gmail API users.messages.send)
 """
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from supabase import Client
 
+from .gmail_client import GmailCreds, gmail_oauth_client_id, gmail_oauth_client_secret
+from .graph_client import GraphCreds
+# Re-export so callers can import SmtpCreds from credentials.
+from .smtp_client_creds import SmtpCreds  # noqa: F401
+
+AccountCreds = Union[SmtpCreds, GraphCreds, GmailCreds]
+
 # id -> (creds, fetched_at_monotonic)
-_CACHE: Dict[str, tuple["AccountCreds", float]] = {}
+_CACHE: Dict[str, tuple[AccountCreds, float]] = {}
 _CACHE_TTL_SECONDS = 300
-
-
-@dataclass(frozen=True)
-class SmtpCreds:
-    kind: str
-    account_id: str
-    from_name: str
-    from_email: str
-    reply_to: Optional[str]
-    send_delay_ms: int
-    max_concurrency: int
-    host: str
-    port: int
-    secure: str  # "tls" | "starttls" | "none"
-    username: str
-    password: str
-
-
-# Future: GraphCreds, GmailCreds. Same shape minus host/port/etc.
-AccountCreds = SmtpCreds
 
 
 class CredentialError(Exception):
@@ -49,33 +40,74 @@ def _read_vault(sb: Client, secret_id: Optional[str]) -> Optional[str]:
     return res.data if res.data else None
 
 
-def _build_from_row(sb: Client, row: Dict[str, Any]) -> AccountCreds:
-    if not row.get("is_active"):
-        raise CredentialError(f"account {row.get('id')} inactive")
-    transport = row.get("transport") or "smtp"
-    if transport != "smtp":
-        # Graph / Gmail OAuth deliberately deferred — keep current edge
-        # function handling them until we extend this module.
-        raise CredentialError(f"transport {transport} not yet implemented in pdf-server")
-
-    password = _read_vault(sb, row.get("smtp_password_secret_id"))
-    if not password:
-        raise CredentialError(f"missing SMTP password for account {row.get('id')}")
-
-    return SmtpCreds(
-        kind="smtp",
+def _common_fields(row: Dict[str, Any]) -> Dict[str, Any]:
+    return dict(
         account_id=str(row["id"]),
         from_name=row.get("from_name") or "",
         from_email=row["from_email"],
         reply_to=row.get("reply_to"),
         send_delay_ms=int(row.get("send_delay_ms") or 0),
         max_concurrency=int(row.get("max_concurrency") or 4),
-        host=row["smtp_host"],
-        port=int(row["smtp_port"]),
-        secure=(row.get("smtp_secure") or "starttls").lower(),
-        username=row["smtp_username"],
-        password=password,
     )
+
+
+def _build_from_row(sb: Client, row: Dict[str, Any]) -> AccountCreds:
+    if not row.get("is_active"):
+        raise CredentialError(f"account {row.get('id')} inactive")
+    transport = (row.get("transport") or "smtp").lower()
+    common = _common_fields(row)
+
+    if transport == "smtp":
+        password = _read_vault(sb, row.get("smtp_password_secret_id"))
+        if not password:
+            raise CredentialError(f"missing SMTP password for account {row.get('id')}")
+        return SmtpCreds(
+            kind="smtp",
+            host=row["smtp_host"],
+            port=int(row["smtp_port"]),
+            secure=(row.get("smtp_secure") or "starttls").lower(),
+            username=row["smtp_username"],
+            password=password,
+            **common,
+        )
+
+    if transport == "graph":
+        client_secret = _read_vault(sb, row.get("graph_client_secret_id"))
+        if not (
+            client_secret
+            and row.get("graph_tenant_id")
+            and row.get("graph_client_id")
+            and row.get("graph_sender_address")
+        ):
+            raise CredentialError(f"incomplete Graph config for account {row.get('id')}")
+        return GraphCreds(
+            kind="graph",
+            azure_tenant_id=row["graph_tenant_id"],
+            client_id=row["graph_client_id"],
+            client_secret=client_secret,
+            sender=row["graph_sender_address"],
+            **common,
+        )
+
+    if transport == "gmail_oauth":
+        refresh = _read_vault(sb, row.get("oauth_refresh_token_secret_id"))
+        client_id = gmail_oauth_client_id()
+        client_secret = gmail_oauth_client_secret()
+        if not (refresh and client_id and client_secret and row.get("oauth_email")):
+            raise CredentialError(
+                f"incomplete Gmail OAuth config for account {row.get('id')} "
+                f"(refresh={'y' if refresh else 'n'}, client_id_env={'y' if client_id else 'n'})"
+            )
+        return GmailCreds(
+            kind="gmail_oauth",
+            refresh_token=refresh,
+            client_id=client_id,
+            client_secret=client_secret,
+            oauth_email=row["oauth_email"],
+            **common,
+        )
+
+    raise CredentialError(f"unknown transport {transport!r} for account {row.get('id')}")
 
 
 def get_account_creds(sb: Client, account_id: str, *, force_refresh: bool = False) -> AccountCreds:
@@ -112,15 +144,13 @@ def resolve_account_id_for_row(
 ) -> Optional[str]:
     """Mirror of the edge dispatcher's account fallback chain.
 
-    Returns the id of the first usable SMTP account, in order:
-      1. branch default SMTP
-      2. any branch active SMTP
-      3. tenant-wide default SMTP (no branch)
-      4. any tenant-wide active SMTP
-      5. any active SMTP for the tenant
-    Returns None if no SMTP account is configured. The Python worker
-    does not yet implement Graph/OAuth transports, so those rows are
-    intentionally skipped here and will surface as `no_email_account`.
+    Returns the id of the first usable active account (any transport),
+    in order:
+      1. branch default
+      2. any branch
+      3. tenant-wide default (no branch)
+      4. any tenant-wide (no branch)
+      5. any active account for this tenant
     """
     if not tenant_id:
         return None
@@ -130,7 +160,6 @@ def resolve_account_id_for_row(
         .select("id,branch_id,is_default,transport,is_active")
         .eq("tenant_id", tenant_id)
         .eq("is_active", True)
-        .eq("transport", "smtp")
         .execute()
     )
     accounts = res.data or []
@@ -159,4 +188,3 @@ def resolve_account_id_for_row(
         return picked
 
     return accounts[0]["id"]
-
