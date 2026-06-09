@@ -51,14 +51,14 @@ const blank = (tenant_id: string): Partial<EmailAccount> & { smtp_password?: str
   transport: "smtp",
 });
 
-type SendMethod = "platform" | "own_smtp";
+
 
 export function EmailAccountsTab() {
   const { tenantId } = useTenantContext();
   const { settingsMap, isLoading: settingsLoading } = useTenantSettingsMap("email");
   const upsertSetting = useUpsertTenantSetting();
 
-  const sendMethod = ((settingsMap.email_send_method as string) || "platform") as SendMethod;
+  
   const systemName = (settingsMap.email_system_name as string) || "";
   const emailNote = (settingsMap.email_note as string) || "";
 
