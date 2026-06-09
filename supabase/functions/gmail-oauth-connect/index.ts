@@ -95,13 +95,14 @@ Deno.serve(async (req) => {
       if (oauthErr) return htmlClosePage(corsHeaders, { success: false, error: oauthErr });
       if (!code || !stateRaw) return htmlClosePage(corsHeaders, { success: false, error: "Missing code or state" });
 
-      let state: { tenant_id: string; caller_id: string };
+      let state: { tenant_id: string; caller_id: string; branch_id?: string | null };
       try {
         state = JSON.parse(atob(stateRaw));
       } catch {
         return htmlClosePage(corsHeaders, { success: false, error: "Invalid state" });
       }
-      if (!(await assertTenantAdmin(admin, state.caller_id, state.tenant_id))) {
+      const branchId = state.branch_id ?? null;
+      if (!(await assertAuthorized(admin, state.caller_id, state.tenant_id, branchId))) {
         return htmlClosePage(corsHeaders, { success: false, error: "Forbidden" });
       }
 
@@ -144,12 +145,15 @@ Deno.serve(async (req) => {
       });
       if (vErr) return htmlClosePage(corsHeaders, { success: false, error: `Vault error: ${vErr.message}` });
 
-      const { data: existing } = await admin
+      let existingQuery = admin
         .from("email_accounts")
         .select("id, oauth_refresh_token_secret_id")
         .eq("tenant_id", state.tenant_id)
-        .eq("transport", "gmail_oauth")
-        .maybeSingle();
+        .eq("transport", "gmail_oauth");
+      existingQuery = branchId
+        ? existingQuery.eq("branch_id", branchId)
+        : existingQuery.is("branch_id", null);
+      const { data: existing } = await existingQuery.maybeSingle();
 
       if (existing) {
         if (existing.oauth_refresh_token_secret_id) {
@@ -171,13 +175,15 @@ Deno.serve(async (req) => {
       } else {
         const { error } = await admin.from("email_accounts").insert({
           tenant_id: state.tenant_id,
+          branch_id: branchId,
           transport: "gmail_oauth",
-          label: "Gmail",
+          label: branchId ? "Gmail (Branch)" : "Gmail",
           from_name: gmailEmail.split("@")[0],
           from_email: gmailEmail,
           oauth_refresh_token_secret_id: secretId,
           oauth_email: gmailEmail,
           is_active: true,
+          is_default: !!branchId,
           last_verified_at: new Date().toISOString(),
         });
         if (error) return htmlClosePage(corsHeaders, { success: false, error: error.message });
