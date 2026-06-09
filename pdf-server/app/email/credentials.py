@@ -193,8 +193,23 @@ def resolve_account_id_for_row(
       4. any tenant-wide (no branch)
       5. any active account for this tenant
     """
+    def _platform_graph_fallback() -> Optional[str]:
+        # Any active Graph account anywhere on the platform.
+        res = (
+            sb.table("email_accounts")
+            .select("id,is_default,created_at")
+            .eq("is_active", True)
+            .eq("transport", "graph")
+            .order("is_default", desc=True)
+            .order("created_at", desc=False)
+            .limit(1)
+            .execute()
+        )
+        rows = res.data or []
+        return rows[0]["id"] if rows else None
+
     if not tenant_id:
-        return None
+        return _platform_graph_fallback()
 
     res = (
         sb.table("email_accounts")
@@ -204,8 +219,6 @@ def resolve_account_id_for_row(
         .execute()
     )
     accounts = res.data or []
-    if not accounts:
-        return None
 
     def _pick(predicate) -> Optional[str]:
         for a in accounts:
@@ -213,19 +226,24 @@ def resolve_account_id_for_row(
                 return a["id"]
         return None
 
-    if branch_id:
-        picked = _pick(lambda a: a.get("branch_id") == branch_id and a.get("is_default"))
+    if accounts:
+        if branch_id:
+            picked = _pick(lambda a: a.get("branch_id") == branch_id and a.get("is_default"))
+            if picked:
+                return picked
+            picked = _pick(lambda a: a.get("branch_id") == branch_id)
+            if picked:
+                return picked
+
+        picked = _pick(lambda a: not a.get("branch_id") and a.get("is_default"))
         if picked:
             return picked
-        picked = _pick(lambda a: a.get("branch_id") == branch_id)
+        picked = _pick(lambda a: not a.get("branch_id"))
         if picked:
             return picked
 
-    picked = _pick(lambda a: not a.get("branch_id") and a.get("is_default"))
-    if picked:
-        return picked
-    picked = _pick(lambda a: not a.get("branch_id"))
-    if picked:
-        return picked
+        # Any active account for this tenant (last resort within tenant).
+        return accounts[0]["id"]
 
-    return accounts[0]["id"]
+    return _platform_graph_fallback()
+
