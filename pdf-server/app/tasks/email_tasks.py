@@ -22,7 +22,10 @@ from app.email.concurrency import account_slot
 from app.email.config import email_settings
 from app.email.credentials import CredentialError, get_account_creds
 from app.email.metrics import email_failed_total, email_send_seconds, email_sent_total
-from app.email.smtp_client import PermanentSmtpError, TransientSmtpError, send_smtp
+from app.email.errors import PermanentSmtpError, TransientSmtpError
+from app.email.smtp_client import send_smtp
+from app.email.graph_client import send_graph
+from app.email.gmail_client import send_gmail
 from app.worker import celery_app
 from app.core.queue import enqueue
 
@@ -120,10 +123,13 @@ def send_email(self, row: Dict[str, Any]) -> str:
 
     message_id = f"<{uuid.uuid4()}@{creds.from_email.split('@')[-1]}>"
     started = time.monotonic()
+    provider = creds.kind  # "smtp" | "graph" | "gmail_oauth"
+    sender_fn = {"smtp": send_smtp, "graph": send_graph, "gmail_oauth": send_gmail}[provider]
+
     try:
         with account_slot(account_id, max_concurrency=creds.max_concurrency,
                           lease_seconds=email_settings.lease_seconds):
-            send_smtp(
+            sent_message_id = sender_fn(
                 creds,
                 to=to_email,
                 cc=row.get("cc"),
@@ -137,33 +143,35 @@ def send_email(self, row: Dict[str, Any]) -> str:
                 attachments=atts,
                 message_id=message_id,
             )
+        # SMTP returns None (we keep our generated message_id); graph/gmail
+        # return the provider id (x-ms-request-id / gmail message id).
+        if sent_message_id:
+            message_id = sent_message_id
     except PermanentSmtpError as exc:
         latency_ms = int((time.monotonic() - started) * 1000)
-        repo.mark_failed(sb, outbox_id, error=str(exc), error_code="smtp_permanent")
+        repo.mark_failed(sb, outbox_id, error=str(exc), error_code=f"{provider}_permanent")
         repo.record_metric(sb, tenant_id=row.get("tenant_id"), email_account_id=account_id,
                            sent=False, latency_ms=latency_ms)
-        email_failed_total.labels(reason="smtp_permanent").inc()
-        return "smtp_permanent"
+        email_failed_total.labels(reason=f"{provider}_permanent").inc()
+        return f"{provider}_permanent"
     except TransientSmtpError as exc:
         latency_ms = int((time.monotonic() - started) * 1000)
-        # Celery retry — but also record + flip status so DB stays consistent
-        # if we hit max_retries.
         attempts = int(row.get("attempts") or 0)
         max_attempts = int(row.get("max_attempts") or 5)
         if self.request.retries + 1 >= max_attempts:
-            repo.mark_failed(sb, outbox_id, error=str(exc), error_code="smtp_transient_exhausted", dlq=True)
-            email_failed_total.labels(reason="smtp_transient_dlq").inc()
+            repo.mark_failed(sb, outbox_id, error=str(exc), error_code=f"{provider}_transient_exhausted", dlq=True)
+            email_failed_total.labels(reason=f"{provider}_transient_dlq").inc()
             return "dlq"
-        repo.mark_retry(sb, outbox_id, attempts=attempts, error=str(exc), error_code="smtp_transient")
+        repo.mark_retry(sb, outbox_id, attempts=attempts, error=str(exc), error_code=f"{provider}_transient")
         repo.record_metric(sb, tenant_id=row.get("tenant_id"), email_account_id=account_id,
                            sent=False, latency_ms=latency_ms)
-        email_failed_total.labels(reason="smtp_transient").inc()
+        email_failed_total.labels(reason=f"{provider}_transient").inc()
         raise  # autoretry_for picks this up
 
     latency_ms = int((time.monotonic() - started) * 1000)
-    repo.mark_sent(sb, outbox_id, provider="smtp", message_id=message_id)
+    repo.mark_sent(sb, outbox_id, provider=provider, message_id=message_id)
     repo.record_metric(sb, tenant_id=row.get("tenant_id"), email_account_id=account_id,
                        sent=True, latency_ms=latency_ms)
-    email_sent_total.labels(provider="smtp").inc()
+    email_sent_total.labels(provider=provider).inc()
     email_send_seconds.observe(latency_ms / 1000.0)
     return "sent"
