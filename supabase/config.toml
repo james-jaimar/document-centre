@@ -47,3 +47,8 @@ project_id = "lcvdhtaqoumyokjqaqfw"
     verify_jwt = false
   [functions.payments-save-credentials]
     verify_jwt = false
+  [functions.gmail-oauth-connect]
+    verify_jwt = false
+  [functions.microsoft-oauth-connect]
+    verify_jwt = false
+
