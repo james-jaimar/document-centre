@@ -18,7 +18,7 @@ from typing import Iterable, List, Optional
 import httpx
 
 from .attachments import LoadedAttachment
-from .smtp_client import PermanentSmtpError, TransientSmtpError
+from .errors import PermanentSmtpError, TransientSmtpError
 
 TOKEN_TIMEOUT = 20.0
 SEND_TIMEOUT = 60.0
