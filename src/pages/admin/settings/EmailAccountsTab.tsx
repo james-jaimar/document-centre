@@ -447,7 +447,81 @@ export function EmailAccountsTab() {
         </Card>
       )}
 
+      {/* ── Microsoft 365 / Outlook OAuth Connection ── */}
+      {sendMethod === "own_smtp" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Mail className="h-4 w-4" />
+              Connect Microsoft 365 / Outlook
+            </CardTitle>
+            <CardDescription>
+              Send emails directly from your Microsoft 365 or Outlook.com mailbox. No SMTP configuration needed — just sign in with Microsoft.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {microsoftAccount ? (
+              <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-blue-50 flex items-center justify-center">
+                    <Mail className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{microsoftAccount.oauth_email}</span>
+                      <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 gap-1">
+                        <CheckCircle2 className="h-3 w-3" /> Connected
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Emails will be sent from this Microsoft account.
+                    </p>
+                    {microsoftAccount.last_error && (
+                      <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3" /> {microsoftAccount.last_error}
+                      </p>
+                    )}
+                    {microsoftAccount.last_verified_at && !microsoftAccount.last_error && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Last sent: {new Date(microsoftAccount.last_verified_at).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <Button variant="outline" size="sm" onClick={disconnectMicrosoft}>
+                  Disconnect
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-start gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Click below to authorize Document Centre to send emails from your Microsoft 365 or Outlook mailbox. We only request send permission.
+                </p>
+                <Button
+                  onClick={connectMicrosoft}
+                  disabled={connectingMicrosoft}
+                  className="gap-2"
+                >
+                  {connectingMicrosoft ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <svg viewBox="0 0 23 23" className="h-4 w-4" xmlns="http://www.w3.org/2000/svg">
+                      <path fill="#f35325" d="M1 1h10v10H1z"/>
+                      <path fill="#81bc06" d="M12 1h10v10H12z"/>
+                      <path fill="#05a6f0" d="M1 12h10v10H1z"/>
+                      <path fill="#ffba08" d="M12 12h10v10H12z"/>
+                    </svg>
+                  )}
+                  Sign in with Microsoft
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* ── SMTP Accounts (only when own_smtp) ── */}
+
       {sendMethod === "own_smtp" && (
         <Card>
           <CardHeader className="flex-row items-start justify-between gap-4">
