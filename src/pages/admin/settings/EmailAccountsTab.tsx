@@ -57,6 +57,8 @@ const blank = (tenant_id: string): Partial<EmailAccount> & { smtp_password?: str
 
 export function EmailAccountsTab() {
   const { tenantId } = useTenantContext();
+  const { data: branches } = useBranches(tenantId);
+  const isMultiBranch = (branches?.length ?? 0) > 1;
   const { settingsMap, isLoading: settingsLoading } = useTenantSettingsMap("email");
   const upsertSetting = useUpsertTenantSetting();
 
