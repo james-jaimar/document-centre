@@ -13,14 +13,30 @@ Supports three transports, matching the retired edge dispatcher:
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from typing import Any, Dict, Optional, Union
 
 from supabase import Client
 
 from .gmail_client import GmailCreds, gmail_oauth_client_id, gmail_oauth_client_secret
 from .graph_client import GraphCreds
-# Re-export so callers can import SmtpCreds from credentials.
-from .smtp_client_creds import SmtpCreds  # noqa: F401
+
+
+@dataclass(frozen=True)
+class SmtpCreds:
+    kind: str
+    account_id: str
+    from_name: str
+    from_email: str
+    reply_to: Optional[str]
+    send_delay_ms: int
+    max_concurrency: int
+    host: str
+    port: int
+    secure: str  # "tls" | "starttls" | "none"
+    username: str
+    password: str
+
 
 AccountCreds = Union[SmtpCreds, GraphCreds, GmailCreds]
 
