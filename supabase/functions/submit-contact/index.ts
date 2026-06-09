@@ -7,6 +7,7 @@
 //     2. Branded auto-reply    → the visitor
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { enqueueEmail } from "../_shared/email-queue.ts";
+import { kickEmailWorker } from "../_shared/email-kick.ts";
 import { DC_BRAND, escapeHtml, renderBrandedEmail, renderBrandedText } from "../_shared/branded-shell.ts";
 
 const corsHeaders = {
@@ -197,11 +198,9 @@ Deno.serve(async (req) => {
       metadata: { kind: "contact_autoreply", source },
     });
 
-    // Best-effort immediate dispatch
-    fetch(`${url}/functions/v1/email-dispatcher`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${serviceKey}` },
-    }).catch(() => {});
+    // Kick the Cloud Run email worker for prompt delivery.
+    kickEmailWorker();
+
 
     return new Response(JSON.stringify({ success: true, id: submissionId }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

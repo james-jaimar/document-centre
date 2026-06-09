@@ -16,14 +16,9 @@ import aiosmtplib  # type: ignore
 from .attachments import LoadedAttachment
 from .config import email_settings
 from .credentials import SmtpCreds
+from .errors import PermanentSmtpError, TransientSmtpError
 
-
-class TransientSmtpError(Exception):
-    """Network / 4xx / connection failures — Celery will retry."""
-
-
-class PermanentSmtpError(Exception):
-    """5xx invalid recipient / auth failures — do not retry."""
+__all__ = ["send_smtp", "PermanentSmtpError", "TransientSmtpError"]
 
 
 def _build_message(

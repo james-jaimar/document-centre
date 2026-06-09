@@ -3,6 +3,7 @@
 // Idempotent on (order_id, event_key) — won't double-send.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { enqueueEmail } from "../_shared/email-queue.ts";
+import { kickEmailWorker } from "../_shared/email-kick.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -502,11 +503,9 @@ Deno.serve(async (req) => {
       attachments: attachments.length ? attachments : undefined,
     });
 
-    // Kick the dispatcher so the customer email goes out promptly.
-    fetch(`${Deno.env.get("SUPABASE_URL")!}/functions/v1/email-dispatcher`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!}` },
-    }).catch(() => {});
+    // Kick the Cloud Run email worker so the email goes out within ~1s.
+    kickEmailWorker();
+
 
     return json({ success: true, queued: true });
   } catch (e) {

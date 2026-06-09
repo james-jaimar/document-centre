@@ -359,6 +359,26 @@ jobs:
           # 512 MiB × 1 min-instance ≈ trivial cost vs. SMTP latency saved.
           deploy_worker pdf-worker-emails worker-emails-http 1 512Mi 20 1
 
+          # Gmail OAuth client creds — only the emails worker needs them,
+          # only required for tenants on transport=gmail_oauth. Use
+          # update-secrets so this is additive: if the GCP Secret Manager
+          # entries don't exist yet (Graph-only setups), skip without
+          # breaking the deploy. The secret names match the env var names
+          # the Python gmail_client reads.
+          if gcloud secrets describe GMAIL_OAUTH_CLIENT_ID --project="${{ env.GCP_PROJECT_ID }}" >/dev/null 2>&1 \
+             && gcloud secrets describe GMAIL_OAUTH_CLIENT_SECRET --project="${{ env.GCP_PROJECT_ID }}" >/dev/null 2>&1; then
+            gcloud run services update pdf-worker-emails \
+              --region="${{ env.GCP_REGION }}" \
+              --update-secrets="GMAIL_OAUTH_CLIENT_ID=GMAIL_OAUTH_CLIENT_ID:latest,GMAIL_OAUTH_CLIENT_SECRET=GMAIL_OAUTH_CLIENT_SECRET:latest" \
+              --quiet
+            gcloud run services update-traffic pdf-worker-emails \
+              --region="${{ env.GCP_REGION }}" \
+              --to-latest --quiet
+            echo "Gmail OAuth secrets mounted on pdf-worker-emails."
+          else
+            echo "::warning::GMAIL_OAUTH_CLIENT_ID / GMAIL_OAUTH_CLIENT_SECRET not in GCP Secret Manager — Gmail OAuth tenants will fail with config_missing. SMTP and Graph (Outlook 365) are unaffected."
+          fi
+
 
 
 
