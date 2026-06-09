@@ -30,7 +30,7 @@ interface EmailAccount {
   is_active: boolean;
   last_verified_at: string | null;
   last_error: string | null;
-  transport: "smtp" | "gmail_oauth" | "graph";
+  transport: "smtp" | "gmail_oauth" | "graph" | "graph_oauth";
   oauth_email: string | null;
 }
 
@@ -68,6 +68,7 @@ export function EmailAccountsTab() {
   const [testRecipient, setTestRecipient] = useState("");
   const [testingId, setTestingId] = useState<string | null>(null);
   const [connectingGmail, setConnectingGmail] = useState(false);
+  const [connectingMicrosoft, setConnectingMicrosoft] = useState(false);
 
   const [localSystemName, setLocalSystemName] = useState("");
   const [localNote, setLocalNote] = useState("");
@@ -165,46 +166,46 @@ export function EmailAccountsTab() {
     load();
   };
 
-  // Gmail OAuth flow
+  // OAuth flows (Gmail + Microsoft) — share popup pattern
   const gmailAccount = accounts.find((a) => a.transport === "gmail_oauth");
+  const microsoftAccount = accounts.find((a) => a.transport === "graph_oauth");
   const smtpAccounts = accounts.filter((a) => a.transport === "smtp");
 
-  const connectGmail = async () => {
+  const runOAuthPopup = async (
+    fnName: "gmail-oauth-connect" | "microsoft-oauth-connect",
+    messageType: "gmail-oauth-callback" | "microsoft-oauth-callback",
+    providerLabel: string,
+    setConnecting: (v: boolean) => void,
+  ) => {
     if (!tenantId) return;
-    setConnectingGmail(true);
+    setConnecting(true);
     try {
-      const { data, error } = await supabase.functions.invoke("gmail-oauth-connect", {
+      const { data, error } = await supabase.functions.invoke(fnName, {
         body: { action: "authorize", tenant_id: tenantId },
       });
       if (error || data?.error) {
         toast.error(error?.message || data?.error);
-        setConnectingGmail(false);
+        setConnecting(false);
         return;
       }
-      // Open Google consent in a popup
-      const popup = window.open(data.authorize_url, "gmail-oauth", "width=600,height=700,scrollbars=yes");
-      // Poll for the popup closing and check for the callback
+      const popup = window.open(data.authorize_url, `${fnName}-oauth`, "width=600,height=700,scrollbars=yes");
       const pollInterval = setInterval(async () => {
         if (popup?.closed) {
           clearInterval(pollInterval);
-          setConnectingGmail(false);
-          // Reload accounts to check if connection succeeded
+          setConnecting(false);
           await load();
         }
       }, 1000);
-
-      // Also listen for message from the popup (for callback handling)
       const handleMessage = async (event: MessageEvent) => {
-        if (event.data?.type === "gmail-oauth-callback") {
+        if (event.data?.type === messageType) {
           clearInterval(pollInterval);
           popup?.close();
           window.removeEventListener("message", handleMessage);
-          setConnectingGmail(false);
-
+          setConnecting(false);
           if (event.data.success) {
-            toast.success(`Gmail connected: ${event.data.email}`);
+            toast.success(`${providerLabel} connected: ${event.data.email}`);
           } else {
-            toast.error(event.data.error || "Gmail connection failed");
+            toast.error(event.data.error || `${providerLabel} connection failed`);
           }
           await load();
         }
@@ -212,23 +213,37 @@ export function EmailAccountsTab() {
       window.addEventListener("message", handleMessage);
     } catch (e) {
       toast.error((e as Error).message);
-      setConnectingGmail(false);
+      setConnecting(false);
     }
   };
 
-  const disconnectGmail = async () => {
-    if (!gmailAccount) return;
-    if (!confirm("Disconnect Gmail? Emails will no longer be sent via this account.")) return;
-    const { data, error } = await supabase.functions.invoke("gmail-oauth-connect", {
-      body: { action: "disconnect", account_id: gmailAccount.id },
+  const connectGmail = () =>
+    runOAuthPopup("gmail-oauth-connect", "gmail-oauth-callback", "Gmail", setConnectingGmail);
+  const connectMicrosoft = () =>
+    runOAuthPopup("microsoft-oauth-connect", "microsoft-oauth-callback", "Microsoft 365", setConnectingMicrosoft);
+
+  const disconnectOAuth = async (
+    fnName: "gmail-oauth-connect" | "microsoft-oauth-connect",
+    account: EmailAccount | undefined,
+    providerLabel: string,
+  ) => {
+    if (!account) return;
+    if (!confirm(`Disconnect ${providerLabel}? Emails will no longer be sent via this account.`)) return;
+    const { data, error } = await supabase.functions.invoke(fnName, {
+      body: { action: "disconnect", account_id: account.id },
     });
     if (error || (data as any)?.error) {
       toast.error(error?.message || (data as any)?.error);
       return;
     }
-    toast.success("Gmail disconnected");
+    toast.success(`${providerLabel} disconnected`);
     load();
   };
+
+  const disconnectGmail = () => disconnectOAuth("gmail-oauth-connect", gmailAccount, "Gmail");
+  const disconnectMicrosoft = () =>
+    disconnectOAuth("microsoft-oauth-connect", microsoftAccount, "Microsoft 365");
+
 
   return (
     <div className="space-y-6">
