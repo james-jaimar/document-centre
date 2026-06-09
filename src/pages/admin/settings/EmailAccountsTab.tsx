@@ -30,7 +30,7 @@ interface EmailAccount {
   is_active: boolean;
   last_verified_at: string | null;
   last_error: string | null;
-  transport: "smtp" | "gmail_oauth" | "graph";
+  transport: "smtp" | "gmail_oauth" | "graph" | "graph_oauth";
   oauth_email: string | null;
 }
 
@@ -68,6 +68,7 @@ export function EmailAccountsTab() {
   const [testRecipient, setTestRecipient] = useState("");
   const [testingId, setTestingId] = useState<string | null>(null);
   const [connectingGmail, setConnectingGmail] = useState(false);
+  const [connectingMicrosoft, setConnectingMicrosoft] = useState(false);
 
   const [localSystemName, setLocalSystemName] = useState("");
   const [localNote, setLocalNote] = useState("");
@@ -165,46 +166,46 @@ export function EmailAccountsTab() {
     load();
   };
 
-  // Gmail OAuth flow
+  // OAuth flows (Gmail + Microsoft) — share popup pattern
   const gmailAccount = accounts.find((a) => a.transport === "gmail_oauth");
+  const microsoftAccount = accounts.find((a) => a.transport === "graph_oauth");
   const smtpAccounts = accounts.filter((a) => a.transport === "smtp");
 
-  const connectGmail = async () => {
+  const runOAuthPopup = async (
+    fnName: "gmail-oauth-connect" | "microsoft-oauth-connect",
+    messageType: "gmail-oauth-callback" | "microsoft-oauth-callback",
+    providerLabel: string,
+    setConnecting: (v: boolean) => void,
+  ) => {
     if (!tenantId) return;
-    setConnectingGmail(true);
+    setConnecting(true);
     try {
-      const { data, error } = await supabase.functions.invoke("gmail-oauth-connect", {
+      const { data, error } = await supabase.functions.invoke(fnName, {
         body: { action: "authorize", tenant_id: tenantId },
       });
       if (error || data?.error) {
         toast.error(error?.message || data?.error);
-        setConnectingGmail(false);
+        setConnecting(false);
         return;
       }
-      // Open Google consent in a popup
-      const popup = window.open(data.authorize_url, "gmail-oauth", "width=600,height=700,scrollbars=yes");
-      // Poll for the popup closing and check for the callback
+      const popup = window.open(data.authorize_url, `${fnName}-oauth`, "width=600,height=700,scrollbars=yes");
       const pollInterval = setInterval(async () => {
         if (popup?.closed) {
           clearInterval(pollInterval);
-          setConnectingGmail(false);
-          // Reload accounts to check if connection succeeded
+          setConnecting(false);
           await load();
         }
       }, 1000);
-
-      // Also listen for message from the popup (for callback handling)
       const handleMessage = async (event: MessageEvent) => {
-        if (event.data?.type === "gmail-oauth-callback") {
+        if (event.data?.type === messageType) {
           clearInterval(pollInterval);
           popup?.close();
           window.removeEventListener("message", handleMessage);
-          setConnectingGmail(false);
-
+          setConnecting(false);
           if (event.data.success) {
-            toast.success(`Gmail connected: ${event.data.email}`);
+            toast.success(`${providerLabel} connected: ${event.data.email}`);
           } else {
-            toast.error(event.data.error || "Gmail connection failed");
+            toast.error(event.data.error || `${providerLabel} connection failed`);
           }
           await load();
         }
@@ -212,23 +213,37 @@ export function EmailAccountsTab() {
       window.addEventListener("message", handleMessage);
     } catch (e) {
       toast.error((e as Error).message);
-      setConnectingGmail(false);
+      setConnecting(false);
     }
   };
 
-  const disconnectGmail = async () => {
-    if (!gmailAccount) return;
-    if (!confirm("Disconnect Gmail? Emails will no longer be sent via this account.")) return;
-    const { data, error } = await supabase.functions.invoke("gmail-oauth-connect", {
-      body: { action: "disconnect", account_id: gmailAccount.id },
+  const connectGmail = () =>
+    runOAuthPopup("gmail-oauth-connect", "gmail-oauth-callback", "Gmail", setConnectingGmail);
+  const connectMicrosoft = () =>
+    runOAuthPopup("microsoft-oauth-connect", "microsoft-oauth-callback", "Microsoft 365", setConnectingMicrosoft);
+
+  const disconnectOAuth = async (
+    fnName: "gmail-oauth-connect" | "microsoft-oauth-connect",
+    account: EmailAccount | undefined,
+    providerLabel: string,
+  ) => {
+    if (!account) return;
+    if (!confirm(`Disconnect ${providerLabel}? Emails will no longer be sent via this account.`)) return;
+    const { data, error } = await supabase.functions.invoke(fnName, {
+      body: { action: "disconnect", account_id: account.id },
     });
     if (error || (data as any)?.error) {
       toast.error(error?.message || (data as any)?.error);
       return;
     }
-    toast.success("Gmail disconnected");
+    toast.success(`${providerLabel} disconnected`);
     load();
   };
+
+  const disconnectGmail = () => disconnectOAuth("gmail-oauth-connect", gmailAccount, "Gmail");
+  const disconnectMicrosoft = () =>
+    disconnectOAuth("microsoft-oauth-connect", microsoftAccount, "Microsoft 365");
+
 
   return (
     <div className="space-y-6">
@@ -298,7 +313,7 @@ export function EmailAccountsTab() {
               <div className="flex-1">
                 <p className="font-medium">Send via your own domain</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Use your own SMTP mailbox or connect your Gmail account. Emails are sent from your domain.
+                  Use your own SMTP mailbox, or connect Gmail or Microsoft 365 in one click. Emails are sent from your domain.
                 </p>
                 {smtpAccounts.length > 0 && sendMethod === "own_smtp" && (
                   <p className="text-xs text-muted-foreground mt-2">
@@ -310,6 +325,12 @@ export function EmailAccountsTab() {
                     Gmail: {gmailAccount.oauth_email}
                   </p>
                 )}
+                {microsoftAccount && sendMethod === "own_smtp" && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Microsoft 365: {microsoftAccount.oauth_email}
+                  </p>
+                )}
+
               </div>
             </div>
           </button>
@@ -432,7 +453,81 @@ export function EmailAccountsTab() {
         </Card>
       )}
 
+      {/* ── Microsoft 365 / Outlook OAuth Connection ── */}
+      {sendMethod === "own_smtp" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Mail className="h-4 w-4" />
+              Connect Microsoft 365 / Outlook
+            </CardTitle>
+            <CardDescription>
+              Send emails directly from your Microsoft 365 or Outlook.com mailbox. No SMTP configuration needed — just sign in with Microsoft.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {microsoftAccount ? (
+              <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-blue-50 flex items-center justify-center">
+                    <Mail className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{microsoftAccount.oauth_email}</span>
+                      <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 gap-1">
+                        <CheckCircle2 className="h-3 w-3" /> Connected
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Emails will be sent from this Microsoft account.
+                    </p>
+                    {microsoftAccount.last_error && (
+                      <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3" /> {microsoftAccount.last_error}
+                      </p>
+                    )}
+                    {microsoftAccount.last_verified_at && !microsoftAccount.last_error && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Last sent: {new Date(microsoftAccount.last_verified_at).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <Button variant="outline" size="sm" onClick={disconnectMicrosoft}>
+                  Disconnect
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-start gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Click below to authorize Document Centre to send emails from your Microsoft 365 or Outlook mailbox. We only request send permission.
+                </p>
+                <Button
+                  onClick={connectMicrosoft}
+                  disabled={connectingMicrosoft}
+                  className="gap-2"
+                >
+                  {connectingMicrosoft ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <svg viewBox="0 0 23 23" className="h-4 w-4" xmlns="http://www.w3.org/2000/svg">
+                      <path fill="#f35325" d="M1 1h10v10H1z"/>
+                      <path fill="#81bc06" d="M12 1h10v10H12z"/>
+                      <path fill="#05a6f0" d="M1 12h10v10H1z"/>
+                      <path fill="#ffba08" d="M12 12h10v10H12z"/>
+                    </svg>
+                  )}
+                  Sign in with Microsoft
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* ── SMTP Accounts (only when own_smtp) ── */}
+
       {sendMethod === "own_smtp" && (
         <Card>
           <CardHeader className="flex-row items-start justify-between gap-4">

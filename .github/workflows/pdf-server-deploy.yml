@@ -359,25 +359,33 @@ jobs:
           # 512 MiB × 1 min-instance ≈ trivial cost vs. SMTP latency saved.
           deploy_worker pdf-worker-emails worker-emails-http 1 512Mi 20 1
 
-          # Gmail OAuth client creds — only the emails worker needs them,
-          # only required for tenants on transport=gmail_oauth. Use
-          # update-secrets so this is additive: if the GCP Secret Manager
-          # entries don't exist yet (Graph-only setups), skip without
-          # breaking the deploy. The secret names match the env var names
-          # the Python gmail_client reads.
-          if gcloud secrets describe GMAIL_OAUTH_CLIENT_ID --project="${{ env.GCP_PROJECT_ID }}" >/dev/null 2>&1 \
-             && gcloud secrets describe GMAIL_OAUTH_CLIENT_SECRET --project="${{ env.GCP_PROJECT_ID }}" >/dev/null 2>&1; then
-            gcloud run services update pdf-worker-emails \
-              --region="${{ env.GCP_REGION }}" \
-              --update-secrets="GMAIL_OAUTH_CLIENT_ID=GMAIL_OAUTH_CLIENT_ID:latest,GMAIL_OAUTH_CLIENT_SECRET=GMAIL_OAUTH_CLIENT_SECRET:latest" \
-              --quiet
-            gcloud run services update-traffic pdf-worker-emails \
-              --region="${{ env.GCP_REGION }}" \
-              --to-latest --quiet
-            echo "Gmail OAuth secrets mounted on pdf-worker-emails."
-          else
-            echo "::warning::GMAIL_OAUTH_CLIENT_ID / GMAIL_OAUTH_CLIENT_SECRET not in GCP Secret Manager — Gmail OAuth tenants will fail with config_missing. SMTP and Graph (Outlook 365) are unaffected."
-          fi
+          # Per-tenant OAuth client creds for self-serve mailbox connect.
+          # Only the emails worker needs them; only required when a tenant
+          # is on transport=gmail_oauth or transport=graph_oauth. Each pair
+          # is added independently so a Gmail-only or Microsoft-only setup
+          # still mounts what it has.
+          mount_oauth_pair() {
+            local id_secret="$1" sec_secret="$2" id_env="$3" sec_env="$4" label="$5"
+            if gcloud secrets describe "$id_secret" --project="${{ env.GCP_PROJECT_ID }}" >/dev/null 2>&1 \
+               && gcloud secrets describe "$sec_secret" --project="${{ env.GCP_PROJECT_ID }}" >/dev/null 2>&1; then
+              gcloud run services update pdf-worker-emails \
+                --region="${{ env.GCP_REGION }}" \
+                --update-secrets="${id_env}=${id_secret}:latest,${sec_env}=${sec_secret}:latest" \
+                --quiet
+              echo "${label} OAuth secrets mounted on pdf-worker-emails."
+            else
+              echo "::warning::${id_secret} / ${sec_secret} not in GCP Secret Manager — ${label} OAuth tenants will fail with config_missing. SMTP and other transports are unaffected."
+            fi
+          }
+
+          mount_oauth_pair GMAIL_OAUTH_CLIENT_ID     GMAIL_OAUTH_CLIENT_SECRET     GMAIL_OAUTH_CLIENT_ID     GMAIL_OAUTH_CLIENT_SECRET     "Gmail"
+          mount_oauth_pair MICROSOFT_OAUTH_CLIENT_ID MICROSOFT_OAUTH_CLIENT_SECRET MICROSOFT_OAUTH_CLIENT_ID MICROSOFT_OAUTH_CLIENT_SECRET "Microsoft"
+
+          # Bounce traffic to the latest revision once secrets are applied.
+          gcloud run services update-traffic pdf-worker-emails \
+            --region="${{ env.GCP_REGION }}" \
+            --to-latest --quiet
+
 
 
 

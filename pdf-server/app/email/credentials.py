@@ -20,6 +20,11 @@ from supabase import Client
 
 from .gmail_client import GmailCreds, gmail_oauth_client_id, gmail_oauth_client_secret
 from .graph_client import GraphCreds
+from .graph_oauth_client import (
+    GraphOAuthCreds,
+    microsoft_oauth_client_id,
+    microsoft_oauth_client_secret,
+)
 
 
 @dataclass(frozen=True)
@@ -38,7 +43,7 @@ class SmtpCreds:
     password: str
 
 
-AccountCreds = Union[SmtpCreds, GraphCreds, GmailCreds]
+AccountCreds = Union[SmtpCreds, GraphCreds, GmailCreds, GraphOAuthCreds]
 
 # id -> (creds, fetched_at_monotonic)
 _CACHE: Dict[str, tuple[AccountCreds, float]] = {}
@@ -122,6 +127,26 @@ def _build_from_row(sb: Client, row: Dict[str, Any]) -> AccountCreds:
             oauth_email=row["oauth_email"],
             **common,
         )
+
+    if transport == "graph_oauth":
+        refresh = _read_vault(sb, row.get("oauth_refresh_token_secret_id"))
+        client_id = microsoft_oauth_client_id()
+        client_secret = microsoft_oauth_client_secret()
+        if not (refresh and client_id and client_secret and row.get("oauth_email")):
+            raise CredentialError(
+                f"incomplete Microsoft OAuth config for account {row.get('id')} "
+                f"(refresh={'y' if refresh else 'n'}, client_id_env={'y' if client_id else 'n'})"
+            )
+        return GraphOAuthCreds(
+            kind="graph_oauth",
+            refresh_token=refresh,
+            client_id=client_id,
+            client_secret=client_secret,
+            oauth_email=row["oauth_email"],
+            **common,
+        )
+
+
 
     raise CredentialError(f"unknown transport {transport!r} for account {row.get('id')}")
 

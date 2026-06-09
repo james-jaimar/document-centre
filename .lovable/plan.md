@@ -1,84 +1,129 @@
-# Restore per-tenant email on Cloud Run
+# Seamless tenant email onboarding: SMTP + Gmail OAuth + Microsoft OAuth
 
-Goal: make `pdf-worker-emails` send via SMTP, Microsoft Graph, and Gmail OAuth — same fallback chain the retired edge dispatcher used — so Postnet Sandton (SMTP/Graph) and the Document Centre demo (Outlook/Graph) start sending again without any new infra or third-party service.
+Goal: a tenant admin can land on Settings → Email Accounts and connect their mailbox in **one click** for Gmail, in **one click** for Microsoft 365 / Outlook, or by pasting host/port/user/pass for any other SMTP provider — no platform-admin intervention, no copying refresh tokens around.
+
+## Current state
+
+- **SMTP**: fully working. Postnet stores use this.
+- **Gmail OAuth**: edge function `gmail-oauth-connect` already implements authorize / callback / disconnect; UI wiring + Google Cloud OAuth client are the only missing pieces.
+- **Microsoft Graph**: only the Document Centre mailbox is wired, using app-only (`client_credentials`) creds entered manually into `email_accounts`. There is **no self-serve OAuth connect** for tenants today.
+- **Python worker**: SMTP + Graph + Gmail client code is already ported (`pdf-server/app/email/{smtp,graph,gmail}_client.py`). Just needs the two OAuth client secrets in GCP Secret Manager to actually send Gmail.
 
 ## What changes
 
-### 1. New transport clients (Python port of edge code)
+### 1. Pick the right Microsoft auth model for tenants
 
-- `pdf-server/app/email/graph_client.py`
-  - `get_access_token(creds)` → POST `login.microsoftonline.com/{tenant}/oauth2/v2.0/token` (client_credentials).
-  - `send_graph(creds, row, attachments, ...)` → POST `graph.microsoft.com/v1.0/users/{sender}/sendMail`.
-  - Map errors: `401/403` → `PermanentSmtpError` (auth, do not retry); `429` → `TransientSmtpError` with Retry-After; other 5xx/network → `TransientSmtpError`.
-  - Returns the `x-ms-request-id` header as `message_id`.
+Use **delegated OAuth (authorization_code + refresh_token) on a multi-tenant Azure app** — same shape as Gmail. Why not app-only / client_credentials per-tenant?
 
-- `pdf-server/app/email/gmail_client.py`
-  - `refresh_access_token(creds)` → POST `oauth2.googleapis.com/token` (refresh_token grant).
-  - `build_rfc2822(...)` → identical MIME assembly to the TS version (text/html, multipart/related for inline cids, multipart/mixed for regular attachments).
-  - `send_gmail(...)` → POST `gmail.googleapis.com/gmail/v1/users/me/messages/send` with base64url `raw`.
-  - Same 401/403/429 → permanent/transient mapping.
+- Client credentials require each tenant to register their own Azure app and paste tenant_id / client_id / client_secret. That is the opposite of "seamless onboarding".
+- Multi-tenant delegated OAuth means we register **one** Azure app, tenants click "Connect Microsoft", grant consent once, and we store a refresh token in Vault — identical UX to Gmail.
+- `Mail.Send` delegated scope (optionally `offline_access`, `User.Read`) is enough for `sendMail`.
 
-Both use `httpx` (already in `requirements.txt`); no new dependencies.
+DC's existing app-only Graph account keeps working unchanged — the worker already branches on `transport == 'graph'` and reads `graph_client_secret_id`. We will introduce a parallel transport `graph_oauth` for the tenant flow.
 
-### 2. Credential layer
+### 2. Schema: add `graph_oauth` transport
 
-`pdf-server/app/email/credentials.py`:
-- `AccountCreds = Union[SmtpCreds, GraphCreds, GmailCreds]` (add `kind` discriminator already present).
-- `_build_from_row` branches on `transport` (`smtp` / `graph` / `gmail_oauth`) and reads the right vault secret IDs (`graph_client_secret_id`, `oauth_refresh_token_secret_id`) via the existing `read_email_account_secret` RPC.
-- `resolve_account_id_for_row`: drop the `transport == 'smtp'` filter so Graph/Gmail rows are picked up. Keep the branch → tenant fallback chain.
-- Gmail client_id/secret come from worker env: `GMAIL_OAUTH_CLIENT_ID`, `GMAIL_OAUTH_CLIENT_SECRET` (same env names the edge fn used).
+Migration on `email_accounts`:
+- Extend the allowed `transport` values to include `graph_oauth` (the column is plain text — no enum migration needed; update any CHECK constraint if present).
+- No new columns: `graph_oauth` reuses `oauth_refresh_token_secret_id` and `oauth_email` (same as Gmail).
+- Backfill: none — DC's existing row stays `transport='graph'`.
 
-### 3. Dispatch shim
+### 3. New edge function: `microsoft-oauth-connect`
 
-`pdf-server/app/tasks/email_tasks.py` → in `send_email`, after `get_account_creds`:
+Mirror `gmail-oauth-connect` exactly. Actions: `authorize`, `callback`, `disconnect`. Endpoints:
+- Authorize: `https://login.microsoftonline.com/common/oauth2/v2.0/authorize` with `scope=offline_access Mail.Send User.Read`, `response_type=code`, `prompt=consent`.
+- Token: `https://login.microsoftonline.com/common/oauth2/v2.0/token`.
+- Userinfo (to capture mailbox address): `GET https://graph.microsoft.com/v1.0/me` → `mail` or `userPrincipalName`.
+- Store refresh token in Vault via existing `create_email_account_secret` RPC.
+- Upsert `email_accounts` row with `transport='graph_oauth'`, `oauth_email=<mailbox>`.
+
+Secrets needed (platform-level, added once via `add_secret`):
+- `MICROSOFT_OAUTH_CLIENT_ID`
+- `MICROSOFT_OAUTH_CLIENT_SECRET`
+- `GMAIL_OAUTH_CLIENT_ID`
+- `GMAIL_OAUTH_CLIENT_SECRET`
+
+### 4. Python worker: add `graph_oauth` sender
+
+`pdf-server/app/email/graph_oauth_client.py` (new, ~80 lines):
+- Refresh access token using stored refresh_token + `MICROSOFT_OAUTH_CLIENT_ID`/`SECRET` (same pattern as `gmail_client._refresh_access_token`).
+- Call `POST https://graph.microsoft.com/v1.0/me/sendMail` (note: `/me`, not `/users/{sender}` — delegated tokens are scoped to the signed-in mailbox).
+- Reuse the message-builder logic already in `graph_client.send_graph` (factor the body assembly into a shared helper).
+
+`credentials.py`:
+- Add `GraphOAuthCreds` dataclass; in `_build_from_row` add a branch for `transport == 'graph_oauth'` reading `oauth_refresh_token_secret_id` + `oauth_email`, plus `microsoft_oauth_client_id()` / `_secret()` env helpers.
+
+`email_tasks.py` dispatch shim:
 ```python
-if creds.kind == "smtp":   send_smtp(...)
-elif creds.kind == "graph": send_graph(...)
-elif creds.kind == "gmail_oauth": send_gmail(...)
+elif creds.kind == "graph_oauth": send_graph_oauth(...)
 ```
-Reuse the existing `account_slot` concurrency wrapper, metrics, retry logic, and mark_sent/mark_failed paths unchanged.
 
-### 4. Remove duplicate-dispatcher race
+Cloud Run worker env (`.github/workflows/pdf-server-deploy.yml`):
+- Add `MICROSOFT_OAUTH_CLIENT_ID` + `_SECRET` and `GMAIL_OAUTH_CLIENT_ID` + `_SECRET` as Secret Manager refs on `pdf-worker-emails`.
 
-Three edge functions still fire-and-forget POST to `email-dispatcher` after enqueueing:
-- `supabase/functions/send-email/index.ts:72`
-- `supabase/functions/send-order-email/index.ts:506`
-- `supabase/functions/submit-contact/index.ts:201`
+### 5. UI: one-click connect buttons
 
-Replace each with a fire-and-forget POST to the Cloud Run worker's existing beat route (`POST {PDF_API_URL}/beat/scan-email-outbox` with `EMAIL_NOTIFY_TOKEN`) so a freshly enqueued row sends within ~1 s instead of waiting for the 30 s scheduler tick. If `PDF_API_URL` or token env is missing, just skip — the scheduler picks it up.
+`src/pages/admin/settings/EmailAccountsTab.tsx` already knows about `gmail_oauth` and `graph` transports. Add:
+- A **"Connect Microsoft 365 / Outlook"** button alongside the existing "Connect Gmail" button. Calls `microsoft-oauth-connect` with `action=authorize`, opens the returned URL in a new window, listens for the popup `postMessage` (or polls `email_accounts`) to refresh the list.
+- Surface `graph_oauth` rows in the list with a Microsoft icon, the mailbox address, and a "Disconnect" action.
+- Same panel on `BranchEmailAccountsPanel.tsx` (branch-scoped accounts).
 
-### 5. Worker env
+Auth callback page: both `gmail-oauth-connect` and `microsoft-oauth-connect` redirect back to a small `/oauth/email-callback` route that POSTs `{code, state, provider}` to the matching function and then closes itself. (Reuse one route; branch by `provider` query param.)
 
-Add to `pdf-worker-emails` in `.github/workflows/pdf-server-deploy.yml`:
-- `GMAIL_OAUTH_CLIENT_ID` and `GMAIL_OAUTH_CLIENT_SECRET` as Secret Manager refs (same secret names already used by the edge fn — needs verification that they exist as GCP secrets; if not, user adds them).
-- No other env changes required.
+### 6. Remove edge-dispatcher kicks (carried over from prior plan)
 
-### 6. Decommission edge dispatcher (deferred, opt-in)
+Replace the three fire-and-forget `email-dispatcher` POSTs (`send-email`, `send-order-email`, `submit-contact`) with a POST to the Cloud Run beat route so newly enqueued rows send within ~1 s. Already drafted via `_shared/email-kick.ts`; ensure all three call-sites use it.
 
-Not done in this pass. Once Postnet Sandton and DC demo send successfully on the new path, follow `docs/VPS_DECOMMISSION.md` §6 to drop the `notify_email_dispatcher` trigger + cron and delete the `email-dispatcher` function. Until then it remains as a no-op safety net (rows are claimed by whichever dispatcher gets there first; with the kicks removed in step 4 that will be Python).
+### 7. Documentation / setup checklist
+
+Add `docs/EMAIL_OAUTH_SETUP.md` covering, for the platform admin:
+
+**Google Cloud (Gmail OAuth):**
+1. Create OAuth client ID (type: Web application).
+2. Authorized redirect URI: `https://<supabase-ref>.functions.supabase.co/gmail-oauth-connect`.
+3. Scopes requested at runtime: `gmail.send email profile`. App needs to be either in test mode (limited to listed test users) or submitted for verification before tenants can connect.
+4. Copy client ID + secret → Supabase Edge Secrets **and** GCP Secret Manager (worker reads from GCP).
+
+**Microsoft Entra (Microsoft OAuth):**
+1. Register app, **multi-tenant + personal accounts**.
+2. Redirect URI: `https://<supabase-ref>.functions.supabase.co/microsoft-oauth-connect`.
+3. API permissions (delegated): `Mail.Send`, `User.Read`, `offline_access`. Grant admin consent for our own tenant; tenants grant consent at first connect via the consent screen.
+4. Generate client secret → store in Supabase Edge Secrets + GCP Secret Manager.
 
 ## Out of scope
 
-- No UI changes.
-- No new tests beyond a manual send to Postnet Sandton + DC demo after deploy.
-- No switch to SendGrid/Resend/Mailgun.
-- No schema changes (the `email_accounts` columns the edge fn read already exist).
+- No changes to DC's existing app-only Graph row (`transport='graph'`). It keeps working.
+- No marketing / bulk email features.
+- No UI to switch a tenant's transport — they just disconnect and reconnect via the relevant provider button.
 
-## Post-deploy verification
+## Verification
 
-1. `gcloud run services describe pdf-worker-emails ... --format='yaml(status.traffic,status.latestReadyRevisionName)'` — live revision matches latest.
-2. Send a test order on Postnet Sandton → row in `email_outbox` goes `pending → sent` within 5 s; `provider` column shows `graph`; `message_id` populated.
-3. Same on the DC demo (hello@documentcentre.com / Graph).
-4. Send a row on a tenant configured with Gmail OAuth (if available) → `provider=gmail_oauth`, `message_id` is a Gmail message id.
-5. Confirm `email_failed_total{reason="config_missing"}` stops climbing.
+1. Tenant admin clicks "Connect Microsoft" → consent screen → returns → row appears with `transport='graph_oauth'`, `oauth_email` populated.
+2. Send a test email → `email_outbox` goes `pending → sent` within 5 s; `provider='graph_oauth'`; `message_id` populated from `x-ms-request-id`.
+3. Same for Gmail.
+4. SMTP path unchanged — Postnet test send still goes via `transport='smtp'`.
+5. DC's existing Graph row still sends successfully via `transport='graph'` (app-only).
 
 ## Files touched
 
-- new: `pdf-server/app/email/graph_client.py`
-- new: `pdf-server/app/email/gmail_client.py`
-- edited: `pdf-server/app/email/credentials.py`
-- edited: `pdf-server/app/tasks/email_tasks.py`
-- edited: `supabase/functions/send-email/index.ts`
-- edited: `supabase/functions/send-order-email/index.ts`
-- edited: `supabase/functions/submit-contact/index.ts`
-- edited: `.github/workflows/pdf-server-deploy.yml` (Gmail OAuth env for emails worker)
+- new: `supabase/functions/microsoft-oauth-connect/index.ts`
+- new: `pdf-server/app/email/graph_oauth_client.py`
+- new: `docs/EMAIL_OAUTH_SETUP.md`
+- edit: `supabase/functions/gmail-oauth-connect/index.ts` (no functional change; align callback redirect with shared route if needed)
+- edit: `src/pages/admin/settings/EmailAccountsTab.tsx`
+- edit: `src/components/branch/BranchEmailAccountsPanel.tsx`
+- edit: `src/App.tsx` (+ new `src/pages/OAuthEmailCallback.tsx`)
+- edit: `pdf-server/app/email/credentials.py`
+- edit: `pdf-server/app/email/tasks/email_tasks.py`
+- edit: `pdf-server/app/email/graph_client.py` (extract shared message-builder)
+- edit: `.github/workflows/pdf-server-deploy.yml` (4 new Secret Manager env refs)
+- edit: `supabase/functions/send-email/index.ts`, `send-order-email/index.ts`, `submit-contact/index.ts` (swap dispatcher kick for worker beat kick, if not already done)
+- migration: extend `email_accounts.transport` allowed values to include `graph_oauth`
+
+## What the platform admin (you) needs to do once, manually
+
+1. **Google Cloud Console**: create an OAuth 2.0 Client ID under the same Google account that will manage the project long-term. Reuse the existing OAuth client if you can find it; otherwise create new (no existing tokens to invalidate since no Gmail tenants are live yet).
+2. **Microsoft Entra admin center**: register a new multi-tenant app, add redirect URI, generate a client secret.
+3. Paste the four values into Supabase Edge Secrets when prompted, and `gcloud secrets create` the same four into GCP Secret Manager for the worker (I will give you the exact commands once the code is in).
+
+Everything else — schema migration, edge functions, UI, worker code, deploy config — I do in code.

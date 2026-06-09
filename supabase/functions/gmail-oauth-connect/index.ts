@@ -36,6 +36,25 @@ async function assertTenantAdmin(admin: any, callerId: string, tenantId: string)
   return !!pa;
 }
 
+function htmlClosePage(corsHdrs: Record<string, string>, payload: Record<string, unknown>) {
+  const safe = JSON.stringify(payload).replace(/</g, "\\u003c");
+  const body = `<!doctype html><meta charset="utf-8"><title>Gmail Connect</title>
+<style>body{font-family:system-ui,sans-serif;padding:24px;color:#333}</style>
+<p>Gmail account connected. You can close this window.</p>
+<script>
+  try {
+    if (window.opener && !window.opener.closed) {
+      window.opener.postMessage({ type: "gmail-oauth-callback", ...${safe} }, "*");
+    }
+  } catch (e) {}
+  setTimeout(() => window.close(), 300);
+</script>`;
+  return new Response(body, {
+    status: 200,
+    headers: { ...corsHdrs, "Content-Type": "text/html; charset=utf-8" },
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -50,6 +69,111 @@ Deno.serve(async (req) => {
       return json({ error: "Gmail OAuth not configured. Platform admin must add GMAIL_OAUTH_CLIENT_ID and GMAIL_OAUTH_CLIENT_SECRET." }, 503);
     }
 
+    const admin = createClient(url, serviceKey);
+    // The callback URL for the OAuth flow — points back to this function
+    const functionUrl = `${url}/functions/v1/gmail-oauth-connect`;
+
+    // ── GET: Google consent redirect (?code=&state=) ──
+    if (req.method === "GET") {
+      const reqUrl = new URL(req.url);
+      const code = reqUrl.searchParams.get("code");
+      const stateRaw = reqUrl.searchParams.get("state");
+      const oauthErr = reqUrl.searchParams.get("error_description") || reqUrl.searchParams.get("error");
+      if (oauthErr) return htmlClosePage(corsHeaders, { success: false, error: oauthErr });
+      if (!code || !stateRaw) return htmlClosePage(corsHeaders, { success: false, error: "Missing code or state" });
+
+      let state: { tenant_id: string; caller_id: string };
+      try {
+        state = JSON.parse(atob(stateRaw));
+      } catch {
+        return htmlClosePage(corsHeaders, { success: false, error: "Invalid state" });
+      }
+      if (!(await assertTenantAdmin(admin, state.caller_id, state.tenant_id))) {
+        return htmlClosePage(corsHeaders, { success: false, error: "Forbidden" });
+      }
+
+      const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          code,
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: functionUrl,
+          grant_type: "authorization_code",
+        }),
+      });
+      const tokenData = await tokenRes.json();
+      if (!tokenRes.ok || !tokenData.refresh_token) {
+        console.error("Gmail token exchange failed:", tokenData);
+        return htmlClosePage(corsHeaders, {
+          success: false,
+          error: tokenData.error_description || "Failed to exchange code for tokens",
+        });
+      }
+
+      let gmailEmail = "";
+      try {
+        const userinfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+          headers: { Authorization: `Bearer ${tokenData.access_token}` },
+        });
+        const userinfo = await userinfoRes.json();
+        gmailEmail = userinfo.email || "";
+      } catch {
+        gmailEmail = "";
+      }
+      if (!gmailEmail) return htmlClosePage(corsHeaders, { success: false, error: "Could not determine Gmail address" });
+
+      const secretName = `gmail_oauth:${state.tenant_id}:${crypto.randomUUID()}`;
+      const { data: secretId, error: vErr } = await admin.rpc("create_email_account_secret", {
+        p_name: secretName,
+        p_secret: tokenData.refresh_token,
+      });
+      if (vErr) return htmlClosePage(corsHeaders, { success: false, error: `Vault error: ${vErr.message}` });
+
+      const { data: existing } = await admin
+        .from("email_accounts")
+        .select("id, oauth_refresh_token_secret_id")
+        .eq("tenant_id", state.tenant_id)
+        .eq("transport", "gmail_oauth")
+        .maybeSingle();
+
+      if (existing) {
+        if (existing.oauth_refresh_token_secret_id) {
+          await admin.rpc("delete_email_account_secret", { p_secret_id: existing.oauth_refresh_token_secret_id });
+        }
+        const { error } = await admin
+          .from("email_accounts")
+          .update({
+            oauth_refresh_token_secret_id: secretId,
+            oauth_email: gmailEmail,
+            from_email: gmailEmail,
+            from_name: gmailEmail.split("@")[0],
+            last_verified_at: new Date().toISOString(),
+            last_error: null,
+            is_active: true,
+          })
+          .eq("id", existing.id);
+        if (error) return htmlClosePage(corsHeaders, { success: false, error: error.message });
+      } else {
+        const { error } = await admin.from("email_accounts").insert({
+          tenant_id: state.tenant_id,
+          transport: "gmail_oauth",
+          label: "Gmail",
+          from_name: gmailEmail.split("@")[0],
+          from_email: gmailEmail,
+          oauth_refresh_token_secret_id: secretId,
+          oauth_email: gmailEmail,
+          is_active: true,
+          last_verified_at: new Date().toISOString(),
+        });
+        if (error) return htmlClosePage(corsHeaders, { success: false, error: error.message });
+      }
+
+      return htmlClosePage(corsHeaders, { success: true, email: gmailEmail });
+    }
+
+    // ── POST: authorize / disconnect / (legacy callback) ──
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) return json({ error: "Unauthorized" }, 401);
 
@@ -59,14 +183,11 @@ Deno.serve(async (req) => {
     const { data: { user: caller } } = await userClient.auth.getUser();
     if (!caller) return json({ error: "Unauthorized" }, 401);
 
-    const admin = createClient(url, serviceKey);
     const body = await req.json();
     const action = body.action as string;
 
-    // The callback URL for the OAuth flow — points back to this function
-    const functionUrl = `${url}/functions/v1/gmail-oauth-connect`;
-
     if (action === "authorize") {
+
       const tenantId = body.tenant_id as string;
       if (!tenantId) return json({ error: "tenant_id required" }, 400);
       if (!(await assertTenantAdmin(admin, caller.id, tenantId))) return json({ error: "Forbidden" }, 403);
