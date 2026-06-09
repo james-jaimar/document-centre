@@ -17,23 +17,36 @@ const json = (d: unknown, s = 200) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
-async function assertTenantAdmin(admin: any, callerId: string, tenantId: string): Promise<boolean> {
-  const { data } = await admin
-    .from("tenant_memberships")
-    .select("role")
-    .eq("profile_id", callerId)
-    .eq("tenant_id", tenantId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
-  if (data) return true;
+async function assertAuthorized(
+  admin: any,
+  callerId: string,
+  tenantId: string,
+  branchId: string | null,
+): Promise<boolean> {
   const { data: pa } = await admin
     .from("user_roles")
     .select("role")
     .eq("user_id", callerId)
     .eq("role", "platform_admin")
     .maybeSingle();
-  return !!pa;
+  if (pa) return true;
+  const { data: tm } = await admin
+    .from("tenant_memberships")
+    .select("role, branch_id")
+    .eq("profile_id", callerId)
+    .eq("tenant_id", tenantId)
+    .eq("is_active", true);
+  if (!tm || tm.length === 0) return false;
+  const isTenantAdmin = tm.some(
+    (m: any) => m.branch_id === null && ["owner", "admin"].includes(m.role),
+  );
+  if (isTenantAdmin) return true;
+  if (branchId) {
+    return tm.some(
+      (m: any) => m.branch_id === branchId && ["owner", "admin", "manager"].includes(m.role),
+    );
+  }
+  return false;
 }
 
 function htmlClosePage(corsHdrs: Record<string, string>, payload: Record<string, unknown>) {
