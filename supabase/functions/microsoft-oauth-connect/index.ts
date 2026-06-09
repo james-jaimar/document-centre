@@ -114,14 +114,15 @@ Deno.serve(async (req) => {
       if (oauthErr) return htmlClosePage({ success: false, error: oauthErr });
       if (!code || !stateRaw) return htmlClosePage({ success: false, error: "Missing code or state" });
 
-      let state: { tenant_id: string; caller_id: string };
+      let state: { tenant_id: string; caller_id: string; branch_id?: string | null };
       try {
         state = JSON.parse(atob(stateRaw));
       } catch {
         return htmlClosePage({ success: false, error: "Invalid state" });
       }
+      const branchId = state.branch_id ?? null;
 
-      if (!(await assertTenantAdmin(admin, state.caller_id, state.tenant_id))) {
+      if (!(await assertAuthorized(admin, state.caller_id, state.tenant_id, branchId))) {
         return htmlClosePage({ success: false, error: "Forbidden" });
       }
 
@@ -170,12 +171,15 @@ Deno.serve(async (req) => {
       });
       if (vErr) return htmlClosePage({ success: false, error: `Vault error: ${vErr.message}` });
 
-      const { data: existing } = await admin
+      let existingQuery = admin
         .from("email_accounts")
         .select("id, oauth_refresh_token_secret_id")
         .eq("tenant_id", state.tenant_id)
-        .eq("transport", "graph_oauth")
-        .maybeSingle();
+        .eq("transport", "graph_oauth");
+      existingQuery = branchId
+        ? existingQuery.eq("branch_id", branchId)
+        : existingQuery.is("branch_id", null);
+      const { data: existing } = await existingQuery.maybeSingle();
 
       if (existing) {
         if (existing.oauth_refresh_token_secret_id) {
@@ -199,13 +203,15 @@ Deno.serve(async (req) => {
       } else {
         const { error } = await admin.from("email_accounts").insert({
           tenant_id: state.tenant_id,
+          branch_id: branchId,
           transport: "graph_oauth",
-          label: "Microsoft 365",
+          label: branchId ? "Microsoft 365 (Branch)" : "Microsoft 365",
           from_name: displayName || mailbox.split("@")[0],
           from_email: mailbox,
           oauth_refresh_token_secret_id: secretId,
           oauth_email: mailbox,
           is_active: true,
+          is_default: !!branchId,
           last_verified_at: new Date().toISOString(),
         });
         if (error) return htmlClosePage({ success: false, error: error.message });
