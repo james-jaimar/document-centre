@@ -128,6 +128,26 @@ def _build_from_row(sb: Client, row: Dict[str, Any]) -> AccountCreds:
             **common,
         )
 
+    if transport == "graph_oauth":
+        refresh = _read_vault(sb, row.get("oauth_refresh_token_secret_id"))
+        client_id = microsoft_oauth_client_id()
+        client_secret = microsoft_oauth_client_secret()
+        if not (refresh and client_id and client_secret and row.get("oauth_email")):
+            raise CredentialError(
+                f"incomplete Microsoft OAuth config for account {row.get('id')} "
+                f"(refresh={'y' if refresh else 'n'}, client_id_env={'y' if client_id else 'n'})"
+            )
+        return GraphOAuthCreds(
+            kind="graph_oauth",
+            refresh_token=refresh,
+            client_id=client_id,
+            client_secret=client_secret,
+            oauth_email=row["oauth_email"],
+            **common,
+        )
+
+
+
     raise CredentialError(f"unknown transport {transport!r} for account {row.get('id')}")
 
 

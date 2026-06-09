@@ -26,6 +26,7 @@ from app.email.errors import PermanentSmtpError, TransientSmtpError
 from app.email.smtp_client import send_smtp
 from app.email.graph_client import send_graph
 from app.email.gmail_client import send_gmail
+from app.email.graph_oauth_client import send_graph_oauth
 from app.worker import celery_app
 from app.core.queue import enqueue
 
@@ -123,8 +124,13 @@ def send_email(self, row: Dict[str, Any]) -> str:
 
     message_id = f"<{uuid.uuid4()}@{creds.from_email.split('@')[-1]}>"
     started = time.monotonic()
-    provider = creds.kind  # "smtp" | "graph" | "gmail_oauth"
-    sender_fn = {"smtp": send_smtp, "graph": send_graph, "gmail_oauth": send_gmail}[provider]
+    provider = creds.kind  # "smtp" | "graph" | "gmail_oauth" | "graph_oauth"
+    sender_fn = {
+        "smtp": send_smtp,
+        "graph": send_graph,
+        "gmail_oauth": send_gmail,
+        "graph_oauth": send_graph_oauth,
+    }[provider]
 
     try:
         with account_slot(account_id, max_concurrency=creds.max_concurrency,
