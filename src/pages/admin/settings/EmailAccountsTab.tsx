@@ -313,7 +313,7 @@ export function EmailAccountsTab() {
               <div className="flex-1">
                 <p className="font-medium">Send via your own domain</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Use your own SMTP mailbox or connect your Gmail account. Emails are sent from your domain.
+                  Use your own SMTP mailbox, or connect Gmail or Microsoft 365 in one click. Emails are sent from your domain.
                 </p>
                 {smtpAccounts.length > 0 && sendMethod === "own_smtp" && (
                   <p className="text-xs text-muted-foreground mt-2">
@@ -325,6 +325,12 @@ export function EmailAccountsTab() {
                     Gmail: {gmailAccount.oauth_email}
                   </p>
                 )}
+                {microsoftAccount && sendMethod === "own_smtp" && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Microsoft 365: {microsoftAccount.oauth_email}
+                  </p>
+                )}
+
               </div>
             </div>
           </button>
