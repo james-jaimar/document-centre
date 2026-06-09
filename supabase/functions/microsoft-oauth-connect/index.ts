@@ -240,12 +240,15 @@ Deno.serve(async (req) => {
 
     if (action === "authorize") {
       const tenantId = body.tenant_id as string;
+      const branchId = (body.branch_id as string | undefined) || null;
       if (!tenantId) return json({ error: "tenant_id required" }, 400);
-      if (!(await assertTenantAdmin(admin, caller.id, tenantId))) {
+      if (!(await assertAuthorized(admin, caller.id, tenantId, branchId))) {
         return json({ error: "Forbidden" }, 403);
       }
 
-      const state = btoa(JSON.stringify({ tenant_id: tenantId, caller_id: caller.id }));
+      const state = btoa(
+        JSON.stringify({ tenant_id: tenantId, caller_id: caller.id, branch_id: branchId }),
+      );
       const params = new URLSearchParams({
         client_id: clientId,
         response_type: "code",
@@ -270,7 +273,7 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (!acct) return json({ error: "Not found" }, 404);
-      if (!(await assertTenantAdmin(admin, caller.id, acct.tenant_id))) {
+      if (!(await assertAuthorized(admin, caller.id, acct.tenant_id, acct.branch_id))) {
         return json({ error: "Forbidden" }, 403);
       }
 
