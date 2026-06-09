@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { enqueueEmail } from "../_shared/email-queue.ts";
+import { kickEmailWorker } from "../_shared/email-kick.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -68,11 +69,10 @@ Deno.serve(async (req) => {
       metadata: body.metadata ?? {},
     });
 
-    // Best-effort immediate dispatch so simple callers see fast delivery.
-    fetch(`${url}/functions/v1/email-dispatcher`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${serviceKey}` },
-    }).catch(() => {});
+    // Best-effort: kick the Cloud Run worker so the row sends within ~1s
+    // instead of waiting for the 30s scheduler tick. No-op if env missing.
+    kickEmailWorker();
+
 
     return new Response(JSON.stringify({ success: true, queued: true, id: queued.id }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
