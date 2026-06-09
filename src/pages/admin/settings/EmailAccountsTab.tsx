@@ -247,95 +247,17 @@ export function EmailAccountsTab() {
 
   return (
     <div className="space-y-6">
-      {/* ── Send Method Selector ── */}
-      <div>
-        <h3 className="text-lg font-semibold mb-3">System Emails</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Platform option */}
-          <button
-            type="button"
-            onClick={() => setSendMethod("platform")}
-            className={`relative rounded-lg border-2 p-5 text-left transition-colors ${
-              sendMethod === "platform"
-                ? "border-primary bg-primary/5"
-                : "border-border hover:border-muted-foreground/30"
-            }`}
-          >
-            <div className="flex items-start gap-3">
-              <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center ${
-                sendMethod === "platform" ? "border-primary" : "border-muted-foreground/40"
-              }`}>
-                {sendMethod === "platform" && (
-                  <div className="h-2 w-2 rounded-full bg-primary" />
-                )}
-              </div>
-              <div className="flex-1">
-                <p className="font-medium">Send via Document Centre</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Guaranteed delivery using dedicated, safeguarded IP address. No configuration required.
-                </p>
-                <p className="text-xs text-muted-foreground mt-2">
-                  noreply@document-centre.com
-                </p>
-                <div className="flex flex-wrap gap-2 mt-3">
-                  <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 gap-1">
-                    <CheckCircle2 className="h-3 w-3" /> SPF
-                  </Badge>
-                  <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 gap-1">
-                    <CheckCircle2 className="h-3 w-3" /> DKIM
-                  </Badge>
-                  <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 gap-1">
-                    <CheckCircle2 className="h-3 w-3" /> DMARC
-                  </Badge>
-                </div>
-              </div>
-            </div>
-          </button>
-
-          {/* Own SMTP option */}
-          <button
-            type="button"
-            onClick={() => setSendMethod("own_smtp")}
-            className={`relative rounded-lg border-2 p-5 text-left transition-colors ${
-              sendMethod === "own_smtp"
-                ? "border-primary bg-primary/5"
-                : "border-border hover:border-muted-foreground/30"
-            }`}
-          >
-            <div className="flex items-start gap-3">
-              <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center ${
-                sendMethod === "own_smtp" ? "border-primary" : "border-muted-foreground/40"
-              }`}>
-                {sendMethod === "own_smtp" && (
-                  <div className="h-2 w-2 rounded-full bg-primary" />
-                )}
-              </div>
-              <div className="flex-1">
-                <p className="font-medium">Send via your own domain</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Use your own SMTP mailbox, or connect Gmail or Microsoft 365 in one click. Emails are sent from your domain.
-                </p>
-                {smtpAccounts.length > 0 && sendMethod === "own_smtp" && (
-                  <p className="text-xs text-muted-foreground mt-2">
-                    {smtpAccounts[0].from_name} &lt;{smtpAccounts[0].from_email}&gt;
-                  </p>
-                )}
-                {gmailAccount && sendMethod === "own_smtp" && (
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Gmail: {gmailAccount.oauth_email}
-                  </p>
-                )}
-                {microsoftAccount && sendMethod === "own_smtp" && (
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Microsoft 365: {microsoftAccount.oauth_email}
-                  </p>
-                )}
-
-              </div>
-            </div>
-          </button>
-        </div>
+      {/* ── How emails are sent ── */}
+      <div className="rounded-lg border border-border bg-muted/30 p-4">
+        <h3 className="text-base font-semibold mb-1">How your emails are sent</h3>
+        <p className="text-sm text-muted-foreground">
+          Add a mailbox below (SMTP, Gmail or Microsoft 365) and mark it as default for the branch or
+          tenant. Active mailboxes are used in this order: branch default → any branch mailbox →
+          tenant default → any tenant mailbox. If no mailbox is configured, emails fall back to the
+          Document Centre platform sender.
+        </p>
       </div>
+
 
       {/* ── System Name & Note ── */}
       <Card>
