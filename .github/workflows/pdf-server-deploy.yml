@@ -28,6 +28,9 @@ on:
         type: string
 
 env:
+  # Opt into Node 24 now so the forced switch on June 16th 2026 doesn't
+  # surprise us. Silences the Node 20 deprecation warning on every run.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
   GCP_PROJECT_ID: project-59a14b18-b4df-4c6b-b09
   GCP_PROJECT_NUMBER: '622687766375'
   GCP_REGION: africa-south1
