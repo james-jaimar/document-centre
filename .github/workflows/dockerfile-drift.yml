@@ -10,6 +10,12 @@ on:
       - 'pdf-server/Dockerfile'
       - 'pdf-server/docker/MANIFEST.md'
 
+
+env:
+  # Opt into Node 24 now so the forced switch on June 16th 2026 doesn't
+  # surprise us. Silences the Node 20 deprecation warning on every run.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   drift:
     runs-on: ubuntu-latest
