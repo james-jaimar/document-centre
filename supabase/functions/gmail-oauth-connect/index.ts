@@ -173,9 +173,21 @@ Deno.serve(async (req) => {
       return htmlClosePage(corsHeaders, { success: true, email: gmailEmail });
     }
 
+    // ── POST: authorize / disconnect / (legacy callback) ──
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) return json({ error: "Unauthorized" }, 401);
 
+    const userClient = createClient(url, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user: caller } } = await userClient.auth.getUser();
+    if (!caller) return json({ error: "Unauthorized" }, 401);
+
+    const body = await req.json();
+    const action = body.action as string;
 
     if (action === "authorize") {
+
       const tenantId = body.tenant_id as string;
       if (!tenantId) return json({ error: "tenant_id required" }, 400);
       if (!(await assertTenantAdmin(admin, caller.id, tenantId))) return json({ error: "Forbidden" }, 403);
