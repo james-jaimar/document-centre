@@ -20,6 +20,11 @@ from supabase import Client
 
 from .gmail_client import GmailCreds, gmail_oauth_client_id, gmail_oauth_client_secret
 from .graph_client import GraphCreds
+from .graph_oauth_client import (
+    GraphOAuthCreds,
+    microsoft_oauth_client_id,
+    microsoft_oauth_client_secret,
+)
 
 
 @dataclass(frozen=True)
@@ -38,7 +43,7 @@ class SmtpCreds:
     password: str
 
 
-AccountCreds = Union[SmtpCreds, GraphCreds, GmailCreds]
+AccountCreds = Union[SmtpCreds, GraphCreds, GmailCreds, GraphOAuthCreds]
 
 # id -> (creds, fetched_at_monotonic)
 _CACHE: Dict[str, tuple[AccountCreds, float]] = {}
