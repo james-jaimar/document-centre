@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useTenantContext } from "@/hooks/useTenantContext";
+import { useBranches } from "@/hooks/useBranches";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -55,6 +57,8 @@ const blank = (tenant_id: string): Partial<EmailAccount> & { smtp_password?: str
 
 export function EmailAccountsTab() {
   const { tenantId } = useTenantContext();
+  const { data: branches } = useBranches(tenantId);
+  const isMultiBranch = (branches?.length ?? 0) > 1;
   const { settingsMap, isLoading: settingsLoading } = useTenantSettingsMap("email");
   const upsertSetting = useUpsertTenantSetting();
 
@@ -297,6 +301,26 @@ export function EmailAccountsTab() {
         </CardContent>
       </Card>
 
+      {isMultiBranch ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Mail className="h-4 w-4" /> Branch mailboxes
+            </CardTitle>
+            <CardDescription>
+              This tenant has multiple branches. Mailboxes (Gmail, Microsoft 365, SMTP) are
+              configured per branch — each branch sends order, quote, and notification emails
+              from its own mailbox.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild variant="outline">
+              <Link to="/admin/branches">Open Branches → Settings → Email</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+      <>
       {/* ── Gmail OAuth Connection ── */}
       <Card>
 
@@ -514,6 +538,10 @@ export function EmailAccountsTab() {
             )}
           </CardContent>
         </Card>
+      </>
+      )}
+
+
 
 
 

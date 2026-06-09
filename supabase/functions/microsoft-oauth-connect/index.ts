@@ -30,23 +30,36 @@ const AUTHORITY = "https://login.microsoftonline.com/common";
 // for the /me lookup so we can store the mailbox address on the account row.
 const SCOPES = "offline_access Mail.Send User.Read";
 
-async function assertTenantAdmin(admin: any, callerId: string, tenantId: string): Promise<boolean> {
-  const { data } = await admin
-    .from("tenant_memberships")
-    .select("role")
-    .eq("profile_id", callerId)
-    .eq("tenant_id", tenantId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
-  if (data) return true;
+async function assertAuthorized(
+  admin: any,
+  callerId: string,
+  tenantId: string,
+  branchId: string | null,
+): Promise<boolean> {
   const { data: pa } = await admin
     .from("user_roles")
     .select("role")
     .eq("user_id", callerId)
     .eq("role", "platform_admin")
     .maybeSingle();
-  return !!pa;
+  if (pa) return true;
+  const { data: tm } = await admin
+    .from("tenant_memberships")
+    .select("role, branch_id")
+    .eq("profile_id", callerId)
+    .eq("tenant_id", tenantId)
+    .eq("is_active", true);
+  if (!tm || tm.length === 0) return false;
+  const isTenantAdmin = tm.some(
+    (m: any) => m.branch_id === null && ["owner", "admin"].includes(m.role),
+  );
+  if (isTenantAdmin) return true;
+  if (branchId) {
+    return tm.some(
+      (m: any) => m.branch_id === branchId && ["owner", "admin", "manager"].includes(m.role),
+    );
+  }
+  return false;
 }
 
 function htmlClosePage(payload: Record<string, unknown>) {
@@ -101,14 +114,15 @@ Deno.serve(async (req) => {
       if (oauthErr) return htmlClosePage({ success: false, error: oauthErr });
       if (!code || !stateRaw) return htmlClosePage({ success: false, error: "Missing code or state" });
 
-      let state: { tenant_id: string; caller_id: string };
+      let state: { tenant_id: string; caller_id: string; branch_id?: string | null };
       try {
         state = JSON.parse(atob(stateRaw));
       } catch {
         return htmlClosePage({ success: false, error: "Invalid state" });
       }
+      const branchId = state.branch_id ?? null;
 
-      if (!(await assertTenantAdmin(admin, state.caller_id, state.tenant_id))) {
+      if (!(await assertAuthorized(admin, state.caller_id, state.tenant_id, branchId))) {
         return htmlClosePage({ success: false, error: "Forbidden" });
       }
 
@@ -157,12 +171,15 @@ Deno.serve(async (req) => {
       });
       if (vErr) return htmlClosePage({ success: false, error: `Vault error: ${vErr.message}` });
 
-      const { data: existing } = await admin
+      let existingQuery = admin
         .from("email_accounts")
         .select("id, oauth_refresh_token_secret_id")
         .eq("tenant_id", state.tenant_id)
-        .eq("transport", "graph_oauth")
-        .maybeSingle();
+        .eq("transport", "graph_oauth");
+      existingQuery = branchId
+        ? existingQuery.eq("branch_id", branchId)
+        : existingQuery.is("branch_id", null);
+      const { data: existing } = await existingQuery.maybeSingle();
 
       if (existing) {
         if (existing.oauth_refresh_token_secret_id) {
@@ -186,13 +203,15 @@ Deno.serve(async (req) => {
       } else {
         const { error } = await admin.from("email_accounts").insert({
           tenant_id: state.tenant_id,
+          branch_id: branchId,
           transport: "graph_oauth",
-          label: "Microsoft 365",
+          label: branchId ? "Microsoft 365 (Branch)" : "Microsoft 365",
           from_name: displayName || mailbox.split("@")[0],
           from_email: mailbox,
           oauth_refresh_token_secret_id: secretId,
           oauth_email: mailbox,
           is_active: true,
+          is_default: !!branchId,
           last_verified_at: new Date().toISOString(),
         });
         if (error) return htmlClosePage({ success: false, error: error.message });
@@ -221,12 +240,15 @@ Deno.serve(async (req) => {
 
     if (action === "authorize") {
       const tenantId = body.tenant_id as string;
+      const branchId = (body.branch_id as string | undefined) || null;
       if (!tenantId) return json({ error: "tenant_id required" }, 400);
-      if (!(await assertTenantAdmin(admin, caller.id, tenantId))) {
+      if (!(await assertAuthorized(admin, caller.id, tenantId, branchId))) {
         return json({ error: "Forbidden" }, 403);
       }
 
-      const state = btoa(JSON.stringify({ tenant_id: tenantId, caller_id: caller.id }));
+      const state = btoa(
+        JSON.stringify({ tenant_id: tenantId, caller_id: caller.id, branch_id: branchId }),
+      );
       const params = new URLSearchParams({
         client_id: clientId,
         response_type: "code",
@@ -251,7 +273,7 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (!acct) return json({ error: "Not found" }, 404);
-      if (!(await assertTenantAdmin(admin, caller.id, acct.tenant_id))) {
+      if (!(await assertAuthorized(admin, caller.id, acct.tenant_id, acct.branch_id))) {
         return json({ error: "Forbidden" }, 403);
       }
 

@@ -17,23 +17,36 @@ const json = (d: unknown, s = 200) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
-async function assertTenantAdmin(admin: any, callerId: string, tenantId: string): Promise<boolean> {
-  const { data } = await admin
-    .from("tenant_memberships")
-    .select("role")
-    .eq("profile_id", callerId)
-    .eq("tenant_id", tenantId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
-  if (data) return true;
+async function assertAuthorized(
+  admin: any,
+  callerId: string,
+  tenantId: string,
+  branchId: string | null,
+): Promise<boolean> {
   const { data: pa } = await admin
     .from("user_roles")
     .select("role")
     .eq("user_id", callerId)
     .eq("role", "platform_admin")
     .maybeSingle();
-  return !!pa;
+  if (pa) return true;
+  const { data: tm } = await admin
+    .from("tenant_memberships")
+    .select("role, branch_id")
+    .eq("profile_id", callerId)
+    .eq("tenant_id", tenantId)
+    .eq("is_active", true);
+  if (!tm || tm.length === 0) return false;
+  const isTenantAdmin = tm.some(
+    (m: any) => m.branch_id === null && ["owner", "admin"].includes(m.role),
+  );
+  if (isTenantAdmin) return true;
+  if (branchId) {
+    return tm.some(
+      (m: any) => m.branch_id === branchId && ["owner", "admin", "manager"].includes(m.role),
+    );
+  }
+  return false;
 }
 
 function htmlClosePage(corsHdrs: Record<string, string>, payload: Record<string, unknown>) {
@@ -82,13 +95,14 @@ Deno.serve(async (req) => {
       if (oauthErr) return htmlClosePage(corsHeaders, { success: false, error: oauthErr });
       if (!code || !stateRaw) return htmlClosePage(corsHeaders, { success: false, error: "Missing code or state" });
 
-      let state: { tenant_id: string; caller_id: string };
+      let state: { tenant_id: string; caller_id: string; branch_id?: string | null };
       try {
         state = JSON.parse(atob(stateRaw));
       } catch {
         return htmlClosePage(corsHeaders, { success: false, error: "Invalid state" });
       }
-      if (!(await assertTenantAdmin(admin, state.caller_id, state.tenant_id))) {
+      const branchId = state.branch_id ?? null;
+      if (!(await assertAuthorized(admin, state.caller_id, state.tenant_id, branchId))) {
         return htmlClosePage(corsHeaders, { success: false, error: "Forbidden" });
       }
 
@@ -131,12 +145,15 @@ Deno.serve(async (req) => {
       });
       if (vErr) return htmlClosePage(corsHeaders, { success: false, error: `Vault error: ${vErr.message}` });
 
-      const { data: existing } = await admin
+      let existingQuery = admin
         .from("email_accounts")
         .select("id, oauth_refresh_token_secret_id")
         .eq("tenant_id", state.tenant_id)
-        .eq("transport", "gmail_oauth")
-        .maybeSingle();
+        .eq("transport", "gmail_oauth");
+      existingQuery = branchId
+        ? existingQuery.eq("branch_id", branchId)
+        : existingQuery.is("branch_id", null);
+      const { data: existing } = await existingQuery.maybeSingle();
 
       if (existing) {
         if (existing.oauth_refresh_token_secret_id) {
@@ -158,13 +175,15 @@ Deno.serve(async (req) => {
       } else {
         const { error } = await admin.from("email_accounts").insert({
           tenant_id: state.tenant_id,
+          branch_id: branchId,
           transport: "gmail_oauth",
-          label: "Gmail",
+          label: branchId ? "Gmail (Branch)" : "Gmail",
           from_name: gmailEmail.split("@")[0],
           from_email: gmailEmail,
           oauth_refresh_token_secret_id: secretId,
           oauth_email: gmailEmail,
           is_active: true,
+          is_default: !!branchId,
           last_verified_at: new Date().toISOString(),
         });
         if (error) return htmlClosePage(corsHeaders, { success: false, error: error.message });
@@ -187,13 +206,16 @@ Deno.serve(async (req) => {
     const action = body.action as string;
 
     if (action === "authorize") {
-
       const tenantId = body.tenant_id as string;
+      const branchId = (body.branch_id as string | undefined) || null;
       if (!tenantId) return json({ error: "tenant_id required" }, 400);
-      if (!(await assertTenantAdmin(admin, caller.id, tenantId))) return json({ error: "Forbidden" }, 403);
+      if (!(await assertAuthorized(admin, caller.id, tenantId, branchId))) {
+        return json({ error: "Forbidden" }, 403);
+      }
 
-      // Build state payload (tenant_id + caller_id for the callback)
-      const state = btoa(JSON.stringify({ tenant_id: tenantId, caller_id: caller.id }));
+      const state = btoa(
+        JSON.stringify({ tenant_id: tenantId, caller_id: caller.id, branch_id: branchId }),
+      );
 
       const params = new URLSearchParams({
         client_id: clientId,
@@ -208,112 +230,6 @@ Deno.serve(async (req) => {
       return json({ authorize_url: `https://accounts.google.com/o/oauth2/v2/auth?${params}` });
     }
 
-    // Handle the GET callback from Google (browser redirect)
-    if (action === "callback") {
-      const code = body.code as string;
-      const stateRaw = body.state as string;
-      if (!code || !stateRaw) return json({ error: "Missing code or state" }, 400);
-
-      let state: { tenant_id: string; caller_id: string };
-      try {
-        state = JSON.parse(atob(stateRaw));
-      } catch {
-        return json({ error: "Invalid state" }, 400);
-      }
-
-      if (!(await assertTenantAdmin(admin, state.caller_id, state.tenant_id))) {
-        return json({ error: "Forbidden" }, 403);
-      }
-
-      // Exchange code for tokens
-      const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          code,
-          client_id: clientId,
-          client_secret: clientSecret,
-          redirect_uri: functionUrl,
-          grant_type: "authorization_code",
-        }),
-      });
-
-      const tokenData = await tokenRes.json();
-      if (!tokenRes.ok || !tokenData.refresh_token) {
-        console.error("Gmail token exchange failed:", tokenData);
-        return json({ error: "Failed to exchange code for tokens", detail: tokenData.error_description }, 400);
-      }
-
-      // Get the user's email from the id_token or userinfo
-      let gmailEmail = "";
-      try {
-        const userinfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-          headers: { Authorization: `Bearer ${tokenData.access_token}` },
-        });
-        const userinfo = await userinfoRes.json();
-        gmailEmail = userinfo.email || "";
-      } catch {
-        gmailEmail = "";
-      }
-
-      if (!gmailEmail) {
-        return json({ error: "Could not determine Gmail address" }, 400);
-      }
-
-      // Store refresh token in Vault
-      const secretName = `gmail_oauth:${state.tenant_id}:${crypto.randomUUID()}`;
-      const { data: secretId, error: vErr } = await admin.rpc("create_email_account_secret", {
-        p_name: secretName,
-        p_secret: tokenData.refresh_token,
-      });
-      if (vErr) return json({ error: `Vault error: ${vErr.message}` }, 500);
-
-      // Check for existing gmail_oauth account for this tenant
-      const { data: existing } = await admin
-        .from("email_accounts")
-        .select("id, oauth_refresh_token_secret_id")
-        .eq("tenant_id", state.tenant_id)
-        .eq("transport", "gmail_oauth")
-        .maybeSingle();
-
-      if (existing) {
-        // Clean up old refresh token
-        if (existing.oauth_refresh_token_secret_id) {
-          await admin.rpc("delete_email_account_secret", { p_secret_id: existing.oauth_refresh_token_secret_id });
-        }
-        // Update existing account
-        const { error } = await admin
-          .from("email_accounts")
-          .update({
-            oauth_refresh_token_secret_id: secretId,
-            oauth_email: gmailEmail,
-            from_email: gmailEmail,
-            from_name: gmailEmail.split("@")[0],
-            last_verified_at: new Date().toISOString(),
-            last_error: null,
-            is_active: true,
-          })
-          .eq("id", existing.id);
-        if (error) return json({ error: error.message }, 500);
-      } else {
-        // Create new account
-        const { error } = await admin.from("email_accounts").insert({
-          tenant_id: state.tenant_id,
-          transport: "gmail_oauth",
-          label: "Gmail",
-          from_name: gmailEmail.split("@")[0],
-          from_email: gmailEmail,
-          oauth_refresh_token_secret_id: secretId,
-          oauth_email: gmailEmail,
-          is_active: true,
-          last_verified_at: new Date().toISOString(),
-        });
-        if (error) return json({ error: error.message }, 500);
-      }
-
-      return json({ success: true, email: gmailEmail });
-    }
-
     if (action === "disconnect") {
       const accountId = body.account_id as string;
       if (!accountId) return json({ error: "account_id required" }, 400);
@@ -326,18 +242,19 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (!acct) return json({ error: "Not found" }, 404);
-      if (!(await assertTenantAdmin(admin, caller.id, acct.tenant_id))) return json({ error: "Forbidden" }, 403);
+      if (!(await assertAuthorized(admin, caller.id, acct.tenant_id, acct.branch_id))) {
+        return json({ error: "Forbidden" }, 403);
+      }
 
-      // Clean up Vault secret
       if (acct.oauth_refresh_token_secret_id) {
         await admin.rpc("delete_email_account_secret", { p_secret_id: acct.oauth_refresh_token_secret_id });
       }
 
-      // Delete the account
       await admin.from("email_accounts").delete().eq("id", accountId);
 
       return json({ success: true });
     }
+
 
     return json({ error: "Unknown action" }, 400);
   } catch (e) {
