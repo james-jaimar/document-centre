@@ -50,18 +50,23 @@ async function assertAuthorized(
 }
 
 function htmlClosePage(corsHdrs: Record<string, string>, payload: Record<string, unknown>) {
-  const safe = JSON.stringify(payload).replace(/</g, "\\u003c");
-  const body = `<!doctype html><meta charset="utf-8"><title>Gmail Connect</title>
+  const safe = JSON.stringify({ type: "gmail-oauth-callback", ...payload })
+    .replace(/</g, "\\u003c");
+  const body = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Gmail Connect</title>
 <style>body{font-family:system-ui,sans-serif;padding:24px;color:#333}</style>
+</head><body>
 <p>Gmail account connected. You can close this window.</p>
 <script>
   try {
+    var payload = ${safe};
     if (window.opener && !window.opener.closed) {
-      window.opener.postMessage({ type: "gmail-oauth-callback", ...${safe} }, "*");
+      window.opener.postMessage(payload, "*");
     }
   } catch (e) {}
-  setTimeout(() => window.close(), 300);
-</script>`;
+  setTimeout(function(){ window.close(); }, 300);
+</script>
+</body></html>`;
   return new Response(body, {
     status: 200,
     headers: { ...corsHdrs, "Content-Type": "text/html; charset=utf-8" },
