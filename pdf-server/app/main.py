@@ -118,6 +118,7 @@ def health():
             'enabled': settings.pdf_cache_enabled,
             'dir': settings.pdf_cache_dir,
         },
+        'email': _email_diagnostics(),
         'binaries': {
             'mutool': {**_bin_version(settings.mutool_bin, ['-v']), 'jpeg_supported': mutool_jpeg_ok, 'effective': mutool_effective},
 
@@ -128,4 +129,12 @@ def health():
         },
         'cpu_count': _os.cpu_count(),
     }
+
+
+def _email_diagnostics():
+    try:
+        from app.email.credentials import email_transport_diagnostics
+        return email_transport_diagnostics()
+    except Exception as exc:  # noqa: BLE001
+        return {'error': str(exc)}
 

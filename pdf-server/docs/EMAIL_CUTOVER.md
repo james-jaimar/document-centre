@@ -39,6 +39,12 @@ Functions remain the **enqueue** path (writing rows into
    CELERY_BROKER_URL=redis://redis:6379/0
    CELERY_RESULT_BACKEND=redis://redis:6379/1
 
+    # Required when connected OAuth mailboxes exist
+    MICROSOFT_OAUTH_CLIENT_ID=...
+    MICROSOFT_OAUTH_CLIENT_SECRET=...
+    GMAIL_OAUTH_CLIENT_ID=...
+    GMAIL_OAUTH_CLIENT_SECRET=...
+
    # Optional tuning
    EMAIL_BATCH_SIZE=50
    EMAIL_LEASE_SECONDS=120
@@ -55,6 +61,8 @@ Functions remain the **enqueue** path (writing rows into
 3. **Smoke test** — enqueue a small batch via existing send-email flow.
    Watch:
    - `worker-emails` logs (`celery ... -n emails@%h`)
+   - `/health` → `email.supported` includes `graph_oauth` and the relevant
+     `email.oauth_env_present.*` values are `true`
    - `SELECT status, count(*) FROM email_outbox GROUP BY status;`
    - `SELECT * FROM email_send_metrics ORDER BY bucket_at DESC LIMIT 10;`
 
@@ -112,15 +120,19 @@ send to that address is marked `failed` before the SMTP call.
 
 Batch endpoint: POST `/v1/webhooks/email/batch` with `{ "events": [...] }`.
 
-## Transports not yet ported
+## Supported transports
 
-Microsoft Graph (`transport='graph'`) and Gmail OAuth
-(`transport='gmail_oauth'`) accounts are NOT handled by pdf-server yet —
-they raise `CredentialError` and the row goes to `failed`. Tenants on
-these transports must keep using the edge dispatcher OR be migrated to
-SMTP relay before cutover. To extend, add `GraphCreds` / `GmailCreds`
-dataclasses in `app/email/credentials.py` and the corresponding sender in
-`app/email/smtp_client.py` (rename module or split).
+The pdf-server sender handles these `email_accounts.transport` values:
+
+- `smtp`
+- `graph` — Microsoft Graph app-only send
+- `gmail_oauth` — delegated Gmail OAuth send
+- `graph_oauth` — delegated Microsoft 365 / Outlook OAuth send
+
+If a row fails with `transport <name> not yet implemented in pdf-server`, the
+running worker is on an older image/revision. Rebuild/redeploy or restart the
+email worker from the current code, then confirm `/health` reports the expected
+`email.supported` list.
 
 ## Rollback
 

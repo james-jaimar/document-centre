@@ -1,27 +1,42 @@
-## Plan: make platform Microsoft email connect feel complete
+## What the problem is
 
-### What I found
-- The platform mailbox was created successfully for `hello@document-centre.com`.
-- The remaining issue is the callback page/popup experience: it is showing raw callback HTML/script content in an ugly way even though the connection succeeded.
+The Microsoft account connection is now working: the mailbox `hello@document-centre.com` is saved as an active `graph_oauth` email account.
 
-### Changes to make
-1. **Clean up the Microsoft callback page**
-   - Return a proper success/failure page with clear messaging.
-   - Ensure the displayed text matches the actual result.
-   - Avoid showing raw JSON/script fragments to the user.
-   - Keep the `postMessage` callback so the platform settings tab can refresh automatically.
+The remaining failure is in the sending worker, not the OAuth setup. The live email sender is still running code that says `transport graph_oauth not yet implemented in pdf-server`, while the current repository already contains the `graph_oauth` credential loader and sender.
 
-2. **Improve the platform email connection UX**
-   - After a successful callback, refresh the account list and show the connected mailbox.
-   - Use a clearer success toast for platform-scope connection.
-   - Handle popup-close and callback-message cleanup more safely.
+## Plan
 
-3. **Verify existing database state**
-   - Keep the existing successful platform email row.
-   - No further schema change is needed for the current reported issue.
+1. **Confirm the running worker path**
+   - Check whether outbound email is being processed by the VPS/Celery `worker-emails` service or the Cloud Run `worker-emails-http` service.
+   - Confirm the deployed image/service is older than the current repo code.
 
-### Technical notes
-- The edge function already inserts/updates platform-scoped email accounts correctly after the `tenant_id` nullable fix.
-- The callback page will be updated inside `microsoft-oauth-connect` only.
-- The frontend change is limited to `PlatformEmailTab` for better refresh/error handling.
-- After implementation, deploy the updated edge function and verify the callback no longer exposes raw script content.
+2. **Verify required Microsoft OAuth runtime secrets**
+   - Ensure the email worker runtime has the same Microsoft OAuth client ID and client secret used by the connect flow.
+   - If those env vars are missing, add them to the worker environment before redeploy/restart.
+
+3. **Deploy/restart the email worker with current code**
+   - Rebuild/redeploy the pdf-server worker image or restart the VPS `worker-emails` service from the updated codebase.
+   - The key current files already support this transport:
+     - `pdf-server/app/email/credentials.py`
+     - `pdf-server/app/email/graph_oauth_client.py`
+     - `pdf-server/app/tasks/email_tasks.py`
+
+4. **Recover the failed email**
+   - Requeue the failed proforma invoice outbox row or resend the invoice from the UI.
+   - Confirm the row moves from `failed` to `sent` and records provider `graph_oauth`.
+
+5. **Add a guard to prevent this recurring**
+   - Update the worker deployment checklist/docs so `MICROSOFT_OAUTH_CLIENT_ID` and `MICROSOFT_OAUTH_CLIENT_SECRET` are listed as required for Microsoft 365 sending.
+   - Optionally add a startup/health diagnostic that reports which email transports the worker build supports.
+
+## Expected result
+
+After the worker is redeployed/restarted with the current pdf-server code and Microsoft OAuth env vars, invoices should send through `hello@document-centre.com` without the `graph_oauth not yet implemented` transport error.
+
+<presentation-actions>
+  <presentation-open-history>View History</presentation-open-history>
+</presentation-actions>
+
+<presentation-actions>
+<presentation-link url="https://docs.lovable.dev/tips-tricks/troubleshooting">Troubleshooting docs</presentation-link>
+</presentation-actions>

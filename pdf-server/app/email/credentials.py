@@ -5,10 +5,11 @@ The Supabase vault stores SMTP/OAuth secrets, decrypted via the existing
 uses). We mirror its behaviour by calling the RPC through the Supabase
 service-role client — no need to re-implement vault crypto in Python.
 
-Supports three transports, matching the retired edge dispatcher:
+Supports all active account transports, matching the retired edge dispatcher:
 - smtp           → SmtpCreds (aiosmtplib)
 - graph          → GraphCreds (Microsoft Graph sendMail)
 - gmail_oauth    → GmailCreds (Gmail API users.messages.send)
+- graph_oauth    → GraphOAuthCreds (delegated Microsoft Graph sendMail)
 """
 from __future__ import annotations
 
@@ -44,6 +45,7 @@ class SmtpCreds:
 
 
 AccountCreds = Union[SmtpCreds, GraphCreds, GmailCreds, GraphOAuthCreds]
+SUPPORTED_EMAIL_TRANSPORTS = ("smtp", "graph", "gmail_oauth", "graph_oauth")
 
 # id -> (creds, fetched_at_monotonic)
 _CACHE: Dict[str, tuple[AccountCreds, float]] = {}
@@ -52,6 +54,23 @@ _CACHE_TTL_SECONDS = 300
 
 class CredentialError(Exception):
     """Raised when an account row is missing required fields or vault read fails."""
+
+
+def email_transport_diagnostics() -> Dict[str, Any]:
+    """Expose non-secret runtime facts for health checks and deploy drift checks."""
+    return {
+        "supported": list(SUPPORTED_EMAIL_TRANSPORTS),
+        "oauth_env_present": {
+            "gmail_oauth": {
+                "client_id": bool(gmail_oauth_client_id()),
+                "client_secret": bool(gmail_oauth_client_secret()),
+            },
+            "graph_oauth": {
+                "client_id": bool(microsoft_oauth_client_id()),
+                "client_secret": bool(microsoft_oauth_client_secret()),
+            },
+        },
+    }
 
 
 def _read_vault(sb: Client, secret_id: Optional[str]) -> Optional[str]:
@@ -193,23 +212,50 @@ def resolve_account_id_for_row(
       4. any tenant-wide (no branch)
       5. any active account for this tenant
     """
-    def _platform_graph_fallback() -> Optional[str]:
-        # Any active Graph account anywhere on the platform.
-        res = (
+    def _first_id(query) -> Optional[str]:
+        rows = query.execute().data or []
+        return rows[0]["id"] if rows else None
+
+    def _platform_fallback() -> Optional[str]:
+        # Prefer the platform-level default account, then any platform account,
+        # then the older Graph/Graph-OAuth fallback anywhere on the platform.
+        picked = _first_id(
+            sb.table("email_accounts")
+            .select("id,is_default,created_at")
+            .is_("tenant_id", None)
+            .is_("branch_id", None)
+            .eq("is_active", True)
+            .eq("is_default", True)
+            .order("created_at", desc=False)
+            .limit(1)
+        )
+        if picked:
+            return picked
+
+        picked = _first_id(
+            sb.table("email_accounts")
+            .select("id,is_default,created_at")
+            .is_("tenant_id", None)
+            .is_("branch_id", None)
+            .eq("is_active", True)
+            .order("created_at", desc=False)
+            .limit(1)
+        )
+        if picked:
+            return picked
+
+        return _first_id(
             sb.table("email_accounts")
             .select("id,is_default,created_at")
             .eq("is_active", True)
-            .eq("transport", "graph")
+            .in_("transport", ["graph", "graph_oauth"])
             .order("is_default", desc=True)
             .order("created_at", desc=False)
             .limit(1)
-            .execute()
         )
-        rows = res.data or []
-        return rows[0]["id"] if rows else None
 
     if not tenant_id:
-        return _platform_graph_fallback()
+        return _platform_fallback()
 
     res = (
         sb.table("email_accounts")
@@ -245,5 +291,5 @@ def resolve_account_id_for_row(
         # Any active account for this tenant (last resort within tenant).
         return accounts[0]["id"]
 
-    return _platform_graph_fallback()
+    return _platform_fallback()
 
