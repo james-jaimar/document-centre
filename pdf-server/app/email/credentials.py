@@ -222,8 +222,8 @@ def resolve_account_id_for_row(
         picked = _first_id(
             sb.table("email_accounts")
             .select("id,is_default,created_at")
-            .is_("tenant_id", "null")
-            .is_("branch_id", "null")
+            .is_("tenant_id", None)
+            .is_("branch_id", None)
             .eq("is_active", True)
             .eq("is_default", True)
             .order("created_at", desc=False)
@@ -235,8 +235,8 @@ def resolve_account_id_for_row(
         picked = _first_id(
             sb.table("email_accounts")
             .select("id,is_default,created_at")
-            .is_("tenant_id", "null")
-            .is_("branch_id", "null")
+            .is_("tenant_id", None)
+            .is_("branch_id", None)
             .eq("is_active", True)
             .order("created_at", desc=False)
             .limit(1)
