@@ -1410,7 +1410,7 @@ export type Database = {
           smtp_port: number | null
           smtp_secure: string | null
           smtp_username: string | null
-          tenant_id: string
+          tenant_id: string | null
           transport: string
           updated_at: string
         }
@@ -1440,7 +1440,7 @@ export type Database = {
           smtp_port?: number | null
           smtp_secure?: string | null
           smtp_username?: string | null
-          tenant_id: string
+          tenant_id?: string | null
           transport?: string
           updated_at?: string
         }
@@ -1470,7 +1470,7 @@ export type Database = {
           smtp_port?: number | null
           smtp_secure?: string | null
           smtp_username?: string | null
-          tenant_id?: string
+          tenant_id?: string | null
           transport?: string
           updated_at?: string
         }

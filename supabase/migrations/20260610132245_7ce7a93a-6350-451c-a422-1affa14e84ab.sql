@@ -1,0 +1,1 @@
+ALTER TABLE public.email_accounts ALTER COLUMN tenant_id DROP NOT NULL;
