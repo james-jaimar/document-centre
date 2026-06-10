@@ -38,8 +38,9 @@ interface UpsertBody {
 interface DeleteBody { action: "delete"; id: string; }
 interface TestBody { action: "test_send"; id: string; recipient: string; }
 interface DisconnectGmailBody { action: "disconnect_gmail"; id: string; }
+interface SetDefaultBody { action: "set_default"; id: string; }
 
-type Body = UpsertBody | DeleteBody | TestBody | DisconnectGmailBody;
+type Body = UpsertBody | DeleteBody | TestBody | DisconnectGmailBody | SetDefaultBody;
 
 async function assertTenantAdmin(admin: any, callerId: string, tenant_id: string) {
   const { data } = await admin
@@ -194,29 +195,124 @@ Deno.serve(async (req) => {
       if (!acct) return json({ error: "Not found" }, 404);
       if (!(await assertCanManageBranchOrTenant(admin, caller.id, acct.tenant_id, acct.branch_id))) return json({ error: "Forbidden" }, 403);
 
-
-      const { data: pwd, error: pwdErr } = await admin.rpc("read_email_account_secret", {
-        p_secret_id: acct.smtp_password_secret_id,
-      });
-      if (pwdErr || !pwd) return json({ error: "Could not read SMTP password" }, 500);
-
-      const client = new SMTPClient({
-        connection: {
-          hostname: acct.smtp_host,
-          port: acct.smtp_port,
-          tls: acct.smtp_secure === "tls",
-          auth: { username: acct.smtp_username, password: pwd as string },
-        },
-      });
+      const subject = `Test from ${acct.label}`;
+      const textBody = `This is a test email from your "${acct.label}" mailbox.\n\nIf you received this, the configuration is working.`;
+      const htmlBody = `<p>This is a test email from your <strong>${acct.label}</strong> mailbox.</p><p>If you received this, the configuration is working.</p>`;
 
       try {
-        await client.send({
-          from: `${acct.from_name} <${acct.from_email}>`,
-          to: body.recipient,
-          subject: `Test from ${acct.label}`,
-          content: `This is a test email from your "${acct.label}" SMTP account.\n\nIf you received this, the configuration is working.`,
-        });
-        await client.close();
+        if (acct.transport === "smtp") {
+          const { data: pwd, error: pwdErr } = await admin.rpc("read_email_account_secret", {
+            p_secret_id: acct.smtp_password_secret_id,
+          });
+          if (pwdErr || !pwd) return json({ error: "Could not read SMTP password" }, 500);
+
+          const client = new SMTPClient({
+            connection: {
+              hostname: acct.smtp_host,
+              port: acct.smtp_port,
+              tls: acct.smtp_secure === "tls",
+              auth: { username: acct.smtp_username, password: pwd as string },
+            },
+          });
+          await client.send({
+            from: `${acct.from_name} <${acct.from_email}>`,
+            to: body.recipient,
+            subject,
+            content: textBody,
+          });
+          await client.close();
+        } else if (acct.transport === "graph_oauth") {
+          const clientId = Deno.env.get("MICROSOFT_OAUTH_CLIENT_ID");
+          const clientSecret = Deno.env.get("MICROSOFT_OAUTH_CLIENT_SECRET");
+          if (!clientId || !clientSecret) return json({ error: "Microsoft OAuth not configured" }, 500);
+          const { data: refreshToken } = await admin.rpc("read_email_account_secret", {
+            p_secret_id: acct.oauth_refresh_token_secret_id,
+          });
+          if (!refreshToken) return json({ error: "No refresh token stored" }, 500);
+          const tokRes = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              grant_type: "refresh_token",
+              refresh_token: refreshToken as string,
+              client_id: clientId,
+              client_secret: clientSecret,
+              scope: "offline_access Mail.Send User.Read",
+            }),
+          });
+          if (!tokRes.ok) {
+            const t = await tokRes.text();
+            throw new Error(`token refresh ${tokRes.status}: ${t.slice(0, 300)}`);
+          }
+          const tokJson = await tokRes.json();
+          const sendRes = await fetch("https://graph.microsoft.com/v1.0/me/sendMail", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${tokJson.access_token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              message: {
+                subject,
+                body: { contentType: "HTML", content: htmlBody },
+                toRecipients: [{ emailAddress: { address: body.recipient } }],
+              },
+              saveToSentItems: true,
+            }),
+          });
+          if (sendRes.status !== 202) {
+            const t = await sendRes.text();
+            throw new Error(`graph sendMail ${sendRes.status}: ${t.slice(0, 400)}`);
+          }
+        } else if (acct.transport === "gmail_oauth") {
+          const clientId = Deno.env.get("GMAIL_OAUTH_CLIENT_ID");
+          const clientSecret = Deno.env.get("GMAIL_OAUTH_CLIENT_SECRET");
+          if (!clientId || !clientSecret) return json({ error: "Gmail OAuth not configured" }, 500);
+          const { data: refreshToken } = await admin.rpc("read_email_account_secret", {
+            p_secret_id: acct.oauth_refresh_token_secret_id,
+          });
+          if (!refreshToken) return json({ error: "No refresh token stored" }, 500);
+          const tokRes = await fetch("https://oauth2.googleapis.com/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              grant_type: "refresh_token",
+              refresh_token: refreshToken as string,
+              client_id: clientId,
+              client_secret: clientSecret,
+            }),
+          });
+          if (!tokRes.ok) {
+            const t = await tokRes.text();
+            throw new Error(`token refresh ${tokRes.status}: ${t.slice(0, 300)}`);
+          }
+          const tokJson = await tokRes.json();
+          const rfc = [
+            `From: ${acct.from_name} <${acct.from_email}>`,
+            `To: ${body.recipient}`,
+            `Subject: ${subject}`,
+            'MIME-Version: 1.0',
+            'Content-Type: text/html; charset="UTF-8"',
+            '',
+            htmlBody,
+          ].join("\r\n");
+          const raw = btoa(rfc).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+          const sendRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${tokJson.access_token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ raw }),
+          });
+          if (!sendRes.ok) {
+            const t = await sendRes.text();
+            throw new Error(`gmail send ${sendRes.status}: ${t.slice(0, 400)}`);
+          }
+        } else {
+          return json({ error: `Unsupported transport: ${acct.transport}` }, 400);
+        }
+
         await admin
           .from("email_accounts")
           .update({ last_verified_at: new Date().toISOString(), last_error: null })
@@ -239,6 +335,29 @@ Deno.serve(async (req) => {
         await admin.rpc("delete_email_account_secret", { p_secret_id: acct.oauth_refresh_token_secret_id });
       }
       const { error } = await admin.from("email_accounts").delete().eq("id", body.id);
+      if (error) return json({ error: error.message }, 500);
+      return json({ success: true });
+    }
+
+    if (body.action === "set_default") {
+      const { data: acct } = await admin.from("email_accounts").select("*").eq("id", body.id).maybeSingle();
+      if (!acct) return json({ error: "Not found" }, 404);
+      if (!(await assertCanManageBranchOrTenant(admin, caller.id, acct.tenant_id, acct.branch_id))) return json({ error: "Forbidden" }, 403);
+
+      // Clear other defaults in the same (tenant, branch) scope.
+      const clearBuilder = admin
+        .from("email_accounts")
+        .update({ is_default: false })
+        .eq("tenant_id", acct.tenant_id);
+      if (acct.branch_id) {
+        await clearBuilder.eq("branch_id", acct.branch_id);
+      } else {
+        await clearBuilder.is("branch_id", null);
+      }
+      const { error } = await admin
+        .from("email_accounts")
+        .update({ is_default: true, is_active: true })
+        .eq("id", body.id);
       if (error) return json({ error: error.message }, 500);
       return json({ success: true });
     }

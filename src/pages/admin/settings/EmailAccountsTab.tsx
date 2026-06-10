@@ -243,6 +243,18 @@ export function EmailAccountsTab() {
   const disconnectMicrosoft = () =>
     disconnectOAuth("microsoft-oauth-connect", microsoftAccount, "Microsoft 365");
 
+  const setDefault = async (id: string) => {
+    const { data, error } = await supabase.functions.invoke("email-account-manage", {
+      body: { action: "set_default", id },
+    });
+    if (error || (data as any)?.error) {
+      toast.error(error?.message || (data as any)?.error);
+      return;
+    }
+    toast.success("Set as default mailbox");
+    load();
+  };
+
 
   return (
     <div className="space-y-6">
@@ -341,11 +353,12 @@ export function EmailAccountsTab() {
                     <Mail className="h-5 w-5 text-red-600" />
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium">{gmailAccount.oauth_email}</span>
                       <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 gap-1">
                         <CheckCircle2 className="h-3 w-3" /> Connected
                       </Badge>
+                      {gmailAccount.is_default && <Badge variant="default">Default</Badge>}
                     </div>
                     <p className="text-sm text-muted-foreground">
                       Emails will be sent from this Gmail account.
@@ -357,14 +370,33 @@ export function EmailAccountsTab() {
                     )}
                     {gmailAccount.last_verified_at && !gmailAccount.last_error && (
                       <p className="text-xs text-muted-foreground mt-1">
-                        Last sent: {new Date(gmailAccount.last_verified_at).toLocaleString()}
+                        Last verified: {new Date(gmailAccount.last_verified_at).toLocaleString()}
                       </p>
                     )}
                   </div>
                 </div>
-                <Button variant="outline" size="sm" onClick={disconnectGmail}>
-                  Disconnect
-                </Button>
+                <div className="flex flex-col gap-2 items-end">
+                  <div className="flex gap-2">
+                    {!gmailAccount.is_default && (
+                      <Button variant="outline" size="sm" onClick={() => setDefault(gmailAccount.id)}>
+                        Set as default
+                      </Button>
+                    )}
+                    <Button variant="outline" size="sm" onClick={() => test(gmailAccount.id)} disabled={testingId === gmailAccount.id}>
+                      <Send className="h-3 w-3 mr-1" /> {testingId === gmailAccount.id ? "Sending…" : "Send test"}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={disconnectGmail}>
+                      Disconnect
+                    </Button>
+                  </div>
+                  <Input
+                    type="email"
+                    placeholder="test recipient@example.com"
+                    value={testRecipient}
+                    onChange={(e) => setTestRecipient(e.target.value)}
+                    className="max-w-xs h-8 text-xs"
+                  />
+                </div>
               </div>
             ) : (
               <div className="flex flex-col items-start gap-3">
@@ -415,11 +447,12 @@ export function EmailAccountsTab() {
                     <Mail className="h-5 w-5 text-blue-600" />
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium">{microsoftAccount.oauth_email}</span>
                       <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 gap-1">
                         <CheckCircle2 className="h-3 w-3" /> Connected
                       </Badge>
+                      {microsoftAccount.is_default && <Badge variant="default">Default</Badge>}
                     </div>
                     <p className="text-sm text-muted-foreground">
                       Emails will be sent from this Microsoft account.
@@ -431,14 +464,33 @@ export function EmailAccountsTab() {
                     )}
                     {microsoftAccount.last_verified_at && !microsoftAccount.last_error && (
                       <p className="text-xs text-muted-foreground mt-1">
-                        Last sent: {new Date(microsoftAccount.last_verified_at).toLocaleString()}
+                        Last verified: {new Date(microsoftAccount.last_verified_at).toLocaleString()}
                       </p>
                     )}
                   </div>
                 </div>
-                <Button variant="outline" size="sm" onClick={disconnectMicrosoft}>
-                  Disconnect
-                </Button>
+                <div className="flex flex-col gap-2 items-end">
+                  <div className="flex gap-2">
+                    {!microsoftAccount.is_default && (
+                      <Button variant="outline" size="sm" onClick={() => setDefault(microsoftAccount.id)}>
+                        Set as default
+                      </Button>
+                    )}
+                    <Button variant="outline" size="sm" onClick={() => test(microsoftAccount.id)} disabled={testingId === microsoftAccount.id}>
+                      <Send className="h-3 w-3 mr-1" /> {testingId === microsoftAccount.id ? "Sending…" : "Send test"}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={disconnectMicrosoft}>
+                      Disconnect
+                    </Button>
+                  </div>
+                  <Input
+                    type="email"
+                    placeholder="test recipient@example.com"
+                    value={testRecipient}
+                    onChange={(e) => setTestRecipient(e.target.value)}
+                    className="max-w-xs h-8 text-xs"
+                  />
+                </div>
               </div>
             ) : (
               <div className="flex flex-col items-start gap-3">
