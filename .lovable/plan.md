@@ -1,42 +1,35 @@
-## What the problem is
+## What I confirmed
 
-The Microsoft account connection is now working: the mailbox `hello@document-centre.com` is saved as an active `graph_oauth` email account.
-
-The remaining failure is in the sending worker, not the OAuth setup. The live email sender is still running code that says `transport graph_oauth not yet implemented in pdf-server`, while the current repository already contains the `graph_oauth` credential loader and sender.
+- The code at commit `d618700` does include `graph_oauth` support in the Python pdf-server.
+- The live `pdf-api /health` endpoint now reports `email.supported` includes `graph_oauth`, so the GitHub deploy did update at least the API image.
+- The latest failed row for `INV-00076` was queued at `18:29:31` and still failed with the old exact message: `transport graph_oauth not yet implemented in pdf-server`.
+- That exact error string is not present anywhere in the current repository, so it is coming from a stale deployed runtime path or a stale running revision, not from current source.
+- One requeued `INV-00082` row did send successfully at `18:20:55`, which proves the Microsoft OAuth account/token itself works.
 
 ## Plan
 
-1. **Confirm the running worker path**
-   - Check whether outbound email is being processed by the VPS/Celery `worker-emails` service or the Cloud Run `worker-emails-http` service.
-   - Confirm the deployed image/service is older than the current repo code.
+1. **Add worker-specific deployment verification**
+   - Extend the GitHub deploy workflow’s post-deploy check to validate `pdf-worker-emails`, not just `pdf-worker-light`.
+   - Require the live email worker revision to have:
+     - `ROLE=worker-emails-http`
+     - `QUEUE_BACKEND=cloud_tasks`
+     - `MICROSOFT_OAUTH_CLIENT_ID` mounted
+     - `MICROSOFT_OAUTH_CLIENT_SECRET` mounted
+   - Include the live `pdf-worker-emails` revision/image in the workflow summary so stale worker traffic is visible after every deploy.
 
-2. **Verify required Microsoft OAuth runtime secrets**
-   - Ensure the email worker runtime has the same Microsoft OAuth client ID and client secret used by the connect flow.
-   - If those env vars are missing, add them to the worker environment before redeploy/restart.
+2. **Expose the email worker health safely**
+   - Add a small internal health/diagnostic endpoint for the email worker, protected the same way as the worker task endpoints.
+   - It should return non-secret facts only: role, revision, queue backend, supported transports, and whether Microsoft OAuth env vars are present.
+   - This gives us a direct proof of what the live email worker is running, instead of inferring from the API service.
 
-3. **Deploy/restart the email worker with current code**
-   - Rebuild/redeploy the pdf-server worker image or restart the VPS `worker-emails` service from the updated codebase.
-   - The key current files already support this transport:
-     - `pdf-server/app/email/credentials.py`
-     - `pdf-server/app/email/graph_oauth_client.py`
-     - `pdf-server/app/tasks/email_tasks.py`
+3. **Add a runtime guard against the stale path**
+   - In the current Python send path, add a clear startup/runtime log line when `graph_oauth` is supported.
+   - If an unknown transport occurs, include the revision/role in the error message so future rows identify the exact service revision that produced the failure.
 
-4. **Recover the failed email**
-   - Requeue the failed proforma invoice outbox row or resend the invoice from the UI.
-   - Confirm the row moves from `failed` to `sent` and records provider `graph_oauth`.
-
-5. **Add a guard to prevent this recurring**
-   - Update the worker deployment checklist/docs so `MICROSOFT_OAUTH_CLIENT_ID` and `MICROSOFT_OAUTH_CLIENT_SECRET` are listed as required for Microsoft 365 sending.
-   - Optionally add a startup/health diagnostic that reports which email transports the worker build supports.
+4. **Recover the latest failed invoice after verification**
+   - Once the diagnostics show the email worker is on the current revision, requeue `6ceab9ad-7695-43c4-92fe-6573a881c4ab` for `INV-00076`.
+   - Confirm it changes to `sent` rather than just queued.
 
 ## Expected result
 
-After the worker is redeployed/restarted with the current pdf-server code and Microsoft OAuth env vars, invoices should send through `hello@document-centre.com` without the `graph_oauth not yet implemented` transport error.
-
-<presentation-actions>
-  <presentation-open-history>View History</presentation-open-history>
-</presentation-actions>
-
-<presentation-actions>
-<presentation-link url="https://docs.lovable.dev/tips-tricks/troubleshooting">Troubleshooting docs</presentation-link>
-</presentation-actions>
+After this, we’ll know whether `pdf-worker-emails` is actually serving the latest revision, and future GitHub deploys will fail loudly if the email worker is left on stale code or missing Microsoft OAuth secrets.
