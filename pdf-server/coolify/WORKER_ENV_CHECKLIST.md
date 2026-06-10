@@ -13,6 +13,16 @@ Set these env vars in the Worker app:
 - SUPABASE_SERVICE_ROLE_KEY=...
 - SUPABASE_STORAGE_BUCKET=documents
 - STORAGE_MODE=supabase
+- MICROSOFT_OAUTH_CLIENT_ID=...        # required for Microsoft 365 / Outlook connected mailboxes
+- MICROSOFT_OAUTH_CLIENT_SECRET=...    # required for Microsoft 365 / Outlook connected mailboxes
+- GMAIL_OAUTH_CLIENT_ID=...            # required only if Gmail OAuth accounts are enabled
+- GMAIL_OAUTH_CLIENT_SECRET=...        # required only if Gmail OAuth accounts are enabled
+
+After deploying/restarting the worker, check `/health` and confirm:
+
+- `email.supported` includes `graph_oauth`
+- `email.oauth_env_present.graph_oauth.client_id` is `true`
+- `email.oauth_env_present.graph_oauth.client_secret` is `true`
 
 ## Sizing (4 vCPU / 16 GB host)
 
