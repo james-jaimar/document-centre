@@ -243,6 +243,18 @@ export function EmailAccountsTab() {
   const disconnectMicrosoft = () =>
     disconnectOAuth("microsoft-oauth-connect", microsoftAccount, "Microsoft 365");
 
+  const setDefault = async (id: string) => {
+    const { data, error } = await supabase.functions.invoke("email-account-manage", {
+      body: { action: "set_default", id },
+    });
+    if (error || (data as any)?.error) {
+      toast.error(error?.message || (data as any)?.error);
+      return;
+    }
+    toast.success("Set as default mailbox");
+    load();
+  };
+
 
   return (
     <div className="space-y-6">
