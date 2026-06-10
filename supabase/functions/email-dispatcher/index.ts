@@ -130,7 +130,15 @@ interface GmailCreds extends BaseCreds {
   oauth_email: string;
 }
 
-type AccountCreds = SmtpCreds | GraphCreds | GmailCreds;
+interface GraphOauthCreds extends BaseCreds {
+  kind: "graph_oauth";
+  refresh_token: string;
+  client_id: string;
+  client_secret: string;
+  oauth_email: string;
+}
+
+type AccountCreds = SmtpCreds | GraphCreds | GmailCreds | GraphOauthCreds;
 
 async function loadVaultSecret(admin: any, secret_id: string | null): Promise<string | null> {
   if (!secret_id) return null;
