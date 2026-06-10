@@ -256,15 +256,17 @@ Deno.serve(async (req) => {
     const action = body.action as string;
 
     if (action === "authorize") {
-      const tenantId = body.tenant_id as string;
+      const scope = (body.scope as string | undefined) === "platform" ? "platform" : "tenant";
+      const isPlatform = scope === "platform";
+      const tenantId = isPlatform ? null : (body.tenant_id as string);
       const branchId = (body.branch_id as string | undefined) || null;
-      if (!tenantId) return json({ error: "tenant_id required" }, 400);
+      if (!isPlatform && !tenantId) return json({ error: "tenant_id required" }, 400);
       if (!(await assertAuthorized(admin, caller.id, tenantId, branchId))) {
         return json({ error: "Forbidden" }, 403);
       }
 
       const state = btoa(
-        JSON.stringify({ tenant_id: tenantId, caller_id: caller.id, branch_id: branchId }),
+        JSON.stringify({ tenant_id: tenantId, caller_id: caller.id, branch_id: branchId, scope }),
       );
       const params = new URLSearchParams({
         client_id: clientId,
@@ -277,6 +279,7 @@ Deno.serve(async (req) => {
       });
       return json({ authorize_url: `${AUTHORITY}/oauth2/v2.0/authorize?${params}` });
     }
+
 
     if (action === "disconnect") {
       const accountId = body.account_id as string;
