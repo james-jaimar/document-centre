@@ -240,3 +240,59 @@ async function upsertBranchSubscription(
     throw error;
   }
 }
+
+// Best-effort fire-and-forget. Not awaited from the webhook caller so a slow
+// SMTP/Graph send never blocks the Stripe response.
+function notifyTenant(
+  tenantId: string,
+  event: "subscription_cancelled" | "invoice_paid" | "invoice_failed",
+  opts: { amount?: number | null; currency?: string | null; number?: string | null; include_platform_admins?: boolean } = {},
+) {
+  (async () => {
+    try {
+      const { data: tenant } = await supabaseAdmin
+        .from("tenants").select("name").eq("id", tenantId).maybeSingle();
+      const tenantName = (tenant as any)?.name ?? "your account";
+      const recipients = new Set<string>(await tenantOwnerEmails(supabaseAdmin, tenantId));
+      if (opts.include_platform_admins) {
+        for (const a of await platformAdminEmails(supabaseAdmin)) recipients.add(a);
+      }
+
+      let subject = "";
+      let bodyHtml = "";
+      if (event === "subscription_cancelled") {
+        subject = `Subscription cancelled — ${tenantName}`;
+        bodyHtml = `<p>The Document Centre subscription for <strong>${tenantName}</strong> has been cancelled.</p>
+          <p>You'll continue to have access until the end of the current billing period. Sign in any time to reactivate.</p>`;
+      } else if (event === "invoice_paid") {
+        const amt = opts.amount != null && opts.currency
+          ? `${(opts.amount / 100).toFixed(2)} ${String(opts.currency).toUpperCase()}` : "";
+        subject = `Receipt — ${opts.number ?? "invoice"} (${tenantName})`;
+        bodyHtml = `<p>Thanks — we've received your payment${amt ? ` of <strong>${amt}</strong>` : ""}.</p>
+          ${opts.number ? `<p>Invoice number: <strong>${opts.number}</strong></p>` : ""}`;
+      } else {
+        const amt = opts.amount != null && opts.currency
+          ? `${(opts.amount / 100).toFixed(2)} ${String(opts.currency).toUpperCase()}` : "";
+        subject = `Payment failed — ${tenantName}`;
+        bodyHtml = `<p>We couldn't collect ${amt ? `<strong>${amt}</strong>` : "payment"} for your Document Centre subscription.</p>
+          ${opts.number ? `<p>Invoice number: <strong>${opts.number}</strong></p>` : ""}
+          <p>Please update your billing details to avoid interruption.</p>`;
+      }
+
+      await platformNotify(supabaseAdmin, {
+        event,
+        recipients: [...recipients],
+        tenant_id: tenantId,
+        related_type: "stripe",
+        related_id: tenantId,
+        subject,
+        html: platformEmailLayout(subject, bodyHtml),
+      });
+    } catch (e) {
+      console.error(`notifyTenant(${event}) failed:`, e);
+    }
+  })();
+}
+
+  }
+}
