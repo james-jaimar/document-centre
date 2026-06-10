@@ -556,6 +556,100 @@ async function sendViaGmail(
   throw new Error(`Gmail send failed: ${res.status} ${text.slice(0, 600)}`);
 }
 
+// ---- Microsoft Graph OAuth (delegated user token) ----------------------
+async function getGraphOauthAccessToken(creds: GraphOauthCreds): Promise<string> {
+  const res = await withTimeout(
+    fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: creds.refresh_token,
+        client_id: creds.client_id,
+        client_secret: creds.client_secret,
+        scope: "offline_access Mail.Send User.Read",
+      }),
+    }),
+    20_000,
+    "Graph OAuth token refresh"
+  );
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`graph_auth token refresh failed: ${res.status} ${txt.slice(0, 400)}`);
+  }
+  const json = await res.json();
+  if (!json.access_token) throw new Error("Graph OAuth token response missing access_token");
+  return json.access_token as string;
+}
+
+async function sendViaGraphOauth(
+  creds: GraphOauthCreds,
+  row: OutboxRow,
+  fromName: string,
+  fromEmail: string,
+  replyTo: string | undefined,
+  attachments: LoadedAttachment[]
+): Promise<{ messageId: string | null }> {
+  console.log(`[graph_oauth] refreshing token for ${creds.oauth_email}`);
+  const token = await getGraphOauthAccessToken(creds);
+  console.log(`[graph_oauth] got token; sending as ${creds.oauth_email} -> ${row.to_email}`);
+  // Delegated send uses /me/sendMail (the token belongs to the signed-in user).
+  const url = `https://graph.microsoft.com/v1.0/me/sendMail`;
+
+  const message: Record<string, unknown> = {
+    subject: row.subject,
+    body: {
+      contentType: row.html ? "HTML" : "Text",
+      content: row.html ?? row.text_body ?? "",
+    },
+    toRecipients: toGraphRecipients(row.to_email),
+    ccRecipients: toGraphRecipients(row.cc),
+    bccRecipients: toGraphRecipients(row.bcc),
+  };
+  // Note: with delegated auth Graph ignores `from` (always uses the signed-in
+  // mailbox), and may reject custom from addresses. Only set replyTo + name.
+  if (fromName && fromEmail) {
+    // Best-effort: rely on mailbox identity for the From address.
+  }
+  if (replyTo) message.replyTo = toGraphRecipients(replyTo);
+  if (attachments.length) {
+    message.attachments = attachments.map((a) => ({
+      "@odata.type": "#microsoft.graph.fileAttachment",
+      name: a.filename,
+      contentType: a.contentType,
+      contentBytes: bytesToBase64(a.bytes),
+      ...(a.inline && a.contentId ? { contentId: a.contentId, isInline: true } : {}),
+    }));
+  }
+
+  const res = await withTimeout(
+    fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ message, saveToSentItems: true }),
+    }),
+    SEND_TIMEOUT_MS,
+    "Graph OAuth sendMail"
+  );
+
+  if (res.status === 202) {
+    return { messageId: res.headers.get("x-ms-request-id") };
+  }
+
+  const text = await res.text();
+  if (res.status === 401 || res.status === 403) {
+    throw new Error(`graph_auth ${res.status}: ${text.slice(0, 600)}`);
+  }
+  if (res.status === 429) {
+    const retry = res.headers.get("Retry-After");
+    throw new Error(`graph_rate_limited retry-after=${retry ?? "?"}: ${text.slice(0, 300)}`);
+  }
+  throw new Error(`Graph OAuth sendMail failed: ${res.status} ${text.slice(0, 600)}`);
+}
+
 // ---- Main per-row processor ----------------------------------------------
 async function processOne(admin: any, row: OutboxRow): Promise<void> {
   console.log(`[dispatch] processOne start row=${row.id} to=${row.to_email} acct=${row.email_account_id}`);
