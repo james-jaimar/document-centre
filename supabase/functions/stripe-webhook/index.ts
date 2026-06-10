@@ -1,5 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
+import {
+  platformNotify,
+  tenantOwnerEmails,
+  platformAdminEmails,
+  platformEmailLayout,
+} from "../_shared/platform-notify.ts";
+
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { apiVersion: "2023-10-16" });
 const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET")!;
@@ -87,6 +94,7 @@ Deno.serve(async (req) => {
             .eq("stripe_subscription_id", sub.id);
           await supabaseAdmin.from("tenants").update({ plan_slug: "starter" }).eq("id", tenantId);
         }
+        if (tenantId) notifyTenant(tenantId, "subscription_cancelled");
         break;
       }
 
@@ -98,10 +106,19 @@ Deno.serve(async (req) => {
         const { data: bsHit } = await supabaseAdmin
           .from("branch_subscriptions" as any)
           .update({ status: "active", billing_status: "paid" })
-          .eq("stripe_subscription_id", subId).select("id");
+          .eq("stripe_subscription_id", subId).select("id, tenant_id");
+        let tenantId: string | null = (bsHit as any[])?.[0]?.tenant_id ?? null;
         if (!bsHit || (bsHit as any[]).length === 0) {
-          await supabaseAdmin.from("tenant_subscriptions")
-            .update({ status: "active" }).eq("stripe_subscription_id", subId);
+          const { data: tsHit } = await supabaseAdmin.from("tenant_subscriptions")
+            .update({ status: "active" }).eq("stripe_subscription_id", subId).select("tenant_id");
+          tenantId = (tsHit as any[])?.[0]?.tenant_id ?? null;
+        }
+        if (tenantId) {
+          notifyTenant(tenantId, "invoice_paid", {
+            amount: invoice.amount_paid,
+            currency: invoice.currency,
+            number: invoice.number,
+          });
         }
         break;
       }
@@ -113,14 +130,25 @@ Deno.serve(async (req) => {
         const { data: bsHit } = await supabaseAdmin
           .from("branch_subscriptions" as any)
           .update({ status: "past_due" })
-          .eq("stripe_subscription_id", subId).select("id");
+          .eq("stripe_subscription_id", subId).select("id, tenant_id");
+        let tenantId: string | null = (bsHit as any[])?.[0]?.tenant_id ?? null;
         if (!bsHit || (bsHit as any[]).length === 0) {
-          await supabaseAdmin.from("tenant_subscriptions")
-            .update({ status: "past_due" }).eq("stripe_subscription_id", subId);
+          const { data: tsHit } = await supabaseAdmin.from("tenant_subscriptions")
+            .update({ status: "past_due" }).eq("stripe_subscription_id", subId).select("tenant_id");
+          tenantId = (tsHit as any[])?.[0]?.tenant_id ?? null;
+        }
+        if (tenantId) {
+          notifyTenant(tenantId, "invoice_failed", {
+            amount: invoice.amount_due,
+            currency: invoice.currency,
+            number: invoice.number,
+            include_platform_admins: true,
+          });
         }
         break;
       }
     }
+
   } catch (err) {
     console.error("Error processing webhook:", err);
     return new Response(JSON.stringify({ error: "Processing failed" }), {
@@ -212,3 +240,57 @@ async function upsertBranchSubscription(
     throw error;
   }
 }
+
+// Best-effort fire-and-forget. Not awaited from the webhook caller so a slow
+// SMTP/Graph send never blocks the Stripe response.
+function notifyTenant(
+  tenantId: string,
+  event: "subscription_cancelled" | "invoice_paid" | "invoice_failed",
+  opts: { amount?: number | null; currency?: string | null; number?: string | null; include_platform_admins?: boolean } = {},
+) {
+  (async () => {
+    try {
+      const { data: tenant } = await supabaseAdmin
+        .from("tenants").select("name").eq("id", tenantId).maybeSingle();
+      const tenantName = (tenant as any)?.name ?? "your account";
+      const recipients = new Set<string>(await tenantOwnerEmails(supabaseAdmin, tenantId));
+      if (opts.include_platform_admins) {
+        for (const a of await platformAdminEmails(supabaseAdmin)) recipients.add(a);
+      }
+
+      let subject = "";
+      let bodyHtml = "";
+      if (event === "subscription_cancelled") {
+        subject = `Subscription cancelled — ${tenantName}`;
+        bodyHtml = `<p>The Document Centre subscription for <strong>${tenantName}</strong> has been cancelled.</p>
+          <p>You'll continue to have access until the end of the current billing period. Sign in any time to reactivate.</p>`;
+      } else if (event === "invoice_paid") {
+        const amt = opts.amount != null && opts.currency
+          ? `${(opts.amount / 100).toFixed(2)} ${String(opts.currency).toUpperCase()}` : "";
+        subject = `Receipt — ${opts.number ?? "invoice"} (${tenantName})`;
+        bodyHtml = `<p>Thanks — we've received your payment${amt ? ` of <strong>${amt}</strong>` : ""}.</p>
+          ${opts.number ? `<p>Invoice number: <strong>${opts.number}</strong></p>` : ""}`;
+      } else {
+        const amt = opts.amount != null && opts.currency
+          ? `${(opts.amount / 100).toFixed(2)} ${String(opts.currency).toUpperCase()}` : "";
+        subject = `Payment failed — ${tenantName}`;
+        bodyHtml = `<p>We couldn't collect ${amt ? `<strong>${amt}</strong>` : "payment"} for your Document Centre subscription.</p>
+          ${opts.number ? `<p>Invoice number: <strong>${opts.number}</strong></p>` : ""}
+          <p>Please update your billing details to avoid interruption.</p>`;
+      }
+
+      await platformNotify(supabaseAdmin, {
+        event,
+        recipients: [...recipients],
+        tenant_id: tenantId,
+        related_type: "stripe",
+        related_id: tenantId,
+        subject,
+        html: platformEmailLayout(subject, bodyHtml),
+      });
+    } catch (e) {
+      console.error(`notifyTenant(${event}) failed:`, e);
+    }
+  })();
+}
+

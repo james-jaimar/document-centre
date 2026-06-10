@@ -47,11 +47,13 @@ export interface EnqueuedEmail {
 }
 
 /**
- * Resolves the SMTP account to use for an outgoing email:
+ * Resolves the SMTP/Graph account to use for an outgoing email:
  *   1. explicit email_account_id (validated)
  *   2. branch default (if branch_id given and a branch-level account exists)
- *   3. tenant default
- *   4. null  → caller decides (platform fallback handled at dispatcher level)
+ *   3. tenant default → any active tenant account
+ *   4. platform default (tenant_id IS NULL AND branch_id IS NULL AND is_default)
+ *   5. any active platform account (tenant_id IS NULL)
+ *   6. legacy fallback: first active Graph/Graph-OAuth account anywhere
  */
 export async function resolveEmailAccount(
   admin: SupabaseClient,
@@ -67,9 +69,6 @@ export async function resolveEmailAccount(
       .maybeSingle();
     if (data?.is_active) return data.id;
   }
-
-  // Implicit resolution: if the tenant/branch has any active account configured,
-  // use it. No opt-in toggle required. Platform Graph is the tail fallback.
 
   if (branch_id) {
     const { data } = await admin
@@ -93,7 +92,6 @@ export async function resolveEmailAccount(
       .maybeSingle();
     if (data?.id) return data.id;
 
-    // No explicit default — use any active tenant-level account
     const { data: any } = await admin
       .from("email_accounts")
       .select("id")
@@ -106,12 +104,34 @@ export async function resolveEmailAccount(
     if (any?.id) return any.id;
   }
 
-  // Final fallback: first active Graph account anywhere on the platform.
+  // Platform-level account (tenant_id IS NULL AND branch_id IS NULL)
+  const { data: platformDefault } = await admin
+    .from("email_accounts")
+    .select("id")
+    .is("tenant_id", null)
+    .is("branch_id", null)
+    .eq("is_active", true)
+    .eq("is_default", true)
+    .maybeSingle();
+  if (platformDefault?.id) return platformDefault.id;
+
+  const { data: anyPlatform } = await admin
+    .from("email_accounts")
+    .select("id")
+    .is("tenant_id", null)
+    .is("branch_id", null)
+    .eq("is_active", true)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (anyPlatform?.id) return anyPlatform.id;
+
+  // Final legacy fallback: any active Graph/Graph-OAuth account.
   const { data: graphFallback } = await admin
     .from("email_accounts")
     .select("id")
     .eq("is_active", true)
-    .eq("transport", "graph")
+    .in("transport", ["graph", "graph_oauth"])
     .order("is_default", { ascending: false })
     .order("created_at", { ascending: true })
     .limit(1)
@@ -120,6 +140,7 @@ export async function resolveEmailAccount(
 
   return null;
 }
+
 
 export async function enqueueEmail(
   admin: SupabaseClient,

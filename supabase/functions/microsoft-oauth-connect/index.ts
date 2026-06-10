@@ -33,9 +33,10 @@ const SCOPES = "offline_access Mail.Send User.Read";
 async function assertAuthorized(
   admin: any,
   callerId: string,
-  tenantId: string,
+  tenantId: string | null,
   branchId: string | null,
 ): Promise<boolean> {
+  // Platform admins always allowed (and required when tenantId is null).
   const { data: pa } = await admin
     .from("user_roles")
     .select("role")
@@ -43,6 +44,7 @@ async function assertAuthorized(
     .eq("role", "platform_admin")
     .maybeSingle();
   if (pa) return true;
+  if (!tenantId) return false; // platform-scope connect requires platform_admin
   const { data: tm } = await admin
     .from("tenant_memberships")
     .select("role, branch_id")
@@ -61,6 +63,7 @@ async function assertAuthorized(
   }
   return false;
 }
+
 
 function htmlClosePage(payload: Record<string, unknown>) {
   // Posted to window.opener so the dashboard can refresh + toast.
@@ -119,15 +122,17 @@ Deno.serve(async (req) => {
       if (oauthErr) return htmlClosePage({ success: false, error: oauthErr });
       if (!code || !stateRaw) return htmlClosePage({ success: false, error: "Missing code or state" });
 
-      let state: { tenant_id: string; caller_id: string; branch_id?: string | null };
+      let state: { tenant_id: string | null; caller_id: string; branch_id?: string | null; scope?: "tenant" | "platform" };
       try {
         state = JSON.parse(atob(stateRaw));
       } catch {
         return htmlClosePage({ success: false, error: "Invalid state" });
       }
       const branchId = state.branch_id ?? null;
+      const isPlatform = state.scope === "platform" || state.tenant_id === null;
+      const tenantId = isPlatform ? null : state.tenant_id;
 
-      if (!(await assertAuthorized(admin, state.caller_id, state.tenant_id, branchId))) {
+      if (!(await assertAuthorized(admin, state.caller_id, tenantId, branchId))) {
         return htmlClosePage({ success: false, error: "Forbidden" });
       }
 
@@ -169,7 +174,7 @@ Deno.serve(async (req) => {
         return htmlClosePage({ success: false, error: "Could not determine mailbox address" });
       }
 
-      const secretName = `graph_oauth:${state.tenant_id}:${crypto.randomUUID()}`;
+      const secretName = `graph_oauth:${isPlatform ? "platform" : tenantId}:${crypto.randomUUID()}`;
       const { data: secretId, error: vErr } = await admin.rpc("create_email_account_secret", {
         p_name: secretName,
         p_secret: tokenData.refresh_token,
@@ -179,11 +184,12 @@ Deno.serve(async (req) => {
       let existingQuery = admin
         .from("email_accounts")
         .select("id, oauth_refresh_token_secret_id")
-        .eq("tenant_id", state.tenant_id)
         .eq("transport", "graph_oauth");
-      existingQuery = branchId
-        ? existingQuery.eq("branch_id", branchId)
-        : existingQuery.is("branch_id", null);
+      existingQuery = isPlatform
+        ? existingQuery.is("tenant_id", null).is("branch_id", null)
+        : (branchId
+            ? existingQuery.eq("tenant_id", tenantId!).eq("branch_id", branchId)
+            : existingQuery.eq("tenant_id", tenantId!).is("branch_id", null));
       const { data: existing } = await existingQuery.maybeSingle();
 
       if (existing) {
@@ -206,23 +212,29 @@ Deno.serve(async (req) => {
           .eq("id", existing.id);
         if (error) return htmlClosePage({ success: false, error: error.message });
       } else {
+        const label = isPlatform
+          ? "Document Centre Platform"
+          : (branchId ? "Microsoft 365 (Branch)" : "Microsoft 365");
         const { error } = await admin.from("email_accounts").insert({
-          tenant_id: state.tenant_id,
+          tenant_id: tenantId,
           branch_id: branchId,
           transport: "graph_oauth",
-          label: branchId ? "Microsoft 365 (Branch)" : "Microsoft 365",
+          label,
           from_name: displayName || mailbox.split("@")[0],
           from_email: mailbox,
           oauth_refresh_token_secret_id: secretId,
           oauth_email: mailbox,
           is_active: true,
-          is_default: !!branchId,
+          // For platform: mark as default (single platform-default unique index enforces it).
+          // For branch: mirror existing behaviour.
+          is_default: isPlatform ? true : !!branchId,
           last_verified_at: new Date().toISOString(),
         });
         if (error) return htmlClosePage({ success: false, error: error.message });
       }
 
       return htmlClosePage({ success: true, email: mailbox });
+
     } catch (e) {
       console.error("microsoft-oauth-connect GET error:", e);
       return htmlClosePage({ success: false, error: (e as Error).message });
@@ -244,15 +256,17 @@ Deno.serve(async (req) => {
     const action = body.action as string;
 
     if (action === "authorize") {
-      const tenantId = body.tenant_id as string;
+      const scope = (body.scope as string | undefined) === "platform" ? "platform" : "tenant";
+      const isPlatform = scope === "platform";
+      const tenantId = isPlatform ? null : (body.tenant_id as string);
       const branchId = (body.branch_id as string | undefined) || null;
-      if (!tenantId) return json({ error: "tenant_id required" }, 400);
+      if (!isPlatform && !tenantId) return json({ error: "tenant_id required" }, 400);
       if (!(await assertAuthorized(admin, caller.id, tenantId, branchId))) {
         return json({ error: "Forbidden" }, 403);
       }
 
       const state = btoa(
-        JSON.stringify({ tenant_id: tenantId, caller_id: caller.id, branch_id: branchId }),
+        JSON.stringify({ tenant_id: tenantId, caller_id: caller.id, branch_id: branchId, scope }),
       );
       const params = new URLSearchParams({
         client_id: clientId,
@@ -265,6 +279,7 @@ Deno.serve(async (req) => {
       });
       return json({ authorize_url: `${AUTHORITY}/oauth2/v2.0/authorize?${params}` });
     }
+
 
     if (action === "disconnect") {
       const accountId = body.account_id as string;
