@@ -94,6 +94,7 @@ Deno.serve(async (req) => {
             .eq("stripe_subscription_id", sub.id);
           await supabaseAdmin.from("tenants").update({ plan_slug: "starter" }).eq("id", tenantId);
         }
+        if (tenantId) notifyTenant(tenantId, "subscription_cancelled");
         break;
       }
 
@@ -105,10 +106,19 @@ Deno.serve(async (req) => {
         const { data: bsHit } = await supabaseAdmin
           .from("branch_subscriptions" as any)
           .update({ status: "active", billing_status: "paid" })
-          .eq("stripe_subscription_id", subId).select("id");
+          .eq("stripe_subscription_id", subId).select("id, tenant_id");
+        let tenantId: string | null = (bsHit as any[])?.[0]?.tenant_id ?? null;
         if (!bsHit || (bsHit as any[]).length === 0) {
-          await supabaseAdmin.from("tenant_subscriptions")
-            .update({ status: "active" }).eq("stripe_subscription_id", subId);
+          const { data: tsHit } = await supabaseAdmin.from("tenant_subscriptions")
+            .update({ status: "active" }).eq("stripe_subscription_id", subId).select("tenant_id");
+          tenantId = (tsHit as any[])?.[0]?.tenant_id ?? null;
+        }
+        if (tenantId) {
+          notifyTenant(tenantId, "invoice_paid", {
+            amount: invoice.amount_paid,
+            currency: invoice.currency,
+            number: invoice.number,
+          });
         }
         break;
       }
@@ -120,14 +130,25 @@ Deno.serve(async (req) => {
         const { data: bsHit } = await supabaseAdmin
           .from("branch_subscriptions" as any)
           .update({ status: "past_due" })
-          .eq("stripe_subscription_id", subId).select("id");
+          .eq("stripe_subscription_id", subId).select("id, tenant_id");
+        let tenantId: string | null = (bsHit as any[])?.[0]?.tenant_id ?? null;
         if (!bsHit || (bsHit as any[]).length === 0) {
-          await supabaseAdmin.from("tenant_subscriptions")
-            .update({ status: "past_due" }).eq("stripe_subscription_id", subId);
+          const { data: tsHit } = await supabaseAdmin.from("tenant_subscriptions")
+            .update({ status: "past_due" }).eq("stripe_subscription_id", subId).select("tenant_id");
+          tenantId = (tsHit as any[])?.[0]?.tenant_id ?? null;
+        }
+        if (tenantId) {
+          notifyTenant(tenantId, "invoice_failed", {
+            amount: invoice.amount_due,
+            currency: invoice.currency,
+            number: invoice.number,
+            include_platform_admins: true,
+          });
         }
         break;
       }
     }
+
   } catch (err) {
     console.error("Error processing webhook:", err);
     return new Response(JSON.stringify({ error: "Processing failed" }), {
