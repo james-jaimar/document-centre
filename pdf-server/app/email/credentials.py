@@ -165,9 +165,19 @@ def _build_from_row(sb: Client, row: Dict[str, Any]) -> AccountCreds:
             **common,
         )
 
-
-
-    raise CredentialError(f"unknown transport {transport!r} for account {row.get('id')}")
+    # Include the running Cloud Run service+revision in the error so a stale
+    # `not yet implemented in pdf-server` message is unambiguously traceable
+    # to the exact revision that produced it (vs. inferring from the API
+    # service's /health). Both env vars are set automatically by Cloud Run.
+    import os as _os
+    svc = _os.getenv("K_SERVICE") or "unknown-service"
+    rev = _os.getenv("K_REVISION") or "unknown-revision"
+    role = _os.getenv("ROLE") or "unknown-role"
+    raise CredentialError(
+        f"unknown transport {transport!r} for account {row.get('id')} "
+        f"(svc={svc} rev={rev} role={role} "
+        f"supported={','.join(SUPPORTED_EMAIL_TRANSPORTS)})"
+    )
 
 
 def get_account_creds(sb: Client, account_id: str, *, force_refresh: bool = False) -> AccountCreds:
