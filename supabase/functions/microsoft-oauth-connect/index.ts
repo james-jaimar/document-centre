@@ -69,11 +69,33 @@ function htmlClosePage(payload: Record<string, unknown>) {
   // Posted to window.opener so the dashboard can refresh + toast.
   const safe = JSON.stringify({ type: "microsoft-oauth-callback", ...payload })
     .replace(/</g, "\\u003c");
+  const success = (payload as any).success === true;
+  const email = (payload as any).email as string | undefined;
+  const error = (payload as any).error as string | undefined;
+  const accent = success ? "#16a34a" : "#dc2626";
+  const icon = success
+    ? `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="${accent}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>`
+    : `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="${accent}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+  const heading = success ? "Mailbox connected" : "Connection failed";
+  const detail = success
+    ? (email ? `<p style="margin:8px 0 0;color:#475569;font-size:14px">${email}</p>` : "")
+    : (error ? `<p style="margin:8px 0 0;color:#991b1b;font-size:13px;word-break:break-word">${error.replace(/</g, "&lt;")}</p>` : "");
   const body = `<!doctype html>
-<html><head><meta charset="utf-8"><title>Microsoft Connect</title>
-<style>body{font-family:system-ui,sans-serif;padding:24px;color:#333}</style>
+<html><head><meta charset="utf-8"><title>${heading}</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;color:#0f172a}
+  .wrap{min-height:100%;display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:32px;max-width:380px;width:100%;text-align:center;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+  h1{margin:16px 0 4px;font-size:18px;font-weight:600}
+  .hint{margin-top:20px;font-size:12px;color:#94a3b8}
+</style>
 </head><body>
-<p>Microsoft account connected. You can close this window.</p>
+<div class="wrap"><div class="card">
+  ${icon}
+  <h1>${heading}</h1>
+  ${detail}
+  <p class="hint">This window will close automatically.</p>
+</div></div>
 <script>
   try {
     var payload = ${safe};
@@ -81,7 +103,7 @@ function htmlClosePage(payload: Record<string, unknown>) {
       window.opener.postMessage(payload, "*");
     }
   } catch (e) {}
-  setTimeout(function(){ window.close(); }, 300);
+  setTimeout(function(){ window.close(); }, ${success ? 600 : 2500});
 </script>
 </body></html>`;
   return new Response(body, {
@@ -89,6 +111,7 @@ function htmlClosePage(payload: Record<string, unknown>) {
     headers: { ...corsHeaders, "Content-Type": "text/html; charset=utf-8" },
   });
 }
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
