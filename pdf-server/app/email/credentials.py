@@ -255,7 +255,7 @@ def resolve_account_id_for_row(
         )
 
     if not tenant_id:
-        return _platform_graph_fallback()
+        return _platform_fallback()
 
     res = (
         sb.table("email_accounts")
@@ -291,5 +291,5 @@ def resolve_account_id_for_row(
         # Any active account for this tenant (last resort within tenant).
         return accounts[0]["id"]
 
-    return _platform_graph_fallback()
+    return _platform_fallback()
 
