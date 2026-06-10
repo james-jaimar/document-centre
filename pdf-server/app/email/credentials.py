@@ -212,20 +212,47 @@ def resolve_account_id_for_row(
       4. any tenant-wide (no branch)
       5. any active account for this tenant
     """
-    def _platform_graph_fallback() -> Optional[str]:
-        # Any active Graph account anywhere on the platform.
-        res = (
+    def _first_id(query) -> Optional[str]:
+        rows = query.execute().data or []
+        return rows[0]["id"] if rows else None
+
+    def _platform_fallback() -> Optional[str]:
+        # Prefer the platform-level default account, then any platform account,
+        # then the older Graph/Graph-OAuth fallback anywhere on the platform.
+        picked = _first_id(
+            sb.table("email_accounts")
+            .select("id,is_default,created_at")
+            .is_("tenant_id", "null")
+            .is_("branch_id", "null")
+            .eq("is_active", True)
+            .eq("is_default", True)
+            .order("created_at", desc=False)
+            .limit(1)
+        )
+        if picked:
+            return picked
+
+        picked = _first_id(
+            sb.table("email_accounts")
+            .select("id,is_default,created_at")
+            .is_("tenant_id", "null")
+            .is_("branch_id", "null")
+            .eq("is_active", True)
+            .order("created_at", desc=False)
+            .limit(1)
+        )
+        if picked:
+            return picked
+
+        return _first_id(
             sb.table("email_accounts")
             .select("id,is_default,created_at")
             .eq("is_active", True)
-            .eq("transport", "graph")
+            .in_("transport", ["graph", "graph_oauth"])
             .order("is_default", desc=True)
             .order("created_at", desc=False)
             .limit(1)
-            .execute()
         )
-        rows = res.data or []
-        return rows[0]["id"] if rows else None
 
     if not tenant_id:
         return _platform_graph_fallback()
