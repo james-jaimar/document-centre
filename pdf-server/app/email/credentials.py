@@ -5,10 +5,11 @@ The Supabase vault stores SMTP/OAuth secrets, decrypted via the existing
 uses). We mirror its behaviour by calling the RPC through the Supabase
 service-role client — no need to re-implement vault crypto in Python.
 
-Supports three transports, matching the retired edge dispatcher:
+Supports all active account transports, matching the retired edge dispatcher:
 - smtp           → SmtpCreds (aiosmtplib)
 - graph          → GraphCreds (Microsoft Graph sendMail)
 - gmail_oauth    → GmailCreds (Gmail API users.messages.send)
+- graph_oauth    → GraphOAuthCreds (delegated Microsoft Graph sendMail)
 """
 from __future__ import annotations
 
@@ -44,6 +45,7 @@ class SmtpCreds:
 
 
 AccountCreds = Union[SmtpCreds, GraphCreds, GmailCreds, GraphOAuthCreds]
+SUPPORTED_EMAIL_TRANSPORTS = ("smtp", "graph", "gmail_oauth", "graph_oauth")
 
 # id -> (creds, fetched_at_monotonic)
 _CACHE: Dict[str, tuple[AccountCreds, float]] = {}
@@ -52,6 +54,23 @@ _CACHE_TTL_SECONDS = 300
 
 class CredentialError(Exception):
     """Raised when an account row is missing required fields or vault read fails."""
+
+
+def email_transport_diagnostics() -> Dict[str, Any]:
+    """Expose non-secret runtime facts for health checks and deploy drift checks."""
+    return {
+        "supported": list(SUPPORTED_EMAIL_TRANSPORTS),
+        "oauth_env_present": {
+            "gmail_oauth": {
+                "client_id": bool(gmail_oauth_client_id()),
+                "client_secret": bool(gmail_oauth_client_secret()),
+            },
+            "graph_oauth": {
+                "client_id": bool(microsoft_oauth_client_id()),
+                "client_secret": bool(microsoft_oauth_client_secret()),
+            },
+        },
+    }
 
 
 def _read_vault(sb: Client, secret_id: Optional[str]) -> Optional[str]:
