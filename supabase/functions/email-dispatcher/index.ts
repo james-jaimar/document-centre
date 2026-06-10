@@ -691,6 +691,11 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
       const result = await sendViaGmail(creds, row, fromName, fromEmail, replyTo, loadedAttachments);
       console.log(`[dispatch] sendViaGmail returned messageId=${result.messageId}`);
       messageId = result.messageId;
+    } else if (creds.kind === "graph_oauth") {
+      console.log(`[dispatch] entering sendViaGraphOauth for row=${row.id}`);
+      const result = await sendViaGraphOauth(creds, row, fromName, fromEmail, replyTo, loadedAttachments);
+      console.log(`[dispatch] sendViaGraphOauth returned messageId=${result.messageId}`);
+      messageId = result.messageId;
     } else {
       // SMTP via nodemailer (port 465 = implicit TLS; 587 = STARTTLS upgrade)
       const useSecure = creds.port === 465;
