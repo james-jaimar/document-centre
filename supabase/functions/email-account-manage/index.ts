@@ -339,6 +339,29 @@ Deno.serve(async (req) => {
       return json({ success: true });
     }
 
+    if (body.action === "set_default") {
+      const { data: acct } = await admin.from("email_accounts").select("*").eq("id", body.id).maybeSingle();
+      if (!acct) return json({ error: "Not found" }, 404);
+      if (!(await assertCanManageBranchOrTenant(admin, caller.id, acct.tenant_id, acct.branch_id))) return json({ error: "Forbidden" }, 403);
+
+      // Clear other defaults in the same (tenant, branch) scope.
+      const clearBuilder = admin
+        .from("email_accounts")
+        .update({ is_default: false })
+        .eq("tenant_id", acct.tenant_id);
+      if (acct.branch_id) {
+        await clearBuilder.eq("branch_id", acct.branch_id);
+      } else {
+        await clearBuilder.is("branch_id", null);
+      }
+      const { error } = await admin
+        .from("email_accounts")
+        .update({ is_default: true, is_active: true })
+        .eq("id", body.id);
+      if (error) return json({ error: error.message }, 500);
+      return json({ success: true });
+    }
+
     return json({ error: "Unknown action" }, 400);
   } catch (e) {
     console.error("email-account-manage error:", e);
