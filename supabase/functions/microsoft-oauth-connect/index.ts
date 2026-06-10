@@ -64,18 +64,23 @@ async function assertAuthorized(
 
 function htmlClosePage(payload: Record<string, unknown>) {
   // Posted to window.opener so the dashboard can refresh + toast.
-  const safe = JSON.stringify(payload).replace(/</g, "\\u003c");
-  const body = `<!doctype html><meta charset="utf-8"><title>Microsoft Connect</title>
+  const safe = JSON.stringify({ type: "microsoft-oauth-callback", ...payload })
+    .replace(/</g, "\\u003c");
+  const body = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Microsoft Connect</title>
 <style>body{font-family:system-ui,sans-serif;padding:24px;color:#333}</style>
+</head><body>
 <p>Microsoft account connected. You can close this window.</p>
 <script>
   try {
+    var payload = ${safe};
     if (window.opener && !window.opener.closed) {
-      window.opener.postMessage({ type: "microsoft-oauth-callback", ...${safe} }, "*");
+      window.opener.postMessage(payload, "*");
     }
   } catch (e) {}
-  setTimeout(() => window.close(), 300);
-</script>`;
+  setTimeout(function(){ window.close(); }, 300);
+</script>
+</body></html>`;
   return new Response(body, {
     status: 200,
     headers: { ...corsHeaders, "Content-Type": "text/html; charset=utf-8" },
