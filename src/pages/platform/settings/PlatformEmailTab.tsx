@@ -90,22 +90,17 @@ export function PlatformEmailTab() {
     }
     setTestingId(acct.id);
     const { data, error } = await supabase.functions.invoke("send-test-email", {
-      body: { account_id: acct.id, recipient: testRecipient },
+      body: { to: testRecipient, subject: `Document Centre · platform mailbox test (${acct.label})` },
     });
     setTestingId(null);
     if (error || (data as any)?.error) {
-      // Fallback: try email-account-manage (works for tenant accounts but server enforces auth).
-      const r = await supabase.functions.invoke("email-account-manage", {
-        body: { action: "test_send", id: acct.id, recipient: testRecipient },
-      });
-      if (r.error || (r.data as any)?.error) {
-        toast.error(r.error?.message || (r.data as any)?.error || (error?.message ?? "Test failed"));
-        return;
-      }
+      toast.error(error?.message || (data as any)?.error || "Test failed");
+      return;
     }
     toast.success("Test email queued — check inbox in a few seconds");
     refetch();
   };
+
 
   return (
     <div className="space-y-6">
