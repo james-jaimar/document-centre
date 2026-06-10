@@ -161,7 +161,7 @@ export function EmailAccountsTab() {
       load();
       return;
     }
-    toast.success("Test email sent");
+    toast.success("Test email queued — check Sent Mail for delivery status");
     load();
   };
 
