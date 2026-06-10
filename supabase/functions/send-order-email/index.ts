@@ -298,8 +298,12 @@ Deno.serve(async (req) => {
       }
     }
 
-    if ((order as any).is_demo) return json({ success: true, skipped: true, reason: "demo_order" });
     if (!order.customer_email) return json({ success: true, skipped: true, reason: "no_email" });
+    // Skip only synthetic demo recipients (the seeded throwaway addresses). Real
+    // customer addresses on demo tenants should still receive their order emails.
+    if (/@demo\.document-centre\.com$/i.test(order.customer_email)) {
+      return json({ success: true, skipped: true, reason: "synthetic_demo_recipient" });
+    }
 
     // Resolve invoice to attach for events that should include a PDF.
     // Events that carry an attachment:
