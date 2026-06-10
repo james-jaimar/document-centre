@@ -194,6 +194,25 @@ async function buildCredsFromAccount(
     };
   }
 
+  if (transport === "graph_oauth") {
+    const refreshToken = await loadVaultSecret(admin, a.oauth_refresh_token_secret_id);
+    const msClientId = Deno.env.get("MICROSOFT_OAUTH_CLIENT_ID");
+    const msClientSecret = Deno.env.get("MICROSOFT_OAUTH_CLIENT_SECRET");
+    if (!refreshToken || !msClientId || !msClientSecret || !a.oauth_email) return null;
+    return {
+      kind: "graph_oauth",
+      id: a.id,
+      refresh_token: refreshToken,
+      client_id: msClientId,
+      client_secret: msClientSecret,
+      oauth_email: a.oauth_email,
+      from_name: a.from_name,
+      from_email: a.from_email,
+      reply_to: a.reply_to,
+      send_delay_ms: a.send_delay_ms ?? 1500,
+    };
+  }
+
   // smtp
   const password = await loadVaultSecret(admin, a.smtp_password_secret_id);
   if (!password) return null;
