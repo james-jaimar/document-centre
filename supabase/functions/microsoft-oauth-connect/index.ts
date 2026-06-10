@@ -33,9 +33,10 @@ const SCOPES = "offline_access Mail.Send User.Read";
 async function assertAuthorized(
   admin: any,
   callerId: string,
-  tenantId: string,
+  tenantId: string | null,
   branchId: string | null,
 ): Promise<boolean> {
+  // Platform admins always allowed (and required when tenantId is null).
   const { data: pa } = await admin
     .from("user_roles")
     .select("role")
@@ -43,6 +44,7 @@ async function assertAuthorized(
     .eq("role", "platform_admin")
     .maybeSingle();
   if (pa) return true;
+  if (!tenantId) return false; // platform-scope connect requires platform_admin
   const { data: tm } = await admin
     .from("tenant_memberships")
     .select("role, branch_id")
@@ -61,6 +63,7 @@ async function assertAuthorized(
   }
   return false;
 }
+
 
 function htmlClosePage(payload: Record<string, unknown>) {
   // Posted to window.opener so the dashboard can refresh + toast.
