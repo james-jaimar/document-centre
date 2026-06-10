@@ -294,5 +294,3 @@ function notifyTenant(
   })();
 }
 
-  }
-}
