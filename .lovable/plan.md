@@ -1,28 +1,42 @@
-## Findings
+## Goal
 
-- The Microsoft 365 OAuth mailbox is connected, active, and now the default for the tenant.
-- The latest submitted orders for `Document Centre Demo` were created with `is_demo = true`.
-- `send-order-email` currently has a hard stop for demo orders, so those emails return as “skipped” and never create an `email_outbox` row.
-- The **Sent Mail** screen reads only from `email_outbox`, so skipped emails cannot appear there.
-- The new **Send test** action sends directly through Microsoft/Gmail/SMTP, so it can verify the mailbox but also does not create a Sent Mail row.
+Get the Document Centre Demo invoice email (`INV-00082` → `jimmybhawkins@gmail.com`) actually sent through the new Microsoft 365 OAuth mailbox.
 
-## Plan
+## Root cause
 
-1. **Allow safe demo-tenant email delivery**
-   - Replace the blanket “skip all demo orders” rule with a safer guard.
-   - Continue skipping clearly fake demo recipients such as `@demo.document-centre.com`.
-   - Allow real customer email addresses on the demo tenant to be queued and sent, so your live tests reach the inbox.
+The failed `email_outbox` row has `error_message = "credential_error: transport graph_oauth not yet implemented in pdf-server"`. That string is **not in the current repo** — the deployed `pdf-worker-emails` Cloud Run service is running an older image that pre-dates the `graph_oauth` transport. The repo (`pdf-server/app/email/credentials.py`, `graph_oauth_client.py`, `tasks/email_tasks.py`) already implements it correctly; the deployed container just needs rebuilding.
 
-2. **Make test emails visible in Sent Mail**
-   - Change the OAuth/SMTP test-send flow so it creates an `email_outbox` row using the selected email account.
-   - Return the outbox ID to the UI.
-   - Let the existing worker/dispatcher send it, so the row appears as queued/sent/failed in **Sent Mail**.
+## Steps
 
-3. **Improve admin feedback**
-   - Update the success toast to say the test email was queued and can be checked in Sent Mail.
-   - Keep `last_verified_at` / `last_error` updates for mailbox health when the send succeeds or fails.
+1. **Verify worker env vars**
+   Confirm the `pdf-worker-emails` Cloud Run service has `MICROSOFT_OAUTH_CLIENT_ID` and `MICROSOFT_OAUTH_CLIENT_SECRET` set (same secret values used by the `microsoft-oauth-connect` edge function). If missing, add them — without these the refresh-token exchange in `graph_oauth_client._refresh_access_token` will fail.
 
-4. **Verify with the current tenant**
-   - Trigger a test email through the Microsoft 365 account.
-   - Confirm a new row appears in `email_outbox` for `Document Centre Demo`.
-   - Confirm the row transitions to sent or exposes the exact provider/worker error if delivery fails.
+2. **Rebuild and redeploy `pdf-worker-emails`**
+   Trigger a Cloud Build / `gcloud run deploy` of the emails worker image so it picks up the current `pdf-server/app/email/*` code (graph_oauth_client, credentials, tasks/email_tasks). No code changes required — just a fresh image.
+
+3. **Re-queue the stuck invoice email**
+   ```sql
+   update public.email_outbox
+   set status = 'queued',
+       attempts = 0,
+       error_message = null,
+       next_attempt_at = now()
+   where id = '8e33a1f7-60bb-478d-bfdc-e233bba879fd';
+   ```
+   The beat tick will claim it and the redeployed worker will send via Microsoft Graph `/me/sendMail` (saves to the user's Sent Items).
+
+4. **Verify**
+   - Watch the row transition `queued → sending → sent` in Sent Mail.
+   - Confirm `jimmybhawkins@gmail.com` receives it and a copy appears in the connected Microsoft 365 mailbox's Sent Items.
+   - If it fails again, the new `error_message` will now come from the live code (e.g. `graph_oauth_auth 401: …` or `graph_oauth send …`) and tell us exactly where in the OAuth flow it broke.
+
+## What this does NOT change
+
+- No application code edits — the fix is purely a worker redeploy.
+- No DB schema changes.
+- The `send-order-email` / `email-account-manage` / dispatcher logic from the last round stays exactly as-is.
+
+## Risks
+
+- If the secrets in step 1 are missing or wrong, the redeploy will still fail — but with a clear `graph_oauth_auth` error instead of the misleading "not yet implemented" message.
+- Worker redeploy is the GCP-side action; I can apply the SQL re-queue, but the Cloud Run rebuild needs to happen in the pdf-server deployment pipeline.
