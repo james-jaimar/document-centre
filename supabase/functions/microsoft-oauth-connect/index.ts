@@ -122,15 +122,17 @@ Deno.serve(async (req) => {
       if (oauthErr) return htmlClosePage({ success: false, error: oauthErr });
       if (!code || !stateRaw) return htmlClosePage({ success: false, error: "Missing code or state" });
 
-      let state: { tenant_id: string; caller_id: string; branch_id?: string | null };
+      let state: { tenant_id: string | null; caller_id: string; branch_id?: string | null; scope?: "tenant" | "platform" };
       try {
         state = JSON.parse(atob(stateRaw));
       } catch {
         return htmlClosePage({ success: false, error: "Invalid state" });
       }
       const branchId = state.branch_id ?? null;
+      const isPlatform = state.scope === "platform" || state.tenant_id === null;
+      const tenantId = isPlatform ? null : state.tenant_id;
 
-      if (!(await assertAuthorized(admin, state.caller_id, state.tenant_id, branchId))) {
+      if (!(await assertAuthorized(admin, state.caller_id, tenantId, branchId))) {
         return htmlClosePage({ success: false, error: "Forbidden" });
       }
 
@@ -172,7 +174,7 @@ Deno.serve(async (req) => {
         return htmlClosePage({ success: false, error: "Could not determine mailbox address" });
       }
 
-      const secretName = `graph_oauth:${state.tenant_id}:${crypto.randomUUID()}`;
+      const secretName = `graph_oauth:${isPlatform ? "platform" : tenantId}:${crypto.randomUUID()}`;
       const { data: secretId, error: vErr } = await admin.rpc("create_email_account_secret", {
         p_name: secretName,
         p_secret: tokenData.refresh_token,
@@ -182,11 +184,12 @@ Deno.serve(async (req) => {
       let existingQuery = admin
         .from("email_accounts")
         .select("id, oauth_refresh_token_secret_id")
-        .eq("tenant_id", state.tenant_id)
         .eq("transport", "graph_oauth");
-      existingQuery = branchId
-        ? existingQuery.eq("branch_id", branchId)
-        : existingQuery.is("branch_id", null);
+      existingQuery = isPlatform
+        ? existingQuery.is("tenant_id", null).is("branch_id", null)
+        : (branchId
+            ? existingQuery.eq("tenant_id", tenantId!).eq("branch_id", branchId)
+            : existingQuery.eq("tenant_id", tenantId!).is("branch_id", null));
       const { data: existing } = await existingQuery.maybeSingle();
 
       if (existing) {
@@ -209,23 +212,29 @@ Deno.serve(async (req) => {
           .eq("id", existing.id);
         if (error) return htmlClosePage({ success: false, error: error.message });
       } else {
+        const label = isPlatform
+          ? "Document Centre Platform"
+          : (branchId ? "Microsoft 365 (Branch)" : "Microsoft 365");
         const { error } = await admin.from("email_accounts").insert({
-          tenant_id: state.tenant_id,
+          tenant_id: tenantId,
           branch_id: branchId,
           transport: "graph_oauth",
-          label: branchId ? "Microsoft 365 (Branch)" : "Microsoft 365",
+          label,
           from_name: displayName || mailbox.split("@")[0],
           from_email: mailbox,
           oauth_refresh_token_secret_id: secretId,
           oauth_email: mailbox,
           is_active: true,
-          is_default: !!branchId,
+          // For platform: mark as default (single platform-default unique index enforces it).
+          // For branch: mirror existing behaviour.
+          is_default: isPlatform ? true : !!branchId,
           last_verified_at: new Date().toISOString(),
         });
         if (error) return htmlClosePage({ success: false, error: error.message });
       }
 
       return htmlClosePage({ success: true, email: mailbox });
+
     } catch (e) {
       console.error("microsoft-oauth-connect GET error:", e);
       return htmlClosePage({ success: false, error: (e as Error).message });
