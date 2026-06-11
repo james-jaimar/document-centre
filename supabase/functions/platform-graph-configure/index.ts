@@ -321,6 +321,12 @@ Deno.serve(async (req) => {
         diagnostic: verify.diagnostic,
       }, 400);
     }
+    const provisionDiagnostic = await runSendDiagnostic(
+      verify.token,
+      verify.roles,
+      sender,
+      (body.diagnostic_recipient || caller.email || sender).trim().toLowerCase(),
+    );
 
     // 2. Look up existing platform graph row (we keep at most one).
     const { data: existing } = await admin
@@ -359,7 +365,7 @@ Deno.serve(async (req) => {
       graph_sender_address: sender,
       is_default: true,
       is_active: true,
-      last_error: null,
+      last_error: provisionDiagnostic.ok ? null : `${provisionDiagnostic.code}: ${provisionDiagnostic.title} ${provisionDiagnostic.detail}`.slice(0, 500),
       last_verified_at: new Date().toISOString(),
     };
 
@@ -400,7 +406,7 @@ Deno.serve(async (req) => {
       .is("branch_id", null)
       .eq("transport", "graph_oauth");
 
-    return json({ success: true, account_id: savedId, sender_address: sender });
+    return json({ success: true, account_id: savedId, sender_address: sender, diagnostic: provisionDiagnostic });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);
   }
