@@ -140,6 +140,7 @@ def send_graph(
             )
             if retry.status_code == 202:
                 return retry.headers.get("x-ms-request-id")
+            r = retry
     except httpx.HTTPError as exc:
         raise TransientSmtpError(f"graph send network: {exc}") from exc
 
