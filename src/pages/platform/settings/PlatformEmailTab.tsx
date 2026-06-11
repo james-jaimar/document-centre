@@ -276,7 +276,7 @@ export function PlatformEmailTab() {
                         </div>
                       )}
                       {diagnostic && (
-                        <div className={`mt-2 rounded border p-2 text-xs space-y-1 ${diagnostic.ok ? "border-green-300 bg-green-50 text-green-900" : "border-amber-300 bg-amber-50 text-amber-950"}`}>
+                        <div className={`mt-2 rounded border p-2 text-xs space-y-1 ${diagnostic.ok ? "border-border bg-muted/30 text-foreground" : "border-destructive/30 bg-destructive/5 text-foreground"}`}>
                           <p className="font-medium">{diagnostic.title}</p>
                           <p className="break-words">{diagnostic.detail}</p>
                           {diagnostic.roles && (
