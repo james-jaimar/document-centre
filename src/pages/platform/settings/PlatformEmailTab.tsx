@@ -89,15 +89,18 @@ export function PlatformEmailTab() {
       return;
     }
     setTestingId(acct.id);
-    const { data, error } = await supabase.functions.invoke("send-test-email", {
-      body: { to: testRecipient, subject: `Document Centre · platform mailbox test (${acct.label})` },
+    // Send the test against THIS specific account (Microsoft OAuth, SMTP, etc.)
+    // — the generic send-test-email function ignores account id and falls back
+    // to the platform default, which makes platform diagnostics misleading.
+    const { data, error } = await supabase.functions.invoke("email-account-manage", {
+      body: { action: "test_send", id: acct.id, recipient: testRecipient },
     });
     setTestingId(null);
     if (error || (data as any)?.error) {
       toast.error(error?.message || (data as any)?.error || "Test failed");
       return;
     }
-    toast.success("Test email queued — check inbox in a few seconds");
+    toast.success("Test email queued — check Sent Mail for delivery status");
     refetch();
   };
 
