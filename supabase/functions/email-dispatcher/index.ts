@@ -367,7 +367,7 @@ async function sendViaGraph(
   }
 
 
-  const res = await withTimeout(
+  let res = await withTimeout(
     fetch(url, {
       method: "POST",
       headers: {
@@ -379,6 +379,23 @@ async function sendViaGraph(
     SEND_TIMEOUT_MS,
     "Graph sendMail"
   );
+
+  if ((res.status === 401 || res.status === 403) && (await res.clone().text()).toLowerCase().includes("erroraccessdenied")) {
+    const retry = await withTimeout(
+      fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ message, saveToSentItems: false }),
+      }),
+      SEND_TIMEOUT_MS,
+      "Graph sendMail without Sent Items"
+    );
+    if (retry.status === 202) return { messageId: retry.headers.get("x-ms-request-id") };
+    res = retry;
+  }
 
   if (res.status === 202) {
     return { messageId: res.headers.get("x-ms-request-id") };
