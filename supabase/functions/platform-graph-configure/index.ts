@@ -38,12 +38,96 @@ async function isPlatformAdmin(admin: any, callerId: string) {
   return !!data;
 }
 
+interface GraphDiagnostic {
+  ok: boolean;
+  stage: "token" | "permission" | "send";
+  code: string;
+  title: string;
+  detail: string;
+  steps: string[];
+  http_status?: number;
+  roles?: string[];
+}
+
+function decodeJwtPayload(token: string): Record<string, unknown> {
+  try {
+    const payload = token.split(".")[1];
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(normalized.length + (4 - normalized.length % 4) % 4, "=");
+    return JSON.parse(atob(padded));
+  } catch {
+    return {};
+  }
+}
+
+function classifyGraphSendFailure(status: number, body: string, roles: string[]): GraphDiagnostic {
+  const lower = body.toLowerCase();
+  if (!roles.includes("Mail.Send")) {
+    return {
+      ok: false,
+      stage: "permission",
+      code: "missing_mail_send_application_role",
+      title: "Microsoft issued an app token, but the token does not contain the Mail.Send application role.",
+      detail: body.slice(0, 800),
+      roles,
+      http_status: status,
+      steps: [
+        "In Entra → App registrations → Doc Centre Mail Sender (GCP) → API permissions, add Microsoft Graph → Application permissions → Mail.Send.",
+        "Click Grant admin consent for your tenant and wait a few minutes for Microsoft to issue tokens with the new role.",
+        "Delegated Mail.Send does not help this platform mailbox; the token must contain the Application role named Mail.Send.",
+      ],
+    };
+  }
+  if (status === 404 || lower.includes("resourcenotfound") || lower.includes("request_resource_not_found")) {
+    return {
+      ok: false,
+      stage: "send",
+      code: "mailbox_not_found",
+      title: "Microsoft accepted the app permission, but could not find the sender mailbox.",
+      detail: body.slice(0, 800),
+      roles,
+      http_status: status,
+      steps: [
+        "Confirm hello@document-centre.com is a real Exchange Online user mailbox in this same Microsoft 365 tenant.",
+        "Confirm it is not only an alias, shared address without mailbox access, group, or distribution list.",
+        "If the mailbox was recently created or licensed, wait for Exchange provisioning to finish and run the diagnostic again.",
+      ],
+    };
+  }
+  if (status === 401 || status === 403 || lower.includes("erroraccessdenied")) {
+    return {
+      ok: false,
+      stage: "send",
+      code: "exchange_send_denied",
+      title: "Microsoft issued a token with Mail.Send, but Exchange blocked this app from sending as hello@document-centre.com.",
+      detail: body.slice(0, 800),
+      roles,
+      http_status: status,
+      steps: [
+        "In Exchange Online PowerShell, create or verify the application RBAC assignment for this app and the hello@document-centre.com mailbox.",
+        "The role assignment must use the Application Mail.Send role, scoped to hello@document-centre.com.",
+        "If you previously created an ApplicationAccessPolicy for a different app/client ID, remove or update it so it matches b49ffe95-83b9-44fc-a5ae-36cfd65de84b.",
+      ],
+    };
+  }
+  return {
+    ok: false,
+    stage: "send",
+    code: "graph_send_failed",
+    title: `Microsoft Graph rejected the send probe with HTTP ${status}.`,
+    detail: body.slice(0, 800),
+    roles,
+    http_status: status,
+    steps: ["Review the Microsoft response body, then rerun the diagnostic after correcting the Microsoft 365 configuration."],
+  };
+}
+
 // Hit Microsoft's token endpoint to fail-fast if creds are wrong.
 async function verifyAppOnlyToken(
   tenantId: string,
   clientId: string,
   clientSecret: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; token: string; roles: string[] } | { ok: false; diagnostic: GraphDiagnostic }> {
   try {
     const r = await fetch(
       `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
@@ -60,12 +144,91 @@ async function verifyAppOnlyToken(
     );
     if (!r.ok) {
       const body = await r.text();
-      return { ok: false, error: `token ${r.status}: ${body.slice(0, 400)}` };
+      return {
+        ok: false,
+        diagnostic: {
+          ok: false,
+          stage: "token",
+          code: "token_failed",
+          title: "Microsoft rejected the app-only token request.",
+          detail: `token ${r.status}: ${body.slice(0, 800)}`,
+          http_status: r.status,
+          steps: [
+            "Check the Directory tenant ID, Application client ID, and client secret VALUE, not the secret ID.",
+            "If the secret has expired, create a new client secret and update the platform Graph secret.",
+          ],
+        },
+      };
     }
-    return { ok: true };
+    const data = await r.json();
+    const token = data.access_token as string | undefined;
+    if (!token) {
+      return {
+        ok: false,
+        diagnostic: {
+          ok: false,
+          stage: "token",
+          code: "token_missing_access_token",
+          title: "Microsoft returned a token response without an access token.",
+          detail: JSON.stringify(data).slice(0, 800),
+          steps: ["Re-check the app registration credentials and try again."],
+        },
+      };
+    }
+    const roles = ((decodeJwtPayload(token).roles as string[] | undefined) ?? []).sort();
+    return { ok: true, token, roles };
   } catch (e) {
-    return { ok: false, error: `network: ${(e as Error).message}` };
+    return {
+      ok: false,
+      diagnostic: {
+        ok: false,
+        stage: "token",
+        code: "token_network_error",
+        title: "Could not reach Microsoft’s token endpoint.",
+        detail: `network: ${(e as Error).message}`,
+        steps: ["Try again; if it repeats, check Microsoft service status and network access."],
+      },
+    };
   }
+}
+
+async function runSendDiagnostic(
+  token: string,
+  roles: string[],
+  sender: string,
+  recipient: string,
+): Promise<GraphDiagnostic> {
+  if (!roles.includes("Mail.Send")) {
+    return classifyGraphSendFailure(403, "Token roles do not include Mail.Send", roles);
+  }
+  const r = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sender)}/sendMail`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: {
+        subject: "Document Centre Microsoft Graph diagnostic",
+        body: {
+          contentType: "Text",
+          content: `Microsoft Graph diagnostic sent at ${new Date().toISOString()}.`,
+        },
+        toRecipients: [{ emailAddress: { address: recipient } }],
+      },
+      saveToSentItems: true,
+    }),
+  });
+  if (r.status === 202) {
+    return {
+      ok: true,
+      stage: "send",
+      code: "send_probe_accepted",
+      title: "Microsoft Graph accepted a sendMail probe for the platform mailbox.",
+      detail: "The app-only token includes Mail.Send and Exchange accepted the sender mailbox.",
+      roles,
+      http_status: 202,
+      steps: [],
+    };
+  }
+  return classifyGraphSendFailure(r.status, await r.text(), roles);
 }
 
 Deno.serve(async (req) => {
