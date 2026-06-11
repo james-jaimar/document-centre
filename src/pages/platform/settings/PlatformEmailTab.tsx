@@ -275,6 +275,20 @@ export function PlatformEmailTab() {
                           })()}
                         </div>
                       )}
+                      {diagnostic && (
+                        <div className={`mt-2 rounded border p-2 text-xs space-y-1 ${diagnostic.ok ? "border-green-300 bg-green-50 text-green-900" : "border-amber-300 bg-amber-50 text-amber-950"}`}>
+                          <p className="font-medium">{diagnostic.title}</p>
+                          <p className="break-words">{diagnostic.detail}</p>
+                          {diagnostic.roles && (
+                            <p>Token roles: {diagnostic.roles.length ? diagnostic.roles.join(", ") : "none"}</p>
+                          )}
+                          {diagnostic.steps.length > 0 && (
+                            <ol className="list-decimal list-inside space-y-0.5">
+                              {diagnostic.steps.map((s, i) => <li key={i}>{s}</li>)}
+                            </ol>
+                          )}
+                        </div>
+                      )}
                       {graphAccount.last_verified_at && !graphAccount.last_error && (
                         <p className="text-xs text-muted-foreground mt-1">
                           Last verified: {new Date(graphAccount.last_verified_at).toLocaleString()}
@@ -291,6 +305,10 @@ export function PlatformEmailTab() {
                       <Button variant="outline" size="sm" onClick={provision} disabled={provisioning || !secretsReady}>
                         {provisioning ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
                         Re-provision
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={runDiagnostic} disabled={diagnosing || !secretsReady}>
+                        {diagnosing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <ShieldCheck className="h-3 w-3 mr-1" />}
+                        Diagnose Graph
                       </Button>
                     </div>
                     <Input
