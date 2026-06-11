@@ -84,8 +84,6 @@ def send_graph(
     """Send via Graph. Returns the x-ms-request-id (best-effort message id)."""
     token = _get_token(creds)
 
-    eff_from_name = from_name or creds.from_name
-    eff_from_email = from_email or creds.from_email
     eff_reply_to = reply_to or creds.reply_to
 
     message = {
