@@ -71,6 +71,21 @@ interface GraphStatus {
   };
 }
 
+interface GraphDiagnostic {
+  ok: boolean;
+  code: string;
+  title: string;
+  detail: string;
+  steps: string[];
+  roles?: string[];
+  http_status?: number;
+}
+
+interface GraphActionResponse {
+  error?: string;
+  diagnostic?: GraphDiagnostic;
+}
+
 export function PlatformEmailTab() {
   const { data: accounts = [], isLoading, refetch } = usePlatformEmailAccounts();
   const [status, setStatus] = useState<GraphStatus | null>(null);
@@ -79,6 +94,8 @@ export function PlatformEmailTab() {
   const [provisioning, setProvisioning] = useState(false);
   const [testRecipient, setTestRecipient] = useState("");
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [diagnostic, setDiagnostic] = useState<GraphDiagnostic | null>(null);
 
   const loadStatus = async () => {
     setStatusLoading(true);
@@ -110,11 +127,15 @@ export function PlatformEmailTab() {
       body: { action: "provision", sender_address: sender.trim() },
     });
     setProvisioning(false);
-    if (error || (data as any)?.error) {
-      toast.error(error?.message || (data as any)?.error || "Provision failed");
+    const response = data as GraphActionResponse | null;
+    if (error || response?.error) {
+      toast.error(error?.message || response?.error || "Provision failed");
       return;
     }
-    toast.success("Platform Microsoft Graph mailbox configured");
+    const dx = response?.diagnostic;
+    if (dx) setDiagnostic(dx);
+    if (dx && !dx.ok) toast.error(dx.title);
+    else toast.success("Platform Microsoft Graph mailbox configured");
     await Promise.all([loadStatus(), refetch()]);
   };
 
@@ -128,12 +149,47 @@ export function PlatformEmailTab() {
       body: { action: "test_send", id: acct.id, recipient: testRecipient },
     });
     setTestingId(null);
-    if (error || (data as any)?.error) {
-      toast.error(error?.message || (data as any)?.error || "Test failed");
+    const response = data as GraphActionResponse | null;
+    if (error || response?.error) {
+      toast.error(error?.message || response?.error || "Test failed");
       return;
     }
     toast.success("Test email queued — check the recipient inbox shortly");
-    refetch();
+    await Promise.all([loadStatus(), refetch()]);
+    window.setTimeout(() => {
+      loadStatus();
+      refetch();
+    }, 2500);
+    window.setTimeout(() => {
+      loadStatus();
+      refetch();
+    }, 6000);
+  };
+
+  const runDiagnostic = async () => {
+    setDiagnosing(true);
+    const { data, error } = await supabase.functions.invoke("platform-graph-configure", {
+      body: {
+        action: "diagnose",
+        sender_address: sender.trim(),
+        diagnostic_recipient: testRecipient || undefined,
+      },
+    });
+    setDiagnosing(false);
+    const response = data as GraphActionResponse | null;
+    if (error || response?.error) {
+      toast.error(error?.message || response?.error || "Diagnostic failed");
+      return;
+    }
+    const next = response?.diagnostic;
+    if (!next) {
+      toast.error("Diagnostic returned no result");
+      return;
+    }
+    setDiagnostic(next);
+    if (next.ok) toast.success("Microsoft Graph accepted the platform mailbox send probe");
+    else toast.error(next.title);
+    await Promise.all([loadStatus(), refetch()]);
   };
 
   const removeOther = async (acct: PlatformEmailAccount) => {
@@ -234,6 +290,20 @@ export function PlatformEmailTab() {
                           })()}
                         </div>
                       )}
+                      {diagnostic && (
+                        <div className={`mt-2 rounded border p-2 text-xs space-y-1 ${diagnostic.ok ? "border-border bg-muted/30 text-foreground" : "border-destructive/30 bg-destructive/5 text-foreground"}`}>
+                          <p className="font-medium">{diagnostic.title}</p>
+                          <p className="break-words">{diagnostic.detail}</p>
+                          {diagnostic.roles && (
+                            <p>Token roles: {diagnostic.roles.length ? diagnostic.roles.join(", ") : "none"}</p>
+                          )}
+                          {diagnostic.steps.length > 0 && (
+                            <ol className="list-decimal list-inside space-y-0.5">
+                              {diagnostic.steps.map((s, i) => <li key={i}>{s}</li>)}
+                            </ol>
+                          )}
+                        </div>
+                      )}
                       {graphAccount.last_verified_at && !graphAccount.last_error && (
                         <p className="text-xs text-muted-foreground mt-1">
                           Last verified: {new Date(graphAccount.last_verified_at).toLocaleString()}
@@ -250,6 +320,10 @@ export function PlatformEmailTab() {
                       <Button variant="outline" size="sm" onClick={provision} disabled={provisioning || !secretsReady}>
                         {provisioning ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
                         Re-provision
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={runDiagnostic} disabled={diagnosing || !secretsReady}>
+                        {diagnosing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <ShieldCheck className="h-3 w-3 mr-1" />}
+                        Diagnose Graph
                       </Button>
                     </div>
                     <Input

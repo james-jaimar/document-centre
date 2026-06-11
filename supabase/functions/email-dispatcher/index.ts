@@ -335,8 +335,8 @@ function toGraphRecipients(addrs: string[] | string | null | undefined) {
 async function sendViaGraph(
   creds: GraphCreds,
   row: OutboxRow,
-  fromName: string,
-  fromEmail: string,
+  _fromName: string,
+  _fromEmail: string,
   replyTo: string | undefined,
   attachments: LoadedAttachment[]
 ): Promise<{ messageId: string | null }> {
@@ -354,7 +354,6 @@ async function sendViaGraph(
     toRecipients: toGraphRecipients(row.to_email),
     ccRecipients: toGraphRecipients(row.cc),
     bccRecipients: toGraphRecipients(row.bcc),
-    from: { emailAddress: { address: fromEmail, name: fromName } },
   };
   if (replyTo) message.replyTo = toGraphRecipients(replyTo);
   if (attachments.length) {
@@ -368,7 +367,7 @@ async function sendViaGraph(
   }
 
 
-  const res = await withTimeout(
+  let res = await withTimeout(
     fetch(url, {
       method: "POST",
       headers: {
@@ -380,6 +379,23 @@ async function sendViaGraph(
     SEND_TIMEOUT_MS,
     "Graph sendMail"
   );
+
+  if ((res.status === 401 || res.status === 403) && (await res.clone().text()).toLowerCase().includes("erroraccessdenied")) {
+    const retry = await withTimeout(
+      fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ message, saveToSentItems: false }),
+      }),
+      SEND_TIMEOUT_MS,
+      "Graph sendMail without Sent Items"
+    );
+    if (retry.status === 202) return { messageId: retry.headers.get("x-ms-request-id") };
+    res = retry;
+  }
 
   if (res.status === 202) {
     return { messageId: res.headers.get("x-ms-request-id") };

@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass
 from typing import Iterable, List, Optional
+from urllib.parse import quote
 
 import httpx
 
@@ -42,6 +43,10 @@ def _recipients(addrs):
     if isinstance(addrs, str):
         addrs = [addrs]
     return [{"emailAddress": {"address": a}} for a in addrs if a]
+
+
+def _is_access_denied_response(r: httpx.Response) -> bool:
+    return r.status_code in (401, 403) and "erroraccessdenied" in r.text.lower()
 
 
 def _get_token(creds: GraphCreds) -> str:
@@ -84,8 +89,6 @@ def send_graph(
     """Send via Graph. Returns the x-ms-request-id (best-effort message id)."""
     token = _get_token(creds)
 
-    eff_from_name = from_name or creds.from_name
-    eff_from_email = from_email or creds.from_email
     eff_reply_to = reply_to or creds.reply_to
 
     message = {
@@ -95,7 +98,6 @@ def send_graph(
             "content": html or text or "",
         },
         "toRecipients": _recipients(to),
-        "from": {"emailAddress": {"address": eff_from_email, "name": eff_from_name or ""}},
     }
     if cc:
         message["ccRecipients"] = _recipients(cc)
@@ -121,7 +123,7 @@ def send_graph(
             for a in atts
         ]
 
-    url = f"https://graph.microsoft.com/v1.0/users/{creds.sender}/sendMail"
+    url = f"https://graph.microsoft.com/v1.0/users/{quote(creds.sender, safe='')}/sendMail"
     try:
         r = httpx.post(
             url,
@@ -129,6 +131,16 @@ def send_graph(
             headers={"Authorization": f"Bearer {token}"},
             timeout=SEND_TIMEOUT,
         )
+        if _is_access_denied_response(r):
+            retry = httpx.post(
+                url,
+                json={"message": message, "saveToSentItems": False},
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=SEND_TIMEOUT,
+            )
+            if retry.status_code == 202:
+                return retry.headers.get("x-ms-request-id")
+            r = retry
     except httpx.HTTPError as exc:
         raise TransientSmtpError(f"graph send network: {exc}") from exc
 
