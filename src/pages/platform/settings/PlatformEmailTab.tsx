@@ -7,7 +7,55 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Mail, AlertCircle, CheckCircle2, Loader2, Send, ShieldCheck } from "lucide-react";
+import { Mail, AlertCircle, CheckCircle2, Loader2, Send, ShieldCheck, ExternalLink } from "lucide-react";
+
+/** Turn a raw Microsoft Graph / AAD error string into a concrete next step. */
+function diagnoseGraphError(err: string | null | undefined): { title: string; steps: string[] } | null {
+  if (!err) return null;
+  const e = err.toLowerCase();
+  if (e.includes("erroraccessdenied") || (e.includes("403") && e.includes("graph"))) {
+    return {
+      title: "Microsoft issued a token but Exchange refused the send.",
+      steps: [
+        "In Entra → App registrations → Doc Centre Mail Sender (GCP) → API permissions: confirm Microsoft Graph › Application › Mail.Send is listed AND has 'Granted for <your tenant>' (admin consent).",
+        "Remove any Delegated Mail.Send if present — only the Application one is needed for app-only sending.",
+        "In Exchange Online PowerShell, scope the app to the hello@ mailbox using Application RBAC (New-ServicePrincipal + New-ManagementScope + New-ManagementRoleAssignment 'Application Mail.Send'). If you skip scoping, the app can send as ANY mailbox in the tenant — but it should still work.",
+        "Verify hello@document-centre.com is an actual licensed Exchange Online mailbox (not just an alias or distribution group).",
+      ],
+    };
+  }
+  if (e.includes("aadsts7000215") || e.includes("invalid client secret")) {
+    return {
+      title: "The client secret value is wrong or expired.",
+      steps: [
+        "In Entra → App registrations → Certificates & secrets, create a new Client secret.",
+        "Copy the secret VALUE (not the secret ID) immediately and update MICROSOFT_GRAPH_CLIENT_SECRET in Lovable secrets.",
+        "Re-provision below.",
+      ],
+    };
+  }
+  if (e.includes("aadsts700016") || e.includes("application with identifier")) {
+    return {
+      title: "The MICROSOFT_GRAPH_CLIENT_ID does not exist in the MICROSOFT_GRAPH_TENANT_ID directory.",
+      steps: [
+        "Double-check the Application (client) ID and Directory (tenant) ID on the App registration overview match the secrets in Lovable exactly.",
+      ],
+    };
+  }
+  if (e.includes("aadsts90002") || e.includes("tenant") && e.includes("not found")) {
+    return {
+      title: "The MICROSOFT_GRAPH_TENANT_ID is wrong.",
+      steps: ["Use the Directory (tenant) ID GUID from the App registration overview."],
+    };
+  }
+  if (e.includes("aadsts65001") || e.includes("does not have consent")) {
+    return {
+      title: "Admin consent for Mail.Send has not been granted.",
+      steps: ["Entra → App registrations → API permissions → Grant admin consent for <your tenant>."],
+    };
+  }
+  return null;
+}
 
 interface GraphStatus {
   secrets_present: { tenant_id: boolean; client_id: boolean; client_secret: boolean };
@@ -159,9 +207,32 @@ export function PlatformEmailTab() {
                       </div>
                       <p className="text-sm text-muted-foreground">{graphAccount.label}</p>
                       {graphAccount.last_error && (
-                        <p className="text-xs text-destructive mt-1 flex items-center gap-1">
-                          <AlertCircle className="h-3 w-3" /> {graphAccount.last_error}
-                        </p>
+                        <div className="mt-2 rounded border border-destructive/30 bg-destructive/5 p-2 space-y-1">
+                          <p className="text-xs text-destructive flex items-start gap-1">
+                            <AlertCircle className="h-3 w-3 mt-0.5 shrink-0" />
+                            <span className="break-words">{graphAccount.last_error}</span>
+                          </p>
+                          {(() => {
+                            const dx = diagnoseGraphError(graphAccount.last_error);
+                            if (!dx) return null;
+                            return (
+                              <div className="text-xs text-foreground/80 pl-4 space-y-1">
+                                <p className="font-medium">{dx.title}</p>
+                                <ol className="list-decimal list-inside space-y-0.5">
+                                  {dx.steps.map((s, i) => <li key={i}>{s}</li>)}
+                                </ol>
+                                <a
+                                  href="https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 text-primary hover:underline"
+                                >
+                                  Open Entra app registrations <ExternalLink className="h-3 w-3" />
+                                </a>
+                              </div>
+                            );
+                          })()}
+                        </div>
                       )}
                       {graphAccount.last_verified_at && !graphAccount.last_error && (
                         <p className="text-xs text-muted-foreground mt-1">
