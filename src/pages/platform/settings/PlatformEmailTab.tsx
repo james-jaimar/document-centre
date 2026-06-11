@@ -81,6 +81,11 @@ interface GraphDiagnostic {
   http_status?: number;
 }
 
+interface GraphActionResponse {
+  error?: string;
+  diagnostic?: GraphDiagnostic;
+}
+
 export function PlatformEmailTab() {
   const { data: accounts = [], isLoading, refetch } = usePlatformEmailAccounts();
   const [status, setStatus] = useState<GraphStatus | null>(null);
@@ -122,11 +127,12 @@ export function PlatformEmailTab() {
       body: { action: "provision", sender_address: sender.trim() },
     });
     setProvisioning(false);
-    if (error || (data as any)?.error) {
-      toast.error(error?.message || (data as any)?.error || "Provision failed");
+    const response = data as GraphActionResponse | null;
+    if (error || response?.error) {
+      toast.error(error?.message || response?.error || "Provision failed");
       return;
     }
-    const dx = (data as any)?.diagnostic as GraphDiagnostic | undefined;
+    const dx = response?.diagnostic;
     if (dx) setDiagnostic(dx);
     if (dx && !dx.ok) toast.error(dx.title);
     else toast.success("Platform Microsoft Graph mailbox configured");
@@ -143,8 +149,9 @@ export function PlatformEmailTab() {
       body: { action: "test_send", id: acct.id, recipient: testRecipient },
     });
     setTestingId(null);
-    if (error || (data as any)?.error) {
-      toast.error(error?.message || (data as any)?.error || "Test failed");
+    const response = data as GraphActionResponse | null;
+    if (error || response?.error) {
+      toast.error(error?.message || response?.error || "Test failed");
       return;
     }
     toast.success("Test email queued — check the recipient inbox shortly");
@@ -169,11 +176,16 @@ export function PlatformEmailTab() {
       },
     });
     setDiagnosing(false);
-    if (error || (data as any)?.error) {
-      toast.error(error?.message || (data as any)?.error || "Diagnostic failed");
+    const response = data as GraphActionResponse | null;
+    if (error || response?.error) {
+      toast.error(error?.message || response?.error || "Diagnostic failed");
       return;
     }
-    const next = (data as any)?.diagnostic as GraphDiagnostic;
+    const next = response?.diagnostic;
+    if (!next) {
+      toast.error("Diagnostic returned no result");
+      return;
+    }
     setDiagnostic(next);
     if (next.ok) toast.success("Microsoft Graph accepted the platform mailbox send probe");
     else toast.error(next.title);
