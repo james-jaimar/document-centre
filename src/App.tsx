@@ -106,6 +106,7 @@ import PlatformDocumentCentreMetrics from "@/pages/platform/PlatformDocumentCent
 import PlatformDocumentCentreStorage from "@/pages/platform/PlatformDocumentCentreStorage";
 import PlatformDocumentCentreConfig from "@/pages/platform/PlatformDocumentCentreConfig";
 import PlatformDocumentCentreAudit from "@/pages/platform/PlatformDocumentCentreAudit";
+import PlatformSentMail from "@/pages/platform/PlatformSentMail";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -358,6 +359,11 @@ function AppRoutes() {
         <Route path="/platform/settings" element={
           <ProtectedRoute allowedRoles={["platform_admin"]}>
             <PlatformSettings />
+          </ProtectedRoute>
+        } />
+        <Route path="/platform/sent-mail" element={
+          <ProtectedRoute allowedRoles={["platform_admin"]}>
+            <PlatformSentMail />
           </ProtectedRoute>
         } />
         <Route path="/platform/demo" element={
