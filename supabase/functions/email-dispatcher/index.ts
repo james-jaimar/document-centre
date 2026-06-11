@@ -336,7 +336,7 @@ async function sendViaGraph(
   creds: GraphCreds,
   row: OutboxRow,
   fromName: string,
-  fromEmail: string,
+  _fromEmail: string,
   replyTo: string | undefined,
   attachments: LoadedAttachment[]
 ): Promise<{ messageId: string | null }> {
@@ -354,7 +354,6 @@ async function sendViaGraph(
     toRecipients: toGraphRecipients(row.to_email),
     ccRecipients: toGraphRecipients(row.cc),
     bccRecipients: toGraphRecipients(row.bcc),
-    from: { emailAddress: { address: fromEmail, name: fromName } },
   };
   if (replyTo) message.replyTo = toGraphRecipients(replyTo);
   if (attachments.length) {
