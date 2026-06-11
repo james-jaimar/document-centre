@@ -120,7 +120,7 @@ export default function PlatformSentMail() {
   const retry = async (id: string) => {
     await supabase
       .from("email_outbox")
-      .update({ status: "queued", attempts: 0, error_message: null, send_after: new Date().toISOString() })
+      .update({ status: "queued", attempts: 0, error_message: null, next_attempt_at: new Date().toISOString() })
       .eq("id", id);
     load();
   };
