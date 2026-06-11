@@ -207,9 +207,32 @@ export function PlatformEmailTab() {
                       </div>
                       <p className="text-sm text-muted-foreground">{graphAccount.label}</p>
                       {graphAccount.last_error && (
-                        <p className="text-xs text-destructive mt-1 flex items-center gap-1">
-                          <AlertCircle className="h-3 w-3" /> {graphAccount.last_error}
-                        </p>
+                        <div className="mt-2 rounded border border-destructive/30 bg-destructive/5 p-2 space-y-1">
+                          <p className="text-xs text-destructive flex items-start gap-1">
+                            <AlertCircle className="h-3 w-3 mt-0.5 shrink-0" />
+                            <span className="break-words">{graphAccount.last_error}</span>
+                          </p>
+                          {(() => {
+                            const dx = diagnoseGraphError(graphAccount.last_error);
+                            if (!dx) return null;
+                            return (
+                              <div className="text-xs text-foreground/80 pl-4 space-y-1">
+                                <p className="font-medium">{dx.title}</p>
+                                <ol className="list-decimal list-inside space-y-0.5">
+                                  {dx.steps.map((s, i) => <li key={i}>{s}</li>)}
+                                </ol>
+                                <a
+                                  href="https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 text-primary hover:underline"
+                                >
+                                  Open Entra app registrations <ExternalLink className="h-3 w-3" />
+                                </a>
+                              </div>
+                            );
+                          })()}
+                        </div>
                       )}
                       {graphAccount.last_verified_at && !graphAccount.last_error && (
                         <p className="text-xs text-muted-foreground mt-1">
