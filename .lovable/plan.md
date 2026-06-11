@@ -1,84 +1,140 @@
-## What's actually happening
+## What the evidence shows
 
-Three independent facts confirmed from your diagnostics:
+- The VPS Celery services are no longer the visible systemd units, but the email rows are still being re-claimed every lease cycle.
+- The current claimant is `pdf-server:localhost:2`, and all 12 stuck rows share the same `claimed_at` / `worker_lease_until` window.
+- That means something is successfully running `scan_outbox` and `claim_email_batch`, but the follow-up `send_email` work is not completing.
+- This is probably not the original VPS worker PID anymore; `localhost` matches a container hostname pattern, so we need to debug Cloud Run / Cloud Tasks delivery rather than only systemd.
 
-1. **The old VPS (`srv1516161`) is still running the email stack** — listener, Celery worker, and beat are all `active (running)` since 06:44 UTC today, with old code that has no `graph_oauth` transport. It's claiming outbox rows as `pdf-server:localhost:2` and breaking them with the legacy "transport graph_oauth not yet implemented in pdf-server" error.
-2. **Cloud Run `pdf-worker-emails` (rev 00143-r9d) is healthy** — Microsoft OAuth secrets are wired, Cloud Scheduler is calling `scan_outbox` every minute and `release_stuck` every 5 min, scans return 200.
-3. **`release_stuck_claims()` is broken** — it tries to set `status='retry'`, but the `email_outbox_status_check` constraint only allows `queued | sending | sent | failed | dlq | cancelled`. Every release run 500s, so the two rows claimed by the dead VPS worker (INV-00080, INV-00082, claimed 08:29, lease expired 08:31) are stuck in `sending` forever and Cloud Run never gets to retry them.
+## Most likely failure points to check
 
-So the loop is: VPS claims row → VPS fails or hangs → release_stuck can't unstick it → row sits as `sending` forever → Cloud Run worker never sees it.
+1. **Cloud Tasks cannot invoke `pdf-worker-emails`**
+   - `scan_outbox` claims rows on the emails worker, then enqueues per-row `send_email` tasks.
+   - If `emails-default` tasks are rejected by OIDC/IAM/audience/service URL mismatch, rows stay `sending` until `release_stuck_claims` resets them.
 
-## Fix plan
+2. **`pdf-worker-emails` is running an old or wrong revision**
+   - The current code supports `graph_oauth`, but a stale worker revision could still claim and then fail before marking the row.
+   - Need to verify live revision, env vars, and mounted Microsoft OAuth secrets.
 
-### 1. Decommission the old VPS email services (you run on the VPS)
+3. **The email worker’s internal `send_email` task is crashing before DB status update**
+   - Could be missing OAuth secret mounts, token refresh failure, attachment load issue, or a `self.request` Celery-context problem when a Celery task is invoked through the HTTP Cloud Tasks adapter.
+   - Logs will tell which one.
 
-These three units must be stopped and disabled so they stop claiming rows. They are not needed — Cloud Run + Cloud Scheduler fully replaces them.
+4. **Scheduler/control queue is healthy, default queue is not**
+   - Because claims are happening, `emails-control` is being delivered.
+   - Because rows are not sent/failed, `emails-default` may be failing separately.
+
+## Debug commands to run in Cloud Shell
+
+Run these in Google Cloud Shell, not on the VPS:
 
 ```bash
-systemctl stop document-centre-listener-emails document-centre-worker-emails document-centre-beat
-systemctl disable document-centre-listener-emails document-centre-worker-emails document-centre-beat
-systemctl status document-centre-listener-emails document-centre-worker-emails document-centre-beat --no-pager | grep -E 'Active|Loaded'
+gcloud config set project project-59a14b18-b4df-4c6b-b09
+REGION=africa-south1
+TASKS_REGION=europe-west1
 ```
 
-Note: `document-centre-beat` is the Celery scheduler for the old emails-only beat schedule on this VPS — Cloud Scheduler now owns that. If you have other non-email beat jobs still wanted here, tell me and we'll narrow it.
+### 1) Check live Cloud Run email worker revision and env
 
-### 2. Fix `release_stuck_claims()` in the database (migration)
-
-Rewrite the function to set stuck rows back to `queued` (a valid status), clear all claim/lease fields, and set `next_attempt_at = now()` so the Cloud Run worker picks them up on the next 1-minute scan. Stuck = `status = 'sending'` AND `worker_lease_until < now()`.
-
-```sql
-CREATE OR REPLACE FUNCTION public.release_stuck_claims()
-RETURNS integer
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE n integer;
-BEGIN
-  UPDATE public.email_outbox
-     SET status = 'queued',
-         claimed_by = NULL,
-         claimed_at = NULL,
-         worker_lease_until = NULL,
-         locked_by = NULL,
-         locked_at = NULL,
-         next_attempt_at = now()
-   WHERE status = 'sending'
-     AND worker_lease_until IS NOT NULL
-     AND worker_lease_until < now();
-  GET DIAGNOSTICS n = ROW_COUNT;
-  RETURN n;
-END;
-$$;
+```bash
+gcloud run services describe pdf-worker-emails \
+  --region="$REGION" \
+  --format='yaml(status.url,status.traffic,status.latestReadyRevisionName,spec.template.spec.containers[0].env)'
 ```
 
-### 3. Requeue the stuck and recent-failed invoices (data update)
+Look for:
+- `ROLE=worker-emails-http`
+- `QUEUE_BACKEND=cloud_tasks`
+- `WORKER_SELF_URL=https://pdf-worker-emails-...run.app`
+- `WORKER_URL_EMAILS=https://pdf-worker-emails-...run.app`
+- `TASKS_INVOKER_SA=cloud-tasks-invoker@project-59a14b18-b4df-4c6b-b09.iam.gserviceaccount.com`
+- `MICROSOFT_OAUTH_CLIENT_ID` and `MICROSOFT_OAUTH_CLIENT_SECRET` mounted as secrets
 
-After step 1 is done so they can't be re-claimed by the dead worker, requeue:
+### 2) Check Cloud Tasks queues
 
-- The two `sending` rows: `aa13537f-…` (INV-00080), `f1cdf704-…` (INV-00082)
-- The recent `failed` rows that died on the legacy "graph_oauth not implemented" message: `6ceab9ad-…`, `944aac8c-…`, `8e33a1f7-…` (all INV-00076 / INV-00082)
+```bash
+gcloud tasks queues describe emails-control --location="$TASKS_REGION"
+gcloud tasks queues describe emails-default --location="$TASKS_REGION"
 
-For each: `status='queued'`, `attempts=0`, `error_message=NULL`, `last_error_code=NULL`, `next_attempt_at=now()`, `scheduled_for=NULL`, clear `claimed_by/claimed_at/worker_lease_until/locked_by/locked_at`.
+gcloud tasks list --queue=emails-control --location="$TASKS_REGION" --limit=20
+gcloud tasks list --queue=emails-default --location="$TASKS_REGION" --limit=20
+```
 
-I will leave the older `no_email_account` failures alone — those were a different cause from before OAuth was configured. Tell me if you want them retried too.
+If `emails-default` has many retries or old tasks, that is the failed send stage.
 
-### 4. Verify
+### 3) Check Cloud Run logs for the exact error
 
-- Watch Cloud Run logs for `pdf-worker-emails` over the next 1–3 minutes — expect successful sends, no more `release_stuck` 500s.
-- Re-query `email_outbox` for the five IDs: expect `status='sent'` with a `provider_message_id`.
-- If any still fail, the error will now be a real Microsoft Graph OAuth response (token / scope / mailbox), not the stale VPS message — that's the next, separate fix.
+```bash
+gcloud logging read \
+  'resource.type="cloud_run_revision" AND resource.labels.service_name="pdf-worker-emails"' \
+  --project=project-59a14b18-b4df-4c6b-b09 \
+  --limit=200 \
+  --order=desc \
+  --format='value(timestamp,severity,textPayload,jsonPayload.message)'
+```
 
-## Out of scope (deliberately)
+Then narrow to email task failures:
 
-- Removing the now-redundant `email_outbox_push` trigger / old Supabase `email-dispatcher` cron. Worth doing for cleanliness, but stopping the VPS workers already breaks the legacy path. I can do it in a follow-up once sends are confirmed green.
-- Any change to invoice generation or email templates.
+```bash
+gcloud logging read \
+  'resource.type="cloud_run_revision" AND resource.labels.service_name="pdf-worker-emails" AND (textPayload:"send_email" OR textPayload:"task send_email failed" OR textPayload:"OIDC" OR textPayload:"credential" OR textPayload:"graph_oauth" OR jsonPayload.message:"send_email" OR jsonPayload.message:"OIDC" OR jsonPayload.message:"graph_oauth")' \
+  --project=project-59a14b18-b4df-4c6b-b09 \
+  --limit=100 \
+  --order=desc \
+  --format='value(timestamp,severity,textPayload,jsonPayload.message)'
+```
 
-## After your approval
+### 4) Check whether Cloud Tasks is getting HTTP errors from the worker
 
-Switch me to build mode and I will:
-- Issue the migration in step 2 (one approval prompt from Supabase).
-- Issue the data update in step 3 (one approval prompt from Supabase).
-- Tail logs / re-query the outbox and report back.
+```bash
+gcloud logging read \
+  'resource.type="cloud_tasks_queue" AND resource.labels.queue_id=("emails-default" OR "emails-control")' \
+  --project=project-59a14b18-b4df-4c6b-b09 \
+  --limit=100 \
+  --order=desc \
+  --format='value(timestamp,severity,textPayload,jsonPayload.status,jsonPayload.targetType,jsonPayload.url)'
+```
 
-You only need to run the `systemctl` commands in step 1 on the VPS yourself.
+If this shows 401/403, it is IAM/OIDC/audience. If 500, the worker code is crashing. If no logs, the tasks may not be enqueued or logging filter needs adjusting.
+
+### 5) Manually trigger the scheduler path
+
+```bash
+gcloud scheduler jobs run email-scan-outbox-30s --location="$TASKS_REGION"
+```
+
+Then immediately read worker logs again. This should produce a `running task=scan_outbox` line, followed by `running task=send_email` lines if `emails-default` delivery works.
+
+## Likely fixes depending on what logs show
+
+### If logs show `invalid oidc token` / `missing bearer token`
+- Re-run the GCP bootstrap to repair Cloud Tasks IAM and Scheduler/queue config:
+
+```bash
+bash pdf-server/docker/gcp-tasks-bootstrap.sh
+```
+
+Then re-run the GitHub deploy workflow so `WORKER_SELF_URL`, worker URLs, and secret mounts are current.
+
+### If logs show missing Microsoft OAuth env/secrets
+- Add or fix these Secret Manager entries, then re-run the deploy workflow:
+  - `MICROSOFT_OAUTH_CLIENT_ID`
+  - `MICROSOFT_OAUTH_CLIENT_SECRET`
+
+### If logs show `send_email() missing self` or `AttributeError` around `self.request`
+- Code fix needed: adapt the HTTP task runner or split the Celery-bound implementation so `send_email` can run safely outside a Celery worker.
+
+### If logs show `graph_oauth_auth 400/401/403`
+- The connected Microsoft mailbox refresh token may be revoked/expired, or the Azure app/client secret no longer matches. Reconnect the mailbox or rotate the Microsoft OAuth secret.
+
+### If logs show attachment/storage errors
+- The invoice PDF attachment path may be inaccessible to the Cloud Run worker; fix the attachment loader/storage permissions and then requeue.
+
+## After root cause is fixed
+
+- Release/requeue the stuck rows once more.
+- Watch for `status='sent'` or a concrete `failed/dlq` error.
+- Confirm in the recipient inbox and the app’s sent-mail UI.
+
+## What I need from you
+
+Please paste the output from sections **1, 2, 3, and 4** above. The exact error should be in the `pdf-worker-emails` or `emails-default` logs, and then I can give the precise fix instead of guessing.
