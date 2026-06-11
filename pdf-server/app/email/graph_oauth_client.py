@@ -48,16 +48,21 @@ class GraphOAuthCreds:
 
 
 def _refresh_access_token(creds: GraphOAuthCreds) -> str:
+    # Vault round-trips sometimes leave a trailing newline on the secret;
+    # AADSTS90013 ("Invalid input received from the user") is what Microsoft
+    # returns when the refresh_token has stray whitespace, so strip it.
+    refresh_token = (creds.refresh_token or "").strip()
     try:
         r = httpx.post(
             f"{AUTHORITY}/oauth2/v2.0/token",
             data={
                 "grant_type": "refresh_token",
-                "refresh_token": creds.refresh_token,
+                "refresh_token": refresh_token,
                 "client_id": creds.client_id,
                 "client_secret": creds.client_secret,
                 "scope": SCOPES,
             },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
             timeout=TOKEN_TIMEOUT,
         )
     except httpx.HTTPError as exc:
