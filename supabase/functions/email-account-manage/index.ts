@@ -42,7 +42,19 @@ interface SetDefaultBody { action: "set_default"; id: string; }
 
 type Body = UpsertBody | DeleteBody | TestBody | DisconnectGmailBody | SetDefaultBody;
 
-async function assertTenantAdmin(admin: any, callerId: string, tenant_id: string) {
+async function isPlatformAdmin(admin: any, callerId: string) {
+  const { data } = await admin
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", callerId)
+    .eq("role", "platform_admin")
+    .maybeSingle();
+  return !!data;
+}
+
+async function assertTenantAdmin(admin: any, callerId: string, tenant_id: string | null) {
+  if (await isPlatformAdmin(admin, callerId)) return true;
+  if (!tenant_id) return false;
   const { data } = await admin
     .from("tenant_memberships")
     .select("role")
@@ -51,25 +63,18 @@ async function assertTenantAdmin(admin: any, callerId: string, tenant_id: string
     .eq("is_active", true)
     .in("role", ["owner", "admin"])
     .maybeSingle();
-  if (data) return true;
-  const { data: pa } = await admin
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", callerId)
-    .eq("role", "platform_admin")
-    .maybeSingle();
-  return !!pa;
+  return !!data;
 }
 
 /** True if caller is platform admin, tenant owner/admin, or active branch_manager of `branch_id`. */
 async function assertCanManageBranchOrTenant(
   admin: any,
   callerId: string,
-  tenant_id: string,
+  tenant_id: string | null,
   branch_id: string | null
 ) {
   if (await assertTenantAdmin(admin, callerId, tenant_id)) return true;
-  if (!branch_id) return false;
+  if (!tenant_id || !branch_id) return false;
   const { data } = await admin
     .from("tenant_memberships")
     .select("id")

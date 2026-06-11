@@ -159,6 +159,16 @@ def send_email(self, row: Dict[str, Any]) -> str:
         repo.record_metric(sb, tenant_id=row.get("tenant_id"), email_account_id=account_id,
                            sent=False, latency_ms=latency_ms)
         email_failed_total.labels(reason=f"{provider}_permanent").inc()
+        # Surface auth-style failures on the account row so the UI can prompt
+        # the admin to reconnect (esp. Microsoft / Gmail OAuth refresh failures).
+        try:
+            err_text = str(exc)
+            if any(tag in err_text for tag in ("auth", "AADSTS", "invalid_grant", "401", "403")):
+                sb.table("email_accounts").update({
+                    "last_error": err_text[:500],
+                }).eq("id", account_id).execute()
+        except Exception:  # noqa: BLE001
+            pass
         return f"{provider}_permanent"
     except TransientSmtpError as exc:
         latency_ms = int((time.monotonic() - started) * 1000)

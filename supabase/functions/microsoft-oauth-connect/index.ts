@@ -26,9 +26,13 @@ const json = (d: unknown, s = 200) =>
 // Authority. `common` allows work + school + personal MSAs. Switch to
 // `organizations` if you ever want to lock out personal accounts.
 const AUTHORITY = "https://login.microsoftonline.com/common";
-// Scopes: offline_access for refresh_token, Mail.Send for sendMail, User.Read
-// for the /me lookup so we can store the mailbox address on the account row.
-const SCOPES = "offline_access Mail.Send User.Read";
+// Scopes consented at authorize-time. We use fully-qualified resource scopes
+// (https://graph.microsoft.com/...) so the refresh-token call on the Python
+// worker can request a matching subset without triggering AADSTS90013.
+// User.Read is requested only to look up the mailbox address during connect;
+// the worker only ever asks Microsoft for Mail.Send + offline_access at refresh.
+const SCOPES =
+  "offline_access https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read";
 
 async function assertAuthorized(
   admin: any,
