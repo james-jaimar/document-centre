@@ -201,7 +201,7 @@ async function runSendDiagnostic(
   if (!roles.includes("Mail.Send")) {
     return classifyGraphSendFailure(403, "Token roles do not include Mail.Send", roles);
   }
-  const r = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sender)}/sendMail`, {
+  let r = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sender)}/sendMail`, {
     method: "POST",
     headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -216,6 +216,24 @@ async function runSendDiagnostic(
       saveToSentItems: true,
     }),
   });
+  if ((r.status === 401 || r.status === 403) && (await r.clone().text()).toLowerCase().includes("erroraccessdenied")) {
+    const retry = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sender)}/sendMail`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: {
+          subject: "Document Centre Microsoft Graph diagnostic",
+          body: {
+            contentType: "Text",
+            content: `Microsoft Graph diagnostic sent at ${new Date().toISOString()}.`,
+          },
+          toRecipients: [{ emailAddress: { address: recipient } }],
+        },
+        saveToSentItems: false,
+      }),
+    });
+    if (retry.status === 202) r = retry;
+  }
   if (r.status === 202) {
     return {
       ok: true,
