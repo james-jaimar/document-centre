@@ -1,86 +1,73 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePlatformEmailAccounts, type PlatformEmailAccount } from "@/hooks/usePlatformEmailAccounts";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Mail, AlertCircle, CheckCircle2, Loader2, Send } from "lucide-react";
+import { Mail, AlertCircle, CheckCircle2, Loader2, Send, ShieldCheck } from "lucide-react";
+
+interface GraphStatus {
+  secrets_present: { tenant_id: boolean; client_id: boolean; client_secret: boolean };
+  account: null | {
+    id: string;
+    from_email: string;
+    graph_sender_address: string | null;
+    is_active: boolean;
+    is_default: boolean;
+    last_error: string | null;
+    last_verified_at: string | null;
+    label: string | null;
+  };
+}
 
 export function PlatformEmailTab() {
   const { data: accounts = [], isLoading, refetch } = usePlatformEmailAccounts();
-  const [connecting, setConnecting] = useState(false);
+  const [status, setStatus] = useState<GraphStatus | null>(null);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [sender, setSender] = useState("hello@document-centre.com");
+  const [provisioning, setProvisioning] = useState(false);
   const [testRecipient, setTestRecipient] = useState("");
   const [testingId, setTestingId] = useState<string | null>(null);
 
-  const microsoft = accounts.find((a) => a.transport === "graph_oauth");
-  const others = accounts.filter((a) => a.transport !== "graph_oauth");
-
-  const connectMicrosoft = async () => {
-    setConnecting(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("microsoft-oauth-connect", {
-        body: { action: "authorize", scope: "platform" },
-      });
-      if (error || (data as any)?.error) {
-        toast.error(error?.message || (data as any)?.error);
-        setConnecting(false);
-        return;
-      }
-      const popup = window.open(
-        (data as any).authorize_url,
-        "microsoft-oauth-platform",
-        "width=600,height=700,scrollbars=yes",
-      );
-      const poll = setInterval(async () => {
-        if (popup?.closed) {
-          clearInterval(poll);
-          setConnecting(false);
-          await refetch();
-        }
-      }, 1000);
-      const onMessage = async (event: MessageEvent) => {
-        if (event.data?.type === "microsoft-oauth-callback") {
-          clearInterval(poll);
-          popup?.close();
-          window.removeEventListener("message", onMessage);
-          setConnecting(false);
-          if (event.data.success) {
-            toast.success(`Platform mailbox connected: ${event.data.email}`);
-          } else {
-            toast.error(event.data.error || "Microsoft connect failed");
-          }
-          await refetch();
-        }
-      };
-      window.addEventListener("message", onMessage);
-    } catch (e) {
-      toast.error((e as Error).message);
-      setConnecting(false);
+  const loadStatus = async () => {
+    setStatusLoading(true);
+    const { data, error } = await supabase.functions.invoke("platform-graph-configure", {
+      body: { action: "status" },
+    });
+    setStatusLoading(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setStatus(data as GraphStatus);
+    if ((data as GraphStatus)?.account?.graph_sender_address) {
+      setSender((data as GraphStatus).account!.graph_sender_address!);
     }
   };
 
-  const disconnect = async (acct: PlatformEmailAccount) => {
-    if (!confirm(`Disconnect ${acct.label || acct.from_email}? Platform emails will fall back to the legacy account.`)) return;
-    if (acct.transport === "graph_oauth") {
-      const { error } = await supabase.functions.invoke("microsoft-oauth-connect", {
-        body: { action: "disconnect", account_id: acct.id },
-      });
-      if (error) {
-        toast.error(error.message);
-        return;
-      }
-    } else {
-      // SMTP / other transports — delete via email-account-manage (platform admin policy covers it via service role on server).
-      const { error } = await supabase.from("email_accounts").delete().eq("id", acct.id);
-      if (error) {
-        toast.error(error.message);
-        return;
-      }
+  useEffect(() => {
+    loadStatus();
+  }, []);
+
+  const graphAccount = accounts.find((a) => a.transport === "graph" && a.is_active);
+  const legacyOAuth = accounts.find((a) => a.transport === "graph_oauth");
+  const others = accounts.filter((a) => a.transport !== "graph" && a.transport !== "graph_oauth");
+
+  const provision = async () => {
+    setProvisioning(true);
+    const { data, error } = await supabase.functions.invoke("platform-graph-configure", {
+      body: { action: "provision", sender_address: sender.trim() },
+    });
+    setProvisioning(false);
+    if (error || (data as any)?.error) {
+      toast.error(error?.message || (data as any)?.error || "Provision failed");
+      return;
     }
-    toast.success("Disconnected");
-    refetch();
+    toast.success("Platform Microsoft Graph mailbox configured");
+    await Promise.all([loadStatus(), refetch()]);
   };
 
   const sendTest = async (acct: PlatformEmailAccount) => {
@@ -89,9 +76,6 @@ export function PlatformEmailTab() {
       return;
     }
     setTestingId(acct.id);
-    // Send the test against THIS specific account (Microsoft OAuth, SMTP, etc.)
-    // — the generic send-test-email function ignores account id and falls back
-    // to the platform default, which makes platform diagnostics misleading.
     const { data, error } = await supabase.functions.invoke("email-account-manage", {
       body: { action: "test_send", id: acct.id, recipient: testRecipient },
     });
@@ -100,105 +84,171 @@ export function PlatformEmailTab() {
       toast.error(error?.message || (data as any)?.error || "Test failed");
       return;
     }
-    toast.success("Test email queued — check Sent Mail for delivery status");
+    toast.success("Test email queued — check the recipient inbox shortly");
     refetch();
   };
 
+  const removeOther = async (acct: PlatformEmailAccount) => {
+    if (!confirm(`Remove ${acct.label || acct.from_email}?`)) return;
+    const { error } = await supabase.from("email_accounts").delete().eq("id", acct.id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Removed");
+    refetch();
+  };
+
+  const secretsReady =
+    status?.secrets_present.tenant_id &&
+    status?.secrets_present.client_id &&
+    status?.secrets_present.client_secret;
 
   return (
     <div className="space-y-6">
       <div className="rounded-lg border border-border bg-muted/30 p-4">
         <h3 className="text-base font-semibold mb-1">Platform sender mailbox</h3>
         <p className="text-sm text-muted-foreground">
-          This mailbox sends every platform-level email: subscription receipts, plan changes, trial
-          notifications, billing alerts and platform admin invitations. Tenants that have configured
-          their own mailbox keep using it for their own customer-facing mail; this is only the
-          fallback for tenant-less ("system") emails.
+          Sends every platform-level email (subscription receipts, plan changes, trial notices,
+          billing alerts, admin invites). Uses Microsoft Graph <strong>app-only</strong>{" "}
+          authentication — Microsoft's recommended path for service mailboxes: no refresh tokens,
+          no re-consent, no AADSTS90013 surprises.
         </p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Mail className="h-4 w-4" /> Microsoft 365 / Outlook
+            <ShieldCheck className="h-4 w-4" /> Microsoft 365 (Graph app-only)
           </CardTitle>
           <CardDescription>
-            Recommended. Sends from a real Microsoft 365 mailbox using delegated OAuth (refresh
-            tokens stored in Supabase Vault). Connect <code>hello@document-centre.com</code> or any
-            workspace mailbox you want as the platform sender.
+            Configured once from your Azure App Registration. The client secret is stored in
+            Supabase Vault and read by the email worker only.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          {isLoading ? (
+        <CardContent className="space-y-4">
+          {statusLoading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
-          ) : microsoft ? (
-            <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-blue-50 flex items-center justify-center">
-                  <Mail className="h-5 w-5 text-blue-600" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium">{microsoft.oauth_email || microsoft.from_email}</span>
-                    <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 gap-1">
-                      <CheckCircle2 className="h-3 w-3" /> Connected
-                    </Badge>
-                    {microsoft.is_default && <Badge>Platform Default</Badge>}
-                  </div>
-                  <p className="text-sm text-muted-foreground">{microsoft.label}</p>
-                  {microsoft.last_error && (
-                    <p className="text-xs text-destructive mt-1 flex items-center gap-1">
-                      <AlertCircle className="h-3 w-3" /> {microsoft.last_error}
-                    </p>
-                  )}
-                  {microsoft.last_verified_at && !microsoft.last_error && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Last verified: {new Date(microsoft.last_verified_at).toLocaleString()}
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="flex flex-col gap-2 items-end">
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => sendTest(microsoft)} disabled={testingId === microsoft.id}>
-                    <Send className="h-3 w-3 mr-1" />
-                    {testingId === microsoft.id ? "Sending…" : "Send test"}
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => disconnect(microsoft)}>
-                    Disconnect
-                  </Button>
-                </div>
-                <Input
-                  type="email"
-                  placeholder="test recipient@example.com"
-                  value={testRecipient}
-                  onChange={(e) => setTestRecipient(e.target.value)}
-                  className="max-w-xs h-8 text-xs"
-                />
-              </div>
-            </div>
           ) : (
-            <div className="flex flex-col items-start gap-3">
-              <p className="text-sm text-muted-foreground">
-                Connect a Microsoft 365 mailbox to act as the platform sender. We only request
-                send permission — we never read inboxes.
-              </p>
-              <Button onClick={connectMicrosoft} disabled={connecting} className="gap-2">
-                {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-                Connect Microsoft 365
-              </Button>
-            </div>
+            <>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <Badge variant={status?.secrets_present.tenant_id ? "default" : "destructive"}>
+                  MICROSOFT_GRAPH_TENANT_ID {status?.secrets_present.tenant_id ? "✓" : "missing"}
+                </Badge>
+                <Badge variant={status?.secrets_present.client_id ? "default" : "destructive"}>
+                  MICROSOFT_GRAPH_CLIENT_ID {status?.secrets_present.client_id ? "✓" : "missing"}
+                </Badge>
+                <Badge variant={status?.secrets_present.client_secret ? "default" : "destructive"}>
+                  MICROSOFT_GRAPH_CLIENT_SECRET {status?.secrets_present.client_secret ? "✓" : "missing"}
+                </Badge>
+              </div>
+
+              {graphAccount ? (
+                <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-blue-50 flex items-center justify-center">
+                      <Mail className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium">{graphAccount.from_email}</span>
+                        <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 gap-1">
+                          <CheckCircle2 className="h-3 w-3" /> Active
+                        </Badge>
+                        {graphAccount.is_default && <Badge>Platform Default</Badge>}
+                      </div>
+                      <p className="text-sm text-muted-foreground">{graphAccount.label}</p>
+                      {graphAccount.last_error && (
+                        <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" /> {graphAccount.last_error}
+                        </p>
+                      )}
+                      {graphAccount.last_verified_at && !graphAccount.last_error && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Last verified: {new Date(graphAccount.last_verified_at).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2 items-end">
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => sendTest(graphAccount)} disabled={testingId === graphAccount.id}>
+                        <Send className="h-3 w-3 mr-1" />
+                        {testingId === graphAccount.id ? "Sending…" : "Send test"}
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={provision} disabled={provisioning || !secretsReady}>
+                        {provisioning ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                        Re-provision
+                      </Button>
+                    </div>
+                    <Input
+                      type="email"
+                      placeholder="test recipient@example.com"
+                      value={testRecipient}
+                      onChange={(e) => setTestRecipient(e.target.value)}
+                      className="max-w-xs h-8 text-xs"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="sender">Sender mailbox (must exist in your M365 tenant)</Label>
+                    <Input
+                      id="sender"
+                      type="email"
+                      value={sender}
+                      onChange={(e) => setSender(e.target.value)}
+                      placeholder="hello@document-centre.com"
+                    />
+                  </div>
+                  <Button onClick={provision} disabled={provisioning || !secretsReady} className="gap-2">
+                    {provisioning ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                    Provision platform mailbox
+                  </Button>
+                  {!secretsReady && (
+                    <p className="text-xs text-destructive">
+                      Add the three Microsoft Graph secrets above before provisioning.
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
+
+      {legacyOAuth && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Legacy delegated OAuth mailbox</CardTitle>
+            <CardDescription>
+              Old user-delegated Microsoft 365 connection. Superseded by app-only above — kept
+              visible so you can remove it.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between rounded border p-3">
+              <div>
+                <div className="font-medium text-sm">{legacyOAuth.oauth_email || legacyOAuth.from_email}</div>
+                <div className="text-xs text-muted-foreground">
+                  graph_oauth · {legacyOAuth.is_active ? "active" : "inactive"}
+                </div>
+                {legacyOAuth.last_error && (
+                  <p className="text-xs text-destructive mt-1">{legacyOAuth.last_error}</p>
+                )}
+              </div>
+              <Button variant="outline" size="sm" onClick={() => removeOther(legacyOAuth)}>Remove</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {others.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Other platform accounts</CardTitle>
-            <CardDescription>
-              Additional accounts configured at the platform level (SMTP / Gmail / legacy Graph).
-            </CardDescription>
+            <CardDescription>SMTP / Gmail / etc.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             {others.map((a) => (
@@ -207,7 +257,7 @@ export function PlatformEmailTab() {
                   <div className="font-medium text-sm">{a.label || a.from_email}</div>
                   <div className="text-xs text-muted-foreground">{a.from_email} · {a.transport}</div>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => disconnect(a)}>Remove</Button>
+                <Button variant="outline" size="sm" onClick={() => removeOther(a)}>Remove</Button>
               </div>
             ))}
           </CardContent>
