@@ -1,43 +1,74 @@
+You’re right: this got over-engineered. The actual issue is that I split Microsoft mail into two competing paths:
+
+```text
+Tenant/branch mail:  standard delegated Microsoft OAuth connector -> graph_oauth -> /me/sendMail
+Platform mail:       separate app-only Graph setup -> graph -> /users/{mailbox}/sendMail
+```
+
+That second platform-only path is the mess. It needs extra Application permissions / admin consent / Exchange RBAC and is why you’re seeing the `Mail.Send application role` red box. It is not the simple connector flow you expected.
+
+Do I know what the issue is? Yes. The platform page was changed to prefer a new app-only Graph account instead of reusing the existing Microsoft OAuth connector with its own platform-scoped credentials.
+
 ## Plan
 
-### 1. Replace vague 403 guidance with an in-app Graph permission diagnostic
-- Extend the platform Graph configuration function so it can run a real Microsoft Graph probe, not just “can I get a token”.
-- The probe will call Microsoft Graph using the app-only token against `hello@document-centre.com` and classify the result:
-  - credentials/token failure,
-  - missing Graph Application `Mail.Send` / admin consent,
-  - Exchange application access/RBAC denial,
-  - mailbox not found or not a real Exchange mailbox,
-  - successful access/send acceptance.
-- Store the diagnostic on the platform email account so the UI shows the exact Microsoft-side failure, not generic advice.
+1. **Make Microsoft 365 one connector again**
+   - Use the existing `microsoft-oauth-connect` OAuth flow for platform mail as well as tenant/branch mail.
+   - Platform connection will be a normal `email_accounts` row with:
+     ```text
+     tenant_id = null
+     branch_id = null
+     transport = graph_oauth
+     oauth_email = hello@document-centre.com
+     own refresh token secret in Vault
+     is_default = true
+     ```
+   - Tenant/branch connections remain separate rows with their own refresh tokens, even if the email address happens to be the same.
 
-### 2. Fix the platform test-send workflow
-- Update the platform email settings “Send test” flow so it refreshes the platform account status after the worker fails or succeeds.
-- Show a clear state distinction:
-  - “token works, send blocked by Microsoft permissions”
-  - “test queued, waiting for worker”
-  - “sent”
-  - “failed with Microsoft diagnostic”.
+2. **Strip the platform email settings UI back to simple controls**
+   - Remove the app-only wording, secret badges, “Re-provision”, “Diagnose Graph”, token-role panels, and Exchange RBAC instructions.
+   - Replace them with the same simple pattern used in tenant settings:
+     - “Sign in with Microsoft”
+     - connected mailbox display
+     - “Send test”
+     - “Disconnect”
+   - The platform button will call the existing connector with `scope: "platform"`.
 
-### 3. Correct the app-only Graph request body if needed
-- Keep the worker using `POST /users/{hello@document-centre.com}/sendMail` for app-only sending.
-- Remove avoidable ambiguity from the Graph payload by not trying to force a `from` header; app-only `/users/{sender}/sendMail` already determines the sender from the URL. This avoids Microsoft rejecting a message because of a mismatched or unsupported `from` field.
-- Keep `replyTo`, recipients, subject, HTML/text body, attachments, and `saveToSentItems: true`.
+3. **Stop platform mail from preferring the app-only account**
+   - Update platform account resolution so platform-level emails use the platform default account, and the expected Microsoft path is `graph_oauth`.
+   - Remove the special fallback that hunts for any `transport in (graph, graph_oauth)` outside the platform scope, because that can blur tenant/platform ownership.
 
-### 4. Fix platform Sent Mail audit column issues
-- The live `email_outbox` table uses `queued_at` and `error_message`, not `created_at` / `last_error`.
-- Update platform Sent Mail queries and retry logic to use the actual columns consistently.
-- Keep platform scope as `tenant_id is null`, so platform subscription/admin mail stays separate from tenant mail.
+4. **Remove the app-only Graph setup surface**
+   - Remove the `platform-graph-configure` dependency from the frontend.
+   - Leave low-level `transport='graph'` sender code only if still needed for existing legacy rows; otherwise remove the unused edge function from deployment.
+   - The platform no longer asks for `MICROSOFT_GRAPH_TENANT_ID`, `MICROSOFT_GRAPH_CLIENT_ID`, or `MICROSOFT_GRAPH_CLIENT_SECRET` for sending platform mail.
 
-### 5. Clean up confusing legacy mailbox visibility
-- Make tenant delegated Microsoft OAuth (`graph_oauth`) visibly separate from the platform app-only mailbox.
-- Do not let a tenant OAuth row appear as a platform fix path.
-- The Document Centre Demo delegated OAuth failure can remain a separate tenant mailbox issue after platform mail is working.
+5. **Fix Microsoft OAuth refresh consistency**
+   - Keep the Microsoft OAuth connector on the documented delegated scopes:
+     ```text
+     offline_access
+     https://graph.microsoft.com/Mail.Send
+     https://graph.microsoft.com/User.Read
+     ```
+   - Ensure the worker refresh request uses the same fully-qualified Graph scopes, not a mixed shorthand scope string.
+   - Send via `/me/sendMail`, with no forced `from` field.
 
-### Validation
-- Query the platform account and latest outbox rows to confirm the platform row is the only active platform default.
-- Deploy the updated platform Graph function.
-- Run the new diagnostic against the real `hello@document-centre.com` account.
-- Queue one platform test email and verify the resulting Sent Mail row shows either `sent` or a precise Microsoft diagnostic.
+6. **Clean up the visible state**
+   - Platform Settings should show only the platform OAuth mailbox, not app-only diagnostics.
+   - Sent Mail continues to show platform-level outbox rows where `tenant_id is null`.
 
-## Expected remaining external action
-If the diagnostic still returns Microsoft `403 ErrorAccessDenied`, the code path is doing the standard app-only Graph flow correctly and the remaining fix is in Microsoft 365: Graph **Application** `Mail.Send` with admin consent, and/or Exchange Application RBAC allowing this app to send as `hello@document-centre.com`. The new diagnostic will make that explicit instead of leaving us guessing.
+7. **Validation**
+   - Connect `hello@document-centre.com` from Platform Settings using Microsoft sign-in.
+   - Send a platform test email.
+   - Confirm the outbox row uses `provider = graph_oauth` and moves to sent, or shows only a normal OAuth refresh/send error if Microsoft rejects it.
+
+## Result
+
+After this, Microsoft mail is simple again:
+
+```text
+Each scope connects its own Microsoft account.
+Each connected account stores its own refresh token.
+Same email address is allowed because scope/row/credential are separate.
+Sending uses the standard delegated Graph connector.
+No app-only permissions, no Exchange RBAC, no token-role diagnostics.
+```

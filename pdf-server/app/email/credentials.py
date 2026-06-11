@@ -227,8 +227,8 @@ def resolve_account_id_for_row(
         return rows[0]["id"] if rows else None
 
     def _platform_fallback() -> Optional[str]:
-        # Prefer the platform-level default account, then any platform account,
-        # then the older Graph/Graph-OAuth fallback anywhere on the platform.
+        # Platform-scope mail uses the platform-level default account (any
+        # transport). No cross-tenant fallback — that would blur ownership.
         picked = _first_id(
             sb.table("email_accounts")
             .select("id,is_default,created_at")
@@ -242,24 +242,12 @@ def resolve_account_id_for_row(
         if picked:
             return picked
 
-        picked = _first_id(
+        return _first_id(
             sb.table("email_accounts")
             .select("id,is_default,created_at")
             .is_("tenant_id", None)
             .is_("branch_id", None)
             .eq("is_active", True)
-            .order("created_at", desc=False)
-            .limit(1)
-        )
-        if picked:
-            return picked
-
-        return _first_id(
-            sb.table("email_accounts")
-            .select("id,is_default,created_at")
-            .eq("is_active", True)
-            .in_("transport", ["graph", "graph_oauth"])
-            .order("is_default", desc=True)
             .order("created_at", desc=False)
             .limit(1)
         )

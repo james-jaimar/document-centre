@@ -109,11 +109,8 @@ def send_graph_oauth(
     """
     token = _refresh_access_token(creds)
 
-    eff_from_name = from_name or creds.from_name
-    # NOTE: Microsoft Graph ignores the From header on delegated `/me/sendMail`
-    # — the message is always sent as the consented mailbox. We still pass it
-    # for parity / Sent-Items display.
-    eff_from_email = from_email or creds.from_email
+    # Microsoft Graph determines the sender from the delegated token on
+    # `/me/sendMail`; passing a custom `from` is ignored and can be rejected.
     eff_reply_to = reply_to or creds.reply_to
 
     message: dict = {
@@ -123,7 +120,6 @@ def send_graph_oauth(
             "content": html or text or "",
         },
         "toRecipients": _recipients(to),
-        "from": {"emailAddress": {"address": eff_from_email, "name": eff_from_name or ""}},
     }
     if cc:
         message["ccRecipients"] = _recipients(cc)
