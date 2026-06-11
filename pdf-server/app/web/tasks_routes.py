@@ -176,10 +176,26 @@ async def run_task(task_name: str, request: Request) -> dict[str, Any]:
                 log.warning("idempotency guard check failed: %s", guard_exc)
 
     # Celery tasks are callable as plain functions via .run / .__call__.
-    # We support both Celery tasks and bare callables.
+    # We support both Celery tasks and bare callables. Run them in a worker
+    # thread so blocking code (e.g. send_smtp -> asyncio.run, sync httpx
+    # calls, sync supabase-py) does not collide with this endpoint's
+    # running event loop. Without this wrapper, any task that calls
+    # asyncio.run() internally raises:
+    #   RuntimeError: asyncio.run() cannot be called from a running event loop
+    import asyncio as _asyncio
+    import inspect as _inspect
+    from anyio import to_thread as _to_thread
+
     runner = getattr(fn, "run", fn)
     try:
-        result = runner(*args, **kwargs)
+        if _inspect.iscoroutinefunction(runner):
+            result = await runner(*args, **kwargs)
+        else:
+            def _invoke():
+                return runner(*args, **kwargs)
+            result = await _to_thread.run_sync(_invoke)
+            if _inspect.isawaitable(result):
+                result = await result
     except NonRetryableTaskError as e:
         log.error("task %s failed terminally; acknowledging to stop Cloud Tasks retry: %s", task_name, e)
         return {"ok": False, "task": task_name, "non_retryable": True, "error": str(e)}
