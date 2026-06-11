@@ -71,6 +71,16 @@ interface GraphStatus {
   };
 }
 
+interface GraphDiagnostic {
+  ok: boolean;
+  code: string;
+  title: string;
+  detail: string;
+  steps: string[];
+  roles?: string[];
+  http_status?: number;
+}
+
 export function PlatformEmailTab() {
   const { data: accounts = [], isLoading, refetch } = usePlatformEmailAccounts();
   const [status, setStatus] = useState<GraphStatus | null>(null);
@@ -79,6 +89,8 @@ export function PlatformEmailTab() {
   const [provisioning, setProvisioning] = useState(false);
   const [testRecipient, setTestRecipient] = useState("");
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [diagnostic, setDiagnostic] = useState<GraphDiagnostic | null>(null);
 
   const loadStatus = async () => {
     setStatusLoading(true);
@@ -133,7 +145,36 @@ export function PlatformEmailTab() {
       return;
     }
     toast.success("Test email queued — check the recipient inbox shortly");
-    refetch();
+    await Promise.all([loadStatus(), refetch()]);
+    window.setTimeout(() => {
+      loadStatus();
+      refetch();
+    }, 2500);
+    window.setTimeout(() => {
+      loadStatus();
+      refetch();
+    }, 6000);
+  };
+
+  const runDiagnostic = async () => {
+    setDiagnosing(true);
+    const { data, error } = await supabase.functions.invoke("platform-graph-configure", {
+      body: {
+        action: "diagnose",
+        sender_address: sender.trim(),
+        diagnostic_recipient: testRecipient || undefined,
+      },
+    });
+    setDiagnosing(false);
+    if (error || (data as any)?.error) {
+      toast.error(error?.message || (data as any)?.error || "Diagnostic failed");
+      return;
+    }
+    const next = (data as any)?.diagnostic as GraphDiagnostic;
+    setDiagnostic(next);
+    if (next.ok) toast.success("Microsoft Graph accepted the platform mailbox send probe");
+    else toast.error(next.title);
+    await Promise.all([loadStatus(), refetch()]);
   };
 
   const removeOther = async (acct: PlatformEmailAccount) => {
