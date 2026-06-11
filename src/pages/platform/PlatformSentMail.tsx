@@ -26,6 +26,13 @@ interface OutboxRow {
   metadata: Record<string, unknown>;
 }
 
+interface AccountLabelRow {
+  id: string;
+  label: string | null;
+  from_email: string;
+  transport: string;
+}
+
 const STATUS_TONE: Record<string, string> = {
   queued: "bg-blue-100 text-blue-700 border-blue-200",
   sending: "bg-amber-100 text-amber-700 border-amber-200",
@@ -62,7 +69,7 @@ export default function PlatformSentMail() {
     if (statusFilter !== "all") q = q.eq("status", statusFilter);
     if (categoryFilter !== "all") q = q.eq("category", categoryFilter);
     const { data } = await q;
-    setRows((data as any) ?? []);
+    setRows((data ?? []) as OutboxRow[]);
 
     const { data: accounts } = await supabase
       .from("email_accounts")
@@ -70,7 +77,7 @@ export default function PlatformSentMail() {
       .is("tenant_id", null)
       .is("branch_id", null);
     const map: Record<string, string> = {};
-    (accounts ?? []).forEach((a: any) => {
+    ((accounts ?? []) as AccountLabelRow[]).forEach((a) => {
       map[a.id] = `${a.label} <${a.from_email}> · ${a.transport}`;
     });
     setAccountLabels(map);
