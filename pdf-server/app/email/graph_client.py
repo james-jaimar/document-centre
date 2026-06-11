@@ -45,6 +45,10 @@ def _recipients(addrs):
     return [{"emailAddress": {"address": a}} for a in addrs if a]
 
 
+def _is_access_denied_response(r: httpx.Response) -> bool:
+    return r.status_code in (401, 403) and "erroraccessdenied" in r.text.lower()
+
+
 def _get_token(creds: GraphCreds) -> str:
     url = f"https://login.microsoftonline.com/{creds.azure_tenant_id}/oauth2/v2.0/token"
     body = {
@@ -127,6 +131,15 @@ def send_graph(
             headers={"Authorization": f"Bearer {token}"},
             timeout=SEND_TIMEOUT,
         )
+        if _is_access_denied_response(r):
+            retry = httpx.post(
+                url,
+                json={"message": message, "saveToSentItems": False},
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=SEND_TIMEOUT,
+            )
+            if retry.status_code == 202:
+                return retry.headers.get("x-ms-request-id")
     except httpx.HTTPError as exc:
         raise TransientSmtpError(f"graph send network: {exc}") from exc
 
