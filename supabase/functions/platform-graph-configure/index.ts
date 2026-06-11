@@ -232,7 +232,7 @@ async function runSendDiagnostic(
         saveToSentItems: false,
       }),
     });
-    if (retry.status === 202) r = retry;
+    r = retry;
   }
   if (r.status === 202) {
     return {
