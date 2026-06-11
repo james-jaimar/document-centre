@@ -1,140 +1,43 @@
-## What the evidence shows
+# Fix: email worker crashes because Redis isn't available on Cloud Run
 
-- The VPS Celery services are no longer the visible systemd units, but the email rows are still being re-claimed every lease cycle.
-- The current claimant is `pdf-server:localhost:2`, and all 12 stuck rows share the same `claimed_at` / `worker_lease_until` window.
-- That means something is successfully running `scan_outbox` and `claim_email_batch`, but the follow-up `send_email` work is not completing.
-- This is probably not the original VPS worker PID anymore; `localhost` matches a container hostname pattern, so we need to debug Cloud Run / Cloud Tasks delivery rather than only systemd.
+## Root cause (confirmed from logs)
 
-## Most likely failure points to check
+Every `send_email` call on Cloud Run blows up here:
 
-1. **Cloud Tasks cannot invoke `pdf-worker-emails`**
-   - `scan_outbox` claims rows on the emails worker, then enqueues per-row `send_email` tasks.
-   - If `emails-default` tasks are rejected by OIDC/IAM/audience/service URL mismatch, rows stay `sending` until `release_stuck_claims` resets them.
-
-2. **`pdf-worker-emails` is running an old or wrong revision**
-   - The current code supports `graph_oauth`, but a stale worker revision could still claim and then fail before marking the row.
-   - Need to verify live revision, env vars, and mounted Microsoft OAuth secrets.
-
-3. **The email worker’s internal `send_email` task is crashing before DB status update**
-   - Could be missing OAuth secret mounts, token refresh failure, attachment load issue, or a `self.request` Celery-context problem when a Celery task is invoked through the HTTP Cloud Tasks adapter.
-   - Logs will tell which one.
-
-4. **Scheduler/control queue is healthy, default queue is not**
-   - Because claims are happening, `emails-control` is being delivered.
-   - Because rows are not sent/failed, `emails-default` may be failing separately.
-
-## Debug commands to run in Cloud Shell
-
-Run these in Google Cloud Shell, not on the VPS:
-
-```bash
-gcloud config set project project-59a14b18-b4df-4c6b-b09
-REGION=africa-south1
-TASKS_REGION=europe-west1
+```
+File "/app/app/email/concurrency.py", line 21, in _client
+    _redis = redis.Redis.from_url(settings.redis_url, ...)
+ValueError: Redis URL must specify one of the following schemes (redis://, rediss://, unix://)
 ```
 
-### 1) Check live Cloud Run email worker revision and env
+`account_slot()` unconditionally opens a Redis client to enforce per-account send concurrency. On the VPS, Redis was the Celery broker so this worked. On Cloud Run the queue backend is Cloud Tasks — there is no Redis, and `REDIS_URL` is unset (or set to something invalid like an empty string / `none`), so the URL parse fails and the task 500s. Cloud Tasks retries forever, the outbox row stays `claimed`, `queued_at` never clears → emails never go out.
 
-```bash
-gcloud run services describe pdf-worker-emails \
-  --region="$REGION" \
-  --format='yaml(status.url,status.traffic,status.latestReadyRevisionName,spec.template.spec.containers[0].env)'
-```
+Cloud Tasks already enforces a global send rate via the `emails-default` queue (`max_concurrent_dispatches`), so the per-account Redis limiter is a "nice to have" on Cloud Run, not load-bearing.
 
-Look for:
-- `ROLE=worker-emails-http`
-- `QUEUE_BACKEND=cloud_tasks`
-- `WORKER_SELF_URL=https://pdf-worker-emails-...run.app`
-- `WORKER_URL_EMAILS=https://pdf-worker-emails-...run.app`
-- `TASKS_INVOKER_SA=cloud-tasks-invoker@project-59a14b18-b4df-4c6b-b09.iam.gserviceaccount.com`
-- `MICROSOFT_OAUTH_CLIENT_ID` and `MICROSOFT_OAUTH_CLIENT_SECRET` mounted as secrets
+## Fix
 
-### 2) Check Cloud Tasks queues
+Make the limiter degrade gracefully when Redis is unavailable, so the send path proceeds unguarded by Redis (Cloud Tasks queue concurrency takes over). The VPS path is gone, so we don't need to preserve Redis-backed limiting in production — but we keep it working when a valid `REDIS_URL` IS configured (local dev, future use).
 
-```bash
-gcloud tasks queues describe emails-control --location="$TASKS_REGION"
-gcloud tasks queues describe emails-default --location="$TASKS_REGION"
+### Code change — `pdf-server/app/email/concurrency.py`
 
-gcloud tasks list --queue=emails-control --location="$TASKS_REGION" --limit=20
-gcloud tasks list --queue=emails-default --location="$TASKS_REGION" --limit=20
-```
+1. In `_client()`, wrap the URL parse / connection in try/except. If `settings.redis_url` is missing, empty, doesn't start with `redis://`/`rediss://`/`unix://`, OR if the first ping fails, return `None` and cache that decision (a `_disabled = True` flag) so we don't retry on every send.
+2. In `account_slot()`, if `_client()` returns `None`, log once at INFO ("per-account Redis limiter disabled — relying on Cloud Tasks queue concurrency") and `yield` immediately without any INCR/DECR/TTL bookkeeping.
+3. Keep the existing Redis-backed path unchanged when Redis IS reachable.
 
-If `emails-default` has many retries or old tasks, that is the failed send stage.
+No other files change. No env var changes required. No deploy script changes — the next Cloud Run image rebuild picks it up.
 
-### 3) Check Cloud Run logs for the exact error
+## Verification
 
-```bash
-gcloud logging read \
-  'resource.type="cloud_run_revision" AND resource.labels.service_name="pdf-worker-emails"' \
-  --project=project-59a14b18-b4df-4c6b-b09 \
-  --limit=200 \
-  --order=desc \
-  --format='value(timestamp,severity,textPayload,jsonPayload.message)'
-```
+After deploy:
 
-Then narrow to email task failures:
+1. `gcloud logging read 'resource.labels.service_name="pdf-worker-emails" AND severity>=WARNING' --limit=20` — the `ValueError: Redis URL must specify ...` traceback should be gone.
+2. `select id, status, queued_at, sent_at, last_error from email_outbox order by created_at desc limit 20` — the 12 stuck rows transition to `sent` (or to `failed` with a real SMTP/Graph error if a specific message has a bad recipient / attachment / mailbox).
+3. The `emails-default` Cloud Tasks queue drains (no growing retry backlog).
 
-```bash
-gcloud logging read \
-  'resource.type="cloud_run_revision" AND resource.labels.service_name="pdf-worker-emails" AND (textPayload:"send_email" OR textPayload:"task send_email failed" OR textPayload:"OIDC" OR textPayload:"credential" OR textPayload:"graph_oauth" OR jsonPayload.message:"send_email" OR jsonPayload.message:"OIDC" OR jsonPayload.message:"graph_oauth")' \
-  --project=project-59a14b18-b4df-4c6b-b09 \
-  --limit=100 \
-  --order=desc \
-  --format='value(timestamp,severity,textPayload,jsonPayload.message)'
-```
+If any rows then fail with a NEW error code (e.g. `graph_oauth_permanent`, `attachment_error`), that's a separate, real per-message problem to address — but the pipeline itself will be unblocked.
 
-### 4) Check whether Cloud Tasks is getting HTTP errors from the worker
+## Out of scope
 
-```bash
-gcloud logging read \
-  'resource.type="cloud_tasks_queue" AND resource.labels.queue_id=("emails-default" OR "emails-control")' \
-  --project=project-59a14b18-b4df-4c6b-b09 \
-  --limit=100 \
-  --order=desc \
-  --format='value(timestamp,severity,textPayload,jsonPayload.status,jsonPayload.targetType,jsonPayload.url)'
-```
-
-If this shows 401/403, it is IAM/OIDC/audience. If 500, the worker code is crashing. If no logs, the tasks may not be enqueued or logging filter needs adjusting.
-
-### 5) Manually trigger the scheduler path
-
-```bash
-gcloud scheduler jobs run email-scan-outbox-30s --location="$TASKS_REGION"
-```
-
-Then immediately read worker logs again. This should produce a `running task=scan_outbox` line, followed by `running task=send_email` lines if `emails-default` delivery works.
-
-## Likely fixes depending on what logs show
-
-### If logs show `invalid oidc token` / `missing bearer token`
-- Re-run the GCP bootstrap to repair Cloud Tasks IAM and Scheduler/queue config:
-
-```bash
-bash pdf-server/docker/gcp-tasks-bootstrap.sh
-```
-
-Then re-run the GitHub deploy workflow so `WORKER_SELF_URL`, worker URLs, and secret mounts are current.
-
-### If logs show missing Microsoft OAuth env/secrets
-- Add or fix these Secret Manager entries, then re-run the deploy workflow:
-  - `MICROSOFT_OAUTH_CLIENT_ID`
-  - `MICROSOFT_OAUTH_CLIENT_SECRET`
-
-### If logs show `send_email() missing self` or `AttributeError` around `self.request`
-- Code fix needed: adapt the HTTP task runner or split the Celery-bound implementation so `send_email` can run safely outside a Celery worker.
-
-### If logs show `graph_oauth_auth 400/401/403`
-- The connected Microsoft mailbox refresh token may be revoked/expired, or the Azure app/client secret no longer matches. Reconnect the mailbox or rotate the Microsoft OAuth secret.
-
-### If logs show attachment/storage errors
-- The invoice PDF attachment path may be inaccessible to the Cloud Run worker; fix the attachment loader/storage permissions and then requeue.
-
-## After root cause is fixed
-
-- Release/requeue the stuck rows once more.
-- Watch for `status='sent'` or a concrete `failed/dlq` error.
-- Confirm in the recipient inbox and the app’s sent-mail UI.
-
-## What I need from you
-
-Please paste the output from sections **1, 2, 3, and 4** above. The exact error should be in the `pdf-worker-emails` or `emails-default` logs, and then I can give the precise fix instead of guessing.
+- No change to Cloud Tasks queue config, IAM, OIDC, or secrets — logs confirm those are fine.
+- No change to `email_tasks.py`, `tasks_routes.py`, or the Celery shim — the bound-task `self` is already handled correctly by the runner.
+- No reintroduction of Redis on GCP. If you later want true per-mailbox throttling on Cloud Run, the right move is Memorystore (Redis) + `REDIS_URL=redis://10.x.x.x:6379/0` on the worker — but that's a separate decision, not needed to unblock sends.
