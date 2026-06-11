@@ -95,7 +95,6 @@ def send_graph(
             "content": html or text or "",
         },
         "toRecipients": _recipients(to),
-        "from": {"emailAddress": {"address": eff_from_email, "name": eff_from_name or ""}},
     }
     if cc:
         message["ccRecipients"] = _recipients(cc)
