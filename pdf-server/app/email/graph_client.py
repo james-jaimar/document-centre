@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass
 from typing import Iterable, List, Optional
+from urllib.parse import quote
 
 import httpx
 
@@ -118,7 +119,7 @@ def send_graph(
             for a in atts
         ]
 
-    url = f"https://graph.microsoft.com/v1.0/users/{creds.sender}/sendMail"
+    url = f"https://graph.microsoft.com/v1.0/users/{quote(creds.sender, safe='')}/sendMail"
     try:
         r = httpx.post(
             url,
