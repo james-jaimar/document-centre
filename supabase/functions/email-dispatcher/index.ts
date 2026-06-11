@@ -335,7 +335,7 @@ function toGraphRecipients(addrs: string[] | string | null | undefined) {
 async function sendViaGraph(
   creds: GraphCreds,
   row: OutboxRow,
-  fromName: string,
+  _fromName: string,
   _fromEmail: string,
   replyTo: string | undefined,
   attachments: LoadedAttachment[]
