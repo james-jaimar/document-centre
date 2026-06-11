@@ -258,6 +258,7 @@ Deno.serve(async (req) => {
       action?: string;
       sender_address?: string;
       label?: string;
+      diagnostic_recipient?: string;
     };
 
     if (body.action === "status") {
@@ -278,6 +279,28 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (body.action === "diagnose") {
+      if (!tenantId || !clientId || !clientSecret) {
+        return json({ error: "Microsoft Graph platform secrets missing." }, 400);
+      }
+      const sender = (body.sender_address || "hello@document-centre.com").trim().toLowerCase();
+      const recipient = (body.diagnostic_recipient || caller.email || sender).trim().toLowerCase();
+      const verify = await verifyAppOnlyToken(tenantId, clientId, clientSecret);
+      const diagnostic = verify.ok
+        ? await runSendDiagnostic(verify.token, verify.roles, sender, recipient)
+        : verify.diagnostic;
+      await admin
+        .from("email_accounts")
+        .update({
+          last_error: diagnostic.ok ? null : `${diagnostic.code}: ${diagnostic.title} ${diagnostic.detail}`.slice(0, 500),
+          last_verified_at: new Date().toISOString(),
+        })
+        .is("tenant_id", null)
+        .is("branch_id", null)
+        .eq("transport", "graph");
+      return json({ diagnostic });
+    }
+
     if (body.action !== "provision") return json({ error: "unknown_action" }, 400);
 
     if (!tenantId || !clientId || !clientSecret) {
@@ -294,7 +317,8 @@ Deno.serve(async (req) => {
     const verify = await verifyAppOnlyToken(tenantId, clientId, clientSecret);
     if (!verify.ok) {
       return json({
-        error: `Microsoft rejected app-only token: ${verify.error}. Double-check tenant id, client id, client secret value (not secret id), and that admin consent was granted for Mail.Send.`,
+        error: `${verify.diagnostic.code}: ${verify.diagnostic.title} ${verify.diagnostic.detail}`,
+        diagnostic: verify.diagnostic,
       }, 400);
     }
 
