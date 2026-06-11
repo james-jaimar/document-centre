@@ -24,9 +24,12 @@ from .errors import PermanentSmtpError, TransientSmtpError
 TOKEN_TIMEOUT = 20.0
 SEND_TIMEOUT = 60.0
 AUTHORITY = "https://login.microsoftonline.com/common"
-# Same scopes the edge function requested at consent time. Refresh tokens are
-# scope-bound; asking for a different set here just fails.
-SCOPES = "offline_access Mail.Send User.Read"
+# For refresh, request a subset of what was consented at authorize-time
+# (offline_access + Mail.Send + User.Read). Asking for a SUPERSET — or for
+# scopes from a different resource — triggers AADSTS90013 "Invalid input
+# received from the user". Mail.Send + offline_access is all we actually
+# need to call /me/sendMail and rotate refresh tokens.
+SCOPES = "offline_access https://graph.microsoft.com/Mail.Send"
 
 
 @dataclass(frozen=True)
