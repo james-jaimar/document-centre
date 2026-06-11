@@ -126,7 +126,10 @@ export function PlatformEmailTab() {
       toast.error(error?.message || (data as any)?.error || "Provision failed");
       return;
     }
-    toast.success("Platform Microsoft Graph mailbox configured");
+    const dx = (data as any)?.diagnostic as GraphDiagnostic | undefined;
+    if (dx) setDiagnostic(dx);
+    if (dx && !dx.ok) toast.error(dx.title);
+    else toast.success("Platform Microsoft Graph mailbox configured");
     await Promise.all([loadStatus(), refetch()]);
   };
 
