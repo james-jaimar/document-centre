@@ -259,6 +259,9 @@ export interface RingBinderPreviewProps {
   tabPositions?: TabPosition[];
   colorFlags?: boolean[];
   rawPaths?: string[];
+  /** Signed URL of the uploaded front-cover thumbnail, painted in the
+   * binder's transparent pocket. Sourced OUTSIDE the open-sheet sequence. */
+  pocketCoverUrl?: string;
 }
 
 /* ══════════════════════════════════════════════════════════════
