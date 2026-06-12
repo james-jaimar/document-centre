@@ -427,6 +427,22 @@ export function buildPreviewSnapshot(input: {
   // blank_back, tab/tab_back, insert/insert_back).
   const isRingBinder = productType === "ring_binder";
 
+  // Ring binders: the uploaded front cover lives in the binder's transparent
+  // pocket (a hardware face), NOT as the first page of the inside sheet
+  // stack. Strip the leading front_cover entry (and the synthetic blank_back
+  // that follows a simplex single-page cover) from the open sequence so the
+  // first inside spread starts at body page 1.
+  let pocketCoverThumbnail: string | undefined;
+  if (isRingBinder && roles[0] === "front_cover") {
+    pocketCoverThumbnail = fp[0]?.thumbnailUrl || undefined;
+    fp.splice(0, 1);
+    roles.splice(0, 1);
+    if (roles[0] === "blank_back") {
+      fp.splice(0, 1);
+      roles.splice(0, 1);
+    }
+  }
+
   const hasBackCover = isBound && effects.backCover && effects.backCover !== "none";
   // Ring binders are hardware — they have no printed back cover sheet.
   const skipBackCoverCard = isRingBinder;
