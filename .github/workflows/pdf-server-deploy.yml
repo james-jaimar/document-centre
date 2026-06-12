@@ -592,7 +592,7 @@ jobs:
               key="${kv%%=*}"
               echo "| \`$key\` | \`${LIVE_EMAILS_ENV[$key]}\` |"
             done
-            echo "| \`MICROSOFT_OAUTH_CLIENT_FP_ACTUAL\` | \`${LIVE_EMAILS_ENV["MICROSOFT_OAUTH_CLIENT_FP_ACTUAL"]:-<not checked>}\` |"
+            echo "| \`MICROSOFT_OAUTH_CLIENT_FP_ACTUAL\` | \`${LIVE_EMAILS_ENV[MICROSOFT_OAUTH_CLIENT_FP_ACTUAL]:-<not checked>}\` |"
             for s in "${oauth_required_secrets[@]}"; do
               mounted="${LIVE_EMAILS_SECRETS[$s]:-<not mounted>}"
               echo "| \`$s\` (secret) | \`${mounted}\` |"
