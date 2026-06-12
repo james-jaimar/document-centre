@@ -43,6 +43,9 @@ export interface DocumentPreviewProps {
   scaleMode?: "fit" | "fill";
   /** TrimBox crop for clipping crop marks from inline PDF rendering */
   trimCrop?: TrimCrop;
+  /** Ring binders only: storage path of the cover thumbnail painted in the
+   * binder's transparent pocket. Signed alongside thumbnailPaths. */
+  pocketCoverPath?: string;
 }
 
 const BOUND_TYPES = new Set([
