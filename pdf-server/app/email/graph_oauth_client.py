@@ -83,7 +83,7 @@ def _refresh_access_token(creds: GraphOAuthCreds) -> str:
         raise PermanentSmtpError(
             f"graph_oauth_auth token {r.status_code} "
             f"(refresh_len={len(refresh_token)}, "
-            f"client_id_present={bool(creds.client_id)}, "
+            f"client_fp={_client_fp(creds.client_id)}, "
             f"client_secret_present={bool(creds.client_secret)}): "
             f"{r.text[:400]}"
         )
