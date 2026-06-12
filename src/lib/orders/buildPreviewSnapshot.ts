@@ -584,5 +584,6 @@ export function buildPreviewSnapshot(input: {
     tabPositions,
     displayPageNumbers,
     faceLabels,
+    pocketCoverThumbnail,
   };
 }
