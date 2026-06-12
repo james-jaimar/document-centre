@@ -290,8 +290,11 @@ Deno.serve(async (req) => {
         return json({ error: "Forbidden" }, 403);
       }
 
+      // Capture the SPA origin so the callback redirect lands back on the
+      // same host the popup was opened from (preview, custom domain, etc).
+      const reqOrigin = req.headers.get("origin") || resolveAppOrigin(req);
       const state = btoa(
-        JSON.stringify({ tenant_id: tenantId, caller_id: caller.id, branch_id: branchId, scope }),
+        JSON.stringify({ tenant_id: tenantId, caller_id: caller.id, branch_id: branchId, scope, origin: reqOrigin }),
       );
       const params = new URLSearchParams({
         client_id: clientId,
