@@ -453,7 +453,7 @@ export default function PreviewPanel({
   }, [sections, documents, isBound, isFold, productType]);
 
   // Build final page sequence with explicit roles + enforce physical alignment
-  const { finalPages, pageRoles: computedPageRoles } = useMemo(() => {
+  const { finalPages, pageRoles: computedPageRoles, pocketCoverPath } = useMemo(() => {
     const fp = [...pages];
     const roles: string[] = fp.map((p) => {
       if (p.pageIndex === -1 && p.section?.section_type === "insert") return "insert_back";
