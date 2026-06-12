@@ -24,12 +24,16 @@ from .errors import PermanentSmtpError, TransientSmtpError
 TOKEN_TIMEOUT = 20.0
 SEND_TIMEOUT = 60.0
 AUTHORITY = "https://login.microsoftonline.com/common"
-# For refresh, request a subset of what was consented at authorize-time
-# (offline_access + Mail.Send + User.Read). Asking for a SUPERSET — or for
-# scopes from a different resource — triggers AADSTS90013 "Invalid input
-# received from the user". Mail.Send + offline_access is all we actually
-# need to call /me/sendMail and rotate refresh tokens.
-SCOPES = "offline_access https://graph.microsoft.com/Mail.Send"
+# Refresh scopes MUST mirror what `microsoft-oauth-connect` requested at
+# authorize-time. Asking for a strict subset (e.g. dropping User.Read) has
+# been observed to trigger AADSTS90013 "Invalid input received from the
+# user" on /common's v2 token endpoint. Keep these three in lockstep with
+# the SCOPES constant in supabase/functions/microsoft-oauth-connect/index.ts.
+SCOPES = (
+    "offline_access "
+    "https://graph.microsoft.com/Mail.Send "
+    "https://graph.microsoft.com/User.Read"
+)
 
 
 @dataclass(frozen=True)
@@ -69,7 +73,13 @@ def _refresh_access_token(creds: GraphOAuthCreds) -> str:
         raise TransientSmtpError(f"graph_oauth token network: {exc}") from exc
     if r.status_code in (400, 401, 403):
         # invalid_grant means refresh_token revoked → permanent.
-        raise PermanentSmtpError(f"graph_oauth_auth token {r.status_code}: {r.text[:400]}")
+        raise PermanentSmtpError(
+            f"graph_oauth_auth token {r.status_code} "
+            f"(refresh_len={len(refresh_token)}, "
+            f"client_id_present={bool(creds.client_id)}, "
+            f"client_secret_present={bool(creds.client_secret)}): "
+            f"{r.text[:400]}"
+        )
     if not r.is_success:
         raise TransientSmtpError(f"graph_oauth token {r.status_code}: {r.text[:400]}")
     tok = r.json().get("access_token")

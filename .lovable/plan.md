@@ -1,74 +1,28 @@
-You’re right: this got over-engineered. The actual issue is that I split Microsoft mail into two competing paths:
+## Goal
 
-```text
-Tenant/branch mail:  standard delegated Microsoft OAuth connector -> graph_oauth -> /me/sendMail
-Platform mail:       separate app-only Graph setup -> graph -> /users/{mailbox}/sendMail
-```
+Get the platform Microsoft 365 mailbox (`hello@document-centre.com`) actually sending. The OAuth connect succeeds — only the refresh-token call from the worker fails with `AADSTS90013: Invalid input received from the user`.
 
-That second platform-only path is the mess. It needs extra Application permissions / admin consent / Exchange RBAC and is why you’re seeing the `Mail.Send application role` red box. It is not the simple connector flow you expected.
+## Root cause hypothesis
 
-Do I know what the issue is? Yes. The platform page was changed to prefer a new app-only Graph account instead of reusing the existing Microsoft OAuth connector with its own platform-scoped credentials.
+The worker requests fewer scopes at refresh time than were consented at authorize time. Microsoft can return AADSTS90013 in that mismatch. Aligning refresh scopes to the original consent set is the documented safe pattern.
 
-## Plan
+Secondary risk: the refresh token is read from Vault and could carry hidden whitespace; we already `.strip()` it, but we don't log the length, so a truncated/empty token would look identical to a bad-input error.
 
-1. **Make Microsoft 365 one connector again**
-   - Use the existing `microsoft-oauth-connect` OAuth flow for platform mail as well as tenant/branch mail.
-   - Platform connection will be a normal `email_accounts` row with:
-     ```text
-     tenant_id = null
-     branch_id = null
-     transport = graph_oauth
-     oauth_email = hello@document-centre.com
-     own refresh token secret in Vault
-     is_default = true
-     ```
-   - Tenant/branch connections remain separate rows with their own refresh tokens, even if the email address happens to be the same.
+## Changes (code only — no schema, no UI behaviour change)
 
-2. **Strip the platform email settings UI back to simple controls**
-   - Remove the app-only wording, secret badges, “Re-provision”, “Diagnose Graph”, token-role panels, and Exchange RBAC instructions.
-   - Replace them with the same simple pattern used in tenant settings:
-     - “Sign in with Microsoft”
-     - connected mailbox display
-     - “Send test”
-     - “Disconnect”
-   - The platform button will call the existing connector with `scope: "platform"`.
+1. `pdf-server/app/email/graph_oauth_client.py`
+   - Change `SCOPES` to mirror the consent set used by `microsoft-oauth-connect`:
+     `offline_access https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read`
+   - On refresh failure, include `refresh_len=<n>` and `client_id_present=<bool>` in the raised error message (no secrets logged) so the Sent Mail row tells us if the token was empty/short.
 
-3. **Stop platform mail from preferring the app-only account**
-   - Update platform account resolution so platform-level emails use the platform default account, and the expected Microsoft path is `graph_oauth`.
-   - Remove the special fallback that hunts for any `transport in (graph, graph_oauth)` outside the platform scope, because that can blur tenant/platform ownership.
+2. No changes to `microsoft-oauth-connect`, `credentials.py`, the UI, or the database.
 
-4. **Remove the app-only Graph setup surface**
-   - Remove the `platform-graph-configure` dependency from the frontend.
-   - Leave low-level `transport='graph'` sender code only if still needed for existing legacy rows; otherwise remove the unused edge function from deployment.
-   - The platform no longer asks for `MICROSOFT_GRAPH_TENANT_ID`, `MICROSOFT_GRAPH_CLIENT_ID`, or `MICROSOFT_GRAPH_CLIENT_SECRET` for sending platform mail.
+## Validation
 
-5. **Fix Microsoft OAuth refresh consistency**
-   - Keep the Microsoft OAuth connector on the documented delegated scopes:
-     ```text
-     offline_access
-     https://graph.microsoft.com/Mail.Send
-     https://graph.microsoft.com/User.Read
-     ```
-   - Ensure the worker refresh request uses the same fully-qualified Graph scopes, not a mixed shorthand scope string.
-   - Send via `/me/sendMail`, with no forced `from` field.
+1. After deploy, click "Send test" again from Platform Settings → Email.
+2. Expected: outbox row turns `sent`. If it still fails, the new error string will show `refresh_len` so we know whether to look at Vault storage vs Microsoft-side.
 
-6. **Clean up the visible state**
-   - Platform Settings should show only the platform OAuth mailbox, not app-only diagnostics.
-   - Sent Mail continues to show platform-level outbox rows where `tenant_id is null`.
+## Out of scope
 
-7. **Validation**
-   - Connect `hello@document-centre.com` from Platform Settings using Microsoft sign-in.
-   - Send a platform test email.
-   - Confirm the outbox row uses `provider = graph_oauth` and moves to sent, or shows only a normal OAuth refresh/send error if Microsoft rejects it.
-
-## Result
-
-After this, Microsoft mail is simple again:
-
-```text
-Each scope connects its own Microsoft account.
-Each connected account stores its own refresh token.
-Same email address is allowed because scope/row/credential are separate.
-Sending uses the standard delegated Graph connector.
-No app-only permissions, no Exchange RBAC, no token-role diagnostics.
-```
+- No new connectors, no app-only path, no Exchange RBAC.
+- Not changing the multi-tenant Azure app registration.
