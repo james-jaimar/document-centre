@@ -348,26 +348,27 @@ jobs:
               --to-latest --quiet
           }
 
-          # Heavy: pin min=1 so prepare_for_product doesn't pay a cold
-          # start on every customer upload (it sits in the critical path
-          # before generate_previews). 2 vCPU × 4 GiB × 1 instance = ~£20/mo
-          # for the SLA improvement.
-          deploy_worker pdf-worker-heavy  worker-heavy-http  2 4Gi  5 1
-          # Light worker: customer-facing thumbnail render. 4 vCPU × 4 GiB
-          # with concurrency=1 — the batch render-first pipeline uses all
-          # 4 cores via PREVIEW_GS_THREADS=4 + RENDER_CPU_CONCURRENCY=4
-          # and 8 IO threads for parallel S3 uploads. min=1 keeps the
-          # worker warm so the first thumbnail of a quiet period doesn't
-          # cold-start. PREVIEW_PIPELINE_MODE=batch is the render-first
-          # single-GS-invocation path; PREVIEW_FORCE_SEQUENTIAL=false is
-          # the rollback kill-switch (set true to drop back to the legacy
-          # per-page path without redeploying).
-          deploy_worker pdf-worker-light  worker-light-http  4 4Gi  20 1 \
+          # Right-sized for a ~200-store target (see .lovable/plan.md).
+          # max-instances is HEADROOM — Cloud Run only bills running instances.
+          #
+          # Heavy: LibreOffice/imposition for store owners. concurrency=2
+          # packs two office conversions per instance; max=5 absorbs bursts;
+          # min=0 eliminates the £20/mo idle pin. First job of a quiet
+          # period pays ~10s cold start — acceptable for the admin side.
+          deploy_worker pdf-worker-heavy  worker-heavy-http  2 4Gi  5 0 2
+          # Light: customer-facing preview render. concurrency=4 packs 4
+          # parallel renders onto each 4-vCPU instance via the batch
+          # pipeline; max=50 = up to 200 concurrent renders for the "all
+          # stores upload at once" worst case. min=0 — cold start ~6–10s,
+          # bill scales with actual volume, not the ceiling.
+          # PREVIEW_PIPELINE_MODE=batch is the render-first single-GS path;
+          # PREVIEW_FORCE_SEQUENTIAL=false is the rollback kill-switch.
+          deploy_worker pdf-worker-light  worker-light-http  4 4Gi  50 0 4 \
             "PREVIEW_PIPELINE_MODE=batch,PREVIEW_FORCE_SEQUENTIAL=false,PREVIEW_GS_THREADS=4,RENDER_CPU_CONCURRENCY=4,RENDER_IO_CONCURRENCY=8"
-          # Emails: bumped max-instances 10 → 20 and pinned min=1 so the
-          # first email after a quiet period doesn't pay a cold start.
-          # 512 MiB × 1 min-instance ≈ trivial cost vs. SMTP latency saved.
-          deploy_worker pdf-worker-emails worker-emails-http 1 512Mi 20 1
+          # Emails: pure I/O. concurrency=8 per instance, max=10. min=1
+          # kept warm (~£2–3/mo) so transactional email never cold-starts.
+          deploy_worker pdf-worker-emails worker-emails-http 1 512Mi 10 1 8
+
 
           # Per-tenant OAuth client creds for self-serve mailbox connect.
           # Only the emails worker needs them; only required when a tenant
