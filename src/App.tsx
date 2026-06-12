@@ -30,6 +30,7 @@ import PrivacyPolicy from "@/pages/legal/PrivacyPolicy";
 import TermsOfService from "@/pages/legal/TermsOfService";
 import PlatformDemoActivity from "@/pages/platform/PlatformDemoActivity";
 import MobileUpload from "@/pages/MobileUpload";
+import MicrosoftCallbackResult from "@/pages/oauth/MicrosoftCallbackResult";
 
 // Customer
 import CustomerDashboard from "@/pages/dashboard/CustomerDashboard";
