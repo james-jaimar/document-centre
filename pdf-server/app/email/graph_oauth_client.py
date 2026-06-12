@@ -12,6 +12,7 @@ Document Centre mailbox; new tenants use this OAuth path.
 from __future__ import annotations
 
 import base64
+import hashlib
 import os
 from dataclasses import dataclass
 from typing import Iterable, List, Optional
@@ -20,6 +21,17 @@ import httpx
 
 from .attachments import LoadedAttachment
 from .errors import PermanentSmtpError, TransientSmtpError
+
+
+def _client_fp(client_id: str) -> str:
+    """Non-secret fingerprint of the OAuth client_id (first 8 hex of sha256).
+
+    Lets us cross-check that the Edge Function and Cloud Run worker use the
+    SAME Entra app without ever logging the client_id itself.
+    """
+    if not client_id:
+        return "absent"
+    return hashlib.sha256(client_id.encode("utf-8")).hexdigest()[:8]
 
 TOKEN_TIMEOUT = 20.0
 SEND_TIMEOUT = 60.0
