@@ -358,12 +358,15 @@ jobs:
           deploy_worker pdf-worker-heavy  worker-heavy-http  2 4Gi  5 0 2
           # Light: customer-facing preview render. concurrency=4 packs 4
           # parallel renders onto each 4-vCPU instance via the batch
-          # pipeline; max=50 = up to 200 concurrent renders for the "all
-          # stores upload at once" worst case. min=0 — cold start ~6–10s,
-          # bill scales with actual volume, not the ceiling.
+          # pipeline; max=32 = up to 128 concurrent renders for the "all
+          # stores upload at once" worst case. The 32-instance ceiling is
+          # the africa-south1 CpuAllocPerProjectRegion quota cap
+          # (4 vCPU × 32 = 128k mCPU = 128 vCPU, the regional allowance).
+          # Request a quota bump if we ever sustain >120 concurrent renders.
+          # min=0 — cold start ~6–10s, bill scales with actual volume.
           # PREVIEW_PIPELINE_MODE=batch is the render-first single-GS path;
           # PREVIEW_FORCE_SEQUENTIAL=false is the rollback kill-switch.
-          deploy_worker pdf-worker-light  worker-light-http  4 4Gi  50 0 4 \
+          deploy_worker pdf-worker-light  worker-light-http  4 4Gi  32 0 4 \
             "PREVIEW_PIPELINE_MODE=batch,PREVIEW_FORCE_SEQUENTIAL=false,PREVIEW_GS_THREADS=4,RENDER_CPU_CONCURRENCY=4,RENDER_IO_CONCURRENCY=8"
           # Emails: pure I/O. concurrency=8 per instance, max=10. min=1
           # kept warm (~£2–3/mo) so transactional email never cold-starts.
