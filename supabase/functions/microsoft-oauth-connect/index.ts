@@ -135,26 +135,31 @@ Deno.serve(async (req) => {
 
   // ── GET: Microsoft consent redirect ──
   if (req.method === "GET") {
+    // Default redirect origin if state is missing/broken.
+    let appOrigin = resolveAppOrigin(req);
+    const fail = (err: string) =>
+      redirectToCallbackResult(appOrigin, { success: "false", error: err });
     try {
       const reqUrl = new URL(req.url);
       const code = reqUrl.searchParams.get("code");
       const stateRaw = reqUrl.searchParams.get("state");
       const oauthErr = reqUrl.searchParams.get("error_description") || reqUrl.searchParams.get("error");
-      if (oauthErr) return htmlClosePage({ success: false, error: oauthErr });
-      if (!code || !stateRaw) return htmlClosePage({ success: false, error: "Missing code or state" });
+      if (oauthErr) return fail(oauthErr);
+      if (!code || !stateRaw) return fail("Missing code or state");
 
-      let state: { tenant_id: string | null; caller_id: string; branch_id?: string | null; scope?: "tenant" | "platform" };
+      let state: { tenant_id: string | null; caller_id: string; branch_id?: string | null; scope?: "tenant" | "platform"; origin?: string };
       try {
         state = JSON.parse(atob(stateRaw));
       } catch {
-        return htmlClosePage({ success: false, error: "Invalid state" });
+        return fail("Invalid state");
       }
+      if (state.origin) appOrigin = state.origin;
       const branchId = state.branch_id ?? null;
       const isPlatform = state.scope === "platform" || state.tenant_id === null;
       const tenantId = isPlatform ? null : state.tenant_id;
 
       if (!(await assertAuthorized(admin, state.caller_id, tenantId, branchId))) {
-        return htmlClosePage({ success: false, error: "Forbidden" });
+        return fail("Forbidden");
       }
 
       const tokenRes = await fetch(`${AUTHORITY}/oauth2/v2.0/token`, {
@@ -171,11 +176,9 @@ Deno.serve(async (req) => {
       });
       const tokenData = await tokenRes.json();
       if (!tokenRes.ok || !tokenData.refresh_token) {
-        console.error("Microsoft token exchange failed:", tokenData);
-        return htmlClosePage({
-          success: false,
-          error: tokenData.error_description || "Token exchange failed",
-        });
+        const fp = await clientIdFingerprint(clientId);
+        console.error("Microsoft token exchange failed (client_fp=" + fp + "):", tokenData);
+        return fail(tokenData.error_description || "Token exchange failed");
       }
 
       // Lookup mailbox address.
@@ -192,7 +195,7 @@ Deno.serve(async (req) => {
         // fall through
       }
       if (!mailbox) {
-        return htmlClosePage({ success: false, error: "Could not determine mailbox address" });
+        return fail("Could not determine mailbox address");
       }
 
       const secretName = `graph_oauth:${isPlatform ? "platform" : tenantId}:${crypto.randomUUID()}`;
@@ -200,7 +203,7 @@ Deno.serve(async (req) => {
         p_name: secretName,
         p_secret: tokenData.refresh_token,
       });
-      if (vErr) return htmlClosePage({ success: false, error: `Vault error: ${vErr.message}` });
+      if (vErr) return fail(`Vault error: ${vErr.message}`);
 
       let existingQuery = admin
         .from("email_accounts")
@@ -231,7 +234,7 @@ Deno.serve(async (req) => {
             is_active: true,
           })
           .eq("id", existing.id);
-        if (error) return htmlClosePage({ success: false, error: error.message });
+        if (error) return fail(error.message);
       } else {
         const label = isPlatform
           ? "Document Centre Platform"
@@ -246,21 +249,22 @@ Deno.serve(async (req) => {
           oauth_refresh_token_secret_id: secretId,
           oauth_email: mailbox,
           is_active: true,
-          // For platform: mark as default (single platform-default unique index enforces it).
-          // For branch: mirror existing behaviour.
           is_default: isPlatform ? true : !!branchId,
           last_verified_at: new Date().toISOString(),
         });
-        if (error) return htmlClosePage({ success: false, error: error.message });
+        if (error) return fail(error.message);
       }
 
-      return htmlClosePage({ success: true, email: mailbox });
+      const fp = await clientIdFingerprint(clientId);
+      console.log(`microsoft-oauth-connect: connected ${mailbox} (client_fp=${fp})`);
+      return redirectToCallbackResult(appOrigin, { success: "true", email: mailbox });
 
     } catch (e) {
       console.error("microsoft-oauth-connect GET error:", e);
-      return htmlClosePage({ success: false, error: (e as Error).message });
+      return fail((e as Error).message);
     }
   }
+
 
   // ── POST: authorize / disconnect ──
   try {
