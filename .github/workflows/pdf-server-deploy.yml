@@ -327,7 +327,7 @@ jobs:
               --set-secrets="$SECRET_FLAG" \
               --memory="$mem" --cpu="$cpu" \
               --cpu-boost \
-              --concurrency=1 \
+              --concurrency="$concurrency" \
               --min-instances="$min" --max-instances="$max" \
               --timeout=900 \
               --no-allow-unauthenticated \
