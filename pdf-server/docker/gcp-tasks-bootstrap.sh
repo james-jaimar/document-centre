@@ -59,14 +59,17 @@ for q in "${QUEUES[@]}"; do
 done
 
 # Per-queue rate / retry tuning.
+# Per-queue rate / retry tuning. max-concurrent-dispatches matches the
+# Cloud Run service max-instances × concurrency so Cloud Tasks doesn't
+# throttle below what the workers can absorb. See .lovable/plan.md.
 gcloud tasks queues update documents-heavy --location="$TASKS_REGION" --project="$PROJECT_ID" \
-  --max-dispatches-per-second=5 --max-concurrent-dispatches=10 \
+  --max-dispatches-per-second=10 --max-concurrent-dispatches=10 \
   --max-attempts=5 --min-backoff=10s --max-backoff=600s --quiet
 gcloud tasks queues update documents-light --location="$TASKS_REGION" --project="$PROJECT_ID" \
-  --max-dispatches-per-second=10 --max-concurrent-dispatches=10 \
+  --max-dispatches-per-second=50 --max-concurrent-dispatches=200 \
   --max-attempts=5 --min-backoff=5s --max-backoff=300s --quiet
 gcloud tasks queues update emails-default --location="$TASKS_REGION" --project="$PROJECT_ID" \
-  --max-dispatches-per-second=10 --max-concurrent-dispatches=20 \
+  --max-dispatches-per-second=20 --max-concurrent-dispatches=80 \
   --max-attempts=8 --min-backoff=30s --max-backoff=3600s --quiet
 gcloud tasks queues update emails-control --location="$TASKS_REGION" --project="$PROJECT_ID" \
   --max-dispatches-per-second=2 --max-concurrent-dispatches=2 \
