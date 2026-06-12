@@ -26,13 +26,19 @@ const json = (d: unknown, s = 200) =>
 // Authority. `common` allows work + school + personal MSAs. Switch to
 // `organizations` if you ever want to lock out personal accounts.
 const AUTHORITY = "https://login.microsoftonline.com/common";
-// Scopes consented at authorize-time. We use fully-qualified resource scopes
-// (https://graph.microsoft.com/...) so the refresh-token call on the Python
-// worker can request a matching subset without triggering AADSTS90013.
-// User.Read is requested only to look up the mailbox address during connect;
-// the worker only ever asks Microsoft for Mail.Send + offline_access at refresh.
-const SCOPES =
-  "offline_access https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read";
+// Microsoft's documented delegated Graph scope strings. Use the SAME string
+// for authorize, code exchange, and refresh. Do not get clever with
+// fully-qualified resource URIs — Microsoft's own examples use the short form.
+const SCOPES = "offline_access Mail.Send User.Read";
+
+// Non-secret fingerprint of the OAuth client ID so we can prove the Edge
+// Function and the Cloud Run worker are using the SAME Entra app without
+// exposing the client_id itself in logs/UI.
+async function clientIdFingerprint(clientId: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(clientId));
+  const hex = Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return hex.slice(0, 8);
+}
 
 async function assertAuthorized(
   admin: any,
@@ -69,52 +75,40 @@ async function assertAuthorized(
 }
 
 
-function htmlClosePage(payload: Record<string, unknown>) {
-  // Posted to window.opener so the dashboard can refresh + toast.
-  const safe = JSON.stringify({ type: "microsoft-oauth-callback", ...payload })
-    .replace(/</g, "\\u003c");
-  const success = (payload as any).success === true;
-  const email = (payload as any).email as string | undefined;
-  const error = (payload as any).error as string | undefined;
-  const accent = success ? "#16a34a" : "#dc2626";
-  const icon = success
-    ? `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="${accent}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>`
-    : `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="${accent}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
-  const heading = success ? "Mailbox connected" : "Connection failed";
-  const detail = success
-    ? (email ? `<p style="margin:8px 0 0;color:#475569;font-size:14px">${email}</p>` : "")
-    : (error ? `<p style="margin:8px 0 0;color:#991b1b;font-size:13px;word-break:break-word">${error.replace(/</g, "&lt;")}</p>` : "");
-  const body = `<!doctype html>
-<html><head><meta charset="utf-8"><title>${heading}</title>
-<style>
-  html,body{margin:0;padding:0;height:100%;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;color:#0f172a}
-  .wrap{min-height:100%;display:flex;align-items:center;justify-content:center;padding:24px}
-  .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:32px;max-width:380px;width:100%;text-align:center;box-shadow:0 1px 2px rgba(15,23,42,.04)}
-  h1{margin:16px 0 4px;font-size:18px;font-weight:600}
-  .hint{margin-top:20px;font-size:12px;color:#94a3b8}
-</style>
-</head><body>
-<div class="wrap"><div class="card">
-  ${icon}
-  <h1>${heading}</h1>
-  ${detail}
-  <p class="hint">This window will close automatically.</p>
-</div></div>
-<script>
-  try {
-    var payload = ${safe};
-    if (window.opener && !window.opener.closed) {
-      window.opener.postMessage(payload, "*");
-    }
-  } catch (e) {}
-  setTimeout(function(){ window.close(); }, ${success ? 600 : 2500});
-</script>
-</body></html>`;
-  return new Response(body, {
-    status: 200,
-    headers: { ...corsHeaders, "Content-Type": "text/html; charset=utf-8" },
+// Supabase Edge Functions rewrite text/html GET responses to text/plain
+// (documented behaviour), which is why our self-rendered close page showed
+// as raw source. Redirect to a normal React route in the app instead — it
+// renders the result UI and postMessages the opener before closing.
+function redirectToCallbackResult(
+  origin: string,
+  payload: Record<string, unknown>,
+) {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(payload)) {
+    if (v === undefined || v === null) continue;
+    params.set(k, String(v));
+  }
+  const target = `${origin}/oauth/microsoft/callback-result?${params.toString()}`;
+  return new Response(null, {
+    status: 302,
+    headers: { ...corsHeaders, Location: target },
   });
 }
+
+// Derive the SPA origin to redirect back to. Prefer the Origin/Referer header
+// (the popup was opened from the dashboard); fall back to the configured
+// public app URL secret.
+function resolveAppOrigin(req: Request): string {
+  const ref = req.headers.get("referer");
+  if (ref) {
+    try { return new URL(ref).origin; } catch { /* ignore */ }
+  }
+  const origin = req.headers.get("origin");
+  if (origin) return origin;
+  return Deno.env.get("PUBLIC_APP_URL") || "https://document-centre.com";
+}
+
+
 
 
 Deno.serve(async (req) => {
@@ -141,26 +135,31 @@ Deno.serve(async (req) => {
 
   // ── GET: Microsoft consent redirect ──
   if (req.method === "GET") {
+    // Default redirect origin if state is missing/broken.
+    let appOrigin = resolveAppOrigin(req);
+    const fail = (err: string) =>
+      redirectToCallbackResult(appOrigin, { success: "false", error: err });
     try {
       const reqUrl = new URL(req.url);
       const code = reqUrl.searchParams.get("code");
       const stateRaw = reqUrl.searchParams.get("state");
       const oauthErr = reqUrl.searchParams.get("error_description") || reqUrl.searchParams.get("error");
-      if (oauthErr) return htmlClosePage({ success: false, error: oauthErr });
-      if (!code || !stateRaw) return htmlClosePage({ success: false, error: "Missing code or state" });
+      if (oauthErr) return fail(oauthErr);
+      if (!code || !stateRaw) return fail("Missing code or state");
 
-      let state: { tenant_id: string | null; caller_id: string; branch_id?: string | null; scope?: "tenant" | "platform" };
+      let state: { tenant_id: string | null; caller_id: string; branch_id?: string | null; scope?: "tenant" | "platform"; origin?: string };
       try {
         state = JSON.parse(atob(stateRaw));
       } catch {
-        return htmlClosePage({ success: false, error: "Invalid state" });
+        return fail("Invalid state");
       }
+      if (state.origin) appOrigin = state.origin;
       const branchId = state.branch_id ?? null;
       const isPlatform = state.scope === "platform" || state.tenant_id === null;
       const tenantId = isPlatform ? null : state.tenant_id;
 
       if (!(await assertAuthorized(admin, state.caller_id, tenantId, branchId))) {
-        return htmlClosePage({ success: false, error: "Forbidden" });
+        return fail("Forbidden");
       }
 
       const tokenRes = await fetch(`${AUTHORITY}/oauth2/v2.0/token`, {
@@ -177,11 +176,9 @@ Deno.serve(async (req) => {
       });
       const tokenData = await tokenRes.json();
       if (!tokenRes.ok || !tokenData.refresh_token) {
-        console.error("Microsoft token exchange failed:", tokenData);
-        return htmlClosePage({
-          success: false,
-          error: tokenData.error_description || "Token exchange failed",
-        });
+        const fp = await clientIdFingerprint(clientId);
+        console.error("Microsoft token exchange failed (client_fp=" + fp + "):", tokenData);
+        return fail(tokenData.error_description || "Token exchange failed");
       }
 
       // Lookup mailbox address.
@@ -198,7 +195,7 @@ Deno.serve(async (req) => {
         // fall through
       }
       if (!mailbox) {
-        return htmlClosePage({ success: false, error: "Could not determine mailbox address" });
+        return fail("Could not determine mailbox address");
       }
 
       const secretName = `graph_oauth:${isPlatform ? "platform" : tenantId}:${crypto.randomUUID()}`;
@@ -206,7 +203,7 @@ Deno.serve(async (req) => {
         p_name: secretName,
         p_secret: tokenData.refresh_token,
       });
-      if (vErr) return htmlClosePage({ success: false, error: `Vault error: ${vErr.message}` });
+      if (vErr) return fail(`Vault error: ${vErr.message}`);
 
       let existingQuery = admin
         .from("email_accounts")
@@ -237,7 +234,7 @@ Deno.serve(async (req) => {
             is_active: true,
           })
           .eq("id", existing.id);
-        if (error) return htmlClosePage({ success: false, error: error.message });
+        if (error) return fail(error.message);
       } else {
         const label = isPlatform
           ? "Document Centre Platform"
@@ -252,21 +249,22 @@ Deno.serve(async (req) => {
           oauth_refresh_token_secret_id: secretId,
           oauth_email: mailbox,
           is_active: true,
-          // For platform: mark as default (single platform-default unique index enforces it).
-          // For branch: mirror existing behaviour.
           is_default: isPlatform ? true : !!branchId,
           last_verified_at: new Date().toISOString(),
         });
-        if (error) return htmlClosePage({ success: false, error: error.message });
+        if (error) return fail(error.message);
       }
 
-      return htmlClosePage({ success: true, email: mailbox });
+      const fp = await clientIdFingerprint(clientId);
+      console.log(`microsoft-oauth-connect: connected ${mailbox} (client_fp=${fp})`);
+      return redirectToCallbackResult(appOrigin, { success: "true", email: mailbox });
 
     } catch (e) {
       console.error("microsoft-oauth-connect GET error:", e);
-      return htmlClosePage({ success: false, error: (e as Error).message });
+      return fail((e as Error).message);
     }
   }
+
 
   // ── POST: authorize / disconnect ──
   try {
@@ -292,8 +290,11 @@ Deno.serve(async (req) => {
         return json({ error: "Forbidden" }, 403);
       }
 
+      // Capture the SPA origin so the callback redirect lands back on the
+      // same host the popup was opened from (preview, custom domain, etc).
+      const reqOrigin = req.headers.get("origin") || resolveAppOrigin(req);
       const state = btoa(
-        JSON.stringify({ tenant_id: tenantId, caller_id: caller.id, branch_id: branchId, scope }),
+        JSON.stringify({ tenant_id: tenantId, caller_id: caller.id, branch_id: branchId, scope, origin: reqOrigin }),
       );
       const params = new URLSearchParams({
         client_id: clientId,

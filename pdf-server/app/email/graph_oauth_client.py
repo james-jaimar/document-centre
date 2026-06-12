@@ -12,6 +12,7 @@ Document Centre mailbox; new tenants use this OAuth path.
 from __future__ import annotations
 
 import base64
+import hashlib
 import os
 from dataclasses import dataclass
 from typing import Iterable, List, Optional
@@ -21,19 +22,25 @@ import httpx
 from .attachments import LoadedAttachment
 from .errors import PermanentSmtpError, TransientSmtpError
 
+
+def _client_fp(client_id: str) -> str:
+    """Non-secret fingerprint of the OAuth client_id (first 8 hex of sha256).
+
+    Lets us cross-check that the Edge Function and Cloud Run worker use the
+    SAME Entra app without ever logging the client_id itself.
+    """
+    if not client_id:
+        return "absent"
+    return hashlib.sha256(client_id.encode("utf-8")).hexdigest()[:8]
+
 TOKEN_TIMEOUT = 20.0
 SEND_TIMEOUT = 60.0
 AUTHORITY = "https://login.microsoftonline.com/common"
-# Refresh scopes MUST mirror what `microsoft-oauth-connect` requested at
-# authorize-time. Asking for a strict subset (e.g. dropping User.Read) has
-# been observed to trigger AADSTS90013 "Invalid input received from the
-# user" on /common's v2 token endpoint. Keep these three in lockstep with
-# the SCOPES constant in supabase/functions/microsoft-oauth-connect/index.ts.
-SCOPES = (
-    "offline_access "
-    "https://graph.microsoft.com/Mail.Send "
-    "https://graph.microsoft.com/User.Read"
-)
+# Microsoft's documented delegated Graph scope string. Use the SAME string
+# the Edge Function used at authorize-time. Refresh scope is optional and
+# must be equivalent-or-subset; the short form `Mail.Send User.Read` is what
+# Microsoft's own examples show for delegated Graph access.
+SCOPES = "offline_access Mail.Send User.Read"
 
 
 @dataclass(frozen=True)
@@ -76,7 +83,7 @@ def _refresh_access_token(creds: GraphOAuthCreds) -> str:
         raise PermanentSmtpError(
             f"graph_oauth_auth token {r.status_code} "
             f"(refresh_len={len(refresh_token)}, "
-            f"client_id_present={bool(creds.client_id)}, "
+            f"client_fp={_client_fp(creds.client_id)}, "
             f"client_secret_present={bool(creds.client_secret)}): "
             f"{r.text[:400]}"
         )
