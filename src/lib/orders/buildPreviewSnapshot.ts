@@ -365,6 +365,9 @@ export interface PreviewSnapshot {
   tabPositions: TabPosition[];
   displayPageNumbers: (number | null)[];
   faceLabels: string[];
+  /** Ring binders only: uploaded front-cover thumbnail painted in the
+   * binder's transparent pocket. Not part of the open-sheet sequence. */
+  pocketCoverThumbnail?: string;
 }
 
 export function buildPreviewSnapshot(input: {
