@@ -5,8 +5,9 @@
 #   ROLE=api              → uvicorn FastAPI server (port 8000)
 #   ROLE=worker-heavy     → Celery worker for imposition / large PDF assembly
 #   ROLE=worker-light     → Celery worker for thumbnails / preflight / conversions
-#   ROLE=worker-emails    → Celery worker for SMTP send (kept on VPS for Phase 1+2)
-#   ROLE=listener-emails  → Postgres LISTEN/NOTIFY email dispatcher (VPS-only for now)
+#   ROLE=worker-emails-http → Cloud Run email worker (Cloud Tasks push)
+#   ROLE=worker-emails      → disabled legacy VPS Celery email worker
+#   ROLE=listener-emails    → disabled legacy VPS LISTEN/NOTIFY dispatcher
 #   ROLE=beat             → Celery beat scheduler
 #
 # Versions are pinned against pdf-server/docker/MANIFEST.md.

@@ -51,7 +51,9 @@ case "$ROLE" in
           --timeout-keep-alive 30
         ;;
     esac
-    # Legacy Celery worker roles (VPS). Kept for fallback during cutover.
+    # Legacy Celery worker roles. Email delivery is Cloud Run only; refusing
+    # `worker-emails` prevents an old VPS/container from racing the canonical
+    # pdf-worker-emails service with stale OAuth secrets.
     case "$ROLE" in
       worker-heavy)
         exec celery -A app.worker.celery_app worker \
@@ -68,21 +70,16 @@ case "$ROLE" in
           --loglevel="${LOG_LEVEL:-INFO}"
         ;;
       worker-emails)
-        exec celery -A app.worker.celery_app worker \
-          -Q emails-default,emails-control -n "emails@%h" -P prefork \
-          --concurrency="${CELERY_EMAILS_CONCURRENCY:-16}" \
-          --max-tasks-per-child=500 --max-memory-per-child=400000 \
-          --loglevel="${LOG_LEVEL:-INFO}"
+        echo "[entrypoint] ROLE=worker-emails is disabled; email sending is Cloud Run only (use worker-emails-http)." >&2
+        exit 78
         ;;
     esac
     ;;
 
 
   listener-emails)
-    # Postgres LISTEN/NOTIFY → primary email dispatch path. Not deployed to
-    # Cloud Run in Phase 2 (stays on VPS); image still ships the role so
-    # Phase 5 cutover only needs an env-var flip.
-    exec python -m app.email.listener
+    echo "[entrypoint] ROLE=listener-emails is disabled; email notifications go to Cloud Run /internal/email/notify." >&2
+    exit 78
     ;;
 
   beat)

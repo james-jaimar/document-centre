@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Install / refresh /etc/systemd/system/document-centre-worker-emails.service
-# from the canonical unit at
-# pdf-server/deploy/systemd/document-centre-worker-emails.service.
+# Disable the legacy VPS email worker. Email sending is Cloud Run only.
 #
 # Idempotent. Safe to re-run.
 #
@@ -45,39 +43,11 @@ if [[ "$NEEDS_INSTALL" -eq 1 ]]; then
   systemctl daemon-reload
 fi
 
-echo "systemctl enable ${UNIT_NAME}"
-systemctl enable "$UNIT_NAME" >/dev/null
+echo "systemctl disable ${UNIT_NAME}"
+systemctl disable "$UNIT_NAME" >/dev/null 2>&1 || true
 
-echo "systemctl restart ${UNIT_NAME}"
-systemctl restart "$UNIT_NAME"
-
-echo -n "Waiting for worker to become active"
-ACTIVE=0
-for i in $(seq 1 30); do
-  if systemctl is-active --quiet "$UNIT_NAME"; then
-    ACTIVE=1
-    echo " — OK"
-    break
-  fi
-  echo -n "."
-  sleep 1
-done
-
-if [[ "$ACTIVE" -ne 1 ]]; then
-  echo
-  echo "FAIL: worker did not become active within 30s." >&2
-  systemctl status --no-pager --lines=0 "$UNIT_NAME" >&2 || true
-  echo "----- last 50 journal lines -----" >&2
-  journalctl -u "$UNIT_NAME" --no-pager -n 50 >&2 || true
-  exit 1
-fi
+echo "systemctl stop ${UNIT_NAME}"
+systemctl stop "$UNIT_NAME" >/dev/null 2>&1 || true
 
 echo
-echo "Registered tasks (email.*):"
-sudo -u root /opt/document-centre-api/.venv/bin/celery \
-  -A app.worker.celery_app inspect registered 2>/dev/null \
-  | grep -E '^\s+\* email\.' || echo "  (no email.* tasks reported — check beat schedule and app.tasks.email_tasks import)"
-
-echo
-echo "Done. Unit installed, enabled, restarted."
-echo "Tail logs with: journalctl -u ${UNIT_NAME} -n 100 -f"
+echo "Done. Legacy VPS email worker is installed as a disabled guard unit and stopped."

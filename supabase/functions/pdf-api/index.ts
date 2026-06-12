@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
       actorRole = "platform_admin";
     }
 
-    const baseUrl = Deno.env.get("DOCUMENT_CENTRE_API_URL")!.replace(/\/+$/, "");
+    const baseUrl = requireCloudRunApiBase();
     const fullUrl = `${baseUrl}/${path}`;
     const httpMethod = (forwardMethod || "POST").toUpperCase();
 
@@ -162,3 +162,11 @@ Deno.serve(async (req) => {
     });
   }
 });
+
+function requireCloudRunApiBase(): string {
+  const raw = (Deno.env.get("DOCUMENT_CENTRE_API_URL") ?? "").replace(/\/+$/, "");
+  if (!raw) throw new Error("DOCUMENT_CENTRE_API_URL missing");
+  const host = new URL(raw).hostname;
+  if (host === "api.document-centre.com" || host.endsWith(".run.app")) return raw;
+  throw new Error(`DOCUMENT_CENTRE_API_URL must point to Cloud Run, got ${host}`);
+}

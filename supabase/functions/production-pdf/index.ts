@@ -112,9 +112,8 @@ Deno.serve(async (req) => {
     }
 
 
-    // Use the same base URL as the pdf-api proxy (single source of truth).
-    // Falls back to the legacy VPS_PDF_API_URL secret if DOCUMENT_CENTRE_API_URL is unset.
-    const apiUrl = (Deno.env.get("DOCUMENT_CENTRE_API_URL") ?? Deno.env.get("VPS_PDF_API_URL") ?? "").replace(/\/+$/, "");
+    // Use the same Cloud Run base URL as the pdf-api proxy (single source of truth).
+    const apiUrl = requireCloudRunApiBase();
     const apiKey = Deno.env.get("VPS_PDF_API_KEY");
     if (!apiUrl) return json({ error: "PDF API not configured (DOCUMENT_CENTRE_API_URL missing)" }, 500);
 
@@ -181,3 +180,11 @@ Deno.serve(async (req) => {
     return json({ error: (e as Error).message ?? "Internal error" }, 500);
   }
 });
+
+function requireCloudRunApiBase(): string {
+  const raw = (Deno.env.get("DOCUMENT_CENTRE_API_URL") ?? "").replace(/\/+$/, "");
+  if (!raw) return "";
+  const host = new URL(raw).hostname;
+  if (host === "api.document-centre.com" || host.endsWith(".run.app")) return raw;
+  throw new Error(`DOCUMENT_CENTRE_API_URL must point to Cloud Run, got ${host}`);
+}

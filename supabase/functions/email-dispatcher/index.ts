@@ -816,6 +816,14 @@ async function processOne(admin: any, row: OutboxRow): Promise<void> {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  // Retired. Outbound email delivery is Cloud Run only (`pdf-worker-emails`).
+  // Keep this function as a hard-stop so old cron/webhook calls cannot claim
+  // email_outbox rows through the legacy edge dispatcher.
+  return new Response(
+    JSON.stringify({ error: "email_dispatcher_retired", route: "cloud_run_only" }),
+    { status: 410, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
+
   const admin = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
