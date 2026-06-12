@@ -551,7 +551,6 @@ export default function PreviewPanel({
 
     return { finalPages: fp, pageRoles: roles, pocketCoverPath: ringPocketCoverPath };
   }, [pages, effects, isBound, productType]);
-  const { pocketCoverPath } = { pocketCoverPath: undefined as string | undefined, ...{ pocketCoverPath: (finalPages as any).__pocketCoverPath } };
 
   const thumbnailPaths = useMemo(() => {
     if (isFold && foldThumbnails) return foldThumbnails;
