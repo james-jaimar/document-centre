@@ -10,7 +10,7 @@
 // the Cloud Scheduler `email-scan-outbox-30s` job still picks the row up
 // within 30s.
 export function kickEmailWorker(): void {
-  const base = (Deno.env.get("DOCUMENT_CENTRE_API_URL") ?? "").replace(/\/+$/, "");
+  const base = cloudRunApiBase();
   const token = Deno.env.get("EMAIL_NOTIFY_TOKEN") ?? "";
   if (!base || !token) return;
   fetch(`${base}/internal/email/notify`, {
@@ -21,4 +21,17 @@ export function kickEmailWorker(): void {
     },
     body: "{}",
   }).catch(() => {});
+}
+
+function cloudRunApiBase(): string {
+  const raw = (Deno.env.get("DOCUMENT_CENTRE_API_URL") ?? "").replace(/\/+$/, "");
+  if (!raw) return "";
+  try {
+    const host = new URL(raw).hostname;
+    if (host === "api.document-centre.com" || host.endsWith(".run.app")) return raw;
+  } catch {
+    return "";
+  }
+  console.error(`Refusing non-Cloud-Run DOCUMENT_CENTRE_API_URL: ${raw}`);
+  return "";
 }
