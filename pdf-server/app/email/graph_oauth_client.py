@@ -15,7 +15,7 @@ import base64
 import hashlib
 import os
 from dataclasses import dataclass
-from typing import Iterable, List, Optional
+from typing import Callable, Iterable, List, Optional
 
 import httpx
 
@@ -58,7 +58,13 @@ class GraphOAuthCreds:
     oauth_email: str
 
 
-def _refresh_access_token(creds: GraphOAuthCreds) -> str:
+@dataclass(frozen=True)
+class TokenRefreshResult:
+    access_token: str
+    refresh_token: Optional[str] = None
+
+
+def _refresh_access_token(creds: GraphOAuthCreds) -> TokenRefreshResult:
     # Vault round-trips sometimes leave a trailing newline on the secret;
     # AADSTS90013 ("Invalid input received from the user") is what Microsoft
     # returns when the refresh_token has stray whitespace, so strip it.
@@ -89,10 +95,12 @@ def _refresh_access_token(creds: GraphOAuthCreds) -> str:
         )
     if not r.is_success:
         raise TransientSmtpError(f"graph_oauth token {r.status_code}: {r.text[:400]}")
-    tok = r.json().get("access_token")
+    payload = r.json()
+    tok = payload.get("access_token")
     if not tok:
         raise PermanentSmtpError("graph_oauth token response missing access_token")
-    return tok
+    replacement_refresh = (payload.get("refresh_token") or "").strip() or None
+    return TokenRefreshResult(access_token=tok, refresh_token=replacement_refresh)
 
 
 def _recipients(addrs):
@@ -117,6 +125,7 @@ def send_graph_oauth(
     text: Optional[str] = None,
     attachments: Optional[Iterable[LoadedAttachment]] = None,
     message_id: str,  # unused — Graph assigns its own
+    refresh_token_updater: Optional[Callable[[str], None]] = None,
 ) -> Optional[str]:
     """Send via the signed-in user's mailbox (`/me/sendMail`).
 
@@ -124,7 +133,16 @@ def send_graph_oauth(
     rather than `/users/{sender}` (which only works with app-only tokens +
     Mail.Send application permission).
     """
-    token = _refresh_access_token(creds)
+    refreshed = _refresh_access_token(creds)
+    token = refreshed.access_token
+    current_refresh = (creds.refresh_token or "").strip()
+    if refreshed.refresh_token and refreshed.refresh_token != current_refresh:
+        if refresh_token_updater is None:
+            raise TransientSmtpError("graph_oauth refresh rotation missing updater")
+        try:
+            refresh_token_updater(refreshed.refresh_token)
+        except Exception as exc:  # noqa: BLE001
+            raise TransientSmtpError(f"graph_oauth refresh rotation persist failed: {exc}") from exc
 
     # Microsoft Graph determines the sender from the delegated token on
     # `/me/sendMail`; passing a custom `from` is ignored and can be rejected.
