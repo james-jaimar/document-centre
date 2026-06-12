@@ -1,6 +1,6 @@
 # GCP Cutover — what runs where
 
-# GCP Cutover — what runs where
+
 
 ## Cloud Run services (auto-scale 0→N)
 Sized for a ~200-store target (see `.lovable/plan.md`). `max-instances`
