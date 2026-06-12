@@ -79,9 +79,11 @@ export default function DocumentPreview({
   pdfSizeMm,
   scaleMode,
   trimCrop,
+  pocketCoverPath,
 }: DocumentPreviewProps) {
   const [internalPage, setInternalPage] = useState(0);
   const [urls, setUrls] = useState<string[]>([]);
+  const [pocketCoverUrl, setPocketCoverUrl] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const retryRef = useRef(false);
 
