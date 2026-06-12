@@ -204,6 +204,7 @@ export default function DocumentPreview({
         {...commonProps}
         tabPositions={tabPositions}
         rawPaths={thumbnailPaths}
+        pocketCoverUrl={pocketCoverUrl}
       />
     );
   }
