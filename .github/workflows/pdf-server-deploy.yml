@@ -295,7 +295,7 @@ jobs:
           SECRET_FLAG=$(IFS=,; echo "${SECRETS[*]}")
 
           deploy_worker() {
-            local name="$1" role="$2" cpu="$3" mem="$4" max="$5" min="${6:-0}" extra_env="${7:-}"
+            local name="$1" role="$2" cpu="$3" mem="$4" max="$5" min="${6:-0}" concurrency="${7:-1}" extra_env="${8:-}"
             # NOTE: QUEUE_BACKEND=cloud_tasks must be on workers too — not just
             # pdf-api. Without it, generate_previews on pdf-worker-light defaults
             # to the Celery fan-out path and an enqueue() call from inside a
