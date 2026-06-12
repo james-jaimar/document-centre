@@ -607,3 +607,18 @@ jobs:
             exit 1
           fi
 
+      - name: Prune old Artifact Registry images (keep 5 newest + buildcache)
+        if: success()
+        env:
+          GCP_PROJECT_ID: ${{ env.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ env.GCP_REGION }}
+          AR_REPO: ${{ env.AR_REPO }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+        run: |
+          # Iteration is heavy; without pruning the repo grew to ~70 images
+          # in 10 days (~£3/mo, growing). Keep a 5-image rollback buffer.
+          # Failure here must NOT fail the deploy — billing hygiene only.
+          bash pdf-server/scripts/cleanup-artifact-registry.sh --force --keep=5 || \
+            echo "::warning::Artifact Registry cleanup failed (non-fatal). Run manually from Cloud Shell."
+
+

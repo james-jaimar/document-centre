@@ -1,57 +1,39 @@
-# Cloud Run right-sizing — "200 stores" target
+## Automated Artifact Registry Cleanup
 
-Goal: comfortably absorb realistic peak (≈50 concurrent uploads, bursts to ≈100) for the next few months while keeping idle spend near zero. All ceilings are headroom — Cloud Run only bills for instances that actually run.
+### Problem
+~70 Docker images have accumulated in ~10 days of heavy iteration. Artifact Registry is costing £3.12/mo and growing. The user wants to keep only a 5-image rollback buffer.
 
-## Target configuration
+### Files to Change
 
-| Service | CPU / RAM | Concurrency | min | max | Notes |
-|---|---|---|---|---|---|
-| `pdf-api` | 1 / 1Gi | 80 | 0 | 10 | Unchanged. Auto-scales on HTTP. |
-| `pdf-worker-heavy` | 2 / 4Gi | **2** | **0** | **5** | LibreOffice/imposition; store owners tolerate slower turnaround. |
-| `pdf-worker-light` | 4 / 4Gi | **4** | **0** | **50** | Headroom for 200 concurrent renders. First job/day pays ~6–10s cold start. |
-| `pdf-worker-emails` | 1 / 512Mi | **8** | **1** | **10** | Keep warm (~£2–3/mo) so transactional email is instant. |
+1. **`.github/workflows/pdf-server-deploy.yml`** — Add a post-deploy cleanup step that automatically prunes old images after every successful push.
+2. **`pdf-server/scripts/cleanup-artifact-registry.sh`** — New standalone script for manual one-shot cleanup (run from Cloud Shell or CI). Supports `--dry-run` and `--force` flags.
 
-Cloud Tasks queue limits (in `pdf-server/docker/gcp-tasks-bootstrap.sh`) rise to match: `documents-heavy` max-concurrent=10, `documents-light` max-concurrent=200, `emails-default` max-concurrent=80.
+### How It Works
 
-## Files to change
+- After every successful deploy, the workflow lists all images in the repo.
+- Excludes the `:buildcache` tag (required for registry layer caching).
+- Sorts by `createTime` descending, keeps the 5 newest.
+- Deletes everything older with `--delete-tags --quiet`.
+- Safe: the freshly-pushed image is always in the top 5, and Cloud Run only references recent revisions.
 
-1. `.github/workflows/pdf-server-deploy.yml` — parameterise `deploy_worker` so each worker sets its own `--concurrency` and `--max-instances` (currently shared). Apply the table above.
-2. `pdf-server/docker/gcp-tasks-bootstrap.sh` — update the four `gcloud tasks queues update` lines to match the new max-concurrent-dispatches.
-3. `pdf-server/docs/GCP_CUTOVER.md` — document the new sizing and the "scale-up trigger" rule (see below).
-4. No application code changes. No VPS changes. No Supabase changes.
+### Standalone Script Features
 
-## Cost expectation
+- `--dry-run` (default): lists what would be deleted without touching anything.
+- `--force`: actually deletes.
+- `--keep=N`: override the default 5-image retention.
+- Configurable via env vars or flags for project, region, repo, image name.
 
-- Idle (nights, weekends, no uploads): ~£3–5/mo (only the warm emails instance).
-- Pilot week (you + a handful of test branches): ~£8–15/mo.
-- 50 active branches doing real jobs daily: ~£40–70/mo.
-- 200 active branches: ~£120–180/mo, scales linearly with actual document volume — not with the max-instances ceiling.
+### Cost Impact
 
-Compare to the £20-over-8-days burn you saw: that was ~85% pinned idle instances, which this plan eliminates.
+- Immediate: drops ~65 images → Artifact Registry bill falls from ~£3.12 to ~£0.25/mo.
+- Ongoing: never accumulates more than 5 images + 1 build cache.
 
-## Operational safety net
+### One-Time Action Required
 
-After deploy, set two **GCP billing alerts** (console, no code) at £75/mo and £200/mo, emailed to you. If either fires earlier than expected, that is the signal to look — not to scale down preemptively. Cloud Run keeps every revision, so any sizing change is one `gcloud run services update-traffic` rollback away.
+After merge, run the standalone script once from Cloud Shell to clear the backlog:
 
-## Scale-up triggers (set-and-forget rules)
+```bash
+bash pdf-server/scripts/cleanup-artifact-registry.sh --force
+```
 
-Only revisit sizing when one of these hits:
-- A branch owner reports an upload that "sat queued" >30s during business hours → bump light `max-instances` from 50 → 100.
-- Sustained heavy queue depth >5 jobs for >5 min → raise heavy `max-instances` from 5 → 10 and concurrency from 2 → 3.
-- Email send latency >10s on a transactional email → raise emails `min-instances` from 1 → 2.
-
-Each is a single workflow re-run, zero downtime.
-
-## Rollout
-
-1. Merge the workflow + bootstrap changes.
-2. GitHub Actions redeploys all four services with new sizing.
-3. Re-run `bash pdf-server/docker/gcp-tasks-bootstrap.sh` once from Cloud Shell to apply the new queue limits.
-4. Configure the two billing alerts in GCP console.
-5. Watch GCP billing for 48h — expect ~70% drop from current daily run-rate.
-
-## What this plan does **not** do
-
-- Does not touch `pdf-api`, application code, Cloud Scheduler jobs, or the VPS LISTEN/NOTIFY email listener.
-- Does not change Supabase plan or connection pooling (Pro plan's 2,000 PgBouncer connections is plenty for this tier).
-- Does not add caching, batching, or architectural changes — those only become worthwhile past ~200 active branches.
+Future deploys will self-clean automatically.
