@@ -188,6 +188,9 @@ function AppRoutes() {
       {/* Public mobile upload — no auth required */}
       <Route path="/upload/:token" element={<MobileUpload />} />
 
+      {/* OAuth popup result page — Microsoft connect flow redirects here */}
+      <Route path="/oauth/microsoft/callback-result" element={<MicrosoftCallbackResult />} />
+
       {/* Customer portal — slug-based storefront (public layout, auth only where needed) */}
       <Route path="/t/:slug" element={<CustomerLayout />}>
         {customerRoutes()}
