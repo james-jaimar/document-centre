@@ -504,6 +504,7 @@ jobs:
           emails_required_env=(
             "ROLE=worker-emails-http"
             "QUEUE_BACKEND=cloud_tasks"
+            "MICROSOFT_OAUTH_CLIENT_FP_EXPECTED=${{ env.MICROSOFT_OAUTH_CLIENT_FP_EXPECTED }}"
           )
           declare -A LIVE_EMAILS_ENV
           for kv in "${emails_required_env[@]}"; do
@@ -536,6 +537,22 @@ jobs:
               fail=1
             fi
           done
+
+          microsoft_id_secret=$(echo "$emails_json" | jq -r \
+            '.spec.containers[0].env[]? | select(.name=="MICROSOFT_OAUTH_CLIENT_ID") | .valueFrom.secretKeyRef.name // ""')
+          if [ -n "$microsoft_id_secret" ]; then
+            if actual_client_id=$(gcloud secrets versions access latest --secret="$microsoft_id_secret" --project="$GCP_PROJECT_ID" 2>/dev/null); then
+              actual_fp=$(printf '%s' "$actual_client_id" | sha256sum | awk '{print substr($1,1,8)}')
+              LIVE_EMAILS_ENV["MICROSOFT_OAUTH_CLIENT_FP_ACTUAL"]="$actual_fp"
+              if [ "$actual_fp" != "${{ env.MICROSOFT_OAUTH_CLIENT_FP_EXPECTED }}" ]; then
+                echo "::error::pdf-worker-emails Microsoft OAuth client mismatch: mounted secret $microsoft_id_secret has fingerprint $actual_fp, expected ${{ env.MICROSOFT_OAUTH_CLIENT_FP_EXPECTED }}. This causes AADSTS90013."
+                fail=1
+              fi
+            else
+              echo "::warning::Could not read $microsoft_id_secret to verify Microsoft OAuth client fingerprint."
+              LIVE_EMAILS_ENV["MICROSOFT_OAUTH_CLIENT_FP_ACTUAL"]="<unverified>"
+            fi
+          fi
 
 
 
