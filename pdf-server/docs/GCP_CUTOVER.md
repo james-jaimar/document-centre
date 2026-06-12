@@ -10,12 +10,16 @@ is HEADROOM — Cloud Run only bills running instances.
 |---------------------|------------|-------|-----|-----|-----------------------------------------------|
 | `pdf-api`           | 1 / 1Gi    | 80    | 0   | 10  | FastAPI sync endpoints + `/internal/beat/*`   |
 | `pdf-worker-heavy`  | 2 / 4Gi    | 2     | 0   | 5   | LibreOffice/imposition (admin side)           |
-| `pdf-worker-light`  | 4 / 4Gi    | 4     | 0   | 50  | Customer-facing preview render (batch GS)     |
+| `pdf-worker-light`  | 4 / 4Gi    | 4     | 0   | 32  | Customer-facing preview render (batch GS)     |
 | `pdf-worker-emails` | 1 / 512Mi  | 8     | 1   | 10  | SMTP outbound (min=1 → no cold start on email)|
+
+Note: `pdf-worker-light` max=32 is the africa-south1 quota ceiling
+(CpuAllocPerProjectRegion = 128 vCPU; 4 vCPU × 32 instances = 128).
+Request a quota bump if we sustain >120 concurrent renders.
 
 ## Cloud Tasks queues (replaces Celery + Redis broker)
 - `documents-heavy` → `pdf-worker-heavy` (max-concurrent-dispatches=10)
-- `documents-light` → `pdf-worker-light` (max-concurrent-dispatches=200)
+- `documents-light` → `pdf-worker-light` (max-concurrent-dispatches=128)
 - `emails-default`, `emails-control` → `pdf-worker-emails`
 
 Region: **europe-west1** (Tasks/Scheduler not in africa-south1).
@@ -24,7 +28,7 @@ Compute region: **africa-south1**.
 ## Scale-up triggers (set-and-forget)
 Only revisit sizing when one of these hits:
 - Branch owner reports an upload "sat queued" >30s during business hours
-  → bump light `max-instances` 50 → 100.
+  → request africa-south1 CPU quota bump, then raise light `max-instances` 32 → 64.
 - Sustained heavy queue depth >5 jobs for >5 min
   → raise heavy `max-instances` 5 → 10 and concurrency 2 → 3.
 - Email send latency >10s on a transactional email
