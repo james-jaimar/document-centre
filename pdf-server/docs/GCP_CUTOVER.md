@@ -1,20 +1,38 @@
 # GCP Cutover — what runs where
 
+# GCP Cutover — what runs where
+
 ## Cloud Run services (auto-scale 0→N)
-| Service          | Purpose                                          |
-|------------------|--------------------------------------------------|
-| `pdf-api`        | FastAPI sync endpoints + `/internal/beat/*`      |
-| `pdf-worker-heavy`  | Heavy PDF processing (docs/imposition queue)  |
-| `pdf-worker-light`  | Thumbnails / inspect / light tasks            |
-| `pdf-worker-emails` | SMTP outbound                                 |
+Sized for a ~200-store target (see `.lovable/plan.md`). `max-instances`
+is HEADROOM — Cloud Run only bills running instances.
+
+| Service             | CPU/RAM    | Conc. | min | max | Purpose                                       |
+|---------------------|------------|-------|-----|-----|-----------------------------------------------|
+| `pdf-api`           | 1 / 1Gi    | 80    | 0   | 10  | FastAPI sync endpoints + `/internal/beat/*`   |
+| `pdf-worker-heavy`  | 2 / 4Gi    | 2     | 0   | 5   | LibreOffice/imposition (admin side)           |
+| `pdf-worker-light`  | 4 / 4Gi    | 4     | 0   | 50  | Customer-facing preview render (batch GS)     |
+| `pdf-worker-emails` | 1 / 512Mi  | 8     | 1   | 10  | SMTP outbound (min=1 → no cold start on email)|
 
 ## Cloud Tasks queues (replaces Celery + Redis broker)
-- `documents-heavy` → `pdf-worker-heavy`
-- `documents-light` → `pdf-worker-light`
+- `documents-heavy` → `pdf-worker-heavy` (max-concurrent-dispatches=10)
+- `documents-light` → `pdf-worker-light` (max-concurrent-dispatches=200)
 - `emails-default`, `emails-control` → `pdf-worker-emails`
 
-Region: **europe-west1** (Tasks/Scheduler are not in africa-south1).
+Region: **europe-west1** (Tasks/Scheduler not in africa-south1).
 Compute region: **africa-south1**.
+
+## Scale-up triggers (set-and-forget)
+Only revisit sizing when one of these hits:
+- Branch owner reports an upload "sat queued" >30s during business hours
+  → bump light `max-instances` 50 → 100.
+- Sustained heavy queue depth >5 jobs for >5 min
+  → raise heavy `max-instances` 5 → 10 and concurrency 2 → 3.
+- Email send latency >10s on a transactional email
+  → raise emails `min-instances` 1 → 2.
+
+Each is a single workflow re-run, zero downtime. Configure GCP billing
+alerts at £75/mo and £200/mo — if one fires, that's the signal to look.
+
 
 ## Cloud Scheduler jobs (replaces Celery beat)
 Created by `pdf-server/docker/gcp-tasks-bootstrap.sh`. All POST to
