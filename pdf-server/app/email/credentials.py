@@ -23,6 +23,7 @@ from .gmail_client import GmailCreds, gmail_oauth_client_id, gmail_oauth_client_
 from .graph_client import GraphCreds
 from .graph_oauth_client import (
     GraphOAuthCreds,
+    _client_fp as graph_oauth_client_fp,
     microsoft_oauth_client_id,
     microsoft_oauth_client_secret,
 )
