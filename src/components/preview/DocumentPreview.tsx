@@ -93,8 +93,15 @@ export default function DocumentPreview({
   // Batch sign all URLs on mount / when paths change
   // Data URLs (from canvas composition) and already-signed https URLs are passed through directly.
   useEffect(() => {
-    if (thumbnailPaths.length === 0) {
+    const resolveDirect = (p: string | undefined): string | null => {
+      if (!p) return "";
+      if (p.startsWith("data:") || p.startsWith("http://") || p.startsWith("https://")) return p;
+      return null; // needs signing
+    };
+
+    if (thumbnailPaths.length === 0 && !pocketCoverPath) {
       setUrls([]);
+      setPocketCoverUrl("");
       setLoading(false);
       return;
     }
@@ -103,16 +110,17 @@ export default function DocumentPreview({
     const directUrls = new Map<number, string>();
 
     thumbnailPaths.forEach((p, i) => {
-      if (p.startsWith("data:") || p.startsWith("http://") || p.startsWith("https://")) {
-        directUrls.set(i, p);
-      } else if (p) {
-        needsSigning.push(p);
-      }
+      const direct = resolveDirect(p);
+      if (direct !== null) directUrls.set(i, direct);
+      else needsSigning.push(p);
     });
 
+    const pocketDirect = resolveDirect(pocketCoverPath);
+    if (pocketDirect === null && pocketCoverPath) needsSigning.push(pocketCoverPath);
+
     if (needsSigning.length === 0) {
-      // All paths are direct URLs or empty — no signing needed
       setUrls(thumbnailPaths.map((p, i) => directUrls.get(i) || ""));
+      setPocketCoverUrl(pocketDirect ?? "");
       setLoading(false);
       return;
     }
@@ -133,6 +141,9 @@ export default function DocumentPreview({
         const failedPaths = thumbnailPaths.filter(
           (p, i) => p && !directUrls.has(i) && !resolved[i]
         );
+        if (pocketCoverPath && pocketDirect === null && !map.get(pocketCoverPath)) {
+          failedPaths.push(pocketCoverPath);
+        }
 
         if (failedPaths.length > 0 && !isRetry) {
           // Clear cache for failed paths and retry once
@@ -144,13 +155,16 @@ export default function DocumentPreview({
         }
 
         setUrls(resolved);
+        setPocketCoverUrl(
+          pocketDirect ?? (pocketCoverPath ? map.get(pocketCoverPath) || "" : "")
+        );
         setLoading(false);
       });
     };
 
     signAndResolve(false);
     return () => { cancelled = true; };
-  }, [thumbnailPaths]);
+  }, [thumbnailPaths, pocketCoverPath]);
 
   const handlePageChange = useCallback(
     (p: number) => setPage(Math.max(0, Math.min(p, thumbnailPaths.length - 1))),
