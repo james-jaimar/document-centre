@@ -488,7 +488,22 @@ export default function PreviewPanel({
     // virtual faces into the physical sequence. The viewer (RingBinderOpenSpread
     // + the navigation logic below) reconstructs the closed/open hardware
     // states at render time from view-index mapping.
+    //
+    // The uploaded front cover lives in the binder's transparent pocket
+    // (a hardware face), NOT as the first page of the inside sheet stack.
+    // Strip the leading front_cover (and its trailing simplex blank) from
+    // the open sequence so the first inside spread starts at body page 1.
     const isRingBinderType = productType === "ring_binder";
+    let ringPocketCoverPath: string | undefined;
+    if (isRingBinderType && roles[0] === "front_cover") {
+      ringPocketCoverPath = fp[0]?.thumbnailUrl || undefined;
+      fp.splice(0, 1);
+      roles.splice(0, 1);
+      if ((roles[0] as string) === "blank_back") {
+        fp.splice(0, 1);
+        roles.splice(0, 1);
+      }
+    }
 
     // Tab/insert alignment is now handled inside buildPageSequence()
     // via the pending-queue flush — no post-processing pass needed.
