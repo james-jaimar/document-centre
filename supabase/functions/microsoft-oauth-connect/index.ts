@@ -26,13 +26,19 @@ const json = (d: unknown, s = 200) =>
 // Authority. `common` allows work + school + personal MSAs. Switch to
 // `organizations` if you ever want to lock out personal accounts.
 const AUTHORITY = "https://login.microsoftonline.com/common";
-// Scopes consented at authorize-time. We use fully-qualified resource scopes
-// (https://graph.microsoft.com/...) so the refresh-token call on the Python
-// worker can request a matching subset without triggering AADSTS90013.
-// User.Read is requested only to look up the mailbox address during connect;
-// the worker only ever asks Microsoft for Mail.Send + offline_access at refresh.
-const SCOPES =
-  "offline_access https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read";
+// Microsoft's documented delegated Graph scope strings. Use the SAME string
+// for authorize, code exchange, and refresh. Do not get clever with
+// fully-qualified resource URIs — Microsoft's own examples use the short form.
+const SCOPES = "offline_access Mail.Send User.Read";
+
+// Non-secret fingerprint of the OAuth client ID so we can prove the Edge
+// Function and the Cloud Run worker are using the SAME Entra app without
+// exposing the client_id itself in logs/UI.
+async function clientIdFingerprint(clientId: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(clientId));
+  const hex = Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return hex.slice(0, 8);
+}
 
 async function assertAuthorized(
   admin: any,
