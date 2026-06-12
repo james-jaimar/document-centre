@@ -69,6 +69,7 @@ def email_transport_diagnostics() -> Dict[str, Any]:
             "graph_oauth": {
                 "client_id": bool(microsoft_oauth_client_id()),
                 "client_secret": bool(microsoft_oauth_client_secret()),
+                "client_fp": graph_oauth_client_fp(microsoft_oauth_client_id() or ""),
             },
         },
     }
