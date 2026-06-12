@@ -33,6 +33,10 @@ def _client_fp(client_id: str) -> str:
         return "absent"
     return hashlib.sha256(client_id.encode("utf-8")).hexdigest()[:8]
 
+
+def microsoft_oauth_expected_client_fp() -> Optional[str]:
+    return os.getenv("MICROSOFT_OAUTH_CLIENT_FP_EXPECTED")
+
 TOKEN_TIMEOUT = 20.0
 SEND_TIMEOUT = 60.0
 AUTHORITY = "https://login.microsoftonline.com/common"
@@ -86,10 +90,14 @@ def _refresh_access_token(creds: GraphOAuthCreds) -> TokenRefreshResult:
         raise TransientSmtpError(f"graph_oauth token network: {exc}") from exc
     if r.status_code in (400, 401, 403):
         # invalid_grant means refresh_token revoked → permanent.
+        client_fp = _client_fp(creds.client_id)
+        expected_fp = microsoft_oauth_expected_client_fp()
         raise PermanentSmtpError(
             f"graph_oauth_auth token {r.status_code} "
             f"(refresh_len={len(refresh_token)}, "
-            f"client_fp={_client_fp(creds.client_id)}, "
+            f"client_fp={client_fp}, "
+            f"expected_client_fp={expected_fp or 'unset'}, "
+            f"client_fp_matches_expected={client_fp == expected_fp if expected_fp else 'unknown'}, "
             f"client_secret_present={bool(creds.client_secret)}): "
             f"{r.text[:400]}"
         )
