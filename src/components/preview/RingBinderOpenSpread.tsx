@@ -259,6 +259,9 @@ export interface RingBinderPreviewProps {
   tabPositions?: TabPosition[];
   colorFlags?: boolean[];
   rawPaths?: string[];
+  /** Signed URL of the uploaded front-cover thumbnail, painted in the
+   * binder's transparent pocket. Sourced OUTSIDE the open-sheet sequence. */
+  pocketCoverUrl?: string;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -280,11 +283,12 @@ export default function RingBinderPreview({
   tabPositions,
   colorFlags,
   rawPaths,
+  pocketCoverUrl,
 }: RingBinderPreviewProps) {
   const resolvedEffects = effects ?? DEFAULT_PREVIEW_EFFECTS;
   const ratio = pageAspectRatio ?? 0.707;
 
-  if (urls.length === 0) {
+  if (urls.length === 0 && !pocketCoverUrl) {
     return (
       <div className="flex items-center justify-center" style={{ width, height }}>
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/50" />
@@ -304,12 +308,13 @@ export default function RingBinderPreview({
     const pocketH = artH * RING_POCKET.h;
 
     // Pocket artwork (DISPLAY-ONLY — never consumes a sequence index):
-    //   - real uploaded front_cover / pvc_cover_front section, if present
-    //   - otherwise the pocket is blank (no body-page fallback — the binder
-    //     hardware's pocket is empty when the customer hasn't uploaded a cover)
-    let pocketArtworkUrl = "";
+    //   - explicit `pocketCoverUrl` from the snapshot (preferred — the cover
+    //     is no longer part of the open-sheet sequence for ring binders);
+    //   - or, for backward compatibility with older snapshots, the first
+    //     `front_cover` / `pvc_cover_front` role in the sequence.
+    let pocketArtworkUrl = pocketCoverUrl || "";
     let pocketRoleIndex = -1;
-    if (pageRoles && pageRoles.length > 0) {
+    if (!pocketArtworkUrl && pageRoles && pageRoles.length > 0) {
       const fcIdx = pageRoles.findIndex((r) => r === "front_cover" || r === "pvc_cover_front");
       if (fcIdx >= 0 && urls[fcIdx]) {
         pocketArtworkUrl = urls[fcIdx];

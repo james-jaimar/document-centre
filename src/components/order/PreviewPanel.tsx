@@ -453,7 +453,7 @@ export default function PreviewPanel({
   }, [sections, documents, isBound, isFold, productType]);
 
   // Build final page sequence with explicit roles + enforce physical alignment
-  const { finalPages, pageRoles: computedPageRoles } = useMemo(() => {
+  const { finalPages, pageRoles: computedPageRoles, pocketCoverPath } = useMemo(() => {
     const fp = [...pages];
     const roles: string[] = fp.map((p) => {
       if (p.pageIndex === -1 && p.section?.section_type === "insert") return "insert_back";
@@ -488,7 +488,22 @@ export default function PreviewPanel({
     // virtual faces into the physical sequence. The viewer (RingBinderOpenSpread
     // + the navigation logic below) reconstructs the closed/open hardware
     // states at render time from view-index mapping.
+    //
+    // The uploaded front cover lives in the binder's transparent pocket
+    // (a hardware face), NOT as the first page of the inside sheet stack.
+    // Strip the leading front_cover (and its trailing simplex blank) from
+    // the open sequence so the first inside spread starts at body page 1.
     const isRingBinderType = productType === "ring_binder";
+    let ringPocketCoverPath: string | undefined;
+    if (isRingBinderType && roles[0] === "front_cover") {
+      ringPocketCoverPath = fp[0]?.thumbnailUrl || undefined;
+      fp.splice(0, 1);
+      roles.splice(0, 1);
+      if ((roles[0] as string) === "blank_back") {
+        fp.splice(0, 1);
+        roles.splice(0, 1);
+      }
+    }
 
     // Tab/insert alignment is now handled inside buildPageSequence()
     // via the pending-queue flush — no post-processing pass needed.
@@ -534,7 +549,7 @@ export default function PreviewPanel({
       if (fp[backIdx]) fp[backIdx] = { ...fp[backIdx], color: hex };
     });
 
-    return { finalPages: fp, pageRoles: roles };
+    return { finalPages: fp, pageRoles: roles, pocketCoverPath: ringPocketCoverPath };
   }, [pages, effects, isBound, productType]);
 
   const thumbnailPaths = useMemo(() => {
@@ -926,6 +941,7 @@ export default function PreviewPanel({
           pdfSizeMm={pdfSizeMm}
           scaleMode={scaleMode}
           trimCrop={trimCrop}
+          pocketCoverPath={pocketCoverPath}
         />
       </div>
 
@@ -952,6 +968,7 @@ export default function PreviewPanel({
           canvasSizeMm={canvasSizeMm}
           pdfSizeMm={pdfSizeMm}
           trimCrop={trimCrop}
+          pocketCoverPath={pocketCoverPath}
         />
       )}
 

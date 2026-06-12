@@ -775,6 +775,7 @@ const CustomerOrderDetail = () => {
             bindingEdge={snap.bindingEdge}
             bindingArt={snap.bindingArt}
             pageAspectRatio={snap.pageAspectRatio ?? undefined}
+            pocketCoverPath={snap.pocketCoverThumbnail}
             onClose={() => setPreviewJob(null)}
           />
         );
