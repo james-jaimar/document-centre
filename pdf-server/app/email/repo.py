@@ -143,4 +143,8 @@ def record_metric(
 
 
 def worker_id() -> str:
-    return f"pdf-server:{os.uname().nodename}:{os.getpid()}"
+    service = os.getenv("K_SERVICE")
+    revision = os.getenv("K_REVISION") or "unknown-revision"
+    if service:
+        return f"cloud_run:{service}:{revision}:{os.getpid()}"
+    return f"non_cloud_run:{os.uname().nodename}:{os.getpid()}"
