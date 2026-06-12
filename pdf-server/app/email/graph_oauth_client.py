@@ -24,16 +24,11 @@ from .errors import PermanentSmtpError, TransientSmtpError
 TOKEN_TIMEOUT = 20.0
 SEND_TIMEOUT = 60.0
 AUTHORITY = "https://login.microsoftonline.com/common"
-# Refresh scopes MUST mirror what `microsoft-oauth-connect` requested at
-# authorize-time. Asking for a strict subset (e.g. dropping User.Read) has
-# been observed to trigger AADSTS90013 "Invalid input received from the
-# user" on /common's v2 token endpoint. Keep these three in lockstep with
-# the SCOPES constant in supabase/functions/microsoft-oauth-connect/index.ts.
-SCOPES = (
-    "offline_access "
-    "https://graph.microsoft.com/Mail.Send "
-    "https://graph.microsoft.com/User.Read"
-)
+# Microsoft's documented delegated Graph scope string. Use the SAME string
+# the Edge Function used at authorize-time. Refresh scope is optional and
+# must be equivalent-or-subset; the short form `Mail.Send User.Read` is what
+# Microsoft's own examples show for delegated Graph access.
+SCOPES = "offline_access Mail.Send User.Read"
 
 
 @dataclass(frozen=True)
