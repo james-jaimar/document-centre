@@ -437,7 +437,7 @@ export function buildPreviewSnapshot(input: {
     pocketCoverThumbnail = fp[0]?.thumbnailUrl || undefined;
     fp.splice(0, 1);
     roles.splice(0, 1);
-    if (roles[0] === "blank_back") {
+    if ((roles[0] as string) === "blank_back") {
       fp.splice(0, 1);
       roles.splice(0, 1);
     }
