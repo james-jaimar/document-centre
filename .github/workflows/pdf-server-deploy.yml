@@ -39,6 +39,10 @@ env:
   GCP_TASKS_REGION: europe-west1
   AR_REPO: dc-pdf
   IMAGE_NAME: server
+  # Non-secret SHA-256 prefix of the Microsoft OAuth client ID used by the
+  # Supabase Edge Function that mints refresh tokens. The email worker MUST
+  # use the same Entra app; mismatches produce AADSTS90013 on refresh.
+  MICROSOFT_OAUTH_CLIENT_FP_EXPECTED: c1932231
   WIF_PROVIDER: projects/622687766375/locations/global/workloadIdentityPools/github-pool/providers/github-provider
   DEPLOY_SA: github-deployer@project-59a14b18-b4df-4c6b-b09.iam.gserviceaccount.com
   RUNTIME_SA: dc-pdf-runtime@project-59a14b18-b4df-4c6b-b09.iam.gserviceaccount.com
@@ -307,6 +311,9 @@ jobs:
             # via extra_env at the call site below; do NOT move them into
             # the shared base unless every worker needs them.
             local base_env="ROLE=${role},LOG_LEVEL=INFO,APP_ENV=production,UVICORN_WORKERS=1,PYTHONUNBUFFERED=1,QUEUE_BACKEND=cloud_tasks,GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }},GCP_TASKS_REGION=${{ env.GCP_TASKS_REGION }},CLOUD_TASKS_DISPATCH_DEADLINE_SECONDS=900,S3_MAX_POOL_CONNECTIONS=32,PDF_CACHE_ENABLED=true,PDF_CACHE_DIR=/tmp/pdf-cache,PREVIEW_GS_THREADS=1,PREVIEW_GS_BATCH_TIMEOUT_SECONDS=90,PREVIEW_GS_PAGE_TIMEOUT_SECONDS=20,PREVIEW_RENDER_BOX_MODE=metadata_only,PREVIEW_MUTOOL_SALVAGE_ENABLED=false,PREVIEW_PAGE_MAX_RETRIES=1,RENDER_CPU_CONCURRENCY=3,RENDER_IO_CONCURRENCY=8"
+            if [ "$name" = "pdf-worker-emails" ]; then
+              base_env="${base_env},MICROSOFT_OAUTH_CLIENT_FP_EXPECTED=${{ env.MICROSOFT_OAUTH_CLIENT_FP_EXPECTED }}"
+            fi
             local env_flag="$base_env"
             if [ -n "$extra_env" ]; then
               env_flag="${base_env},${extra_env}"
@@ -497,6 +504,7 @@ jobs:
           emails_required_env=(
             "ROLE=worker-emails-http"
             "QUEUE_BACKEND=cloud_tasks"
+            "MICROSOFT_OAUTH_CLIENT_FP_EXPECTED=${{ env.MICROSOFT_OAUTH_CLIENT_FP_EXPECTED }}"
           )
           declare -A LIVE_EMAILS_ENV
           for kv in "${emails_required_env[@]}"; do
@@ -529,6 +537,22 @@ jobs:
               fail=1
             fi
           done
+
+          microsoft_id_secret=$(echo "$emails_json" | jq -r \
+            '.spec.containers[0].env[]? | select(.name=="MICROSOFT_OAUTH_CLIENT_ID") | .valueFrom.secretKeyRef.name // ""')
+          if [ -n "$microsoft_id_secret" ]; then
+            if actual_client_id=$(gcloud secrets versions access latest --secret="$microsoft_id_secret" --project="$GCP_PROJECT_ID" 2>/dev/null); then
+              actual_fp=$(printf '%s' "$actual_client_id" | sha256sum | awk '{print substr($1,1,8)}')
+              LIVE_EMAILS_ENV["MICROSOFT_OAUTH_CLIENT_FP_ACTUAL"]="$actual_fp"
+              if [ "$actual_fp" != "${{ env.MICROSOFT_OAUTH_CLIENT_FP_EXPECTED }}" ]; then
+                echo "::error::pdf-worker-emails Microsoft OAuth client mismatch: mounted secret $microsoft_id_secret has fingerprint $actual_fp, expected ${{ env.MICROSOFT_OAUTH_CLIENT_FP_EXPECTED }}. This causes AADSTS90013."
+                fail=1
+              fi
+            else
+              echo "::warning::Could not read $microsoft_id_secret to verify Microsoft OAuth client fingerprint."
+              LIVE_EMAILS_ENV["MICROSOFT_OAUTH_CLIENT_FP_ACTUAL"]="<unverified>"
+            fi
+          fi
 
 
 
@@ -568,6 +592,7 @@ jobs:
               key="${kv%%=*}"
               echo "| \`$key\` | \`${LIVE_EMAILS_ENV[$key]}\` |"
             done
+            echo "| \`MICROSOFT_OAUTH_CLIENT_FP_ACTUAL\` | \`${LIVE_EMAILS_ENV[MICROSOFT_OAUTH_CLIENT_FP_ACTUAL]:-<not checked>}\` |"
             for s in "${oauth_required_secrets[@]}"; do
               mounted="${LIVE_EMAILS_SECRETS[$s]:-<not mounted>}"
               echo "| \`$s\` (secret) | \`${mounted}\` |"

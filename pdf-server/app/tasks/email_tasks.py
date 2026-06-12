@@ -20,7 +20,7 @@ from app.email import repo
 from app.email.attachments import AttachmentError, load_attachments
 from app.email.concurrency import account_slot
 from app.email.config import email_settings
-from app.email.credentials import CredentialError, get_account_creds
+from app.email.credentials import CredentialError, get_account_creds, invalidate
 from app.email.metrics import email_failed_total, email_send_seconds, email_sent_total
 from app.email.errors import PermanentSmtpError, TransientSmtpError
 from app.email.smtp_client import send_smtp
@@ -31,6 +31,42 @@ from app.worker import celery_app
 from app.core.queue import enqueue
 
 log = logging.getLogger("email.tasks")
+
+
+def _persist_rotated_refresh_token(sb, account_id: str, refresh_token: str) -> None:
+    """Replace the stored OAuth refresh token after Microsoft rotates it.
+
+    Microsoft may return a new refresh_token during refresh. The old token must
+    be discarded, otherwise the next worker process can fail after cache expiry.
+    """
+    acct = (
+        sb.table("email_accounts")
+        .select("id, transport, oauth_refresh_token_secret_id")
+        .eq("id", account_id)
+        .single()
+        .execute()
+        .data
+    )
+    if not acct or acct.get("transport") != "graph_oauth":
+        return
+    secret_name = f"graph_oauth:rotation:{account_id}:{uuid.uuid4()}"
+    created = sb.rpc(
+        "create_email_account_secret",
+        {"p_name": secret_name, "p_secret": refresh_token},
+    ).execute().data
+    if not created:
+        raise RuntimeError("Vault did not return a rotated refresh token secret id")
+    old_secret = acct.get("oauth_refresh_token_secret_id")
+    sb.table("email_accounts").update({
+        "oauth_refresh_token_secret_id": created,
+        "last_error": None,
+    }).eq("id", account_id).execute()
+    if old_secret:
+        try:
+            sb.rpc("delete_email_account_secret", {"p_secret_id": old_secret}).execute()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("failed to delete old rotated OAuth secret for account=%s: %s", account_id, exc)
+    invalidate(account_id)
 
 
 @celery_app.task(name="email.scan_outbox", queue="emails-control", ignore_result=True)
@@ -148,6 +184,11 @@ def send_email(self, row: Dict[str, Any]) -> str:
                 text=row.get("text_body"),
                 attachments=atts,
                 message_id=message_id,
+                **(
+                    {"refresh_token_updater": lambda token: _persist_rotated_refresh_token(sb, account_id, token)}
+                    if provider == "graph_oauth"
+                    else {}
+                ),
             )
         # SMTP returns None (we keep our generated message_id); graph/gmail
         # return the provider id (x-ms-request-id / gmail message id).

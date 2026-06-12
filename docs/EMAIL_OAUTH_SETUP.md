@@ -97,6 +97,24 @@ for s in MICROSOFT_OAUTH_CLIENT_ID MICROSOFT_OAUTH_CLIENT_SECRET; do
 done
 ```
 
+The Supabase Edge secrets and GCP Secret Manager values must be the **same**
+Microsoft Entra app registration. A refresh token minted by the Edge Function
+cannot be refreshed by the worker with a different `client_id`; Microsoft
+returns `AADSTS90013`. The non-secret fingerprint shown in logs/deploy output
+must match on both sides. Current expected Microsoft OAuth client fingerprint:
+`c1932231`.
+
+If the GCP secret already exists but points at the wrong Entra app, replace the
+latest secret versions rather than creating a second secret name:
+
+```bash
+printf '%s' '<same client id as Supabase MICROSOFT_OAUTH_CLIENT_ID>' |
+  gcloud secrets versions add MICROSOFT_OAUTH_CLIENT_ID --data-file=- --project=project-59a14b18-b4df-4c6b-b09
+
+printf '%s' '<same client secret as Supabase MICROSOFT_OAUTH_CLIENT_SECRET>' |
+  gcloud secrets versions add MICROSOFT_OAUTH_CLIENT_SECRET --data-file=- --project=project-59a14b18-b4df-4c6b-b09
+```
+
 ---
 
 ## 3. Verification
@@ -105,10 +123,11 @@ After all four secrets are in place:
 
 1. Re-run the `pdf-server-deploy.yml` workflow (or push any commit under `pdf-server/`).
 2. The deploy log should show both `Gmail OAuth secrets mounted on pdf-worker-emails.` and `Microsoft OAuth secrets mounted on pdf-worker-emails.`
-3. As a tenant admin in `/admin/settings/email`:
+3. The deploy summary should show `MICROSOFT_OAUTH_CLIENT_FP_ACTUAL` equal to `c1932231`.
+4. As a tenant admin in `/admin/settings/email`:
    - Click **Sign in with Google** → consent screen → returns and shows the Gmail address with a "Connected" badge.
    - Click **Sign in with Microsoft** → consent screen → returns and shows the mailbox with "Connected".
-4. Send a test order email; row in `email_outbox` should go `pending → sent` within 5 s with `provider = gmail_oauth` or `graph_oauth` and a populated `message_id`.
+5. Send a test order email; row in `email_outbox` should go `pending → sent` within 5 s with `provider = gmail_oauth` or `graph_oauth` and a populated `message_id`.
 
 ## Notes
 

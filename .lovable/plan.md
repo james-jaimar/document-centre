@@ -1,65 +1,59 @@
-## Problem
+## What I found
 
-The Microsoft connector is failing before it ever calls Graph sendMail. The access-token refresh request returns `AADSTS90013`, while the stored refresh token is present (`refresh_len=1448`) and both worker client credentials are present.
+This is no longer a scope-theory problem. The live evidence shows the connector is using two different Microsoft Entra app registrations:
 
-There is also a separate, confirmed popup issue: Supabase Edge Functions rewrite `text/html` GET responses to `text/plain`, so the callback page is shown as raw source. Supabase documents this behaviour: `GET` requests returning `text/html` are rewritten to `text/plain`.
+- Microsoft OAuth callback succeeded at **07:21** with `client_fp=c1932231`.
+- The email worker then tried to refresh that token with `client_fp=b88cebfd`.
+- A Microsoft refresh token is bound to the OAuth client that minted it. Refreshing it with a different `client_id`/secret is invalid, so Microsoft returns `AADSTS90013`.
 
-## Exact root issues to fix
+That is real forward movement: the current failure is explained by config drift between the Supabase Edge Function and the Cloud Run email worker.
 
-1. **OAuth scope drift**
-   - The original connector used Microsoft’s documented simple delegated Graph scopes: `offline_access Mail.Send User.Read`.
-   - Recent changes switched the authorize and refresh flows to fully-qualified scopes (`https://graph.microsoft.com/Mail.Send`, etc.) and then changed refresh scope again.
-   - Microsoft’s Graph delegated examples use `offline_access User.Read Mail.Read/Mail.Send` style scope strings for this flow, and refresh scope is optional/equivalent-or-subset.
-   - We should stop being clever and use the same simple scope string for authorize, code exchange, and refresh.
+## Documentation baseline checked
 
-2. **Possible client mismatch between Edge Function and Cloud Run worker**
-   - The refresh token is bound to the user + OAuth client.
-   - If the Edge Function receives the token with one `MICROSOFT_OAUTH_CLIENT_ID`, but the Cloud Run email worker refreshes it with a different `MICROSOFT_OAUTH_CLIENT_ID`, Microsoft rejects the refresh.
-   - Current diagnostics only say `client_id_present=True`, not whether it is the same client as the one that minted the token.
+Microsoft docs line up with this:
 
-3. **Callback HTML cannot render from a Supabase Edge Function GET**
-   - Returning an HTML success page from the Edge Function is not reliable/supported; Supabase rewrites it to `text/plain`.
-   - The callback should redirect to a normal React route in the app, which can render UI and `postMessage` the opener.
+- Authorization code flow requires the same `redirect_uri` during code exchange as was used for authorization.
+- Refresh token requests use `grant_type=refresh_token`, the same client identity, and an optional `scope` that must be equivalent/subset of the original scopes.
+- Microsoft Graph short scopes are valid: Microsoft explicitly says that if the resource identifier is omitted, the resource is assumed to be Microsoft Graph, so `Mail.Send User.Read` is equivalent to Graph-scoped permissions.
+- Refresh tokens may rotate; if a new `refresh_token` is returned, the old one should be discarded and replaced.
 
-## Implementation plan
+## Plan
 
-1. **Reset Microsoft OAuth scopes to the documented simple delegated flow**
-   - In `supabase/functions/microsoft-oauth-connect/index.ts`, set the single scope constant back to:
-     - `offline_access Mail.Send User.Read`
-   - Use that exact value for:
-     - authorization URL
-     - authorization-code token exchange
-   - Remove misleading comments about fully-qualified scopes being required.
+1. **Stop changing OAuth code first**
+   - Keep the connector on one delegated OAuth flow.
+   - Keep `/common`, `authorization_code`, `refresh_token`, `Mail.Send`, `User.Read`, and `offline_access`.
+   - Do not reintroduce app-only Graph, RBAC, or another connector.
 
-2. **Reset worker refresh to the same scope string**
-   - In `pdf-server/app/email/graph_oauth_client.py`, set refresh scope to:
-     - `offline_access Mail.Send User.Read`
-   - Keep the refresh-token `.strip()` because it is harmless and prevents whitespace corruption.
-   - On refresh success, if Microsoft returns a replacement `refresh_token`, support returning it later; do not leave token rotation impossible.
+2. **Align the two Microsoft client credentials**
+   - Make the Cloud Run email worker use the same `MICROSOFT_OAUTH_CLIENT_ID` and `MICROSOFT_OAUTH_CLIENT_SECRET` as the Supabase Edge Function.
+   - Target state: the worker refresh error/health diagnostic must show `client_fp=c1932231`, matching the OAuth callback log.
+   - This is the primary fix.
 
-3. **Add a safe client-id fingerprint diagnostic**
-   - Add a non-secret fingerprint of the worker `MICROSOFT_OAUTH_CLIENT_ID` to email diagnostics and refresh errors, e.g. first/last characters or SHA-256 prefix.
-   - Add the same fingerprint to the Edge Function callback result metadata stored on the account if a suitable existing metadata field exists; if not, include it only in function logs and the worker `/health` response.
-   - This lets us prove whether the connector and worker are using the same Entra app without exposing secrets.
+3. **Redeploy only what actually needs redeploying**
+   - Redeploy/update `pdf-worker-emails` so it picks up the corrected GCP Secret Manager values.
+   - If the worker still serves an old revision, move traffic to latest.
+   - No frontend rewrite and no database schema change are needed for the root cause.
 
-4. **Replace Edge Function callback HTML with an app redirect**
-   - Add a React route such as `/oauth/microsoft/callback-result`.
-   - The Edge Function callback will redirect to that route with only safe query params: `success`, `email`, or `error`.
-   - The React page will render the connected/failed message and run `window.opener.postMessage(...)`, then close the popup.
-   - This fixes the raw HTML source screenshot without fighting Supabase’s `text/html` rewrite.
+4. **Reconnect once after config is aligned**
+   - Reconnect `hello@document-centre.com` after the fingerprints match.
+   - This mints a fresh refresh token using the same Entra app that the worker will later use for refresh.
 
-5. **Keep connector architecture simple**
-   - Do not reintroduce `platform-graph-configure`.
-   - Do not add app-only Mail.Send / Exchange RBAC.
-   - Do not add another connector type.
-   - Keep platform and tenants on the same Microsoft delegated OAuth connector; platform is just `scope: "platform"`.
+5. **Send one test email and verify the exact failure point**
+   - Expected: outbox row moves to `sent` via `graph_oauth`.
+   - If it still fails, the next error should no longer be `AADSTS90013` with mismatched fingerprints; any remaining error would be the next true issue, not the same loop.
 
-6. **Validation after implementation**
-   - Deploy `microsoft-oauth-connect` after the Edge Function change.
-   - Redeploy the Cloud Run email worker code path via the existing GitHub workflow.
-   - Reconnect `hello@document-centre.com` so the refresh token is minted with the reset scope flow.
-   - Send a test email.
-   - Expected outcome:
-     - popup renders as a normal app page, not source code;
-     - Sent Mail row goes `sent` via `graph_oauth`;
-     - if it still fails, the error will show a safe client-id fingerprint so we can immediately confirm/exclude OAuth-client mismatch.
+6. **Add drift guardrails in repo**
+   - Update deployment verification so it does not merely check that Microsoft secrets are mounted; it must expose/check the non-secret client fingerprint for `pdf-worker-emails` too.
+   - Add a health/debug endpoint or worker log line for the email worker’s OAuth client fingerprint, because the public API `/health` currently does not prove what the private email worker is using.
+   - Add a short note to the OAuth setup doc: Supabase Edge secrets and GCP Secret Manager secrets must be the same Entra app; mismatched fingerprints cause `AADSTS90013`.
+
+7. **Add refresh-token rotation support as a follow-up hardening step**
+   - When Microsoft returns a replacement `refresh_token`, persist it back to Vault and update the email account secret reference.
+   - This is not the current root cause, but it is a documented best-practice gap and prevents future token expiry/rotation failures.
+
+## Acceptance criteria
+
+- The Edge Function callback fingerprint and email worker fingerprint match.
+- `hello@document-centre.com` reconnects cleanly.
+- A platform test email sends successfully via `graph_oauth`.
+- Deployment checks would catch the same client-ID mismatch before another three-day loop.
