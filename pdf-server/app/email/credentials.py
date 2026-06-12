@@ -24,6 +24,7 @@ from .graph_client import GraphCreds
 from .graph_oauth_client import (
     GraphOAuthCreds,
     _client_fp as graph_oauth_client_fp,
+    microsoft_oauth_expected_client_fp,
     microsoft_oauth_client_id,
     microsoft_oauth_client_secret,
 )
@@ -59,6 +60,8 @@ class CredentialError(Exception):
 
 def email_transport_diagnostics() -> Dict[str, Any]:
     """Expose non-secret runtime facts for health checks and deploy drift checks."""
+    graph_fp = graph_oauth_client_fp(microsoft_oauth_client_id() or "")
+    expected_graph_fp = microsoft_oauth_expected_client_fp()
     return {
         "supported": list(SUPPORTED_EMAIL_TRANSPORTS),
         "oauth_env_present": {
@@ -69,7 +72,9 @@ def email_transport_diagnostics() -> Dict[str, Any]:
             "graph_oauth": {
                 "client_id": bool(microsoft_oauth_client_id()),
                 "client_secret": bool(microsoft_oauth_client_secret()),
-                "client_fp": graph_oauth_client_fp(microsoft_oauth_client_id() or ""),
+                "client_fp": graph_fp,
+                "expected_client_fp": expected_graph_fp,
+                "client_fp_matches_expected": graph_fp == expected_graph_fp if expected_graph_fp else None,
             },
         },
     }
