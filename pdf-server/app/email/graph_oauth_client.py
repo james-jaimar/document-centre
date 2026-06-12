@@ -73,7 +73,13 @@ def _refresh_access_token(creds: GraphOAuthCreds) -> str:
         raise TransientSmtpError(f"graph_oauth token network: {exc}") from exc
     if r.status_code in (400, 401, 403):
         # invalid_grant means refresh_token revoked → permanent.
-        raise PermanentSmtpError(f"graph_oauth_auth token {r.status_code}: {r.text[:400]}")
+        raise PermanentSmtpError(
+            f"graph_oauth_auth token {r.status_code} "
+            f"(refresh_len={len(refresh_token)}, "
+            f"client_id_present={bool(creds.client_id)}, "
+            f"client_secret_present={bool(creds.client_secret)}): "
+            f"{r.text[:400]}"
+        )
     if not r.is_success:
         raise TransientSmtpError(f"graph_oauth token {r.status_code}: {r.text[:400]}")
     tok = r.json().get("access_token")
