@@ -4,6 +4,7 @@
 // - Actions: upsert | delete | get_password (mask) | test_send
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { kickEmailWorker } from "../_shared/email-kick.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -227,21 +228,8 @@ Deno.serve(async (req) => {
         .single();
       if (insErr) return json({ error: `enqueue failed: ${insErr.message}` }, 500);
 
-      // Best-effort: kick the worker so it sends within ~1s.
-      try {
-        const kickUrl = Deno.env.get("EMAIL_WORKER_KICK_URL");
-        const kickToken = Deno.env.get("EMAIL_WORKER_KICK_TOKEN");
-        if (kickUrl) {
-          await fetch(kickUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...(kickToken ? { Authorization: `Bearer ${kickToken}` } : {}),
-            },
-            body: JSON.stringify({ source: "test_send" }),
-          }).catch(() => {});
-        }
-      } catch { /* ignore */ }
+      // Best-effort: kick the Cloud Run worker so it sends within ~1s.
+      kickEmailWorker();
 
       return json({ success: true, queued: true, outbox_id: (row as any).id });
     }
