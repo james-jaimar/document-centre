@@ -968,6 +968,7 @@ export default function PreviewPanel({
           canvasSizeMm={canvasSizeMm}
           pdfSizeMm={pdfSizeMm}
           trimCrop={trimCrop}
+          pocketCoverPath={pocketCoverPath}
         />
       )}
 
