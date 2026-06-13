@@ -1,38 +1,61 @@
-# Import 3@1 Branches
+## Goal
 
-The uploaded `3at1_branches.xlsx` contains **75 branches** (all rows complete: name, address, city, province, postal code, phone, email). The `3 at 1` tenant exists (`slug: 3at1`, `app_id: a0000000…0001`) and currently has 0 branches.
+For the 3@1 tenant (`a513d202-41f7-47eb-97be-47f2354b3bb1`, `app_id a0000000-…-0001`):
 
-## What I'll do
+1. Set `is_live = true` on all 75 branches.
+2. For each branch, create a `branch_manager` user keyed to the branch's `email` column — silently (no invite email). You will trigger "Resend invite" per branch later when the actual staff member is ready to take over.
 
-Insert all 75 rows into `public.branches` via a single SQL data migration, mapping the spreadsheet columns to the branches schema:
+## Step 1 — Flip live
 
-| Excel column | Branches column |
-|---|---|
-| `store_name` | `name` |
-| `store_id` | `code` (e.g. `26659`) |
-| `address` + `address2` | `address` (joined with `, `) |
-| `city` | `city` |
-| `province` | `province` |
-| `postal_code` | `postal_code` (zero-padded to 4 digits where needed) |
-| `country` | `country` (ISO code `ZA`) |
-| `phone` | `phone` |
-| `email` | `email` |
-| derived from name | `slug` (kebab-case, required) |
-| derived from name | `url_slug` (kebab-case, lowercase a-z0-9 + hyphen, reserved-word safe) |
-| — | `tenant_id = a513d202-41f7-47eb-97be-47f2354b3bb1` |
-| — | `is_active = true`, `is_live = false` (same as new PostNet branches — admin flips live when ready) |
+Single UPDATE: `is_live = true` on every branch where `tenant_id = '…3bb1'` and `is_live = false`. Expected: 75 rows.
 
-Slug collisions (e.g. two branches both deriving to `paarl`) will be de-duplicated by appending the city or store_id suffix.
+## Step 2 — Provision branch_manager accounts (silent)
 
-After insert, the `trg_clone_pricing_for_new_branch` trigger automatically clones tenant pricing to each new branch, and `seed_capabilities_for_new_family`-style seeding gives them the default product catalogue — same as PostNet.
+I'll write a small one-shot Node script (run locally against Supabase using the service role key — not committed to the repo) that, for each of the 75 branches:
 
-## Out of scope (ask separately if you want them)
+1. **Skip if branch.email is null/empty** — log and continue.
+2. **Find or create auth user** by email:
+   - `auth.admin.listUsers` paged lookup, or `createUser({ email, password: <random 32-byte hex>, email_confirm: true })`.
+   - If the address already has an auth user (e.g. shared `info@…` or pre-existing), reuse that user id — no overwrite.
+3. **Upsert `profiles` row** (`id = user.id`, `email`, `display_name = branch.name`) — only fill blanks, never clobber.
+4. **Insert `tenant_memberships`**:
+   ```
+   profile_id   = user.id
+   tenant_id    = a513d202-…-3bb1
+   app_id       = a0000000-…-0001
+   role         = 'branch_manager'
+   branch_id    = branch.id
+   is_active    = true
+   ```
+   `ON CONFLICT (profile_id, tenant_id, app_id) DO NOTHING` semantics — if a membership already exists (e.g. shared email already linked elsewhere in 3@1), skip and log. The existing `Resend invite` / `Edit member` flows in `AdminUsers` will handle those edge cases.
+5. **No email is sent.** The user exists with a random unknown password; later you click "Resend invite" in `/admin/users` and the existing `invite-member` flow generates a branded password-setup link.
 
-- Branch admin users / `tenant_memberships` — none created. Each branch will need a manager invited later.
-- Branch-specific overrides (capabilities, payment gateways, credit accounts) — left at tenant defaults.
-- Custom branch logos / hero imagery.
-- Tenant-level branding (header/footer, auth bg) — already configured separately.
+### Why a one-shot script, not a migration or edge function
+
+- Auth user creation must go through `auth.admin.createUser` (service role), which a SQL migration can't do.
+- It's a one-time backfill — not worth a permanent edge function. Same script will be reusable for the PostNet branches (just change the tenant_id).
+
+### Output
+
+Script prints a summary table and writes `/mnt/documents/3at1-branch-admin-provisioning.csv` with columns: `branch_name, branch_email, profile_id, status` (`created` / `reused_existing_user` / `skipped_no_email` / `membership_exists` / `error`).
 
 ## Verification
 
-After the insert I'll run a count + sample query to confirm all 75 rows landed and slugs are unique.
+After the script:
+
+```sql
+SELECT count(*) FROM branches
+  WHERE tenant_id = 'a513d202-…-3bb1' AND is_live = true;     -- expect 75
+
+SELECT count(*) FROM tenant_memberships
+  WHERE tenant_id = 'a513d202-…-3bb1' AND role = 'branch_manager';  -- expect ≤ 75
+```
+
+Plus a spot-check on 3 branches to confirm `profiles.email = branches.email` and `tenant_memberships.branch_id` matches.
+
+## Out of scope
+
+- Sending the invite emails (you said create silently → invite later).
+- PostNet — same script will be re-run separately with the PostNet tenant_id when you're ready.
+- Any branch-level branding, capabilities, pricing, or payment-gateway overrides — they stay at tenant defaults.
+- Promoting these accounts beyond `branch_manager` — they can invite their own `store_operator` staff via the existing UI.
