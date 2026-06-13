@@ -200,11 +200,17 @@ export default function PhotoPrintsBuilder() {
     };
   }, [photoSpec, orderItem?.id, orderItem?.spec]);
 
+  // Resolve signed URLs for every photo path we care about: original (legacy
+  // fallback), thumb (tile), preview (editor). Keys are raw storage paths.
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   useEffect(() => {
-    const paths = photoSpec.photos
-      .map((p) => p.original_storage_path)
-      .filter((p) => p && !signedUrls[p]);
+    const wanted = new Set<string>();
+    for (const p of photoSpec.photos) {
+      if (p.original_storage_path) wanted.add(p.original_storage_path);
+      if (p.thumb_path) wanted.add(p.thumb_path);
+      if (p.preview_path) wanted.add(p.preview_path);
+    }
+    const paths = Array.from(wanted).filter((p) => !signedUrls[p]);
     if (paths.length === 0) return;
     let cancelled = false;
     resolveUrls(paths).then((urls) => {
@@ -214,11 +220,30 @@ export default function PhotoPrintsBuilder() {
         if (urls[i]) next[p] = urls[i];
       });
       setSignedUrls((prev) => ({ ...prev, ...next }));
+      // Warm the preview blob cache in the background so clicking Edit
+      // opens the editor instantly on subsequent interactions.
+      for (const p of photoSpec.photos) {
+        if (p.preview_path && next[p.preview_path] && !getCachedBlobUrl(p.preview_path)) {
+          void prefetchToCache(p.preview_path, next[p.preview_path]);
+        }
+      }
     });
     return () => {
       cancelled = true;
     };
   }, [photoSpec.photos, signedUrls]);
+
+  // Helper: pick the best loadable URL for a path — local blob (instant) >
+  // signed URL > nothing. Used by the tile + editor below.
+  const resolvePhotoUrl = useCallback(
+    (path: string | undefined | null): string | null => {
+      if (!path) return null;
+      const blob = getCachedBlobUrl(path);
+      if (blob) return blob;
+      return signedUrls[path] ?? null;
+    },
+    [signedUrls],
+  );
 
   const device = useDeviceKind();
   const isMobile = device === "mobile";
