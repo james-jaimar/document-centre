@@ -52,7 +52,7 @@ export function useProductionArtefacts(jobId: string | null) {
       const { data, error } = await supabase
         .from("order_jobs")
         .select(
-          "print_ready_pdf_path, imposed_pdf_path, job_ticket_pdf_path, imposition_template_id, product_category, assembly_report, print_ready_assembled_at, print_ready_spec_hash",
+          "print_ready_pdf_path, imposed_pdf_path, job_ticket_pdf_path, imposition_template_id, product_category, assembly_report, print_ready_assembled_at, print_ready_spec_hash, auto_assemble_error, auto_assemble_failed_at, order_id",
         )
         .eq("id", jobId!)
         .single();
@@ -60,6 +60,32 @@ export function useProductionArtefacts(jobId: string | null) {
       return data as unknown as ProductionArtefacts;
     },
   });
+
+  /** Retry the auto-assemble fan-out for the whole order (clears error on success). */
+  const retryAutoAssemble = useCallback(async () => {
+    if (!jobId) return;
+    const orderId = query.data?.order_id;
+    if (!orderId) return;
+    setGenerating("print_ready");
+    try {
+      const { data, error } = await supabase.functions.invoke("enqueue-print-ready", {
+        body: { order_id: orderId, force: true },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast({ title: "Auto-assemble retried", description: "Generating print-ready PDFs and tickets." });
+      qc.invalidateQueries({ queryKey: ["production-artefacts", jobId] });
+      qc.invalidateQueries({ queryKey: ["production-queue"] });
+    } catch (e: any) {
+      toast({
+        title: "Retry failed",
+        description: e?.message ?? "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setGenerating(null);
+    }
+  }, [jobId, query.data?.order_id, qc, toast]);
 
   const generatePrintReady = useCallback(async (opts?: { force?: boolean }) => {
     if (!jobId) return;
