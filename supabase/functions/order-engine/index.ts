@@ -74,28 +74,36 @@ async function isDemoOrder(admin: ReturnType<typeof createClient>, order_id: str
   } catch { return false; }
 }
 
-async function triggerEmail(authHeader: string, order_id: string, event_key: string, extra: Record<string, unknown> = {}) {
+async function triggerEmail(_authHeader: string, order_id: string, event_key: string, extra: Record<string, unknown> = {}) {
   try {
     const url = Deno.env.get("SUPABASE_URL")!;
-    await fetch(`${url}/functions/v1/send-order-email`, {
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const res = await fetch(`${url}/functions/v1/send-order-email`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: authHeader },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
       body: JSON.stringify({ order_id, event_key, ...extra }),
     });
+    if (!res.ok) {
+      console.error(`triggerEmail ${event_key} failed: ${res.status} ${await res.text().catch(() => "")}`);
+    }
   } catch (e) {
     console.error("triggerEmail failed:", e);
   }
 }
 
-async function triggerInvoice(authHeader: string, order_id: string, kind: string): Promise<{ invoice_id?: string } | null> {
+async function triggerInvoice(_authHeader: string, order_id: string, kind: string): Promise<{ invoice_id?: string } | null> {
   try {
     const url = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const res = await fetch(`${url}/functions/v1/generate-invoice-pdf`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: authHeader },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
       body: JSON.stringify({ order_id, kind }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error(`triggerInvoice ${kind} failed: ${res.status} ${await res.text().catch(() => "")}`);
+      return null;
+    }
     const data = await res.json().catch(() => null);
     return data && typeof data === "object" ? { invoice_id: (data as any).invoice_id } : null;
   } catch (e) {
@@ -1237,12 +1245,7 @@ async function recomputeAndNotify(
   // If order was paid and now has a positive due amount, trigger payment request email
   if (prevPaymentStatus === "paid" && due > 0.005) {
     try {
-      const url = Deno.env.get("SUPABASE_URL")!;
-      await fetch(`${url}/functions/v1/send-order-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: authHeader },
-        body: JSON.stringify({ order_id, event_key: "payment_request", force: true }),
-      });
+      await triggerEmail(authHeader, order_id, "payment_request", { force: true });
     } catch (e) {
       console.error("payment_request email failed:", e);
     }
