@@ -30,6 +30,13 @@ interface PhotoEditorModalProps {
       "crop" | "zoom" | "rotation" | "fit_mode" | "croppedAreaPixels"
     >,
   ) => void;
+  /**
+   * When the editor renders a downscaled `preview` derivative instead of the
+   * full original, react-easy-crop emits `croppedAreaPixels` in the
+   * derivative's coord space. Multiplying by `pixelScale` (= source_long /
+   * preview_long) brings them back to source coords for the backend render.
+   */
+  pixelScale?: number;
 }
 
 export default function PhotoEditorModal({
