@@ -1,60 +1,32 @@
-## Problem
+## Status: already complete
 
-When a customer places an order, the order confirmation email never sends. Confirmed via edge logs: the order-engine's call to `send-order-email` for order INV-00090 returned **403 Forbidden**.
+The previous fix changed the **helpers** `triggerEmail` and `triggerInvoice` in `supabase/functions/order-engine/index.ts` so they always send `Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, regardless of who originally called the engine. Because every order-engine side-effect funnels through these two helpers, all notifications are fixed in one place.
 
-## Root cause
+### Coverage check vs. the Notifications tab
 
-`triggerEmail` and `triggerInvoice` in `supabase/functions/order-engine/index.ts` forward the original caller's `Authorization` header. For customer-initiated flows (`createOrderWithJobs` at checkout), that's the customer's user token. `send-order-email`'s auth guard only accepts:
-- service-role bearer, OR
-- a tenant staff role (`owner|admin|sales|production|accounts|branch_manager|store_operator`).
+| Toggle | event_key | Trigger site in order-engine |
+|---|---|---|
+| Order Confirmation | `order_received` | `createOrderWithJobs`, `reorderOrder` |
+| Payment Received | `payment_received` | `recordPaymentEvent` (manual + Stripe webhook) |
+| Proof Ready | `proof_ready` | proof creation |
+| Order Dispatched | `dispatched` | `updateOrderStatus` → `dispatched` |
+| Order Completed | `completed` | `updateOrderStatus` → `completed`, `updateJobStatus` rollup |
 
-Customers fail both checks → 403, no email queued. The tenant notification toggles (Order Confirmation / Payment Received / etc.) are never even reached.
+Also covered (no toggle, always-on or contextual): `ready_for_collection`, `in_production`, `order_cancelled`, `refunded`, `new_message`, `payment_request` (the recompute path was migrated off its inline `fetch` to use `triggerEmail` too).
 
-Manual sends from the admin UI work because they're triggered by staff users whose token passes the guard. That's why pro-forma and payment-request emails from the admin work, but the auto-triggers don't.
+### Out of scope — intentionally unchanged
 
-`triggerInvoice` (proforma generation) is also rejected the same way, so even if the email did send it wouldn't have the PDF attached.
+- `src/lib/orders/mutations.ts → sendInvoiceEmail` and `requestPayment` are **admin-initiated** from the staff UI. They run with a staff bearer that already satisfies `send-order-email`'s auth guard. No change needed.
+- `useQuotes.ts → send-quote-email` is admin-only.
+- `send-order-email`'s inline fallback that auto-generates a proforma when `payment_request` has none: when called from `triggerEmail`, the incoming `Authorization` is now the service-role key, so the forwarded call also has service-role privileges. Works.
 
-## Fix
+### Recommended verification (no code changes)
 
-Server-to-server side-effects from `order-engine` (and any other backend triggers) should authenticate as the service role, not as the customer.
+1. Place a fresh test order on PostNet → confirm row in `email_outbox` with `metadata.event_key = 'order_received'` and a proforma PDF attached.
+2. Admin marks paid → confirm `payment_received` row + receipt PDF.
+3. Admin sets status to Dispatched (with tracking) → confirm `dispatched` row.
+4. Admin sets status to Completed → confirm `completed` row.
 
-### 1. `supabase/functions/order-engine/index.ts`
+If any of these don't appear, check `order-engine` logs for the new "triggerEmail … failed: <status>" message I added, which will tell us the next layer to look at.
 
-Change `triggerEmail` and `triggerInvoice` to drop the `authHeader` parameter and send `Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}` instead.
-
-```ts
-async function triggerEmail(order_id: string, event_key: string, extra: Record<string, unknown> = {}) {
-  try {
-    const url = Deno.env.get("SUPABASE_URL")!;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    await fetch(`${url}/functions/v1/send-order-email`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
-      body: JSON.stringify({ order_id, event_key, ...extra }),
-    });
-  } catch (e) { console.error("triggerEmail failed:", e); }
-}
-```
-
-Apply the same change to `triggerInvoice`. Update all call sites (createOrderWithJobs, recordPaymentEvent, refundPayment, updateOrderStatus, updateJobStatus, cancelOrder, reorderOrder, sendMessage, recomputeAndNotify) to drop the `authHeader` argument.
-
-### 2. Verify the existing service-role bearer check in `send-order-email/index.ts`
-
-Line 271: `const isServiceRole = bearer && bearer === serviceKey;` — this already handles service-role calls correctly. No change needed there.
-
-### 3. Re-test
-
-- Place a fresh test order on PostNet.
-- Confirm `email_outbox` gets a row with `metadata.event_key = 'order_received'` within seconds.
-- Confirm `order_invoices` gets a `proforma` row and that the email has the PDF attached.
-- Confirm a row exists in `timeline_events` for the order.
-- Repeat for `recordPaymentEvent` (mark order paid in admin) → `payment_received` email + receipt PDF.
-
-### 4. Deploy
-
-Deploy `order-engine` only. `send-order-email` is unchanged.
-
-## Out of scope
-
-- The tenant notification toggle UI is working correctly; no changes there.
-- The Stripe webhook path already uses service-role to invoke order-engine, so its downstream triggers will start working as soon as this fix lands.
+No further edits required.
