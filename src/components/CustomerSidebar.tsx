@@ -21,6 +21,7 @@ import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { setTenantSignOutFlag, isAnonymousUser } from "@/lib/tenantSignOut";
+import { withAuthRedirect } from "@/lib/auth/authReturnPath";
 
 export default function CustomerSidebar() {
   const location = useLocation();
@@ -154,7 +155,7 @@ export default function CustomerSidebar() {
       ) : (
         <div className="mt-6">
           <Link
-            to={tenantPath("auth")}
+            to={withAuthRedirect(tenantPath("auth"), location)}
             className="sidebar-nav-item flex items-center gap-2 text-sm text-sidebar-foreground/70 hover:text-sidebar-foreground"
           >
             <LogIn className="h-[18px] w-[18px]" />

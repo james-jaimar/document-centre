@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useAuth } from "@/hooks/useAuth";
 import { isAnonymousUser } from "@/lib/tenantSignOut";
+import { withAuthRedirect } from "@/lib/auth/authReturnPath";
 
 /** Routes (relative to /t/:slug) where the bottom tab bar is hidden so the
  *  primary CTA isn't covered (configurator, checkout, full-screen flows). */
@@ -27,6 +28,7 @@ export default function MobileTabBar() {
   const { user } = useAuth();
   const isAuth = !!user && !isAnonymousUser(user);
   const hidden = useTabBarHidden();
+  const location = useLocation();
 
   if (hidden) return null;
 
@@ -34,7 +36,7 @@ export default function MobileTabBar() {
     { to: tenantPath("print-centre"), icon: Home, label: "Home", end: true },
     { to: tenantPath("orders/new"), icon: Plus, label: "Create", end: false, primary: true },
     {
-      to: isAuth ? tenantPath("orders") : tenantPath("auth"),
+      to: isAuth ? tenantPath("orders") : withAuthRedirect(tenantPath("auth"), location),
       icon: ClipboardList,
       label: isAuth ? "Orders" : "Sign in",
       end: false,

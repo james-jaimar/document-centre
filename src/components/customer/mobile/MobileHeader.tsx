@@ -1,4 +1,5 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { withAuthRedirect } from "@/lib/auth/authReturnPath";
 import { Menu, ShoppingCart, LogIn } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,6 +13,7 @@ import MobileNavSheet from "./MobileNavSheet";
 export default function MobileHeader() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { tenantPath } = useTenantSlug();
   const { user } = useAuth();
   const { tenant } = useTenantFromSlug();
@@ -90,7 +92,7 @@ export default function MobileHeader() {
           </button>
         ) : (
           <Link
-            to={tenantPath("auth")}
+            to={withAuthRedirect(tenantPath("auth"), location)}
             aria-label="Sign in"
             className="flex h-11 w-11 items-center justify-center rounded-lg text-foreground/80 hover:bg-secondary"
           >
