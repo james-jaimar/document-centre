@@ -686,7 +686,10 @@ export default function PhotoPrintsBuilder() {
             <PhotoTile
               key={p.id}
               photo={p}
-              signedUrl={signedUrls[p.original_storage_path] ?? null}
+              signedUrl={
+                resolvePhotoUrl(p.thumb_path) ??
+                resolvePhotoUrl(p.original_storage_path)
+              }
               borderSlug={photoSpec.border_slug}
               onEdit={() => setEditorPhotoId(p.id)}
               onDuplicate={() => duplicatePhoto(p.id)}
