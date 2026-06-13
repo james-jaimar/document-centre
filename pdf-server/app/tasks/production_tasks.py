@@ -232,6 +232,20 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                     return out
 
                 downloaded: dict[str, Path] = {}
+                sliced_cache: dict[tuple[str, int, int], Path] = {}
+
+                def _slice_pdf(idx: int, src: Path, start0: int, end0: int, label: str) -> Path:
+                    """Extract pages [start0..end0] (0-indexed inclusive) into a new PDF."""
+                    from pypdf import PdfReader as _R, PdfWriter as _W
+                    out = ws.path(f"{idx:03d}-{label}-p{start0}-{end0}.pdf")
+                    reader = _R(str(src))
+                    writer = _W()
+                    for p in range(start0, end0 + 1):
+                        writer.add_page(reader.pages[p])
+                    with open(out, "wb") as f:
+                        writer.write(f)
+                    return out
+
                 # For "mixed" colour jobs we want to greyscale only the
                 # sections flagged is_color=False; the rest stay colour.
                 # For whole-doc "bw" jobs we let the downstream step handle
@@ -256,6 +270,44 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                             storage.download(path, local)
                             downloaded[path] = local
 
+                        # ── Slice by page_range if the directive scopes a
+                        # subset of the source PDF. Many products (business
+                        # cards, double-sided flyers, brochure folds, split
+                        # covers) assign multiple sections to the SAME source
+                        # file with different ranges. Without slicing the
+                        # merge would repeat the entire file once per section.
+                        try:
+                            from pypdf import PdfReader as _R
+                            full_pc = len(_R(str(local)).pages)
+                        except Exception:
+                            full_pc = d.get("page_count") or 0
+
+                        rs = d.get("page_range_start")
+                        re_ = d.get("page_range_end")
+                        section_file = local
+                        if (
+                            full_pc
+                            and isinstance(rs, int)
+                            and isinstance(re_, int)
+                        ):
+                            s_clamped = max(0, min(rs, full_pc - 1))
+                            e_clamped = max(s_clamped, min(re_, full_pc - 1))
+                            if (s_clamped, e_clamped) != (0, full_pc - 1):
+                                key = (path, s_clamped, e_clamped)
+                                if key in sliced_cache:
+                                    section_file = sliced_cache[key]
+                                else:
+                                    label = (d.get("section_type") or "section").replace(" ", "_")
+                                    try:
+                                        section_file = _slice_pdf(idx, local, s_clamped, e_clamped, label)
+                                        sliced_cache[key] = section_file
+                                        steps.append(f"slice:{label}:{s_clamped}-{e_clamped}")
+                                    except Exception as ex:
+                                        warnings.append(
+                                            f"slice failed for {label} ({s_clamped}-{e_clamped}): {ex}"
+                                        )
+                                        section_file = local
+
                         section_is_color = d.get("is_color")
                         # Per-section greyscale (mixed jobs only). If the
                         # directive doesn't carry the flag (older snapshot),
@@ -263,10 +315,10 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                         # decide based on TargetSpec.
                         if mixed_colour and section_is_color is False:
                             label = (d.get("section_type") or "section").replace(" ", "_")
-                            local = _greyscale_file(idx, local, label)
+                            section_file = _greyscale_file(idx, section_file, label)
                             steps.append(f"greyscale_section:{label}")
 
-                        files.append(local)
+                        files.append(section_file)
 
                         # Simplex section with odd page count → insert real
                         # blank back page so the press doesn't print on the
@@ -277,7 +329,7 @@ def assemble_print_ready_for_job(self, job_id: str, pdf_job_id: str, force: bool
                             if section_type not in ("front_cover", "back_cover"):
                                 try:
                                     from pypdf import PdfReader as _R
-                                    pc = len(_R(str(local)).pages)
+                                    pc = len(_R(str(section_file)).pages)
                                 except Exception:
                                     pc = d.get("page_count") or 0
                                 if pc and pc % 2 == 1:
