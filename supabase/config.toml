@@ -51,6 +51,8 @@ project_id = "lcvdhtaqoumyokjqaqfw"
     verify_jwt = false
   [functions.microsoft-oauth-connect]
     verify_jwt = false
+  [functions.provision-branch-admins]
+    verify_jwt = false
 
 
 
