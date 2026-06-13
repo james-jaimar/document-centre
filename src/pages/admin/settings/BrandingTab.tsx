@@ -358,6 +358,14 @@ export function BrandingTab() {
             previewClass="h-20 w-auto object-cover"
           />
           <ImageUploadField
+            label="Sign-in Background"
+            value={authBackgroundUrl}
+            onChange={setAuthBackgroundUrl}
+            tenantId={tenantId}
+            fileKey="auth-bg"
+            previewClass="h-20 w-auto object-cover"
+          />
+          <ImageUploadField
             label="Favicon"
             value={faviconUrl}
             onChange={setFaviconUrl}
