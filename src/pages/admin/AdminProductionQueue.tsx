@@ -19,6 +19,7 @@ interface QueueRow {
   created_at: string;
   print_ready_pdf_path: string | null;
   imposed_pdf_path: string | null;
+  auto_assemble_error: string | null;
   order_id: string;
   order: { order_number: string; tenant_id: string } | null;
 }
