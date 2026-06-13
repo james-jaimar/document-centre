@@ -820,6 +820,10 @@ export default function PhotoPrintsBuilder() {
             fit_mode: "fill" as const,
             croppedAreaPixels: null,
             quantity: 1,
+            thumb_path: d.preflight_data?.thumb_path,
+            preview_path: d.preflight_data?.preview_path,
+            preview_width_px: d.preflight_data?.preview_width_px,
+            preview_height_px: d.preflight_data?.preview_height_px,
           }));
           setPhotoSpec((prev) => ({
             ...prev,
