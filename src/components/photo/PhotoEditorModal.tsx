@@ -130,12 +130,21 @@ export default function PhotoEditorModal({
   };
 
   const handleSave = () => {
+    let scaled = croppedAreaPixels;
+    if (scaled && pixelScale && Math.abs(pixelScale - 1) > 0.001) {
+      scaled = {
+        x: Math.round(scaled.x * pixelScale),
+        y: Math.round(scaled.y * pixelScale),
+        width: Math.round(scaled.width * pixelScale),
+        height: Math.round(scaled.height * pixelScale),
+      };
+    }
     onSave({
       crop,
       zoom,
       rotation,
       fit_mode: fitMode,
-      croppedAreaPixels,
+      croppedAreaPixels: scaled,
     });
   };
 
