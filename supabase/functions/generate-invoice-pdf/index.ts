@@ -211,13 +211,21 @@ Deno.serve(async (req) => {
     const { order_id, kind = "invoice" } = body || {};
     if (!order_id) return json({ error: "order_id required" }, 400);
 
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return json({ error: "Unauthorized" }, 401);
-    const userClient = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: u } = await userClient.auth.getUser();
-    if (!u?.user) return json({ error: "Unauthorized" }, 401);
+    // Accept either a service-role bearer (internal callers like order-engine
+    // auto-triggers) OR an authenticated staff/customer JWT.
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    const isServiceRole = bearer && bearer === serviceKey;
+    let u: { user: { id: string } | null } = { user: null };
+    if (!isServiceRole) {
+      if (!authHeader) return json({ error: "Unauthorized" }, 401);
+      const userClient = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: udata } = await userClient.auth.getUser();
+      if (!udata?.user) return json({ error: "Unauthorized" }, 401);
+      u = { user: { id: udata.user.id } };
+    }
 
     const { data: order, error: oErr } = await admin
       .from("orders").select("*").eq("id", order_id).single();
