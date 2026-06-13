@@ -12,7 +12,12 @@
 
 export interface RenderPreviewOpts {
   imageUrl: string;
-  /** Rect on the *rotated* source image, as returned by react-easy-crop. */
+  /**
+   * Rect on the *rotated source* image, in source-pixel coordinates.
+   * When the image we render is a downscaled derivative (thumb/preview),
+   * pass `sourceWidth`/`sourceHeight` so we can scale this rect down to
+   * the loaded image's coordinate space.
+   */
   croppedAreaPixels: { x: number; y: number; width: number; height: number } | null;
   rotation: number;
   /** Output canvas longest edge, in CSS pixels. */
@@ -21,6 +26,13 @@ export interface RenderPreviewOpts {
   aspect: number;
   /** White border thickness as a fraction of the long edge (0–0.2). */
   borderFraction?: number;
+  /**
+   * Original (source) pixel dimensions. When supplied and `imageUrl` is
+   * a downscaled derivative, the crop rect is uniformly scaled by
+   * `loadedLongEdge / sourceLongEdge`.
+   */
+  sourceWidth?: number;
+  sourceHeight?: number;
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
