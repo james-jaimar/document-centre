@@ -45,26 +45,23 @@ export function isAnonymousUser(user: { is_anonymous?: boolean } | null): boolea
 }
 
 /**
- * Resolve the URL the customer should land on after signing out of a
- * tenant portal. Priority:
- *   1. Active branch's `website_url` (the branch's real public web page)
- *   2. Tenant-level `branding.origin_url` (franchisor / brand site)
- *   3. Current window origin (stay on the same host — never kick to document-centre.com)
+ * Normalise a URL so it always has a protocol.
  */
-export function resolvePostSignOutUrl(
-  activeBranchWebsite: string | null | undefined,
-  tenantOrigin: string | null | undefined,
-): string {
-  const normalise = (u: string | null | undefined): string | null => {
-    if (!u) return null;
-    const trimmed = u.trim();
-    if (!trimmed) return null;
-    if (/^https?:\/\//i.test(trimmed)) return trimmed;
-    return `https://${trimmed}`;
-  };
-  return (
-    normalise(activeBranchWebsite) ||
-    normalise(tenantOrigin) ||
-    (typeof window !== "undefined" ? window.location.origin : "/")
-  );
+export function normaliseExternalUrl(u: string | null | undefined): string | null {
+  if (!u) return null;
+  const trimmed = u.trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
+/**
+ * Resolve the in-app path the customer should land on after signing out
+ * of a tenant portal. We deliberately keep them inside the Print Centre
+ * rather than kicking them out to the brand's public website — a small
+ * "Back to main site" link in the footer handles that case instead.
+ */
+export function resolvePostSignOutPath(slug: string | null | undefined): string {
+  if (!slug) return "/";
+  return `/t/${slug}/print-centre`;
 }
