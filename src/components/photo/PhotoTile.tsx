@@ -50,6 +50,11 @@ export default function PhotoTile({
       aspect: size.aspect,
       borderFraction,
       outputLongEdgePx: 480,
+      // The tile may be rendering from the small thumb derivative, but
+      // `croppedAreaPixels` is stored in source-pixel coords. Pass source
+      // dims so renderPhotoPreview can scale the crop rect to match.
+      sourceWidth: photo.source_width_px,
+      sourceHeight: photo.source_height_px,
     })
       .then((url) => {
         if (!cancelled) setPreviewUrl(url);
@@ -63,7 +68,7 @@ export default function PhotoTile({
     return () => {
       cancelled = true;
     };
-  }, [renderKey, signedUrl, photo.croppedAreaPixels, photo.rotation, size.aspect, borderFraction]);
+  }, [renderKey, signedUrl, photo.croppedAreaPixels, photo.rotation, photo.source_width_px, photo.source_height_px, size.aspect, borderFraction]);
 
   // Low-res check
   const longEdgePx = Math.max(photo.source_width_px, photo.source_height_px);
