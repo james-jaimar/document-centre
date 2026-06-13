@@ -20,7 +20,7 @@ import { resolveDisplayName, resolveInitials } from "@/lib/displayName";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
-import { setTenantSignOutFlag, isAnonymousUser, resolvePostSignOutUrl } from "@/lib/tenantSignOut";
+import { setTenantSignOutFlag, isAnonymousUser, resolvePostSignOutPath } from "@/lib/tenantSignOut";
 import { useBranch } from "@/contexts/BranchContext";
 import { withAuthRedirect } from "@/lib/auth/authReturnPath";
 
@@ -38,10 +38,10 @@ export default function CustomerSidebar() {
 
   const handleSignOut = async () => {
     if (slug) setTenantSignOutFlag(slug);
-    const branchSite = (activeBranch as any)?.website_url ?? null;
     await signOut();
     queryClient.clear();
-    window.location.href = resolvePostSignOutUrl(branchSite, branding?.origin_url);
+    // Keep the user inside the Print Centre — land them on the tenant home.
+    window.location.href = resolvePostSignOutPath(slug);
   };
   const cartCount = useCartItemCount();
 
