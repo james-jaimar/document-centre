@@ -33,26 +33,27 @@ export function interpolateLegal(
   ctx: Partial<LegalTemplateContext>,
   opts: { strip?: boolean } = {},
 ): string {
-  const supportEmail = ctx.support_email || "";
-  const website = ctx.website_url || "";
-  const country = ctx.country || "South Africa";
-  const map: Record<string, string> = {
-    tenant_name: ctx.tenant_name ?? "",
-    support_email: supportEmail,
-    website_url: website,
-    country,
-    branch_name: ctx.branch_name ?? ctx.tenant_name ?? "",
-    branch_phone: ctx.branch_phone ?? "",
-    branch_email: ctx.branch_email ?? supportEmail,
-    branch_address: ctx.branch_address ?? "",
-    branch_website: ctx.branch_website ?? website,
-  };
+  // Only build entries for keys explicitly provided — unknown placeholders
+  // are left intact so a later interpolation pass (e.g. render-time branch
+  // resolution) can fill them in.
+  const entries: [string, string][] = [];
+  const has = (k: keyof LegalTemplateContext) =>
+    Object.prototype.hasOwnProperty.call(ctx, k);
+  if (has("tenant_name")) entries.push(["tenant_name", ctx.tenant_name ?? ""]);
+  if (has("support_email")) entries.push(["support_email", ctx.support_email ?? ""]);
+  if (has("website_url")) entries.push(["website_url", ctx.website_url ?? ""]);
+  if (has("country")) entries.push(["country", ctx.country ?? "South Africa"]);
+  if (has("branch_name")) entries.push(["branch_name", ctx.branch_name ?? ""]);
+  if (has("branch_phone")) entries.push(["branch_phone", ctx.branch_phone ?? ""]);
+  if (has("branch_email")) entries.push(["branch_email", ctx.branch_email ?? ""]);
+  if (has("branch_address")) entries.push(["branch_address", ctx.branch_address ?? ""]);
+  if (has("branch_website")) entries.push(["branch_website", ctx.branch_website ?? ""]);
+
   let out = html;
-  for (const [k, v] of Object.entries(map)) {
+  for (const [k, v] of entries) {
     out = out.split(`{{${k}}}`).join(v);
   }
   if (opts.strip) {
-    // Any remaining {{...}} -> empty
     out = out.replace(/\{\{[a-z0-9_]+\}\}/gi, "");
   }
   return out;
