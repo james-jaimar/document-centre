@@ -255,6 +255,10 @@ export default function PhotoPrintsBuilder() {
         fit_mode: "fill",
         croppedAreaPixels: null,
         quantity: 1,
+        thumb_path: u.thumbPath,
+        preview_path: u.previewPath,
+        preview_width_px: u.previewWidthPx,
+        preview_height_px: u.previewHeightPx,
       }));
 
       setPhotoSpec((prev) => ({ ...prev, photos: [...prev.photos, ...newEntries] }));
