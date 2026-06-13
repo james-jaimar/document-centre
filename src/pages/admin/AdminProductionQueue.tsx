@@ -43,7 +43,7 @@ export default function AdminProductionQueue() {
       const { data, error } = await supabase
         .from("order_jobs")
         .select(
-          "id, job_number, job_name, product_name, job_status, urgency, quantity, ready_at, created_at, print_ready_pdf_path, imposed_pdf_path, order_id, order:orders!inner(order_number, tenant_id)"
+          "id, job_number, job_name, product_name, job_status, urgency, quantity, ready_at, created_at, print_ready_pdf_path, imposed_pdf_path, auto_assemble_error, order_id, order:orders!inner(order_number, tenant_id)"
         )
         .eq("tenant_id", tenantId!)
         .in("job_status", ACTIVE_STATUSES)
