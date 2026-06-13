@@ -6,7 +6,7 @@ import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useCartItemCount } from "@/hooks/useCart";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
-import { setTenantSignOutFlag, isAnonymousUser } from "@/lib/tenantSignOut";
+import { setTenantSignOutFlag, isAnonymousUser, resolvePostSignOutUrl } from "@/lib/tenantSignOut";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useBranch, clearSavedBranch } from "@/contexts/BranchContext";
@@ -37,7 +37,6 @@ export default function CustomerHeader() {
     const branchSite = (activeBranch as any)?.website_url ?? null;
     await signOut();
     queryClient.clear();
-    const { resolvePostSignOutUrl } = await import("@/lib/tenantSignOut");
     window.location.href = resolvePostSignOutUrl(branchSite, branding?.origin_url);
   };
   const cartCount = useCartItemCount();
