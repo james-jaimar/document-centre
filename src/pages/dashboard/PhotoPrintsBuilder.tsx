@@ -732,7 +732,18 @@ export default function PhotoPrintsBuilder() {
       <PhotoEditorModal
         open={!!editorPhoto}
         photo={editorPhoto}
-        signedUrl={editorPhoto ? signedUrls[editorPhoto.original_storage_path] ?? null : null}
+        signedUrl={
+          editorPhoto
+            ? resolvePhotoUrl(editorPhoto.preview_path) ??
+              resolvePhotoUrl(editorPhoto.original_storage_path)
+            : null
+        }
+        pixelScale={
+          editorPhoto && editorPhoto.preview_path && editorPhoto.preview_width_px && editorPhoto.preview_height_px
+            ? Math.max(editorPhoto.source_width_px, editorPhoto.source_height_px) /
+              Math.max(editorPhoto.preview_width_px, editorPhoto.preview_height_px)
+            : 1
+        }
         borderSlug={photoSpec.border_slug}
         onClose={() => setEditorPhotoId(null)}
         onSave={(next) => {
