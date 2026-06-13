@@ -290,23 +290,39 @@ const Auth = () => {
       : "Enter your email and we'll send a reset link"
     : "Platform staff sign-in";
 
+  const authBgUrl = isTenantPortal ? branding?.auth_background_url?.trim() : "";
+
   return (
     <div
       className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[#f8f9fa] px-4 py-10"
       style={brandVarsStyle}
     >
-      {/* Atmospheric background blobs — brand-tinted */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div
-          className="absolute -left-[10%] -top-[10%] h-[45%] w-[45%] rounded-full opacity-60 blur-[120px]"
-          style={{
-            background: brandColor
-              ? `radial-gradient(circle, ${brandColor}22 0%, transparent 70%)`
-              : "rgba(15, 23, 42, 0.06)",
-          }}
-        />
-        <div className="absolute -bottom-[10%] -right-[10%] h-[45%] w-[45%] rounded-full bg-slate-200 opacity-40 blur-[120px]" />
-      </div>
+      {/* Tenant-supplied background photograph (e.g. PostNet store interior) */}
+      {authBgUrl && (
+        <>
+          <div
+            className="pointer-events-none absolute inset-0 bg-cover bg-center"
+            style={{ backgroundImage: `url(${authBgUrl})`, opacity: 0.5 }}
+            aria-hidden="true"
+          />
+          <div className="pointer-events-none absolute inset-0 bg-white/40" aria-hidden="true" />
+        </>
+      )}
+
+      {/* Atmospheric background blobs — brand-tinted (hidden when a photo background is in use) */}
+      {!authBgUrl && (
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div
+            className="absolute -left-[10%] -top-[10%] h-[45%] w-[45%] rounded-full opacity-60 blur-[120px]"
+            style={{
+              background: brandColor
+                ? `radial-gradient(circle, ${brandColor}22 0%, transparent 70%)`
+                : "rgba(15, 23, 42, 0.06)",
+            }}
+          />
+          <div className="absolute -bottom-[10%] -right-[10%] h-[45%] w-[45%] rounded-full bg-slate-200 opacity-40 blur-[120px]" />
+        </div>
+      )}
 
       <div className="relative w-full max-w-[460px]">
         <div className="rounded-3xl border border-gray-100 bg-white p-8 shadow-[0_20px_50px_rgba(0,0,0,0.08)] sm:p-10 md:p-12">

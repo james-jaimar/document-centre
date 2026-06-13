@@ -90,6 +90,7 @@ export function BrandingTab() {
   const [portalName, setPortalName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [heroImageUrl, setHeroImageUrl] = useState("");
+  const [authBackgroundUrl, setAuthBackgroundUrl] = useState("");
   const [tagline, setTagline] = useState("");
   const [fontHeading, setFontHeading] = useState("");
   const [fontBody, setFontBody] = useState("");
@@ -122,6 +123,7 @@ export function BrandingTab() {
       setPortalName((settingsMap.portal_name as string) ?? "");
       setLogoUrl((settingsMap.logo_url as string) ?? "");
       setHeroImageUrl((settingsMap.hero_image_url as string) ?? "");
+      setAuthBackgroundUrl((settingsMap.auth_background_url as string) ?? "");
       setTagline((settingsMap.tagline as string) ?? "");
       setFontHeading((settingsMap.font_heading as string) ?? "");
       setFontBody((settingsMap.font_body as string) ?? "");
@@ -210,6 +212,7 @@ export function BrandingTab() {
         { category: "branding", setting_key: "portal_name", setting_value: portalName, value_type: "string" },
         { category: "branding", setting_key: "logo_url", setting_value: logoUrl, value_type: "string" },
         { category: "branding", setting_key: "hero_image_url", setting_value: heroImageUrl, value_type: "string" },
+        { category: "branding", setting_key: "auth_background_url", setting_value: authBackgroundUrl, value_type: "string" },
         { category: "branding", setting_key: "tagline", setting_value: tagline, value_type: "string" },
         { category: "branding", setting_key: "font_heading", setting_value: fontHeading, value_type: "string" },
         { category: "branding", setting_key: "font_body", setting_value: fontBody, value_type: "string" },
@@ -352,6 +355,14 @@ export function BrandingTab() {
             onChange={setHeroImageUrl}
             tenantId={tenantId}
             fileKey="hero"
+            previewClass="h-20 w-auto object-cover"
+          />
+          <ImageUploadField
+            label="Sign-in Background"
+            value={authBackgroundUrl}
+            onChange={setAuthBackgroundUrl}
+            tenantId={tenantId}
+            fileKey="auth-bg"
             previewClass="h-20 w-auto object-cover"
           />
           <ImageUploadField

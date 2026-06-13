@@ -8,6 +8,7 @@ export interface TenantBranding {
   portal_name: string;
   logo_url: string;
   hero_image_url: string;
+  auth_background_url: string;
   tagline: string;
   font_heading: string;
   font_body: string;
@@ -30,6 +31,7 @@ const DEFAULTS: TenantBranding = {
   portal_name: "",
   logo_url: "",
   hero_image_url: "",
+  auth_background_url: "",
   tagline: "Professional printing, delivered.",
   font_heading: "",
   font_body: "",
