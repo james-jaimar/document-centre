@@ -232,7 +232,8 @@ Deno.serve(async (req) => {
     if (oErr || !order) return json({ error: "Order not found" }, 404);
 
     // Branch-aware staff/customer access check before generating an invoice.
-    {
+    // Skipped for service-role callers (internal auto-triggers).
+    if (!isServiceRole && u.user) {
       const userId = u.user.id;
       const isCustomer = (order as any).ordered_by_profile_id === userId;
       if (!isCustomer) {
