@@ -4,8 +4,9 @@ import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Mail, Phone, MapPin } from "lucide-react";
+import { Mail, Phone, MapPin, ExternalLink } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
+import { normaliseExternalUrl } from "@/lib/tenantSignOut";
 
 export default function CustomerFooter() {
   const { slug, tenantPath } = useTenantSlug();
@@ -96,7 +97,7 @@ export default function CustomerFooter() {
           )}
         </nav>
 
-        {/* Right: legal + powered-by */}
+        {/* Right: legal + main-site link + powered-by */}
         <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-xs text-muted-foreground">
           {support?.terms_url ? (
             <a href={support.terms_url} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Terms</a>
@@ -108,6 +109,24 @@ export default function CustomerFooter() {
           ) : (
             <Link to={tenantPath("privacy")} className="hover:text-foreground transition-colors">Privacy</Link>
           )}
+          {(() => {
+            const mainSite = normaliseExternalUrl(
+              (activeBranch as any)?.website_url || branding?.origin_url,
+            );
+            if (!mainSite) return null;
+            return (
+              <a
+                href={mainSite}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+                title={`Visit ${tenantName}`}
+              >
+                <ExternalLink className="h-3 w-3" />
+                Visit {tenantName}
+              </a>
+            );
+          })()}
           {!isDemo && (() => {
             const host = typeof window !== "undefined" ? window.location.hostname : "";
             const isPlatformHost =
