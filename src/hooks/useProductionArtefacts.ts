@@ -173,6 +173,7 @@ export function useProductionArtefacts(jobId: string | null) {
     generatePrintReady,
     generateImposition,
     generateJobTicket,
+    retryAutoAssemble,
     signedUrl,
   };
 }
