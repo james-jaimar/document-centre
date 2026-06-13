@@ -1,4 +1,5 @@
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { withAuthRedirect } from "@/lib/auth/authReturnPath";
 import { ShoppingCart, User, LogOut, Settings as SettingsIcon, ClipboardList, LogIn, MapPin, ChevronDown } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
@@ -22,6 +23,7 @@ import MessagesBell from "@/components/customer/MessagesBell";
 export default function CustomerHeader() {
   const { slug, tenantPath } = useTenantSlug();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, signOut } = useAuth();
   const { tenant } = useTenantFromSlug();
   const { data: branding } = useTenantBranding(tenant?.id ?? null);
@@ -94,7 +96,7 @@ export default function CustomerHeader() {
             )}
           </Link>
           <Link
-            to={tenantPath("auth")}
+            to={withAuthRedirect(tenantPath("auth"), location)}
             className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors hover:bg-secondary"
           >
             <LogIn className="h-4 w-4" />

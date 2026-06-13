@@ -21,6 +21,7 @@ import { useCartItemCount } from "@/hooks/useCart";
 import { setTenantSignOutFlag, isAnonymousUser } from "@/lib/tenantSignOut";
 import { useBranch, clearSavedBranch } from "@/contexts/BranchContext";
 import { cn } from "@/lib/utils";
+import { withAuthRedirect } from "@/lib/auth/authReturnPath";
 
 interface Props {
   open: boolean;
@@ -149,7 +150,7 @@ export default function MobileNavSheet({ open, onOpenChange }: Props) {
             </div>
           ) : (
             <button
-              onClick={() => handleNav(tenantPath("auth"))}
+              onClick={() => handleNav(withAuthRedirect(tenantPath("auth"), location))}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-sidebar-accent/40 px-4 py-3 text-sm font-semibold text-sidebar-foreground hover:bg-sidebar-accent/60 transition-colors"
             >
               <LogIn className="h-4 w-4" />
