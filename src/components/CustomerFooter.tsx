@@ -45,40 +45,53 @@ export default function CustomerFooter() {
     { to: tenantPath("account"), label: "My Account" },
   ];
 
+  // Prefer branch contact when a branch is selected, else fall back to tenant settings
+  const contactEmail = (activeBranch as any)?.email || support?.support_email || "";
+  const contactPhone = (activeBranch as any)?.phone || support?.support_phone || "";
+  const contactAddress = (activeBranch as any)?.address || "";
+
   return (
     <footer className="border-t border-border bg-white px-6 py-5 lg:px-10">
       <div className="mx-auto flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        {/* Left: tenant brand + copyright */}
+        {/* Left: tenant brand + branch + copyright */}
         <div className="flex items-center gap-3 min-w-0">
           {logoUrl ? (
             <img src={logoUrl} alt={tenantName} className="h-7 w-auto max-w-[120px] object-contain opacity-90" />
           ) : null}
-          <span className="text-xs text-muted-foreground">© {year} {tenantName}</span>
+          <div className="flex flex-col min-w-0">
+            <span className="text-xs text-muted-foreground">© {year} {activeBranch?.name ?? tenantName}</span>
+            {contactAddress && (
+              <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1 truncate max-w-[420px]">
+                <MapPin className="h-3 w-3 shrink-0" />
+                {contactAddress}
+              </span>
+            )}
+          </div>
         </div>
 
-        {/* Centre: nav + support */}
+        {/* Centre: nav + branch contact */}
         <nav className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
           {navItems.map((item) => (
             <Link key={item.to} to={item.to} className="hover:text-foreground transition-colors">
               {item.label}
             </Link>
           ))}
-          {support?.support_email && (
+          {contactEmail && (
             <a
-              href={`mailto:${support.support_email}`}
+              href={`mailto:${contactEmail}`}
               className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
             >
               <Mail className="h-3.5 w-3.5" />
-              {support.support_email}
+              {contactEmail}
             </a>
           )}
-          {support?.support_phone && (
+          {contactPhone && (
             <a
-              href={`tel:${support.support_phone}`}
+              href={`tel:${contactPhone}`}
               className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
             >
               <Phone className="h-3.5 w-3.5" />
-              {support.support_phone}
+              {contactPhone}
             </a>
           )}
         </nav>
