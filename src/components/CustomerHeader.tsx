@@ -6,7 +6,7 @@ import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useCartItemCount } from "@/hooks/useCart";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
-import { setTenantSignOutFlag, isAnonymousUser, resolvePostSignOutUrl } from "@/lib/tenantSignOut";
+import { setTenantSignOutFlag, isAnonymousUser, resolvePostSignOutPath } from "@/lib/tenantSignOut";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useBranch, clearSavedBranch } from "@/contexts/BranchContext";
@@ -34,10 +34,10 @@ export default function CustomerHeader() {
   const handleSignOut = async () => {
     if (slug) setTenantSignOutFlag(slug);
     if (tenant?.id) clearSavedBranch(tenant.id);
-    const branchSite = (activeBranch as any)?.website_url ?? null;
     await signOut();
     queryClient.clear();
-    window.location.href = resolvePostSignOutUrl(branchSite, branding?.origin_url);
+    // Stay on the Print Centre instead of bouncing to the brand's public site.
+    window.location.href = resolvePostSignOutPath(slug);
   };
   const cartCount = useCartItemCount();
   // Treat anonymous users as guests — only show full nav for real users
