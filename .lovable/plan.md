@@ -1,24 +1,40 @@
-## Plan: Keep users on the Print Centre portal after sign-out + add "Back to main site" link
+# Fix: branch/staff users dropped into customer storefront after sign-in
 
-### Problem
-After signing out from a branch portal, users are redirected to the branch's `website_url` (e.g. `https://postnet.co.za/sandton-city`). The user wants them to stay within the Print Centre app, with only a small optional link back to the main franchise site.
+## Root cause
+`src/pages/Auth.tsx` (added in commit `2c421c2d`, May 30) honors a `?redirect=` query param **before** the role-based landing:
 
-### Changes
+```ts
+const target = safeRedirect ?? resolveTenantLanding(primary, tenantSlug);
+navigate(target, { replace: true });
+```
 
-1. **Update `resolvePostSignOutUrl` in `src/lib/tenantSignOut.ts`**
-   - Change the fallback order so the **current `window.location.origin` (the Print Centre app) is the default** after sign-out.
-   - Keep the branch `website_url` and `origin_url` available as explicit external destinations for a "Back to main site" link, not for the automatic post-sign-out redirect.
+When a staff/branch user clicks Sign In from any public storefront page (e.g. `/sandton-city/print-centre`), the link includes `?redirect=<that path>`. After login the override sends them back to the customer storefront instead of `/branch` (branch roles) or `/admin?tenant=…` (tenant staff).
 
-2. **Update sign-out handlers**
-   - `CustomerSidebar.tsx`
-   - `CustomerHeader.tsx`
-   - `MobileNavSheet.tsx`
-   - After `signOut()` + `queryClient.clear()`, redirect to the tenant portal home page (`/t/:slug/print-centre` or just `/t/:slug/`) instead of the external URL.
+The `?redirect=` feature is legitimate for **customer** roles (deep-link back to the page they were viewing), but it should never override a role landing for staff.
 
-3. **Add "Back to main site" link in `CustomerFooter.tsx`**
-   - If `branding?.origin_url` or `activeBranch?.website_url` exists, show a small subtle link in the footer (e.g. "← Back to PostNet" or "Visit postnet.co.za →").
-   - Style it unobtrusively: small text, muted colour, inline with the existing footer links.
+## Change
 
-### Result
-- Sign-out keeps the user inside the Print Centre app.
-- A discreet footer link lets users navigate to the tenant's main brand website if they choose.
+In `src/pages/Auth.tsx`, only apply `safeRedirect` when the primary membership role is `customer`. For all other roles, always use `resolveTenantLanding(...)`.
+
+```ts
+const STAFF_OR_BRANCH = new Set([
+  "owner","admin","sales","production","accounts",
+  "branch_manager","store_operator",
+]);
+
+const useRedirectOverride = !STAFF_OR_BRANCH.has(primary.role as string);
+const target = (useRedirectOverride && safeRedirect)
+  ? safeRedirect
+  : resolveTenantLanding(primary, tenantSlug ?? null);
+```
+
+Apply the same guard to the `platform_admin` branch above (it already ignores `safeRedirect` — leave as-is).
+
+## Verification
+1. Sign out, visit `https://postnetprintcentre.com/sandton-city/print-centre`, click Sign In, enter `sandtoncityadmin@postnet.co.za` → should land on `/branch`.
+2. Same flow with `sandtonstaff1@postnet.co.za` (store_operator) → should also land on `/branch`.
+3. Customer account signing in from `/sandton-city/orders/new?...` → should still return to that deep link (redirect honored).
+4. Tenant owner/admin signing in from the storefront → should land on tenant admin console, not storefront.
+
+## Scope
+Single-file frontend change to `src/pages/Auth.tsx`. No DB, no edge-function, no other route changes.

@@ -93,7 +93,18 @@ const Auth = () => {
           const matchSlug = list.find((m) => m.tenants?.slug === tenantSlug);
           if (matchSlug) {
             const primary = pickPrimaryMembership(list, tenantSlug ?? null) ?? matchSlug;
-            const target = safeRedirect ?? resolveTenantLanding(primary, tenantSlug ?? null);
+            // Honour ?redirect= only for customers (deep-linking back to a
+            // storefront page). Staff and branch roles must always land on
+            // their role-specific console, otherwise signing in from the
+            // public storefront dumps a branch manager into the customer area.
+            const NON_CUSTOMER = new Set([
+              "owner", "admin", "sales", "production", "accounts",
+              "branch_manager", "store_operator",
+            ]);
+            const allowRedirect = !NON_CUSTOMER.has(primary.role as string);
+            const target = (allowRedirect && safeRedirect)
+              ? safeRedirect
+              : resolveTenantLanding(primary, tenantSlug ?? null);
             navigate(target, { replace: true });
             return;
           }
