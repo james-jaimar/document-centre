@@ -20,7 +20,8 @@ import { resolveDisplayName, resolveInitials } from "@/lib/displayName";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
-import { setTenantSignOutFlag, isAnonymousUser } from "@/lib/tenantSignOut";
+import { setTenantSignOutFlag, isAnonymousUser, resolvePostSignOutUrl } from "@/lib/tenantSignOut";
+import { useBranch } from "@/contexts/BranchContext";
 import { withAuthRedirect } from "@/lib/auth/authReturnPath";
 
 export default function CustomerSidebar() {
@@ -33,18 +34,14 @@ export default function CustomerSidebar() {
   const queryClient = useQueryClient();
   const isAnon = isAnonymousUser(user);
   const isAuthenticated = !!user && !isAnon;
+  const { activeBranch } = useBranch();
 
   const handleSignOut = async () => {
     if (slug) setTenantSignOutFlag(slug);
+    const branchSite = (activeBranch as any)?.website_url ?? null;
     await signOut();
     queryClient.clear();
-    const origin = branding?.origin_url;
-    if (origin) {
-      window.location.href = origin;
-    } else {
-      // Stay on the current host (custom domain or platform subdomain) — never kick users to document-centre.com
-      window.location.href = window.location.origin;
-    }
+    window.location.href = resolvePostSignOutUrl(branchSite, branding?.origin_url);
   };
   const cartCount = useCartItemCount();
 
