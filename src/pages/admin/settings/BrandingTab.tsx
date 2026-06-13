@@ -212,6 +212,7 @@ export function BrandingTab() {
         { category: "branding", setting_key: "portal_name", setting_value: portalName, value_type: "string" },
         { category: "branding", setting_key: "logo_url", setting_value: logoUrl, value_type: "string" },
         { category: "branding", setting_key: "hero_image_url", setting_value: heroImageUrl, value_type: "string" },
+        { category: "branding", setting_key: "auth_background_url", setting_value: authBackgroundUrl, value_type: "string" },
         { category: "branding", setting_key: "tagline", setting_value: tagline, value_type: "string" },
         { category: "branding", setting_key: "font_heading", setting_value: fontHeading, value_type: "string" },
         { category: "branding", setting_key: "font_body", setting_value: fontBody, value_type: "string" },
