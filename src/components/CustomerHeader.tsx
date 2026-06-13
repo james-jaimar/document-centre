@@ -6,7 +6,7 @@ import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useCartItemCount } from "@/hooks/useCart";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
-import { setTenantSignOutFlag, isAnonymousUser } from "@/lib/tenantSignOut";
+import { setTenantSignOutFlag, isAnonymousUser, resolvePostSignOutUrl } from "@/lib/tenantSignOut";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useBranch, clearSavedBranch } from "@/contexts/BranchContext";
@@ -34,15 +34,10 @@ export default function CustomerHeader() {
   const handleSignOut = async () => {
     if (slug) setTenantSignOutFlag(slug);
     if (tenant?.id) clearSavedBranch(tenant.id);
+    const branchSite = (activeBranch as any)?.website_url ?? null;
     await signOut();
     queryClient.clear();
-    const origin = branding?.origin_url;
-    if (origin) {
-      window.location.href = origin;
-    } else {
-      // Stay on the current host (custom domain or platform subdomain) — never kick users to document-centre.com
-      window.location.href = window.location.origin;
-    }
+    window.location.href = resolvePostSignOutUrl(branchSite, branding?.origin_url);
   };
   const cartCount = useCartItemCount();
   // Treat anonymous users as guests — only show full nav for real users

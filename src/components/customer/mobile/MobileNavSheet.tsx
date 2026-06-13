@@ -18,7 +18,7 @@ import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useTenantFromSlug } from "@/hooks/useTenantFromSlug";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useCartItemCount } from "@/hooks/useCart";
-import { setTenantSignOutFlag, isAnonymousUser } from "@/lib/tenantSignOut";
+import { setTenantSignOutFlag, isAnonymousUser, resolvePostSignOutUrl } from "@/lib/tenantSignOut";
 import { useBranch, clearSavedBranch } from "@/contexts/BranchContext";
 import { cn } from "@/lib/utils";
 import { withAuthRedirect } from "@/lib/auth/authReturnPath";
@@ -64,11 +64,11 @@ export default function MobileNavSheet({ open, onOpenChange }: Props) {
   const handleSignOut = async () => {
     if (slug) setTenantSignOutFlag(slug);
     if (tenant?.id) clearSavedBranch(tenant.id);
+    const branchSite = (activeBranch as any)?.website_url ?? null;
     onOpenChange(false);
     await signOut();
     queryClient.clear();
-    const origin = branding?.origin_url;
-    window.location.href = origin || window.location.origin;
+    window.location.href = resolvePostSignOutUrl(branchSite, branding?.origin_url);
   };
 
   const handleNav = (to: string) => {
