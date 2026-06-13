@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { Download, FileCog, Layers, Ticket, Loader2 } from "lucide-react";
+import { Download, FileCog, Layers, Ticket, Loader2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { useProductionArtefacts } from "@/hooks/useProductionArtefacts";
 import { useTemplatesForProductFamily } from "@/hooks/useImpositionTemplates";
+import { format } from "date-fns";
 
 interface Props {
   jobId: string;
@@ -30,6 +32,7 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
     generatePrintReady,
     generateImposition,
     generateJobTicket,
+    retryAutoAssemble,
     signedUrl,
   } = useProductionArtefacts(jobId);
   const { data: templates = [], isLoading: loadingTemplates } =
@@ -124,6 +127,35 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
           <span className="text-[10px] text-muted-foreground">Job status: {jobStatus}</span>
         )}
       </div>
+
+      {artefacts?.auto_assemble_error && !artefacts?.print_ready_pdf_path && (
+        <div className="rounded border border-amber-500/40 bg-amber-50 dark:bg-amber-950/30 px-2 py-1.5 text-[11px] flex items-start gap-2">
+          <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <div className="font-medium text-amber-900 dark:text-amber-200">
+              Auto-assemble failed
+            </div>
+            <div className="text-[10px] text-amber-800/80 dark:text-amber-300/80 truncate" title={artefacts.auto_assemble_error}>
+              {artefacts.auto_assemble_error}
+            </div>
+            {artefacts.auto_assemble_failed_at && (
+              <div className="text-[10px] text-muted-foreground">
+                {format(new Date(artefacts.auto_assemble_failed_at), "d MMM HH:mm")}
+              </div>
+            )}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 px-2 text-[10px] shrink-0"
+            onClick={() => retryAutoAssemble()}
+            disabled={generating === "print_ready"}
+          >
+            {generating === "print_ready" ? <Loader2 className="h-3 w-3 animate-spin" /> : "Retry"}
+          </Button>
+        </div>
+      )}
+
 
       <Row
         icon={<FileCog className="h-3.5 w-3.5" />}

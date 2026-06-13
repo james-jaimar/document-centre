@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Factory, ChevronRight } from "lucide-react";
+import { Factory, ChevronRight, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +19,7 @@ interface QueueRow {
   created_at: string;
   print_ready_pdf_path: string | null;
   imposed_pdf_path: string | null;
+  auto_assemble_error: string | null;
   order_id: string;
   order: { order_number: string; tenant_id: string } | null;
 }
@@ -42,7 +43,7 @@ export default function AdminProductionQueue() {
       const { data, error } = await supabase
         .from("order_jobs")
         .select(
-          "id, job_number, job_name, product_name, job_status, urgency, quantity, ready_at, created_at, print_ready_pdf_path, imposed_pdf_path, order_id, order:orders!inner(order_number, tenant_id)"
+          "id, job_number, job_name, product_name, job_status, urgency, quantity, ready_at, created_at, print_ready_pdf_path, imposed_pdf_path, auto_assemble_error, order_id, order:orders!inner(order_number, tenant_id)"
         )
         .eq("tenant_id", tenantId!)
         .in("job_status", ACTIVE_STATUSES)
@@ -103,6 +104,14 @@ export default function AdminProductionQueue() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    {row.auto_assemble_error && !row.print_ready_pdf_path && (
+                      <span
+                        title={`Auto-assemble failed: ${row.auto_assemble_error}`}
+                        className="flex items-center text-amber-600 dark:text-amber-400"
+                      >
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                      </span>
+                    )}
                     {row.print_ready_pdf_path ? (
                       <Badge className="text-[10px] h-4 px-1.5">PR</Badge>
                     ) : (
