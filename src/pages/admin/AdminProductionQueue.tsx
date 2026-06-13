@@ -104,6 +104,14 @@ export default function AdminProductionQueue() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    {row.auto_assemble_error && !row.print_ready_pdf_path && (
+                      <span
+                        title={`Auto-assemble failed: ${row.auto_assemble_error}`}
+                        className="flex items-center text-amber-600 dark:text-amber-400"
+                      >
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                      </span>
+                    )}
                     {row.print_ready_pdf_path ? (
                       <Badge className="text-[10px] h-4 px-1.5">PR</Badge>
                     ) : (
