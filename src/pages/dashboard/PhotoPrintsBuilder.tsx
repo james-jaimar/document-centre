@@ -10,6 +10,7 @@ import { usePhotoUpload } from "@/hooks/usePhotoUpload";
 
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { resolveUrls } from "@/lib/thumbnailUtils";
+import { getCachedBlobUrl, prefetchToCache } from "@/lib/photoPrints/photoBlobCache";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import {
   PHOTO_FINISH_OPTIONS,
@@ -199,11 +200,17 @@ export default function PhotoPrintsBuilder() {
     };
   }, [photoSpec, orderItem?.id, orderItem?.spec]);
 
+  // Resolve signed URLs for every photo path we care about: original (legacy
+  // fallback), thumb (tile), preview (editor). Keys are raw storage paths.
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   useEffect(() => {
-    const paths = photoSpec.photos
-      .map((p) => p.original_storage_path)
-      .filter((p) => p && !signedUrls[p]);
+    const wanted = new Set<string>();
+    for (const p of photoSpec.photos) {
+      if (p.original_storage_path) wanted.add(p.original_storage_path);
+      if (p.thumb_path) wanted.add(p.thumb_path);
+      if (p.preview_path) wanted.add(p.preview_path);
+    }
+    const paths = Array.from(wanted).filter((p) => !signedUrls[p]);
     if (paths.length === 0) return;
     let cancelled = false;
     resolveUrls(paths).then((urls) => {
@@ -213,11 +220,30 @@ export default function PhotoPrintsBuilder() {
         if (urls[i]) next[p] = urls[i];
       });
       setSignedUrls((prev) => ({ ...prev, ...next }));
+      // Warm the preview blob cache in the background so clicking Edit
+      // opens the editor instantly on subsequent interactions.
+      for (const p of photoSpec.photos) {
+        if (p.preview_path && next[p.preview_path] && !getCachedBlobUrl(p.preview_path)) {
+          void prefetchToCache(p.preview_path, next[p.preview_path]);
+        }
+      }
     });
     return () => {
       cancelled = true;
     };
   }, [photoSpec.photos, signedUrls]);
+
+  // Helper: pick the best loadable URL for a path — local blob (instant) >
+  // signed URL > nothing. Used by the tile + editor below.
+  const resolvePhotoUrl = useCallback(
+    (path: string | undefined | null): string | null => {
+      if (!path) return null;
+      const blob = getCachedBlobUrl(path);
+      if (blob) return blob;
+      return signedUrls[path] ?? null;
+    },
+    [signedUrls],
+  );
 
   const device = useDeviceKind();
   const isMobile = device === "mobile";
@@ -254,6 +280,10 @@ export default function PhotoPrintsBuilder() {
         fit_mode: "fill",
         croppedAreaPixels: null,
         quantity: 1,
+        thumb_path: u.thumbPath,
+        preview_path: u.previewPath,
+        preview_width_px: u.previewWidthPx,
+        preview_height_px: u.previewHeightPx,
       }));
 
       setPhotoSpec((prev) => ({ ...prev, photos: [...prev.photos, ...newEntries] }));
@@ -656,7 +686,10 @@ export default function PhotoPrintsBuilder() {
             <PhotoTile
               key={p.id}
               photo={p}
-              signedUrl={signedUrls[p.original_storage_path] ?? null}
+              signedUrl={
+                resolvePhotoUrl(p.thumb_path) ??
+                resolvePhotoUrl(p.original_storage_path)
+              }
               borderSlug={photoSpec.border_slug}
               onEdit={() => setEditorPhotoId(p.id)}
               onDuplicate={() => duplicatePhoto(p.id)}
@@ -699,7 +732,18 @@ export default function PhotoPrintsBuilder() {
       <PhotoEditorModal
         open={!!editorPhoto}
         photo={editorPhoto}
-        signedUrl={editorPhoto ? signedUrls[editorPhoto.original_storage_path] ?? null : null}
+        signedUrl={
+          editorPhoto
+            ? resolvePhotoUrl(editorPhoto.preview_path) ??
+              resolvePhotoUrl(editorPhoto.original_storage_path)
+            : null
+        }
+        pixelScale={
+          editorPhoto && editorPhoto.preview_path && editorPhoto.preview_width_px && editorPhoto.preview_height_px
+            ? Math.max(editorPhoto.source_width_px, editorPhoto.source_height_px) /
+              Math.max(editorPhoto.preview_width_px, editorPhoto.preview_height_px)
+            : 1
+        }
         borderSlug={photoSpec.border_slug}
         onClose={() => setEditorPhotoId(null)}
         onSave={(next) => {
@@ -776,6 +820,10 @@ export default function PhotoPrintsBuilder() {
             fit_mode: "fill" as const,
             croppedAreaPixels: null,
             quantity: 1,
+            thumb_path: d.preflight_data?.thumb_path,
+            preview_path: d.preflight_data?.preview_path,
+            preview_width_px: d.preflight_data?.preview_width_px,
+            preview_height_px: d.preflight_data?.preview_height_px,
           }));
           setPhotoSpec((prev) => ({
             ...prev,

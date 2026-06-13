@@ -12,7 +12,12 @@
 
 export interface RenderPreviewOpts {
   imageUrl: string;
-  /** Rect on the *rotated* source image, as returned by react-easy-crop. */
+  /**
+   * Rect on the *rotated source* image, in source-pixel coordinates.
+   * When the image we render is a downscaled derivative (thumb/preview),
+   * pass `sourceWidth`/`sourceHeight` so we can scale this rect down to
+   * the loaded image's coordinate space.
+   */
   croppedAreaPixels: { x: number; y: number; width: number; height: number } | null;
   rotation: number;
   /** Output canvas longest edge, in CSS pixels. */
@@ -21,6 +26,13 @@ export interface RenderPreviewOpts {
   aspect: number;
   /** White border thickness as a fraction of the long edge (0–0.2). */
   borderFraction?: number;
+  /**
+   * Original (source) pixel dimensions. When supplied and `imageUrl` is
+   * a downscaled derivative, the crop rect is uniformly scaled by
+   * `loadedLongEdge / sourceLongEdge`.
+   */
+  sourceWidth?: number;
+  sourceHeight?: number;
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -70,10 +82,21 @@ export async function renderPhotoPreview(
     outputLongEdgePx = 480,
     aspect,
     borderFraction = 0,
+    sourceWidth,
+    sourceHeight,
   } = opts;
 
   const img = await loadImage(imageUrl);
   const rotated = getRotatedCanvas(img, rotation || 0);
+
+  // If the loaded image is a downscaled derivative of the source, scale the
+  // source-coord crop rect uniformly so it lines up with this image.
+  let cropScale = 1;
+  if (sourceWidth && sourceHeight) {
+    const loadedLong = Math.max(img.naturalWidth, img.naturalHeight);
+    const sourceLong = Math.max(sourceWidth, sourceHeight);
+    if (sourceLong > 0) cropScale = loadedLong / sourceLong;
+  }
 
   let sx = 0;
   let sy = 0;
@@ -81,10 +104,10 @@ export async function renderPhotoPreview(
   let sh = rotated.height;
 
   if (croppedAreaPixels && croppedAreaPixels.width > 0 && croppedAreaPixels.height > 0) {
-    sx = croppedAreaPixels.x;
-    sy = croppedAreaPixels.y;
-    sw = croppedAreaPixels.width;
-    sh = croppedAreaPixels.height;
+    sx = croppedAreaPixels.x * cropScale;
+    sy = croppedAreaPixels.y * cropScale;
+    sw = croppedAreaPixels.width * cropScale;
+    sh = croppedAreaPixels.height * cropScale;
   } else {
     // Centre crop to aspect.
     const srcAspect = rotated.width / rotated.height;

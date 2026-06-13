@@ -3,6 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { uploadToS3 } from "@/lib/s3Storage";
+import { buildPhotoDerivatives } from "@/lib/photoPrints/deriveImages";
+import { registerBlob } from "@/lib/photoPrints/photoBlobCache";
 import { toast } from "sonner";
 
 interface PhotoUploadProgress {
@@ -20,6 +22,11 @@ export interface UploadedPhoto {
   mimeType: string;
   width: number;
   height: number;
+  /** Derivative paths + dimensions (when generation succeeded). */
+  thumbPath?: string;
+  previewPath?: string;
+  previewWidthPx?: number;
+  previewHeightPx?: number;
 }
 
 const MAX_FILE_SIZE_MB = 50;
@@ -107,13 +114,43 @@ export function usePhotoUpload(orderItemId: string | undefined) {
 
       try {
         const dims = await readImageDimensions(file);
-        updateUpload(originalName, { progress: 15, statusText: "Uploading…" });
+
+        // Build downscaled derivatives client-side so the tile + editor have
+        // small (~50 KB / ~300 KB) images to render against instead of the
+        // raw 5 MB original. Failure here is non-fatal — we still upload the
+        // original and the UI falls back to using it.
+        updateUpload(originalName, { progress: 10, statusText: "Preparing previews…" });
+        let derivatives: Awaited<ReturnType<typeof buildPhotoDerivatives>> | null = null;
+        try {
+          derivatives = await buildPhotoDerivatives(file);
+        } catch (e) {
+          console.warn("[photo-upload] derivative generation failed:", e);
+        }
+
+        updateUpload(originalName, { progress: 25, statusText: "Uploading…" });
 
         const safeFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
         const storagePath = `tenants/${tenantId}/uploads/${user.id}/${effectiveId}/photos/${crypto.randomUUID()}_${safeFileName}`;
+        const thumbPath = derivatives ? `${storagePath}.thumb.jpg` : undefined;
+        const previewPath = derivatives ? `${storagePath}.preview.jpg` : undefined;
 
-        await uploadToS3(storagePath, file);
-        updateUpload(originalName, { progress: 70, statusText: "Saving…" });
+        // Register the local blobs under their eventual S3 keys so the tile
+        // renders instantly (before the upload round-trip finishes) and the
+        // editor opens from a `blob:` URL with no network call.
+        if (derivatives && thumbPath) registerBlob(thumbPath, derivatives.thumbBlob);
+        if (derivatives && previewPath) registerBlob(previewPath, derivatives.previewBlob);
+
+        // Upload original + (optional) thumb + preview in parallel.
+        await Promise.all([
+          uploadToS3(storagePath, file),
+          derivatives && thumbPath
+            ? uploadToS3(thumbPath, derivatives.thumbBlob)
+            : Promise.resolve(),
+          derivatives && previewPath
+            ? uploadToS3(previewPath, derivatives.previewBlob)
+            : Promise.resolve(),
+        ]);
+        updateUpload(originalName, { progress: 80, statusText: "Saving…" });
 
         // Approximate dimensions in mm at 72 DPI (only used as a metadata stub)
         const widthMm = dims.width ? (dims.width * 25.4) / 72 : null;
@@ -135,6 +172,10 @@ export function usePhotoUpload(orderItemId: string | undefined) {
               kind: "photo_print",
               source_width_px: dims.width,
               source_height_px: dims.height,
+              thumb_path: thumbPath,
+              preview_path: previewPath,
+              preview_width_px: derivatives?.previewWidth,
+              preview_height_px: derivatives?.previewHeight,
             } as any,
           })
           .select()
@@ -151,6 +192,10 @@ export function usePhotoUpload(orderItemId: string | undefined) {
           mimeType: file.type || "image/jpeg",
           width: dims.width,
           height: dims.height,
+          thumbPath,
+          previewPath,
+          previewWidthPx: derivatives?.previewWidth,
+          previewHeightPx: derivatives?.previewHeight,
         };
       } catch (err: any) {
         console.error("[photo-upload] failed:", err);

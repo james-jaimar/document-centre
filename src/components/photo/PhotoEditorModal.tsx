@@ -30,6 +30,13 @@ interface PhotoEditorModalProps {
       "crop" | "zoom" | "rotation" | "fit_mode" | "croppedAreaPixels"
     >,
   ) => void;
+  /**
+   * When the editor renders a downscaled `preview` derivative instead of the
+   * full original, react-easy-crop emits `croppedAreaPixels` in the
+   * derivative's coord space. Multiplying by `pixelScale` (= source_long /
+   * preview_long) brings them back to source coords for the backend render.
+   */
+  pixelScale?: number;
 }
 
 export default function PhotoEditorModal({
@@ -39,6 +46,7 @@ export default function PhotoEditorModal({
   borderSlug,
   onClose,
   onSave,
+  pixelScale = 1,
 }: PhotoEditorModalProps) {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -122,12 +130,21 @@ export default function PhotoEditorModal({
   };
 
   const handleSave = () => {
+    let scaled = croppedAreaPixels;
+    if (scaled && pixelScale && Math.abs(pixelScale - 1) > 0.001) {
+      scaled = {
+        x: Math.round(scaled.x * pixelScale),
+        y: Math.round(scaled.y * pixelScale),
+        width: Math.round(scaled.width * pixelScale),
+        height: Math.round(scaled.height * pixelScale),
+      };
+    }
     onSave({
       crop,
       zoom,
       rotation,
       fit_mode: fitMode,
-      croppedAreaPixels,
+      croppedAreaPixels: scaled,
     });
   };
 
