@@ -123,6 +123,7 @@ export function BrandingTab() {
       setPortalName((settingsMap.portal_name as string) ?? "");
       setLogoUrl((settingsMap.logo_url as string) ?? "");
       setHeroImageUrl((settingsMap.hero_image_url as string) ?? "");
+      setAuthBackgroundUrl((settingsMap.auth_background_url as string) ?? "");
       setTagline((settingsMap.tagline as string) ?? "");
       setFontHeading((settingsMap.font_heading as string) ?? "");
       setFontBody((settingsMap.font_body as string) ?? "");
