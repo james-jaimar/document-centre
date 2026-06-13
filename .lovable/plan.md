@@ -1,61 +1,43 @@
-## Goal
+# Plan: Run everything from the Supabase SQL editor
 
-For the 3@1 tenant (`a513d202-41f7-47eb-97be-47f2354b3bb1`, `app_id a0000000-…-0001`):
+Since the edge function call failed in Chrome, switch to a self-contained SQL script you paste into the Supabase SQL editor (https://supabase.com/dashboard/project/lcvdhtaqoumyokjqaqfw/sql/new). The SQL editor runs as service role, so it can write directly to `auth.users` — no edge function, no browser auth round-trip.
 
-1. Set `is_live = true` on all 75 branches.
-2. For each branch, create a `branch_manager` user keyed to the branch's `email` column — silently (no invite email). You will trigger "Resend invite" per branch later when the actual staff member is ready to take over.
+## What the script does
 
-## Step 1 — Flip live
+For tenant `a513d202-41f7-47eb-97be-47f2354b3bb1` (3@1):
 
-Single UPDATE: `is_live = true` on every branch where `tenant_id = '…3bb1'` and `is_live = false`. Expected: 75 rows.
+1. Flip every branch `is_live = true`.
+2. For each branch with a non-empty `email`:
+   - Find existing `auth.users` row by email, or insert a new one with a random encrypted password and `email_confirmed_at = now()` (so the user exists but can't log in until they go through "Resend invite").
+   - Upsert a `profiles` row (id, email, display_name = branch name) — only fill blanks.
+   - Insert a `tenant_memberships` row (`role = 'branch_manager'`, `branch_id = branch.id`, `is_active = true`) unless one already exists for that profile in this tenant/app.
+3. Return a results table (`branch_name, email, profile_id, status`) so you can eyeball the outcome before closing the tab. Statuses: `created`, `reused_existing_user`, `membership_exists`, `skipped_no_email`.
 
-## Step 2 — Provision branch_manager accounts (silent)
+Wrapped in a single `DO $$ ... $$` block + final `SELECT` from a temp table, so it's one paste-and-run.
 
-I'll write a small one-shot Node script (run locally against Supabase using the service role key — not committed to the repo) that, for each of the 75 branches:
+## Technical notes (safe to skip)
 
-1. **Skip if branch.email is null/empty** — log and continue.
-2. **Find or create auth user** by email:
-   - `auth.admin.listUsers` paged lookup, or `createUser({ email, password: <random 32-byte hex>, email_confirm: true })`.
-   - If the address already has an auth user (e.g. shared `info@…` or pre-existing), reuse that user id — no overwrite.
-3. **Upsert `profiles` row** (`id = user.id`, `email`, `display_name = branch.name`) — only fill blanks, never clobber.
-4. **Insert `tenant_memberships`**:
-   ```
-   profile_id   = user.id
-   tenant_id    = a513d202-…-3bb1
-   app_id       = a0000000-…-0001
-   role         = 'branch_manager'
-   branch_id    = branch.id
-   is_active    = true
-   ```
-   `ON CONFLICT (profile_id, tenant_id, app_id) DO NOTHING` semantics — if a membership already exists (e.g. shared email already linked elsewhere in 3@1), skip and log. The existing `Resend invite` / `Edit member` flows in `AdminUsers` will handle those edge cases.
-5. **No email is sent.** The user exists with a random unknown password; later you click "Resend invite" in `/admin/users` and the existing `invite-member` flow generates a branded password-setup link.
+- `auth.users` insert uses `crypt(gen_random_uuid()::text, gen_salt('bf'))` for the password hash — `pgcrypto` is already enabled in Supabase. The password is unknowable; the only way in is the existing `invite-member` "Resend invite" flow which sends a magic link / password-set link.
+- `email_confirmed_at = now()` so Supabase treats the address as verified — required for the invite flow to skip a second confirmation step.
+- `aud = 'authenticated'`, `role = 'authenticated'`, `instance_id = '00000000-0000-0000-0000-000000000000'` to match every other Supabase auth row.
+- `ON CONFLICT` guards on `auth.users.email`, `profiles.id`, and a uniqueness check on `(profile_id, tenant_id, app_id)` for `tenant_memberships` — re-running the script is idempotent.
+- No invite emails are sent. You trigger those later from `/admin/users` per branch.
 
-### Why a one-shot script, not a migration or edge function
+## What you'll do
 
-- Auth user creation must go through `auth.admin.createUser` (service role), which a SQL migration can't do.
-- It's a one-time backfill — not worth a permanent edge function. Same script will be reusable for the PostNet branches (just change the tenant_id).
-
-### Output
-
-Script prints a summary table and writes `/mnt/documents/3at1-branch-admin-provisioning.csv` with columns: `branch_name, branch_email, profile_id, status` (`created` / `reused_existing_user` / `skipped_no_email` / `membership_exists` / `error`).
-
-## Verification
-
-After the script:
-
-```sql
-SELECT count(*) FROM branches
-  WHERE tenant_id = 'a513d202-…-3bb1' AND is_live = true;     -- expect 75
-
-SELECT count(*) FROM tenant_memberships
-  WHERE tenant_id = 'a513d202-…-3bb1' AND role = 'branch_manager';  -- expect ≤ 75
-```
-
-Plus a spot-check on 3 branches to confirm `profiles.email = branches.email` and `tenant_memberships.branch_id` matches.
+1. Approve this plan.
+2. I'll paste the full SQL script in the next message — you copy it into the SQL editor and run it.
+3. We verify with `SELECT count(*) FROM tenant_memberships WHERE tenant_id = '…3bb1' AND role = 'branch_manager';` (expect ≤ 75) and a spot-check of 2–3 rows.
 
 ## Out of scope
 
-- Sending the invite emails (you said create silently → invite later).
-- PostNet — same script will be re-run separately with the PostNet tenant_id when you're ready.
-- Any branch-level branding, capabilities, pricing, or payment-gateway overrides — they stay at tenant defaults.
-- Promoting these accounts beyond `branch_manager` — they can invite their own `store_operator` staff via the existing UI.
+- Sending invite emails (still deferred until you're ready per branch).
+- PostNet — same script, swap the `tenant_id`, run again.
+- Any branch branding / pricing / gateway changes.
+
+```text
+[SQL editor] --(service role)--> auth.users
+                            \--> public.profiles
+                            \--> public.tenant_memberships  (role=branch_manager, branch_id)
+                            \--> public.branches            (is_live=true)
+```
