@@ -82,10 +82,21 @@ export async function renderPhotoPreview(
     outputLongEdgePx = 480,
     aspect,
     borderFraction = 0,
+    sourceWidth,
+    sourceHeight,
   } = opts;
 
   const img = await loadImage(imageUrl);
   const rotated = getRotatedCanvas(img, rotation || 0);
+
+  // If the loaded image is a downscaled derivative of the source, scale the
+  // source-coord crop rect uniformly so it lines up with this image.
+  let cropScale = 1;
+  if (sourceWidth && sourceHeight) {
+    const loadedLong = Math.max(img.naturalWidth, img.naturalHeight);
+    const sourceLong = Math.max(sourceWidth, sourceHeight);
+    if (sourceLong > 0) cropScale = loadedLong / sourceLong;
+  }
 
   let sx = 0;
   let sy = 0;
@@ -93,10 +104,10 @@ export async function renderPhotoPreview(
   let sh = rotated.height;
 
   if (croppedAreaPixels && croppedAreaPixels.width > 0 && croppedAreaPixels.height > 0) {
-    sx = croppedAreaPixels.x;
-    sy = croppedAreaPixels.y;
-    sw = croppedAreaPixels.width;
-    sh = croppedAreaPixels.height;
+    sx = croppedAreaPixels.x * cropScale;
+    sy = croppedAreaPixels.y * cropScale;
+    sw = croppedAreaPixels.width * cropScale;
+    sh = croppedAreaPixels.height * cropScale;
   } else {
     // Centre crop to aspect.
     const srcAspect = rotated.width / rotated.height;
