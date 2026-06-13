@@ -2598,6 +2598,8 @@ export type Database = {
           assembly_report: Json | null
           assigned_supplier_id: string | null
           assigned_to_profile_id: string | null
+          auto_assemble_error: string | null
+          auto_assemble_failed_at: string | null
           branch_id: string | null
           completed_at: string | null
           configuration: Json
@@ -2645,6 +2647,8 @@ export type Database = {
           assembly_report?: Json | null
           assigned_supplier_id?: string | null
           assigned_to_profile_id?: string | null
+          auto_assemble_error?: string | null
+          auto_assemble_failed_at?: string | null
           branch_id?: string | null
           completed_at?: string | null
           configuration?: Json
@@ -2692,6 +2696,8 @@ export type Database = {
           assembly_report?: Json | null
           assigned_supplier_id?: string | null
           assigned_to_profile_id?: string | null
+          auto_assemble_error?: string | null
+          auto_assemble_failed_at?: string | null
           branch_id?: string | null
           completed_at?: string | null
           configuration?: Json
