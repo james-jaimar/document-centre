@@ -14,6 +14,9 @@ export interface ProductionArtefacts {
   assembly_report: AssemblyReport | null;
   print_ready_assembled_at: string | null;
   print_ready_spec_hash: string | null;
+  auto_assemble_error: string | null;
+  auto_assemble_failed_at: string | null;
+  order_id: string | null;
 }
 
 export interface AssemblyReport {
