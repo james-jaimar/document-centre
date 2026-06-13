@@ -1245,12 +1245,7 @@ async function recomputeAndNotify(
   // If order was paid and now has a positive due amount, trigger payment request email
   if (prevPaymentStatus === "paid" && due > 0.005) {
     try {
-      const url = Deno.env.get("SUPABASE_URL")!;
-      await fetch(`${url}/functions/v1/send-order-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: authHeader },
-        body: JSON.stringify({ order_id, event_key: "payment_request", force: true }),
-      });
+      await triggerEmail(authHeader, order_id, "payment_request", { force: true });
     } catch (e) {
       console.error("payment_request email failed:", e);
     }
