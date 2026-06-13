@@ -1,40 +1,38 @@
-# Fix: branch/staff users dropped into customer storefront after sign-in
+# Import 3@1 Branches
 
-## Root cause
-`src/pages/Auth.tsx` (added in commit `2c421c2d`, May 30) honors a `?redirect=` query param **before** the role-based landing:
+The uploaded `3at1_branches.xlsx` contains **75 branches** (all rows complete: name, address, city, province, postal code, phone, email). The `3 at 1` tenant exists (`slug: 3at1`, `app_id: a0000000…0001`) and currently has 0 branches.
 
-```ts
-const target = safeRedirect ?? resolveTenantLanding(primary, tenantSlug);
-navigate(target, { replace: true });
-```
+## What I'll do
 
-When a staff/branch user clicks Sign In from any public storefront page (e.g. `/sandton-city/print-centre`), the link includes `?redirect=<that path>`. After login the override sends them back to the customer storefront instead of `/branch` (branch roles) or `/admin?tenant=…` (tenant staff).
+Insert all 75 rows into `public.branches` via a single SQL data migration, mapping the spreadsheet columns to the branches schema:
 
-The `?redirect=` feature is legitimate for **customer** roles (deep-link back to the page they were viewing), but it should never override a role landing for staff.
+| Excel column | Branches column |
+|---|---|
+| `store_name` | `name` |
+| `store_id` | `code` (e.g. `26659`) |
+| `address` + `address2` | `address` (joined with `, `) |
+| `city` | `city` |
+| `province` | `province` |
+| `postal_code` | `postal_code` (zero-padded to 4 digits where needed) |
+| `country` | `country` (ISO code `ZA`) |
+| `phone` | `phone` |
+| `email` | `email` |
+| derived from name | `slug` (kebab-case, required) |
+| derived from name | `url_slug` (kebab-case, lowercase a-z0-9 + hyphen, reserved-word safe) |
+| — | `tenant_id = a513d202-41f7-47eb-97be-47f2354b3bb1` |
+| — | `is_active = true`, `is_live = false` (same as new PostNet branches — admin flips live when ready) |
 
-## Change
+Slug collisions (e.g. two branches both deriving to `paarl`) will be de-duplicated by appending the city or store_id suffix.
 
-In `src/pages/Auth.tsx`, only apply `safeRedirect` when the primary membership role is `customer`. For all other roles, always use `resolveTenantLanding(...)`.
+After insert, the `trg_clone_pricing_for_new_branch` trigger automatically clones tenant pricing to each new branch, and `seed_capabilities_for_new_family`-style seeding gives them the default product catalogue — same as PostNet.
 
-```ts
-const STAFF_OR_BRANCH = new Set([
-  "owner","admin","sales","production","accounts",
-  "branch_manager","store_operator",
-]);
+## Out of scope (ask separately if you want them)
 
-const useRedirectOverride = !STAFF_OR_BRANCH.has(primary.role as string);
-const target = (useRedirectOverride && safeRedirect)
-  ? safeRedirect
-  : resolveTenantLanding(primary, tenantSlug ?? null);
-```
-
-Apply the same guard to the `platform_admin` branch above (it already ignores `safeRedirect` — leave as-is).
+- Branch admin users / `tenant_memberships` — none created. Each branch will need a manager invited later.
+- Branch-specific overrides (capabilities, payment gateways, credit accounts) — left at tenant defaults.
+- Custom branch logos / hero imagery.
+- Tenant-level branding (header/footer, auth bg) — already configured separately.
 
 ## Verification
-1. Sign out, visit `https://postnetprintcentre.com/sandton-city/print-centre`, click Sign In, enter `sandtoncityadmin@postnet.co.za` → should land on `/branch`.
-2. Same flow with `sandtonstaff1@postnet.co.za` (store_operator) → should also land on `/branch`.
-3. Customer account signing in from `/sandton-city/orders/new?...` → should still return to that deep link (redirect honored).
-4. Tenant owner/admin signing in from the storefront → should land on tenant admin console, not storefront.
 
-## Scope
-Single-file frontend change to `src/pages/Auth.tsx`. No DB, no edge-function, no other route changes.
+After the insert I'll run a count + sample query to confirm all 75 rows landed and slugs are unique.
