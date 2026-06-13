@@ -10,6 +10,7 @@ import { usePhotoUpload } from "@/hooks/usePhotoUpload";
 
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { resolveUrls } from "@/lib/thumbnailUtils";
+import { getCachedBlobUrl, prefetchToCache } from "@/lib/photoPrints/photoBlobCache";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
 import {
   PHOTO_FINISH_OPTIONS,
