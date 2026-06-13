@@ -4,12 +4,14 @@ import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { useTenantSlug } from "@/hooks/useTenantSlug";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Mail, Phone } from "lucide-react";
+import { Mail, Phone, MapPin } from "lucide-react";
+import { useBranch } from "@/contexts/BranchContext";
 
 export default function CustomerFooter() {
   const { slug, tenantPath } = useTenantSlug();
   const { tenant } = useTenantFromSlug();
   const { data: branding } = useTenantBranding(tenant?.id ?? null);
+  const { activeBranch } = useBranch();
 
   const { data: support } = useQuery({
     queryKey: ["tenant_support", tenant?.id],
