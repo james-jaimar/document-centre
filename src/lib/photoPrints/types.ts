@@ -45,7 +45,11 @@ export interface PhotoPrintEntry {
   rotation: number;
   fit_mode: PhotoFitMode;
 
-  /** The pixel rect on the source image that the backend should crop to. */
+  /**
+   * The pixel rect on the *source* image that the backend should crop to.
+   * Always expressed in source-image pixel coordinates regardless of which
+   * derivative the editor displayed at crop time.
+   */
   croppedAreaPixels: CroppedAreaPixels | null;
 
   /** Per-photo print quantity. */
@@ -53,6 +57,18 @@ export interface PhotoPrintEntry {
 
   /** Optional client-side preview thumbnail (data-url or signed URL). Not authoritative. */
   thumbnail_url?: string | null;
+
+  /**
+   * S3 paths of the client-generated derivatives. Optional so old entries
+   * (and QR uploads that bypassed `buildPhotoDerivatives`) still work.
+   * The tile renders from `thumb_path`; the crop editor renders from
+   * `preview_path`. Both fall back to `original_storage_path`.
+   */
+  thumb_path?: string;
+  preview_path?: string;
+  /** Pixel dimensions of `preview_path` — needed to scale crops back to source coords. */
+  preview_width_px?: number;
+  preview_height_px?: number;
 }
 
 export interface PhotoPrintsSpec {
