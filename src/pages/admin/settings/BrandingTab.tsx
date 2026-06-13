@@ -90,6 +90,7 @@ export function BrandingTab() {
   const [portalName, setPortalName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [heroImageUrl, setHeroImageUrl] = useState("");
+  const [authBackgroundUrl, setAuthBackgroundUrl] = useState("");
   const [tagline, setTagline] = useState("");
   const [fontHeading, setFontHeading] = useState("");
   const [fontBody, setFontBody] = useState("");
