@@ -32,6 +32,7 @@ export function ProductionPanel({ jobId, jobStatus, productFamilyId, jobNumber, 
     generatePrintReady,
     generateImposition,
     generateJobTicket,
+    retryAutoAssemble,
     signedUrl,
   } = useProductionArtefacts(jobId);
   const { data: templates = [], isLoading: loadingTemplates } =
