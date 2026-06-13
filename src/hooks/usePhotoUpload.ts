@@ -3,6 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantContext } from "@/hooks/useTenantContext";
 import { uploadToS3 } from "@/lib/s3Storage";
+import { buildPhotoDerivatives } from "@/lib/photoPrints/deriveImages";
+import { registerBlob } from "@/lib/photoPrints/photoBlobCache";
 import { toast } from "sonner";
 
 interface PhotoUploadProgress {
@@ -20,6 +22,11 @@ export interface UploadedPhoto {
   mimeType: string;
   width: number;
   height: number;
+  /** Derivative paths + dimensions (when generation succeeded). */
+  thumbPath?: string;
+  previewPath?: string;
+  previewWidthPx?: number;
+  previewHeightPx?: number;
 }
 
 const MAX_FILE_SIZE_MB = 50;
