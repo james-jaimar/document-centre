@@ -1,6 +1,34 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
+export type CatalogScope = "master" | "tenant" | "branch";
+export interface CatalogScopeArgs {
+  scope?: CatalogScope;
+  tenantId?: string | null;
+  branchId?: string | null;
+}
+
+/** Apply scope filtering. Default scope=master (no tenant/branch). */
+export function applyCatalogScope(query: any, args: CatalogScopeArgs = {}) {
+  const scope: CatalogScope = args.scope ?? "master";
+  query = query.eq("scope_type", scope);
+  if (scope === "tenant") {
+    query = args.tenantId ? query.eq("tenant_id", args.tenantId) : query.is("tenant_id", null);
+    query = query.is("branch_id", null);
+  } else if (scope === "branch") {
+    query = args.branchId ? query.eq("branch_id", args.branchId) : query.is("branch_id", null);
+  } else {
+    query = query.is("tenant_id", null).is("branch_id", null);
+  }
+  return query;
+}
+
+function scopeKey(args: CatalogScopeArgs = {}) {
+  return [args.scope ?? "master", args.tenantId ?? null, args.branchId ?? null];
+}
+
+
+
 // ----------------------------- catalog_sizes -----------------------------
 
 export interface CatalogSize {
