@@ -470,11 +470,30 @@ export function useSetBranchCatalogOverride() {
       price_delta_minor?: number | null;
       price_override_minor?: number | null;
     }) => {
+      const sub_attribute = input.sub_attribute ?? null;
+      let findQ = supabase
+        .from("branch_catalog_overrides" as any)
+        .select("id")
+        .eq("branch_id", input.branch_id)
+        .eq("catalog", input.catalog)
+        .eq("item_code", input.item_code);
+      findQ = sub_attribute === null ? findQ.is("sub_attribute", null) : findQ.eq("sub_attribute", sub_attribute);
+      const { data: existing, error: findErr } = await findQ.maybeSingle();
+      if (findErr) throw findErr;
+      const existingId = (existing as any)?.id as string | undefined;
+      if (existingId) {
+        const { data, error } = await supabase
+          .from("branch_catalog_overrides" as any)
+          .update(input)
+          .eq("id", existingId)
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      }
       const { data, error } = await supabase
         .from("branch_catalog_overrides" as any)
-        .upsert(input, {
-          onConflict: "branch_id,catalog,sub_attribute,item_code",
-        })
+        .insert(input)
         .select()
         .single();
       if (error) throw error;
