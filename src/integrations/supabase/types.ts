@@ -3764,7 +3764,7 @@ export type Database = {
           item_code: string
           product_family_id: string
           sort_order: number
-          sub_attribute: string | null
+          sub_attribute: string
           updated_at: string
         }
         Insert: {
@@ -3775,7 +3775,7 @@ export type Database = {
           item_code: string
           product_family_id: string
           sort_order?: number
-          sub_attribute?: string | null
+          sub_attribute?: string
           updated_at?: string
         }
         Update: {
@@ -3786,7 +3786,7 @@ export type Database = {
           item_code?: string
           product_family_id?: string
           sort_order?: number
-          sub_attribute?: string | null
+          sub_attribute?: string
           updated_at?: string
         }
         Relationships: [
