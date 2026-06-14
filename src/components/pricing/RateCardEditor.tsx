@@ -58,6 +58,7 @@ import { Plus, Trash2, RefreshCw } from "lucide-react";
 import TiersButton from "./TiersButton";
 import { toast } from "@/hooks/use-toast";
 import { formatPrice } from "@/lib/formatCurrency";
+import { useCatalogSizes, type CatalogSize } from "@/hooks/useCatalog";
 
 interface Props {
   scope: RateCardScope;
@@ -70,7 +71,47 @@ interface Props {
   resyncPending?: boolean;
 }
 
-const SIZE_PRESETS = ["A4", "A3", "SRA3", "A5", "A6", "DL"];
+/** Tiny size picker bound to the master catalogue. */
+function CatalogSizeSelect({
+  value,
+  onChange,
+  sizes,
+  includeNone = false,
+  placeholder = "Select size",
+}: {
+  value: string | null | undefined;
+  onChange: (v: string | null) => void;
+  sizes: CatalogSize[];
+  includeNone?: boolean;
+  placeholder?: string;
+}) {
+  // Normalise legacy uppercase values (e.g. "A4") against catalogue codes ("a4").
+  const codeMatch = sizes.find(
+    (s) => s.code.toLowerCase() === String(value ?? "").toLowerCase(),
+  );
+  const current = codeMatch?.code ?? (includeNone ? "__none__" : "");
+  return (
+    <Select
+      value={current || undefined}
+      onValueChange={(v) => onChange(v === "__none__" ? null : v)}
+    >
+      <SelectTrigger><SelectValue placeholder={placeholder} /></SelectTrigger>
+      <SelectContent>
+        {includeNone && <SelectItem value="__none__">— any size —</SelectItem>}
+        {sizes
+          .filter((s) => s.is_active)
+          .map((s) => (
+            <SelectItem key={s.id} value={s.code}>
+              {s.label}{" "}
+              <span className="opacity-60 text-xs">
+                ({Math.round(Number(s.width_mm))}×{Math.round(Number(s.height_mm))})
+              </span>
+            </SelectItem>
+          ))}
+      </SelectContent>
+    </Select>
+  );
+}
 const FINISH_OPTIONS = ["bond", "gloss", "matt", "silk", "recycled"];
 const FINISHING_CATEGORIES = [
   "binding",
@@ -217,6 +258,7 @@ function ClicksTab({
   const update = useUpdateRateCardClick();
   const insert = useInsertRateCardClick();
   const del = useDeleteRateCardClick();
+  const { data: sizes = [] } = useCatalogSizes();
   const [drafts, setDrafts] = useState<Record<string, { sell?: string; cost?: string }>>({});
   const [adding, setAdding] = useState<{
     size: string;
@@ -395,15 +437,11 @@ function ClicksTab({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">Size</Label>
-                <Input
-                  list="click-size-presets"
+                <CatalogSizeSelect
                   value={adding.size}
-                  onChange={(e) => setAdding({ ...adding, size: e.target.value.toUpperCase() })}
-                  placeholder="A4, A3, SRA3, A5…"
+                  onChange={(v) => setAdding({ ...adding, size: v ?? "" })}
+                  sizes={sizes}
                 />
-                <datalist id="click-size-presets">
-                  {SIZE_PRESETS.map((s) => <option key={s} value={s} />)}
-                </datalist>
               </div>
               <div>
                 <Label className="text-xs">Colour</Label>
@@ -478,6 +516,7 @@ function PapersTab({
 }) {
   const upsert = useUpsertRateCardPaper();
   const del = useDeleteRateCardPaper();
+  const { data: sizes = [] } = useCatalogSizes();
   const [editing, setEditing] = useState<Partial<RateCardPaper> | null>(null);
 
   function openNew() {
@@ -646,15 +685,11 @@ function PapersTab({
                 </div>
                 <div>
                   <Label className="text-xs">Size</Label>
-                  <Input
-                    list="paper-size-presets"
-                    value={editing.size ?? "A4"}
-                    onChange={(e) => setEditing({ ...editing, size: e.target.value.toUpperCase() })}
-                    placeholder="A4, A3, SRA3…"
+                  <CatalogSizeSelect
+                    value={editing.size}
+                    onChange={(v) => setEditing({ ...editing, size: v ?? "" })}
+                    sizes={sizes}
                   />
-                  <datalist id="paper-size-presets">
-                    {SIZE_PRESETS.map((s) => <option key={s} value={s} />)}
-                  </datalist>
                 </div>
                 <div>
                   <Label className="text-xs">Price per sheet (ZAR)</Label>
@@ -703,6 +738,7 @@ function FinishingTab({
 }) {
   const upsert = useUpsertRateCardFinishing();
   const del = useDeleteRateCardFinishing();
+  const { data: sizes = [] } = useCatalogSizes();
   const [editing, setEditing] = useState<Partial<RateCardFinishing> | null>(null);
 
   function openNew() {
@@ -892,17 +928,12 @@ function FinishingTab({
               </div>
               <div>
                 <Label className="text-xs">Size (optional)</Label>
-                <Input
-                  list="finishing-size-presets"
-                  value={editing.size ?? ""}
-                  onChange={(e) =>
-                    setEditing({ ...editing, size: e.target.value ? e.target.value.toUpperCase() : null })
-                  }
-                  placeholder="— any —"
+                <CatalogSizeSelect
+                  value={editing.size}
+                  onChange={(v) => setEditing({ ...editing, size: v })}
+                  sizes={sizes}
+                  includeNone
                 />
-                <datalist id="finishing-size-presets">
-                  {SIZE_PRESETS.map((s) => <option key={s} value={s} />)}
-                </datalist>
               </div>
               <div className="col-span-2">
                 <Label className="text-xs">Sell price (ZAR)</Label>
