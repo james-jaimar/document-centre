@@ -60,17 +60,11 @@ export function useCatalogSizes(args: CatalogScopeArgs = {}) {
 }
 
 
-export function useUpsertCatalogSize() {
+export function useUpsertCatalogSize(args: CatalogScopeArgs = {}) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (row: Partial<CatalogSize> & { code: string; label: string; width_mm: number; height_mm: number }) => {
-      const { data, error } = await supabase
-        .from("catalog_sizes" as any)
-        .upsert(row, { onConflict: "code" })
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
+      return scopedUpsertByCode("catalog_sizes", row, args);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["catalog_sizes"] }),
   });
