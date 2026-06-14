@@ -262,6 +262,23 @@ export function useUpsertCatalogFinishing(args: CatalogScopeArgs = {}) {
   });
 }
 
+export function usePatchCatalogFinishing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { id: string; patch: Partial<CatalogFinishing> }) => {
+      const { error } = await supabase
+        .from("catalog_finishing" as any)
+        .update(input.patch)
+        .eq("id", input.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["catalog_finishing"] });
+      qc.invalidateQueries({ queryKey: ["catalog_finishing_prices"] });
+    },
+  });
+}
+
 export function useDeleteCatalogFinishing() {
   const qc = useQueryClient();
   return useMutation({
