@@ -684,15 +684,11 @@ function PapersTab({
                 </div>
                 <div>
                   <Label className="text-xs">Size</Label>
-                  <Input
-                    list="paper-size-presets"
-                    value={editing.size ?? "A4"}
-                    onChange={(e) => setEditing({ ...editing, size: e.target.value.toUpperCase() })}
-                    placeholder="A4, A3, SRA3…"
+                  <CatalogSizeSelect
+                    value={editing.size}
+                    onChange={(v) => setEditing({ ...editing, size: v ?? "" })}
+                    sizes={sizes}
                   />
-                  <datalist id="paper-size-presets">
-                    {SIZE_PRESETS.map((s) => <option key={s} value={s} />)}
-                  </datalist>
                 </div>
                 <div>
                   <Label className="text-xs">Price per sheet (ZAR)</Label>
@@ -930,17 +926,12 @@ function FinishingTab({
               </div>
               <div>
                 <Label className="text-xs">Size (optional)</Label>
-                <Input
-                  list="finishing-size-presets"
-                  value={editing.size ?? ""}
-                  onChange={(e) =>
-                    setEditing({ ...editing, size: e.target.value ? e.target.value.toUpperCase() : null })
-                  }
-                  placeholder="— any —"
+                <CatalogSizeSelect
+                  value={editing.size}
+                  onChange={(v) => setEditing({ ...editing, size: v })}
+                  sizes={sizes}
+                  includeNone
                 />
-                <datalist id="finishing-size-presets">
-                  {SIZE_PRESETS.map((s) => <option key={s} value={s} />)}
-                </datalist>
               </div>
               <div className="col-span-2">
                 <Label className="text-xs">Sell price (ZAR)</Label>
