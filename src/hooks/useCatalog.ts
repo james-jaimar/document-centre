@@ -188,19 +188,21 @@ export interface CatalogFinishing {
   metadata: Record<string, any>;
 }
 
-export function useCatalogFinishing() {
+export function useCatalogFinishing(args: CatalogScopeArgs = {}) {
   return useQuery({
-    queryKey: ["catalog_finishing"],
+    queryKey: ["catalog_finishing", ...scopeKey(args)],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("catalog_finishing" as any)
-        .select("*")
-        .order("sort_order", { ascending: true });
+      const q = applyCatalogScope(
+        supabase.from("catalog_finishing" as any).select("*"),
+        args,
+      );
+      const { data, error } = await q.order("sort_order", { ascending: true });
       if (error) throw error;
       return (data ?? []) as unknown as CatalogFinishing[];
     },
   });
 }
+
 
 export function useUpsertCatalogFinishing() {
   const qc = useQueryClient();
