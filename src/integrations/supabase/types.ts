@@ -206,6 +206,59 @@ export type Database = {
           },
         ]
       }
+      branch_catalog_overrides: {
+        Row: {
+          branch_id: string
+          catalog: Database["public"]["Enums"]["catalog_kind"]
+          created_at: string
+          id: string
+          is_enabled: boolean
+          item_code: string
+          label_override: string | null
+          metadata_override: Json | null
+          price_delta_minor: number | null
+          price_override_minor: number | null
+          sub_attribute: string | null
+          updated_at: string
+        }
+        Insert: {
+          branch_id: string
+          catalog: Database["public"]["Enums"]["catalog_kind"]
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          item_code: string
+          label_override?: string | null
+          metadata_override?: Json | null
+          price_delta_minor?: number | null
+          price_override_minor?: number | null
+          sub_attribute?: string | null
+          updated_at?: string
+        }
+        Update: {
+          branch_id?: string
+          catalog?: Database["public"]["Enums"]["catalog_kind"]
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          item_code?: string
+          label_override?: string | null
+          metadata_override?: Json | null
+          price_delta_minor?: number | null
+          price_override_minor?: number | null
+          sub_attribute?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "branch_catalog_overrides_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       branch_onboarding_progress: {
         Row: {
           branch_id: string
@@ -602,6 +655,267 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      catalog_finishing: {
+        Row: {
+          category: string | null
+          code: string
+          created_at: string
+          id: string
+          is_active: boolean
+          label: string
+          metadata: Json
+          pricing_basis: string | null
+          sort_order: number
+          updated_at: string
+          variant: string | null
+        }
+        Insert: {
+          category?: string | null
+          code: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label: string
+          metadata?: Json
+          pricing_basis?: string | null
+          sort_order?: number
+          updated_at?: string
+          variant?: string | null
+        }
+        Update: {
+          category?: string | null
+          code?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label?: string
+          metadata?: Json
+          pricing_basis?: string | null
+          sort_order?: number
+          updated_at?: string
+          variant?: string | null
+        }
+        Relationships: []
+      }
+      catalog_finishing_prices: {
+        Row: {
+          cost_price_minor: number | null
+          created_at: string
+          finishing_id: string
+          id: string
+          is_active: boolean
+          sell_price_minor: number
+          size_code: string | null
+          updated_at: string
+        }
+        Insert: {
+          cost_price_minor?: number | null
+          created_at?: string
+          finishing_id: string
+          id?: string
+          is_active?: boolean
+          sell_price_minor?: number
+          size_code?: string | null
+          updated_at?: string
+        }
+        Update: {
+          cost_price_minor?: number | null
+          created_at?: string
+          finishing_id?: string
+          id?: string
+          is_active?: boolean
+          sell_price_minor?: number
+          size_code?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_finishing_prices_finishing_id_fkey"
+            columns: ["finishing_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_finishing"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_finishing_prices_size_code_fkey"
+            columns: ["size_code"]
+            isOneToOne: false
+            referencedRelation: "catalog_sizes"
+            referencedColumns: ["code"]
+          },
+        ]
+      }
+      catalog_paper_prices: {
+        Row: {
+          cost_price_minor: number | null
+          created_at: string
+          id: string
+          is_active: boolean
+          paper_id: string
+          sell_price_minor: number
+          size_code: string
+          updated_at: string
+        }
+        Insert: {
+          cost_price_minor?: number | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          paper_id: string
+          sell_price_minor?: number
+          size_code: string
+          updated_at?: string
+        }
+        Update: {
+          cost_price_minor?: number | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          paper_id?: string
+          sell_price_minor?: number
+          size_code?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_paper_prices_paper_id_fkey"
+            columns: ["paper_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_papers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_paper_prices_size_code_fkey"
+            columns: ["size_code"]
+            isOneToOne: false
+            referencedRelation: "catalog_sizes"
+            referencedColumns: ["code"]
+          },
+        ]
+      }
+      catalog_papers: {
+        Row: {
+          category: string | null
+          code: string
+          created_at: string
+          finish: string | null
+          id: string
+          is_active: boolean
+          label: string
+          metadata: Json
+          sort_order: number
+          updated_at: string
+          weight_gsm: number | null
+        }
+        Insert: {
+          category?: string | null
+          code: string
+          created_at?: string
+          finish?: string | null
+          id?: string
+          is_active?: boolean
+          label: string
+          metadata?: Json
+          sort_order?: number
+          updated_at?: string
+          weight_gsm?: number | null
+        }
+        Update: {
+          category?: string | null
+          code?: string
+          created_at?: string
+          finish?: string | null
+          id?: string
+          is_active?: boolean
+          label?: string
+          metadata?: Json
+          sort_order?: number
+          updated_at?: string
+          weight_gsm?: number | null
+        }
+        Relationships: []
+      }
+      catalog_print_attrs: {
+        Row: {
+          attribute: string
+          code: string
+          created_at: string
+          id: string
+          is_active: boolean
+          label: string
+          metadata: Json
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          attribute: string
+          code: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label: string
+          metadata?: Json
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          attribute?: string
+          code?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label?: string
+          metadata?: Json
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      catalog_sizes: {
+        Row: {
+          code: string
+          created_at: string
+          height_mm: number
+          id: string
+          is_active: boolean
+          iso_name: string | null
+          label: string
+          metadata: Json
+          region: string | null
+          sort_order: number
+          updated_at: string
+          width_mm: number
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          height_mm: number
+          id?: string
+          is_active?: boolean
+          iso_name?: string | null
+          label: string
+          metadata?: Json
+          region?: string | null
+          sort_order?: number
+          updated_at?: string
+          width_mm: number
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          height_mm?: number
+          id?: string
+          is_active?: boolean
+          iso_name?: string | null
+          label?: string
+          metadata?: Json
+          region?: string | null
+          sort_order?: number
+          updated_at?: string
+          width_mm?: number
+        }
+        Relationships: []
       }
       contact_submissions: {
         Row: {
@@ -3441,6 +3755,50 @@ export type Database = {
           },
         ]
       }
+      product_catalog_links: {
+        Row: {
+          catalog: Database["public"]["Enums"]["catalog_kind"]
+          created_at: string
+          id: string
+          is_default: boolean
+          item_code: string
+          product_family_id: string
+          sort_order: number
+          sub_attribute: string | null
+          updated_at: string
+        }
+        Insert: {
+          catalog: Database["public"]["Enums"]["catalog_kind"]
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          item_code: string
+          product_family_id: string
+          sort_order?: number
+          sub_attribute?: string | null
+          updated_at?: string
+        }
+        Update: {
+          catalog?: Database["public"]["Enums"]["catalog_kind"]
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          item_code?: string
+          product_family_id?: string
+          sort_order?: number
+          sub_attribute?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_catalog_links_product_family_id_fkey"
+            columns: ["product_family_id"]
+            isOneToOne: false
+            referencedRelation: "product_families"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       product_families: {
         Row: {
           cmyk_profile: string
@@ -5450,6 +5808,21 @@ export type Database = {
         }
         Returns: string
       }
+      resolve_product_options: {
+        Args: { p_branch_id?: string; p_product_family_id: string }
+        Returns: {
+          catalog: Database["public"]["Enums"]["catalog_kind"]
+          is_default: boolean
+          is_enabled: boolean
+          item_code: string
+          label: string
+          metadata: Json
+          price_delta_minor: number
+          price_override_minor: number
+          sort_order: number
+          sub_attribute: string
+        }[]
+      }
       resolve_tenant_setting: {
         Args: { p_category: string; p_key: string; p_tenant_id: string }
         Returns: Json
@@ -5589,6 +5962,7 @@ export type Database = {
         | "store_operator"
         | "customer"
       build_status: "draft" | "building" | "ready" | "quoted" | "ordered"
+      catalog_kind: "size" | "print_attr" | "paper" | "finishing"
       click_colour: "mono" | "colour"
       click_sides: "simplex" | "duplex"
       click_size: "A4" | "A3"
@@ -5765,6 +6139,7 @@ export const Constants = {
         "customer",
       ],
       build_status: ["draft", "building", "ready", "quoted", "ordered"],
+      catalog_kind: ["size", "print_attr", "paper", "finishing"],
       click_colour: ["mono", "colour"],
       click_sides: ["simplex", "duplex"],
       click_size: ["A4", "A3"],

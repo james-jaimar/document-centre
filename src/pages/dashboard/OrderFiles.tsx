@@ -48,6 +48,7 @@ import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbn
 import type { PaperSize, NearIsoMatch } from "@/lib/paperSizes";
 import { isLandscape, ISO_SIZES, matchIsoSize, matchKnownSize, sizesMatch, resolveAllowedSizesFromSlugs } from "@/lib/paperSizes";
 import { useResolvedProductOptions } from "@/hooks/useBranchProductOptionOverrides";
+import { useResolvedAllowedSizeLabels } from "@/hooks/useResolvedCatalogOptions";
 import { isStructuredValues, type StructuredOptionValue } from "@/lib/productOptionTypes";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Lock, X as XIcon } from "lucide-react";
@@ -106,11 +107,23 @@ export default function OrderFiles() {
 
   // Branch-resolved product options → restrict the size advisory to sizes
   // this branch actually sells for the current product family.
+  //
+  // Source of truth: the new master catalogue + branch overrides resolver
+  // (`resolve_product_options`). We fall back to the legacy
+  // `product_options.values` shape only when the family has not yet been
+  // linked to the master catalogue.
+  const { labels: catalogAllowedSizeLabels } = useResolvedAllowedSizeLabels(
+    productFamilyId,
+    activeBranch?.id ?? null,
+  );
   const { data: resolvedOptions } = useResolvedProductOptions(
     productFamilyId,
     activeBranch?.id ?? null,
   );
   const allowedSizeNames = useMemo<string[] | null>(() => {
+    if (catalogAllowedSizeLabels && catalogAllowedSizeLabels.length > 0) {
+      return catalogAllowedSizeLabels;
+    }
     const opts = resolvedOptions ?? [];
     if (opts.length === 0) return null;
     const sizeOpt = opts.find((o) => {
@@ -123,7 +136,7 @@ export default function OrderFiles() {
       .map((v) => v.slug);
     const sizes = resolveAllowedSizesFromSlugs(activeSlugs);
     return sizes.length > 0 ? sizes.map((s) => s.name) : null;
-  }, [resolvedOptions]);
+  }, [catalogAllowedSizeLabels, resolvedOptions]);
 
   // Session size-lock (declared early so it can be passed into useDocumentUpload).
   type SessionSizeLock = {
