@@ -392,13 +392,24 @@ export function useSetProductCatalogLink() {
       const { product_family_id, catalog, item_code, enabled, sort_order, is_default } = input;
       const sub_attribute = input.sub_attribute ?? "";
       if (enabled) {
-        const { error } = await supabase
+        const { data: existing, error: findErr } = await supabase
           .from("product_catalog_links" as any)
-          .upsert(
-            { product_family_id, catalog, sub_attribute, item_code, sort_order: sort_order ?? 0, is_default: is_default ?? false },
-            { onConflict: "product_family_id,catalog,sub_attribute,item_code" },
-          );
-        if (error) throw error;
+          .select("id")
+          .eq("product_family_id", product_family_id)
+          .eq("catalog", catalog)
+          .eq("sub_attribute", sub_attribute)
+          .eq("item_code", item_code)
+          .maybeSingle();
+        if (findErr) throw findErr;
+        const existingId = (existing as any)?.id as string | undefined;
+        const payload = { product_family_id, catalog, sub_attribute, item_code, sort_order: sort_order ?? 0, is_default: is_default ?? false };
+        if (existingId) {
+          const { error } = await supabase.from("product_catalog_links" as any).update(payload).eq("id", existingId);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from("product_catalog_links" as any).insert(payload);
+          if (error) throw error;
+        }
       } else {
         const { error } = await supabase
           .from("product_catalog_links" as any)
