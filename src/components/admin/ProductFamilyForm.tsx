@@ -26,6 +26,28 @@ const RENDER_INTENT_OPTIONS = [
   { value: "saturation", label: "Saturation" },
 ];
 
+const ALL_FINISHED_SIZES = [
+  "A3L", "A3P", "A4L", "A4P", "A5L", "A5P", "A6P", "DL", "BC",
+] as const;
+
+interface PrintingRules {
+  allowed_finished_sizes: string[];
+  default_finished_size: string;
+  cover_is_heavy_stock: boolean;
+  force_sra3_when_edge_to_edge: boolean;
+  binding_size_inherits_from: string | null;
+  min_quantity: number;
+}
+
+const DEFAULT_PRINTING_RULES: PrintingRules = {
+  allowed_finished_sizes: ["A4P"],
+  default_finished_size: "A4P",
+  cover_is_heavy_stock: false,
+  force_sra3_when_edge_to_edge: true,
+  binding_size_inherits_from: null,
+  min_quantity: 1,
+};
+
 interface FormValues {
   name: string;
   slug: string;
@@ -36,6 +58,7 @@ interface FormValues {
   color_output: "cmyk" | "rgb";
   cmyk_profile: string;
   render_intent: "relative_colorimetric" | "perceptual" | "absolute_colorimetric" | "saturation";
+  printing_rules: PrintingRules;
 }
 
 interface Props {
