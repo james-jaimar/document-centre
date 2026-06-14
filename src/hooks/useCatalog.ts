@@ -46,11 +46,12 @@ async function scopedUpsertByCode(
   const { data: existing, error: findErr } = await findQ.maybeSingle();
   if (findErr) throw findErr;
 
-  if (existing?.id) {
+  const existingId = (existing as any)?.id as string | undefined;
+  if (existingId) {
     const { data, error } = await supabase
       .from(table as any)
       .update(payload)
-      .eq("id", existing.id)
+      .eq("id", existingId)
       .select()
       .single();
     if (error) throw error;
