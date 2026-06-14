@@ -258,6 +258,7 @@ function ClicksTab({
   const update = useUpdateRateCardClick();
   const insert = useInsertRateCardClick();
   const del = useDeleteRateCardClick();
+  const { data: sizes = [] } = useCatalogSizes();
   const [drafts, setDrafts] = useState<Record<string, { sell?: string; cost?: string }>>({});
   const [adding, setAdding] = useState<{
     size: string;
