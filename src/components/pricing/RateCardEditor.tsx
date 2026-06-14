@@ -516,6 +516,7 @@ function PapersTab({
 }) {
   const upsert = useUpsertRateCardPaper();
   const del = useDeleteRateCardPaper();
+  const { data: sizes = [] } = useCatalogSizes();
   const [editing, setEditing] = useState<Partial<RateCardPaper> | null>(null);
 
   function openNew() {
@@ -737,6 +738,7 @@ function FinishingTab({
 }) {
   const upsert = useUpsertRateCardFinishing();
   const del = useDeleteRateCardFinishing();
+  const { data: sizes = [] } = useCatalogSizes();
   const [editing, setEditing] = useState<Partial<RateCardFinishing> | null>(null);
 
   function openNew() {
