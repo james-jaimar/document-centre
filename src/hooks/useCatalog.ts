@@ -131,19 +131,21 @@ export interface CatalogPaper {
   metadata: Record<string, any>;
 }
 
-export function useCatalogPapers() {
+export function useCatalogPapers(args: CatalogScopeArgs = {}) {
   return useQuery({
-    queryKey: ["catalog_papers"],
+    queryKey: ["catalog_papers", ...scopeKey(args)],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("catalog_papers" as any)
-        .select("*")
-        .order("sort_order", { ascending: true });
+      const q = applyCatalogScope(
+        supabase.from("catalog_papers" as any).select("*"),
+        args,
+      );
+      const { data, error } = await q.order("sort_order", { ascending: true });
       if (error) throw error;
       return (data ?? []) as unknown as CatalogPaper[];
     },
   });
 }
+
 
 export function useUpsertCatalogPaper() {
   const qc = useQueryClient();
