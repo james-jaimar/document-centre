@@ -58,6 +58,7 @@ import { Plus, Trash2, RefreshCw } from "lucide-react";
 import TiersButton from "./TiersButton";
 import { toast } from "@/hooks/use-toast";
 import { formatPrice } from "@/lib/formatCurrency";
+import { useCatalogSizes, type CatalogSize } from "@/hooks/useCatalog";
 
 interface Props {
   scope: RateCardScope;
@@ -70,7 +71,47 @@ interface Props {
   resyncPending?: boolean;
 }
 
-const SIZE_PRESETS = ["A4", "A3", "SRA3", "A5", "A6", "DL"];
+/** Tiny size picker bound to the master catalogue. */
+function CatalogSizeSelect({
+  value,
+  onChange,
+  sizes,
+  includeNone = false,
+  placeholder = "Select size",
+}: {
+  value: string | null | undefined;
+  onChange: (v: string | null) => void;
+  sizes: CatalogSize[];
+  includeNone?: boolean;
+  placeholder?: string;
+}) {
+  // Normalise legacy uppercase values (e.g. "A4") against catalogue codes ("a4").
+  const codeMatch = sizes.find(
+    (s) => s.code.toLowerCase() === String(value ?? "").toLowerCase(),
+  );
+  const current = codeMatch?.code ?? (includeNone ? "__none__" : "");
+  return (
+    <Select
+      value={current || undefined}
+      onValueChange={(v) => onChange(v === "__none__" ? null : v)}
+    >
+      <SelectTrigger><SelectValue placeholder={placeholder} /></SelectTrigger>
+      <SelectContent>
+        {includeNone && <SelectItem value="__none__">— any size —</SelectItem>}
+        {sizes
+          .filter((s) => s.is_active)
+          .map((s) => (
+            <SelectItem key={s.id} value={s.code}>
+              {s.label}{" "}
+              <span className="opacity-60 text-xs">
+                ({Math.round(Number(s.width_mm))}×{Math.round(Number(s.height_mm))})
+              </span>
+            </SelectItem>
+          ))}
+      </SelectContent>
+    </Select>
+  );
+}
 const FINISH_OPTIONS = ["bond", "gloss", "matt", "silk", "recycled"];
 const FINISHING_CATEGORIES = [
   "binding",
