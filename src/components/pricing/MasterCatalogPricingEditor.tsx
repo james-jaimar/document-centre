@@ -40,6 +40,7 @@ import {
   useCatalogSizes,
   useCatalogPapers,
   useCatalogFinishing,
+  usePatchCatalogPaper,
   type CatalogScope,
 } from "@/hooks/useCatalog";
 import {
