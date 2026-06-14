@@ -215,20 +215,12 @@ export default function RateCardEditor({
       <Tabs defaultValue="clicks" className="w-full">
         <TabsList>
           <TabsTrigger value="clicks">Click Charges</TabsTrigger>
-          <TabsTrigger value="papers">Paper Stocks</TabsTrigger>
-          <TabsTrigger value="finishing">Finishing</TabsTrigger>
           <TabsTrigger value="photo">Photo Prints</TabsTrigger>
           <TabsTrigger value="business_cards">Business Cards</TabsTrigger>
         </TabsList>
 
         <TabsContent value="clicks" className="mt-4">
           <ClicksTab clicks={clicks} scope={scope} tenantId={tenantId ?? null} branchId={branchId ?? null} />
-        </TabsContent>
-        <TabsContent value="papers" className="mt-4">
-          <PapersTab papers={papers} scope={scope} tenantId={tenantId ?? null} branchId={branchId ?? null} />
-        </TabsContent>
-        <TabsContent value="finishing" className="mt-4">
-          <FinishingTab finishing={finishing} scope={scope} tenantId={tenantId ?? null} branchId={branchId ?? null} />
         </TabsContent>
         <TabsContent value="photo" className="mt-4">
           <PhotoPrintsTab items={photoPrints} scope={scope} tenantId={tenantId ?? null} branchId={branchId ?? null} />
