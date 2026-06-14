@@ -27,6 +27,46 @@ function scopeKey(args: CatalogScopeArgs = {}) {
   return [args.scope ?? "master", args.tenantId ?? null, args.branchId ?? null];
 }
 
+/** Manual update-or-insert keyed by (scope, tenant, branch, code).
+ * Used in place of `.upsert(onConflict: "code")` because the scoped uniqueness
+ * cannot be enforced via a plain unique constraint (NULLs in tenant_id/branch_id). */
+async function scopedUpsertByCode(
+  table: string,
+  row: any,
+  args: CatalogScopeArgs,
+) {
+  const scope = args.scope ?? "master";
+  const tenantId = args.tenantId ?? null;
+  const branchId = args.branchId ?? null;
+  const payload = { ...row, scope_type: scope, tenant_id: tenantId, branch_id: branchId };
+
+  let findQ = supabase.from(table as any).select("id").eq("scope_type", scope).eq("code", row.code);
+  findQ = tenantId ? findQ.eq("tenant_id", tenantId) : findQ.is("tenant_id", null);
+  findQ = branchId ? findQ.eq("branch_id", branchId) : findQ.is("branch_id", null);
+  const { data: existing, error: findErr } = await findQ.maybeSingle();
+  if (findErr) throw findErr;
+
+  if (existing?.id) {
+    const { data, error } = await supabase
+      .from(table as any)
+      .update(payload)
+      .eq("id", existing.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+  const { data, error } = await supabase
+    .from(table as any)
+    .insert(payload)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+
+
 
 
 // ----------------------------- catalog_sizes -----------------------------
