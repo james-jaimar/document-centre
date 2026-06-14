@@ -696,14 +696,94 @@ function CatalogFinishingPricing({ scopeArgs }: { scopeArgs: { scope: CatalogSco
               draft[row.id]?.cost ?? ((row.cost_price_minor ?? 0) / 100).toFixed(2);
             return (
               <TableRow key={row.id}>
-                <TableCell className="text-sm">{row.item?.label}</TableCell>
-                <TableCell className="text-xs capitalize">{row.item?.category ?? "—"}</TableCell>
-                <TableCell>
-                  <Badge variant="secondary" className="text-[10px]">
-                    {(row.item?.pricing_basis ?? "per_unit").replace("_", " ")}
-                  </Badge>
+                <TableCell className="text-sm">
+                  {canEdit ? (
+                    <Select
+                      value={row.finishing_id}
+                      onValueChange={(v) => changeItem(row, v)}
+                    >
+                      <SelectTrigger className="h-8 w-[180px] text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {items.map((i) => (
+                          <SelectItem key={i.id} value={i.id}>{i.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    row.item?.label
+                  )}
                 </TableCell>
-                <TableCell>{row.size?.label ?? row.size_code ?? "Any"}</TableCell>
+                <TableCell className="text-xs capitalize">
+                  {canEdit && row.item ? (
+                    <Select
+                      value={row.item.category ?? ""}
+                      onValueChange={(v) => changeFinishingField(row.finishing_id, { category: v })}
+                    >
+                      <SelectTrigger className="h-8 w-[150px] text-xs capitalize">
+                        <SelectValue placeholder="—" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CATEGORY_OPTIONS.map((c) => (
+                          <SelectItem key={c} value={c} className="capitalize">
+                            {c.replace("_", " ")}
+                          </SelectItem>
+                        ))}
+                        {row.item.category && !CATEGORY_OPTIONS.includes(row.item.category) && (
+                          <SelectItem value={row.item.category} className="capitalize">
+                            {row.item.category.replace("_", " ")}
+                          </SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    row.item?.category ?? "—"
+                  )}
+                </TableCell>
+                <TableCell>
+                  {canEdit && row.item ? (
+                    <Select
+                      value={row.item.pricing_basis ?? "per_unit"}
+                      onValueChange={(v) => changeFinishingField(row.finishing_id, { pricing_basis: v })}
+                    >
+                      <SelectTrigger className="h-8 w-[120px] text-xs capitalize">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {BASIS_OPTIONS.map((b) => (
+                          <SelectItem key={b} value={b} className="capitalize">
+                            {b.replace("_", " ")}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Badge variant="secondary" className="text-[10px]">
+                      {(row.item?.pricing_basis ?? "per_unit").replace("_", " ")}
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {canEdit ? (
+                    <Select
+                      value={row.size_code ?? "any"}
+                      onValueChange={(v) => changeSize(row, v)}
+                    >
+                      <SelectTrigger className="h-8 w-[120px] text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="any">Any</SelectItem>
+                        {sizes.map((s) => (
+                          <SelectItem key={s.code} value={s.code}>{s.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    row.size?.label ?? row.size_code ?? "Any"
+                  )}
+                </TableCell>
                 <TableCell>
                   <Input
                     type="number"
