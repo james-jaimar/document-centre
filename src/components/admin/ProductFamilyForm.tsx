@@ -102,7 +102,7 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         color_output: (fam.color_output as "cmyk" | "rgb") ?? "cmyk",
         cmyk_profile: fam.cmyk_profile ?? "fogra39",
         render_intent: (fam.render_intent as FormValues["render_intent"]) ?? "relative_colorimetric",
-        printing_rules: { ...DEFAULT_PRINTING_RULES, ...(fam.printing_rules ?? {}) },
+        printing_rules: { ...DEFAULT_PRINTING_RULES, ...((fam.printing_rules as Partial<PrintingRules>) ?? {}) },
       });
     } else {
       form.reset({
