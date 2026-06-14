@@ -457,12 +457,13 @@ function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope;
 // Finishing
 // ----------------------------------------------------------------------------
 
-function CatalogFinishingPricing() {
-  const { data: items = [] } = useCatalogFinishing();
-  const { data: sizes = [] } = useCatalogSizes();
-  const { data: prices = [], isLoading } = useCatalogFinishingPrices();
-  const upsert = useUpsertCatalogFinishingPrice();
+function CatalogFinishingPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope; tenantId: string | null; branchId: string | null } }) {
+  const { data: items = [] } = useCatalogFinishing(scopeArgs);
+  const { data: sizes = [] } = useCatalogSizes(scopeArgs);
+  const { data: prices = [], isLoading } = useCatalogFinishingPrices(scopeArgs);
+  const upsert = useUpsertCatalogFinishingPrice(scopeArgs);
   const del = useDeleteCatalogFinishingPrice();
+
   const [adding, setAdding] = useState<{
     finishing_id: string;
     size_code: string;
