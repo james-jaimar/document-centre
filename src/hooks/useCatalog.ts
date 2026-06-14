@@ -44,19 +44,21 @@ export interface CatalogSize {
   metadata: Record<string, any>;
 }
 
-export function useCatalogSizes() {
+export function useCatalogSizes(args: CatalogScopeArgs = {}) {
   return useQuery({
-    queryKey: ["catalog_sizes"],
+    queryKey: ["catalog_sizes", ...scopeKey(args)],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("catalog_sizes" as any)
-        .select("*")
-        .order("sort_order", { ascending: true });
+      const q = applyCatalogScope(
+        supabase.from("catalog_sizes" as any).select("*"),
+        args,
+      );
+      const { data, error } = await q.order("sort_order", { ascending: true });
       if (error) throw error;
       return (data ?? []) as unknown as CatalogSize[];
     },
   });
 }
+
 
 export function useUpsertCatalogSize() {
   const qc = useQueryClient();
