@@ -40,6 +40,7 @@ import {
   useCatalogSizes,
   useCatalogPapers,
   useCatalogFinishing,
+  usePatchCatalogPaper,
   type CatalogScope,
 } from "@/hooks/useCatalog";
 import {
@@ -205,6 +206,9 @@ function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope;
   const { data: prices = [], isLoading } = useCatalogPaperPrices(scopeArgs);
   const upsert = useUpsertCatalogPaperPrice(scopeArgs);
   const del = useDeleteCatalogPaperPrice();
+  const patchPaper = usePatchCatalogPaper();
+
+  const canEditPaper = scopeArgs.scope === "master";
 
   const [draft, setDraft] = useState<Record<string, string>>({});
 
@@ -311,6 +315,44 @@ function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope;
     }
   }
 
+  async function addSizeToPaper(paper: typeof papers[number], size: string) {
+    const current = ((paper as any).stocked_sizes ?? []) as string[];
+    if (current.map((s) => s.toLowerCase()).includes(size)) return;
+    try {
+      await patchPaper.mutateAsync({
+        id: paper.id,
+        patch: { stocked_sizes: [...current, size] },
+      });
+      // Seed an editable 0.00 price row.
+      await upsert.mutateAsync({
+        paper_id: paper.id,
+        size_code: size,
+        sell_price_minor: 0,
+        is_active: true,
+      } as any);
+    } catch (e: any) {
+      toast({ title: "Add size failed", description: e.message, variant: "destructive" });
+    }
+  }
+
+  async function toggleCover(paper: typeof papers[number]) {
+    const next = !(paper as any).is_cover_stock;
+    try {
+      await patchPaper.mutateAsync({ id: paper.id, patch: { is_cover_stock: next } });
+    } catch (e: any) {
+      toast({ title: "Toggle failed", description: e.message, variant: "destructive" });
+    }
+  }
+
+  async function toggleEdgeToEdge(paper: typeof papers[number]) {
+    const next = !(paper as any).is_edge_to_edge_only;
+    try {
+      await patchPaper.mutateAsync({ id: paper.id, patch: { is_edge_to_edge_only: next } });
+    } catch (e: any) {
+      toast({ title: "Toggle failed", description: e.message, variant: "destructive" });
+    }
+  }
+
   return (
     <Card className="p-4">
       <div className="flex items-start justify-between gap-4 mb-3">
@@ -349,7 +391,21 @@ function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope;
                 <TableCell className="capitalize text-muted-foreground">{paper.finish}</TableCell>
                 {allSizes.map((size) => {
                   if (!stocked.has(size)) {
-                    return <TableCell key={size} className="text-center text-muted-foreground/40">—</TableCell>;
+                    if (!canEditPaper) {
+                      return <TableCell key={size} className="text-center text-muted-foreground/40">—</TableCell>;
+                    }
+                    return (
+                      <TableCell key={size} className="text-center">
+                        <button
+                          type="button"
+                          onClick={() => addSizeToPaper(paper, size)}
+                          className="text-xs text-muted-foreground/60 hover:text-foreground hover:bg-muted rounded px-2 py-1 transition-colors"
+                          title={`Add ${size.toUpperCase()} to this paper`}
+                        >
+                          + Add
+                        </button>
+                      </TableCell>
+                    );
                   }
                   const row = pricesByPaper[paper.id]?.[size];
                   const valueStr =
@@ -377,11 +433,42 @@ function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope;
                   );
                 })}
                 <TableCell className="space-x-1">
-                  {(paper as any).is_cover_stock && (
-                    <Badge variant="secondary" className="text-[10px]">Cover</Badge>
-                  )}
-                  {(paper as any).is_edge_to_edge_only && (
-                    <Badge variant="outline" className="text-[10px]">SRA3-only</Badge>
+                  {canEditPaper ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => toggleCover(paper)}
+                        title="Click to toggle cover stock"
+                      >
+                        <Badge
+                          variant={(paper as any).is_cover_stock ? "secondary" : "outline"}
+                          className={`text-[10px] cursor-pointer ${(paper as any).is_cover_stock ? "" : "opacity-40 hover:opacity-80"}`}
+                        >
+                          Cover
+                        </Badge>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleEdgeToEdge(paper)}
+                        title="Click to toggle SRA3-only / edge-to-edge"
+                      >
+                        <Badge
+                          variant={(paper as any).is_edge_to_edge_only ? "secondary" : "outline"}
+                          className={`text-[10px] cursor-pointer ${(paper as any).is_edge_to_edge_only ? "" : "opacity-40 hover:opacity-80"}`}
+                        >
+                          SRA3-only
+                        </Badge>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {(paper as any).is_cover_stock && (
+                        <Badge variant="secondary" className="text-[10px]">Cover</Badge>
+                      )}
+                      {(paper as any).is_edge_to_edge_only && (
+                        <Badge variant="outline" className="text-[10px]">SRA3-only</Badge>
+                      )}
+                    </>
                   )}
                   {paper.category === "coloured" && (
                     <Badge variant="outline" className="text-[10px] capitalize">{paper.category}</Badge>
