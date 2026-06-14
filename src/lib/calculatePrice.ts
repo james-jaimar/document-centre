@@ -367,7 +367,18 @@ export function calculatePriceFromRateCard(
   // clicks (at the duplex rate) + 10 sheets of paper.
   const lines: PriceLineItem[] = [];
 
-  const size = String(spec.selected_options.size ?? "A4");
+  // Size key: accept the canonical "size" slot, plus the friendly option
+  // names the customer-facing OptionsPanel writes ("Document Size",
+  // "Paper Size", "Print Size", "Size"). Normalised to upper-case so
+  // catalog codes like "a4" / "sra3" match the rate card's "A4" / "SRA3".
+  const rawSize =
+    spec.selected_options.size ??
+    spec.selected_options["Document Size"] ??
+    spec.selected_options["Paper Size"] ??
+    spec.selected_options["Print Size"] ??
+    spec.selected_options["Size"] ??
+    "A4";
+  const size = String(rawSize).toUpperCase();
 
   const SIZE_IMPOSITION: Record<string, { parent: string; nUp: number }> = {
     A4: { parent: "A3", nUp: 2 },
@@ -409,14 +420,21 @@ export function calculatePriceFromRateCard(
   }
 
   /**
-   * Resolve a paper row. If the requested code is missing but an n-up parent
-   * exists, swap the size suffix (e.g. -a5 → -a3).
+   * Resolve a paper row. The requested code can be either:
+   *   - a sized rate-card code (e.g. "80gsm-bond-a4"), or
+   *   - a bare catalog_papers.code (e.g. "80gsm-bond") — in which case we
+   *     append the finished size before looking up.
+   * Falls back to the n-up parent size when no direct row exists.
    */
   function resolvePaper(
     requestedCode: string,
     finishedSize: string
   ): { paper: typeof rc.papers[number]; nUp: number } | null {
-    const direct = rc.papers.find((p) => p.code === requestedCode && p.is_active);
+    const sizeSuffix = `-${finishedSize.toLowerCase()}`;
+    const hasSizeSuffix = /-(a\d|dl|sra3|letter|legal|tabloid)$/i.test(requestedCode);
+    const candidate = hasSizeSuffix ? requestedCode : `${requestedCode}${sizeSuffix}`;
+
+    const direct = rc.papers.find((p) => p.code === candidate && p.is_active);
     if (direct) {
       const imp = SIZE_IMPOSITION[finishedSize];
       if (imp && direct.size === imp.parent) return { paper: direct, nUp: imp.nUp };
@@ -424,7 +442,10 @@ export function calculatePriceFromRateCard(
     }
     const imp = SIZE_IMPOSITION[finishedSize];
     if (imp) {
-      const parentCode = requestedCode.replace(/-(a\d|dl|sra3|letter|legal)$/i, `-${imp.parent.toLowerCase()}`);
+      const baseCode = hasSizeSuffix
+        ? requestedCode.replace(/-(a\d|dl|sra3|letter|legal|tabloid)$/i, "")
+        : requestedCode;
+      const parentCode = `${baseCode}-${imp.parent.toLowerCase()}`;
       const parent = rc.papers.find((p) => p.code === parentCode && p.is_active);
       if (parent) return { paper: parent, nUp: imp.nUp };
     }
@@ -490,9 +511,16 @@ export function calculatePriceFromRateCard(
     }
   }
 
-  // 2) Paper — sum sheets across sections, bill once
+  // 2) Paper — sum sheets across sections, bill once. Accept both the
+  // canonical "paper" slot and the friendly option names the customer UI
+  // writes ("Paper Stock", "Paper", "Body Paper"). The customer's
+  // Paper Stock picker now emits catalog_papers.code (e.g. "80gsm-bond"),
+  // and resolvePaper() appends the current size before the rate-card lookup.
   const paperCode =
     (spec.selected_options.paper as string | undefined) ||
+    (spec.selected_options["Paper Stock"] as string | undefined) ||
+    (spec.selected_options["Paper"] as string | undefined) ||
+    (spec.selected_options["Body Paper"] as string | undefined) ||
     recipe.default_paper_code ||
     null;
   if (paperCode && totalSheets > 0) {
