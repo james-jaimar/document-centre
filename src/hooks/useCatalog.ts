@@ -192,6 +192,25 @@ export function useUpsertCatalogPaper(args: CatalogScopeArgs = {}) {
   });
 }
 
+/** Patch arbitrary fields on a single paper row by id (e.g. is_cover_stock,
+ *  is_edge_to_edge_only, stocked_sizes). Used by the inline editors. */
+export function usePatchCatalogPaper() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { id: string; patch: Record<string, any> }) => {
+      const { data, error } = await supabase
+        .from("catalog_papers" as any)
+        .update(input.patch)
+        .eq("id", input.id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["catalog_papers"] }),
+  });
+}
+
 export function useDeleteCatalogPaper() {
   const qc = useQueryClient();
   return useMutation({
