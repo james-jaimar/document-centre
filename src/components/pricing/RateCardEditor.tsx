@@ -58,7 +58,7 @@ import { Plus, Trash2, RefreshCw } from "lucide-react";
 import TiersButton from "./TiersButton";
 import { toast } from "@/hooks/use-toast";
 import { formatPrice } from "@/lib/formatCurrency";
-import { useCatalogSizes, type CatalogSize } from "@/hooks/useCatalog";
+import { useCatalogSizes, useCatalogPrintAttrs, type CatalogSize } from "@/hooks/useCatalog";
 
 interface Props {
   scope: RateCardScope;
