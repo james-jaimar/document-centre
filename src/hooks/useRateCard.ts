@@ -185,95 +185,140 @@ export function useDeleteRateCardClick() {
   });
 }
 
-// ----- Papers -----
+// ----- Papers (adapter over the Catalogue) -----
+//
+// The legacy `rate_card_papers` table was retired in favour of the
+// `catalog_papers` / `catalog_paper_prices` model. To avoid rewriting every
+// consumer of the rate-card engine, these hooks now project the catalogue
+// rows into the historical `RateCardPaper` shape (one row per paper x
+// stocked size). Mutations throw — editing happens in the Master Catalogue
+// Pricing editor.
+
+function applyCatalogScopeFilter(q: any, args: ScopeArgs) {
+  if (args.scope === "branch" && args.branchId) {
+    return q.eq("scope_type", "branch").eq("branch_id", args.branchId);
+  }
+  if (args.scope === "tenant" && args.tenantId) {
+    return q.eq("scope_type", "tenant").eq("tenant_id", args.tenantId);
+  }
+  return q.eq("scope_type", "master").is("tenant_id", null);
+}
 
 export function useRateCardPapers(args: ScopeArgs) {
   return useQuery({
     queryKey: KEY("papers", args),
     enabled: args.scope === "master" || (args.scope === "branch" ? !!args.branchId : !!args.tenantId),
     queryFn: async () => {
-      const q = scopeFilter(
-        supabase.from("rate_card_papers" as any).select("*"),
-        args,
-      );
-      const { data, error } = await q.order("sort_order").order("weight_gsm");
-      if (error) throw error;
-      return (data ?? []) as unknown as RateCardPaper[];
-    },
-  });
-}
-
-export function useUpsertRateCardPaper() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: Partial<RateCardPaper> & { scope_type: RateCardScope }) => {
-      if (input.id) {
-        const { id, ...rest } = input;
-        const { error } = await supabase.from("rate_card_papers" as any).update(rest).eq("id", id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("rate_card_papers" as any).insert(input);
-        if (error) throw error;
+      const [papersRes, pricesRes] = await Promise.all([
+        applyCatalogScopeFilter(supabase.from("catalog_papers" as any).select("*"), args),
+        applyCatalogScopeFilter(supabase.from("catalog_paper_prices" as any).select("*"), args),
+      ]);
+      if (papersRes.error) throw papersRes.error;
+      if (pricesRes.error) throw pricesRes.error;
+      const papers = (papersRes.data ?? []) as any[];
+      const prices = (pricesRes.data ?? []) as any[];
+      const byId = new Map(papers.map((p) => [p.id, p]));
+      const rows: RateCardPaper[] = [];
+      for (const pp of prices) {
+        const paper = byId.get(pp.paper_id);
+        if (!paper) continue;
+        rows.push({
+          id: pp.id,
+          scope_type: pp.scope_type,
+          tenant_id: pp.tenant_id ?? null,
+          branch_id: pp.branch_id ?? null,
+          code: `${paper.code}-${pp.size_code}`,
+          label: `${paper.label} ${String(pp.size_code).toUpperCase()}`,
+          weight_gsm: paper.weight_gsm,
+          finish: paper.finish,
+          size: String(pp.size_code).toUpperCase(),
+          sell_price: Number(pp.sell_price_minor ?? 0) / 100,
+          cost_price: Number(pp.cost_price_minor ?? 0) / 100,
+          sort_order: paper.sort_order ?? 0,
+          is_active: !!paper.is_active && !!pp.is_active,
+        });
       }
+      return rows;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "papers"] }),
   });
 }
 
-export function useDeleteRateCardPaper() {
-  const qc = useQueryClient();
+/** Deprecated — paper pricing lives on `catalog_paper_prices`. */
+export function useUpsertRateCardPaper() {
   return useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("rate_card_papers" as any).delete().eq("id", id);
-      if (error) throw error;
+    mutationFn: async () => {
+      throw new Error("Paper pricing has moved to the Master Catalogue editor.");
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "papers"] }),
   });
 }
 
-// ----- Finishing -----
+/** Deprecated — paper pricing lives on `catalog_paper_prices`. */
+export function useDeleteRateCardPaper() {
+  return useMutation({
+    mutationFn: async () => {
+      throw new Error("Paper pricing has moved to the Master Catalogue editor.");
+    },
+  });
+}
+
+// ----- Finishing (adapter over the Catalogue) -----
 
 export function useRateCardFinishing(args: ScopeArgs) {
   return useQuery({
     queryKey: KEY("finishing", args),
     enabled: args.scope === "master" || (args.scope === "branch" ? !!args.branchId : !!args.tenantId),
     queryFn: async () => {
-      const q = scopeFilter(
-        supabase.from("rate_card_finishing" as any).select("*"),
-        args,
-      );
-      const { data, error } = await q.order("category").order("sort_order");
-      if (error) throw error;
-      return (data ?? []) as unknown as RateCardFinishing[];
-    },
-  });
-}
-
-export function useUpsertRateCardFinishing() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: Partial<RateCardFinishing> & { scope_type: RateCardScope }) => {
-      if (input.id) {
-        const { id, ...rest } = input;
-        const { error } = await supabase.from("rate_card_finishing" as any).update(rest).eq("id", id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("rate_card_finishing" as any).insert(input);
-        if (error) throw error;
+      const [itemsRes, pricesRes] = await Promise.all([
+        applyCatalogScopeFilter(supabase.from("catalog_finishing" as any).select("*"), args),
+        applyCatalogScopeFilter(supabase.from("catalog_finishing_prices" as any).select("*"), args),
+      ]);
+      if (itemsRes.error) throw itemsRes.error;
+      if (pricesRes.error) throw pricesRes.error;
+      const items = (itemsRes.data ?? []) as any[];
+      const prices = (pricesRes.data ?? []) as any[];
+      const byId = new Map(items.map((i) => [i.id, i]));
+      const rows: RateCardFinishing[] = [];
+      for (const fp of prices) {
+        const item = byId.get(fp.finishing_id);
+        if (!item) continue;
+        const sized = fp.size_code && fp.size_code !== "any";
+        rows.push({
+          id: fp.id,
+          scope_type: fp.scope_type,
+          tenant_id: fp.tenant_id ?? null,
+          branch_id: fp.branch_id ?? null,
+          code: item.code + (sized ? `-${fp.size_code}` : ""),
+          label: item.label + (sized ? ` ${String(fp.size_code).toUpperCase()}` : ""),
+          category: item.category,
+          pricing_basis: item.pricing_basis as FinishingBasis,
+          variant: item.variant ?? null,
+          size: sized ? String(fp.size_code).toUpperCase() : null,
+          sell_price: Number(fp.sell_price_minor ?? 0) / 100,
+          cost_price: Number(fp.cost_price_minor ?? 0) / 100,
+          sort_order: item.sort_order ?? 0,
+          is_active: !!item.is_active && !!fp.is_active,
+        });
       }
+      return rows;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "finishing"] }),
   });
 }
 
-export function useDeleteRateCardFinishing() {
-  const qc = useQueryClient();
+/** Deprecated — finishing pricing lives on `catalog_finishing_prices`. */
+export function useUpsertRateCardFinishing() {
   return useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("rate_card_finishing" as any).delete().eq("id", id);
-      if (error) throw error;
+    mutationFn: async () => {
+      throw new Error("Finishing pricing has moved to the Master Catalogue editor.");
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate_card", "finishing"] }),
+  });
+}
+
+/** Deprecated — finishing pricing lives on `catalog_finishing_prices`. */
+export function useDeleteRateCardFinishing() {
+  return useMutation({
+    mutationFn: async () => {
+      throw new Error("Finishing pricing has moved to the Master Catalogue editor.");
+    },
   });
 }
 
