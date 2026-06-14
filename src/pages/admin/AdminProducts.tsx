@@ -8,6 +8,7 @@ import {
 import type { ProductFamily } from "@/hooks/useProductFamilies";
 import ProductFamilyForm from "@/components/admin/ProductFamilyForm";
 import ProductOptionsEditor from "@/components/admin/ProductOptionsEditor";
+import ProductCatalogueLinksTab from "@/components/admin/ProductCatalogueLinksTab";
 
 import ProductRecipeTab from "@/components/admin/ProductRecipeTab";
 import { seedDefaultRecipes } from "@/lib/seedDefaultRecipes";
@@ -231,11 +232,15 @@ const AdminProducts = () => {
                       <CollapsibleContent asChild>
                         <tr>
                           <td colSpan={7} className="bg-muted/30 p-4">
-                            <Tabs defaultValue="options" className="w-full">
+                            <Tabs defaultValue="catalogue" className="w-full">
                               <TabsList className="mb-3">
+                                <TabsTrigger value="catalogue">Catalogue</TabsTrigger>
                                 <TabsTrigger value="options">Options</TabsTrigger>
                                 <TabsTrigger value="recipe">Recipe</TabsTrigger>
                               </TabsList>
+                              <TabsContent value="catalogue">
+                                <ProductCatalogueLinksTab productFamilyId={f.id} />
+                              </TabsContent>
                               <TabsContent value="options">
                                 <ProductOptionsEditor productFamilyId={f.id} />
                               </TabsContent>
