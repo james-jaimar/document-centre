@@ -85,21 +85,24 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
       color_output: "cmyk",
       cmyk_profile: "fogra39",
       render_intent: "relative_colorimetric",
+      printing_rules: DEFAULT_PRINTING_RULES,
     },
   });
 
   useEffect(() => {
-    if (family) {
+    const fam = family as (ProductFamily & { printing_rules?: Partial<PrintingRules> }) | null;
+    if (fam) {
       form.reset({
-        name: family.name,
-        slug: family.slug,
-        description: family.description || "",
-        icon: family.icon || "FileText",
-        is_active: family.is_active,
-        sort_order: family.sort_order,
-        color_output: (family.color_output as "cmyk" | "rgb") ?? "cmyk",
-        cmyk_profile: family.cmyk_profile ?? "fogra39",
-        render_intent: (family.render_intent as FormValues["render_intent"]) ?? "relative_colorimetric",
+        name: fam.name,
+        slug: fam.slug,
+        description: fam.description || "",
+        icon: fam.icon || "FileText",
+        is_active: fam.is_active,
+        sort_order: fam.sort_order,
+        color_output: (fam.color_output as "cmyk" | "rgb") ?? "cmyk",
+        cmyk_profile: fam.cmyk_profile ?? "fogra39",
+        render_intent: (fam.render_intent as FormValues["render_intent"]) ?? "relative_colorimetric",
+        printing_rules: { ...DEFAULT_PRINTING_RULES, ...(fam.printing_rules ?? {}) },
       });
     } else {
       form.reset({
@@ -112,6 +115,7 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         color_output: "cmyk",
         cmyk_profile: "fogra39",
         render_intent: "relative_colorimetric",
+        printing_rules: DEFAULT_PRINTING_RULES,
       });
     }
   }, [family, open]);
