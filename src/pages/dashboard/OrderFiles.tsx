@@ -104,6 +104,27 @@ export default function OrderFiles() {
     enabled: !!productFamilyId,
   });
 
+  // Branch-resolved product options → restrict the size advisory to sizes
+  // this branch actually sells for the current product family.
+  const { data: resolvedOptions } = useResolvedProductOptions(
+    productFamilyId,
+    activeBranch?.id ?? null,
+  );
+  const allowedSizeNames = useMemo<string[] | null>(() => {
+    const opts = resolvedOptions ?? [];
+    if (opts.length === 0) return null;
+    const sizeOpt = opts.find((o) => {
+      const name = (o.name ?? "").toLowerCase();
+      return name.includes("size") && isStructuredValues(o.values);
+    });
+    if (!sizeOpt || !isStructuredValues(sizeOpt.values)) return null;
+    const activeSlugs = (sizeOpt.values as StructuredOptionValue[])
+      .filter((v) => v.is_active !== false)
+      .map((v) => v.slug);
+    const sizes = resolveAllowedSizesFromSlugs(activeSlugs);
+    return sizes.length > 0 ? sizes.map((s) => s.name) : null;
+  }, [resolvedOptions]);
+
   // Session size-lock (declared early so it can be passed into useDocumentUpload).
   type SessionSizeLock = {
     size: PaperSize;
