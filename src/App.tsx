@@ -94,6 +94,7 @@ import PlatformSettings from "@/pages/platform/PlatformSettings";
 import PlatformPricingRegions from "@/pages/platform/PlatformPricingRegions";
 import PlatformProducts from "@/pages/platform/PlatformProducts";
 import PlatformMasterPricing from "@/pages/platform/PlatformMasterPricing";
+import PlatformCatalog from "@/pages/platform/PlatformCatalog";
 import PlatformSubscriptions from "@/pages/platform/PlatformSubscriptions";
 import PlatformDemoPrintPricing from "@/pages/platform/PlatformDemoPrintPricing";
 import PlatformImposition from "@/pages/platform/PlatformImposition";
@@ -383,6 +384,11 @@ function AppRoutes() {
         <Route path="/platform/master-pricing" element={
           <ProtectedRoute allowedRoles={["platform_admin"]}>
             <PlatformMasterPricing />
+          </ProtectedRoute>
+        } />
+        <Route path="/platform/catalog" element={
+          <ProtectedRoute allowedRoles={["platform_admin"]}>
+            <PlatformCatalog />
           </ProtectedRoute>
         } />
         <Route path="/platform/pricing" element={
