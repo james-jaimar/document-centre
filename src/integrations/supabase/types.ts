@@ -4448,6 +4448,7 @@ export type Database = {
       rate_card_clicks: {
         Row: {
           branch_id: string | null
+          catalog_size_code: string | null
           colour: Database["public"]["Enums"]["click_colour"]
           cost_price: number
           created_at: string
@@ -4463,6 +4464,7 @@ export type Database = {
         }
         Insert: {
           branch_id?: string | null
+          catalog_size_code?: string | null
           colour: Database["public"]["Enums"]["click_colour"]
           cost_price?: number
           created_at?: string
@@ -4478,6 +4480,7 @@ export type Database = {
         }
         Update: {
           branch_id?: string | null
+          catalog_size_code?: string | null
           colour?: Database["public"]["Enums"]["click_colour"]
           cost_price?: number
           created_at?: string
@@ -4500,6 +4503,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "rate_card_clicks_catalog_size_code_fkey"
+            columns: ["catalog_size_code"]
+            isOneToOne: false
+            referencedRelation: "catalog_sizes"
+            referencedColumns: ["code"]
+          },
+          {
             foreignKeyName: "rate_card_clicks_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
@@ -4511,6 +4521,8 @@ export type Database = {
       rate_card_finishing: {
         Row: {
           branch_id: string | null
+          catalog_finishing_id: string | null
+          catalog_size_code: string | null
           category: string
           code: string
           cost_price: number
@@ -4530,6 +4542,8 @@ export type Database = {
         }
         Insert: {
           branch_id?: string | null
+          catalog_finishing_id?: string | null
+          catalog_size_code?: string | null
           category: string
           code: string
           cost_price?: number
@@ -4549,6 +4563,8 @@ export type Database = {
         }
         Update: {
           branch_id?: string | null
+          catalog_finishing_id?: string | null
+          catalog_size_code?: string | null
           category?: string
           code?: string
           cost_price?: number
@@ -4575,6 +4591,20 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "rate_card_finishing_catalog_finishing_id_fkey"
+            columns: ["catalog_finishing_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_finishing"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rate_card_finishing_catalog_size_code_fkey"
+            columns: ["catalog_size_code"]
+            isOneToOne: false
+            referencedRelation: "catalog_sizes"
+            referencedColumns: ["code"]
+          },
+          {
             foreignKeyName: "rate_card_finishing_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
@@ -4586,6 +4616,8 @@ export type Database = {
       rate_card_papers: {
         Row: {
           branch_id: string | null
+          catalog_paper_id: string | null
+          catalog_size_code: string | null
           code: string
           cost_price: number
           created_at: string
@@ -4604,6 +4636,8 @@ export type Database = {
         }
         Insert: {
           branch_id?: string | null
+          catalog_paper_id?: string | null
+          catalog_size_code?: string | null
           code: string
           cost_price?: number
           created_at?: string
@@ -4622,6 +4656,8 @@ export type Database = {
         }
         Update: {
           branch_id?: string | null
+          catalog_paper_id?: string | null
+          catalog_size_code?: string | null
           code?: string
           cost_price?: number
           created_at?: string
@@ -4645,6 +4681,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "branches"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rate_card_papers_catalog_paper_id_fkey"
+            columns: ["catalog_paper_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_papers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rate_card_papers_catalog_size_code_fkey"
+            columns: ["catalog_size_code"]
+            isOneToOne: false
+            referencedRelation: "catalog_sizes"
+            referencedColumns: ["code"]
           },
           {
             foreignKeyName: "rate_card_papers_tenant_id_fkey"

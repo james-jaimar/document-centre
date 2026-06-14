@@ -1,13 +1,18 @@
+import MasterCatalogPricingEditor from "@/components/pricing/MasterCatalogPricingEditor";
 import RateCardEditor from "@/components/pricing/RateCardEditor";
 
 export default function PlatformMasterPricing() {
   return (
-    <div className="p-6">
-      <RateCardEditor
-        scope="master"
-        title="Master Rate Card"
-        description="The platform-wide source of truth for click charges, paper stocks and finishing prices. Each tenant inherits a clone that they can edit independently."
-      />
+    <div className="p-6 space-y-8">
+      <MasterCatalogPricingEditor />
+
+      <div className="border-t border-border pt-6">
+        <RateCardEditor
+          scope="master"
+          title="Click Charges, Photo Prints & Business Cards"
+          description="Per-click colour/mono rates and the standalone Photo Print and Business Card products. These still live on the rate-card tables — paper stocks and finishing items have moved to the catalogue editor above."
+        />
+      </div>
     </div>
   );
 }

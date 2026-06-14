@@ -58,7 +58,7 @@ import { Plus, Trash2, RefreshCw } from "lucide-react";
 import TiersButton from "./TiersButton";
 import { toast } from "@/hooks/use-toast";
 import { formatPrice } from "@/lib/formatCurrency";
-import { useCatalogSizes, type CatalogSize } from "@/hooks/useCatalog";
+import { useCatalogSizes, useCatalogPrintAttrs, type CatalogSize } from "@/hooks/useCatalog";
 
 interface Props {
   scope: RateCardScope;
@@ -259,6 +259,9 @@ function ClicksTab({
   const insert = useInsertRateCardClick();
   const del = useDeleteRateCardClick();
   const { data: sizes = [] } = useCatalogSizes();
+  const { data: printAttrs = [] } = useCatalogPrintAttrs();
+  const colourOptions = printAttrs.filter((a) => a.attribute === "colour_mode" && a.is_active && (a.code === "mono" || a.code === "colour"));
+  const sidesOptions = printAttrs.filter((a) => a.attribute === "sides" && a.is_active && (a.code === "simplex" || a.code === "duplex"));
   const [drafts, setDrafts] = useState<Record<string, { sell?: string; cost?: string }>>({});
   const [adding, setAdding] = useState<{
     size: string;
@@ -451,8 +454,9 @@ function ClicksTab({
                 >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="mono">Mono</SelectItem>
-                    <SelectItem value="colour">Colour</SelectItem>
+                    {colourOptions.map((o) => (
+                      <SelectItem key={o.code} value={o.code}>{o.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -464,8 +468,9 @@ function ClicksTab({
                 >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="simplex">Simplex</SelectItem>
-                    <SelectItem value="duplex">Duplex</SelectItem>
+                    {sidesOptions.map((o) => (
+                      <SelectItem key={o.code} value={o.code}>{o.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
