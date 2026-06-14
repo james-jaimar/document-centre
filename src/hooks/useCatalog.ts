@@ -27,6 +27,47 @@ function scopeKey(args: CatalogScopeArgs = {}) {
   return [args.scope ?? "master", args.tenantId ?? null, args.branchId ?? null];
 }
 
+/** Manual update-or-insert keyed by (scope, tenant, branch, code).
+ * Used in place of `.upsert(onConflict: "code")` because the scoped uniqueness
+ * cannot be enforced via a plain unique constraint (NULLs in tenant_id/branch_id). */
+async function scopedUpsertByCode(
+  table: string,
+  row: any,
+  args: CatalogScopeArgs,
+) {
+  const scope = args.scope ?? "master";
+  const tenantId = args.tenantId ?? null;
+  const branchId = args.branchId ?? null;
+  const payload = { ...row, scope_type: scope, tenant_id: tenantId, branch_id: branchId };
+
+  let findQ = supabase.from(table as any).select("id").eq("scope_type", scope).eq("code", row.code);
+  findQ = tenantId ? findQ.eq("tenant_id", tenantId) : findQ.is("tenant_id", null);
+  findQ = branchId ? findQ.eq("branch_id", branchId) : findQ.is("branch_id", null);
+  const { data: existing, error: findErr } = await findQ.maybeSingle();
+  if (findErr) throw findErr;
+
+  const existingId = (existing as any)?.id as string | undefined;
+  if (existingId) {
+    const { data, error } = await supabase
+      .from(table as any)
+      .update(payload)
+      .eq("id", existingId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+  const { data, error } = await supabase
+    .from(table as any)
+    .insert(payload)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+
+
 
 
 // ----------------------------- catalog_sizes -----------------------------
@@ -60,17 +101,11 @@ export function useCatalogSizes(args: CatalogScopeArgs = {}) {
 }
 
 
-export function useUpsertCatalogSize() {
+export function useUpsertCatalogSize(args: CatalogScopeArgs = {}) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (row: Partial<CatalogSize> & { code: string; label: string; width_mm: number; height_mm: number }) => {
-      const { data, error } = await supabase
-        .from("catalog_sizes" as any)
-        .upsert(row, { onConflict: "code" })
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
+      return scopedUpsertByCode("catalog_sizes", row, args);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["catalog_sizes"] }),
   });
@@ -147,17 +182,11 @@ export function useCatalogPapers(args: CatalogScopeArgs = {}) {
 }
 
 
-export function useUpsertCatalogPaper() {
+export function useUpsertCatalogPaper(args: CatalogScopeArgs = {}) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (row: Partial<CatalogPaper> & { code: string; label: string }) => {
-      const { data, error } = await supabase
-        .from("catalog_papers" as any)
-        .upsert(row, { onConflict: "code" })
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
+      return scopedUpsertByCode("catalog_papers", row, args);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["catalog_papers"] }),
   });
@@ -204,17 +233,11 @@ export function useCatalogFinishing(args: CatalogScopeArgs = {}) {
 }
 
 
-export function useUpsertCatalogFinishing() {
+export function useUpsertCatalogFinishing(args: CatalogScopeArgs = {}) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (row: Partial<CatalogFinishing> & { code: string; label: string }) => {
-      const { data, error } = await supabase
-        .from("catalog_finishing" as any)
-        .upsert(row, { onConflict: "code" })
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
+      return scopedUpsertByCode("catalog_finishing", row, args);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["catalog_finishing"] }),
   });
@@ -369,13 +392,24 @@ export function useSetProductCatalogLink() {
       const { product_family_id, catalog, item_code, enabled, sort_order, is_default } = input;
       const sub_attribute = input.sub_attribute ?? "";
       if (enabled) {
-        const { error } = await supabase
+        const { data: existing, error: findErr } = await supabase
           .from("product_catalog_links" as any)
-          .upsert(
-            { product_family_id, catalog, sub_attribute, item_code, sort_order: sort_order ?? 0, is_default: is_default ?? false },
-            { onConflict: "product_family_id,catalog,sub_attribute,item_code" },
-          );
-        if (error) throw error;
+          .select("id")
+          .eq("product_family_id", product_family_id)
+          .eq("catalog", catalog)
+          .eq("sub_attribute", sub_attribute)
+          .eq("item_code", item_code)
+          .maybeSingle();
+        if (findErr) throw findErr;
+        const existingId = (existing as any)?.id as string | undefined;
+        const payload = { product_family_id, catalog, sub_attribute, item_code, sort_order: sort_order ?? 0, is_default: is_default ?? false };
+        if (existingId) {
+          const { error } = await supabase.from("product_catalog_links" as any).update(payload).eq("id", existingId);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from("product_catalog_links" as any).insert(payload);
+          if (error) throw error;
+        }
       } else {
         const { error } = await supabase
           .from("product_catalog_links" as any)
@@ -436,11 +470,30 @@ export function useSetBranchCatalogOverride() {
       price_delta_minor?: number | null;
       price_override_minor?: number | null;
     }) => {
+      const sub_attribute = input.sub_attribute ?? null;
+      let findQ = supabase
+        .from("branch_catalog_overrides" as any)
+        .select("id")
+        .eq("branch_id", input.branch_id)
+        .eq("catalog", input.catalog)
+        .eq("item_code", input.item_code);
+      findQ = sub_attribute === null ? findQ.is("sub_attribute", null) : findQ.eq("sub_attribute", sub_attribute);
+      const { data: existing, error: findErr } = await findQ.maybeSingle();
+      if (findErr) throw findErr;
+      const existingId = (existing as any)?.id as string | undefined;
+      if (existingId) {
+        const { data, error } = await supabase
+          .from("branch_catalog_overrides" as any)
+          .update(input)
+          .eq("id", existingId)
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      }
       const { data, error } = await supabase
         .from("branch_catalog_overrides" as any)
-        .upsert(input, {
-          onConflict: "branch_id,catalog,sub_attribute,item_code",
-        })
+        .insert(input)
         .select()
         .single();
       if (error) throw error;
