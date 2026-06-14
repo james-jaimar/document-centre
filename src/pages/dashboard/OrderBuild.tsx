@@ -3,7 +3,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useOrderData, useUpdateOrderItemSpec, useAddSection, useUpdateSection, useDeleteSection } from "@/hooks/useOrderBuilder";
 import { useAddItemToCart } from "@/hooks/useCart";
-import { useResolvedProductOptions } from "@/hooks/useBranchProductOptionOverrides";
+import { useCatalogBackedOptions } from "@/hooks/useCatalogBackedOptions";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { ItemSpec } from "@/lib/calculatePrice";
@@ -74,8 +74,10 @@ export default function OrderBuild() {
   const { activeBranch } = useBranch();
   const effectiveBranchId = activeBranch?.id ?? membershipBranchId ?? null;
 
-  // Resolved = master options minus any value the active branch has disabled.
-  const { data: options = [] } = useResolvedProductOptions(productFamilyId, effectiveBranchId);
+  // Resolved = legacy product_options skeleton with values for Paper / Cover /
+  // Document Size overlaid from the master catalogue (catalog_papers,
+  // catalog_sizes) so what the customer sees matches what admins curate.
+  const { data: options = [] } = useCatalogBackedOptions(productFamilyId, effectiveBranchId);
 
   // Fetch product family to get slug for preview type
   const { data: productFamily } = useQuery({

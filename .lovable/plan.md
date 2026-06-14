@@ -1,40 +1,60 @@
-# Master Pricing → Finishing: make rows editable inline
+# Wire products to master catalog & pricing
 
-Right now the Finishing tab shows **Item / Category / Basis / Size** as plain text — you can only edit Sell, Cost and Active. The note tells you to go to *Master Catalogue → Finishing* to change anything else, which is exactly the bounce-around you want to stop.
+## The problem
 
-This change adds inline editing for those four columns on the master scope only, same pattern we just used for Papers (Cover/SRA3 toggles + Add).
+The customer configurator (`/orders/new/:familyId` → `OrderBuild.tsx`) is **not** reading from the Master Catalogue / Master Pricing you've been editing. It's reading from the legacy `product_options` JSONB table.
 
-## Changes
+What that means concretely:
+- Adding a paper to **Master Catalogue → Papers** doesn't make it appear in the customer's paper picker.
+- Adding an SRA3 price in **Master Pricing → Papers** has no effect on what the customer is charged.
+- Toggling **Cover / SRA3-only** flags is invisible to the customer flow.
+- Editing a finishing item's category/basis/size in **Master Pricing → Finishing** doesn't flow through.
+- `branch_catalog_overrides` (the new branch override system) is dead from the customer's POV — only `branch_product_option_overrides` (legacy) is read.
 
-### 1. `CatalogFinishingPricing` in `src/components/pricing/MasterCatalogPricingEditor.tsx`
+Pricing engine has a second hidden disconnect: it only uses the new rate-card engine when **both** a `product_recipes` row and a non-empty `rate_card_clicks` table exist for the branch. Otherwise it silently falls back to legacy `pricing_rules`. Even in the new engine, missing finishing entries fall back to legacy `product_options.price_impact`.
 
-Replace the read-only cells with inline controls (master scope only — tenant/branch stay read-only because their rows cascade from master):
+## What to build
 
-- **Item** → `Select` of all `catalog_finishing` items. Changing it updates `catalog_finishing_prices.finishing_id` for that price row.
-- **Category** → `Select` with the values already in use: `binding, cover, folding, guillotining, hole_punching, inserts, lamination, packaging, special, stapling, tab_dividers, trimming`. Free-text "Other…" option that opens a tiny prompt for a new value (so we're not boxed in if you add a new category later). Writes `catalog_finishing.category`.
-- **Basis** → `Select` of `per_unit | per_sheet | per_set`. Writes `catalog_finishing.pricing_basis`.
-- **Size** → `Select` of `Any` + every code from `catalog_sizes` (already loaded by the editor). Writes `catalog_finishing_prices.size_code` (`null` for "Any", matching today's behaviour).
+### 1. Replace the option-list source in `OrderBuild.tsx`
 
-Cells stay compact (`h-8`, small text) so the table density doesn't change.
+Swap `useResolvedProductOptions(productFamilyId, branchId)` for `useResolvedCatalogOptions(productFamilyId, branchId)` (the hook that already calls the `resolve_product_options` RPC — master ← product_catalog_links ← branch_catalog_overrides).
 
-On tenant/branch scope the cells render as today (plain text badges) — `canEdit = scopeArgs.scope === "master"`.
+Build a small adapter (`src/lib/catalog/toProductOptions.ts`) that projects the RPC's rows into the `Tables<"product_options">[]` shape that `OptionsPanel` and `calculateItemPrice` expect:
+- `catalog: "size"` → option group `size`, values from `catalog_sizes` rows (with metadata.iso, width_mm, height_mm).
+- `catalog: "print_attr"` → grouped by `sub_attribute` (`color`, `sides`, …).
+- `catalog: "paper"` → option group `paper`, with `metadata` carrying weight/finish/`is_cover_stock`/`is_edge_to_edge_only` so capability gates (cover, SRA3-only) work.
+- `catalog: "finishing"` → option group `finishing` (or per-category groups: binding, lamination, …), values from `catalog_finishing` rows.
 
-### 2. Hook: `usePatchCatalogFinishing` in `src/hooks/useCatalog.ts`
+This adapter is the seam. `OptionsPanel` stays as-is.
 
-Mirror of the `usePatchCatalogPaper` hook we just added. Partial update by `id` of `category` / `pricing_basis` / `label`. Invalidates `catalog_finishing` and `catalog_finishing_prices` (because the joined view in the editor reads both).
+### 2. Make pricing always use the catalog
 
-### 3. Reuse existing mutations
+In `calculatePriceFromRateCard` (and the dispatch in `PriceSummary.tsx`):
+- Remove the `useNewEngine` gate. The new engine should always run when there's a recipe; missing pieces should warn loudly (a dev console warn + a UI "pricing not configured" badge) rather than silently fall back to `pricing_rules`.
+- Remove the `product_options.price_impact` fallback inside `calculatePriceFromRateCard` (lines ~705-723). Prices come from `catalog_paper_prices` / `catalog_finishing_prices` only.
+- For families with no recipe yet, keep the legacy path but surface a visible "Legacy pricing — please configure recipe" notice in admin/dev only (no behaviour change for end users on those families).
 
-- Changing **Size** or **Item** uses the existing `useUpsertCatalogFinishingPrice` (passes the price row's `id` plus the new `size_code` / `finishing_id`).
-- No schema change, no migration, no new RLS.
+### 3. Retire the duplicate branch-override system (follow-up, flagged not done)
 
-## Out of scope
+`branch_product_option_overrides` (legacy) and `branch_catalog_overrides` (new) both exist. After step 1, only `branch_catalog_overrides` matters. Plan a follow-up migration to: (a) one-time migrate any active legacy overrides into `branch_catalog_overrides`, (b) drop reads of the legacy table, (c) eventually drop the table.
 
-- The "Add finishing price" dialog stays as-is — it already lets you pick item / category-via-item / size.
-- No changes to Papers, RateCard, or the Master Catalogue → Finishing editor.
-- We're not adding a "delete category" or "rename category globally" workflow — editing category on one row only changes that row's `catalog_finishing` record (which is how it works in the catalogue editor today).
+### 4. QA matrix
+
+Before shipping:
+- Pick one product family with a configured recipe (e.g. bound documents). Confirm: sizes, papers, print attrs, finishing all appear from master catalogue; SRA3-only and Cover flags gate correctly; price equals master-pricing × quantity.
+- Pick one family **without** a recipe. Confirm: it still loads (legacy path) and shows the dev-only "configure recipe" notice.
+- Toggle a paper off in `branch_catalog_overrides`; confirm it disappears from the customer picker on that branch.
 
 ## Technical notes
 
-- `catalog_finishing.category` and `pricing_basis` are plain `text` columns (no enum), so writing arbitrary strings is safe — but the dropdown keeps things tidy.
-- Optimistic update + `toast` on failure, same pattern as the Cover toggle.
+- Files touched: `src/pages/dashboard/OrderBuild.tsx`, `src/components/order/PriceSummary.tsx`, `src/lib/calculatePrice.ts`, new `src/lib/catalog/toProductOptions.ts`. No schema migrations required for step 1+2.
+- `resolve_product_options` RPC already returns `metadata`, `price_delta_minor`, `price_override_minor`, `is_enabled`, `is_default` — enough for the adapter.
+- Keep `useProductOptions` around (admin editors still use it) but stop importing it in `OrderBuild`.
+- The rate-card engine already reads `catalog_papers` / `catalog_finishing` directly, so no change needed there — only the gate and the fallback.
+
+## Out of scope
+
+- Touching admin/branch catalogue editors (already correct).
+- Photo-prints flow (`rate_card_photo_prints`) — separate engine, separate review.
+- Migrating/removing `branch_product_option_overrides` (flagged as follow-up).
+- Any UI redesign of `OptionsPanel`.
