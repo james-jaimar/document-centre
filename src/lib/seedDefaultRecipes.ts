@@ -139,7 +139,7 @@ export async function seedDefaultRecipes(): Promise<SeedResult> {
       finish: r.paper.finish,
       size: String(r.size_code).toUpperCase(),
     }));
-  const finishing = (finishingRes.data ?? []) as Array<{ code: string; category: string }>;
+  const finishing = (finishingRes.data ?? []) as unknown as Array<{ code: string; category: string }>;
 
   const { data: families, error: famErr } = await supabase
     .from("product_families")
