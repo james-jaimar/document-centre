@@ -188,11 +188,17 @@ export default function MasterCatalogPricingEditor({
 // ----------------------------------------------------------------------------
 
 /**
- * Parent sheets we price against. Everything else (A5, A6, DL, BC, …) is
- * derived by imposition at quote-time — not stocked, not priced here.
+ * Display order for size columns. Sizes not in this list are appended
+ * alphabetically. Each paper's actual columns are driven by its
+ * `stocked_sizes` array so photo/poster stocks show their own sizes
+ * instead of empty A4/A3/SRA3 cells.
  */
-const PARENT_SHEETS = ["a4", "a3", "sra3"] as const;
-type ParentSheet = (typeof PARENT_SHEETS)[number];
+const SIZE_ORDER = [
+  "a4", "a3", "sra3",
+  "a5", "a6", "dl",
+  "a2", "a1", "a0",
+  "photo_4x6", "photo_5x7", "photo_6x8", "photo_8x10",
+];
 
 function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope; tenantId: string | null; branchId: string | null } }) {
   const { data: papers = [] } = useCatalogPapers(scopeArgs);
@@ -202,12 +208,12 @@ function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope;
 
   const [draft, setDraft] = useState<Record<string, string>>({});
 
-  /** Map paper_id → { sizeCode → price row } limited to parent sheets. */
+  /** Map paper_id → { sizeCode → price row }. */
   const pricesByPaper = useMemo(() => {
-    const out: Record<string, Partial<Record<ParentSheet, typeof prices[number]>>> = {};
+    const out: Record<string, Record<string, typeof prices[number]>> = {};
     for (const p of prices) {
-      const s = (p.size_code || "").toLowerCase() as ParentSheet;
-      if (!(PARENT_SHEETS as readonly string[]).includes(s)) continue;
+      const s = (p.size_code || "").toLowerCase();
+      if (!s) continue;
       out[p.paper_id] ??= {};
       out[p.paper_id]![s] = p;
     }
@@ -226,13 +232,45 @@ function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope;
     [papers],
   );
 
-  const cellKey = (paperId: string, size: ParentSheet) => `${paperId}:${size}`;
+  /** Union of every size that any active paper is stocked in (sorted). */
+  const allSizes = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of rows) {
+      for (const s of ((p as any).stocked_sizes ?? []) as string[]) {
+        set.add(s.toLowerCase());
+      }
+    }
+    const arr = Array.from(set);
+    arr.sort((a, b) => {
+      const ai = SIZE_ORDER.indexOf(a);
+      const bi = SIZE_ORDER.indexOf(b);
+      if (ai === -1 && bi === -1) return a.localeCompare(b);
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
+    return arr;
+  }, [rows]);
 
-  function setCellDraft(paperId: string, size: ParentSheet, value: string) {
+  /** Coverage: how many active papers have at least one price row. */
+  const coverage = useMemo(() => {
+    let withPrices = 0;
+    for (const p of rows) {
+      const byP = pricesByPaper[p.id];
+      if (byP && Object.values(byP).some((r) => (r?.sell_price_minor ?? 0) > 0)) {
+        withPrices++;
+      }
+    }
+    return { total: rows.length, withPrices };
+  }, [rows, pricesByPaper]);
+
+  const cellKey = (paperId: string, size: string) => `${paperId}:${size}`;
+
+  function setCellDraft(paperId: string, size: string, value: string) {
     setDraft((d) => ({ ...d, [cellKey(paperId, size)]: value }));
   }
 
-  async function commitCell(paper: typeof papers[number], size: ParentSheet, value: string) {
+  async function commitCell(paper: typeof papers[number], size: string, value: string) {
     const minor = Math.round((parseFloat(value) || 0) * 100);
     const row = pricesByPaper[paper.id]?.[size];
     const currentMinor = row?.sell_price_minor ?? 0;
@@ -262,7 +300,7 @@ function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope;
     }
   }
 
-  async function removeCell(paperId: string, size: ParentSheet) {
+  async function removeCell(paperId: string, size: string) {
     const row = pricesByPaper[paperId]?.[size];
     if (!row) return;
     if (!confirm(`Remove ${size.toUpperCase()} pricing for this paper?`)) return;
@@ -275,72 +313,89 @@ function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope;
 
   return (
     <Card className="p-4">
-      <p className="text-xs text-muted-foreground mb-3">
-        One row per paper stock. Pricing is per <strong>parent sheet</strong> only
-        — A4 cut, A3 cut and SRA3. Child sizes (A5, A6, DL, business cards, …)
-        are derived by imposition at quote time and charged as whole parent sheets.
-        Leave a cell blank if the paper isn't stocked in that size.
-      </p>
+      <div className="flex items-start justify-between gap-4 mb-3">
+        <p className="text-xs text-muted-foreground max-w-3xl">
+          One row per paper stock. Columns are the sizes each stock is held in
+          — A4 / A3 / SRA3 for office stocks, photo and poster sizes for
+          their respective stocks. Child sizes (A5, A6, DL, business cards…)
+          are derived by imposition at quote time and charged as whole parent
+          sheets. Leave a cell blank if the paper isn't stocked in that size.
+        </p>
+        <Badge variant={coverage.withPrices < coverage.total ? "secondary" : "outline"} className="shrink-0">
+          {coverage.withPrices} / {coverage.total} priced
+        </Badge>
+      </div>
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Paper</TableHead>
             <TableHead className="w-16">GSM</TableHead>
             <TableHead>Finish</TableHead>
-            <TableHead className="w-24">A4 (R)</TableHead>
-            <TableHead className="w-24">A3 (R)</TableHead>
-            <TableHead className="w-24">SRA3 (R)</TableHead>
+            {allSizes.map((s) => (
+              <TableHead key={s} className="w-24 uppercase">{s.replace("_", " ")} (R)</TableHead>
+            ))}
             <TableHead>Flags</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((paper) => (
-            <TableRow key={paper.id}>
-              <TableCell className="text-sm font-medium">{paper.label}</TableCell>
-              <TableCell>{paper.weight_gsm}</TableCell>
-              <TableCell className="capitalize text-muted-foreground">{paper.finish}</TableCell>
-              {PARENT_SHEETS.map((size) => {
-                const row = pricesByPaper[paper.id]?.[size];
-                const valueStr =
-                  draft[cellKey(paper.id, size)] ??
-                  (row ? (row.sell_price_minor / 100).toFixed(2) : "");
-                return (
-                  <TableCell key={size}>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      placeholder="—"
-                      className="h-8 w-20 text-sm"
-                      value={valueStr}
-                      onChange={(e) => setCellDraft(paper.id, size, e.target.value)}
-                      onBlur={(e) => {
-                        if (e.target.value.trim() === "" && !row) return;
-                        if (e.target.value.trim() === "" && row) {
-                          removeCell(paper.id, size);
-                          return;
-                        }
-                        commitCell(paper, size, e.target.value);
-                      }}
-                    />
-                  </TableCell>
-                );
-              })}
-              <TableCell className="space-x-1">
-                {(paper as any).is_cover_stock && (
-                  <Badge variant="secondary" className="text-[10px]">Cover</Badge>
-                )}
-                {(paper as any).is_edge_to_edge_only && (
-                  <Badge variant="outline" className="text-[10px]">SRA3-only</Badge>
-                )}
-                {paper.category === "coloured" && (
-                  <Badge variant="outline" className="text-[10px] capitalize">{paper.category}</Badge>
-                )}
-              </TableCell>
-            </TableRow>
-          ))}
+          {rows.map((paper) => {
+            const stocked = new Set(
+              (((paper as any).stocked_sizes ?? []) as string[]).map((s) => s.toLowerCase()),
+            );
+            return (
+              <TableRow key={paper.id}>
+                <TableCell className="text-sm font-medium">{paper.label}</TableCell>
+                <TableCell>{paper.weight_gsm}</TableCell>
+                <TableCell className="capitalize text-muted-foreground">{paper.finish}</TableCell>
+                {allSizes.map((size) => {
+                  if (!stocked.has(size)) {
+                    return <TableCell key={size} className="text-center text-muted-foreground/40">—</TableCell>;
+                  }
+                  const row = pricesByPaper[paper.id]?.[size];
+                  const valueStr =
+                    draft[cellKey(paper.id, size)] ??
+                    (row ? (row.sell_price_minor / 100).toFixed(2) : "");
+                  return (
+                    <TableCell key={size}>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="—"
+                        className="h-8 w-20 text-sm"
+                        value={valueStr}
+                        onChange={(e) => setCellDraft(paper.id, size, e.target.value)}
+                        onBlur={(e) => {
+                          if (e.target.value.trim() === "" && !row) return;
+                          if (e.target.value.trim() === "" && row) {
+                            removeCell(paper.id, size);
+                            return;
+                          }
+                          commitCell(paper, size, e.target.value);
+                        }}
+                      />
+                    </TableCell>
+                  );
+                })}
+                <TableCell className="space-x-1">
+                  {(paper as any).is_cover_stock && (
+                    <Badge variant="secondary" className="text-[10px]">Cover</Badge>
+                  )}
+                  {(paper as any).is_edge_to_edge_only && (
+                    <Badge variant="outline" className="text-[10px]">SRA3-only</Badge>
+                  )}
+                  {paper.category === "coloured" && (
+                    <Badge variant="outline" className="text-[10px] capitalize">{paper.category}</Badge>
+                  )}
+                  {stocked.size === 0 && (
+                    <Badge variant="destructive" className="text-[10px]">No sizes set</Badge>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
           {!isLoading && rows.length === 0 && (
             <TableRow>
-              <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-6">
+              <TableCell colSpan={3 + allSizes.length + 1} className="text-center text-sm text-muted-foreground py-6">
                 No paper stocks yet. Add them in <strong>Master Catalogue → Papers</strong>.
               </TableCell>
             </TableRow>

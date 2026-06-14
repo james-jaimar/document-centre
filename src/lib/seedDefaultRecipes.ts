@@ -114,20 +114,32 @@ function deriveRecipe(
  * already have one. Idempotent.
  */
 export async function seedDefaultRecipes(): Promise<SeedResult> {
-  // Master papers + finishing
-  const { data: papers, error: paperErr } = await supabase
-    .from("rate_card_papers" as any)
-    .select("code,weight_gsm,finish,size")
-    .eq("scope_type", "master")
-    .eq("is_active", true);
-  if (paperErr) throw paperErr;
-
-  const { data: finishing, error: finErr } = await supabase
-    .from("rate_card_finishing" as any)
-    .select("code,category")
-    .eq("scope_type", "master")
-    .eq("is_active", true);
-  if (finErr) throw finErr;
+  // Master papers + finishing (sourced from the Catalogue tables now that
+  // the legacy rate_card_papers / rate_card_finishing tables have been
+  // retired). We project the rows into the historical shape this seeder
+  // expects so downstream logic doesn't change.
+  const [paperJoinRes, finishingRes] = await Promise.all([
+    supabase
+      .from("catalog_paper_prices" as any)
+      .select("size_code,is_active,paper:catalog_papers(code,weight_gsm,finish,is_active)")
+      .eq("scope_type", "master"),
+    supabase
+      .from("catalog_finishing" as any)
+      .select("code,category")
+      .eq("scope_type", "master")
+      .eq("is_active", true),
+  ]);
+  if (paperJoinRes.error) throw paperJoinRes.error;
+  if (finishingRes.error) throw finishingRes.error;
+  const papers = ((paperJoinRes.data ?? []) as any[])
+    .filter((r) => r.is_active && r.paper?.is_active)
+    .map((r) => ({
+      code: `${r.paper.code}-${r.size_code}`,
+      weight_gsm: r.paper.weight_gsm,
+      finish: r.paper.finish,
+      size: String(r.size_code).toUpperCase(),
+    }));
+  const finishing = (finishingRes.data ?? []) as unknown as Array<{ code: string; category: string }>;
 
   const { data: families, error: famErr } = await supabase
     .from("product_families")
