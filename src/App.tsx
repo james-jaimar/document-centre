@@ -56,6 +56,8 @@ import AdminProducts from "@/pages/admin/AdminProducts";
 import AdminProductCatalogue from "@/pages/admin/AdminProductCatalogue";
 import AdminPricing from "@/pages/admin/AdminPricing";
 import AdminRateCard from "@/pages/admin/AdminRateCard";
+import AdminCatalogPricing from "@/pages/admin/AdminCatalogPricing";
+
 import AdminDelivery from "@/pages/admin/AdminDelivery";
 import AdminBranchDelivery from "@/pages/admin/AdminBranchDelivery";
 import AdminUsers from "@/pages/admin/AdminUsers";
@@ -80,6 +82,8 @@ import BranchOrderDetail from "@/pages/branch/BranchOrderDetail";
 import BranchProducts from "@/pages/branch/BranchProducts";
 import BranchPricing from "@/pages/branch/BranchPricing";
 import BranchRateCard from "@/pages/branch/BranchRateCard";
+import BranchCatalogPricing from "@/pages/branch/BranchCatalogPricing";
+
 import BranchDelivery from "@/pages/branch/BranchDelivery";
 import BranchQuotes from "@/pages/branch/BranchQuotes";
 import BranchQuoteDetail from "@/pages/branch/BranchQuoteDetail";
@@ -229,6 +233,8 @@ function AppRoutes() {
         <Route path="/branch/products" element={<BranchProducts />} />
         <Route path="/branch/pricing" element={<BranchPricing />} />
         <Route path="/branch/rate-card" element={<BranchRateCard />} />
+        <Route path="/branch/catalog-pricing" element={<BranchCatalogPricing />} />
+
         <Route path="/branch/delivery" element={<BranchDelivery />} />
         <Route path="/branch/quotes" element={<BranchQuotes />} />
         <Route path="/branch/quotes/:id" element={<BranchQuoteDetail />} />
@@ -305,6 +311,12 @@ function AppRoutes() {
             <AdminRateCard />
           </ProtectedRoute>
         } />
+        <Route path="/admin/catalog-pricing" element={
+          <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
+            <AdminCatalogPricing />
+          </ProtectedRoute>
+        } />
+
         <Route path="/admin/delivery" element={
           <ProtectedRoute allowedRoles={[...adminRoles]} allowedMembershipRoles={adminMembershipRoles}>
             <AdminDelivery />

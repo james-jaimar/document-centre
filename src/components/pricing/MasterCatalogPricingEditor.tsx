@@ -33,13 +33,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, RefreshCw } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
 import {
   useCatalogSizes,
   useCatalogPapers,
   useCatalogFinishing,
+  type CatalogScope,
 } from "@/hooks/useCatalog";
 import {
   useCatalogPaperPrices,
@@ -49,28 +50,104 @@ import {
   useUpsertCatalogFinishingPrice,
   useDeleteCatalogFinishingPrice,
 } from "@/hooks/useCatalogPrices";
+import {
+  useCloneMasterCatalogToTenant,
+  useResyncTenantCatalogFromMaster,
+  useCloneTenantCatalogToBranch,
+  useResyncBranchCatalogFromTenant,
+} from "@/hooks/useCatalogCascade";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+interface Props {
+  scope?: CatalogScope;
+  tenantId?: string | null;
+  branchId?: string | null;
+  title?: string;
+  description?: string;
+}
 
 /**
- * Master Pricing surface for the platform tier — binds directly to the Master
- * Catalogue tables (catalog_papers, catalog_paper_prices, catalog_finishing,
- * catalog_finishing_prices). The Master Catalogue is the single source of truth.
- *
- * Click charges, photo prints and business cards still live on the rate-card
- * tables and are rendered by the legacy `RateCardEditor` alongside this one.
+ * Catalogue Pricing editor — binds to `catalog_papers/catalog_paper_prices`
+ * and `catalog_finishing/catalog_finishing_prices`, scoped to master/tenant/branch.
  */
-export default function MasterCatalogPricingEditor() {
+export default function MasterCatalogPricingEditor({
+  scope = "master",
+  tenantId = null,
+  branchId = null,
+  title,
+  description,
+}: Props = {}) {
+  const scopeArgs = { scope, tenantId, branchId };
+  const cloneToTenant = useCloneMasterCatalogToTenant();
+  const resyncTenant = useResyncTenantCatalogFromMaster();
+  const cloneToBranch = useCloneTenantCatalogToBranch();
+  const resyncBranch = useResyncBranchCatalogFromTenant();
+  const [confirmResync, setConfirmResync] = useState(false);
+
+  const defaultTitle =
+    scope === "tenant" ? "Catalogue Pricing (Tenant)"
+    : scope === "branch" ? "Catalogue Pricing (Branch)"
+    : "Catalogue Pricing (Master)";
+  const defaultDescription =
+    scope === "tenant"
+      ? "Your tenant's copy of paper-stock and finishing prices. 'Pull missing from master' fills in any new items; 'Re-sync from master' replaces everything."
+      : scope === "branch"
+      ? "Your branch's copy of paper-stock and finishing prices. 'Pull missing from tenant' fills in new items; 'Re-sync from tenant' replaces everything."
+      : "Sell prices for every paper stock and finishing item in the Master Catalogue. Anything you change here flows to tenants and branches on their next pull.";
+
+  async function handlePull() {
+    try {
+      if (scope === "tenant" && tenantId) {
+        await cloneToTenant.mutateAsync(tenantId);
+      } else if (scope === "branch" && branchId) {
+        await cloneToBranch.mutateAsync(branchId);
+      }
+      toast({ title: "Pulled missing rows" });
+    } catch (e: any) {
+      toast({ title: "Pull failed", description: e.message, variant: "destructive" });
+    }
+  }
+
+  async function handleResync() {
+    setConfirmResync(false);
+    try {
+      if (scope === "tenant" && tenantId) {
+        await resyncTenant.mutateAsync(tenantId);
+      } else if (scope === "branch" && branchId) {
+        await resyncBranch.mutateAsync(branchId);
+      }
+      toast({ title: "Re-synced" });
+    } catch (e: any) {
+      toast({ title: "Re-sync failed", description: e.message, variant: "destructive" });
+    }
+  }
+
+  const pulling = cloneToTenant.isPending || cloneToBranch.isPending;
+  const resyncing = resyncTenant.isPending || resyncBranch.isPending;
+  const showCascade = scope === "tenant" || scope === "branch";
+
   return (
     <div className="space-y-3">
-      <div>
-        <h2 className="text-xl font-semibold text-foreground">
-          Catalogue Pricing (Master)
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Sell prices for every paper stock and finishing item in the Master
-          Catalogue. Anything you change here flows through to every tenant
-          rate card on next sync. Add new items in{" "}
-          <strong>Master Catalogue</strong> first, then price them here.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold text-foreground">{title ?? defaultTitle}</h2>
+          <p className="text-sm text-muted-foreground">{description ?? defaultDescription}</p>
+        </div>
+        {showCascade && (
+          <div className="flex gap-2 shrink-0">
+            <Button size="sm" variant="outline" onClick={handlePull} disabled={pulling}>
+              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+              {scope === "tenant" ? "Pull missing from master" : "Pull missing from tenant"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setConfirmResync(true)} disabled={resyncing}>
+              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+              {scope === "tenant" ? "Re-sync from master" : "Re-sync from tenant"}
+            </Button>
+          </div>
+        )}
       </div>
 
       <Tabs defaultValue="papers" className="w-full">
@@ -79,26 +156,44 @@ export default function MasterCatalogPricingEditor() {
           <TabsTrigger value="finishing">Finishing</TabsTrigger>
         </TabsList>
         <TabsContent value="papers" className="mt-4">
-          <CatalogPapersPricing />
+          <CatalogPapersPricing scopeArgs={scopeArgs} />
         </TabsContent>
         <TabsContent value="finishing" className="mt-4">
-          <CatalogFinishingPricing />
+          <CatalogFinishingPricing scopeArgs={scopeArgs} />
         </TabsContent>
       </Tabs>
+
+      <AlertDialog open={confirmResync} onOpenChange={setConfirmResync}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Re-sync catalogue?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will <strong>delete all of this {scope}'s catalogue rows</strong> and replace
+              them with a fresh copy from the parent scope. Any local edits will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleResync}>Re-sync</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
+
 
 // ----------------------------------------------------------------------------
 // Papers
 // ----------------------------------------------------------------------------
 
-function CatalogPapersPricing() {
-  const { data: papers = [] } = useCatalogPapers();
-  const { data: sizes = [] } = useCatalogSizes();
-  const { data: prices = [], isLoading } = useCatalogPaperPrices();
-  const upsert = useUpsertCatalogPaperPrice();
+function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope; tenantId: string | null; branchId: string | null } }) {
+  const { data: papers = [] } = useCatalogPapers(scopeArgs);
+  const { data: sizes = [] } = useCatalogSizes(scopeArgs);
+  const { data: prices = [], isLoading } = useCatalogPaperPrices(scopeArgs);
+  const upsert = useUpsertCatalogPaperPrice(scopeArgs);
   const del = useDeleteCatalogPaperPrice();
+
   const [adding, setAdding] = useState<{
     paper_id: string;
     size_code: string;
@@ -362,12 +457,13 @@ function CatalogPapersPricing() {
 // Finishing
 // ----------------------------------------------------------------------------
 
-function CatalogFinishingPricing() {
-  const { data: items = [] } = useCatalogFinishing();
-  const { data: sizes = [] } = useCatalogSizes();
-  const { data: prices = [], isLoading } = useCatalogFinishingPrices();
-  const upsert = useUpsertCatalogFinishingPrice();
+function CatalogFinishingPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope; tenantId: string | null; branchId: string | null } }) {
+  const { data: items = [] } = useCatalogFinishing(scopeArgs);
+  const { data: sizes = [] } = useCatalogSizes(scopeArgs);
+  const { data: prices = [], isLoading } = useCatalogFinishingPrices(scopeArgs);
+  const upsert = useUpsertCatalogFinishingPrice(scopeArgs);
   const del = useDeleteCatalogFinishingPrice();
+
   const [adding, setAdding] = useState<{
     finishing_id: string;
     size_code: string;

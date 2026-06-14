@@ -1,6 +1,34 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
+export type CatalogScope = "master" | "tenant" | "branch";
+export interface CatalogScopeArgs {
+  scope?: CatalogScope;
+  tenantId?: string | null;
+  branchId?: string | null;
+}
+
+/** Apply scope filtering. Default scope=master (no tenant/branch). */
+export function applyCatalogScope(query: any, args: CatalogScopeArgs = {}) {
+  const scope: CatalogScope = args.scope ?? "master";
+  query = query.eq("scope_type", scope);
+  if (scope === "tenant") {
+    query = args.tenantId ? query.eq("tenant_id", args.tenantId) : query.is("tenant_id", null);
+    query = query.is("branch_id", null);
+  } else if (scope === "branch") {
+    query = args.branchId ? query.eq("branch_id", args.branchId) : query.is("branch_id", null);
+  } else {
+    query = query.is("tenant_id", null).is("branch_id", null);
+  }
+  return query;
+}
+
+function scopeKey(args: CatalogScopeArgs = {}) {
+  return [args.scope ?? "master", args.tenantId ?? null, args.branchId ?? null];
+}
+
+
+
 // ----------------------------- catalog_sizes -----------------------------
 
 export interface CatalogSize {
@@ -16,19 +44,21 @@ export interface CatalogSize {
   metadata: Record<string, any>;
 }
 
-export function useCatalogSizes() {
+export function useCatalogSizes(args: CatalogScopeArgs = {}) {
   return useQuery({
-    queryKey: ["catalog_sizes"],
+    queryKey: ["catalog_sizes", ...scopeKey(args)],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("catalog_sizes" as any)
-        .select("*")
-        .order("sort_order", { ascending: true });
+      const q = applyCatalogScope(
+        supabase.from("catalog_sizes" as any).select("*"),
+        args,
+      );
+      const { data, error } = await q.order("sort_order", { ascending: true });
       if (error) throw error;
       return (data ?? []) as unknown as CatalogSize[];
     },
   });
 }
+
 
 export function useUpsertCatalogSize() {
   const qc = useQueryClient();
@@ -69,13 +99,15 @@ export interface CatalogPrintAttr {
   metadata: Record<string, any>;
 }
 
-export function useCatalogPrintAttrs() {
+export function useCatalogPrintAttrs(args: CatalogScopeArgs = {}) {
   return useQuery({
-    queryKey: ["catalog_print_attrs"],
+    queryKey: ["catalog_print_attrs", ...scopeKey(args)],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("catalog_print_attrs" as any)
-        .select("*")
+      const q = applyCatalogScope(
+        supabase.from("catalog_print_attrs" as any).select("*"),
+        args,
+      );
+      const { data, error } = await q
         .order("attribute", { ascending: true })
         .order("sort_order", { ascending: true });
       if (error) throw error;
@@ -83,6 +115,7 @@ export function useCatalogPrintAttrs() {
     },
   });
 }
+
 
 // ----------------------------- catalog_papers ----------------------------
 
@@ -98,19 +131,21 @@ export interface CatalogPaper {
   metadata: Record<string, any>;
 }
 
-export function useCatalogPapers() {
+export function useCatalogPapers(args: CatalogScopeArgs = {}) {
   return useQuery({
-    queryKey: ["catalog_papers"],
+    queryKey: ["catalog_papers", ...scopeKey(args)],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("catalog_papers" as any)
-        .select("*")
-        .order("sort_order", { ascending: true });
+      const q = applyCatalogScope(
+        supabase.from("catalog_papers" as any).select("*"),
+        args,
+      );
+      const { data, error } = await q.order("sort_order", { ascending: true });
       if (error) throw error;
       return (data ?? []) as unknown as CatalogPaper[];
     },
   });
 }
+
 
 export function useUpsertCatalogPaper() {
   const qc = useQueryClient();
@@ -153,19 +188,21 @@ export interface CatalogFinishing {
   metadata: Record<string, any>;
 }
 
-export function useCatalogFinishing() {
+export function useCatalogFinishing(args: CatalogScopeArgs = {}) {
   return useQuery({
-    queryKey: ["catalog_finishing"],
+    queryKey: ["catalog_finishing", ...scopeKey(args)],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("catalog_finishing" as any)
-        .select("*")
-        .order("sort_order", { ascending: true });
+      const q = applyCatalogScope(
+        supabase.from("catalog_finishing" as any).select("*"),
+        args,
+      );
+      const { data, error } = await q.order("sort_order", { ascending: true });
       if (error) throw error;
       return (data ?? []) as unknown as CatalogFinishing[];
     },
   });
 }
+
 
 export function useUpsertCatalogFinishing() {
   const qc = useQueryClient();

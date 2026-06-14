@@ -658,6 +658,7 @@ export type Database = {
       }
       catalog_finishing: {
         Row: {
+          branch_id: string | null
           category: string | null
           code: string
           created_at: string
@@ -666,11 +667,14 @@ export type Database = {
           label: string
           metadata: Json
           pricing_basis: string | null
+          scope_type: Database["public"]["Enums"]["catalog_scope"]
           sort_order: number
+          tenant_id: string | null
           updated_at: string
           variant: string | null
         }
         Insert: {
+          branch_id?: string | null
           category?: string | null
           code: string
           created_at?: string
@@ -679,11 +683,14 @@ export type Database = {
           label: string
           metadata?: Json
           pricing_basis?: string | null
+          scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sort_order?: number
+          tenant_id?: string | null
           updated_at?: string
           variant?: string | null
         }
         Update: {
+          branch_id?: string | null
           category?: string | null
           code?: string
           created_at?: string
@@ -692,7 +699,9 @@ export type Database = {
           label?: string
           metadata?: Json
           pricing_basis?: string | null
+          scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sort_order?: number
+          tenant_id?: string | null
           updated_at?: string
           variant?: string | null
         }
@@ -700,33 +709,42 @@ export type Database = {
       }
       catalog_finishing_prices: {
         Row: {
+          branch_id: string | null
           cost_price_minor: number | null
           created_at: string
           finishing_id: string
           id: string
           is_active: boolean
+          scope_type: Database["public"]["Enums"]["catalog_scope"]
           sell_price_minor: number
           size_code: string | null
+          tenant_id: string | null
           updated_at: string
         }
         Insert: {
+          branch_id?: string | null
           cost_price_minor?: number | null
           created_at?: string
           finishing_id: string
           id?: string
           is_active?: boolean
+          scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sell_price_minor?: number
           size_code?: string | null
+          tenant_id?: string | null
           updated_at?: string
         }
         Update: {
+          branch_id?: string | null
           cost_price_minor?: number | null
           created_at?: string
           finishing_id?: string
           id?: string
           is_active?: boolean
+          scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sell_price_minor?: number
           size_code?: string | null
+          tenant_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -737,44 +755,46 @@ export type Database = {
             referencedRelation: "catalog_finishing"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "catalog_finishing_prices_size_code_fkey"
-            columns: ["size_code"]
-            isOneToOne: false
-            referencedRelation: "catalog_sizes"
-            referencedColumns: ["code"]
-          },
         ]
       }
       catalog_paper_prices: {
         Row: {
+          branch_id: string | null
           cost_price_minor: number | null
           created_at: string
           id: string
           is_active: boolean
           paper_id: string
+          scope_type: Database["public"]["Enums"]["catalog_scope"]
           sell_price_minor: number
           size_code: string
+          tenant_id: string | null
           updated_at: string
         }
         Insert: {
+          branch_id?: string | null
           cost_price_minor?: number | null
           created_at?: string
           id?: string
           is_active?: boolean
           paper_id: string
+          scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sell_price_minor?: number
           size_code: string
+          tenant_id?: string | null
           updated_at?: string
         }
         Update: {
+          branch_id?: string | null
           cost_price_minor?: number | null
           created_at?: string
           id?: string
           is_active?: boolean
           paper_id?: string
+          scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sell_price_minor?: number
           size_code?: string
+          tenant_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -785,17 +805,11 @@ export type Database = {
             referencedRelation: "catalog_papers"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "catalog_paper_prices_size_code_fkey"
-            columns: ["size_code"]
-            isOneToOne: false
-            referencedRelation: "catalog_sizes"
-            referencedColumns: ["code"]
-          },
         ]
       }
       catalog_papers: {
         Row: {
+          branch_id: string | null
           category: string | null
           code: string
           created_at: string
@@ -804,11 +818,14 @@ export type Database = {
           is_active: boolean
           label: string
           metadata: Json
+          scope_type: Database["public"]["Enums"]["catalog_scope"]
           sort_order: number
+          tenant_id: string | null
           updated_at: string
           weight_gsm: number | null
         }
         Insert: {
+          branch_id?: string | null
           category?: string | null
           code: string
           created_at?: string
@@ -817,11 +834,14 @@ export type Database = {
           is_active?: boolean
           label: string
           metadata?: Json
+          scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sort_order?: number
+          tenant_id?: string | null
           updated_at?: string
           weight_gsm?: number | null
         }
         Update: {
+          branch_id?: string | null
           category?: string | null
           code?: string
           created_at?: string
@@ -830,7 +850,9 @@ export type Database = {
           is_active?: boolean
           label?: string
           metadata?: Json
+          scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sort_order?: number
+          tenant_id?: string | null
           updated_at?: string
           weight_gsm?: number | null
         }
@@ -839,41 +861,51 @@ export type Database = {
       catalog_print_attrs: {
         Row: {
           attribute: string
+          branch_id: string | null
           code: string
           created_at: string
           id: string
           is_active: boolean
           label: string
           metadata: Json
+          scope_type: Database["public"]["Enums"]["catalog_scope"]
           sort_order: number
+          tenant_id: string | null
           updated_at: string
         }
         Insert: {
           attribute: string
+          branch_id?: string | null
           code: string
           created_at?: string
           id?: string
           is_active?: boolean
           label: string
           metadata?: Json
+          scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sort_order?: number
+          tenant_id?: string | null
           updated_at?: string
         }
         Update: {
           attribute?: string
+          branch_id?: string | null
           code?: string
           created_at?: string
           id?: string
           is_active?: boolean
           label?: string
           metadata?: Json
+          scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sort_order?: number
+          tenant_id?: string | null
           updated_at?: string
         }
         Relationships: []
       }
       catalog_sizes: {
         Row: {
+          branch_id: string | null
           code: string
           created_at: string
           height_mm: number
@@ -883,11 +915,14 @@ export type Database = {
           label: string
           metadata: Json
           region: string | null
+          scope_type: Database["public"]["Enums"]["catalog_scope"]
           sort_order: number
+          tenant_id: string | null
           updated_at: string
           width_mm: number
         }
         Insert: {
+          branch_id?: string | null
           code: string
           created_at?: string
           height_mm: number
@@ -897,11 +932,14 @@ export type Database = {
           label: string
           metadata?: Json
           region?: string | null
+          scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sort_order?: number
+          tenant_id?: string | null
           updated_at?: string
           width_mm: number
         }
         Update: {
+          branch_id?: string | null
           code?: string
           created_at?: string
           height_mm?: number
@@ -911,7 +949,9 @@ export type Database = {
           label?: string
           metadata?: Json
           region?: string | null
+          scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sort_order?: number
+          tenant_id?: string | null
           updated_at?: string
           width_mm?: number
         }
@@ -3757,36 +3797,45 @@ export type Database = {
       }
       product_catalog_links: {
         Row: {
+          branch_id: string | null
           catalog: Database["public"]["Enums"]["catalog_kind"]
           created_at: string
           id: string
           is_default: boolean
           item_code: string
           product_family_id: string
+          scope_type: Database["public"]["Enums"]["catalog_scope"]
           sort_order: number
           sub_attribute: string
+          tenant_id: string | null
           updated_at: string
         }
         Insert: {
+          branch_id?: string | null
           catalog: Database["public"]["Enums"]["catalog_kind"]
           created_at?: string
           id?: string
           is_default?: boolean
           item_code: string
           product_family_id: string
+          scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sort_order?: number
           sub_attribute?: string
+          tenant_id?: string | null
           updated_at?: string
         }
         Update: {
+          branch_id?: string | null
           catalog?: Database["public"]["Enums"]["catalog_kind"]
           created_at?: string
           id?: string
           is_default?: boolean
           item_code?: string
           product_family_id?: string
+          scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sort_order?: number
           sub_attribute?: string
+          tenant_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -4503,13 +4552,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "rate_card_clicks_catalog_size_code_fkey"
-            columns: ["catalog_size_code"]
-            isOneToOne: false
-            referencedRelation: "catalog_sizes"
-            referencedColumns: ["code"]
-          },
-          {
             foreignKeyName: "rate_card_clicks_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
@@ -4598,13 +4640,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "rate_card_finishing_catalog_size_code_fkey"
-            columns: ["catalog_size_code"]
-            isOneToOne: false
-            referencedRelation: "catalog_sizes"
-            referencedColumns: ["code"]
-          },
-          {
             foreignKeyName: "rate_card_finishing_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
@@ -4688,13 +4723,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "catalog_papers"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "rate_card_papers_catalog_size_code_fkey"
-            columns: ["catalog_size_code"]
-            isOneToOne: false
-            referencedRelation: "catalog_sizes"
-            referencedColumns: ["code"]
           },
           {
             foreignKeyName: "rate_card_papers_tenant_id_fkey"
@@ -5713,8 +5741,16 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      clone_master_catalog_to_tenant: {
+        Args: { p_tenant_id: string }
+        Returns: undefined
+      }
       clone_master_rate_card_to_tenant: {
         Args: { p_tenant_id: string }
+        Returns: undefined
+      }
+      clone_tenant_catalog_to_branch: {
+        Args: { p_branch_id: string }
         Returns: undefined
       }
       clone_tenant_delivery_to_branch: {
@@ -5877,8 +5913,16 @@ export type Database = {
         Args: { p_category: string; p_key: string; p_tenant_id: string }
         Returns: Json
       }
+      resync_branch_catalog_from_tenant: {
+        Args: { p_branch_id: string }
+        Returns: undefined
+      }
       resync_branch_pricing_from_tenant: {
         Args: { p_branch_id: string }
+        Returns: undefined
+      }
+      resync_tenant_catalog_from_master: {
+        Args: { p_tenant_id: string }
         Returns: undefined
       }
       rollup_order_status: { Args: { p_order_id: string }; Returns: undefined }
@@ -5948,6 +5992,10 @@ export type Database = {
         Args: { p_branch_id: string }
         Returns: boolean
       }
+      user_can_manage_branch_catalog: {
+        Args: { p_branch_id: string }
+        Returns: boolean
+      }
       user_can_read_branch_subscription: {
         Args: { p_branch_id: string }
         Returns: boolean
@@ -6013,6 +6061,7 @@ export type Database = {
         | "customer"
       build_status: "draft" | "building" | "ready" | "quoted" | "ordered"
       catalog_kind: "size" | "print_attr" | "paper" | "finishing"
+      catalog_scope: "master" | "tenant" | "branch"
       click_colour: "mono" | "colour"
       click_sides: "simplex" | "duplex"
       click_size: "A4" | "A3"
@@ -6190,6 +6239,7 @@ export const Constants = {
       ],
       build_status: ["draft", "building", "ready", "quoted", "ordered"],
       catalog_kind: ["size", "print_attr", "paper", "finishing"],
+      catalog_scope: ["master", "tenant", "branch"],
       click_colour: ["mono", "colour"],
       click_sides: ["simplex", "duplex"],
       click_size: ["A4", "A3"],
