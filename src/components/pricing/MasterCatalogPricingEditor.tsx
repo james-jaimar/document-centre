@@ -187,12 +187,13 @@ export default function MasterCatalogPricingEditor({
 // Papers
 // ----------------------------------------------------------------------------
 
-function CatalogPapersPricing() {
-  const { data: papers = [] } = useCatalogPapers();
-  const { data: sizes = [] } = useCatalogSizes();
-  const { data: prices = [], isLoading } = useCatalogPaperPrices();
-  const upsert = useUpsertCatalogPaperPrice();
+function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope; tenantId: string | null; branchId: string | null } }) {
+  const { data: papers = [] } = useCatalogPapers(scopeArgs);
+  const { data: sizes = [] } = useCatalogSizes(scopeArgs);
+  const { data: prices = [], isLoading } = useCatalogPaperPrices(scopeArgs);
+  const upsert = useUpsertCatalogPaperPrice(scopeArgs);
   const del = useDeleteCatalogPaperPrice();
+
   const [adding, setAdding] = useState<{
     paper_id: string;
     size_code: string;
