@@ -233,17 +233,11 @@ export function useCatalogFinishing(args: CatalogScopeArgs = {}) {
 }
 
 
-export function useUpsertCatalogFinishing() {
+export function useUpsertCatalogFinishing(args: CatalogScopeArgs = {}) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (row: Partial<CatalogFinishing> & { code: string; label: string }) => {
-      const { data, error } = await supabase
-        .from("catalog_finishing" as any)
-        .upsert(row, { onConflict: "code" })
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
+      return scopedUpsertByCode("catalog_finishing", row, args);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["catalog_finishing"] }),
   });
