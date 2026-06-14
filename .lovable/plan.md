@@ -1,122 +1,76 @@
+## Goal
 
-# Master Catalogues as Single Source of Truth
+Finish the Master Catalogue and make Master Pricing + the print-cost engine reference it as the single source of truth. Then put the cut-sheet vs N-up sheet strategy under explicit per-product control, the way an MIS does.
 
-## The problem
+## 1. Finish the Master Catalogue
 
-Every product family today carries its own copy of sizes, paper stocks, finishing items, print colour, sides, etc. inside `product_options.values` (JSONB). A quick audit shows the same handful of values duplicated across **9+ product families** — e.g. `Paper Stock` is re-typed 7 times (18 values × bound-documents, presentations, ring-binders; 9–10 in others), `Document Size` is re-typed 9 times, `Print Colour` is re-typed 8 times. Update one stock price → you must touch every product. That's the bug.
+Add two tabs to **Platform → Master Catalogue** alongside Sizes / Print Attributes:
 
-Rate-card tables (`rate_card_papers`, `rate_card_finishing`, `rate_card_clicks`) already exist as proper master/tenant/branch tables — but products don't actually reference them. The recipe model (`product_recipes.available_papers`) was the start of the right idea; we now finish the job and extend it to **sizes** and **print attributes** which have no master table yet.
+- **Papers** (`catalog_papers` + `catalog_paper_prices`). Each paper is size-agnostic (code, label, gsm, finish, category). Prices are entered per **size from `catalog_sizes`** — a dropdown, never free text. So "80gsm Bond" exists once; you set the A4 cost, A3 cost, SRA3 cost as price rows.
+- **Finishing** (`catalog_finishing` + `catalog_finishing_prices`). Same shape: category (lamination, binding, cutting…), variant, pricing basis (per item / per sheet / per click), then price rows per size (or no-size for "per item" charges like wire binding).
 
-## The target model
+Nothing else is added to the master catalogue. Click charges stay in pricing, because they are press-specific, not catalogue items.
 
-```text
-                ┌───────────── MASTER CATALOGUES ─────────────┐
-                │  catalog_sizes        (A4, A3, US Letter…)  │
-                │  catalog_print_attrs  (mono/colour, sides…) │
-                │  rate_card_papers     (existing)            │
-                │  rate_card_finishing  (existing)            │
-                └───────────────────┬─────────────────────────┘
-                                    │ referenced by code
-                                    ▼
-                       product_catalog_links
-              (product_family_id, catalog, item_code, sort)
-                                    │
-                                    ▼
-              branch_catalog_overrides   ← full override
-        (branch_id, catalog, item_code,
-         is_enabled, label, dimensions/metadata, price_delta)
+## 2. Make Master Pricing reference the catalogue
+
+`RateCardEditor` is currently the source of truth for clicks / papers / finishing and uses hard-coded size strings (`A4, A3, SRA3, A5, A6, DL`) plus free-text size fields. We change it so:
+
+- **Click charges** — `size` column becomes a select sourced from `catalog_sizes` (active rows only). The colour/sides columns continue to use `catalog_print_attrs`.
+- **Papers** — instead of one row per (paper × size), the editor lists each `catalog_papers` row once with a sub-grid of size rows. You pick paper from the master, then add a price row per size — size comes from `catalog_sizes`, not text.
+- **Finishing** — same pattern. Finishing item from `catalog_finishing`; price rows reference `catalog_sizes.code` or "any size" for per-item charges.
+- **Photo prints** & **Business cards** rate-card tabs — their `size`/`size_slug` columns also switch to a select bound to `catalog_sizes` (filtered by sensible region tags: photo for photo prints, business-card sizes for cards).
+
+The underlying tenant/branch override flow (scope_type clones) is unchanged — we only change the input controls and reject saves whose `size` isn't a known catalogue code.
+
+## 3. Sheet strategy: cut-sheet vs imposed N-up
+
+The infrastructure already exists (`imposition_templates`, `product_imposition_defaults`) but isn't surfaced as a deliberate per-product choice. We add it as an explicit control on the new **Catalogue** tab of each product family:
+
+```
+Document Sizes
+  [✓] A4    Sheet strategy: ( ) Cut sheet 1-up    (•) Imposed on …  [SRA3, 2-up ▾]
+  [✓] A3    Sheet strategy: (•) Cut sheet 1-up    ( ) Imposed on …
+  [✓] A5    Sheet strategy: ( ) Cut sheet 1-up    (•) Imposed on …  [SRA3, 4-up ▾]
+  [✓] DL    Sheet strategy: ( ) Cut sheet 1-up    (•) Imposed on …  [SRA3, 8-up ▾]
 ```
 
-- **One master catalogue per dimension.** Products do not store values; they store *references* to catalogue codes.
-- **Branches get full override**: rename, change dimensions, override price, or disable entirely (you picked Full override).
-- **`product_options` becomes a thin view** built at query-time by joining `product_catalog_links → master → branch overrides`. The JSONB `values` field stays only as a fallback for free-form options that genuinely are product-specific (we'll keep the column, just stop using it for the shared dimensions).
+- "Cut sheet 1-up" = print on the same paper size as the document; click and paper are billed at that size.
+- "Imposed on parent" = uses an `imposition_templates` row that we already store (`input_size`, `output_size`, `n_up`, `work_style`, bleed/gutter…). The dropdown only shows templates whose `input_size` matches the linked size.
 
-## What we build
+We store the choice in `product_imposition_defaults` (already exists) — `is_primary = true` marks the active strategy for that family+size; absence = cut sheet. Sane defaults per family: bound documents / presentations / loose sheets / booklets → cut sheet on A4/A3; business cards → imposed on SRA3; small flat sheets (A5/A6/DL) when full-bleed → imposed on SRA3.
 
-### 1. New master catalogue tables
+A small "Press setup" preview shows the resolved parent sheet and n-up so the admin can sanity-check.
 
-- `catalog_sizes` — `code` (e.g. `a4`), `label`, `width_mm`, `height_mm`, `iso_name`, `region`, `sort_order`, `is_active`. Seeded with A0–A6, SRA3, US Letter, US Legal, Tabloid, DL, square sizes, common photo sizes.
-- `catalog_print_attrs` — `attribute` (`colour_mode` | `sides` | `orientation`), `code`, `label`, `sort_order`, `is_active`. Seeded with the obvious values (mono/colour, simplex/duplex, portrait/landscape).
-- `rate_card_papers` / `rate_card_finishing` — **unchanged**, already the source of truth.
+## 4. Pricing engine update
 
-All four expose a master row set; the existing scope pattern (`scope_type` master/tenant/branch + tenant clone) is kept for papers/finishing. Sizes & print attrs are global (no per-tenant pricing) so a single `is_active` master row is enough.
+The click+paper cost calculator (`calculatePriceFromRateCard`) gets a thin wrapper that, for each line:
 
-### 2. New linking table
+1. Looks up the active `product_imposition_defaults` row for `(product_family, size)`.
+2. If found → bills click and paper on the **output_size** (the parent), divides by `n_up`, multiplies sheets needed (rounded up).
+3. If not found → bills on the document size as today (cut-sheet).
 
-`product_catalog_links`:
-- `id`
-- `product_family_id`
-- `catalog` enum: `size | paper | finishing | print_attr`
-- `item_code` — FK by code into the matching master table
-- `sub_attribute` — only used when `catalog = print_attr` (e.g. `colour_mode`)
-- `sort_order`, `is_default`
-- Unique on `(product_family_id, catalog, sub_attribute, item_code)`
+This matches the MIS screenshot's flow (A4 doc → SRA3 sheet → 2-up → cost = SRA3 click + SRA3 paper × sheets/2). No new pricing table is needed.
 
-This replaces the JSONB `values` for the four shared dimensions.
+Finishing prices that depend on size (lamination, trimming) are billed on the **document size** even when printed N-up, because finishing happens after trimming.
 
-### 3. Branch override table
+## 5. Migration / cleanup
 
-`branch_catalog_overrides`:
-- `branch_id`
-- `catalog`, `item_code`, `sub_attribute`
-- `is_enabled` (default true)
-- `label_override`, `metadata_override` (JSONB — used for sizes to change dimensions)
-- `price_delta_minor`, `price_override_minor` (one or the other; for paper/finishing)
-- Unique on `(branch_id, catalog, sub_attribute, item_code)`
+- Backfill `catalog_papers` / `catalog_paper_prices` from the existing master `rate_card_papers` rows (group by label+gsm+finish to dedupe; carry size+price into the prices table).
+- Same for finishing.
+- Keep `rate_card_papers` / `rate_card_finishing` as the editable working tables (tenant/branch clones live there); the master tab in RateCardEditor reads/writes through `catalog_*` and mirrors changes back so old code keeps working until cutover.
+- Seed sensible `imposition_templates` if missing: A4-on-SRA3-2up, A5-on-SRA3-4up, A6-on-SRA3-8up, DL-on-SRA3-8up, BC-on-SRA3-24up.
+- Re-link existing `product_options` size values to `catalog_sizes` (already done by the previous migration).
 
-This subsumes the current `branch_product_option_overrides` table (data migrated, table dropped at the end).
+## Out of scope
 
-### 4. Resolver: `resolve_product_options(product_family_id, branch_id)`
-
-Server-side SQL function (or RPC + view) that returns the same shape the front-end consumes today (`{ name, option_type, values: StructuredOptionValue[] }`) but is *built* from:
-- `product_catalog_links` joined to master tables → base values
-- Left-joined to `branch_catalog_overrides` for the branch → applies enable/disable, label, dimensions, price
-- Falls back to free-form `product_options.values` for anything not catalogued (e.g. "Cover Style" labels that are genuinely product-specific)
-
-`useResolvedProductOptions(productFamilyId, branchId)` is rewritten to call this. All downstream code (configurator, paper-size advisory, price summary, branch product specs dialog) keeps working because the shape is unchanged.
-
-### 5. Admin UX
-
-- **Platform → Master Catalogues**: new page with four tabs (Sizes, Print Attributes, Papers, Finishing). Papers/Finishing already exist in Master Rate Card — we just link them here.
-- **Admin → Products → \[family\]**: the "Document Size", "Paper Stock", "Finishing", "Print Colour", "Print Sides" sections become **multi-select pickers from the master catalogue** (with default + sort), not free-form value editors. Other options (e.g. "Inserts", "Covers" labels) keep the JSONB editor.
-- **Branch → My Products → \[family\]**: the existing `BranchProductSpecsDialog` is refitted onto `branch_catalog_overrides`. Same UI shape — enable/disable + override label/dims/price.
-
-### 6. Automatic migration
-
-A single migration that:
-
-1. Creates the new tables and seeds master catalogues.
-2. **Sizes**: scans every `product_options` row named `Document Size` / `Print Size`. For each structured value, parses dimensions out of slug/metadata (we already have `parseSizeOptionSlug`), matches to a master `catalog_sizes` row by dimensions (insert a new master row if no match, so nothing is lost), and inserts a `product_catalog_links` row.
-3. **Papers**: matches values by label/weight/finish to existing `rate_card_papers` (creating new master papers for orphans), inserts links. Default paper carried over from `product_recipes.default_paper_code` where present.
-4. **Finishing**: same approach against `rate_card_finishing` (matching on label + category).
-5. **Print attrs**: maps the well-known labels (Mono/Black & White, Colour/Full Colour, Single-sided/Simplex, Double-sided/Duplex) to `catalog_print_attrs`.
-6. **Branch overrides**: copies every `branch_product_option_overrides` row to `branch_catalog_overrides` by joining through the option value's slug.
-7. Marks each migrated `product_options` row as `is_legacy = true` (kept around for one release as safety net), then a follow-up migration drops them.
-
-The migration is idempotent and prints a per-family summary so we can sanity-check before the legacy drop.
-
-## Technical notes
-
-- All new tables get `GRANT SELECT TO anon, authenticated` (catalogue browsing is public for storefront) and `GRANT ALL TO service_role`. Write policies restrict catalogue edits to platform admins; override edits to tenant/branch members via `tenant_memberships`.
-- The resolver is `SECURITY DEFINER` with `search_path = public` so storefront (anon) can read resolved options without leaking master pricing.
-- Pricing engine (`calculatePriceFromRateCard`) already reads from rate-card tables, so no math changes — it just gets a cleaner option list.
-- Order pricing snapshots remain immutable (`order_pricing_snapshots`), so historical orders are unaffected by master catalogue changes.
-- `branch_product_option_overrides` is **renamed** rather than dropped, then dropped one release later, to give us a rollback window.
-
-## Out of scope (call out, don't build)
-
-- Per-tenant catalogue customisation (only branches override). Tenants inherit the master verbatim. We can add a `tenant_catalog_overrides` layer later with the same pattern.
-- Reworking the photo-prints engine — it already reads from `rate_card_photo_prints` directly.
-- Reworking pricing rules (`pricing_rules`) — separate concern.
+- No press / device modelling beyond what `imposition_templates.output_size` already captures.
+- No multi-job ganging across orders.
+- Pricing rules (`pricing_rules`) keep working unchanged.
 
 ## Verification
 
-1. Update master price of `80gsm Bond A4` → re-open any storefront product that lists it → new price shown immediately, no per-product edits required.
-2. Add a new size `SRA2` to `catalog_sizes`, link it to Posters only → appears on Posters storefront, absent from Bound Documents.
-3. PostNet branch disables `US Letter` for Bound Documents in branch override → customer upload of US Letter PDF shows advisory **without** US Letter (already partially wired in the previous patch; resolver now drives it cleanly).
-4. Branch sets `price_delta_minor = 500` for `300gsm Silk` → branch storefront shows the surcharge; tenant default unchanged.
-5. Run migration on a copy of prod, diff `resolve_product_options(family, null)` against the legacy JSONB → identical option lists per family.
-
-## Rough size
-
-DB migration (~600 lines SQL incl. seeds) + 1 resolver function + 4 master-catalogue admin pages + refits of `ProductOptionsEditor`, `BranchProductSpecsDialog`, `useResolvedProductOptions`. Roughly 2–3 build sessions; the migration itself is the riskiest piece and worth a dry-run on a DB snapshot first.
+1. Master Catalogue → add SRA3 to Papers, set A4/A3/SRA3 prices. Save. Reopen — values persist; sizes shown are exactly the active rows from `catalog_sizes`.
+2. Master Pricing → all size dropdowns list only catalogue sizes; saving a click row with a non-catalogue size is rejected.
+3. Admin → Products → Business Cards → Catalogue: A4 disabled, BC55×85 enabled with "Imposed on SRA3, 24-up". Storefront quote for 100 business cards bills SRA3 paper + SRA3 click × ceil(100/24) sheets.
+4. Admin → Products → Bound Documents → A4 set to "Cut sheet 1-up". Same quote engine bills A4 click + A4 paper per page side. No regression vs current pricing.
+5. Branch override that disables SRA3 paper still hides it from both the size advisory and the imposition picker for that branch.
