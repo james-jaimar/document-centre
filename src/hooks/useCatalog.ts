@@ -182,17 +182,11 @@ export function useCatalogPapers(args: CatalogScopeArgs = {}) {
 }
 
 
-export function useUpsertCatalogPaper() {
+export function useUpsertCatalogPaper(args: CatalogScopeArgs = {}) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (row: Partial<CatalogPaper> & { code: string; label: string }) => {
-      const { data, error } = await supabase
-        .from("catalog_papers" as any)
-        .upsert(row, { onConflict: "code" })
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
+      return scopedUpsertByCode("catalog_papers", row, args);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["catalog_papers"] }),
   });
