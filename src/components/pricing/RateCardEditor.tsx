@@ -454,8 +454,9 @@ function ClicksTab({
                 >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="mono">Mono</SelectItem>
-                    <SelectItem value="colour">Colour</SelectItem>
+                    {colourOptions.map((o) => (
+                      <SelectItem key={o.code} value={o.code}>{o.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -467,8 +468,9 @@ function ClicksTab({
                 >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="simplex">Simplex</SelectItem>
-                    <SelectItem value="duplex">Duplex</SelectItem>
+                    {sidesOptions.map((o) => (
+                      <SelectItem key={o.code} value={o.code}>{o.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
