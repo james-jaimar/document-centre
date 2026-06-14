@@ -1,63 +1,40 @@
-# Master Pricing — fix Cover badge & "—" cells
+# Master Pricing → Finishing: make rows editable inline
 
-Two changes: tidy the master catalogue data so the flags reflect the rule "all 170gsm+ stocks are cover-capable", and turn this screen into something you can actually edit from instead of bouncing to Master Catalogue → Papers.
+Right now the Finishing tab shows **Item / Category / Basis / Size** as plain text — you can only edit Sell, Cost and Active. The note tells you to go to *Master Catalogue → Finishing* to change anything else, which is exactly the bounce-around you want to stop.
 
-## 1. Data cleanup (one-off migration on `catalog_papers`, master rows only)
+This change adds inline editing for those four columns on the master scope only, same pattern we just used for Papers (Cover/SRA3 toggles + Add).
 
-**Cover flag** — set `is_cover_stock` strictly by weight:
+## Changes
 
-- `weight_gsm >= 170` → `is_cover_stock = true`
-- `weight_gsm < 170` → `is_cover_stock = false`
+### 1. `CatalogFinishingPricing` in `src/components/pricing/MasterCatalogPricingEditor.tsx`
 
-Net effect vs today:
+Replace the read-only cells with inline controls (master scope only — tenant/branch stay read-only because their rows cascade from master):
 
-| Paper | gsm | Today | After |
-|---|---|---|---|
-| Standard Poster Paper (Satin) | 120 | Cover | — |
-| 170gsm Gloss | 170 | Cover | Cover |
-| 170gsm Matt | 170 | — | Cover |
-| 200gsm Gloss | 200 | — | Cover |
-| 200gsm Matt | 200 | Cover | Cover |
-| Photo / Premium Poster Papers | 200 | — | Cover |
-| 250gsm Gloss / Matt | 250 | partial | Cover |
-| 300gsm Gloss / Matt | 300 | partial | Cover |
-| 350gsm Gloss / Matt | 350 | partial | Cover |
+- **Item** → `Select` of all `catalog_finishing` items. Changing it updates `catalog_finishing_prices.finishing_id` for that price row.
+- **Category** → `Select` with the values already in use: `binding, cover, folding, guillotining, hole_punching, inserts, lamination, packaging, special, stapling, tab_dividers, trimming`. Free-text "Other…" option that opens a tiny prompt for a new value (so we're not boxed in if you add a new category later). Writes `catalog_finishing.category`.
+- **Basis** → `Select` of `per_unit | per_sheet | per_set`. Writes `catalog_finishing.pricing_basis`.
+- **Size** → `Select` of `Any` + every code from `catalog_sizes` (already loaded by the editor). Writes `catalog_finishing_prices.size_code` (`null` for "Any", matching today's behaviour).
 
-**SRA3 stocked sizes** — add `sra3` to `stocked_sizes` for every active 170gsm+ paper that doesn't already have it (170gsm Gloss, 170gsm Matt). Poster papers stay on `[a3, a2, a1, a0]` — SRA3 doesn't apply to them.
+Cells stay compact (`h-8`, small text) so the table density doesn't change.
 
-**Seed missing price rows** — for any newly-stocked size (e.g. 170gsm Gloss SRA3) insert a `catalog_paper_prices` row with `0.00` so the cell renders as an editable input.
+On tenant/branch scope the cells render as today (plain text badges) — `canEdit = scopeArgs.scope === "master"`.
 
-## 2. Inline editing on the Master Pricing screen
+### 2. Hook: `usePatchCatalogFinishing` in `src/hooks/useCatalog.ts`
 
-File: `src/components/pricing/MasterCatalogPricingEditor.tsx` (`CatalogPapersPricing` only).
+Mirror of the `usePatchCatalogPaper` hook we just added. Partial update by `id` of `category` / `pricing_basis` / `label`. Invalidates `catalog_finishing` and `catalog_finishing_prices` (because the joined view in the editor reads both).
 
-**Cover badge becomes a toggle.** Click the "Cover" pill to flip `is_cover_stock` on that paper (optimistic update + toast on failure). Same treatment for "SRA3-only".
+### 3. Reuse existing mutations
 
-**"+ Add" affordance on non-stocked size cells.** Instead of the faint "—", every column in `allSizes` that the paper doesn't stock renders a small ghost button labelled `+`. Clicking it:
-
-1. Appends that size to the paper's `stocked_sizes` array.
-2. Inserts a `catalog_paper_prices` row with `0.00`.
-3. The cell re-renders as a normal editable input ready for the price.
-
-Removing a size — clearing the price input already deletes the price row. We'll add a tiny "×" overlay on a stocked cell (visible on hover) that also strips the size from `stocked_sizes`. Skipped if you'd rather keep that to the catalogue editor — say the word.
-
-**Scope guard.** Inline editing only works on the master scope (`scope === "master"`). On tenant/branch scopes the badges stay read-only and `+ Add` is hidden, because their papers cascade from master.
-
-## 3. Hooks
-
-Add two small mutation hooks in `src/hooks/useCatalog.ts` (or alongside it):
-
-- `useUpdateCatalogPaper(scopeArgs)` — partial update of `is_cover_stock`, `is_edge_to_edge_only`, `stocked_sizes`. Invalidates the papers query.
-- No new finishing hook needed.
-
-## Technical notes
-
-- The migration is data-only on `public.catalog_papers` and `public.catalog_paper_prices`; no schema change, no new tables, no new RLS.
-- `tenant_id IS NULL` filter on every UPDATE so only master rows are touched. Tenants/branches pick the changes up via the existing "Pull missing from master" button.
-- The `+ Add` cell uses the same `useUpsertCatalogPaperPrice` mutation already in the editor; it just calls the paper-update hook first, then the price upsert.
+- Changing **Size** or **Item** uses the existing `useUpsertCatalogFinishingPrice` (passes the price row's `id` plus the new `size_code` / `finishing_id`).
+- No schema change, no migration, no new RLS.
 
 ## Out of scope
 
-- No changes to `RateCardEditor`, finishing prices, or pricing engine.
-- Not auto-setting actual SRA3 prices — they seed at `0.00` and you fill them in.
-- Not changing the Master Catalogue → Papers editor.
+- The "Add finishing price" dialog stays as-is — it already lets you pick item / category-via-item / size.
+- No changes to Papers, RateCard, or the Master Catalogue → Finishing editor.
+- We're not adding a "delete category" or "rename category globally" workflow — editing category on one row only changes that row's `catalog_finishing` record (which is how it works in the catalogue editor today).
+
+## Technical notes
+
+- `catalog_finishing.category` and `pricing_basis` are plain `text` columns (no enum), so writing arbitrary strings is safe — but the dropdown keeps things tidy.
+- Optimistic update + `toast` on failure, same pattern as the Cover toggle.
