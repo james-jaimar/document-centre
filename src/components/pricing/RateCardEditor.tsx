@@ -259,6 +259,9 @@ function ClicksTab({
   const insert = useInsertRateCardClick();
   const del = useDeleteRateCardClick();
   const { data: sizes = [] } = useCatalogSizes();
+  const { data: printAttrs = [] } = useCatalogPrintAttrs();
+  const colourOptions = printAttrs.filter((a) => a.attribute === "colour_mode" && a.is_active && (a.code === "mono" || a.code === "colour"));
+  const sidesOptions = printAttrs.filter((a) => a.attribute === "sides" && a.is_active && (a.code === "simplex" || a.code === "duplex"));
   const [drafts, setDrafts] = useState<Record<string, { sell?: string; cost?: string }>>({});
   const [adding, setAdding] = useState<{
     size: string;
