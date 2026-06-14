@@ -94,6 +94,7 @@ import PlatformSettings from "@/pages/platform/PlatformSettings";
 import PlatformPricingRegions from "@/pages/platform/PlatformPricingRegions";
 import PlatformProducts from "@/pages/platform/PlatformProducts";
 import PlatformMasterPricing from "@/pages/platform/PlatformMasterPricing";
+import PlatformCatalog from "@/pages/platform/PlatformCatalog";
 import PlatformSubscriptions from "@/pages/platform/PlatformSubscriptions";
 import PlatformDemoPrintPricing from "@/pages/platform/PlatformDemoPrintPricing";
 import PlatformImposition from "@/pages/platform/PlatformImposition";
