@@ -84,6 +84,211 @@ export function useCatalogPrintAttrs() {
   });
 }
 
+// ----------------------------- catalog_papers ----------------------------
+
+export interface CatalogPaper {
+  id: string;
+  code: string;
+  label: string;
+  weight_gsm: number | null;
+  finish: string | null;
+  category: string | null;
+  sort_order: number;
+  is_active: boolean;
+  metadata: Record<string, any>;
+}
+
+export function useCatalogPapers() {
+  return useQuery({
+    queryKey: ["catalog_papers"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("catalog_papers" as any)
+        .select("*")
+        .order("sort_order", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as unknown as CatalogPaper[];
+    },
+  });
+}
+
+export function useUpsertCatalogPaper() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (row: Partial<CatalogPaper> & { code: string; label: string }) => {
+      const { data, error } = await supabase
+        .from("catalog_papers" as any)
+        .upsert(row, { onConflict: "code" })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["catalog_papers"] }),
+  });
+}
+
+export function useDeleteCatalogPaper() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("catalog_papers" as any).delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["catalog_papers"] }),
+  });
+}
+
+// --------------------------- catalog_finishing ---------------------------
+
+export interface CatalogFinishing {
+  id: string;
+  code: string;
+  label: string;
+  category: string | null;
+  variant: string | null;
+  pricing_basis: string | null;
+  sort_order: number;
+  is_active: boolean;
+  metadata: Record<string, any>;
+}
+
+export function useCatalogFinishing() {
+  return useQuery({
+    queryKey: ["catalog_finishing"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("catalog_finishing" as any)
+        .select("*")
+        .order("sort_order", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as unknown as CatalogFinishing[];
+    },
+  });
+}
+
+export function useUpsertCatalogFinishing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (row: Partial<CatalogFinishing> & { code: string; label: string }) => {
+      const { data, error } = await supabase
+        .from("catalog_finishing" as any)
+        .upsert(row, { onConflict: "code" })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["catalog_finishing"] }),
+  });
+}
+
+export function useDeleteCatalogFinishing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("catalog_finishing" as any).delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["catalog_finishing"] }),
+  });
+}
+
+// -------------------------- imposition_templates -------------------------
+
+export interface ImpositionTemplate {
+  id: string;
+  name: string;
+  input_size: string;
+  output_size: string;
+  n_up: number;
+  work_style: string;
+  is_active: boolean;
+  kind: string;
+}
+
+export function useImpositionTemplates() {
+  return useQuery({
+    queryKey: ["imposition_templates"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("imposition_templates" as any)
+        .select("id, name, input_size, output_size, n_up, work_style, is_active, kind")
+        .eq("is_active", true)
+        .order("input_size", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as unknown as ImpositionTemplate[];
+    },
+  });
+}
+
+// ----------------------- product_imposition_defaults ---------------------
+
+export interface ProductImpositionDefault {
+  id: string;
+  product_family_id: string;
+  imposition_template_id: string;
+  is_primary: boolean;
+  sort_order: number;
+}
+
+export function useProductImpositionDefaults(productFamilyId: string | null) {
+  return useQuery({
+    queryKey: ["product_imposition_defaults", productFamilyId],
+    enabled: !!productFamilyId,
+    queryFn: async () => {
+      if (!productFamilyId) return [];
+      const { data, error } = await supabase
+        .from("product_imposition_defaults" as any)
+        .select("*")
+        .eq("product_family_id", productFamilyId);
+      if (error) throw error;
+      return (data ?? []) as unknown as ProductImpositionDefault[];
+    },
+  });
+}
+
+export function useSetProductImposition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      product_family_id: string;
+      /** When null, removes any imposition default for this size (= cut sheet). */
+      imposition_template_id: string | null;
+      /** All existing rows whose template input_size matches this code are cleared first. */
+      input_size_code: string;
+      templates: ImpositionTemplate[];
+    }) => {
+      const { product_family_id, imposition_template_id, input_size_code, templates } = input;
+      // Remove any existing defaults for templates whose input_size matches this size code.
+      const matchingIds = templates
+        .filter((t) => t.input_size.toLowerCase() === input_size_code.toLowerCase())
+        .map((t) => t.id);
+      if (matchingIds.length > 0) {
+        const { error: delErr } = await supabase
+          .from("product_imposition_defaults" as any)
+          .delete()
+          .eq("product_family_id", product_family_id)
+          .in("imposition_template_id", matchingIds);
+        if (delErr) throw delErr;
+      }
+      if (imposition_template_id) {
+        const { error: insErr } = await supabase
+          .from("product_imposition_defaults" as any)
+          .insert({
+            product_family_id,
+            imposition_template_id,
+            is_primary: true,
+            sort_order: 0,
+          });
+        if (insErr) throw insErr;
+      }
+    },
+    onSuccess: (_d, v) =>
+      qc.invalidateQueries({ queryKey: ["product_imposition_defaults", v.product_family_id] }),
+  });
+}
+
 // ------------------------- product_catalog_links -------------------------
 
 export interface ProductCatalogLink {
