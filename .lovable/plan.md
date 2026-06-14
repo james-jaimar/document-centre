@@ -1,76 +1,71 @@
 ## Goal
 
-Finish the Master Catalogue and make Master Pricing + the print-cost engine reference it as the single source of truth. Then put the cut-sheet vs N-up sheet strategy under explicit per-product control, the way an MIS does.
+The Master Catalogue (`catalog_papers`, `catalog_paper_prices`, `catalog_finishing`, `catalog_finishing_prices`) is currently empty. Master Pricing (`rate_card_papers` / `rate_card_finishing` at `scope_type = 'master'`) is fully populated and is the source we'll backfill from. After this, you'll wire products to reference the catalogue.
 
-## 1. Finish the Master Catalogue
+## What's in Master Pricing today
 
-Add two tabs to **Platform → Master Catalogue** alongside Sizes / Print Attributes:
+**Papers** — one row per (label, gsm, finish, size). Distinct stocks once duplicates are collapsed on (label-without-size, gsm, finish):
 
-- **Papers** (`catalog_papers` + `catalog_paper_prices`). Each paper is size-agnostic (code, label, gsm, finish, category). Prices are entered per **size from `catalog_sizes`** — a dropdown, never free text. So "80gsm Bond" exists once; you set the A4 cost, A3 cost, SRA3 cost as price rows.
-- **Finishing** (`catalog_finishing` + `catalog_finishing_prices`). Same shape: category (lamination, binding, cutting…), variant, pricing basis (per item / per sheet / per click), then price rows per size (or no-size for "per item" charges like wire binding).
+- 80gsm Bond — A4, A3
+- 90gsm White Bond — A4, A3, A5
+- 100gsm Bond / Uncoated — A4, A3 (+ extras)
+- 135gsm Gloss — A4, A3
+- 170gsm Gloss — A4, A3
+- 250gsm Gloss — A4 (+ Matt variant)
+- 300gsm Gloss — A4
+- 350gsm Matt — A4
+- 80gsm Pastel Blue / Green / Pink / Yellow — A4, A3, A5
+- 80gsm Recycled White — A4, A3, A5
+- (plus any further long-tail rows that exist in master)
 
-Nothing else is added to the master catalogue. Click charges stay in pricing, because they are press-specific, not catalogue items.
+**Finishing** — mostly size-agnostic items (per_unit / per_set), plus a few per-sheet items with sizes:
 
-## 2. Make Master Pricing reference the catalogue
+- Binding: Comb 6/10/16/19/25/32/38mm, Wire 8/12mm, Spiral 10/16mm, Ring Binder 25/50/75mm — all per_unit, no size
+- Stapling: Saddle Stitch — per_unit
+- Cover: Acetate A4/A3, Card Back A4/A3 — per_sheet with size
+- Lamination: A4/A3 Gloss + A4/A3 Matt — per_sheet with size
+- Folding: Bi / Tri / Z — per_unit, no size
+- Guillotining / Trimming: Guillotine flyers (per_unit), Business Card Trim (per_set)
 
-`RateCardEditor` is currently the source of truth for clicks / papers / finishing and uses hard-coded size strings (`A4, A3, SRA3, A5, A6, DL`) plus free-text size fields. We change it so:
+## Backfill strategy
 
-- **Click charges** — `size` column becomes a select sourced from `catalog_sizes` (active rows only). The colour/sides columns continue to use `catalog_print_attrs`.
-- **Papers** — instead of one row per (paper × size), the editor lists each `catalog_papers` row once with a sub-grid of size rows. You pick paper from the master, then add a price row per size — size comes from `catalog_sizes`, not text.
-- **Finishing** — same pattern. Finishing item from `catalog_finishing`; price rows reference `catalog_sizes.code` or "any size" for per-item charges.
-- **Photo prints** & **Business cards** rate-card tabs — their `size`/`size_slug` columns also switch to a select bound to `catalog_sizes` (filtered by sensible region tags: photo for photo prints, business-card sizes for cards).
+A single data migration that, for the `scope_type = 'master'` rows only:
 
-The underlying tenant/branch override flow (scope_type clones) is unchanged — we only change the input controls and reject saves whose `size` isn't a known catalogue code.
+**1. Papers**
 
-## 3. Sheet strategy: cut-sheet vs imposed N-up
+- Group `rate_card_papers` by a stable key — normalised `(label_without_size, weight_gsm, finish)` — to produce one `catalog_papers` row per stock.
+- `catalog_papers.code` = stable slug, e.g. `80gsm-bond`, `90gsm-white-bond`, `135gsm-gloss`, `80gsm-pastel-blue`, `80gsm-recycled-white`.
+- `label` = stock name without size ("80gsm Bond", "80gsm Pastel Blue", "350gsm Matt").
+- `weight_gsm`, `finish` carried over. `category` inferred: `bond` / `uncoated` / `silk` / `gloss` / `matt` → `text` or `cover` based on gsm (≥170 → `cover`, else `text`); pastels → `coloured`; recycled → `recycled`.
+- For each source row, insert a `catalog_paper_prices` row keyed `(paper_id, size_code)` where `size_code` is the lower-cased catalogue size (`a4`, `a3`, `a5`, `sra3` …). `sell_price_minor` / `cost_price_minor` = `round(price * 100)`. Skip if the size isn't in `catalog_sizes`.
+- `ON CONFLICT (paper_id, size_code) DO NOTHING` so re-runs are safe.
 
-The infrastructure already exists (`imposition_templates`, `product_imposition_defaults`) but isn't surfaced as a deliberate per-product choice. We add it as an explicit control on the new **Catalogue** tab of each product family:
+**2. Finishing**
 
-```
-Document Sizes
-  [✓] A4    Sheet strategy: ( ) Cut sheet 1-up    (•) Imposed on …  [SRA3, 2-up ▾]
-  [✓] A3    Sheet strategy: (•) Cut sheet 1-up    ( ) Imposed on …
-  [✓] A5    Sheet strategy: ( ) Cut sheet 1-up    (•) Imposed on …  [SRA3, 4-up ▾]
-  [✓] DL    Sheet strategy: ( ) Cut sheet 1-up    (•) Imposed on …  [SRA3, 8-up ▾]
-```
+- Group `rate_card_finishing` master rows by `(category, variant, label-without-size, pricing_basis)` to produce one `catalog_finishing` row per item.
+- `code` = stable slug, mirroring existing slugs where possible (`comb-6mm`, `wire-12mm`, `saddle-stitch`, `lamination-gloss`, `lamination-matt`, `acetate-cover`, `card-back`, `fold-bi`, `fold-tri`, `fold-z`, `guillotine-flyer`, `trim-bcards`, `ring-binder-25mm`, …).
+- For size-agnostic items (binding, stapling, folding, guillotining, trimming) insert one `catalog_finishing_prices` row with `size_code = 'any'` (or null — see open question below).
+- For per-sheet sized items (lamination, cover) insert one `catalog_finishing_prices` row per source size, `size_code` lower-cased.
 
-- "Cut sheet 1-up" = print on the same paper size as the document; click and paper are billed at that size.
-- "Imposed on parent" = uses an `imposition_templates` row that we already store (`input_size`, `output_size`, `n_up`, `work_style`, bleed/gutter…). The dropdown only shows templates whose `input_size` matches the linked size.
+**3. Re-run safety**
 
-We store the choice in `product_imposition_defaults` (already exists) — `is_primary = true` marks the active strategy for that family+size; absence = cut sheet. Sane defaults per family: bound documents / presentations / loose sheets / booklets → cut sheet on A4/A3; business cards → imposed on SRA3; small flat sheets (A5/A6/DL) when full-bleed → imposed on SRA3.
+- All inserts use `ON CONFLICT` on the natural keys (`catalog_papers.code`, `catalog_finishing.code`, `(paper_id, size_code)`, `(finishing_id, size_code)`) `DO NOTHING`. Running the migration twice produces no duplicates and doesn't overwrite anything you've already edited in the Master Catalogue UI.
+- Source `rate_card_*` rows are not modified or deleted. They keep working until you've finished pointing products at the new catalogue.
 
-A small "Press setup" preview shows the resolved parent sheet and n-up so the admin can sanity-check.
+## What this migration does NOT do
 
-## 4. Pricing engine update
+- Doesn't touch tenant or branch rate cards.
+- Doesn't link any product family to catalogue items — you'll do that manually via the Catalogue tab on each product as planned.
+- Doesn't seed imposition templates (already covered in the earlier plan).
+- Doesn't delete or deactivate master `rate_card_*` rows.
 
-The click+paper cost calculator (`calculatePriceFromRateCard`) gets a thin wrapper that, for each line:
+## Open question
 
-1. Looks up the active `product_imposition_defaults` row for `(product_family, size)`.
-2. If found → bills click and paper on the **output_size** (the parent), divides by `n_up`, multiplies sheets needed (rounded up).
-3. If not found → bills on the document size as today (cut-sheet).
+`catalog_finishing_prices.size_code` is currently `text NOT NULL` (no FK). For size-agnostic items I propose storing the literal string `'any'`. If you'd rather make that column nullable and use `NULL` for "any size", say so and I'll include the schema tweak in the same migration.
 
-This matches the MIS screenshot's flow (A4 doc → SRA3 sheet → 2-up → cost = SRA3 click + SRA3 paper × sheets/2). No new pricing table is needed.
+## Verification after migration
 
-Finishing prices that depend on size (lamination, trimming) are billed on the **document size** even when printed N-up, because finishing happens after trimming.
-
-## 5. Migration / cleanup
-
-- Backfill `catalog_papers` / `catalog_paper_prices` from the existing master `rate_card_papers` rows (group by label+gsm+finish to dedupe; carry size+price into the prices table).
-- Same for finishing.
-- Keep `rate_card_papers` / `rate_card_finishing` as the editable working tables (tenant/branch clones live there); the master tab in RateCardEditor reads/writes through `catalog_*` and mirrors changes back so old code keeps working until cutover.
-- Seed sensible `imposition_templates` if missing: A4-on-SRA3-2up, A5-on-SRA3-4up, A6-on-SRA3-8up, DL-on-SRA3-8up, BC-on-SRA3-24up.
-- Re-link existing `product_options` size values to `catalog_sizes` (already done by the previous migration).
-
-## Out of scope
-
-- No press / device modelling beyond what `imposition_templates.output_size` already captures.
-- No multi-job ganging across orders.
-- Pricing rules (`pricing_rules`) keep working unchanged.
-
-## Verification
-
-1. Master Catalogue → add SRA3 to Papers, set A4/A3/SRA3 prices. Save. Reopen — values persist; sizes shown are exactly the active rows from `catalog_sizes`.
-2. Master Pricing → all size dropdowns list only catalogue sizes; saving a click row with a non-catalogue size is rejected.
-3. Admin → Products → Business Cards → Catalogue: A4 disabled, BC55×85 enabled with "Imposed on SRA3, 24-up". Storefront quote for 100 business cards bills SRA3 paper + SRA3 click × ceil(100/24) sheets.
-4. Admin → Products → Bound Documents → A4 set to "Cut sheet 1-up". Same quote engine bills A4 click + A4 paper per page side. No regression vs current pricing.
-5. Branch override that disables SRA3 paper still hides it from both the size advisory and the imposition picker for that branch.
+1. Platform → Master Catalogue → Papers — every distinct stock appears once, with one price row per size it had in Master Pricing.
+2. Platform → Master Catalogue → Finishing — every binding/lamination/fold/cover/trim option appears once, with size-agnostic items showing a single price row and lamination/cover showing per-size rows.
+3. Re-running the migration produces zero new rows.
+4. Master Pricing still loads identically (we haven't touched it).
