@@ -668,8 +668,10 @@ function CatalogFinishingPricing({ scopeArgs }: { scopeArgs: { scope: CatalogSco
       <div className="flex items-center justify-between mb-3">
         <p className="text-xs text-muted-foreground">
           One row per (finishing item × size). Use <strong>Any size</strong> for
-          items priced the same regardless of paper size. Edit category, pricing
-          basis or variant in <strong>Master Catalogue → Finishing</strong>.
+          items priced the same regardless of paper size.{" "}
+          {canEdit
+            ? "Click any field to edit it inline."
+            : "Item, category, basis and size cascade from master — edit them at the master scope."}
         </p>
         <Button size="sm" onClick={openAdd}>
           <Plus className="h-3.5 w-3.5 mr-1.5" /> Add price
