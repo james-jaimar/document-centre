@@ -315,6 +315,44 @@ function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope;
     }
   }
 
+  async function addSizeToPaper(paper: typeof papers[number], size: string) {
+    const current = ((paper as any).stocked_sizes ?? []) as string[];
+    if (current.map((s) => s.toLowerCase()).includes(size)) return;
+    try {
+      await patchPaper.mutateAsync({
+        id: paper.id,
+        patch: { stocked_sizes: [...current, size] },
+      });
+      // Seed an editable 0.00 price row.
+      await upsert.mutateAsync({
+        paper_id: paper.id,
+        size_code: size,
+        sell_price_minor: 0,
+        is_active: true,
+      } as any);
+    } catch (e: any) {
+      toast({ title: "Add size failed", description: e.message, variant: "destructive" });
+    }
+  }
+
+  async function toggleCover(paper: typeof papers[number]) {
+    const next = !(paper as any).is_cover_stock;
+    try {
+      await patchPaper.mutateAsync({ id: paper.id, patch: { is_cover_stock: next } });
+    } catch (e: any) {
+      toast({ title: "Toggle failed", description: e.message, variant: "destructive" });
+    }
+  }
+
+  async function toggleEdgeToEdge(paper: typeof papers[number]) {
+    const next = !(paper as any).is_edge_to_edge_only;
+    try {
+      await patchPaper.mutateAsync({ id: paper.id, patch: { is_edge_to_edge_only: next } });
+    } catch (e: any) {
+      toast({ title: "Toggle failed", description: e.message, variant: "destructive" });
+    }
+  }
+
   return (
     <Card className="p-4">
       <div className="flex items-start justify-between gap-4 mb-3">
