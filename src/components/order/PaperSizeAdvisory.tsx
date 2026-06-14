@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, FileText, ArrowRight, Lock } from "lucide-react";
-import { type PaperSize, getSuggestedIsoSizes, isLandscape, UNKNOWN_SIZE_LABEL } from "@/lib/paperSizes";
+import { type PaperSize, getSuggestedIsoSizes, isLandscape, UNKNOWN_SIZE_LABEL, matchKnownSize } from "@/lib/paperSizes";
 import { cn } from "@/lib/utils";
 
 interface PaperSizeAdvisoryProps {
@@ -30,6 +30,14 @@ interface PaperSizeAdvisoryProps {
   lockedSize?: PaperSize | null;
   /** Product family slug — used to tailor suggested scale targets (e.g. posters → A2/A1/A0). */
   productFamilySlug?: string | null;
+  /**
+   * Canonical size names this branch sells for the current product family
+   * (e.g. ["A4","A5"]). When supplied & non-empty:
+   *  - the scale-target list is restricted to ISO names in this set;
+   *  - "Keep original" is hidden if the upload's canonical size isn't allowed.
+   * When null/empty, fall back to the previous unrestricted behaviour.
+   */
+  allowedSizeNames?: string[] | null;
 }
 
 export default function PaperSizeAdvisory({
@@ -43,11 +51,38 @@ export default function PaperSizeAdvisory({
   onScaleTo,
   lockedSize,
   productFamilySlug,
+  allowedSizeNames,
 }: PaperSizeAdvisoryProps) {
-  const suggestions = getSuggestedIsoSizes(widthMm, heightMm, productFamilySlug);
+  const suggestionsAll = getSuggestedIsoSizes(widthMm, heightMm, productFamilySlug);
+
+  const allowedSet = useMemo(() => {
+    if (!allowedSizeNames || allowedSizeNames.length === 0) return null;
+    return new Set(allowedSizeNames);
+  }, [allowedSizeNames]);
+
+  const suggestions = useMemo(() => {
+    if (!allowedSet) return suggestionsAll;
+    const filtered = suggestionsAll.filter((s) => allowedSet.has(s.name));
+    // Safety net: if the branch restriction filters out every suggestion AND
+    // the original isn't allowed either, fall back to the unfiltered list so
+    // the customer always has at least one choice.
+    return filtered.length > 0 ? filtered : suggestionsAll;
+  }, [suggestionsAll, allowedSet]);
+
   const landscape = isLandscape(widthMm, heightMm);
   const isPoster = (productFamilySlug ?? "").toLowerCase().startsWith("poster");
   const recommendedLabel = isPoster ? "A2, A1 or A0" : "A4 or A3";
+
+  // Hide "Keep original" when the branch doesn't sell the uploaded file's size.
+  const originalCanonical = useMemo(
+    () => matchKnownSize(widthMm, heightMm),
+    [widthMm, heightMm],
+  );
+  const canKeepOriginal = useMemo(() => {
+    if (!allowedSet) return true;
+    if (!originalCanonical) return false;
+    return allowedSet.has(originalCanonical.name);
+  }, [allowedSet, originalCanonical]);
 
   // In locked mode, the locked size is the primary (and pre-selected) option,
   // even if it's not in the auto-suggested list.
@@ -58,7 +93,7 @@ export default function PaperSizeAdvisory({
   }, [suggestions, lockedSize]);
 
   const [selectedTarget, setSelectedTarget] = useState<PaperSize | null>(
-    lockedSize ?? (suggestions.length > 0 ? suggestions[0] : null),
+    lockedSize ?? (orderedOptions.length > 0 ? orderedOptions[0] : null),
   );
   const [isApplying, setIsApplying] = useState(false);
 
