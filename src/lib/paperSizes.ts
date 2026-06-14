@@ -132,6 +132,44 @@ export function matchKnownSize(widthMm: number, heightMm: number): PaperSize | n
 }
 
 /**
+ * Extract dimensions encoded in a structured product_option value slug.
+ * Conventional slug format ends in `-WIDTH-HEIGHTmm`, e.g.
+ *   `a4-210-297mm` → { 210, 297 }
+ *   `us-letter-216-279mm` → { 216, 279 }
+ * Returns null if no dimension suffix is present.
+ */
+export function parseSizeOptionSlug(
+  slug: string,
+): { widthMm: number; heightMm: number } | null {
+  const m = slug.match(/(\d+)-(\d+)mm$/i);
+  if (!m) return null;
+  const w = parseInt(m[1], 10);
+  const h = parseInt(m[2], 10);
+  if (!Number.isFinite(w) || !Number.isFinite(h)) return null;
+  return { widthMm: w, heightMm: h };
+}
+
+/**
+ * Given a list of product-option size slugs (e.g. the active values of the
+ * branch-resolved "Document Size" option), return the matching canonical
+ * PaperSize entries (ISO or non-ISO). Unknown slugs are skipped.
+ */
+export function resolveAllowedSizesFromSlugs(slugs: string[]): PaperSize[] {
+  const out: PaperSize[] = [];
+  const seen = new Set<string>();
+  for (const slug of slugs) {
+    const dims = parseSizeOptionSlug(slug);
+    if (!dims) continue;
+    const match = matchKnownSize(dims.widthMm, dims.heightMm);
+    if (match && !seen.has(match.name)) {
+      seen.add(match.name);
+      out.push(match);
+    }
+  }
+  return out;
+}
+
+/**
  * Detect if the given dimensions match a known non-ISO paper size.
  * Returns the matched size name or null if it's ISO or unknown.
  */
