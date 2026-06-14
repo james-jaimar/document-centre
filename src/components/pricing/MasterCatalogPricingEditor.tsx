@@ -598,6 +598,47 @@ function CatalogFinishingPricing({ scopeArgs }: { scopeArgs: { scope: CatalogSco
     }
   }
 
+  async function changeItem(
+    row: { id: string; size_code: string | null },
+    newFinishingId: string,
+  ) {
+    try {
+      await upsert.mutateAsync({
+        id: row.id,
+        finishing_id: newFinishingId,
+        size_code: row.size_code ?? "any",
+      } as any);
+    } catch (e: any) {
+      toast({ title: "Update failed", description: e.message, variant: "destructive" });
+    }
+  }
+
+  async function changeSize(
+    row: { id: string; finishing_id: string },
+    newSize: string,
+  ) {
+    try {
+      await upsert.mutateAsync({
+        id: row.id,
+        finishing_id: row.finishing_id,
+        size_code: newSize,
+      } as any);
+    } catch (e: any) {
+      toast({ title: "Update failed", description: e.message, variant: "destructive" });
+    }
+  }
+
+  async function changeFinishingField(
+    finishingId: string,
+    patch: { category?: string; pricing_basis?: string },
+  ) {
+    try {
+      await patchFinishing.mutateAsync({ id: finishingId, patch });
+    } catch (e: any) {
+      toast({ title: "Update failed", description: e.message, variant: "destructive" });
+    }
+  }
+
   function openAdd() {
     setAdding({ finishing_id: "", size_code: "any", sell: "0.00", cost: "0.00" });
   }
