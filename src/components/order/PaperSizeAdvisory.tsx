@@ -215,32 +215,39 @@ export default function PaperSizeAdvisory({
             );
           })}
 
-          {/* Keep original */}
-          <button
-            onClick={() => setSelectedTarget(null)}
-            className={cn(
-              "w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-all",
-              selectedTarget === null
-                ? "border-primary bg-primary/5 ring-1 ring-primary/30"
-                : "border-border hover:border-primary/40 hover:bg-muted/30",
-            )}
-          >
-            <div className="shrink-0 w-8 h-10 border border-muted-foreground/20 rounded-sm flex items-center justify-center bg-muted/20">
-              <FileText className="h-4 w-4 text-muted-foreground/60" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground">
-                {isLocked
-                  ? `Keep original ${detectedSize || ""} (${Math.round(widthMm)} × ${Math.round(heightMm)}mm)`
-                  : `Keep original size (${Math.round(widthMm)} × ${Math.round(heightMm)}mm)`}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {isLocked
-                  ? `I'll change my other ${lockedSize?.name} files instead`
-                  : `Print at ${detectedSize} size — may require custom cutting`}
-              </p>
-            </div>
-          </button>
+          {/* Keep original — hidden when the branch doesn't offer this size */}
+          {canKeepOriginal && (
+            <button
+              onClick={() => setSelectedTarget(null)}
+              className={cn(
+                "w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-all",
+                selectedTarget === null
+                  ? "border-primary bg-primary/5 ring-1 ring-primary/30"
+                  : "border-border hover:border-primary/40 hover:bg-muted/30",
+              )}
+            >
+              <div className="shrink-0 w-8 h-10 border border-muted-foreground/20 rounded-sm flex items-center justify-center bg-muted/20">
+                <FileText className="h-4 w-4 text-muted-foreground/60" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground">
+                  {isLocked
+                    ? `Keep original ${detectedSize || ""} (${Math.round(widthMm)} × ${Math.round(heightMm)}mm)`
+                    : `Keep original size (${Math.round(widthMm)} × ${Math.round(heightMm)}mm)`}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {isLocked
+                    ? `I'll change my other ${lockedSize?.name} files instead`
+                    : `Print at ${detectedSize} size — may require custom cutting`}
+                </p>
+              </div>
+            </button>
+          )}
+          {!canKeepOriginal && !!allowedSet && (
+            <p className="text-xs text-muted-foreground px-1">
+              This branch only prints {Array.from(allowedSet).join(", ")} for this product, so the original size isn't available.
+            </p>
+          )}
         </div>
 
         <DialogFooter>
