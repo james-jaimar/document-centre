@@ -206,6 +206,9 @@ function CatalogPapersPricing({ scopeArgs }: { scopeArgs: { scope: CatalogScope;
   const { data: prices = [], isLoading } = useCatalogPaperPrices(scopeArgs);
   const upsert = useUpsertCatalogPaperPrice(scopeArgs);
   const del = useDeleteCatalogPaperPrice();
+  const patchPaper = usePatchCatalogPaper();
+
+  const canEditPaper = scopeArgs.scope === "master";
 
   const [draft, setDraft] = useState<Record<string, string>>({});
 
