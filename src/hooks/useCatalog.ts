@@ -99,13 +99,15 @@ export interface CatalogPrintAttr {
   metadata: Record<string, any>;
 }
 
-export function useCatalogPrintAttrs() {
+export function useCatalogPrintAttrs(args: CatalogScopeArgs = {}) {
   return useQuery({
-    queryKey: ["catalog_print_attrs"],
+    queryKey: ["catalog_print_attrs", ...scopeKey(args)],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("catalog_print_attrs" as any)
-        .select("*")
+      const q = applyCatalogScope(
+        supabase.from("catalog_print_attrs" as any).select("*"),
+        args,
+      );
+      const { data, error } = await q
         .order("attribute", { ascending: true })
         .order("sort_order", { ascending: true });
       if (error) throw error;
@@ -113,6 +115,7 @@ export function useCatalogPrintAttrs() {
     },
   });
 }
+
 
 // ----------------------------- catalog_papers ----------------------------
 
