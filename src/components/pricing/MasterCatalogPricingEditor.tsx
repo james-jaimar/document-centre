@@ -504,6 +504,15 @@ function CatalogFinishingPricing({ scopeArgs }: { scopeArgs: { scope: CatalogSco
   const { data: prices = [], isLoading } = useCatalogFinishingPrices(scopeArgs);
   const upsert = useUpsertCatalogFinishingPrice(scopeArgs);
   const del = useDeleteCatalogFinishingPrice();
+  const patchFinishing = usePatchCatalogFinishing();
+  const canEdit = scopeArgs.scope === "master";
+
+  const CATEGORY_OPTIONS = [
+    "binding", "cover", "folding", "guillotining", "hole_punching",
+    "inserts", "lamination", "packaging", "special", "stapling",
+    "tab_dividers", "trimming",
+  ];
+  const BASIS_OPTIONS = ["per_unit", "per_sheet", "per_set"];
 
   const [adding, setAdding] = useState<{
     finishing_id: string;
