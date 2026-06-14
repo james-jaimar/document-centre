@@ -436,15 +436,11 @@ function ClicksTab({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">Size</Label>
-                <Input
-                  list="click-size-presets"
+                <CatalogSizeSelect
                   value={adding.size}
-                  onChange={(e) => setAdding({ ...adding, size: e.target.value.toUpperCase() })}
-                  placeholder="A4, A3, SRA3, A5…"
+                  onChange={(v) => setAdding({ ...adding, size: v ?? "" })}
+                  sizes={sizes}
                 />
-                <datalist id="click-size-presets">
-                  {SIZE_PRESETS.map((s) => <option key={s} value={s} />)}
-                </datalist>
               </div>
               <div>
                 <Label className="text-xs">Colour</Label>
