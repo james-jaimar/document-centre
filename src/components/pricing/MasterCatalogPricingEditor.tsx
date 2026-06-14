@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import { formatPrice } from "@/lib/formatCurrency";
+
 import {
   useCatalogSizes,
   useCatalogPapers,
