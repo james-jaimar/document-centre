@@ -329,7 +329,8 @@ export function useSetProductCatalogLink() {
       sort_order?: number;
       is_default?: boolean;
     }) => {
-      const { product_family_id, catalog, sub_attribute, item_code, enabled, sort_order, is_default } = input;
+      const { product_family_id, catalog, item_code, enabled, sort_order, is_default } = input;
+      const sub_attribute = input.sub_attribute ?? "";
       if (enabled) {
         const { error } = await supabase
           .from("product_catalog_links" as any)
@@ -339,14 +340,13 @@ export function useSetProductCatalogLink() {
           );
         if (error) throw error;
       } else {
-        let q = supabase
+        const { error } = await supabase
           .from("product_catalog_links" as any)
           .delete()
           .eq("product_family_id", product_family_id)
           .eq("catalog", catalog)
-          .eq("item_code", item_code);
-        q = sub_attribute === null ? q.is("sub_attribute", null) : q.eq("sub_attribute", sub_attribute);
-        const { error } = await q;
+          .eq("item_code", item_code)
+          .eq("sub_attribute", sub_attribute);
         if (error) throw error;
       }
     },
