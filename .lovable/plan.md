@@ -1,34 +1,66 @@
-# Fix catalogue Pull/Re-sync error
+## Problem
 
-## What's broken
-Clicking **Pull missing from master** (or **Re-sync from master**) on the tenant Catalogue Pricing page returns:
+Editing a paper in the master catalogue (and similarly sizes/finishing/links) fails with:
 
-> column "is_enabled" of relation "product_catalog_links" does not exist
+> there is no unique or exclusion constraint matching the ON CONFLICT specification
 
-## Root cause
-The four cascade RPCs created in the previous migration (`clone_master_catalog_to_tenant`, `resync_tenant_catalog_from_master`, `clone_tenant_catalog_to_branch`, `resync_branch_catalog_from_tenant`) insert into `public.product_catalog_links` with columns `(... is_enabled, metadata)`.
+The frontend hooks call `upsert(row, { onConflict: "code" })` (and similar) on:
 
-The actual table columns are:
-`id, product_family_id, catalog, sub_attribute, item_code, sort_order, is_default, created_at, updated_at, scope_type, tenant_id, branch_id`
+- `catalog_papers` — onConflict: `code`
+- `catalog_sizes` — onConflict: `code`
+- `catalog_finishing` — onConflict: `code`
+- `product_catalog_links` — onConflict: `product_family_id,catalog,sub_attribute,item_code`
+- `branch_catalog_overrides` — onConflict: `branch_id,catalog,sub_attribute,item_code`
 
-There is no `is_enabled` and no `metadata` column. Those names belong to `branch_catalog_overrides`, not `product_catalog_links`. Result: every clone aborts before any rows are copied (which is also why the tenant tables are still empty in the screenshot).
+But the tables only have a primary-key constraint on `id`. None of the columns above are unique, so Postgres rejects every upsert — including the Save in your Edit Paper dialog.
+
+This happened because when we added `scope_type / tenant_id / branch_id` to make the catalogue cascadable, the old "unique on `code`" assumption stopped being valid (the same `code` now legitimately exists once per scope), and the replacement scoped-unique indexes were never added.
 
 ## Fix
-One migration that recreates the four RPCs with the correct column list for `product_catalog_links`:
 
+Add scope-aware unique indexes that match what the hooks expect, then the existing upsert calls work unchanged.
+
+### Migration
+
+For each of `catalog_papers`, `catalog_sizes`, `catalog_finishing`:
+
+```sql
+CREATE UNIQUE INDEX catalog_papers_scope_code_uidx
+  ON public.catalog_papers (scope_type, COALESCE(tenant_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                            COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid), code);
 ```
-(scope_type, tenant_id [, branch_id], product_family_id, catalog,
- sub_attribute, item_code, sort_order, is_default)
+
+For `product_catalog_links`:
+
+```sql
+CREATE UNIQUE INDEX product_catalog_links_scope_uidx
+  ON public.product_catalog_links (scope_type, COALESCE(tenant_id,'0…'::uuid), COALESCE(branch_id,'0…'::uuid),
+                                   product_family_id, catalog, COALESCE(sub_attribute,''), item_code);
 ```
 
-No other changes — the catalog_sizes / print_attrs / papers / finishing / paper_prices / finishing_prices inserts are already correct.
+For `branch_catalog_overrides`:
 
-## After the fix
-- Re-click **Pull missing from master** on the PostNet tenant page. Paper Stocks, Finishing, and Click Charges tabs should populate from the master catalogue.
-- Same buttons on the Branch page will then work for branch-from-tenant cloning.
+```sql
+CREATE UNIQUE INDEX branch_catalog_overrides_uidx
+  ON public.branch_catalog_overrides (branch_id, catalog, COALESCE(sub_attribute,''), item_code);
+```
 
-## Which button to use
-- **Pull missing**: additive — brings in any items that don't already exist at your scope. Safe; keeps your edits.
-- **Re-sync**: destructive — wipes your scope and replaces with a fresh copy from the parent. Use only when you want to discard local changes.
+(First de-duplicate any existing duplicate rows before creating the indexes — I'll check with a `SELECT … HAVING count(*) > 1` and keep the lowest `id` row in each group.)
 
-For PostNet right now (no rows yet), either will work — Pull is the safer default.
+### Hook updates
+
+Change the upsert `onConflict` strings to include the scope columns, e.g.:
+
+```ts
+.upsert(row, { onConflict: "scope_type,tenant_id,branch_id,code" })
+```
+
+and ensure the row object always sets `scope_type` (+ `tenant_id`/`branch_id` as needed) — currently `useUpsertCatalogPaper`/`Size`/`Finishing` don't, which is why edits silently target the wrong scope. The MasterCatalogPricingEditor / Admin / Branch editors already know which scope they're in, so they'll pass it through.
+
+## Result
+
+- Edit Paper → Save works in master, tenant, and branch catalogues.
+- Same code can coexist across scopes (e.g. master `80gsm-bond` and a tenant override `80gsm-bond`) without colliding.
+- Catalog link / branch override upserts stop throwing the same ON CONFLICT error.
+
+No data is deleted apart from true duplicate rows (same scope + same code), which I'll list for you before the migration runs.
