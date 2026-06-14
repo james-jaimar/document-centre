@@ -8,6 +8,7 @@ import {
 import type { ProductFamily } from "@/hooks/useProductFamilies";
 import ProductFamilyForm from "@/components/admin/ProductFamilyForm";
 import ProductOptionsEditor from "@/components/admin/ProductOptionsEditor";
+import ProductCatalogueLinksTab from "@/components/admin/ProductCatalogueLinksTab";
 
 import ProductRecipeTab from "@/components/admin/ProductRecipeTab";
 import { seedDefaultRecipes } from "@/lib/seedDefaultRecipes";
