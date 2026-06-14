@@ -48,6 +48,7 @@ import { toStorageKey, pickBestPerPage, clearSignedUrlCache } from "@/lib/thumbn
 import type { PaperSize, NearIsoMatch } from "@/lib/paperSizes";
 import { isLandscape, ISO_SIZES, matchIsoSize, matchKnownSize, sizesMatch, resolveAllowedSizesFromSlugs } from "@/lib/paperSizes";
 import { useResolvedProductOptions } from "@/hooks/useBranchProductOptionOverrides";
+import { useResolvedAllowedSizeLabels } from "@/hooks/useResolvedCatalogOptions";
 import { isStructuredValues, type StructuredOptionValue } from "@/lib/productOptionTypes";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Lock, X as XIcon } from "lucide-react";
