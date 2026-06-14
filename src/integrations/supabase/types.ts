@@ -816,10 +816,13 @@ export type Database = {
           finish: string | null
           id: string
           is_active: boolean
+          is_cover_stock: boolean
+          is_edge_to_edge_only: boolean
           label: string
           metadata: Json
           scope_type: Database["public"]["Enums"]["catalog_scope"]
           sort_order: number
+          stocked_sizes: string[]
           tenant_id: string | null
           updated_at: string
           weight_gsm: number | null
@@ -832,10 +835,13 @@ export type Database = {
           finish?: string | null
           id?: string
           is_active?: boolean
+          is_cover_stock?: boolean
+          is_edge_to_edge_only?: boolean
           label: string
           metadata?: Json
           scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sort_order?: number
+          stocked_sizes?: string[]
           tenant_id?: string | null
           updated_at?: string
           weight_gsm?: number | null
@@ -848,10 +854,13 @@ export type Database = {
           finish?: string | null
           id?: string
           is_active?: boolean
+          is_cover_stock?: boolean
+          is_edge_to_edge_only?: boolean
           label?: string
           metadata?: Json
           scope_type?: Database["public"]["Enums"]["catalog_scope"]
           sort_order?: number
+          stocked_sizes?: string[]
           tenant_id?: string | null
           updated_at?: string
           weight_gsm?: number | null
@@ -3859,6 +3868,7 @@ export type Database = {
           image_url: string | null
           is_active: boolean
           name: string
+          printing_rules: Json
           render_intent: string
           slug: string
           sort_order: number
@@ -3874,6 +3884,7 @@ export type Database = {
           image_url?: string | null
           is_active?: boolean
           name: string
+          printing_rules?: Json
           render_intent?: string
           slug: string
           sort_order?: number
@@ -3889,6 +3900,7 @@ export type Database = {
           image_url?: string | null
           is_active?: boolean
           name?: string
+          printing_rules?: Json
           render_intent?: string
           slug?: string
           sort_order?: number

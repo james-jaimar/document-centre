@@ -26,6 +26,28 @@ const RENDER_INTENT_OPTIONS = [
   { value: "saturation", label: "Saturation" },
 ];
 
+const ALL_FINISHED_SIZES = [
+  "A3L", "A3P", "A4L", "A4P", "A5L", "A5P", "A6P", "DL", "BC",
+] as const;
+
+interface PrintingRules {
+  allowed_finished_sizes: string[];
+  default_finished_size: string;
+  cover_is_heavy_stock: boolean;
+  force_sra3_when_edge_to_edge: boolean;
+  binding_size_inherits_from: string | null;
+  min_quantity: number;
+}
+
+const DEFAULT_PRINTING_RULES: PrintingRules = {
+  allowed_finished_sizes: ["A4P"],
+  default_finished_size: "A4P",
+  cover_is_heavy_stock: false,
+  force_sra3_when_edge_to_edge: true,
+  binding_size_inherits_from: null,
+  min_quantity: 1,
+};
+
 interface FormValues {
   name: string;
   slug: string;
@@ -36,6 +58,7 @@ interface FormValues {
   color_output: "cmyk" | "rgb";
   cmyk_profile: string;
   render_intent: "relative_colorimetric" | "perceptual" | "absolute_colorimetric" | "saturation";
+  printing_rules: PrintingRules;
 }
 
 interface Props {
@@ -62,21 +85,24 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
       color_output: "cmyk",
       cmyk_profile: "fogra39",
       render_intent: "relative_colorimetric",
+      printing_rules: DEFAULT_PRINTING_RULES,
     },
   });
 
   useEffect(() => {
-    if (family) {
+    const fam = family as (ProductFamily & { printing_rules?: Partial<PrintingRules> }) | null;
+    if (fam) {
       form.reset({
-        name: family.name,
-        slug: family.slug,
-        description: family.description || "",
-        icon: family.icon || "FileText",
-        is_active: family.is_active,
-        sort_order: family.sort_order,
-        color_output: (family.color_output as "cmyk" | "rgb") ?? "cmyk",
-        cmyk_profile: family.cmyk_profile ?? "fogra39",
-        render_intent: (family.render_intent as FormValues["render_intent"]) ?? "relative_colorimetric",
+        name: fam.name,
+        slug: fam.slug,
+        description: fam.description || "",
+        icon: fam.icon || "FileText",
+        is_active: fam.is_active,
+        sort_order: fam.sort_order,
+        color_output: (fam.color_output as "cmyk" | "rgb") ?? "cmyk",
+        cmyk_profile: fam.cmyk_profile ?? "fogra39",
+        render_intent: (fam.render_intent as FormValues["render_intent"]) ?? "relative_colorimetric",
+        printing_rules: { ...DEFAULT_PRINTING_RULES, ...((fam.printing_rules as Partial<PrintingRules>) ?? {}) },
       });
     } else {
       form.reset({
@@ -89,6 +115,7 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         color_output: "cmyk",
         cmyk_profile: "fogra39",
         render_intent: "relative_colorimetric",
+        printing_rules: DEFAULT_PRINTING_RULES,
       });
     }
   }, [family, open]);
@@ -263,6 +290,120 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
                   />
                 </>
               )}
+            </div>
+
+            <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+              <div>
+                <h4 className="text-sm font-semibold">Printing Rules</h4>
+                <p className="text-xs text-muted-foreground">
+                  Which finished sizes this product is sold in, and how covers /
+                  bleed pick the parent sheet at quote time.
+                </p>
+              </div>
+              <FormField
+                control={form.control}
+                name="printing_rules.allowed_finished_sizes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-xs">Allowed finished sizes</FormLabel>
+                    <div className="flex flex-wrap gap-1.5">
+                      {ALL_FINISHED_SIZES.map((s) => {
+                        const checked = (field.value ?? []).includes(s);
+                        return (
+                          <button
+                            type="button"
+                            key={s}
+                            onClick={() => {
+                              const set = new Set(field.value ?? []);
+                              if (checked) set.delete(s); else set.add(s);
+                              field.onChange(Array.from(set));
+                            }}
+                            className={`px-2 py-1 rounded text-xs border transition ${
+                              checked
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-background text-muted-foreground border-border hover:border-primary/50"
+                            }`}
+                          >
+                            {s}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </FormItem>
+                )}
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <FormField
+                  control={form.control}
+                  name="printing_rules.default_finished_size"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs">Default size</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || ""}>
+                        <FormControl><SelectTrigger className="h-8"><SelectValue /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {ALL_FINISHED_SIZES.map((s) => (
+                            <SelectItem key={s} value={s}>{s}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="printing_rules.min_quantity"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs">Min quantity</FormLabel>
+                      <FormControl>
+                        <Input type="number" min={1} className="h-8" {...field}
+                          onChange={(e) => field.onChange(parseInt(e.target.value) || 1)} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <FormField
+                control={form.control}
+                name="printing_rules.cover_is_heavy_stock"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between gap-2">
+                    <FormLabel className="text-xs font-normal">Covers use heavy stock (force SRA3)</FormLabel>
+                    <FormControl><Switch checked={!!field.value} onCheckedChange={field.onChange} /></FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="printing_rules.force_sra3_when_edge_to_edge"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between gap-2">
+                    <FormLabel className="text-xs font-normal">Edge-to-edge selection forces SRA3</FormLabel>
+                    <FormControl><Switch checked={!!field.value} onCheckedChange={field.onChange} /></FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="printing_rules.binding_size_inherits_from"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-xs">Binding price inherits from</FormLabel>
+                    <Select
+                      onValueChange={(v) => field.onChange(v === "__none__" ? null : v)}
+                      value={field.value ?? "__none__"}
+                    >
+                      <FormControl><SelectTrigger className="h-8"><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="__none__">— None —</SelectItem>
+                        <SelectItem value="A4">A4 (A5 binding uses A4 price)</SelectItem>
+                        <SelectItem value="A3">A3</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )}
+              />
             </div>
 
             <DialogFooter>
