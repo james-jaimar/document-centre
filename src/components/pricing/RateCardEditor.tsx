@@ -105,25 +105,6 @@ function CatalogSizeSelect({
     </Select>
   );
 }
-const FINISH_OPTIONS = ["bond", "gloss", "matt", "silk", "recycled"];
-const FINISHING_CATEGORIES = [
-  "binding",
-  "stapling",
-  "lamination",
-  "folding",
-  "trimming",
-  "guillotining",
-  "cover",
-  "other",
-];
-const BASES: FinishingBasis[] = [
-  "per_unit",
-  "per_sheet",
-  "per_set",
-  "per_cut",
-  "per_document",
-  "per_page",
-];
 const PHOTO_SIZE_PRESETS: Array<{ slug: string; label: string; w: number; h: number }> = [
   { slug: "4x6", label: '4×6"', w: 152, h: 102 },
   { slug: "5x7", label: '5×7"', w: 178, h: 127 },
