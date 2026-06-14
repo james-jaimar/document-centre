@@ -41,6 +41,7 @@ import {
   useCatalogPapers,
   useCatalogFinishing,
   usePatchCatalogPaper,
+  usePatchCatalogFinishing,
   type CatalogScope,
 } from "@/hooks/useCatalog";
 import {
@@ -503,6 +504,15 @@ function CatalogFinishingPricing({ scopeArgs }: { scopeArgs: { scope: CatalogSco
   const { data: prices = [], isLoading } = useCatalogFinishingPrices(scopeArgs);
   const upsert = useUpsertCatalogFinishingPrice(scopeArgs);
   const del = useDeleteCatalogFinishingPrice();
+  const patchFinishing = usePatchCatalogFinishing();
+  const canEdit = scopeArgs.scope === "master";
+
+  const CATEGORY_OPTIONS = [
+    "binding", "cover", "folding", "guillotining", "hole_punching",
+    "inserts", "lamination", "packaging", "special", "stapling",
+    "tab_dividers", "trimming",
+  ];
+  const BASIS_OPTIONS = ["per_unit", "per_sheet", "per_set"];
 
   const [adding, setAdding] = useState<{
     finishing_id: string;
@@ -588,6 +598,47 @@ function CatalogFinishingPricing({ scopeArgs }: { scopeArgs: { scope: CatalogSco
     }
   }
 
+  async function changeItem(
+    row: { id: string; size_code: string | null },
+    newFinishingId: string,
+  ) {
+    try {
+      await upsert.mutateAsync({
+        id: row.id,
+        finishing_id: newFinishingId,
+        size_code: row.size_code ?? "any",
+      } as any);
+    } catch (e: any) {
+      toast({ title: "Update failed", description: e.message, variant: "destructive" });
+    }
+  }
+
+  async function changeSize(
+    row: { id: string; finishing_id: string },
+    newSize: string,
+  ) {
+    try {
+      await upsert.mutateAsync({
+        id: row.id,
+        finishing_id: row.finishing_id,
+        size_code: newSize,
+      } as any);
+    } catch (e: any) {
+      toast({ title: "Update failed", description: e.message, variant: "destructive" });
+    }
+  }
+
+  async function changeFinishingField(
+    finishingId: string,
+    patch: { category?: string; pricing_basis?: string },
+  ) {
+    try {
+      await patchFinishing.mutateAsync({ id: finishingId, patch });
+    } catch (e: any) {
+      toast({ title: "Update failed", description: e.message, variant: "destructive" });
+    }
+  }
+
   function openAdd() {
     setAdding({ finishing_id: "", size_code: "any", sell: "0.00", cost: "0.00" });
   }
@@ -617,8 +668,10 @@ function CatalogFinishingPricing({ scopeArgs }: { scopeArgs: { scope: CatalogSco
       <div className="flex items-center justify-between mb-3">
         <p className="text-xs text-muted-foreground">
           One row per (finishing item × size). Use <strong>Any size</strong> for
-          items priced the same regardless of paper size. Edit category, pricing
-          basis or variant in <strong>Master Catalogue → Finishing</strong>.
+          items priced the same regardless of paper size.{" "}
+          {canEdit
+            ? "Click any field to edit it inline."
+            : "Item, category, basis and size cascade from master — edit them at the master scope."}
         </p>
         <Button size="sm" onClick={openAdd}>
           <Plus className="h-3.5 w-3.5 mr-1.5" /> Add price
@@ -645,14 +698,94 @@ function CatalogFinishingPricing({ scopeArgs }: { scopeArgs: { scope: CatalogSco
               draft[row.id]?.cost ?? ((row.cost_price_minor ?? 0) / 100).toFixed(2);
             return (
               <TableRow key={row.id}>
-                <TableCell className="text-sm">{row.item?.label}</TableCell>
-                <TableCell className="text-xs capitalize">{row.item?.category ?? "—"}</TableCell>
-                <TableCell>
-                  <Badge variant="secondary" className="text-[10px]">
-                    {(row.item?.pricing_basis ?? "per_unit").replace("_", " ")}
-                  </Badge>
+                <TableCell className="text-sm">
+                  {canEdit ? (
+                    <Select
+                      value={row.finishing_id}
+                      onValueChange={(v) => changeItem(row, v)}
+                    >
+                      <SelectTrigger className="h-8 w-[180px] text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {items.map((i) => (
+                          <SelectItem key={i.id} value={i.id}>{i.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    row.item?.label
+                  )}
                 </TableCell>
-                <TableCell>{row.size?.label ?? row.size_code ?? "Any"}</TableCell>
+                <TableCell className="text-xs capitalize">
+                  {canEdit && row.item ? (
+                    <Select
+                      value={row.item.category ?? ""}
+                      onValueChange={(v) => changeFinishingField(row.finishing_id, { category: v })}
+                    >
+                      <SelectTrigger className="h-8 w-[150px] text-xs capitalize">
+                        <SelectValue placeholder="—" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CATEGORY_OPTIONS.map((c) => (
+                          <SelectItem key={c} value={c} className="capitalize">
+                            {c.replace("_", " ")}
+                          </SelectItem>
+                        ))}
+                        {row.item.category && !CATEGORY_OPTIONS.includes(row.item.category) && (
+                          <SelectItem value={row.item.category} className="capitalize">
+                            {row.item.category.replace("_", " ")}
+                          </SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    row.item?.category ?? "—"
+                  )}
+                </TableCell>
+                <TableCell>
+                  {canEdit && row.item ? (
+                    <Select
+                      value={row.item.pricing_basis ?? "per_unit"}
+                      onValueChange={(v) => changeFinishingField(row.finishing_id, { pricing_basis: v })}
+                    >
+                      <SelectTrigger className="h-8 w-[120px] text-xs capitalize">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {BASIS_OPTIONS.map((b) => (
+                          <SelectItem key={b} value={b} className="capitalize">
+                            {b.replace("_", " ")}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Badge variant="secondary" className="text-[10px]">
+                      {(row.item?.pricing_basis ?? "per_unit").replace("_", " ")}
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {canEdit ? (
+                    <Select
+                      value={row.size_code ?? "any"}
+                      onValueChange={(v) => changeSize(row, v)}
+                    >
+                      <SelectTrigger className="h-8 w-[120px] text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="any">Any</SelectItem>
+                        {sizes.map((s) => (
+                          <SelectItem key={s.code} value={s.code}>{s.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    row.size?.label ?? row.size_code ?? "Any"
+                  )}
+                </TableCell>
                 <TableCell>
                   <Input
                     type="number"
