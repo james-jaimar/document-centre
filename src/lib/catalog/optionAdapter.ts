@@ -127,7 +127,9 @@ export function enrichFinishingValuesFromMaster(
     );
     if (!code) continue;
     const master = byCode.get(code);
-    if (!master || !master.is_active) continue;
+    // Product-level Enabled is authoritative for customer visibility.
+    // Only drop if the master row was deleted from the catalogue entirely.
+    if (!master) continue;
 
     const meta: Record<string, any> = {
       ...(v.metadata ?? {}),

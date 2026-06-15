@@ -68,14 +68,16 @@ export function useCatalogBackedOptions(
     },
   });
 
+  // NOTE: do NOT filter by is_active here. Product-level Enabled toggles are
+  // authoritative for customer visibility; we still need to find master rows
+  // that are globally inactive so we can enrich product-enabled values.
   const finishingQ = useQuery({
-    queryKey: ["catalog_finishing", "master", "active"],
+    queryKey: ["catalog_finishing", "master", "all"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("catalog_finishing" as any)
         .select("*")
-        .eq("scope_type", "master")
-        .eq("is_active", true);
+        .eq("scope_type", "master");
       if (error) throw error;
       return (data ?? []) as any[];
     },
