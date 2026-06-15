@@ -84,6 +84,7 @@ export function useCatalogBackedOptions(
     const resolvedRows = resolved.data ?? [];
     const masterPapers = papersQ.data ?? [];
     const masterSizes = sizesQ.data ?? [];
+    const masterFinishing = finishingQ.data ?? [];
 
     if (opts.length === 0) return opts;
 
@@ -107,6 +108,28 @@ export function useCatalogBackedOptions(
 
     return opts.map((opt) => {
       const name = opt.name ?? "";
+      const source = (opt as any).source as string | undefined;
+      const sourceFilter = (opt as any).source_filter as
+        | { category?: string }
+        | null
+        | undefined;
+
+      // FINISHING (binding, lamination, …) — overlays catalog values + metadata
+      // so the customer flip-book preview can read binding_method/color/size_mm
+      // off the selected value (same shape legacy manual values used).
+      const finishingCategory =
+        source === "catalog.finishing"
+          ? sourceFilter?.category ?? null
+          : inferFinishingCategoryFromName(name);
+      if (finishingCategory && masterFinishing.length > 0) {
+        const next = finishingRowsToValues(masterFinishing, finishingCategory);
+        if (next.length > 0) {
+          return {
+            ...opt,
+            values: preserveDefault(opt.values, next) as any,
+          };
+        }
+      }
 
       // PAPER STOCK
       if (isPaperStockOptionName(name)) {
@@ -143,7 +166,7 @@ export function useCatalogBackedOptions(
 
       return opt;
     });
-  }, [legacy.data, resolved.data, papersQ.data, sizesQ.data]);
+  }, [legacy.data, resolved.data, papersQ.data, sizesQ.data, finishingQ.data]);
 
   return {
     data,
@@ -151,8 +174,14 @@ export function useCatalogBackedOptions(
       legacy.isLoading ||
       resolved.isLoading ||
       papersQ.isLoading ||
-      sizesQ.isLoading,
-    error: legacy.error ?? resolved.error ?? papersQ.error ?? sizesQ.error,
+      sizesQ.isLoading ||
+      finishingQ.isLoading,
+    error:
+      legacy.error ??
+      resolved.error ??
+      papersQ.error ??
+      sizesQ.error ??
+      finishingQ.error,
   };
 }
 
