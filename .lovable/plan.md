@@ -1,95 +1,98 @@
-## Goal
+## Problem
 
-Collapse the three confusing tabs (Catalogue / Options / Recipe) down to two — **Catalogue** and **Options** — with **Options** as the single place an admin configures what a customer sees. All option values come from Master Catalogue + Master Pricing. Nothing hard-coded.
+The customer flip-book preview reads visual metadata directly off the selected option value:
 
-## What's wrong today
+- `selectedBindingArt` → `metadata.binding_method` + `metadata.color` → which spine PNG to draw
+- `inferPreviewType` → `metadata.binding_method` → which preview engine to launch
+- `calculatePrice` / `useBindingSpecifications` → `metadata.binding_method` + `size_mm` → sheet caps & pricing
 
-- **Options tab** shows hard-coded values entered in the Edit Option dialog (A4, A5, US Letter…). It does not read Master Catalogue or Master Pricing.
-- **Recipe tab** is what I built to wire papers/finishing/engine to Master Pricing — but conceptually that's the same job as Options. Two screens, one job.
-- **Catalogue tab** links the family to master sizes/print-attrs (this part is fine).
+When Binding (or any visual finishing) was a **manual** option, those metadata keys were hand-authored in `productOptionValues.ts` (e.g. `{ binding_method: "spiral", color: "Black", size_mm: 10 }`).
 
-Result: admins edit the same concept in three places, and the customer-facing picker still reads the hard-coded Options values.
+Now that Binding is sourced from **Master Catalogue → Finishing**, the mirror builder in `ProductOptionsEditor` only copies `category` + `catalog_code`. `catalog_finishing` rows have empty `metadata` JSONB, so the preview can no longer figure out the method, size or colour. Result: spine artwork disappears, preview engine falls back to "loose sheets", and binding capacity validation breaks.
 
-## Target shape
+The same gap exists for any finishing category the preview cares about (lamination, cover stocks, edges).
 
-```text
-Product Family
-├── Catalogue tab   → which master items (sizes, print attrs) this family uses
-└── Options tab     → ordered list of option groups the customer sees
-                        each group:
-                          • name (e.g. "Document Size", "Paper Stock", "Binding")
-                          • source: catalog.sizes | catalog.papers | catalog.finishing[:category] | manual
-                          • required / sort
-                          • per-value: enabled, default, price override
-                        values are READ-ONLY mirrors of master data, never typed in
+## Fix
+
+Carry the visual/structural metadata from `catalog_finishing` into the option values that the preview consumes.
+
+### 1. Schema — enrich `catalog_finishing`
+
+Add nullable structured columns (admin-editable in the Master Catalogue → Finishing editor, used only by Binding-category rows today, available for future use elsewhere):
+
+| Column           | Type   | Purpose                                                                |
+| ---------------- | ------ | ---------------------------------------------------------------------- |
+| `binding_method` | text   | `comb`, `spiral`, `twin_loop`, `ring_binder`, `saddle_stitch`, `perfect` |
+| `color`          | text   | `Black`, `White`, `Silver`, `Clear`, …                                 |
+| `size_mm`        | int    | spine diameter in mm                                                   |
+| `max_sheets`     | int    | optional override for `binding_specifications` lookup                  |
+
+Back-fill in the migration by parsing existing codes (`spiral-10mm` → spiral / 10mm / Black default; `wire-*` → twin_loop; `comb-*` → comb; `ring-binder-*` → ring_binder). The seed numbers in `productOptionValues.ts` are the source of truth for the back-fill values.
+
+### 2. Mirror builder — copy metadata into option values
+
+In `ProductOptionsEditor.refreshCatalogMirror`'s `catalog.finishing` branch, extend the `extraMeta` object so the structured option value receives:
+
+```ts
+{
+  category: cat,
+  binding_method: f.binding_method,
+  color: f.color,
+  size_mm: f.size_mm,
+  max_sheets: f.max_sheets,
+}
 ```
 
-Recipe tab is deleted. Its three responsibilities move into Options:
+Filter out `null` keys so non-binding finishing rows stay clean.
 
-| Recipe today                | New home                                                    |
-| --------------------------- | ----------------------------------------------------------- |
-| Pricing engine selector     | Family-level setting on the family form (not per-option)    |
-| Available papers + default  | A "Paper Stock" option group, source = `catalog.papers`     |
-| Finishing items + required  | One option group per finishing category, source = `catalog.finishing:<category>` |
+### 3. Live overlay for customers — add finishing to `useCatalogBackedOptions`
 
-## Plan
+Today the hook overlays only Paper Stock and Document Size from the master catalogue. Add a third branch keyed off option `source === "catalog.finishing"` (or fall back to name match for "Binding"/"Cover Lamination") that:
 
-### 1. Schema additions (one migration)
+1. Loads `catalog_finishing` once.
+2. Builds `StructuredOptionValue[]` via a new `finishingRowsToValues(rows, category)` adapter in `src/lib/catalog/optionAdapter.ts`, projecting the same metadata fields.
+3. Overlays only when the master catalogue has rows for that category — otherwise keeps existing values (so legacy manual Binding rows still work until migrated).
 
-Add to `product_options`:
+This means a new catalog finishing row immediately appears in the customer picker without re-editing the product.
 
-- `source` text — `manual` (default, legacy) | `catalog.sizes` | `catalog.papers` | `catalog.finishing`
-- `source_filter` jsonb — e.g. `{ "category": "lamination" }` for finishing groups; `null` otherwise
+### 4. Audit each product family
 
-Add to `product_families`:
+For every family currently in `product_options`, decide which options should be catalog-sourced and update them in the admin once the schema lands:
 
-- `pricing_engine` text — `click_charges` (default) | `photo_prints`
+| Family            | Options to switch to catalog                          |
+| ----------------- | ----------------------------------------------------- |
+| Bound Documents   | Binding, Cover Lamination, (Cover Stock already cat.) |
+| Brochures         | Cover Lamination, Fold (manual stays)                 |
+| Booklets          | Binding (saddle stitch), Cover Lamination             |
+| Loose Sheets      | (none — no binding, lamination optional)              |
+| Photo Prints      | (uses rate-card path, unaffected)                     |
 
-Both nullable / defaulted so nothing breaks.
+We do this as a one-off pass after step 3 is live; the editor already supports it.
 
-### 2. Rewrite `ProductOptionsEditor.tsx`
+### 5. Tests
 
-- New "Source" dropdown at the top of the Edit Option dialog: Manual / Document Size / Paper Stock / Finishing (with category sub-picker).
-- When source ≠ Manual:
-  - Values list becomes a **read-only mirror** of the chosen catalog, fetched live. Each row shows label + code from master and exposes only three controls: **Enabled**, **Default**, **Price override** (optional, falls back to master pricing).
-  - "Add value" / label / slug / metadata editors are hidden — those live in Master Catalogue / Master Pricing.
-  - A small "Edit in Master Catalogue →" link jumps to the right master screen.
-- Manual mode keeps today's free-form editor (for the rare hand-curated option).
-- The Options list view shows a `Source` badge per option so it's obvious where values come from.
+Add unit tests for:
 
-### 3. Delete Recipe
+- `finishingRowsToValues` — projection of method/color/size into value metadata.
+- `selectedBindingArt` — picks correct spine when option came from catalog (uses a catalog-mirrored value).
+- `inferPreviewType` — chooses bound-preview when `binding_method` arrives via catalog.
+- Migration back-fill — every existing binding row ends up with non-null `binding_method`.
 
-- Remove the Recipe tab from `AdminProducts.tsx` (and `PlatformProducts.tsx` re-export).
-- Delete `src/components/admin/ProductRecipeTab.tsx`, `src/hooks/useProductRecipe.ts`, `src/lib/seedDefaultRecipes.ts`, the "Seed Default Recipes" button.
-- Migration: for each existing `product_recipes` row, create equivalent catalog-backed option groups on the family (Paper Stock + one Finishing group per category) and set `families.pricing_engine`. Then drop the `product_recipes` table.
+## Files
 
-### 4. Make the customer picker actually read from master
-
-- `useCatalogBackedOptions` already does the overlay; tighten it so that when an option has `source = catalog.*` it **replaces** values from master (not "overlays if names match"), and applies the per-family enabled/default/price-override layer.
-- `calculatePrice.ts` keeps the existing master-pricing lookup path; remove the legacy `product_options.price_impact` fallback for catalog-sourced groups.
-
-### 5. Cleanup
-
-- Remove the per-value "Standard Sizes / International Sizes" group editor for size options — that grouping comes from `catalog_sizes.region` now.
-- Keep `product_options` table (it's now the spine); just most rows hold a `source` pointer + a thin overrides layer instead of duplicated value data.
+```text
+supabase/migrations/<new>.sql                  # add columns + back-fill
+src/integrations/supabase/types.ts              # regen
+src/lib/catalog/optionAdapter.ts                # + finishingRowsToValues
+src/hooks/useCatalogBackedOptions.ts            # overlay finishing
+src/components/admin/ProductOptionsEditor.tsx   # copy metadata in mirror
+src/components/pricing/MasterCatalogPricingEditor.tsx  # expose new fields for binding rows
+src/lib/catalog/optionAdapter.test.ts           # new
+src/lib/orders/selectedBindingArt.test.ts       # new
+```
 
 ## Out of scope
 
-- Tenant/branch override editors (`MasterCatalogPricingEditor` already covers those).
-- Pricing engine changes beyond moving the selector.
-
-## Files touched
-
-- migration: `product_options.source`, `product_options.source_filter`, `product_families.pricing_engine`, drop `product_recipes`
-- `src/components/admin/ProductOptionsEditor.tsx` — rewrite editor
-- `src/pages/admin/AdminProducts.tsx` — remove Recipe tab + seed button
-- delete: `ProductRecipeTab.tsx`, `useProductRecipe.ts`, `seedDefaultRecipes.ts`
-- `src/hooks/useCatalogBackedOptions.ts` — replace-mode for catalog-sourced groups
-- `src/lib/calculatePrice.ts` — drop legacy fallback for catalog groups
-
-## Verify
-
-- Master Pricing → add a paper → it appears immediately in Bound Documents → Options → "Paper Stock" without any per-family edit.
-- Toggle a size off in Catalogue tab → disappears from customer picker.
-- Override one paper's price on the family → customer sees the override; everyone else sees master.
-- Customer configurator on `/t/:slug/...` renders only catalog-sourced options; no hard-coded A4/US Letter values remain.
+- Re-modelling lamination/cover-stock preview effects (current behaviour preserved).
+- Changing the spine PNG asset library — `bindingAssets.ts` is unchanged.
+- Pricing engine internals — once `binding_method` flows through, `calculatePrice` works as before.
