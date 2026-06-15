@@ -408,21 +408,19 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       source: src,
       finishingCategory: cat,
     });
-    const vals = opt.values;
-    const parsed: StructuredOptionValue[] = isStructuredValues(vals)
-      ? (vals as StructuredOptionValue[])
-      : Array.isArray(vals)
-      ? (vals as string[]).map((v) => ({
-          ...emptyValue,
-          label: String(v),
-          slug: slugify(String(v)),
-        }))
+    const parsed = parseOptionValues(opt.values);
+    const manualParsed = parseOptionValues((opt as any).manual_values);
+    const manualSnapshot = manualParsed.length > 0
+      ? manualParsed
+      : src === "manual" && !looksLikeCatalogMirror(parsed)
+      ? parsed
       : [];
-    setEditValues(parsed);
-    // Seed the manual snapshot: if currently manual, these ARE manual values.
-    // If currently catalog, we don't know prior manual values — start empty so
-    // toggling to manual gives a blank slate rather than the catalog mirror.
-    manualValuesRef.current = src === "manual" ? parsed : [];
+
+    setEditValues(src === "manual" && parsed.length === 0 ? manualSnapshot : parsed);
+    // Seed the manual snapshot from the persistent backup. If an older row has
+    // no backup yet, only trust the current values when the option is manual
+    // and they do not look like a catalogue mirror.
+    manualValuesRef.current = manualSnapshot;
     prevSourceRef.current = src;
     setOptionDialogOpen(true);
   }
@@ -454,10 +452,17 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       return;
     }
     try {
+      const nextManualValues = optionForm.source === "manual"
+        ? editValues
+        : manualValuesRef.current;
+      const safeManualValues = looksLikeCatalogMirror(nextManualValues)
+        ? []
+        : nextManualValues;
       const payload: any = {
         name: optionForm.name,
         option_type: optionForm.option_type,
         values: editValues as unknown as Json,
+        manual_values: safeManualValues as unknown as Json,
         is_required: optionForm.is_required,
         sort_order: optionForm.sort_order,
         source: optionForm.source,
