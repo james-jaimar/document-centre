@@ -132,15 +132,11 @@ const AdminProducts = () => {
               Binding Artwork Audit
             </Link>
           </Button>
-          <Button variant="outline" onClick={handleSeedAllProducts} disabled={seedingAll || seeding || seedingRecipes}>
+          <Button variant="outline" onClick={handleSeedAllProducts} disabled={seedingAll || seeding}>
             <Sparkles className="h-4 w-4 mr-2" />
             {seedingAll ? "Seeding All…" : "Seed All Products"}
           </Button>
-          <Button variant="outline" onClick={handleSeedRecipes} disabled={seedingRecipes || seeding || seedingAll}>
-            <Sparkles className="h-4 w-4 mr-2" />
-            {seedingRecipes ? "Seeding…" : "Seed Default Recipes"}
-          </Button>
-          <Button variant="outline" onClick={handleSeedBoundDocument} disabled={seeding || seedingAll || seedingRecipes}>
+          <Button variant="outline" onClick={handleSeedBoundDocument} disabled={seeding || seedingAll}>
             <Sparkles className="h-4 w-4 mr-2" />
             {seeding ? "Seeding…" : "Seed Bound Document"}
           </Button>
