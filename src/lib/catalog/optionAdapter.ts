@@ -39,6 +39,74 @@ type CatalogSizeRow = {
   sort_order: number | null;
 };
 
+export type CatalogFinishingRow = {
+  id: string;
+  code: string;
+  label: string;
+  category: string | null;
+  pricing_basis: string | null;
+  is_active: boolean;
+  sort_order?: number | null;
+  binding_method?: string | null;
+  color?: string | null;
+  size_mm?: number | null;
+  max_sheets?: number | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+/**
+ * Project master catalog_finishing rows into structured option values for a
+ * given category (e.g. "binding", "lamination"). Carries through visual /
+ * structural metadata (binding_method, color, size_mm, max_sheets) so the
+ * customer flip-book preview and pricing engine can read them off the
+ * selected value — same shape that hand-authored manual values used.
+ */
+export function finishingRowsToValues(
+  rows: CatalogFinishingRow[],
+  category: string,
+): StructuredOptionValue[] {
+  const filtered = rows
+    .filter((r) => r.is_active)
+    .filter((r) => (r.category ?? "") === category)
+    .sort(
+      (a, b) =>
+        (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+        (a.size_mm ?? 0) - (b.size_mm ?? 0) ||
+        a.label.localeCompare(b.label),
+    );
+
+  return filtered.map((r, i) => {
+    const meta: Record<string, string | number | boolean> = {
+      catalog_code: r.code,
+      category,
+    };
+    if (r.binding_method) meta.binding_method = r.binding_method;
+    if (r.color) meta.color = r.color;
+    if (r.size_mm != null) meta.size_mm = r.size_mm;
+    if (r.max_sheets != null) meta.max_sheets = r.max_sheets;
+
+    return {
+      label: r.label,
+      slug: r.code,
+      group: r.binding_method
+        ? capitaliseMethod(r.binding_method)
+        : capitalise(category),
+      price_impact: 0, // priced via catalog_finishing_prices
+      price_type: "per_document",
+      is_default: i === 0,
+      is_active: true,
+      metadata: meta,
+    };
+  });
+}
+
+function capitaliseMethod(m: string): string {
+  return m
+    .split("_")
+    .map((s) => (s.length ? s[0].toUpperCase() + s.slice(1) : s))
+    .join(" ");
+}
+
 /** Project master catalog_papers rows into structured option values. */
 export function paperRowsToValues(
   papers: CatalogPaperRow[],
@@ -174,4 +242,19 @@ export function isSizeOptionName(name: string): boolean {
     n === "print size" ||
     n === "finished size"
   );
+}
+
+/**
+ * Map a legacy option name to a master-catalog finishing category, so that
+ * options created before the catalog source existed still get overlaid.
+ * Returns null when the name doesn't map to any finishing category.
+ */
+export function inferFinishingCategoryFromName(name: string): string | null {
+  const n = name.trim().toLowerCase();
+  if (n === "binding") return "binding";
+  if (n === "cover lamination" || n === "lamination") return "lamination";
+  if (n === "edge painting" || n === "edges") return "edges";
+  if (n === "corner rounding" || n === "corners") return "corners";
+  if (n === "drilling" || n === "hole punch") return "drilling";
+  return null;
 }

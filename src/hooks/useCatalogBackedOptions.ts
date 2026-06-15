@@ -12,9 +12,11 @@ import {
   resolvedRowsToSizeValues,
   paperRowsToValues,
   sizeRowsToValues,
+  finishingRowsToValues,
   isPaperStockOptionName,
   isCoverPaperOptionName,
   isSizeOptionName,
+  inferFinishingCategoryFromName,
 } from "@/lib/catalog/optionAdapter";
 
 /**
@@ -64,11 +66,25 @@ export function useCatalogBackedOptions(
     },
   });
 
+  const finishingQ = useQuery({
+    queryKey: ["catalog_finishing", "master", "active"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("catalog_finishing" as any)
+        .select("*")
+        .eq("scope_type", "master")
+        .eq("is_active", true);
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+
   const data = useMemo(() => {
     const opts = legacy.data ?? [];
     const resolvedRows = resolved.data ?? [];
     const masterPapers = papersQ.data ?? [];
     const masterSizes = sizesQ.data ?? [];
+    const masterFinishing = finishingQ.data ?? [];
 
     if (opts.length === 0) return opts;
 
@@ -92,6 +108,28 @@ export function useCatalogBackedOptions(
 
     return opts.map((opt) => {
       const name = opt.name ?? "";
+      const source = (opt as any).source as string | undefined;
+      const sourceFilter = (opt as any).source_filter as
+        | { category?: string }
+        | null
+        | undefined;
+
+      // FINISHING (binding, lamination, …) — overlays catalog values + metadata
+      // so the customer flip-book preview can read binding_method/color/size_mm
+      // off the selected value (same shape legacy manual values used).
+      const finishingCategory =
+        source === "catalog.finishing"
+          ? sourceFilter?.category ?? null
+          : inferFinishingCategoryFromName(name);
+      if (finishingCategory && masterFinishing.length > 0) {
+        const next = finishingRowsToValues(masterFinishing, finishingCategory);
+        if (next.length > 0) {
+          return {
+            ...opt,
+            values: preserveDefault(opt.values, next) as any,
+          };
+        }
+      }
 
       // PAPER STOCK
       if (isPaperStockOptionName(name)) {
@@ -128,7 +166,7 @@ export function useCatalogBackedOptions(
 
       return opt;
     });
-  }, [legacy.data, resolved.data, papersQ.data, sizesQ.data]);
+  }, [legacy.data, resolved.data, papersQ.data, sizesQ.data, finishingQ.data]);
 
   return {
     data,
@@ -136,8 +174,14 @@ export function useCatalogBackedOptions(
       legacy.isLoading ||
       resolved.isLoading ||
       papersQ.isLoading ||
-      sizesQ.isLoading,
-    error: legacy.error ?? resolved.error ?? papersQ.error ?? sizesQ.error,
+      sizesQ.isLoading ||
+      finishingQ.isLoading,
+    error:
+      legacy.error ??
+      resolved.error ??
+      papersQ.error ??
+      sizesQ.error ??
+      finishingQ.error,
   };
 }
 
