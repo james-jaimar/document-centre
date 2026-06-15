@@ -314,9 +314,14 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       if (!cat) return [];
       return (catFinishing as any[])
         .filter((f) => f.category === cat)
-        .map((f) =>
-          make(f.code, f.label ?? f.code, cat, "per_document", { category: cat }),
-        );
+        .map((f) => {
+          const extra: Record<string, any> = { category: cat };
+          if (f.binding_method) extra.binding_method = f.binding_method;
+          if (f.color) extra.color = f.color;
+          if (f.size_mm != null) extra.size_mm = f.size_mm;
+          if (f.max_sheets != null) extra.max_sheets = f.max_sheets;
+          return make(f.code, f.label ?? f.code, cat, "per_document", extra);
+        });
     }
     return existing;
   }
