@@ -1,33 +1,27 @@
-I found the likely failure point: the customer hook now respects `source`, but when admin switches an option from catalogue back to manual, the saved manual `values` are still the catalogue mirror rows. That means the customer is correctly reading `product_options`, but `product_options.values` itself has been overwritten by the catalogue list.
+## Plan
 
-Plan:
+1. **Restore the lost manual Covers list**
+   - Repair the current Bound Documents → Covers row so `source = manual` contains the original manual values again: No Cover, clear/matte/frosted front cover combinations, card-stock covers, and printed cover variants.
+   - Keep the preview metadata on every restored value so the customer preview can still render clear/matte/frosted/card/printed covers correctly.
 
-1. Preserve separate manual values in the admin editor
-- Add local tracking in `ProductOptionsEditor` for the last known manual value list while editing.
-- When Source changes to `manual`, restore those manual values instead of leaving the current catalogue mirror in `editValues`.
-- When Source changes to `catalog.*`, build the catalogue mirror for display/toggles, but do not destroy the remembered manual list in the dialog.
+2. **Stop manual values being overwritten again**
+   - Add a persistent `manual_values` backup field to `product_options` (JSONB), so the admin can switch between `manual` and `catalog.*` without losing the hand-curated manual list.
+   - When switching manual → catalog, save/retain the manual list in `manual_values` and show the catalog mirror separately.
+   - When switching catalog → manual, restore from `manual_values` instead of showing a blank list or catalog rows.
 
-2. Make catalogue save explicit and source-driven
-- On save:
-  - `source = manual` saves the manual values only.
-  - `source = catalog.finishing` saves the catalogue mirror rows for the selected category only.
-  - No name-based or stale mirror data should be saved when manual is selected.
+3. **Update the admin product option editor**
+   - Load `manual_values` when opening an option currently set to catalog.
+   - On save:
+     - `manual`: save restored/manual `values`, keep `manual_values` in sync.
+     - `catalog.finishing`: save the catalog mirror in `values`, but preserve the manual list in `manual_values`.
+   - Add defensive logic so a catalog mirror is never treated as the manual backup.
 
-3. Keep preview metadata wired for catalogue rows
-- Reuse the existing cover/binding preview metadata mapper for admin-built catalogue mirrors too, not only the customer-side enrichment.
-- This ensures saved catalogue rows contain `front`, `back`, `binding_method`, `size_mm`, etc. directly in `product_options.values`.
+4. **Keep the customer configurator source-driven**
+   - Leave customer reads strictly based on `product_options.source`.
+   - `manual` uses saved `values`.
+   - `catalog.finishing` uses saved product-enabled catalog rows plus master metadata.
 
-4. Add a data repair migration for the current broken Bound Documents Covers row
-- Current DB state shows Bound Documents → Covers is `source: manual`, but its values are catalogue rows (`acetate-cover`, `frosted-pvc-cover`, etc.).
-- Restore the manual Bound Documents cover options to the seeded manual set (`No Cover`, clear/matte/frosted front + card backs, white card, printed covers) so manual mode actually has manual values again.
-
-5. Customer configurator remains strictly product-option driven
-- Keep `useCatalogBackedOptions` behaviour:
-  - manual: read saved `product_options.values` exactly
-  - catalogue: enrich saved product catalogue rows using the master catalogue
-- Make any small fixes needed so disabled catalogue values are filtered according to product options, not master catalogue defaults.
-
-6. Verify
-- Query Supabase after changes to confirm Bound Documents Covers manual values are restored.
-- Confirm toggling source in admin saves `source` and `values` consistently.
-- Confirm customer view changes based on the saved product option source and selecting Frosted changes preview metadata.
+5. **Validate with database reads**
+   - Confirm Bound Documents → Covers has restored manual values after repair.
+   - Confirm toggling source no longer destroys the manual list.
+   - Confirm catalog mode still displays the catalog list with cover preview metadata.
