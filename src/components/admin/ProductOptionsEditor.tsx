@@ -1,34 +1,90 @@
-import { useState } from "react";
-import { useProductOptions, useCreateProductOption, useUpdateProductOption, useDeleteProductOption } from "@/hooks/useProductOptions";
+import { useEffect, useMemo, useState } from "react";
+import {
+  useProductOptions,
+  useCreateProductOption,
+  useUpdateProductOption,
+  useDeleteProductOption,
+} from "@/hooks/useProductOptions";
 import type { ProductOption } from "@/hooks/useProductOptions";
+import {
+  useCatalogSizes,
+  useCatalogPapers,
+  useCatalogFinishing,
+} from "@/hooks/useCatalog";
 import type { StructuredOptionValue } from "@/lib/productOptionTypes";
-import { isStructuredValues, slugify, groupOptionValues, isValueActive } from "@/lib/productOptionTypes";
+import {
+  isStructuredValues,
+  slugify,
+  groupOptionValues,
+  isValueActive,
+} from "@/lib/productOptionTypes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Plus, Pencil, Trash2, X, ChevronDown } from "lucide-react";
+import { Plus, Pencil, Trash2, X, ChevronDown, ExternalLink } from "lucide-react";
+import { Link } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { Json } from "@/integrations/supabase/types";
 
 const OPTION_TYPES = ["select", "radio", "checkbox", "number", "text"];
 const PRICE_TYPES = ["fixed", "per_document", "per_page"] as const;
 
+type OptionSource =
+  | "manual"
+  | "catalog.sizes"
+  | "catalog.papers"
+  | "catalog.finishing";
+
+const SOURCE_OPTIONS: { value: OptionSource; label: string; description: string }[] = [
+  { value: "manual", label: "Manual (custom)", description: "You type the values by hand" },
+  { value: "catalog.sizes", label: "Document Size (Master Catalogue)", description: "Pulled live from Master Catalogue → Sizes" },
+  { value: "catalog.papers", label: "Paper Stock (Master Catalogue)", description: "Pulled live from Master Catalogue → Papers" },
+  { value: "catalog.finishing", label: "Finishing (Master Catalogue)", description: "Pulled live from Master Catalogue → Finishing (pick a category)" },
+];
+
+const MASTER_LINKS: Record<OptionSource, string | null> = {
+  manual: null,
+  "catalog.sizes": "/admin/master-catalogue",
+  "catalog.papers": "/admin/master-pricing",
+  "catalog.finishing": "/admin/master-pricing",
+};
+
 interface Props {
   productFamilyId: string;
 }
 
-// ─── Option-level form (name, type, required, sort) ─────────────────
 interface OptionFormData {
   name: string;
   option_type: string;
   is_required: boolean;
   sort_order: number;
+  source: OptionSource;
+  finishingCategory: string;
 }
 
 const emptyOptionForm: OptionFormData = {
@@ -36,24 +92,14 @@ const emptyOptionForm: OptionFormData = {
   option_type: "select",
   is_required: false,
   sort_order: 0,
+  source: "manual",
+  finishingCategory: "",
 };
 
-// ─── Structured value form ──────────────────────────────────────────
-interface ValueFormData {
-  label: string;
-  slug: string;
-  group: string;
-  price_impact: number;
-  price_type: "fixed" | "per_document" | "per_page";
-  is_default: boolean;
-  is_active: boolean;
-  metadata: Record<string, string | number | boolean>;
-}
-
-const emptyValueForm: ValueFormData = {
+const emptyValue: StructuredOptionValue = {
   label: "",
   slug: "",
-  group: "",
+  group: "Default",
   price_impact: 0,
   price_type: "per_document",
   is_default: false,
@@ -61,8 +107,8 @@ const emptyValueForm: ValueFormData = {
   metadata: {},
 };
 
-// ─── Value editor sub-component ─────────────────────────────────────
-function ValueEditorRow({
+/* ─── Manual value row (legacy editor) ────────────────────────────── */
+function ManualValueRow({
   value,
   onUpdate,
   onRemove,
@@ -73,139 +119,116 @@ function ValueEditorRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const active = isValueActive(value);
-
   return (
-    <div className={`border rounded-md p-2 space-y-2 bg-background transition-opacity ${active ? "" : "opacity-60"}`}>
+    <div className={`border rounded-md p-2 space-y-2 bg-background ${active ? "" : "opacity-60"}`}>
       <div className="grid grid-cols-12 gap-2 items-center min-w-0">
-        <div className="col-span-12 md:col-span-4 flex items-center gap-2 min-w-0">
+        <div className="col-span-12 md:col-span-4">
           <Input
-            className="h-8 text-sm flex-1 min-w-0"
+            className="h-8 text-sm"
             value={value.label}
             onChange={(e) => onUpdate({ ...value, label: e.target.value, slug: slugify(e.target.value) })}
             placeholder="Label"
           />
-          {!active && (
-            <Badge variant="outline" className="text-[10px] uppercase shrink-0">Hidden</Badge>
-          )}
         </div>
-        <div className="col-span-6 md:col-span-2 min-w-0">
+        <div className="col-span-6 md:col-span-2">
           <Input
-            className="h-8 text-xs font-mono w-full"
+            className="h-8 text-xs font-mono"
             value={value.group}
             onChange={(e) => onUpdate({ ...value, group: e.target.value })}
             placeholder="Group"
           />
         </div>
-        <div className="col-span-6 md:col-span-3 grid grid-cols-5 gap-1 min-w-0">
+        <div className="col-span-6 md:col-span-3 grid grid-cols-5 gap-1">
           <Input
-            className="h-8 text-sm col-span-2 min-w-0"
+            className="h-8 text-sm col-span-2"
             type="number"
             step="0.01"
             value={value.price_impact}
             onChange={(e) => onUpdate({ ...value, price_impact: parseFloat(e.target.value) || 0 })}
             placeholder="Price"
           />
-          <div className="col-span-3 min-w-0">
-            <Select value={value.price_type} onValueChange={(v) => onUpdate({ ...value, price_type: v as ValueFormData["price_type"] })}>
-              <SelectTrigger className="h-8 text-xs w-full">
-                <SelectValue />
-              </SelectTrigger>
+          <div className="col-span-3">
+            <Select value={value.price_type} onValueChange={(v) => onUpdate({ ...value, price_type: v as StructuredOptionValue["price_type"] })}>
+              <SelectTrigger className="h-8 text-xs w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {PRICE_TYPES.map((t) => (
-                  <SelectItem key={t} value={t}>{t.replace("_", "/")}</SelectItem>
-                ))}
+                {PRICE_TYPES.map((t) => <SelectItem key={t} value={t}>{t.replace("_", "/")}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
         </div>
         <div className="col-span-8 md:col-span-2 flex items-center gap-3">
-          <div className="flex items-center gap-1" title="Show this value to customers">
-            <Switch
-              checked={active}
-              onCheckedChange={(v) => onUpdate({ ...value, is_active: v })}
-            />
+          <div className="flex items-center gap-1">
+            <Switch checked={active} onCheckedChange={(v) => onUpdate({ ...value, is_active: v })} />
             <span className="text-xs text-muted-foreground">On</span>
           </div>
           <div className="flex items-center gap-1">
-            <Switch
-              checked={value.is_default}
-              onCheckedChange={(v) => onUpdate({ ...value, is_default: v })}
-            />
+            <Switch checked={value.is_default} onCheckedChange={(v) => onUpdate({ ...value, is_default: v })} />
             <span className="text-xs text-muted-foreground">Def</span>
           </div>
         </div>
-        <div className="col-span-4 md:col-span-1 flex items-center justify-end gap-1">
-          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setExpanded(!expanded)}>
-            <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`} />
-          </Button>
+        <div className="col-span-4 md:col-span-1 flex items-center justify-end">
           <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onRemove}>
             <X className="h-3 w-3 text-destructive" />
           </Button>
         </div>
       </div>
-      {expanded && (
-        <div className="pl-2 space-y-1 text-xs text-muted-foreground">
-          <p>Slug: <code className="font-mono">{value.slug}</code></p>
-          <MetadataEditor
-            metadata={value.metadata}
-            onChange={(m) => onUpdate({ ...value, metadata: m })}
-          />
-        </div>
-      )}
     </div>
   );
 }
 
-// ─── Metadata key-value editor ──────────────────────────────────────
-function MetadataEditor({
-  metadata,
-  onChange,
+/* ─── Catalog mirror row (read-only label + 3 controls) ───────────── */
+function CatalogValueRow({
+  catalogLabel,
+  catalogCode,
+  catalogSub,
+  value,
+  onUpdate,
 }: {
-  metadata: Record<string, string | number | boolean>;
-  onChange: (m: Record<string, string | number | boolean>) => void;
+  catalogLabel: string;
+  catalogCode: string;
+  catalogSub?: string;
+  value: StructuredOptionValue;
+  onUpdate: (v: StructuredOptionValue) => void;
 }) {
-  const [newKey, setNewKey] = useState("");
-  const [newVal, setNewVal] = useState("");
-
-  function addMeta() {
-    if (!newKey.trim()) return;
-    const parsed = newVal === "true" ? true : newVal === "false" ? false : isNaN(Number(newVal)) ? newVal : Number(newVal);
-    onChange({ ...metadata, [newKey.trim()]: parsed });
-    setNewKey("");
-    setNewVal("");
-  }
-
+  const active = isValueActive(value);
   return (
-    <div className="space-y-1">
-      <p className="font-semibold">Metadata:</p>
-      {Object.entries(metadata).map(([k, v]) => (
-        <div key={k} className="flex items-center gap-1">
-          <Badge variant="outline" className="text-xs">{k}: {String(v)}</Badge>
-          <button
-            className="hover:text-destructive"
-            onClick={() => {
-              const next = { ...metadata };
-              delete next[k];
-              onChange(next);
-            }}
-          >
-            <X className="h-3 w-3" />
-          </button>
+    <div className={`border rounded-md p-2 grid grid-cols-12 gap-2 items-center bg-background ${active ? "" : "opacity-60"}`}>
+      <div className="col-span-12 md:col-span-5 min-w-0">
+        <p className="text-sm font-medium truncate">{catalogLabel}</p>
+        <p className="text-xs text-muted-foreground font-mono truncate">
+          {catalogCode}{catalogSub ? ` · ${catalogSub}` : ""}
+        </p>
+      </div>
+      <div className="col-span-6 md:col-span-3">
+        <div className="flex items-center gap-1">
+          <Input
+            className="h-8 text-xs"
+            type="number"
+            step="0.01"
+            value={value.price_impact ?? 0}
+            onChange={(e) => onUpdate({ ...value, price_impact: parseFloat(e.target.value) || 0 })}
+            placeholder="Override price"
+          />
         </div>
-      ))}
-      <div className="flex gap-1">
-        <Input className="h-6 text-xs w-24" value={newKey} onChange={(e) => setNewKey(e.target.value)} placeholder="key" />
-        <Input className="h-6 text-xs w-24" value={newVal} onChange={(e) => setNewVal(e.target.value)} placeholder="value" />
-        <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={addMeta}>+</Button>
+        <p className="text-[10px] text-muted-foreground mt-0.5">Override (blank/0 = use Master Pricing)</p>
+      </div>
+      <div className="col-span-6 md:col-span-4 flex items-center justify-end gap-3">
+        <div className="flex items-center gap-1">
+          <Switch checked={active} onCheckedChange={(v) => onUpdate({ ...value, is_active: v })} />
+          <span className="text-xs text-muted-foreground">Enabled</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Switch checked={value.is_default} onCheckedChange={(v) => onUpdate({ ...value, is_default: v })} />
+          <span className="text-xs text-muted-foreground">Default</span>
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Grouped values preview ─────────────────────────────────────────
+/* ─── Grouped values preview for the list table ───────────────────── */
 function GroupedValuesPreview({ values }: { values: StructuredOptionValue[] }) {
   if (values.length === 0) return <span className="text-muted-foreground text-xs">No values</span>;
-
   const groups = groupOptionValues(values);
   return (
     <div className="flex flex-wrap gap-1">
@@ -222,20 +245,90 @@ function GroupedValuesPreview({ values }: { values: StructuredOptionValue[] }) {
   );
 }
 
-// ─── Main component ─────────────────────────────────────────────────
+/* ─── Main component ──────────────────────────────────────────────── */
 export default function ProductOptionsEditor({ productFamilyId }: Props) {
   const { data: options = [], isLoading } = useProductOptions(productFamilyId);
   const createOption = useCreateProductOption();
   const updateOption = useUpdateProductOption();
   const deleteOption = useDeleteProductOption();
 
-  // Option-level dialog
+  // Live catalog data (used when source ≠ manual)
+  const { data: catSizes = [] } = useCatalogSizes();
+  const { data: catPapers = [] } = useCatalogPapers();
+  const { data: catFinishing = [] } = useCatalogFinishing();
+
+  const finishingCategories = useMemo(
+    () => Array.from(new Set(catFinishing.map((f: any) => f.category))).sort(),
+    [catFinishing],
+  );
+
   const [optionDialogOpen, setOptionDialogOpen] = useState(false);
   const [editingOption, setEditingOption] = useState<ProductOption | null>(null);
   const [optionForm, setOptionForm] = useState<OptionFormData>(emptyOptionForm);
-
-  // Values being edited for current option
   const [editValues, setEditValues] = useState<StructuredOptionValue[]>([]);
+
+  /** Build the catalog mirror list whenever source/category changes (for unsaved edits). */
+  function refreshCatalogMirror(form: OptionFormData, existing: StructuredOptionValue[]) {
+    if (form.source === "manual") return existing;
+    const byCode = new Map(existing.map((v) => [String(v.metadata?.catalog_code ?? v.slug), v]));
+
+    const make = (
+      code: string,
+      label: string,
+      group: string,
+      priceType: StructuredOptionValue["price_type"],
+      extraMeta: Record<string, any> = {},
+    ): StructuredOptionValue => {
+      const prev = byCode.get(code);
+      return {
+        label,
+        slug: code,
+        group,
+        price_impact: prev?.price_impact ?? 0,
+        price_type: prev?.price_type ?? priceType,
+        is_default: prev?.is_default ?? false,
+        is_active: prev?.is_active ?? true,
+        metadata: { ...(prev?.metadata ?? {}), ...extraMeta, catalog_code: code },
+      };
+    };
+
+    if (form.source === "catalog.sizes") {
+      return (catSizes as any[]).map((s) =>
+        make(s.code, s.label ?? s.code, s.region ?? "Default", "per_document", {
+          iso: s.iso,
+          width_mm: s.width_mm,
+          height_mm: s.height_mm,
+        }),
+      );
+    }
+    if (form.source === "catalog.papers") {
+      return (catPapers as any[]).map((p) =>
+        make(p.code, p.label ?? p.code, p.weight_gsm ? `${p.weight_gsm}gsm` : "Default", "per_page", {
+          weight_gsm: p.weight_gsm,
+          finish: p.finish,
+          is_cover_stock: p.is_cover_stock,
+        }),
+      );
+    }
+    if (form.source === "catalog.finishing") {
+      const cat = form.finishingCategory;
+      if (!cat) return [];
+      return (catFinishing as any[])
+        .filter((f) => f.category === cat)
+        .map((f) =>
+          make(f.code, f.label ?? f.code, cat, "per_document", { category: cat }),
+        );
+    }
+    return existing;
+  }
+
+  // Keep mirror in sync when admin changes source/category mid-dialog
+  useEffect(() => {
+    if (!optionDialogOpen) return;
+    if (optionForm.source === "manual") return;
+    setEditValues((prev) => refreshCatalogMirror(optionForm, prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [optionForm.source, optionForm.finishingCategory, catSizes.length, catPapers.length, catFinishing.length, optionDialogOpen]);
 
   function openCreateOption() {
     setEditingOption(null);
@@ -246,40 +339,34 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
 
   function openEditOption(opt: ProductOption) {
     setEditingOption(opt);
+    const src = ((opt as any).source ?? "manual") as OptionSource;
+    const cat = (opt as any).source_filter?.category ?? "";
     setOptionForm({
       name: opt.name,
       option_type: opt.option_type,
       is_required: opt.is_required,
       sort_order: opt.sort_order,
+      source: src,
+      finishingCategory: cat,
     });
-    // Parse existing values
     const vals = opt.values;
-    if (isStructuredValues(vals)) {
-      setEditValues(vals);
-    } else if (Array.isArray(vals)) {
-      // Migrate flat strings to structured
-      setEditValues(
-        (vals as string[]).map((v) => ({
+    const parsed: StructuredOptionValue[] = isStructuredValues(vals)
+      ? (vals as StructuredOptionValue[])
+      : Array.isArray(vals)
+      ? (vals as string[]).map((v) => ({
+          ...emptyValue,
           label: String(v),
           slug: slugify(String(v)),
-          group: "Default",
-          price_impact: 0,
-          price_type: "per_document" as const,
-          is_default: false,
-          is_active: true,
-          metadata: {},
         }))
-      );
-    } else {
-      setEditValues([]);
-    }
+      : [];
+    setEditValues(parsed);
     setOptionDialogOpen(true);
   }
 
   function addValue() {
     setEditValues([
       ...editValues,
-      { ...emptyValueForm, slug: "", group: editValues.length > 0 ? editValues[editValues.length - 1].group : "Default" },
+      { ...emptyValue, group: editValues.at(-1)?.group ?? "Default" },
     ]);
   }
 
@@ -298,13 +385,22 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       toast({ title: "Name is required", variant: "destructive" });
       return;
     }
+    if (optionForm.source === "catalog.finishing" && !optionForm.finishingCategory) {
+      toast({ title: "Pick a finishing category", variant: "destructive" });
+      return;
+    }
     try {
-      const payload = {
+      const payload: any = {
         name: optionForm.name,
         option_type: optionForm.option_type,
         values: editValues as unknown as Json,
         is_required: optionForm.is_required,
         sort_order: optionForm.sort_order,
+        source: optionForm.source,
+        source_filter:
+          optionForm.source === "catalog.finishing"
+            ? { category: optionForm.finishingCategory }
+            : null,
       };
       if (editingOption) {
         await updateOption.mutateAsync({ id: editingOption.id, ...payload });
@@ -330,10 +426,19 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading options…</p>;
 
+  const isCatalog = optionForm.source !== "manual";
+  const masterLink = MASTER_LINKS[optionForm.source];
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-foreground">Product Options</h4>
+        <div>
+          <h4 className="text-sm font-semibold text-foreground">Product Options</h4>
+          <p className="text-xs text-muted-foreground">
+            Values come from Master Catalogue / Master Pricing when an option's <em>Source</em> is set to a catalog —
+            no hand-typed lists needed.
+          </p>
+        </div>
         <Button size="sm" variant="outline" onClick={openCreateOption}>
           <Plus className="h-3 w-3 mr-1" /> Add Option
         </Button>
@@ -346,6 +451,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
+              <TableHead>Source</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Values</TableHead>
               <TableHead>Required</TableHead>
@@ -357,9 +463,20 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
               const vals = opt.values;
               const structured = isStructuredValues(vals);
               const count = Array.isArray(vals) ? vals.length : 0;
+              const src = ((opt as any).source ?? "manual") as OptionSource;
+              const cat = (opt as any).source_filter?.category;
               return (
                 <TableRow key={opt.id}>
                   <TableCell className="font-medium">{opt.name}</TableCell>
+                  <TableCell>
+                    {src === "manual" ? (
+                      <Badge variant="outline" className="text-xs">manual</Badge>
+                    ) : (
+                      <Badge variant="default" className="text-xs">
+                        {src.replace("catalog.", "")}{cat ? ` · ${cat}` : ""}
+                      </Badge>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <Badge variant="secondary">{opt.option_type}</Badge>
                   </TableCell>
@@ -388,27 +505,76 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
         </Table>
       )}
 
-      {/* Option Edit Dialog */}
       <Dialog open={optionDialogOpen} onOpenChange={setOptionDialogOpen}>
         <DialogContent className="max-w-[min(1100px,95vw)] max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
             <DialogTitle>{editingOption ? "Edit Option" : "New Option"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            {/* Option metadata */}
+            {/* Source */}
+            <div className="space-y-1">
+              <Label>Source</Label>
+              <Select
+                value={optionForm.source}
+                onValueChange={(v) => setOptionForm({ ...optionForm, source: v as OptionSource })}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {SOURCE_OPTIONS.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {SOURCE_OPTIONS.find((s) => s.value === optionForm.source)?.description}
+              </p>
+              {masterLink && (
+                <Link
+                  to={masterLink}
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  Edit in Master Catalogue <ExternalLink className="h-3 w-3" />
+                </Link>
+              )}
+            </div>
+
+            {optionForm.source === "catalog.finishing" && (
+              <div className="space-y-1">
+                <Label>Finishing category</Label>
+                <Select
+                  value={optionForm.finishingCategory}
+                  onValueChange={(v) => setOptionForm({ ...optionForm, finishingCategory: v })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Pick a category…" /></SelectTrigger>
+                  <SelectContent>
+                    {finishingCategories.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Option meta */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Name</Label>
-                <Input value={optionForm.name} onChange={(e) => setOptionForm({ ...optionForm, name: e.target.value })} placeholder="e.g. Binding" />
+                <Input
+                  value={optionForm.name}
+                  onChange={(e) => setOptionForm({ ...optionForm, name: e.target.value })}
+                  placeholder="e.g. Binding"
+                />
               </div>
               <div>
                 <Label>Type</Label>
-                <Select value={optionForm.option_type} onValueChange={(v) => setOptionForm({ ...optionForm, option_type: v })}>
+                <Select
+                  value={optionForm.option_type}
+                  onValueChange={(v) => setOptionForm({ ...optionForm, option_type: v })}
+                  disabled={isCatalog}
+                >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {OPTION_TYPES.map((t) => (
-                      <SelectItem key={t} value={t}>{t}</SelectItem>
-                    ))}
+                    {OPTION_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -416,39 +582,82 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
             <div className="flex items-center gap-4">
               <div className="flex-1">
                 <Label>Sort Order</Label>
-                <Input type="number" value={optionForm.sort_order} onChange={(e) => setOptionForm({ ...optionForm, sort_order: parseInt(e.target.value) || 0 })} />
+                <Input
+                  type="number"
+                  value={optionForm.sort_order}
+                  onChange={(e) => setOptionForm({ ...optionForm, sort_order: parseInt(e.target.value) || 0 })}
+                />
               </div>
               <div className="flex items-center gap-2 pt-5">
                 <Label>Required</Label>
-                <Switch checked={optionForm.is_required} onCheckedChange={(v) => setOptionForm({ ...optionForm, is_required: v })} />
+                <Switch
+                  checked={optionForm.is_required}
+                  onCheckedChange={(v) => setOptionForm({ ...optionForm, is_required: v })}
+                />
               </div>
             </div>
 
-            {/* Structured values editor */}
-            {["select", "radio", "checkbox"].includes(optionForm.option_type) && (
+            {/* Values */}
+            {isCatalog ? (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label>Values ({editValues.length})</Label>
-                  <Button size="sm" variant="outline" onClick={addValue}>
-                    <Plus className="h-3 w-3 mr-1" /> Add Value
-                  </Button>
+                  <Label>Catalog values ({editValues.length})</Label>
+                  <span className="text-xs text-muted-foreground">
+                    Read-only mirror of Master Catalogue. Toggle enabled/default or set a per-family price override.
+                  </span>
                 </div>
                 <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1">
-                  {editValues.map((val, idx) => (
-                    <ValueEditorRow
-                      key={idx}
-                      value={val}
-                      onUpdate={(v) => updateValue(idx, v)}
-                      onRemove={() => removeValue(idx)}
-                    />
-                  ))}
+                  {editValues.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic">
+                      No matching catalog items {optionForm.source === "catalog.finishing" ? "for this category " : ""}yet.
+                    </p>
+                  ) : (
+                    editValues.map((val, idx) => (
+                      <CatalogValueRow
+                        key={val.slug || idx}
+                        catalogLabel={val.label}
+                        catalogCode={val.slug}
+                        catalogSub={
+                          (val.metadata?.weight_gsm && `${val.metadata.weight_gsm}gsm`) ||
+                          (val.metadata?.iso as string | undefined) ||
+                          undefined
+                        }
+                        value={val}
+                        onUpdate={(v) => updateValue(idx, v)}
+                      />
+                    ))
+                  )}
                 </div>
               </div>
+            ) : (
+              ["select", "radio", "checkbox"].includes(optionForm.option_type) && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Values ({editValues.length})</Label>
+                    <Button size="sm" variant="outline" onClick={addValue}>
+                      <Plus className="h-3 w-3 mr-1" /> Add Value
+                    </Button>
+                  </div>
+                  <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1">
+                    {editValues.map((val, idx) => (
+                      <ManualValueRow
+                        key={idx}
+                        value={val}
+                        onUpdate={(v) => updateValue(idx, v)}
+                        onRemove={() => removeValue(idx)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )
             )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOptionDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleOptionSubmit} disabled={createOption.isPending || updateOption.isPending}>
+            <Button
+              onClick={handleOptionSubmit}
+              disabled={createOption.isPending || updateOption.isPending}
+            >
               {editingOption ? "Update" : "Create"}
             </Button>
           </DialogFooter>
