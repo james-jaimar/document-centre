@@ -12,9 +12,11 @@ import {
   resolvedRowsToSizeValues,
   paperRowsToValues,
   sizeRowsToValues,
+  finishingRowsToValues,
   isPaperStockOptionName,
   isCoverPaperOptionName,
   isSizeOptionName,
+  inferFinishingCategoryFromName,
 } from "@/lib/catalog/optionAdapter";
 
 /**
