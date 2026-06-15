@@ -76,7 +76,7 @@ export function finishingRowsToValues(
     );
 
   return filtered.map((r, i) => {
-    const meta: Record<string, unknown> = {
+    const meta: Record<string, string | number | boolean> = {
       catalog_code: r.code,
       category,
     };
