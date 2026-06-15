@@ -367,7 +367,9 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
     if (prevSource !== nextSource) {
       if (prevSource === "manual" && nextSource !== "manual") {
         // Leaving manual — remember the manual values so we can restore them.
-        manualValuesRef.current = editValues;
+        if (!looksLikeCatalogMirror(editValues)) {
+          manualValuesRef.current = editValues;
+        }
         setEditValues(refreshCatalogMirror(optionForm, []));
       } else if (prevSource !== "manual" && nextSource === "manual") {
         // Back to manual — restore.
