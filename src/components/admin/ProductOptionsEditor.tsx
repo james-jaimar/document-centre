@@ -266,6 +266,11 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
   const [editingOption, setEditingOption] = useState<ProductOption | null>(null);
   const [optionForm, setOptionForm] = useState<OptionFormData>(emptyOptionForm);
   const [editValues, setEditValues] = useState<StructuredOptionValue[]>([]);
+  // Remembers the last manual value list while admin toggles source
+  // between manual and a catalogue, so flipping back to manual doesn't
+  // clobber the manual list with the catalogue mirror.
+  const manualValuesRef = useRef<StructuredOptionValue[]>([]);
+  const prevSourceRef = useRef<OptionSource>("manual");
 
   /** Build the catalog mirror list whenever source/category changes (for unsaved edits). */
   function refreshCatalogMirror(form: OptionFormData, existing: StructuredOptionValue[]) {
@@ -316,7 +321,13 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       return (catFinishing as any[])
         .filter((f) => f.category === cat)
         .map((f) => {
-          const extra: Record<string, any> = { category: cat };
+          // Bake preview-engine metadata (front/back/binding_method/etc.)
+          // straight into the saved value so the customer preview wires up
+          // even when the option is sourced from the catalogue.
+          const extra: Record<string, any> = {
+            category: cat,
+            ...previewMetadataForFinishingCode(f),
+          };
           if (f.binding_method) extra.binding_method = f.binding_method;
           if (f.color) extra.color = f.color;
           if (f.size_mm != null) extra.size_mm = f.size_mm;
@@ -327,11 +338,36 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
     return existing;
   }
 
-  // Keep mirror in sync when admin changes source/category mid-dialog
+  // Keep mirror in sync when admin changes source/category mid-dialog.
+  // Handles three transitions:
+  //  - manual → catalog: snapshot current manual values, then build mirror
+  //  - catalog → manual: restore the snapshotted manual values
+  //  - catalog → catalog (different cat): rebuild mirror
   useEffect(() => {
     if (!optionDialogOpen) return;
-    if (optionForm.source === "manual") return;
-    setEditValues((prev) => refreshCatalogMirror(optionForm, prev));
+    const prevSource = prevSourceRef.current;
+    const nextSource = optionForm.source;
+
+    if (prevSource !== nextSource) {
+      if (prevSource === "manual" && nextSource !== "manual") {
+        // Leaving manual — remember the manual values so we can restore them.
+        manualValuesRef.current = editValues;
+        setEditValues(refreshCatalogMirror(optionForm, []));
+      } else if (prevSource !== "manual" && nextSource === "manual") {
+        // Back to manual — restore.
+        setEditValues(manualValuesRef.current);
+      } else {
+        // catalog → catalog with different kind/category
+        setEditValues(refreshCatalogMirror(optionForm, []));
+      }
+      prevSourceRef.current = nextSource;
+      return;
+    }
+
+    // Same source, but category or master catalogue changed
+    if (nextSource === "catalog.finishing" || nextSource === "catalog.papers" || nextSource === "catalog.sizes") {
+      setEditValues((prev) => refreshCatalogMirror(optionForm, prev));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [optionForm.source, optionForm.finishingCategory, catSizes.length, catPapers.length, catFinishing.length, optionDialogOpen]);
 
