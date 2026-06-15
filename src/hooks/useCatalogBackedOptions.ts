@@ -66,6 +66,19 @@ export function useCatalogBackedOptions(
     },
   });
 
+  const finishingQ = useQuery({
+    queryKey: ["catalog_finishing", "master", "active"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("catalog_finishing" as any)
+        .select("*")
+        .eq("scope_type", "master")
+        .eq("is_active", true);
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+
   const data = useMemo(() => {
     const opts = legacy.data ?? [];
     const resolvedRows = resolved.data ?? [];
