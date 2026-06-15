@@ -3981,6 +3981,7 @@ export type Database = {
           created_at: string
           id: string
           is_required: boolean
+          manual_values: Json
           name: string
           option_type: string
           product_family_id: string
@@ -3993,6 +3994,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_required?: boolean
+          manual_values?: Json
           name: string
           option_type: string
           product_family_id: string
@@ -4005,6 +4007,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_required?: boolean
+          manual_values?: Json
           name?: string
           option_type?: string
           product_family_id?: string
