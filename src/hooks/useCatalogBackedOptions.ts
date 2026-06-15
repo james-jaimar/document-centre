@@ -118,65 +118,94 @@ export function useCatalogBackedOptions(
         | null
         | undefined;
 
-      // FINISHING (binding, lamination, …) — overlays catalog values + metadata
-      // so the customer flip-book preview can read binding_method/color/size_mm
-      // off the selected value (same shape legacy manual values used).
-      const finishingCategory =
-        source === "catalog.finishing"
-          ? sourceFilter?.category ?? null
-          : inferFinishingCategoryFromName(name);
-      if (finishingCategory && masterFinishing.length > 0) {
-        // Prefer enriching the saved per-product mirror so admin Enabled /
-        // Default toggles are honoured. Fall back to the full category list
-        // only when the option has no saved values yet.
+      // ── MANUAL ─────────────────────────────────────────────────────────────
+      // Admin explicitly opted out of the catalogue overlay. Use the saved
+      // product_options.values verbatim — no enrichment, no name-based
+      // inference. This is the authoritative path when the admin wants to
+      // hand-curate values for this product.
+      if (source === "manual") return opt;
+
+      // ── CATALOG: FINISHING ────────────────────────────────────────────────
+      if (source === "catalog.finishing") {
+        const category = sourceFilter?.category ?? null;
+        if (category && masterFinishing.length > 0) {
+          const saved = isStructured(opt.values) ? opt.values : [];
+          const next =
+            saved.length > 0
+              ? enrichFinishingValuesFromMaster(saved, masterFinishing)
+              : finishingRowsToValues(masterFinishing, category);
+          if (next.length > 0) {
+            return {
+              ...opt,
+              values: preserveDefault(opt.values, next) as any,
+            };
+          }
+        }
+        return opt;
+      }
+
+      // ── CATALOG: PAPERS ───────────────────────────────────────────────────
+      if (source === "catalog.papers") {
+        const isCover = isCoverPaperOptionName(name);
+        const next = isCover
+          ? allCoverPaperValues
+          : paperValuesFromLinks ?? allPaperValues;
+        if (next && next.length > 0) {
+          return {
+            ...opt,
+            values: preserveDefault(opt.values, next) as any,
+          };
+        }
+        return opt;
+      }
+
+      // ── CATALOG: SIZES ────────────────────────────────────────────────────
+      if (source === "catalog.sizes") {
+        const next = sizeValuesFromLinks ?? allSizeValues;
+        if (next && next.length > 0) {
+          return {
+            ...opt,
+            values: preserveDefault(opt.values, next) as any,
+          };
+        }
+        return opt;
+      }
+
+      // ── Legacy rows with no `source` set — fall back to name inference ────
+      // so pre-migration option rows still render. New/edited options always
+      // carry a source above and won't reach this path.
+      const inferredCategory = inferFinishingCategoryFromName(name);
+      if (inferredCategory && masterFinishing.length > 0) {
         const saved = isStructured(opt.values) ? opt.values : [];
         const next = saved.length > 0
           ? enrichFinishingValuesFromMaster(saved, masterFinishing)
-          : finishingRowsToValues(masterFinishing, finishingCategory);
+          : finishingRowsToValues(masterFinishing, inferredCategory);
         if (next.length > 0) {
-          return {
-            ...opt,
-            values: preserveDefault(opt.values, next) as any,
-          };
+          return { ...opt, values: preserveDefault(opt.values, next) as any };
         }
       }
-
-      // PAPER STOCK
       if (isPaperStockOptionName(name)) {
-        const next =
-          paperValuesFromLinks ?? allPaperValues ?? null;
+        const next = paperValuesFromLinks ?? allPaperValues ?? null;
         if (next && next.length > 0) {
-          return {
-            ...opt,
-            values: preserveDefault(opt.values, next) as any,
-          };
+          return { ...opt, values: preserveDefault(opt.values, next) as any };
         }
       }
-
-      // COVER (cover-capable stocks only)
-      if (isCoverPaperOptionName(name) && allCoverPaperValues) {
-        if (allCoverPaperValues.length > 0) {
-          return {
-            ...opt,
-            values: preserveDefault(opt.values, allCoverPaperValues) as any,
-          };
-        }
+      if (isCoverPaperOptionName(name) && allCoverPaperValues?.length) {
+        return {
+          ...opt,
+          values: preserveDefault(opt.values, allCoverPaperValues) as any,
+        };
       }
-
-      // SIZE
       if (isSizeOptionName(name)) {
         const next = sizeValuesFromLinks ?? allSizeValues ?? null;
         if (next && next.length > 0) {
-          return {
-            ...opt,
-            values: preserveDefault(opt.values, next) as any,
-          };
+          return { ...opt, values: preserveDefault(opt.values, next) as any };
         }
       }
-
       return opt;
     });
   }, [legacy.data, resolved.data, papersQ.data, sizesQ.data, finishingQ.data]);
+
 
   return {
     data,

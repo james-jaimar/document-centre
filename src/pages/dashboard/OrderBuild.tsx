@@ -309,17 +309,24 @@ export default function OrderBuild() {
       }
       for (const opt of options) {
         if (SECTION_CONTROLLED_OPTIONS.has(opt.name)) continue;
-        if (selected[opt.name]) continue;
-        if (isStructuredValues(opt.values)) {
-          const activeValues = opt.values.filter(isValueActive);
-          const defaultVal = activeValues.find((v) => v.is_default);
-          if (defaultVal) {
-            selected[opt.name] = defaultVal.slug;
-            changed = true;
-          } else if (activeValues.length > 0) {
-            selected[opt.name] = activeValues[0].slug;
-            changed = true;
-          }
+        if (!isStructuredValues(opt.values)) continue;
+        const activeValues = opt.values.filter(isValueActive);
+        const current = selected[opt.name];
+        const currentExists =
+          current && activeValues.some((v) => v.slug === current);
+        if (currentExists) continue;
+        // Stale or missing selection — reset to default / first active so the
+        // customer doesn't see a label that no longer maps to an option.
+        const defaultVal = activeValues.find((v) => v.is_default);
+        if (defaultVal) {
+          selected[opt.name] = defaultVal.slug;
+          changed = true;
+        } else if (activeValues.length > 0) {
+          selected[opt.name] = activeValues[0].slug;
+          changed = true;
+        } else if (current) {
+          delete selected[opt.name];
+          changed = true;
         }
       }
       if (!changed) return prev;

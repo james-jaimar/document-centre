@@ -51,8 +51,95 @@ export type CatalogFinishingRow = {
   color?: string | null;
   size_mm?: number | null;
   max_sheets?: number | null;
+  variant?: string | null;
   metadata?: Record<string, unknown> | null;
 };
+
+/**
+ * Deterministic preview-engine metadata for a catalog_finishing row, keyed by
+ * its `code`. Lets the customer flip-book / cover preview render the right
+ * material (clear / matte / frosted PVC, card stock, card colour) and the
+ * right binding style (comb, twin_loop, spiral, ring_binder) when the option
+ * is sourced from the master catalogue.
+ *
+ * Returns an empty object for unmapped codes — callers spread it on top of
+ * existing metadata so unmapped rows just keep what they already had.
+ */
+export function previewMetadataForFinishingCode(
+  row: Pick<
+    CatalogFinishingRow,
+    "code" | "category" | "binding_method" | "size_mm" | "color" | "variant"
+  >,
+): Record<string, string | number | boolean> {
+  const code = (row.code ?? "").toLowerCase();
+  const category = (row.category ?? "").toLowerCase();
+
+  // ---- Covers --------------------------------------------------------------
+  if (category === "cover") {
+    switch (code) {
+      case "acetate-cover":
+        return {
+          front: "clear_pvc",
+          back: "white_card",
+          front_thickness_micron: 200,
+        };
+      case "matte-pvc-cover":
+        return {
+          front: "matte_pvc",
+          back: "white_card",
+          front_thickness_micron: 200,
+        };
+      case "frosted-pvc-cover":
+        return {
+          front: "frosted_pvc",
+          back: "white_card",
+          front_thickness_micron: 300,
+        };
+      case "card-back":
+        return { front: "white_card", back: "white_card", weight_gsm: 250 };
+      case "card-back-black":
+        return { front: "white_card", back: "black_card" };
+      case "card-back-navy":
+        return { front: "white_card", back: "navy_card" };
+      case "card-cover-160":
+        return { front: "white_card", back: "white_card", weight_gsm: 160 };
+      case "card-cover-250":
+        return { front: "white_card", back: "white_card", weight_gsm: 250 };
+      case "card-cover-300":
+        return { front: "white_card", back: "white_card", weight_gsm: 300 };
+      case "silk-cover-250":
+        return {
+          front: "silk_card",
+          back: "silk_card",
+          weight_gsm: 250,
+          finish: "silk",
+        };
+      case "gloss-cover-250":
+        return {
+          front: "gloss_card",
+          back: "gloss_card",
+          weight_gsm: 250,
+          finish: "gloss",
+        };
+    }
+    return {};
+  }
+
+  // ---- Binding -------------------------------------------------------------
+  if (category === "binding") {
+    const method = row.binding_method ?? null;
+    const size_mm = row.size_mm ?? null;
+    const meta: Record<string, string | number | boolean> = {};
+    if (method) meta.binding_method = method;
+    if (size_mm != null) meta.size_mm = size_mm;
+    meta.color = row.color ?? (method === "twin_loop" ? "Silver" : "Black");
+    if (method === "ring_binder") meta.requires_hole_punch = true;
+    return meta;
+  }
+
+  return {};
+}
+
 
 /**
  * Project master catalog_finishing rows into structured option values for a
@@ -79,6 +166,7 @@ export function finishingRowsToValues(
     const meta: Record<string, string | number | boolean> = {
       catalog_code: r.code,
       category,
+      ...previewMetadataForFinishingCode(r),
     };
     if (r.binding_method) meta.binding_method = r.binding_method;
     if (r.color) meta.color = r.color;
@@ -99,6 +187,7 @@ export function finishingRowsToValues(
     };
   });
 }
+
 
 /**
  * Enrich the option's SAVED values (the per-product mirror) with fresh
@@ -135,6 +224,7 @@ export function enrichFinishingValuesFromMaster(
       ...(v.metadata ?? {}),
       catalog_code: master.code,
       category: master.category ?? (v.metadata as any)?.category,
+      ...previewMetadataForFinishingCode(master),
     };
     if (master.binding_method) meta.binding_method = master.binding_method;
     if (master.color) meta.color = master.color;
