@@ -100,6 +100,60 @@ export function finishingRowsToValues(
   });
 }
 
+/**
+ * Enrich the option's SAVED values (the per-product mirror) with fresh
+ * metadata from the master `catalog_finishing` rows. The saved array is the
+ * authoritative list of which catalog codes are wired to this product family
+ * and which are per-product enabled / default.
+ *
+ * Rules:
+ *  - Drop saved values whose master row is missing or `is_active = false`.
+ *  - Drop saved values whose per-product `is_active = false`.
+ *  - Overlay master label + binding_method/color/size_mm/max_sheets so the
+ *    flip-book preview and pricing engine see accurate visual data.
+ *  - Preserve per-product `is_default`, `price_impact`, `price_type`.
+ */
+export function enrichFinishingValuesFromMaster(
+  savedValues: StructuredOptionValue[],
+  masterRows: CatalogFinishingRow[],
+): StructuredOptionValue[] {
+  const byCode = new Map(masterRows.map((r) => [r.code, r]));
+  const enriched: StructuredOptionValue[] = [];
+
+  for (const v of savedValues) {
+    if (v.is_active === false) continue;
+    const code = String(
+      (v.metadata as any)?.catalog_code ?? v.slug ?? "",
+    );
+    if (!code) continue;
+    const master = byCode.get(code);
+    if (!master || !master.is_active) continue;
+
+    const meta: Record<string, any> = {
+      ...(v.metadata ?? {}),
+      catalog_code: master.code,
+      category: master.category ?? (v.metadata as any)?.category,
+    };
+    if (master.binding_method) meta.binding_method = master.binding_method;
+    if (master.color) meta.color = master.color;
+    if (master.size_mm != null) meta.size_mm = master.size_mm;
+    if (master.max_sheets != null) meta.max_sheets = master.max_sheets;
+
+    enriched.push({
+      ...v,
+      label: master.label ?? v.label,
+      slug: v.slug ?? master.code,
+      group: v.group ?? (master.binding_method
+        ? capitaliseMethod(master.binding_method)
+        : capitalise(master.category ?? "")),
+      is_active: true,
+      metadata: meta,
+    });
+  }
+
+  return enriched;
+}
+
 function capitaliseMethod(m: string): string {
   return m
     .split("_")
