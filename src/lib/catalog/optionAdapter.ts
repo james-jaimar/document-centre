@@ -243,3 +243,18 @@ export function isSizeOptionName(name: string): boolean {
     n === "finished size"
   );
 }
+
+/**
+ * Map a legacy option name to a master-catalog finishing category, so that
+ * options created before the catalog source existed still get overlaid.
+ * Returns null when the name doesn't map to any finishing category.
+ */
+export function inferFinishingCategoryFromName(name: string): string | null {
+  const n = name.trim().toLowerCase();
+  if (n === "binding") return "binding";
+  if (n === "cover lamination" || n === "lamination") return "lamination";
+  if (n === "edge painting" || n === "edges") return "edges";
+  if (n === "corner rounding" || n === "corners") return "corners";
+  if (n === "drilling" || n === "hole punch") return "drilling";
+  return null;
+}
