@@ -658,48 +658,60 @@ export type Database = {
       }
       catalog_finishing: {
         Row: {
+          binding_method: string | null
           branch_id: string | null
           category: string | null
           code: string
+          color: string | null
           created_at: string
           id: string
           is_active: boolean
           label: string
+          max_sheets: number | null
           metadata: Json
           pricing_basis: string | null
           scope_type: Database["public"]["Enums"]["catalog_scope"]
+          size_mm: number | null
           sort_order: number
           tenant_id: string | null
           updated_at: string
           variant: string | null
         }
         Insert: {
+          binding_method?: string | null
           branch_id?: string | null
           category?: string | null
           code: string
+          color?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
           label: string
+          max_sheets?: number | null
           metadata?: Json
           pricing_basis?: string | null
           scope_type?: Database["public"]["Enums"]["catalog_scope"]
+          size_mm?: number | null
           sort_order?: number
           tenant_id?: string | null
           updated_at?: string
           variant?: string | null
         }
         Update: {
+          binding_method?: string | null
           branch_id?: string | null
           category?: string | null
           code?: string
+          color?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
           label?: string
+          max_sheets?: number | null
           metadata?: Json
           pricing_basis?: string | null
           scope_type?: Database["public"]["Enums"]["catalog_scope"]
+          size_mm?: number | null
           sort_order?: number
           tenant_id?: string | null
           updated_at?: string
