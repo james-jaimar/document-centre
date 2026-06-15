@@ -375,6 +375,8 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
     setEditingOption(null);
     setOptionForm(emptyOptionForm);
     setEditValues([]);
+    manualValuesRef.current = [];
+    prevSourceRef.current = "manual";
     setOptionDialogOpen(true);
   }
 
@@ -401,6 +403,11 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
         }))
       : [];
     setEditValues(parsed);
+    // Seed the manual snapshot: if currently manual, these ARE manual values.
+    // If currently catalog, we don't know prior manual values — start empty so
+    // toggling to manual gives a blank slate rather than the catalog mirror.
+    manualValuesRef.current = src === "manual" ? parsed : [];
+    prevSourceRef.current = src;
     setOptionDialogOpen(true);
   }
 
