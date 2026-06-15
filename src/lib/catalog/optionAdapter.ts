@@ -166,6 +166,7 @@ export function finishingRowsToValues(
     const meta: Record<string, string | number | boolean> = {
       catalog_code: r.code,
       category,
+      ...previewMetadataForFinishingCode(r),
     };
     if (r.binding_method) meta.binding_method = r.binding_method;
     if (r.color) meta.color = r.color;
@@ -186,6 +187,7 @@ export function finishingRowsToValues(
     };
   });
 }
+
 
 /**
  * Enrich the option's SAVED values (the per-product mirror) with fresh
