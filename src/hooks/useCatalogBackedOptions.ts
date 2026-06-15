@@ -124,7 +124,13 @@ export function useCatalogBackedOptions(
           ? sourceFilter?.category ?? null
           : inferFinishingCategoryFromName(name);
       if (finishingCategory && masterFinishing.length > 0) {
-        const next = finishingRowsToValues(masterFinishing, finishingCategory);
+        // Prefer enriching the saved per-product mirror so admin Enabled /
+        // Default toggles are honoured. Fall back to the full category list
+        // only when the option has no saved values yet.
+        const saved = isStructured(opt.values) ? opt.values : [];
+        const next = saved.length > 0
+          ? enrichFinishingValuesFromMaster(saved, masterFinishing)
+          : finishingRowsToValues(masterFinishing, finishingCategory);
         if (next.length > 0) {
           return {
             ...opt,
