@@ -107,6 +107,22 @@ const emptyValue: StructuredOptionValue = {
   metadata: {},
 };
 
+function parseOptionValues(values: unknown): StructuredOptionValue[] {
+  if (isStructuredValues(values)) return values as StructuredOptionValue[];
+  if (Array.isArray(values)) {
+    return (values as unknown[]).map((v) => ({
+      ...emptyValue,
+      label: String(v),
+      slug: slugify(String(v)),
+    }));
+  }
+  return [];
+}
+
+function looksLikeCatalogMirror(values: StructuredOptionValue[]): boolean {
+  return values.length > 0 && values.every((v) => Boolean((v.metadata as any)?.catalog_code));
+}
+
 /* ─── Manual value row (legacy editor) ────────────────────────────── */
 function ManualValueRow({
   value,
