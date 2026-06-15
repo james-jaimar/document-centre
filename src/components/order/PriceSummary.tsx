@@ -3,7 +3,7 @@ import type { Tables } from "@/integrations/supabase/types";
 import type { ItemSpec, PriceBreakdown, RateCardBundle } from "@/lib/calculatePrice";
 import { calculateItemPrice, calculatePriceFromRateCard } from "@/lib/calculatePrice";
 import type { ProductPriceOverride } from "@/hooks/useProductPriceOverrides";
-import type { ProductRecipe } from "@/hooks/useProductRecipe";
+import type { ProductRecipe } from "@/lib/productRecipe";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Minus, Plus, ShoppingCart } from "lucide-react";

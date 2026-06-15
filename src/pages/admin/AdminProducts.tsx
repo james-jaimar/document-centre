@@ -10,8 +10,6 @@ import ProductFamilyForm from "@/components/admin/ProductFamilyForm";
 import ProductOptionsEditor from "@/components/admin/ProductOptionsEditor";
 import ProductCatalogueLinksTab from "@/components/admin/ProductCatalogueLinksTab";
 
-import ProductRecipeTab from "@/components/admin/ProductRecipeTab";
-import { seedDefaultRecipes } from "@/lib/seedDefaultRecipes";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -46,26 +44,6 @@ const AdminProducts = () => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [seedingAll, setSeedingAll] = useState(false);
-  const [seedingRecipes, setSeedingRecipes] = useState(false);
-
-  async function handleSeedRecipes() {
-    setSeedingRecipes(true);
-    try {
-      const result = await seedDefaultRecipes();
-      if (result.created.length === 0) {
-        toast({ title: "All families already have recipes", description: `Skipped ${result.skipped.length}` });
-      } else {
-        toast({
-          title: "Default recipes created",
-          description: `Seeded ${result.created.length} families. Skipped ${result.skipped.length}.`,
-        });
-      }
-    } catch (e: any) {
-      toast({ title: "Seed failed", description: e.message, variant: "destructive" });
-    } finally {
-      setSeedingRecipes(false);
-    }
-  }
 
   function handleCreate() {
     setEditingFamily(null);
@@ -154,15 +132,11 @@ const AdminProducts = () => {
               Binding Artwork Audit
             </Link>
           </Button>
-          <Button variant="outline" onClick={handleSeedAllProducts} disabled={seedingAll || seeding || seedingRecipes}>
+          <Button variant="outline" onClick={handleSeedAllProducts} disabled={seedingAll || seeding}>
             <Sparkles className="h-4 w-4 mr-2" />
             {seedingAll ? "Seeding All…" : "Seed All Products"}
           </Button>
-          <Button variant="outline" onClick={handleSeedRecipes} disabled={seedingRecipes || seeding || seedingAll}>
-            <Sparkles className="h-4 w-4 mr-2" />
-            {seedingRecipes ? "Seeding…" : "Seed Default Recipes"}
-          </Button>
-          <Button variant="outline" onClick={handleSeedBoundDocument} disabled={seeding || seedingAll || seedingRecipes}>
+          <Button variant="outline" onClick={handleSeedBoundDocument} disabled={seeding || seedingAll}>
             <Sparkles className="h-4 w-4 mr-2" />
             {seeding ? "Seeding…" : "Seed Bound Document"}
           </Button>
@@ -236,16 +210,12 @@ const AdminProducts = () => {
                               <TabsList className="mb-3">
                                 <TabsTrigger value="catalogue">Catalogue</TabsTrigger>
                                 <TabsTrigger value="options">Options</TabsTrigger>
-                                <TabsTrigger value="recipe">Recipe</TabsTrigger>
                               </TabsList>
                               <TabsContent value="catalogue">
                                 <ProductCatalogueLinksTab productFamilyId={f.id} />
                               </TabsContent>
                               <TabsContent value="options">
                                 <ProductOptionsEditor productFamilyId={f.id} />
-                              </TabsContent>
-                              <TabsContent value="recipe">
-                                <ProductRecipeTab productFamilyId={f.id} />
                               </TabsContent>
                             </Tabs>
                           </td>

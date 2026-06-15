@@ -242,7 +242,7 @@ import type {
   RateCardFinishing,
   RateCardPhotoPrint,
 } from "@/hooks/useRateCard";
-import type { ProductRecipe } from "@/hooks/useProductRecipe";
+import type { ProductRecipe } from "@/lib/productRecipe";
 import { resolvePhotoPrintPrice } from "@/lib/photoPrints/pricing";
 import type { RateCardPriceBreak, RateCardTable } from "@/hooks/useRateCardPriceBreaks";
 import { resolveTier } from "@/hooks/useRateCardPriceBreaks";
