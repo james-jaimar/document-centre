@@ -224,6 +224,7 @@ export function enrichFinishingValuesFromMaster(
       ...(v.metadata ?? {}),
       catalog_code: master.code,
       category: master.category ?? (v.metadata as any)?.category,
+      ...previewMetadataForFinishingCode(master),
     };
     if (master.binding_method) meta.binding_method = master.binding_method;
     if (master.color) meta.color = master.color;
