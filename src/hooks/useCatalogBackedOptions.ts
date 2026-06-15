@@ -13,11 +13,13 @@ import {
   paperRowsToValues,
   sizeRowsToValues,
   finishingRowsToValues,
+  enrichFinishingValuesFromMaster,
   isPaperStockOptionName,
   isCoverPaperOptionName,
   isSizeOptionName,
   inferFinishingCategoryFromName,
 } from "@/lib/catalog/optionAdapter";
+import { isStructuredValues as isStructured } from "@/lib/productOptionTypes";
 
 /**
  * Resolved product options for the customer configurator, with values for
