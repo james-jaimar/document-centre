@@ -3868,6 +3868,7 @@ export type Database = {
           image_url: string | null
           is_active: boolean
           name: string
+          pricing_engine: string
           printing_rules: Json
           render_intent: string
           slug: string
@@ -3884,6 +3885,7 @@ export type Database = {
           image_url?: string | null
           is_active?: boolean
           name: string
+          pricing_engine?: string
           printing_rules?: Json
           render_intent?: string
           slug: string
@@ -3900,6 +3902,7 @@ export type Database = {
           image_url?: string | null
           is_active?: boolean
           name?: string
+          pricing_engine?: string
           printing_rules?: Json
           render_intent?: string
           slug?: string
@@ -3970,6 +3973,8 @@ export type Database = {
           option_type: string
           product_family_id: string
           sort_order: number
+          source: string
+          source_filter: Json | null
           values: Json
         }
         Insert: {
@@ -3980,6 +3985,8 @@ export type Database = {
           option_type: string
           product_family_id: string
           sort_order?: number
+          source?: string
+          source_filter?: Json | null
           values?: Json
         }
         Update: {
@@ -3990,6 +3997,8 @@ export type Database = {
           option_type?: string
           product_family_id?: string
           sort_order?: number
+          source?: string
+          source_filter?: Json | null
           values?: Json
         }
         Relationships: [
@@ -4052,35 +4061,6 @@ export type Database = {
           weight_grams?: number | null
         }
         Relationships: []
-      }
-      product_recipes: {
-        Row: {
-          created_at: string
-          product_family_id: string
-          recipe: Json
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          product_family_id: string
-          recipe?: Json
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          product_family_id?: string
-          recipe?: Json
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "product_recipes_product_family_id_fkey"
-            columns: ["product_family_id"]
-            isOneToOne: true
-            referencedRelation: "product_families"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       profiles: {
         Row: {
