@@ -1,106 +1,46 @@
-# Simplify Binding: type + colour for the customer, size auto-computed
+# Goal
 
-## Goal
+Walk every active product family end-to-end and confirm that what the customer sees in the configurator (options, defaults, prices) is actually driven by the **master catalogue** (papers / finishing / sizes) and the **master rate card** (click charges, paper sell prices, finishing sell prices, binding spine table). Fix every break we find.
 
-Customers should see binding choices like:
+Trigger: Presentations is showing R19,00 with no document uploaded, and the user has spotted that picking a binding doesn't move the price the way it should. Past sessions have already shown similar wiring slips on Bound Documents and Booklets, so this pass is a sweep, not a single-product fix.
 
-- Comb Binding (Black)
-- Spiral Binding (Black / White / Clear)
-- Twin Loop Wire (Black / Silver)
+# What the audit will check, per family
 
-They never pick a size in mm. The system picks the correct binding size from the document's sheet count (already in `binding_specifications`) and prices it from the master catalogue.
+For every active family (Booklets, Bound Documents, Brochures, Business Cards, Flyers, Photo Prints, Posters, Presentations, Ring Binders, Stapled & Loose Pages) I will verify:
 
-## Current state
+1. **Options are catalogue-backed where they should be.** `source` = `catalog.papers` / `catalog.finishing` / `catalog.sizes` / `catalog.print_attrs`. Anything still on `manual` that has a catalogue equivalent gets flagged.
+2. **No duplicate option rows.** First sweep already shows:
+   - Ring Binders has **two `Binding` rows** (8 values + 3 values).
+   - Brochures has **`Fold Type` (4) and `Folding` (3)** doing the same job.
+   - Brochures has both a `Trimming` and a `Finishing`-style row to reconcile.
+3. **Customer-visible value list is clean.** No `internal: true` rows leaking through, no orphan codes that no longer exist in the master catalogue, no stale snapshots from before the binding simplification (Bound Documents / Presentations `Covers` = 18 entries and `Paper Stock` = 25 entries — almost certainly carrying legacy rows).
+4. **Defaults exist and are sane.** Every required option has exactly one `is_default` row, and that default code resolves in the master catalogue.
+5. **Recipe derivation is complete.** `deriveRecipeFromOptions` currently only carries papers + finishing into the recipe. Confirm that:
+   - Every catalogue-backed paper code in `product_options.values` matches a `catalog_papers.code` and has a `catalog_paper_prices` row.
+   - Every catalogue-backed finishing code (including binding family codes like `comb-black`, `wire-silver`, `spiral-clear`) matches a `catalog_finishing.code` and has a `catalog_finishing_prices` row.
+   - For families on `auto_size_from_sheets` binding (Bound Documents, Booklets, Presentations) the spine table the engine reads from is populated for every visible binding family.
+6. **Rate-card engine is actually firing.** `useNewEngine` flag requires `rcClicks` / `rcPhotoPrints` / `rcBusinessCards` to be non-empty at the active scope (tenant or branch). For each family I will confirm the active branch/tenant has the click charges seeded, otherwise it silently falls back to legacy `pricing_rules` and finishing uplifts get ignored.
+7. **Selected option actually moves the total.** For each family, pick a non-default value (e.g. a different binding, lamination, paper) and confirm `calculatePriceFromRateCard` produces a different total than the default. The Presentations R19,00 case is the canary — fix anything that fails this test.
 
-- Master catalogue (`catalog_finishing` + `catalog_finishing_prices`) holds size-based binding rows: `comb-6mm` … `comb-51mm`, `spiral-6mm` … `spiral-32mm`, `wire-6mm` … `wire-22mm`, plus ring binders. Each priced "any size".
-- `binding_specifications` already maps sheet count → required `size_mm` per method (comb / spiral_coil / wire_2_1 / wire_3_1).
-- Saved product options (e.g. Bound Documents, Booklets) currently expose every size to the customer, which is exactly what we want to hide.
-- Old behaviour the user wants back: customer picks method+colour only, price scales with thickness.
+# Deliverables
 
-## Plan
+1. A short written report in chat listing, family-by-family, every wiring gap found (duplicate options, stale snapshots, missing catalogue codes, missing prices, dead defaults, engine-fallback cases).
+2. One migration that fixes the data-side issues:
+   - Removes the duplicate `Binding` row on Ring Binders and the duplicate `Folding`/`Fold Type` rows on Brochures.
+   - Re-snapshots `Covers` and `Paper Stock` on Bound Documents and Presentations from the master catalogue (drops legacy/`internal:true` rows from the customer list).
+   - Adds any missing `catalog_*_prices` rows that the report identifies.
+   - Sets a default value on any option that currently has none.
+3. Code fixes only where derivation logic is wrong (e.g. if `deriveRecipeFromOptions` needs to carry an extra option type, or if `useNewEngine` needs to include a family that has no click charges but still needs the rate-card path). No UI redesign.
 
-### 1. Master catalogue: binding families and colours
+# Technical notes
 
-In `catalog_finishing`, add a new shape for the customer-visible "family + colour" rows. Codes:
+- Source of truth in code: `src/lib/productRecipe.ts`, `src/lib/calculatePrice.ts`, `src/lib/catalog/optionAdapter.ts`, `src/pages/dashboard/OrderBuild.tsx` (lines 155-200 for engine selection).
+- Source of truth in DB: `product_options`, `catalog_papers` + `catalog_paper_prices`, `catalog_finishing` + `catalog_finishing_prices`, `catalog_sizes`, plus the binding spine table the size-family auto-resolver reads.
+- No changes to ring-binder rings, saddle-stitch geometry, or the Photo Prints / Business Cards rate-card structure unless the audit specifically flags them.
+- No customer-portal UI redesign — this is purely a wiring / data-integrity pass.
 
-```
-comb-black
-spiral-black, spiral-white, spiral-clear
-wire-black, wire-silver
-```
+# Out of scope
 
-Metadata on each row:
-
-```json
-{
-  "binding_method": "comb" | "spiral_coil" | "wire_2_1",
-  "color": "Black" | "White" | "Clear" | "Silver",
-  "auto_size_from_sheets": true,
-  "size_family": "comb" | "spiral" | "wire"
-}
-```
-
-These are the only binding rows customers ever see. The existing size-based rows (`comb-6mm` … `wire-22mm`) stay in the catalogue but are flagged as **internal** (new `metadata.internal: true`) so they:
-
-- still hold the per-size price ladder used by the engine, and
-- are hidden from the customer picker and the product-options editor's "Reset from Master" seed.
-
-Ring binders stay size-based (customer genuinely picks the binder size for those).
-
-### 2. Colour uplift
-
-To allow "Spiral Clear costs more than Spiral Black" without duplicating the entire size ladder per colour, add `catalog_finishing_prices` rows on each family+colour record with a single `size_code = 'color_uplift'` and `sell_price_minor` = uplift over base. Defaults:
-
-- Spiral Black: 0, White: 0, Clear: +R2.00
-- Wire Black: 0, Silver: +R4.00
-- Comb Black: 0
-
-(User confirms numbers in admin; defaults match the screenshot deltas.)
-
-### 3. Pricing engine
-
-Update `src/lib/calculatePrice.ts` so a binding line resolved to a `family+colour` row:
-
-1. Computes sheet count = `ceil(pages / (duplex ? 2 : 1))`.
-2. Calls a small helper (new `src/lib/binding/resolveBindingSize.ts`) that reads `binding_specifications` for that `binding_method` and returns the matching `size_mm` (and the catalogue code, e.g. `spiral-16mm`).
-3. Looks up `catalog_finishing_prices` for the resolved internal code = base price.
-4. Adds the colour uplift from the family+colour row.
-5. Records both in the price breakdown ("Spiral Binding (White) — 16mm coil").
-
-If sheet count exceeds the largest spec for that method, the engine returns a validation error ("This document is too thick for spiral binding — try comb or wire").
-
-### 4. Customer hook
-
-`src/hooks/useCatalogBackedOptions.ts` filters `metadata.internal === true` out of the finishing rows surfaced to the configurator. Family+colour rows render with the price-from-thickness already resolved for the current spec so the dropdown shows the *actual* `+R X,XX/doc` for this job (matches the screenshot UX).
-
-### 5. Admin editor
-
-`ProductOptionsEditor` (binding category) shows the new family+colour rows as the customer-visible set. Size rows are surfaced under a collapsed "Internal size price ladder (auto-selected)" group with a note explaining they're picked automatically — editable for pricing, not toggleable per product.
-
-### 6. Data migration
-
-A single Supabase migration:
-
-- Inserts the new family+colour `catalog_finishing` rows + colour-uplift prices.
-- Marks existing size-based binding rows `metadata.internal = true` (keeps prices intact).
-- Rewrites `product_options.values` for every product whose binding option currently lists size rows: collapse to the family+colour set the product should expose (Bound Documents, Booklets, Presentations all get the same 6-row default; admins can prune afterwards). Existing per-product price overrides for size rows are preserved on the internal rows.
-- Ring Binder rows untouched.
-
-### 7. Verification
-
-- Re-check the Presentations dropdown matches the screenshot (Comb Black, Spiral Black/White/Clear, Wire Black/Silver), each with a live `+R X,XX/doc` that varies with page count.
-- Bound Documents and Booklets show the same simplified list.
-- Price breakdown on an 8-page A4 duplex with Spiral White ≈ base spiral-6mm + spiral-white uplift; bumping pages past 30 sheets jumps to spiral-12mm pricing automatically.
-- Admin can still edit the per-size base ladder in Master Catalogue → Finishing → Internal sizes.
-
-## Files touched
-
-- `supabase/migrations/<new>.sql` — new family+colour rows, colour uplifts, `internal` flag, product_options rewrite.
-- `src/lib/binding/resolveBindingSize.ts` (new) — sheets → method size code.
-- `src/lib/calculatePrice.ts` — auto-size + colour-uplift path for `auto_size_from_sheets` rows.
-- `src/lib/catalog/optionAdapter.ts` — keep family+colour rows; hide `internal` rows from customer projections; enrich saved values with live computed price.
-- `src/hooks/useCatalogBackedOptions.ts` — pass current spec (sheet count) into finishing enrichment for binding rows.
-- `src/components/admin/ProductOptionsEditor.tsx` — split binding list into customer rows vs. internal size ladder.
-- `src/hooks/useBindingSpecifications.ts` — reuse `findSuitableBinding` (already exists).
-
-No changes to ring binders, saddle stitch, or non-binding finishing.
+- Adding new products or new option types.
+- Changing the simplified binding model (we keep the 6-row customer list from the previous session).
+- Tenant-level overrides — we only fix the master layer; tenants inherit from it.
