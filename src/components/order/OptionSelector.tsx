@@ -77,7 +77,7 @@ export default function OptionSelector({
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger className="w-full">
         <SelectValue placeholder={`Select ${option.name}`}>
-          {selectedValue?.label ?? value}
+          {selectedValue?.label ?? humaniseSlug(value)}
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
