@@ -484,6 +484,10 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       toast({ title: "Pick a finishing category", variant: "destructive" });
       return;
     }
+    if (optionForm.source === "catalog.print_attrs" && !optionForm.printAttribute) {
+      toast({ title: "Pick a print attribute", variant: "destructive" });
+      return;
+    }
     try {
       const nextManualValues = optionForm.source === "manual"
         ? editValues
@@ -502,6 +506,8 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
         source_filter:
           optionForm.source === "catalog.finishing"
             ? { category: optionForm.finishingCategory }
+            : optionForm.source === "catalog.print_attrs"
+            ? { attribute: optionForm.printAttribute }
             : null,
       };
       if (editingOption) {
