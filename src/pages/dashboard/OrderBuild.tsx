@@ -819,7 +819,14 @@ export default function OrderBuild() {
 
   // ── Derive insert info from product options ──
   const insertEnabled = useMemo(() => {
-    const insertOpt = options.find((o) => o.name.toLowerCase().includes("insert") || o.name.toLowerCase().includes("divider"));
+    // Match "Inserts" specifically — never "Tab Dividers" (which also
+    // contains the word "divider"). Prefer exact-ish names, then a
+    // contains-"insert" fallback that excludes anything tab-related.
+    const lower = (s: string) => s.toLowerCase();
+    const insertOpt =
+      options.find((o) => lower(o.name) === "inserts") ||
+      options.find((o) => lower(o.name) === "insert") ||
+      options.find((o) => lower(o.name).includes("insert") && !lower(o.name).includes("tab"));
     if (!insertOpt || !isStructuredValues(insertOpt.values)) return false;
     const key = Object.keys(spec.selected_options).find(
       (k) => k.toLowerCase() === insertOpt.name.toLowerCase()
@@ -833,6 +840,7 @@ export default function OrderBuild() {
     if (/(^|[-_])none([-_]|$)/i.test(slug)) return false;
     return true;
   }, [options, spec.selected_options]);
+
 
   // Auto-open drawer when tabs or inserts become enabled
   useEffect(() => {
