@@ -858,6 +858,35 @@ export default function OrderBuild() {
 
   const orderItemId = orderItem?.id ?? "";
 
+  // ── Cleanup: when tabs/inserts are turned off, remove their sections so the preview matches ──
+  useEffect(() => {
+    if (!orderItemId) return;
+    if (!tabInfo) {
+      const stale = sections.filter((s) => s.section_type === "tab");
+      if (stale.length > 0) {
+        stale.forEach((s) => {
+          deleteSectionMut.mutate({ id: s.id, orderItemId });
+        });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabInfo, orderItemId]);
+
+  useEffect(() => {
+    if (!orderItemId) return;
+    if (!insertEnabled) {
+      const stale = sections.filter((s) => s.section_type === "insert");
+      if (stale.length > 0) {
+        stale.forEach((s) => {
+          deleteSectionMut.mutate({ id: s.id, orderItemId });
+        });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [insertEnabled, orderItemId]);
+
+
+
   // ── Tab/Insert callbacks using page_range_start as anchor ──
   const handleAddTab = useCallback(async (afterPage: number, label?: string, bankPosition?: number) => {
     if (!orderItemId) return;
