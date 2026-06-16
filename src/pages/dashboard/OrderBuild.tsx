@@ -336,6 +336,11 @@ export default function OrderBuild() {
       }
       for (const opt of options) {
         if (SECTION_CONTROLLED_OPTIONS.has(opt.name)) continue;
+        // Document Size is owned by the PDF auto-detect effect below; do not
+        // pre-seed it with the catalogue's first entry, otherwise the
+        // detected size never gets a chance to win (the auto-detect bails
+        // out as soon as it sees an existing selection).
+        if (opt.name.toLowerCase() === "document size") continue;
         if (!isStructuredValues(opt.values)) continue;
         const activeValues = opt.values.filter(isValueActive);
         const current = selected[opt.name];
