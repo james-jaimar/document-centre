@@ -227,6 +227,10 @@ export function finishingRowsToValues(
   const filtered = rows
     .filter((r) => r.is_active)
     .filter((r) => (r.category ?? "") === category)
+    // Hide rows flagged as internal (e.g. binding size-ladder rows that are
+    // auto-selected by sheet count). They stay in the master catalogue for
+    // the pricing engine but are never offered to the customer.
+    .filter((r) => !(r.metadata as any)?.internal)
     .sort(
       (a, b) =>
         (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
