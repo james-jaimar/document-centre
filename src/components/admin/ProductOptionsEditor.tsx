@@ -577,7 +577,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {options.map((opt) => {
+            {visibleOptions.map((opt) => {
               const vals = opt.values;
               const structured = isStructuredValues(vals);
               const count = Array.isArray(vals) ? vals.length : 0;
