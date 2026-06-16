@@ -103,6 +103,7 @@ export function useCatalogBackedOptions(
     const masterPapers = papersQ.data ?? [];
     const masterSizes = sizesQ.data ?? [];
     const masterFinishing = finishingQ.data ?? [];
+    const masterPrintAttrs = printAttrsQ.data ?? [];
 
     if (opts.length === 0) return opts;
 
@@ -128,7 +129,7 @@ export function useCatalogBackedOptions(
       const name = opt.name ?? "";
       const source = (opt as any).source as string | undefined;
       const sourceFilter = (opt as any).source_filter as
-        | { category?: string }
+        | { category?: string; attribute?: string }
         | null
         | undefined;
 
