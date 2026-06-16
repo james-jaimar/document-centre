@@ -290,32 +290,6 @@ export function useDeleteCatalogFinishing() {
   });
 }
 
-// --------------------------- catalog_print_attrs -------------------------
-
-export interface CatalogPrintAttr {
-  id: string;
-  attribute: string;
-  code: string;
-  label: string;
-  sort_order: number;
-  is_active: boolean;
-  metadata: Record<string, any>;
-}
-
-export function useCatalogPrintAttrs(args: CatalogScopeArgs = {}) {
-  return useQuery({
-    queryKey: ["catalog_print_attrs", ...scopeKey(args)],
-    queryFn: async () => {
-      const q = applyCatalogScope(
-        supabase.from("catalog_print_attrs" as any).select("*"),
-        args,
-      );
-      const { data, error } = await q.order("attribute", { ascending: true });
-      if (error) throw error;
-      return (data ?? []) as unknown as CatalogPrintAttr[];
-    },
-  });
-}
 
 // -------------------------- imposition_templates -------------------------
 
