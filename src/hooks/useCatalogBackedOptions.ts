@@ -119,6 +119,7 @@ export function useCatalogBackedOptions(
     const masterPapers = papersQ.data ?? [];
     const masterSizes = sizesQ.data ?? [];
     const masterFinishing = finishingQ.data ?? [];
+    const masterFinishingPrices = finishingPricesQ.data ?? [];
     const masterPrintAttrs = printAttrsQ.data ?? [];
 
     if (opts.length === 0) return opts;
@@ -163,8 +164,8 @@ export function useCatalogBackedOptions(
           const saved = isStructured(opt.values) ? opt.values : [];
           const next =
             saved.length > 0
-              ? enrichFinishingValuesFromMaster(saved, masterFinishing)
-              : finishingRowsToValues(masterFinishing, category);
+              ? enrichFinishingValuesFromMaster(saved, masterFinishing, masterFinishingPrices)
+              : finishingRowsToValues(masterFinishing, category, masterFinishingPrices);
           if (next.length > 0) {
             return {
               ...opt,
@@ -174,6 +175,7 @@ export function useCatalogBackedOptions(
         }
         return opt;
       }
+
 
       // ── CATALOG: PAPERS ───────────────────────────────────────────────────
       // Per-product Enabled toggles in the Options editor are authoritative.
