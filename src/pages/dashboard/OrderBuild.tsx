@@ -108,6 +108,10 @@ export default function OrderBuild() {
     gate_fold: "gate_fold",
     loose_sheets: "loose_sheets",
     poster: "poster",
+    posters: "poster",
+    "stapled-loose-pages": "loose_sheets",
+    stapled_loose_pages: "loose_sheets",
+    flyers: "loose_sheets",
     brochures: "bi_fold",
     booklets: "saddle_stitched",
     "business-cards": "business_cards",
@@ -936,6 +940,7 @@ export default function OrderBuild() {
               options={options}
               selectedOptions={spec.selected_options}
               onOptionChange={handleOptionChange}
+              familySlug={productFamily?.slug ?? undefined}
             />
 
             {/* Manage Tabs & Inserts button */}
