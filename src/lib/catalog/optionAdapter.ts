@@ -762,7 +762,11 @@ export function enrichPrintAttrValuesFromMaster(
     const code = String((v.metadata as any)?.catalog_code ?? v.slug ?? "");
     if (!code) continue;
     const master = byCode.get(code);
-    if (!master) continue;
+    if (!master) {
+      enriched.push({ ...v, is_active: true });
+      continue;
+    }
+
     const masterMeta = (master.metadata ?? {}) as Record<string, any>;
     enriched.push({
       ...v,
