@@ -414,6 +414,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
     setEditingOption(opt);
     const src = ((opt as any).source ?? "manual") as OptionSource;
     const cat = (opt as any).source_filter?.category ?? "";
+    const attr = (opt as any).source_filter?.attribute ?? "";
     setOptionForm({
       name: opt.name,
       option_type: opt.option_type,
@@ -421,6 +422,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       sort_order: opt.sort_order,
       source: src,
       finishingCategory: cat,
+      printAttribute: attr,
     });
     const parsed = parseOptionValues(opt.values);
     const manualParsed = parseOptionValues((opt as any).manual_values);
