@@ -175,8 +175,15 @@ export function useCatalogBackedOptions(
       }
 
       // ── CATALOG: SIZES ────────────────────────────────────────────────────
+      // Document Sizes are configured exclusively in Admin → Products →
+      // Catalogue tab (product_catalog_links). Use ONLY the resolved links;
+      // never silently fall back to the full master catalogue, otherwise
+      // customers see every size whenever the link projection is empty.
+      // Brand-new families with no links at all get the full master as a
+      // starter set so they're not blank.
       if (source === "catalog.sizes") {
-        const next = sizeValuesFromLinks ?? allSizeValues;
+        const hasAnyLinks = resolvedRows.some((r) => r.catalog === "size");
+        const next = hasAnyLinks ? sizeValuesFromLinks : allSizeValues;
         if (next && next.length > 0) {
           return {
             ...opt,
@@ -185,6 +192,7 @@ export function useCatalogBackedOptions(
         }
         return opt;
       }
+
 
       // ── CATALOG: PRINT ATTRIBUTES (colour_mode / sides / orientation) ────
       if (source === "catalog.print_attrs") {
