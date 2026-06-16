@@ -59,13 +59,15 @@ type OptionSource =
   | "manual"
   | "catalog.sizes"
   | "catalog.papers"
-  | "catalog.finishing";
+  | "catalog.finishing"
+  | "catalog.print_attrs";
 
 const SOURCE_OPTIONS: { value: OptionSource; label: string; description: string }[] = [
   { value: "manual", label: "Manual (custom)", description: "You type the values by hand" },
   { value: "catalog.sizes", label: "Document Size (Master Catalogue)", description: "Pulled live from Master Catalogue → Sizes" },
   { value: "catalog.papers", label: "Paper Stock (Master Catalogue)", description: "Pulled live from Master Catalogue → Papers" },
   { value: "catalog.finishing", label: "Finishing (Master Catalogue)", description: "Pulled live from Master Catalogue → Finishing (pick a category)" },
+  { value: "catalog.print_attrs", label: "Print Attribute (Master Catalogue)", description: "Pulled live from Master Catalogue → Print Attributes (pick an attribute: colour, sides, orientation). Pricing comes from Master Pricing → Click Charges." },
 ];
 
 const MASTER_LINKS: Record<OptionSource, string | null> = {
@@ -73,6 +75,7 @@ const MASTER_LINKS: Record<OptionSource, string | null> = {
   "catalog.sizes": "/admin/master-catalogue",
   "catalog.papers": "/admin/master-pricing",
   "catalog.finishing": "/admin/master-pricing",
+  "catalog.print_attrs": "/admin/master-pricing",
 };
 
 interface Props {
