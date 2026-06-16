@@ -12,6 +12,12 @@ const SLUG_TO_PREVIEW: Record<string, ProductPreviewType> = {
   gate_fold: "gate_fold",
   loose_sheets: "loose_sheets",
   poster: "poster",
+  // C2: family slug aliases so post-order preview resolution matches the
+  // configurator's mapping.
+  posters: "poster",
+  "stapled-loose-pages": "loose_sheets",
+  stapled_loose_pages: "loose_sheets",
+  flyers: "loose_sheets",
   brochures: "bi_fold",
   booklets: "saddle_stitched",
   "business-cards": "business_cards",
