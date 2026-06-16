@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPriceDelta } from "@/lib/formatCurrency";
+import { humaniseSlug } from "@/lib/utils";
 
 type ProductOption = Tables<"product_options">;
 
