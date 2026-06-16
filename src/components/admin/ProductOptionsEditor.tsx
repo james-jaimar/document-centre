@@ -665,6 +665,26 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
               </div>
             )}
 
+            {optionForm.source === "catalog.print_attrs" && (
+              <div className="space-y-1">
+                <Label>Print attribute</Label>
+                <Select
+                  value={optionForm.printAttribute}
+                  onValueChange={(v) => setOptionForm({ ...optionForm, printAttribute: v })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Pick an attribute…" /></SelectTrigger>
+                  <SelectContent>
+                    {printAttributes.map((a) => (
+                      <SelectItem key={a} value={a}>{a}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Pricing for colour mode and sides comes from Master Pricing → Click Charges.
+                </p>
+              </div>
+            )}
+
             {/* Option meta */}
             <div className="grid grid-cols-2 gap-3">
               <div>
