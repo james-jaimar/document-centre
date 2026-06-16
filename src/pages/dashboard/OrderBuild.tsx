@@ -397,16 +397,26 @@ export default function OrderBuild() {
     if (!docW || !docH) return;
 
     const TOLERANCE = 3; // mm
-    const matched = (sizeOpt.values as StructuredOptionValue[]).find((v) => {
-      const meta = v.metadata as Record<string, any>;
+    const docIsLandscape = docW > docH;
+    type Cand = { v: StructuredOptionValue; sameOrientation: boolean };
+    const candidates: Cand[] = [];
+    for (const v of sizeOpt.values as StructuredOptionValue[]) {
+      const meta = (v.metadata ?? {}) as Record<string, any>;
       const w = Number(meta?.width_mm ?? 0);
       const h = Number(meta?.height_mm ?? 0);
-      if (!w || !h) return false;
-      // Check both portrait and landscape
+      if (!w || !h) continue;
       const portrait = Math.abs(docW - w) <= TOLERANCE && Math.abs(docH - h) <= TOLERANCE;
       const landscape = Math.abs(docW - h) <= TOLERANCE && Math.abs(docH - w) <= TOLERANCE;
-      return portrait || landscape;
-    });
+      if (!portrait && !landscape) continue;
+      // A row's stored orientation: explicit metadata, otherwise inferred
+      // from its w/h. Prefer rows whose orientation matches the uploaded
+      // PDF (landscape PDF → "a4-landscape", not "a4").
+      const rowOrientation = String(meta.orientation ?? (w > h ? "landscape" : "portrait")).toLowerCase();
+      const sameOrientation = (docIsLandscape && rowOrientation === "landscape") ||
+        (!docIsLandscape && rowOrientation === "portrait");
+      candidates.push({ v, sameOrientation });
+    }
+    const matched = candidates.find((c) => c.sameOrientation)?.v ?? candidates[0]?.v;
 
     if (matched) {
       autoSizeMatchedRef.current = true;
