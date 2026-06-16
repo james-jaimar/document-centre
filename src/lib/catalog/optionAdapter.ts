@@ -340,13 +340,20 @@ export function enrichFinishingValuesFromMaster(
       ((master.category ?? "") === "cover" && (masterMeta.cover_group as string | undefined)) ||
       undefined;
 
-    // Pricing chip: prefer master metadata price_impact when present,
-    // otherwise keep whatever the per-product mirror has.
+    // Pricing chip: prefer real catalog_finishing_prices over legacy
+    // metadata.price_impact; fall back to the per-product saved value.
+    const realPrice = pricesBySize ? headlinePrice(pricesBySize) : 0;
     const priceImpact =
-      typeof masterMeta.price_impact === "number" ? masterMeta.price_impact : v.price_impact;
+      realPrice > 0
+        ? realPrice
+        : typeof masterMeta.price_impact === "number"
+          ? masterMeta.price_impact
+          : v.price_impact;
     const priceType =
       (masterMeta.price_type as "fixed" | "per_document" | "per_page" | undefined) ??
+      priceTypeFromBasis(master.pricing_basis) ??
       v.price_type;
+
 
     enriched.push({
       ...v,
