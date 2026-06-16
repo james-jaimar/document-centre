@@ -62,11 +62,20 @@ const RING_BINDER_LABELS: Record<string, string> = {
   tab: "Tab Divider",
 };
 
+const PRESENTATION_LABELS: Record<string, string> = {
+  front_cover: "Title Slide",
+  back_cover: "Closing Slide",
+  body: "Slides",
+  insert: "Insert",
+  tab: "Tab Divider",
+};
+
 function getLabels(familySlug?: string | null): Record<string, string> {
   if (familySlug === "brochures") return BROCHURE_LABELS;
   if (familySlug === "flyers") return FLYER_LABELS;
   if (familySlug === "posters") return POSTER_LABELS;
   if (familySlug === "ring_binders" || familySlug === "ring-binders") return RING_BINDER_LABELS;
+  if (familySlug === "presentations") return PRESENTATION_LABELS;
   return DEFAULT_LABELS;
 }
 
