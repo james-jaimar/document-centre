@@ -163,6 +163,7 @@ export default function OrderBuild() {
   const { data: rcPapers = [] } = useRateCardPapers(rcArgs);
   const { data: rcFinishing = [] } = useRateCardFinishing(rcArgs);
   const { data: rcPhotoPrints = [] } = useRateCardPhotoPrints(rcArgs);
+  const { data: rcBusinessCards = [] } = useRateCardBusinessCards(rcArgs);
   const { data: bindingSpecs = [] } = useBindingSpecifications();
   const { data: rcPriceBreaks = [] } = useRateCardPriceBreaksBundle(rcArgs);
   const rateCard = useMemo(
@@ -171,12 +172,17 @@ export default function OrderBuild() {
       papers: rcPapers,
       finishing: rcFinishing,
       photoPrints: rcPhotoPrints,
+      businessCards: rcBusinessCards,
       bindingSpecs,
       priceBreaks: rcPriceBreaks,
     }),
-    [rcClicks, rcPapers, rcFinishing, rcPhotoPrints, bindingSpecs, rcPriceBreaks],
+    [rcClicks, rcPapers, rcFinishing, rcPhotoPrints, rcBusinessCards, bindingSpecs, rcPriceBreaks],
   );
-  const useNewEngine = !!recipe && (rcClicks.length > 0 || rcPhotoPrints.length > 0);
+  const useNewEngine =
+    !!recipe &&
+    (rcClicks.length > 0 ||
+      rcPhotoPrints.length > 0 ||
+      rcBusinessCards.length > 0);
 
   // Fetch pricing rules for this product family in the active currency.
   // When a branch is selected, use that branch's own pricebook; otherwise the
