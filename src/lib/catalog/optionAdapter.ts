@@ -599,7 +599,11 @@ export function enrichSizeValuesFromMaster(
     const code = String((v.metadata as any)?.size_code ?? v.slug ?? "");
     if (!code) continue;
     const master = byCode.get(code);
-    if (!master) continue;
+    if (!master) {
+      enriched.push({ ...v, is_active: true });
+      continue;
+    }
+
 
     const w = master.width_mm ?? 0;
     const h = master.height_mm ?? 0;
