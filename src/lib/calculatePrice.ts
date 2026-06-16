@@ -479,7 +479,8 @@ export function calculatePriceFromRateCard(
     spec.selected_options["Print Size"] ??
     spec.selected_options["Size"] ??
     "A4";
-  const size = String(rawSize).toUpperCase();
+  // Strip orientation suffix — "A4-LANDSCAPE" / "A4-PORTRAIT" price the same as "A4".
+  const size = String(rawSize).toUpperCase().replace(/-(LANDSCAPE|PORTRAIT)$/, "");
 
   const SIZE_IMPOSITION: Record<string, { parent: string; nUp: number }> = {
     A4: { parent: "A3", nUp: 2 },
