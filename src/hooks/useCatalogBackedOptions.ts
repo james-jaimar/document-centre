@@ -87,6 +87,20 @@ export function useCatalogBackedOptions(
     },
   });
 
+  const finishingPricesQ = useQuery({
+    queryKey: ["catalog_finishing_prices", "master", "active"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("catalog_finishing_prices" as any)
+        .select("*")
+        .eq("scope_type", "master")
+        .eq("is_active", true);
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+
+
   const printAttrsQ = useQuery({
     queryKey: ["catalog_print_attrs", "master", "all"],
     queryFn: async () => {
@@ -105,6 +119,7 @@ export function useCatalogBackedOptions(
     const masterPapers = papersQ.data ?? [];
     const masterSizes = sizesQ.data ?? [];
     const masterFinishing = finishingQ.data ?? [];
+    const masterFinishingPrices = finishingPricesQ.data ?? [];
     const masterPrintAttrs = printAttrsQ.data ?? [];
 
     if (opts.length === 0) return opts;
@@ -149,8 +164,8 @@ export function useCatalogBackedOptions(
           const saved = isStructured(opt.values) ? opt.values : [];
           const next =
             saved.length > 0
-              ? enrichFinishingValuesFromMaster(saved, masterFinishing)
-              : finishingRowsToValues(masterFinishing, category);
+              ? enrichFinishingValuesFromMaster(saved, masterFinishing, masterFinishingPrices)
+              : finishingRowsToValues(masterFinishing, category, masterFinishingPrices);
           if (next.length > 0) {
             return {
               ...opt,
@@ -160,6 +175,7 @@ export function useCatalogBackedOptions(
         }
         return opt;
       }
+
 
       // ── CATALOG: PAPERS ───────────────────────────────────────────────────
       // Per-product Enabled toggles in the Options editor are authoritative.
@@ -234,8 +250,9 @@ export function useCatalogBackedOptions(
       if (inferredCategory && masterFinishing.length > 0) {
         const saved = isStructured(opt.values) ? opt.values : [];
         const next = saved.length > 0
-          ? enrichFinishingValuesFromMaster(saved, masterFinishing)
-          : finishingRowsToValues(masterFinishing, inferredCategory);
+          ? enrichFinishingValuesFromMaster(saved, masterFinishing, masterFinishingPrices)
+          : finishingRowsToValues(masterFinishing, inferredCategory, masterFinishingPrices);
+
         if (next.length > 0) {
           return { ...opt, values: preserveDefault(opt.values, next) as any };
         }
@@ -260,7 +277,7 @@ export function useCatalogBackedOptions(
       }
       return opt;
     });
-  }, [legacy.data, resolved.data, papersQ.data, sizesQ.data, finishingQ.data, printAttrsQ.data]);
+  }, [legacy.data, resolved.data, papersQ.data, sizesQ.data, finishingQ.data, finishingPricesQ.data, printAttrsQ.data]);
 
 
   return {
@@ -271,6 +288,7 @@ export function useCatalogBackedOptions(
       papersQ.isLoading ||
       sizesQ.isLoading ||
       finishingQ.isLoading ||
+      finishingPricesQ.isLoading ||
       printAttrsQ.isLoading,
     error:
       legacy.error ??
@@ -278,8 +296,10 @@ export function useCatalogBackedOptions(
       papersQ.error ??
       sizesQ.error ??
       finishingQ.error ??
+      finishingPricesQ.error ??
       printAttrsQ.error,
   };
+
 }
 
 /**

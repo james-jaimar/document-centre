@@ -831,26 +831,68 @@ export function calculatePriceFromRateCard(
 
 
 
-    if (!selectedValue.price_impact) continue;
+    // Resolve a size-aware price from `metadata.prices_by_size` (injected by
+    // the catalog overlay from `catalog_finishing_prices`). Falls back to the
+    // option value's flat `price_impact` when no size-specific row exists.
+    const pricesBySize = (metadata.prices_by_size ?? null) as
+      | Record<string, number>
+      | null;
+    const sizeKey = String(size ?? "").toLowerCase();
+    const sizedPrice =
+      pricesBySize && typeof pricesBySize[sizeKey] === "number"
+        ? pricesBySize[sizeKey]
+        : pricesBySize && typeof pricesBySize.any === "number"
+          ? pricesBySize.any
+          : null;
+    const unitAmount = sizedPrice ?? selectedValue.price_impact ?? 0;
+    if (!unitAmount) continue;
+
+    // `metadata.pricing_basis` mirrors `catalog_finishing.pricing_basis` and
+    // tells us how to scale the unit price for this configuration.
+    const basis = String(metadata.pricing_basis ?? "").toLowerCase();
     let multiplier = 1;
-    switch (selectedValue.price_type) {
-      case "per_page":
-        multiplier = printableSections.reduce((s, x) => s + x.page_count, 0) || spec.page_count;
+    switch (basis) {
+      case "per_sheet":
+        multiplier = totalSheets || 1;
         break;
+      case "per_page":
+        multiplier =
+          printableSections.reduce((s, x) => s + x.page_count, 0) ||
+          spec.page_count ||
+          1;
+        break;
+      case "per_set":
+      case "per_cut":
       case "per_document":
-      case "fixed":
+      case "per_unit":
+      case "":
       default:
-        multiplier = 1;
+        // Legacy price_type fallback for options that don't carry pricing_basis.
+        if (!basis) {
+          switch (selectedValue.price_type) {
+            case "per_page":
+              multiplier =
+                printableSections.reduce((s, x) => s + x.page_count, 0) ||
+                spec.page_count ||
+                1;
+              break;
+            default:
+              multiplier = 1;
+          }
+        } else {
+          multiplier = 1;
+        }
         break;
     }
     lines.push({
       label: `${option.name}: ${selectedValue.label}`,
       type: "option",
-      unit_amount: selectedValue.price_impact,
+      unit_amount: unitAmount,
       multiplier,
-      total: selectedValue.price_impact * multiplier,
+      total: unitAmount * multiplier,
     });
   }
+
 
   const subtotal_per_unit = lines.reduce((sum, l) => sum + l.total, 0);
   return {

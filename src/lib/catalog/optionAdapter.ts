@@ -56,6 +56,65 @@ export type CatalogFinishingRow = {
   metadata?: Record<string, unknown> | null;
 };
 
+export type CatalogFinishingPriceRow = {
+  id: string;
+  finishing_id: string;
+  size_code: string;
+  sell_price_minor: number | null;
+  is_active: boolean;
+};
+
+/**
+ * Build a per-size price map (rands) for a given finishing row from the
+ * `catalog_finishing_prices` rows. Result keys are lowercase size codes
+ * (`a4`, `a3`, `sra3`, `any`, …). Inactive price rows are ignored.
+ */
+function pricesByFinishingId(
+  prices: CatalogFinishingPriceRow[] | undefined,
+): Map<string, Record<string, number>> {
+  const out = new Map<string, Record<string, number>>();
+  if (!prices) return out;
+  for (const p of prices) {
+    if (!p.is_active) continue;
+    const minor = Number(p.sell_price_minor ?? 0);
+    if (!Number.isFinite(minor)) continue;
+    const bucket = out.get(p.finishing_id) ?? {};
+    bucket[String(p.size_code ?? "any").toLowerCase()] = minor / 100;
+    out.set(p.finishing_id, bucket);
+  }
+  return out;
+}
+
+/** Map catalog_finishing.pricing_basis → StructuredOptionValue.price_type. */
+function priceTypeFromBasis(
+  basis: string | null | undefined,
+): "fixed" | "per_document" | "per_page" {
+  switch ((basis ?? "").toLowerCase()) {
+    case "per_page":
+      return "per_page";
+    case "per_sheet":
+      // No direct equivalent; engine reads `metadata.pricing_basis` to
+      // multiply by total sheets. price_type stays per_document so the
+      // legacy engine doesn't double-count.
+      return "per_document";
+    default:
+      return "per_document";
+  }
+}
+
+/**
+ * Default "headline" price chip for the dropdown: pick A4 (the most common
+ * print size) if present, else `any`, else the first entry, else 0.
+ */
+function headlinePrice(byCode: Record<string, number> | undefined): number {
+  if (!byCode) return 0;
+  if (typeof byCode.a4 === "number") return byCode.a4;
+  if (typeof byCode.any === "number") return byCode.any;
+  const first = Object.values(byCode).find((v) => typeof v === "number");
+  return typeof first === "number" ? first : 0;
+}
+
+
 export type CatalogPrintAttrRow = {
   id: string;
   attribute: string;
@@ -162,7 +221,9 @@ export function previewMetadataForFinishingCode(
 export function finishingRowsToValues(
   rows: CatalogFinishingRow[],
   category: string,
+  priceRows?: CatalogFinishingPriceRow[],
 ): StructuredOptionValue[] {
+  const priceMap = pricesByFinishingId(priceRows);
   const filtered = rows
     .filter((r) => r.is_active)
     .filter((r) => (r.category ?? "") === category)
@@ -175,7 +236,8 @@ export function finishingRowsToValues(
 
   return filtered.map((r, i) => {
     const rowMeta = (r.metadata ?? {}) as Record<string, any>;
-    const meta: Record<string, string | number | boolean> = {
+    const pricesBySize = priceMap.get(r.id);
+    const meta: Record<string, any> = {
       catalog_code: r.code,
       category,
       ...rowMeta,
@@ -185,6 +247,8 @@ export function finishingRowsToValues(
     if (r.color) meta.color = r.color;
     if (r.size_mm != null) meta.size_mm = r.size_mm;
     if (r.max_sheets != null) meta.max_sheets = r.max_sheets;
+    if (r.pricing_basis) meta.pricing_basis = r.pricing_basis;
+    if (pricesBySize) meta.prices_by_size = pricesBySize;
 
     // Per-row group override (e.g. cover_group splits "cover" into
     // No Cover / Clear Covers / White Card Stock / Printed Covers).
@@ -192,13 +256,14 @@ export function finishingRowsToValues(
       (category === "cover" && (rowMeta.cover_group as string | undefined)) ||
       undefined;
 
-    // Master row may carry display pricing in metadata (price_impact + price_type)
-    // so the dropdown shows the same "+R x,xx/doc" chips the manual list had.
-    const priceImpact =
+    // Prefer real catalog_finishing_prices over any legacy metadata.price_impact.
+    const realPrice = pricesBySize ? headlinePrice(pricesBySize) : 0;
+    const fallbackImpact =
       typeof rowMeta.price_impact === "number" ? rowMeta.price_impact : 0;
+    const priceImpact = realPrice > 0 ? realPrice : fallbackImpact;
     const priceType =
       (rowMeta.price_type as "fixed" | "per_document" | "per_page" | undefined) ??
-      "per_document";
+      priceTypeFromBasis(r.pricing_basis);
 
     return {
       label: r.label,
@@ -214,6 +279,9 @@ export function finishingRowsToValues(
     };
   });
 }
+
+
+
 
 
 /**
@@ -232,8 +300,10 @@ export function finishingRowsToValues(
 export function enrichFinishingValuesFromMaster(
   savedValues: StructuredOptionValue[],
   masterRows: CatalogFinishingRow[],
+  priceRows?: CatalogFinishingPriceRow[],
 ): StructuredOptionValue[] {
   const byCode = new Map(masterRows.map((r) => [r.code, r]));
+  const priceMap = pricesByFinishingId(priceRows);
   const enriched: StructuredOptionValue[] = [];
 
   for (const v of savedValues) {
@@ -248,6 +318,7 @@ export function enrichFinishingValuesFromMaster(
     if (!master) continue;
 
     const masterMeta = (master.metadata ?? {}) as Record<string, any>;
+    const pricesBySize = priceMap.get(master.id);
     const meta: Record<string, any> = {
       ...(v.metadata ?? {}),
       ...masterMeta,
@@ -259,6 +330,9 @@ export function enrichFinishingValuesFromMaster(
     if (master.color) meta.color = master.color;
     if (master.size_mm != null) meta.size_mm = master.size_mm;
     if (master.max_sheets != null) meta.max_sheets = master.max_sheets;
+    if (master.pricing_basis) meta.pricing_basis = master.pricing_basis;
+    if (pricesBySize) meta.prices_by_size = pricesBySize;
+
 
     // Master sub-grouping (cover_group) overrides any saved group so a
     // catalog re-categorisation flows through to the customer dropdown.
@@ -266,13 +340,20 @@ export function enrichFinishingValuesFromMaster(
       ((master.category ?? "") === "cover" && (masterMeta.cover_group as string | undefined)) ||
       undefined;
 
-    // Pricing chip: prefer master metadata price_impact when present,
-    // otherwise keep whatever the per-product mirror has.
+    // Pricing chip: prefer real catalog_finishing_prices over legacy
+    // metadata.price_impact; fall back to the per-product saved value.
+    const realPrice = pricesBySize ? headlinePrice(pricesBySize) : 0;
     const priceImpact =
-      typeof masterMeta.price_impact === "number" ? masterMeta.price_impact : v.price_impact;
+      realPrice > 0
+        ? realPrice
+        : typeof masterMeta.price_impact === "number"
+          ? masterMeta.price_impact
+          : v.price_impact;
     const priceType =
       (masterMeta.price_type as "fixed" | "per_document" | "per_page" | undefined) ??
+      priceTypeFromBasis(master.pricing_basis) ??
       v.price_type;
+
 
     enriched.push({
       ...v,
