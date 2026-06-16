@@ -573,6 +573,8 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
               const count = Array.isArray(vals) ? vals.length : 0;
               const src = ((opt as any).source ?? "manual") as OptionSource;
               const cat = (opt as any).source_filter?.category;
+              const attr = (opt as any).source_filter?.attribute;
+              const sub = cat ?? attr;
               return (
                 <TableRow key={opt.id}>
                   <TableCell className="font-medium">{opt.name}</TableCell>
@@ -581,7 +583,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
                       <Badge variant="outline" className="text-xs">manual</Badge>
                     ) : (
                       <Badge variant="default" className="text-xs">
-                        {src.replace("catalog.", "")}{cat ? ` · ${cat}` : ""}
+                        {src.replace("catalog.", "")}{sub ? ` · ${sub}` : ""}
                       </Badge>
                     )}
                   </TableCell>
