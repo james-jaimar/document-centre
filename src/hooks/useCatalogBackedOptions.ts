@@ -87,6 +87,20 @@ export function useCatalogBackedOptions(
     },
   });
 
+  const finishingPricesQ = useQuery({
+    queryKey: ["catalog_finishing_prices", "master", "active"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("catalog_finishing_prices" as any)
+        .select("*")
+        .eq("scope_type", "master")
+        .eq("is_active", true);
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+
+
   const printAttrsQ = useQuery({
     queryKey: ["catalog_print_attrs", "master", "all"],
     queryFn: async () => {
