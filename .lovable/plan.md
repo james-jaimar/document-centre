@@ -1,41 +1,22 @@
-# Three bugs to fix on the customer configurator
+## Two bugs, one root area: `src/pages/dashboard/OrderBuild.tsx`
 
-## 1. "Manage Tabs & Inserts" no longer opens
+### Bug 1 — "Manage Tabs & Inserts" button disappears when tabs are turned off
+The `insertEnabled` lookup picks the first option whose name contains `"insert"` OR `"divider"`:
 
-**Cause.** `OrderBuild.tsx` decides whether tabs are active by reading `metadata.tab_count` / `metadata.pack_count` / `metadata.color` off the selected Tab Dividers value. The new master rows in `catalog_finishing` (`tab-none`, `tab-pack-white`, `tab-pack-multi`) carry no such metadata, so `tabInfo` is always `null` and the **Manage Tabs & Inserts** button never renders. Same root cause means the auto-open effect never fires.
+```ts
+options.find((o) => o.name.toLowerCase().includes("insert") || o.name.toLowerCase().includes("divider"))
+```
 
-**Fix (two layers, so this can't break again):**
+The **Tab Dividers** option name also contains "divider", and it comes before **Inserts** in the list. So when Tab Dividers is set to "No Tab Dividers", `insertEnabled` reads the *tab* slug (`none`) and returns `false` — even though the real Inserts option is set to "Coloured Divider Sheet". The Manage button is gated on `(tabInfo || insertEnabled)`, so it vanishes.
 
-- **Migration** — backfill the master `catalog_finishing` rows so each tab/insert variant carries the metadata the UI needs:
-  - `tab-pack-white` → `{ pack_size: 10, tab_count: 10, pack_count: 1, color: "white", material: "card", printable: true }`
-  - `tab-pack-multi` → same with `color: "multi"`
-  - `insert-slip-80` / `insert-slip-160` / `insert-divider-colour` → `{ kind: "insert", color: "white" | "white" | "assorted" }`
-- **Code** — make `OrderBuild.tsx` derive `tabInfo` defensively: if the selected value belongs to `category: tab_dividers` (or its slug starts with `tab-`) and is not the "none" row, treat it as enabled and fall back to `pack_size` / a default of 10 tabs when `tab_count` isn't set. Same for inserts (category `inserts`, non-none → enabled).
+**Fix:** make the insert lookup specific — match `name.includes("insert")` only, or exclude any option whose name contains "tab". Prefer an exact-ish match: first try `name.toLowerCase() === "inserts"`, then `includes("insert")`, never "divider" alone.
 
-## 2. Customer sees slug `a4` instead of `A4 Landscape`
+### Bug 2 — Preview still shows tabs after deselecting Tab Dividers
+When the user switches Tab Dividers to "No Tab Dividers", `tabInfo` becomes `null` but the previously created `document_sections` rows of `section_type: "tab"` are never deleted, so the preview keeps rendering them. Same applies to Inserts → "None".
 
-**Cause.** Two things compound:
+**Fix:** add an effect that, when `tabInfo` transitions to `null`, deletes all `section_type === "tab"` sections for this order item; and when `insertEnabled` transitions to `false`, deletes all `section_type === "insert"` sections. Reuse the existing `handleDeleteTab` / `handleDeleteInsert` callbacks so engine/cache stays consistent. Guard with a "previously had any" check to avoid wiping on first mount before data loads.
 
-1. `OptionSelector` / `OptionsPanel` fall back to the raw slug when the selected value isn't in the values list (`selectedValue?.label ?? value`). The PDF preflight writes the slug `a4` into `selected_options`, but for Presentations the only catalogue-linked size is `a4-landscape`, so no match is found and the customer sees `a4`.
-2. The size auto-match in `OrderBuild.tsx` accepts the first portrait-OR-landscape hit. When both `a4` and `a4-landscape` are enabled (bound documents) it picks `a4` even when the uploaded PDF is landscape.
+### Files
+- `src/pages/dashboard/OrderBuild.tsx` — tighten `insertEnabled` option lookup; add cleanup effect that purges tab/insert sections when their respective option is set to none.
 
-**Fix.**
-
-- In `OrderBuild.tsx` size auto-match: score each candidate and **prefer the value whose stored orientation matches the PDF's actual orientation** (landscape PDF → `a4-landscape`); cross-orientation match is only used when no same-orientation row exists.
-- In `OptionSelector` and `OptionsPanel.getDisplayValue`: when no value matches the selected slug, render a humanised fallback (`a4-landscape` → `A4 Landscape`) instead of the raw slug, so legacy/edge cases never expose slugs to customers.
-
-## 3. Audit other customer-facing slug leaks
-
-Quick sweep of customer surfaces — Cart line summary, Order Confirmation, Customer Quote/Order detail, PriceSummary "Selected options" — to ensure every place that prints an option value uses the resolved `label` (with the same humanised fallback), never the raw slug from `selected_options`. Any place currently rendering `slug` will be switched to label lookup.
-
-## Files
-
-- `supabase/migrations/<new>.sql` — UPDATE `catalog_finishing` metadata for `tab-pack-white`, `tab-pack-multi`, `insert-slip-80`, `insert-slip-160`, `insert-divider-colour`.
-- `src/pages/dashboard/OrderBuild.tsx` — defensive `tabInfo`/`insertEnabled` derivation; orientation-preferring size auto-match.
-- `src/components/order/OptionSelector.tsx`, `src/components/order/OptionsPanel.tsx` — slug→label humanised fallback.
-- `src/pages/dashboard/Cart.tsx`, `src/pages/dashboard/OrderConfirmation.tsx`, `src/components/order/PriceSummary.tsx` (and any matching admin/customer detail views found in the sweep) — switch any remaining slug renders to resolved labels.
-
-## Out of scope
-
-- No changes to the PDF preflight pipeline — it can keep sending the base ISO code (`a4`); the configurator will resolve the correct landscape variant.
-- No changes to admin-side tooling.
+No changes to TabInsertDrawer, preview, or catalog data needed.
