@@ -407,11 +407,16 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
     }
 
     // Same source, but category or master catalogue changed
-    if (nextSource === "catalog.finishing" || nextSource === "catalog.papers" || nextSource === "catalog.sizes") {
+    if (
+      nextSource === "catalog.finishing" ||
+      nextSource === "catalog.papers" ||
+      nextSource === "catalog.sizes" ||
+      nextSource === "catalog.print_attrs"
+    ) {
       setEditValues((prev) => refreshCatalogMirror(optionForm, prev));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [optionForm.source, optionForm.finishingCategory, catSizes.length, catPapers.length, catFinishing.length, optionDialogOpen]);
+  }, [optionForm.source, optionForm.finishingCategory, optionForm.printAttribute, catSizes.length, catPapers.length, catFinishing.length, catPrintAttrs.length, optionDialogOpen]);
 
   function openCreateOption() {
     setEditingOption(null);
