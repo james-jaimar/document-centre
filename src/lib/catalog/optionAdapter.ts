@@ -314,8 +314,16 @@ export function enrichFinishingValuesFromMaster(
     if (!code) continue;
     const master = byCode.get(code);
     // Product-level Enabled is authoritative for customer visibility.
-    // Only drop if the master row was deleted from the catalogue entirely.
-    if (!master) continue;
+    // When the saved code doesn't match any master row (legacy slug, or
+    // master row deleted), keep the saved value as-is rather than silently
+    // dropping it — losing it makes the customer dropdown disagree with
+    // the admin's curated list. The admin editor flags the orphan so it
+    // can be cleaned up.
+    if (!master) {
+      enriched.push({ ...v, is_active: true });
+      continue;
+    }
+
 
     const masterMeta = (master.metadata ?? {}) as Record<string, any>;
     const pricesBySize = priceMap.get(master.id);
@@ -525,8 +533,21 @@ export function enrichPaperValuesFromMaster(
     if (v.is_active === false) continue;
     const code = String((v.metadata as any)?.paper_code ?? v.slug ?? "");
     if (!code) continue;
-    const master = byCode.get(code);
-    if (!master) continue;
+    // Try direct match first, then fall back to a size-stripped lookup so
+    // legacy sized slugs like `80gsm-bond-a4` map back to master `80gsm-bond`.
+    let master = byCode.get(code);
+    if (!master) {
+      const stripped = code.replace(/-(a\d|dl|sra3|letter|legal|tabloid)$/i, "");
+      if (stripped !== code) master = byCode.get(stripped);
+    }
+    if (!master) {
+      // Keep the saved value visible (with its baked-in price/label) so the
+      // customer dropdown matches the admin's curated list. The admin
+      // editor flags orphans for cleanup.
+      enriched.push({ ...v, is_active: true });
+      continue;
+    }
+
 
     const pmeta = (master.metadata ?? {}) as Record<string, unknown>;
     const color = typeof pmeta.color === "string" ? pmeta.color : "";
@@ -578,7 +599,11 @@ export function enrichSizeValuesFromMaster(
     const code = String((v.metadata as any)?.size_code ?? v.slug ?? "");
     if (!code) continue;
     const master = byCode.get(code);
-    if (!master) continue;
+    if (!master) {
+      enriched.push({ ...v, is_active: true });
+      continue;
+    }
+
 
     const w = master.width_mm ?? 0;
     const h = master.height_mm ?? 0;
@@ -737,7 +762,11 @@ export function enrichPrintAttrValuesFromMaster(
     const code = String((v.metadata as any)?.catalog_code ?? v.slug ?? "");
     if (!code) continue;
     const master = byCode.get(code);
-    if (!master) continue;
+    if (!master) {
+      enriched.push({ ...v, is_active: true });
+      continue;
+    }
+
     const masterMeta = (master.metadata ?? {}) as Record<string, any>;
     enriched.push({
       ...v,

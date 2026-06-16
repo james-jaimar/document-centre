@@ -300,8 +300,22 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
   const manualValuesRef = useRef<StructuredOptionValue[]>([]);
   const prevSourceRef = useRef<OptionSource>("manual");
 
-  /** Build the catalog mirror list whenever source/category changes (for unsaved edits). */
-  function refreshCatalogMirror(form: OptionFormData, existing: StructuredOptionValue[]) {
+  /**
+   * Build the catalog mirror list whenever source/category changes.
+   *
+   * Modes:
+   *   - `seed`: replace the list with ALL active master rows (for new options or
+   *     when the admin changes source/category — they want a fresh list).
+   *   - `refresh`: keep the existing saved entries verbatim; only refresh
+   *     metadata (label / preview hints / binding spec) from master. Master
+   *     rows not already in the saved list are NOT added — the admin's
+   *     curated set is the source of truth for what customers see.
+   */
+  function refreshCatalogMirror(
+    form: OptionFormData,
+    existing: StructuredOptionValue[],
+    mode: "seed" | "refresh" = "seed",
+  ) {
     if (form.source === "manual") return existing;
     const byCode = new Map(existing.map((v) => [String(v.metadata?.catalog_code ?? v.slug), v]));
 
@@ -326,28 +340,40 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
     };
 
     if (form.source === "catalog.sizes") {
-      return (catSizes as any[]).map((s) =>
-        make(s.code, s.label ?? s.code, s.region ?? "Default", "per_document", {
-          iso: s.iso,
-          width_mm: s.width_mm,
-          height_mm: s.height_mm,
-        }),
-      );
+      const rows = (catSizes as any[])
+        .filter((s) => s.is_active)
+        .filter((s) => mode === "seed" || byCode.has(s.code))
+        .map((s) =>
+          make(s.code, s.label ?? s.code, s.region ?? "Default", "per_document", {
+            iso: s.iso,
+            width_mm: s.width_mm,
+            height_mm: s.height_mm,
+          }),
+        );
+      // Always keep existing entries whose master row is missing (legacy),
+      // so the admin can see and clean them up rather than losing them.
+      return mode === "refresh" ? mergeKeepUnknown(rows, existing) : rows;
     }
     if (form.source === "catalog.papers") {
-      return (catPapers as any[]).map((p) =>
-        make(p.code, p.label ?? p.code, p.weight_gsm ? `${p.weight_gsm}gsm` : "Default", "per_page", {
-          weight_gsm: p.weight_gsm,
-          finish: p.finish,
-          is_cover_stock: p.is_cover_stock,
-        }),
-      );
+      const rows = (catPapers as any[])
+        .filter((p) => p.is_active)
+        .filter((p) => mode === "seed" || byCode.has(p.code))
+        .map((p) =>
+          make(p.code, p.label ?? p.code, p.weight_gsm ? `${p.weight_gsm}gsm` : "Default", "per_page", {
+            weight_gsm: p.weight_gsm,
+            finish: p.finish,
+            is_cover_stock: p.is_cover_stock,
+          }),
+        );
+      return mode === "refresh" ? mergeKeepUnknown(rows, existing) : rows;
     }
     if (form.source === "catalog.finishing") {
       const cat = form.finishingCategory;
-      if (!cat) return [];
-      return (catFinishing as any[])
+      if (!cat) return existing;
+      const rows = (catFinishing as any[])
+        .filter((f) => f.is_active)
         .filter((f) => f.category === cat)
+        .filter((f) => mode === "seed" || byCode.has(f.code))
         .map((f) => {
           // Bake preview-engine metadata (front/back/binding_method/etc.)
           // straight into the saved value so the customer preview wires up
@@ -362,27 +388,49 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
           if (f.max_sheets != null) extra.max_sheets = f.max_sheets;
           return make(f.code, f.label ?? f.code, cat, "per_document", extra);
         });
+      return mode === "refresh" ? mergeKeepUnknown(rows, existing) : rows;
     }
     if (form.source === "catalog.print_attrs") {
       const attr = form.printAttribute;
-      if (!attr) return [];
-      return (catPrintAttrs as any[])
-        .filter((p) => p.attribute === attr)
+      if (!attr) return existing;
+      const rows = (catPrintAttrs as any[])
+        .filter((p) => p.is_active)
+        .filter((p) => (p.attribute ?? "") === attr)
+        .filter((p) => mode === "seed" || byCode.has(p.code))
         .map((p) =>
           make(p.code, p.label ?? p.code, attr, "per_document", {
             attribute: attr,
             ...(p.metadata ?? {}),
           }),
         );
+      return mode === "refresh" ? mergeKeepUnknown(rows, existing) : rows;
     }
     return existing;
   }
 
+  /**
+   * Merge refreshed master rows with any existing saved entries whose code no
+   * longer matches a master row. We keep the unknowns at the bottom so the
+   * admin can see and clean them up — losing them silently is what caused
+   * customer dropdowns to drift from the admin's curated list.
+   */
+  function mergeKeepUnknown(
+    refreshed: StructuredOptionValue[],
+    existing: StructuredOptionValue[],
+  ): StructuredOptionValue[] {
+    const refreshedCodes = new Set(refreshed.map((v) => String(v.metadata?.catalog_code ?? v.slug)));
+    const orphans = existing.filter(
+      (v) => !refreshedCodes.has(String(v.metadata?.catalog_code ?? v.slug)),
+    );
+    return [...refreshed, ...orphans];
+  }
+
   // Keep mirror in sync when admin changes source/category mid-dialog.
-  // Handles three transitions:
-  //  - manual → catalog: snapshot current manual values, then build mirror
-  //  - catalog → manual: restore the snapshotted manual values
-  //  - catalog → catalog (different cat): rebuild mirror
+  // - source change (manual ↔ catalog, or catalog→catalog): full seed
+  // - same source, category/master refreshed:
+  //     * new option (no saved values yet): seed from master
+  //     * editing existing option: refresh metadata only, never auto-add
+  //       master rows the admin didn't already enable
   useEffect(() => {
     if (!optionDialogOpen) return;
     const prevSource = prevSourceRef.current;
@@ -394,13 +442,13 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
         if (!looksLikeCatalogMirror(editValues)) {
           manualValuesRef.current = editValues;
         }
-        setEditValues(refreshCatalogMirror(optionForm, []));
+        setEditValues(refreshCatalogMirror(optionForm, [], "seed"));
       } else if (prevSource !== "manual" && nextSource === "manual") {
         // Back to manual — restore.
         setEditValues(manualValuesRef.current);
       } else {
         // catalog → catalog with different kind/category
-        setEditValues(refreshCatalogMirror(optionForm, []));
+        setEditValues(refreshCatalogMirror(optionForm, [], "seed"));
       }
       prevSourceRef.current = nextSource;
       return;
@@ -413,10 +461,19 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       nextSource === "catalog.sizes" ||
       nextSource === "catalog.print_attrs"
     ) {
-      setEditValues((prev) => refreshCatalogMirror(optionForm, prev));
+      setEditValues((prev) => {
+        const isEditingExisting = !!editingOption && prev.length > 0;
+        return refreshCatalogMirror(
+          optionForm,
+          prev,
+          isEditingExisting ? "refresh" : "seed",
+        );
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [optionForm.source, optionForm.finishingCategory, optionForm.printAttribute, catSizes.length, catPapers.length, catFinishing.length, catPrintAttrs.length, optionDialogOpen]);
+
+
 
   function openCreateOption() {
     setEditingOption(null);
@@ -740,11 +797,21 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
             {/* Values */}
             {isCatalog ? (
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <Label>Catalog values ({editValues.length})</Label>
-                  <span className="text-xs text-muted-foreground">
-                    Read-only mirror of Master Catalogue. Toggle enabled/default or set a per-family price override.
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      Read-only mirror. Toggle enabled/default or set per-family overrides.
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setEditValues(refreshCatalogMirror(optionForm, editValues, "seed"))}
+                      title="Replace this list with every active Master Catalogue row for this category"
+                    >
+                      Reset from Master
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1">
                   {editValues.length === 0 ? (
@@ -752,23 +819,48 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
                       No matching catalog items {optionForm.source === "catalog.finishing" ? "for this category " : ""}yet.
                     </p>
                   ) : (
-                    editValues.map((val, idx) => (
-                      <CatalogValueRow
-                        key={val.slug || idx}
-                        catalogLabel={val.label}
-                        catalogCode={val.slug}
-                        catalogSub={
-                          (val.metadata?.weight_gsm && `${val.metadata.weight_gsm}gsm`) ||
-                          (val.metadata?.iso as string | undefined) ||
-                          undefined
-                        }
-                        value={val}
-                        onUpdate={(v) => updateValue(idx, v)}
-                      />
-                    ))
+                    editValues.map((val, idx) => {
+                      const code = String(val.metadata?.catalog_code ?? val.slug ?? "");
+                      const masterMatch =
+                        optionForm.source === "catalog.finishing"
+                          ? (catFinishing as any[]).some(
+                              (f) => f.code === code && f.category === optionForm.finishingCategory,
+                            )
+                          : optionForm.source === "catalog.papers"
+                            ? (catPapers as any[]).some((p) => p.code === code)
+                            : optionForm.source === "catalog.sizes"
+                              ? (catSizes as any[]).some((s) => s.code === code)
+                              : optionForm.source === "catalog.print_attrs"
+                                ? (catPrintAttrs as any[]).some(
+                                    (p) => p.code === code && p.attribute === optionForm.printAttribute,
+                                  )
+                                : true;
+                      return (
+                        <div key={val.slug || idx} className="space-y-1">
+                          {!masterMatch && (
+                            <p className="text-[11px] text-amber-600">
+                              ⚠ <span className="font-mono">{code || "(no code)"}</span> isn't in the Master Catalogue for this category —
+                              customers see the price below, not Master Pricing. Disable it or rename to a master code.
+                            </p>
+                          )}
+                          <CatalogValueRow
+                            catalogLabel={val.label}
+                            catalogCode={val.slug}
+                            catalogSub={
+                              (val.metadata?.weight_gsm && `${val.metadata.weight_gsm}gsm`) ||
+                              (val.metadata?.iso as string | undefined) ||
+                              undefined
+                            }
+                            value={val}
+                            onUpdate={(v) => updateValue(idx, v)}
+                          />
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </div>
+
             ) : (
               ["select", "radio", "checkbox"].includes(optionForm.option_type) && (
                 <div className="space-y-2">
