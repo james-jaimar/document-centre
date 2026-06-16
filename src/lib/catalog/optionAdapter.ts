@@ -238,6 +238,29 @@ export function finishingRowsToValues(
         a.label.localeCompare(b.label),
     );
 
+  // Identify a "None" / no-op row when present so it becomes the seeded
+  // default for optional finishing categories (Lamination, Tab Dividers,
+  // Inserts, Trimming). Without this, the first chargeable item by sort
+  // order becomes the default and silently charges customers for things
+  // they didn't pick.
+  const noneIndex = filtered.findIndex((r) => {
+    const m = (r.metadata ?? {}) as Record<string, any>;
+    if (m.none === true) return true;
+    const code = (r.code ?? "").toLowerCase();
+    if (/(^|[-_])(none|no)([-_]|$)/.test(code)) return true;
+    const label = (r.label ?? "").toLowerCase();
+    return label.startsWith("no ") || label === "none";
+  });
+  const explicitDefaultIndex = filtered.findIndex(
+    (r) => ((r.metadata ?? {}) as Record<string, any>).is_default === true,
+  );
+  const defaultIndex =
+    explicitDefaultIndex >= 0
+      ? explicitDefaultIndex
+      : noneIndex >= 0
+        ? noneIndex
+        : 0;
+
   return filtered.map((r, i) => {
     const rowMeta = (r.metadata ?? {}) as Record<string, any>;
     const pricesBySize = priceMap.get(r.id);
@@ -277,7 +300,7 @@ export function finishingRowsToValues(
         (r.binding_method ? capitaliseMethod(r.binding_method) : capitalise(category)),
       price_impact: priceImpact,
       price_type: priceType,
-      is_default: Boolean(rowMeta.is_default) || (rowMeta.is_default === undefined && i === 0),
+      is_default: i === defaultIndex,
       is_active: true,
       metadata: meta,
     };
