@@ -281,20 +281,7 @@ export function finishingRowsToValues(
 }
 
 
-    return {
-      label: r.label,
-      slug: r.code,
-      group:
-        groupOverride ??
-        (r.binding_method ? capitaliseMethod(r.binding_method) : capitalise(category)),
-      price_impact: priceImpact,
-      price_type: priceType,
-      is_default: Boolean(rowMeta.is_default) || (rowMeta.is_default === undefined && i === 0),
-      is_active: true,
-      metadata: meta,
-    };
-  });
-}
+
 
 
 /**
