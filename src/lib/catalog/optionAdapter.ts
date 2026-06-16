@@ -55,6 +55,16 @@ export type CatalogFinishingRow = {
   metadata?: Record<string, unknown> | null;
 };
 
+export type CatalogPrintAttrRow = {
+  id: string;
+  attribute: string;
+  code: string;
+  label: string;
+  sort_order?: number | null;
+  is_active: boolean;
+  metadata?: Record<string, unknown> | null;
+};
+
 /**
  * Deterministic preview-engine metadata for a catalog_finishing row, keyed by
  * its `code`. Lets the customer flip-book / cover preview render the right
