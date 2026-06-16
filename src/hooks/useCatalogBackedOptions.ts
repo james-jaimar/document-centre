@@ -277,7 +277,7 @@ export function useCatalogBackedOptions(
       }
       return opt;
     });
-  }, [legacy.data, resolved.data, papersQ.data, sizesQ.data, finishingQ.data, printAttrsQ.data]);
+  }, [legacy.data, resolved.data, papersQ.data, sizesQ.data, finishingQ.data, finishingPricesQ.data, printAttrsQ.data]);
 
 
   return {
@@ -288,6 +288,7 @@ export function useCatalogBackedOptions(
       papersQ.isLoading ||
       sizesQ.isLoading ||
       finishingQ.isLoading ||
+      finishingPricesQ.isLoading ||
       printAttrsQ.isLoading,
     error:
       legacy.error ??
@@ -295,8 +296,10 @@ export function useCatalogBackedOptions(
       papersQ.error ??
       sizesQ.error ??
       finishingQ.error ??
+      finishingPricesQ.error ??
       printAttrsQ.error,
   };
+
 }
 
 /**
