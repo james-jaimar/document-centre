@@ -56,6 +56,65 @@ export type CatalogFinishingRow = {
   metadata?: Record<string, unknown> | null;
 };
 
+export type CatalogFinishingPriceRow = {
+  id: string;
+  finishing_id: string;
+  size_code: string;
+  sell_price_minor: number | null;
+  is_active: boolean;
+};
+
+/**
+ * Build a per-size price map (rands) for a given finishing row from the
+ * `catalog_finishing_prices` rows. Result keys are lowercase size codes
+ * (`a4`, `a3`, `sra3`, `any`, …). Inactive price rows are ignored.
+ */
+function pricesByFinishingId(
+  prices: CatalogFinishingPriceRow[] | undefined,
+): Map<string, Record<string, number>> {
+  const out = new Map<string, Record<string, number>>();
+  if (!prices) return out;
+  for (const p of prices) {
+    if (!p.is_active) continue;
+    const minor = Number(p.sell_price_minor ?? 0);
+    if (!Number.isFinite(minor)) continue;
+    const bucket = out.get(p.finishing_id) ?? {};
+    bucket[String(p.size_code ?? "any").toLowerCase()] = minor / 100;
+    out.set(p.finishing_id, bucket);
+  }
+  return out;
+}
+
+/** Map catalog_finishing.pricing_basis → StructuredOptionValue.price_type. */
+function priceTypeFromBasis(
+  basis: string | null | undefined,
+): "fixed" | "per_document" | "per_page" {
+  switch ((basis ?? "").toLowerCase()) {
+    case "per_page":
+      return "per_page";
+    case "per_sheet":
+      // No direct equivalent; engine reads `metadata.pricing_basis` to
+      // multiply by total sheets. price_type stays per_document so the
+      // legacy engine doesn't double-count.
+      return "per_document";
+    default:
+      return "per_document";
+  }
+}
+
+/**
+ * Default "headline" price chip for the dropdown: pick A4 (the most common
+ * print size) if present, else `any`, else the first entry, else 0.
+ */
+function headlinePrice(byCode: Record<string, number> | undefined): number {
+  if (!byCode) return 0;
+  if (typeof byCode.a4 === "number") return byCode.a4;
+  if (typeof byCode.any === "number") return byCode.any;
+  const first = Object.values(byCode).find((v) => typeof v === "number");
+  return typeof first === "number" ? first : 0;
+}
+
+
 export type CatalogPrintAttrRow = {
   id: string;
   attribute: string;
