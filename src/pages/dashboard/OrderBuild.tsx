@@ -567,16 +567,28 @@ export default function OrderBuild() {
   const isLandscapeSize = sizeMeta?.orientation === "landscape";
   const sizeBindingEdge = sizeMeta?.binding_edge as string | undefined;
 
-  // Canvas size from selected Document Size option — drives preview scaling
+  // Canvas size from selected Document Size option — drives preview scaling.
+  // When we already know the uploaded document's true page orientation, prefer
+  // that over the option metadata. This lets posters/flyers/business cards
+  // honour a landscape upload even when only portrait-flavoured size option
+  // values exist (e.g. DOC_SIZE_POSTER has no `a2-landscape` slug).
+  const docOrientationForCanvas: "portrait" | "landscape" | null = useMemo(() => {
+    const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
+    if (!doc || !doc.page_width_mm || !doc.page_height_mm) return null;
+    return Number(doc.page_width_mm) > Number(doc.page_height_mm) ? "landscape" : "portrait";
+  }, [documents]);
+
   const canvasSizeMm = useMemo(() => {
     if (!sizeMeta) return undefined;
     const w = Number(sizeMeta.width_mm ?? 0);
     const h = Number(sizeMeta.height_mm ?? 0);
     if (!w || !h) return undefined;
-    // Swap for landscape orientation
-    if (isLandscapeSize) return { widthMm: Math.max(w, h), heightMm: Math.min(w, h) };
+    const effectiveLandscape = docOrientationForCanvas
+      ? docOrientationForCanvas === "landscape"
+      : isLandscapeSize;
+    if (effectiveLandscape) return { widthMm: Math.max(w, h), heightMm: Math.min(w, h) };
     return { widthMm: Math.min(w, h), heightMm: Math.max(w, h) };
-  }, [sizeMeta, isLandscapeSize]);
+  }, [sizeMeta, isLandscapeSize, docOrientationForCanvas]);
 
   // Single source of truth — same helper is used by buildPreviewSnapshot
   // so live builder and saved/admin previews agree on binding artwork.
