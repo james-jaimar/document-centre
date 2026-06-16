@@ -822,6 +822,23 @@ export function calculatePriceFromRateCard(
               multiplier: 1,
               total: bindUnit,
             });
+            // Colour uplift: when the customer-visible binding option
+            // declares a non-zero `color_uplift_minor` (e.g. Spiral Clear,
+            // Twin Loop Silver), add it on top of the size-resolved base.
+            const upliftMinor = Number(
+              (metadata as any).color_uplift_minor ?? 0,
+            );
+            if (Number.isFinite(upliftMinor) && upliftMinor > 0) {
+              const uplift = upliftMinor / 100;
+              const colour = String((metadata as any).color ?? "").trim();
+              lines.push({
+                label: colour ? `Binding colour: ${colour}` : "Binding colour upgrade",
+                type: "option",
+                unit_amount: uplift,
+                multiplier: 1,
+                total: uplift,
+              });
+            }
             continue;
           }
         }
