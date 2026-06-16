@@ -1,5 +1,6 @@
 import type { Tables } from "@/integrations/supabase/types";
 import { isStructuredValues } from "@/lib/productOptionTypes";
+import { humaniseSlug } from "@/lib/utils";
 import {
   Accordion,
   AccordionContent,
