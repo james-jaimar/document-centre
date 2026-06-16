@@ -537,6 +537,13 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
   const isCatalog = optionForm.source !== "manual";
   const masterLink = MASTER_LINKS[optionForm.source];
 
+  // Document Sizes are now managed exclusively in the Catalogue tab
+  // (product_catalog_links). Hide any catalog.sizes rows from the Options
+  // editor so admins have a single source of truth.
+  const visibleOptions = options.filter(
+    (o) => ((o as any).source ?? "manual") !== "catalog.sizes",
+  );
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -546,13 +553,16 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
             Values come from Master Catalogue / Master Pricing when an option's <em>Source</em> is set to a catalog —
             no hand-typed lists needed.
           </p>
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Document sizes are managed in the <strong>Catalogue</strong> tab.
+          </p>
         </div>
         <Button size="sm" variant="outline" onClick={openCreateOption}>
           <Plus className="h-3 w-3 mr-1" /> Add Option
         </Button>
       </div>
 
-      {options.length === 0 ? (
+      {visibleOptions.length === 0 ? (
         <p className="text-sm text-muted-foreground">No options configured yet.</p>
       ) : (
         <Table>
@@ -567,7 +577,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {options.map((opt) => {
+            {visibleOptions.map((opt) => {
               const vals = opt.values;
               const structured = isStructuredValues(vals);
               const count = Array.isArray(vals) ? vals.length : 0;
