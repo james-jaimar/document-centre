@@ -11,6 +11,7 @@ import {
   useCatalogSizes,
   useCatalogPapers,
   useCatalogFinishing,
+  useCatalogPrintAttrs,
 } from "@/hooks/useCatalog";
 import type { StructuredOptionValue } from "@/lib/productOptionTypes";
 import {
@@ -58,13 +59,15 @@ type OptionSource =
   | "manual"
   | "catalog.sizes"
   | "catalog.papers"
-  | "catalog.finishing";
+  | "catalog.finishing"
+  | "catalog.print_attrs";
 
 const SOURCE_OPTIONS: { value: OptionSource; label: string; description: string }[] = [
   { value: "manual", label: "Manual (custom)", description: "You type the values by hand" },
   { value: "catalog.sizes", label: "Document Size (Master Catalogue)", description: "Pulled live from Master Catalogue → Sizes" },
   { value: "catalog.papers", label: "Paper Stock (Master Catalogue)", description: "Pulled live from Master Catalogue → Papers" },
   { value: "catalog.finishing", label: "Finishing (Master Catalogue)", description: "Pulled live from Master Catalogue → Finishing (pick a category)" },
+  { value: "catalog.print_attrs", label: "Print Attribute (Master Catalogue)", description: "Pulled live from Master Catalogue → Print Attributes (pick an attribute: colour, sides, orientation). Pricing comes from Master Pricing → Click Charges." },
 ];
 
 const MASTER_LINKS: Record<OptionSource, string | null> = {
@@ -72,6 +75,7 @@ const MASTER_LINKS: Record<OptionSource, string | null> = {
   "catalog.sizes": "/admin/master-catalogue",
   "catalog.papers": "/admin/master-pricing",
   "catalog.finishing": "/admin/master-pricing",
+  "catalog.print_attrs": "/admin/master-pricing",
 };
 
 interface Props {
@@ -85,6 +89,7 @@ interface OptionFormData {
   sort_order: number;
   source: OptionSource;
   finishingCategory: string;
+  printAttribute: string;
 }
 
 const emptyOptionForm: OptionFormData = {
@@ -94,6 +99,7 @@ const emptyOptionForm: OptionFormData = {
   sort_order: 0,
   source: "manual",
   finishingCategory: "",
+  printAttribute: "",
 };
 
 const emptyValue: StructuredOptionValue = {
@@ -272,10 +278,16 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
   const { data: catSizes = [] } = useCatalogSizes();
   const { data: catPapers = [] } = useCatalogPapers();
   const { data: catFinishing = [] } = useCatalogFinishing();
+  const { data: catPrintAttrs = [] } = useCatalogPrintAttrs();
 
   const finishingCategories = useMemo(
     () => Array.from(new Set(catFinishing.map((f: any) => f.category))).sort(),
     [catFinishing],
+  );
+
+  const printAttributes = useMemo(
+    () => Array.from(new Set(catPrintAttrs.map((p: any) => p.attribute))).sort(),
+    [catPrintAttrs],
   );
 
   const [optionDialogOpen, setOptionDialogOpen] = useState(false);
@@ -351,6 +363,18 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
           return make(f.code, f.label ?? f.code, cat, "per_document", extra);
         });
     }
+    if (form.source === "catalog.print_attrs") {
+      const attr = form.printAttribute;
+      if (!attr) return [];
+      return (catPrintAttrs as any[])
+        .filter((p) => p.attribute === attr)
+        .map((p) =>
+          make(p.code, p.label ?? p.code, attr, "per_document", {
+            attribute: attr,
+            ...(p.metadata ?? {}),
+          }),
+        );
+    }
     return existing;
   }
 
@@ -383,11 +407,16 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
     }
 
     // Same source, but category or master catalogue changed
-    if (nextSource === "catalog.finishing" || nextSource === "catalog.papers" || nextSource === "catalog.sizes") {
+    if (
+      nextSource === "catalog.finishing" ||
+      nextSource === "catalog.papers" ||
+      nextSource === "catalog.sizes" ||
+      nextSource === "catalog.print_attrs"
+    ) {
       setEditValues((prev) => refreshCatalogMirror(optionForm, prev));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [optionForm.source, optionForm.finishingCategory, catSizes.length, catPapers.length, catFinishing.length, optionDialogOpen]);
+  }, [optionForm.source, optionForm.finishingCategory, optionForm.printAttribute, catSizes.length, catPapers.length, catFinishing.length, catPrintAttrs.length, optionDialogOpen]);
 
   function openCreateOption() {
     setEditingOption(null);
@@ -402,6 +431,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
     setEditingOption(opt);
     const src = ((opt as any).source ?? "manual") as OptionSource;
     const cat = (opt as any).source_filter?.category ?? "";
+    const attr = (opt as any).source_filter?.attribute ?? "";
     setOptionForm({
       name: opt.name,
       option_type: opt.option_type,
@@ -409,6 +439,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       sort_order: opt.sort_order,
       source: src,
       finishingCategory: cat,
+      printAttribute: attr,
     });
     const parsed = parseOptionValues(opt.values);
     const manualParsed = parseOptionValues((opt as any).manual_values);
@@ -453,6 +484,10 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       toast({ title: "Pick a finishing category", variant: "destructive" });
       return;
     }
+    if (optionForm.source === "catalog.print_attrs" && !optionForm.printAttribute) {
+      toast({ title: "Pick a print attribute", variant: "destructive" });
+      return;
+    }
     try {
       const nextManualValues = optionForm.source === "manual"
         ? editValues
@@ -471,6 +506,8 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
         source_filter:
           optionForm.source === "catalog.finishing"
             ? { category: optionForm.finishingCategory }
+            : optionForm.source === "catalog.print_attrs"
+            ? { attribute: optionForm.printAttribute }
             : null,
       };
       if (editingOption) {
@@ -536,6 +573,8 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
               const count = Array.isArray(vals) ? vals.length : 0;
               const src = ((opt as any).source ?? "manual") as OptionSource;
               const cat = (opt as any).source_filter?.category;
+              const attr = (opt as any).source_filter?.attribute;
+              const sub = cat ?? attr;
               return (
                 <TableRow key={opt.id}>
                   <TableCell className="font-medium">{opt.name}</TableCell>
@@ -544,7 +583,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
                       <Badge variant="outline" className="text-xs">manual</Badge>
                     ) : (
                       <Badge variant="default" className="text-xs">
-                        {src.replace("catalog.", "")}{cat ? ` · ${cat}` : ""}
+                        {src.replace("catalog.", "")}{sub ? ` · ${sub}` : ""}
                       </Badge>
                     )}
                   </TableCell>
@@ -623,6 +662,26 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+
+            {optionForm.source === "catalog.print_attrs" && (
+              <div className="space-y-1">
+                <Label>Print attribute</Label>
+                <Select
+                  value={optionForm.printAttribute}
+                  onValueChange={(v) => setOptionForm({ ...optionForm, printAttribute: v })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Pick an attribute…" /></SelectTrigger>
+                  <SelectContent>
+                    {printAttributes.map((a) => (
+                      <SelectItem key={a} value={a}>{a}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Pricing for colour mode and sides comes from Master Pricing → Click Charges.
+                </p>
               </div>
             )}
 

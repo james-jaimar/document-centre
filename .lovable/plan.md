@@ -1,64 +1,51 @@
-# Restore the original Covers experience (catalog-backed)
 
-## What changed, and why it looks different
+## Problem
 
-I traced your four screenshots to the code:
+The Master Catalogue already has a **Print Attributes** section (`catalog_print_attrs`) with three sub-attributes — `colour_mode`, `sides`, `orientation` — and the values you see on screenshot 2 (Black & White / Full Colour / Mixed, Single-sided / Double-sided / Mixed, Portrait / Landscape).
 
-| Option | Currently sourced from | Status |
-|---|---|---|
-| Covers (image 1) | `catalog.finishing` (category = `cover`) | **Broken** — collapsed to one "Cover" group, fewer rows, generic labels |
-| Paper Stock (image 2) | `catalog.papers` | OK — already groups as Text / Coloured / Recycled |
-| Print to Edge (image 3) | `manual` | OK — unchanged |
-| Inserts (image 4) | `manual` | OK — unchanged |
+But the Source dropdown on the per-product **Edit Option** dialog (screenshot 5) only offers:
+- Manual (custom)
+- Document Size (Master Catalogue) → `catalog_sizes`
+- Paper Stock (Master Catalogue) → `catalog_papers`
+- Finishing (Master Catalogue) → `catalog_finishing`
 
-So the regression is **only on Covers**. Two root causes:
+There is no entry that points at `catalog_print_attrs`, so Print Colour and Print Sides are stuck on `manual` and can't be migrated, even though the catalogue data exists. This plan wires that fourth source in.
 
-1. **Sub-grouping was lost.** The original manual list had four section headers — `NO COVER`, `CLEAR COVERS`, `WHITE CARD STOCK`, `PRINTED COVERS`. The catalog adapter (`src/lib/catalog/optionAdapter.ts`, `finishingRowsToValues`) sets `group = capitalise(category)` for every cover row, so they all collapse into one "Cover" header.
+## Approach
 
-2. **The master catalog has fewer / different cover entries than the original manual list.** Current catalog rows (11): `acetate-cover`, `matte-pvc-cover`, `frosted-pvc-cover`, `card-back-black/navy`, `card-cover-160/250/300`, `silk-cover-250`, `gloss-cover-250`, `card-back`. The original manual list had 18 entries with descriptive combo names (`Clear Front + Black Card Back`, `Matte Front + White Card Back`, `Printed Cover (300gsm Silk)`, an explicit `No Cover`, etc.) plus richer pricing per combo.
+Add one new source — **"Print Attribute (Master Catalogue)"** — with a sub-attribute picker (mirroring how Finishing already picks a category). Print Colour will point at `colour_mode`, Print Sides at `sides`, and Orientation (future) at `orientation`. No schema changes, no migration — `catalog_print_attrs` already exists and is populated.
 
-## Plan
+Pricing note: Print Colour and Sides aren't priced as flat per-value deltas — they're priced via **Click Charges** in Master Pricing (screenshot 3, already keyed by size × colour × sides). So the catalogue mirror rows keep `price_impact = 0` by default and the "Edit in Master Catalogue" link on the dialog points at Master Pricing → Click Charges, the same way Papers does.
 
-### 1. Expand `catalog_finishing` cover rows (data migration)
+## Files to change
 
-Add the missing rows so the master catalogue contains every combo the original list had. New codes (illustrative):
+1. **`src/components/admin/ProductOptionsEditor.tsx`**
+   - Extend `OptionSource` with `"catalog.print_attrs"` and add it to `SOURCE_OPTIONS` (label: "Print Attribute (Master Catalogue)", description: "Pulled live from Master Catalogue → Print Attributes (pick an attribute)").
+   - Add `"catalog.print_attrs": "/admin/master-pricing"` to `MASTER_LINKS`.
+   - Add `printAttribute: string` to `OptionFormData` (mirrors `finishingCategory`).
+   - In `refreshCatalogMirror`, add a branch that filters `catPrintAttrs` rows by `form.printAttribute` and projects them via `make(code, label, attribute, "per_document", { attribute, ...metadata })`.
+   - Render a second sub-picker block (just under the Finishing-category one) when `source === "catalog.print_attrs"`, listing the distinct `attribute` values (`colour_mode`, `sides`, `orientation`).
+   - In `openEditOption`, hydrate `printAttribute` from `(opt as any).source_filter?.attribute ?? ""`.
+   - In `handleOptionSubmit`, when source is `catalog.print_attrs`, persist `source_filter: { attribute: optionForm.printAttribute }` and guard with a toast if it's blank.
+   - In the list table's Source badge (around line 540-ish — same place the existing `finishing · cover` chip is built), render `print_attr · colour_mode` etc.
 
-- `cover-none` — *No Cover* → group `No Cover`
-- `clear-front-black-back`, `clear-front-white-back`, `clear-front-navy-back` → group `Clear Covers`
-- `matte-front-black-back`, `matte-front-white-back` (`navy` if you want it) → group `Clear Covers`
-- `frosted-front-black-back`, `frosted-front-white-back` → group `Clear Covers`
-- Re-use existing `card-cover-160 / 250 / 300`, `silk-cover-250`, `gloss-cover-250` for `White Card Stock` (rename label to match old style: `160gsm White Card (Front & Back)` etc.)
-- `printed-cover-body`, `printed-cover-silk-250`, `printed-cover-gloss-250`, `printed-cover-silk-300`, `printed-cover-gloss-300` → group `Printed Covers`
+2. **`src/hooks/useCatalog.ts`** (or wherever `useCatalogFinishing` lives)
+   - Add `useCatalogPrintAttrs()` returning `select * from catalog_print_attrs where is_active order by attribute, sort_order`. Wire it into `ProductOptionsEditor` next to `catFinishing`.
 
-Each row carries:
-- `metadata.cover_group` = `No Cover` | `Clear Covers` | `White Card Stock` | `Printed Covers`
-- `metadata.front` / `back` / `front_thickness_micron` / `weight_gsm` / `finish` / `uses_body_stock` / `is_printed` — so the flip-book preview keeps rendering the right material.
-- A row in `catalog_finishing_prices` so the `(+R 5,00/doc)` chips appear (same numbers the manual list used: R5 clear, R6.50 matte, R7 frosted, R4–R10 card, R10–R14 printed).
+3. **`src/lib/catalog/optionAdapter.ts`** (customer-facing overlay)
+   - Add `printAttrRowsToValues` + an `enrichPrintAttrValuesFromMaster` pair, mirroring the finishing helpers. Key by `code`, group by attribute capitalised ("Colour", "Sides", "Orientation"), keep per-product `price_impact` / `is_default`.
 
-Deprecate the duplicates (`acetate-cover`, single `matte-pvc-cover`, etc.) by setting `is_active = false` so legacy orders still resolve.
+4. **`src/hooks/useCatalogBackedOptions.ts`**
+   - When a saved `product_options` row has `source === "catalog.print_attrs"`, overlay the customer-visible values from `catalog_print_attrs` (same shape as the Finishing path).
 
-### 2. Teach the adapter to honour the sub-group
+## Out of scope
 
-In `src/lib/catalog/optionAdapter.ts`:
-- In `finishingRowsToValues` and `enrichFinishingValuesFromMaster`, when `category === 'cover'` use `meta.cover_group` (falling back to a code-prefix map) for the `group` field instead of the generic `capitalise(category)`.
-- Extend `previewMetadataForFinishingCode` so every new code maps to the right preview metadata (front/back materials, thickness, weight, `is_printed`, `uses_body_stock`).
+- No new tables, no migration, no changes to Click Charges pricing — those are unaffected.
+- No automatic conversion of existing manual Print Colour / Print Sides rows. Once the new source is available, you'll open each option, change Source to "Print Attribute" → pick `colour_mode` / `sides`, toggle the values you want enabled, hit Update. The mirror builder preserves your manual list if you flip back.
 
-No change is needed in `OptionSelector.tsx` — it already renders one `SelectGroup` per distinct `group`, which is exactly how the four section headers appeared originally.
+## Verification
 
-### 3. Wire the Bound Documents → Covers product_option to the new catalogue
-
-Update the row's `values` array (mirror of enabled catalog codes) so all the new codes are enabled with the right `is_default` (`cover-none` default) and group preserved. `manual_values` is left untouched so the manual safety net still works.
-
-### 4. Verify
-
-- Open Bound Documents on Postnet → confirm the Covers dropdown shows the four headers in the right order with the original labels and per-combo prices.
-- Pick `Matte Front + Black Card Back` → confirm flip-book renders matte PVC + black card back exactly as before.
-- Pick `Printed Cover (250gsm Silk)` → confirm preview renders printed silk cover.
-- Confirm `No Cover` is the default and hides cover-related downstream options as before.
-- Switch the Admin source toggle Manual ↔ Catalog → confirm both lists now look effectively identical to the customer.
-
-## Out of scope (working today, will not touch)
-
-- Paper Stock, Print to Edge, Inserts dropdowns — they already match the originals.
-- The Admin Manual/Catalog source toggle and the `manual_values` backup behaviour from the previous round.
-- The catalog `binding` sub-grouping (already correct).
+- Open Bound Documents → Print Sides → Edit Option → Source dropdown now lists "Print Attribute (Master Catalogue)" as a 4th choice.
+- Pick it, choose `sides`, see Single-sided / Double-sided / Mixed appear as a read-only mirror with Enabled/Default toggles.
+- Save, reopen — selections persist, Source column on the table shows `print_attr · sides (3/3)`.
+- Customer configurator on a bound document still shows Print Sides with the same three options.

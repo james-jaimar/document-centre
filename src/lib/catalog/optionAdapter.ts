@@ -55,6 +55,16 @@ export type CatalogFinishingRow = {
   metadata?: Record<string, unknown> | null;
 };
 
+export type CatalogPrintAttrRow = {
+  id: string;
+  attribute: string;
+  code: string;
+  label: string;
+  sort_order?: number | null;
+  is_active: boolean;
+  metadata?: Record<string, unknown> | null;
+};
+
 /**
  * Deterministic preview-engine metadata for a catalog_finishing row, keyed by
  * its `code`. Lets the customer flip-book / cover preview render the right
@@ -441,3 +451,89 @@ export function inferFinishingCategoryFromName(name: string): string | null {
   if (n === "drilling" || n === "hole punch") return "drilling";
   return null;
 }
+
+/* ─── Print Attributes (colour_mode / sides / orientation) ──────────── */
+
+function printAttrGroupLabel(attribute: string): string {
+  const a = attribute.toLowerCase();
+  if (a === "colour_mode" || a === "color_mode" || a === "colour" || a === "color") return "Colour";
+  if (a === "sides") return "Sides";
+  if (a === "orientation") return "Orientation";
+  return capitalise(attribute);
+}
+
+/** Project master catalog_print_attrs rows for a single attribute into option values. */
+export function printAttrRowsToValues(
+  rows: CatalogPrintAttrRow[],
+  attribute: string,
+): StructuredOptionValue[] {
+  const filtered = rows
+    .filter((r) => r.is_active)
+    .filter((r) => (r.attribute ?? "") === attribute)
+    .sort(
+      (a, b) =>
+        (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+        a.label.localeCompare(b.label),
+    );
+
+  const group = printAttrGroupLabel(attribute);
+  return filtered.map((r, i) => {
+    const rowMeta = (r.metadata ?? {}) as Record<string, any>;
+    return {
+      label: r.label,
+      slug: r.code,
+      group,
+      price_impact: 0, // priced via Click Charges, not per-value deltas
+      price_type: "per_document",
+      is_default: Boolean(rowMeta.is_default) || (rowMeta.is_default === undefined && i === 0),
+      is_active: true,
+      metadata: {
+        catalog_code: r.code,
+        attribute,
+        ...rowMeta,
+      },
+    };
+  });
+}
+
+/**
+ * Enrich a product's saved print-attr values with the master row labels and
+ * metadata, dropping any whose master row no longer exists.
+ */
+export function enrichPrintAttrValuesFromMaster(
+  savedValues: StructuredOptionValue[],
+  masterRows: CatalogPrintAttrRow[],
+  attribute: string,
+): StructuredOptionValue[] {
+  const byCode = new Map(
+    masterRows.filter((r) => r.attribute === attribute).map((r) => [r.code, r]),
+  );
+  const group = printAttrGroupLabel(attribute);
+  const enriched: StructuredOptionValue[] = [];
+
+  for (const v of savedValues) {
+    if (v.is_active === false) continue;
+    const code = String((v.metadata as any)?.catalog_code ?? v.slug ?? "");
+    if (!code) continue;
+    const master = byCode.get(code);
+    if (!master) continue;
+    const masterMeta = (master.metadata ?? {}) as Record<string, any>;
+    enriched.push({
+      ...v,
+      label: master.label ?? v.label,
+      slug: v.slug ?? master.code,
+      group,
+      price_impact: v.price_impact ?? 0,
+      price_type: v.price_type ?? "per_document",
+      is_active: true,
+      metadata: {
+        ...(v.metadata ?? {}),
+        ...masterMeta,
+        catalog_code: master.code,
+        attribute,
+      },
+    });
+  }
+  return enriched;
+}
+

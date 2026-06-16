@@ -14,6 +14,8 @@ import {
   sizeRowsToValues,
   finishingRowsToValues,
   enrichFinishingValuesFromMaster,
+  printAttrRowsToValues,
+  enrichPrintAttrValuesFromMaster,
   isPaperStockOptionName,
   isCoverPaperOptionName,
   isSizeOptionName,
@@ -83,12 +85,25 @@ export function useCatalogBackedOptions(
     },
   });
 
+  const printAttrsQ = useQuery({
+    queryKey: ["catalog_print_attrs", "master", "all"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("catalog_print_attrs" as any)
+        .select("*")
+        .eq("scope_type", "master");
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+
   const data = useMemo(() => {
     const opts = legacy.data ?? [];
     const resolvedRows = resolved.data ?? [];
     const masterPapers = papersQ.data ?? [];
     const masterSizes = sizesQ.data ?? [];
     const masterFinishing = finishingQ.data ?? [];
+    const masterPrintAttrs = printAttrsQ.data ?? [];
 
     if (opts.length === 0) return opts;
 
@@ -114,7 +129,7 @@ export function useCatalogBackedOptions(
       const name = opt.name ?? "";
       const source = (opt as any).source as string | undefined;
       const sourceFilter = (opt as any).source_filter as
-        | { category?: string }
+        | { category?: string; attribute?: string }
         | null
         | undefined;
 
@@ -171,6 +186,26 @@ export function useCatalogBackedOptions(
         return opt;
       }
 
+      // ── CATALOG: PRINT ATTRIBUTES (colour_mode / sides / orientation) ────
+      if (source === "catalog.print_attrs") {
+        const attribute = sourceFilter?.attribute ?? null;
+        if (attribute && masterPrintAttrs.length > 0) {
+          const saved = isStructured(opt.values) ? opt.values : [];
+          const next =
+            saved.length > 0
+              ? enrichPrintAttrValuesFromMaster(saved, masterPrintAttrs, attribute)
+              : printAttrRowsToValues(masterPrintAttrs, attribute);
+          if (next.length > 0) {
+            return {
+              ...opt,
+              values: preserveDefault(opt.values, next) as any,
+            };
+          }
+        }
+        return opt;
+      }
+
+
       // ── Legacy rows with no `source` set — fall back to name inference ────
       // so pre-migration option rows still render. New/edited options always
       // carry a source above and won't reach this path.
@@ -204,7 +239,7 @@ export function useCatalogBackedOptions(
       }
       return opt;
     });
-  }, [legacy.data, resolved.data, papersQ.data, sizesQ.data, finishingQ.data]);
+  }, [legacy.data, resolved.data, papersQ.data, sizesQ.data, finishingQ.data, printAttrsQ.data]);
 
 
   return {
@@ -214,13 +249,15 @@ export function useCatalogBackedOptions(
       resolved.isLoading ||
       papersQ.isLoading ||
       sizesQ.isLoading ||
-      finishingQ.isLoading,
+      finishingQ.isLoading ||
+      printAttrsQ.isLoading,
     error:
       legacy.error ??
       resolved.error ??
       papersQ.error ??
       sizesQ.error ??
-      finishingQ.error,
+      finishingQ.error ??
+      printAttrsQ.error,
   };
 }
 
