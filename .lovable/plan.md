@@ -1,59 +1,48 @@
-# Fix Presentations / A4 Landscape pricing
+## Poster orientation audit
 
-## Confirming your hunch — yes, this is the A4 Landscape change
+### What already works
+- **PDF acceptance**: `orientationPolicy.ts` does NOT list `posters` as portrait- or landscape-required, so landscape PDFs (and images) upload without any rotation advisory or forced normalisation. ✓
+- **Image uploads**: `PosterImageEditor` auto-detects orientation from the source image's natural aspect, exposes a Portrait/Landscape toggle, and `imageToPosterPdf` emits the PDF at the correct landscape dimensions (594×420 for A2-landscape, etc.). ✓
+- **Pricing**: `calculatePrice.ts` looks up the size by its orientation-agnostic slug (`a2`, `a3`, …). Landscape A2 prices the same as portrait A2. ✓
+- **Bleed / full-bleed rendering**: `buildPreviewSnapshot` and `PreviewPanel` force `isPoster` to full bleed regardless of orientation. ✓
+- **Size auto-detect**: `matchesSize` already checks both portrait and landscape — a 594×420 PDF correctly matches the `a2` option. ✓
 
-You're right. The R 64.00 you're seeing is only covers + binding + tabs. **Click charges and paper are missing entirely.** Here's why:
+### The actual bug
+`canvasSizeMm` in `src/pages/dashboard/OrderBuild.tsx` (lines 571-579) is derived purely from the **option's** `sizeMeta.orientation` flag. The poster `DOC_SIZE_POSTER` option values only carry portrait metadata, so even when the uploaded poster PDF is 594×420 (landscape A2), the canvas is forced to 420×594 (portrait A2). Result:
+- Preview renders a portrait-shaped canvas with a landscape PDF letterboxed inside, OR
+- Scale-mode "fill" crops the artwork.
 
-### Root cause
+Binding edge already solves this elsewhere by preferring the actual page geometry over the option metadata (`docPageOrientation` override, lines 599-613). The canvas calc never got the same treatment.
 
-`src/lib/calculatePrice.ts` (line ~475) reads the Document Size option and uppercases it:
+### Fix
 
-```ts
-const rawSize = spec.selected_options.size ?? spec.selected_options["Document Size"] ?? ... ?? "A4";
-const size = String(rawSize).toUpperCase();  // → "A4-LANDSCAPE"
+Single, narrow change in `src/pages/dashboard/OrderBuild.tsx` `canvasSizeMm` memo:
+
+1. Compute `docPageOrientation` once (already exists below — hoist or reuse it).
+2. When `docPageOrientation` is known and disagrees with `sizeMeta.orientation`, prefer the document's orientation when swapping width/height.
+
+Effective rule:
 ```
-
-The new Presentations size option stores the slug `"a4-landscape"` (confirmed in migration `20260614084700_…`, seeded as `('a4-landscape','A4 Landscape',297,210,'A4','ISO',31)`).
-
-That string then flows into two lookups that both fail silently:
-
-1. **Click rate** — `resolveClickRate` searches `rate_card_clicks.size === "A4-LANDSCAPE"`. No row exists (rate card only has `A4`, `A3`, `SRA3`). It then tries the imposition parent via `SIZE_IMPOSITION["A4-LANDSCAPE"]` — also missing (map only has `A4`, `A5`, `A6`, `DL`). Returns `null` → **printing line skipped**.
-2. **Paper** — `resolvePaper` builds `${code}-a4-landscape`, no match, then tries imposition parent — also missing. Returns `null` → **paper line skipped**.
-
-So binding + covers + tabs render, printing + paper don't. Exactly the R 64.00 you're seeing.
-
-### Scope check — does it affect anything else?
-
-Only products whose Document Size option emits a `-landscape` (or future `-portrait` variant) slug. Today that's:
-
-- **Presentations** — broken (this report).
-- Bound documents, flyers, brochures, business cards, photo prints, posters — all still use the plain `a4` / `a3` / `sra3` / `dl` / pack-size slugs, so their pricing is unaffected.
-
-If we ever add other `*-landscape` sizes (e.g. `a3-landscape`), they would hit the same bug. The fix below covers them all.
-
-## The fix
-
-In `src/lib/calculatePrice.ts`, normalise the size token before any rate-card lookup by stripping a trailing `-LANDSCAPE` / `-PORTRAIT` modifier. Landscape is an orientation, not a different price — A4 Landscape uses the same A4 paper and the same A4 click rate as portrait A4.
-
-```ts
-const size = String(rawSize)
-  .toUpperCase()
-  .replace(/-(LANDSCAPE|PORTRAIT)$/, "");   // "A4-LANDSCAPE" → "A4"
+effectiveLandscape =
+  docPageOrientation
+    ? docPageOrientation === "landscape"
+    : isLandscapeSize;
 ```
+Then swap dimensions based on `effectiveLandscape`.
 
-That single change makes:
-- `resolveClickRate("A4", …)` find the existing A4 click row → derives from A3 parent via `SIZE_IMPOSITION.A4`.
-- `resolvePaper("80gsm-bond", "A4")` build the correct `80gsm-bond-a4` paper code.
-- The price breakdown popover show the Print + Paper lines again.
+This keeps every other product working unchanged (bound docs, presentations, ring binders all also pass uploads matching their required orientation; presentations already lock landscape so the result is the same). It just lets posters (and flyers/business cards, which use the same canvas calc) follow the uploaded artwork's true shape.
 
-## File touched
+### Files touched
+- `src/pages/dashboard/OrderBuild.tsx` — one memo (~10 lines), no other call sites.
 
-- `src/lib/calculatePrice.ts` — one line, in the size-normalisation block (~line 482).
+### Out of scope
+- No new option values (no `a2-landscape` poster slug needed).
+- No pricing changes.
+- No new orientation policy entries — posters remain "any orientation OK".
+- No preview component changes — `LooseSheetsPreview` already follows `pageAspectRatio` / `canvasSizeMm`.
 
-No DB migration, no rate-card edits, no other product affected.
-
-## Verification after the change
-
-1. Open a Presentations order with A4 Landscape selected → price should jump from R 64 to include per-page print + paper.
-2. Open the Price breakdown popover → confirm "Print A4 Colour Duplex" and a paper line are listed.
-3. Spot-check Bound Documents A4 portrait → price unchanged.
+### Verification
+1. Upload a landscape A2 PDF to a Posters order → preview should render wide, full-bleed, with no letterboxing and the price line item still showing A2.
+2. Upload a portrait A2 PDF → preview unchanged (still portrait).
+3. Upload a landscape JPG → editor opens with Landscape preselected; after confirm, preview renders landscape.
+4. Spot-check Flyers and Business Cards (same memo) — portrait artwork still previews portrait.
