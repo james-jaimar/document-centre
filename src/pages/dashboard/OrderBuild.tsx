@@ -773,6 +773,11 @@ export default function OrderBuild() {
   const prevTabInsertRef = useRef<{ hadTabs: boolean; hadInserts: boolean }>({ hadTabs: false, hadInserts: false });
 
   // ── Derive tab info from product options ──
+  // A row counts as "tabs enabled" when it belongs to the tab_dividers
+  // catalogue category (or its slug starts with "tab-") and isn't the
+  // explicit "none" row. tab_count / pack_count / colour fall back to
+  // sensible defaults so the drawer still opens on rows that haven't been
+  // fully annotated in the master catalogue yet.
   const tabInfo = useMemo(() => {
     const tabOpt = options.find((o) => o.name.toLowerCase().includes("tab"));
     if (!tabOpt || !isStructuredValues(tabOpt.values)) return null;
@@ -780,13 +785,26 @@ export default function OrderBuild() {
       (k) => k.toLowerCase() === tabOpt.name.toLowerCase()
     ) || tabOpt.name;
     const slug = spec.selected_options[key];
-    if (!slug || slug === "none") return null;
+    if (!slug) return null;
     const val = (tabOpt.values as StructuredOptionValue[]).find((v) => v.slug === slug);
     if (!val) return null;
-    const count = (val.metadata as any)?.tab_count ?? 0;
-    const packCount = (val.metadata as any)?.pack_count ?? Math.ceil(count / 10);
-    const multiColor = (val.metadata as any)?.color === "multi";
-    return count > 0 ? { count, packCount, multiColor } : null;
+    const meta = (val.metadata ?? {}) as Record<string, any>;
+    const isNone =
+      meta.none === true ||
+      slug === "none" ||
+      /(^|[-_])none([-_]|$)/i.test(slug) ||
+      /^no[-_ ]/i.test(val.label ?? "");
+    if (isNone) return null;
+    const looksLikeTab =
+      meta.category === "tab_dividers" ||
+      /^tab[-_]/i.test(slug) ||
+      /tab/i.test(val.label ?? "");
+    if (!looksLikeTab) return null;
+    const packSize = Number(meta.pack_size ?? 10) || 10;
+    const packCount = Number(meta.pack_count ?? 1) || 1;
+    const count = Number(meta.tab_count ?? packSize * packCount) || packSize;
+    const multiColor = String(meta.color ?? "").toLowerCase() === "multi";
+    return { count, packCount, multiColor };
   }, [options, spec.selected_options]);
 
   // ── Derive insert info from product options ──
@@ -797,7 +815,13 @@ export default function OrderBuild() {
       (k) => k.toLowerCase() === insertOpt.name.toLowerCase()
     ) || insertOpt.name;
     const slug = spec.selected_options[key];
-    return !!slug && slug !== "none" && slug !== "no-inserts" && slug !== "no_inserts";
+    if (!slug) return false;
+    const val = (insertOpt.values as StructuredOptionValue[]).find((v) => v.slug === slug);
+    const meta = (val?.metadata ?? {}) as Record<string, any>;
+    if (meta.none === true) return false;
+    if (slug === "none" || slug === "no-inserts" || slug === "no_inserts") return false;
+    if (/(^|[-_])none([-_]|$)/i.test(slug)) return false;
+    return true;
   }, [options, spec.selected_options]);
 
   // Auto-open drawer when tabs or inserts become enabled
