@@ -11,6 +11,7 @@ import {
   useCatalogSizes,
   useCatalogPapers,
   useCatalogFinishing,
+  useCatalogPrintAttrs,
 } from "@/hooks/useCatalog";
 import type { StructuredOptionValue } from "@/lib/productOptionTypes";
 import {
