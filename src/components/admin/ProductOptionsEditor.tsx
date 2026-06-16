@@ -278,10 +278,16 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
   const { data: catSizes = [] } = useCatalogSizes();
   const { data: catPapers = [] } = useCatalogPapers();
   const { data: catFinishing = [] } = useCatalogFinishing();
+  const { data: catPrintAttrs = [] } = useCatalogPrintAttrs();
 
   const finishingCategories = useMemo(
     () => Array.from(new Set(catFinishing.map((f: any) => f.category))).sort(),
     [catFinishing],
+  );
+
+  const printAttributes = useMemo(
+    () => Array.from(new Set(catPrintAttrs.map((p: any) => p.attribute))).sort(),
+    [catPrintAttrs],
   );
 
   const [optionDialogOpen, setOptionDialogOpen] = useState(false);
