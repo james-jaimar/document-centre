@@ -363,6 +363,18 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
           return make(f.code, f.label ?? f.code, cat, "per_document", extra);
         });
     }
+    if (form.source === "catalog.print_attrs") {
+      const attr = form.printAttribute;
+      if (!attr) return [];
+      return (catPrintAttrs as any[])
+        .filter((p) => p.attribute === attr)
+        .map((p) =>
+          make(p.code, p.label ?? p.code, attr, "per_document", {
+            attribute: attr,
+            ...(p.metadata ?? {}),
+          }),
+        );
+    }
     return existing;
   }
 
