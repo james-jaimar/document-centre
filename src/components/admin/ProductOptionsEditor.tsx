@@ -797,11 +797,21 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
             {/* Values */}
             {isCatalog ? (
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <Label>Catalog values ({editValues.length})</Label>
-                  <span className="text-xs text-muted-foreground">
-                    Read-only mirror of Master Catalogue. Toggle enabled/default or set a per-family price override.
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      Read-only mirror. Toggle enabled/default or set per-family overrides.
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setEditValues(refreshCatalogMirror(optionForm, editValues, "seed"))}
+                      title="Replace this list with every active Master Catalogue row for this category"
+                    >
+                      Reset from Master
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1">
                   {editValues.length === 0 ? (
@@ -809,23 +819,48 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
                       No matching catalog items {optionForm.source === "catalog.finishing" ? "for this category " : ""}yet.
                     </p>
                   ) : (
-                    editValues.map((val, idx) => (
-                      <CatalogValueRow
-                        key={val.slug || idx}
-                        catalogLabel={val.label}
-                        catalogCode={val.slug}
-                        catalogSub={
-                          (val.metadata?.weight_gsm && `${val.metadata.weight_gsm}gsm`) ||
-                          (val.metadata?.iso as string | undefined) ||
-                          undefined
-                        }
-                        value={val}
-                        onUpdate={(v) => updateValue(idx, v)}
-                      />
-                    ))
+                    editValues.map((val, idx) => {
+                      const code = String(val.metadata?.catalog_code ?? val.slug ?? "");
+                      const masterMatch =
+                        optionForm.source === "catalog.finishing"
+                          ? (catFinishing as any[]).some(
+                              (f) => f.code === code && f.category === optionForm.finishingCategory,
+                            )
+                          : optionForm.source === "catalog.papers"
+                            ? (catPapers as any[]).some((p) => p.code === code)
+                            : optionForm.source === "catalog.sizes"
+                              ? (catSizes as any[]).some((s) => s.code === code)
+                              : optionForm.source === "catalog.print_attrs"
+                                ? (catPrintAttrs as any[]).some(
+                                    (p) => p.code === code && p.attribute === optionForm.printAttribute,
+                                  )
+                                : true;
+                      return (
+                        <div key={val.slug || idx} className="space-y-1">
+                          {!masterMatch && (
+                            <p className="text-[11px] text-amber-600">
+                              ⚠ <span className="font-mono">{code || "(no code)"}</span> isn't in the Master Catalogue for this category —
+                              customers see the price below, not Master Pricing. Disable it or rename to a master code.
+                            </p>
+                          )}
+                          <CatalogValueRow
+                            catalogLabel={val.label}
+                            catalogCode={val.slug}
+                            catalogSub={
+                              (val.metadata?.weight_gsm && `${val.metadata.weight_gsm}gsm`) ||
+                              (val.metadata?.iso as string | undefined) ||
+                              undefined
+                            }
+                            value={val}
+                            onUpdate={(v) => updateValue(idx, v)}
+                          />
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </div>
+
             ) : (
               ["select", "radio", "checkbox"].includes(optionForm.option_type) && (
                 <div className="space-y-2">
