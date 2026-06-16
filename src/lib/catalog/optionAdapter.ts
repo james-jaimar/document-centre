@@ -314,8 +314,16 @@ export function enrichFinishingValuesFromMaster(
     if (!code) continue;
     const master = byCode.get(code);
     // Product-level Enabled is authoritative for customer visibility.
-    // Only drop if the master row was deleted from the catalogue entirely.
-    if (!master) continue;
+    // When the saved code doesn't match any master row (legacy slug, or
+    // master row deleted), keep the saved value as-is rather than silently
+    // dropping it — losing it makes the customer dropdown disagree with
+    // the admin's curated list. The admin editor flags the orphan so it
+    // can be cleaned up.
+    if (!master) {
+      enriched.push({ ...v, is_active: true });
+      continue;
+    }
+
 
     const masterMeta = (master.metadata ?? {}) as Record<string, any>;
     const pricesBySize = priceMap.get(master.id);
