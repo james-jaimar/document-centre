@@ -336,8 +336,10 @@ function TabOverlay({
           if (isBottomEdge) {
             // Same identical rotated portrait artwork, placed under the left page.
             const segmentWidth = pageWidth / bankSize;
-            const mirroredIndex = bankSize - 1 - indexInBank;
-            const leftOffset = segmentWidth * mirroredIndex + (segmentWidth - alongEdgeLen) / 2;
+            // Physical mirror across the spine: a tab that was at the rightmost
+            // slot of the right page (indexInBank=0 -> mirroredIndex=bankSize-1)
+            // appears at the leftmost slot of the left page after being turned.
+            const leftOffset = segmentWidth * indexInBank + (segmentWidth - alongEdgeLen) / 2;
             const bankOffset = bankIndex * (protrusion + 2);
             return (
               <div
