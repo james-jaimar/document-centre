@@ -1,27 +1,64 @@
+# Restore the original Covers experience (catalog-backed)
+
+## What changed, and why it looks different
+
+I traced your four screenshots to the code:
+
+| Option | Currently sourced from | Status |
+|---|---|---|
+| Covers (image 1) | `catalog.finishing` (category = `cover`) | **Broken** — collapsed to one "Cover" group, fewer rows, generic labels |
+| Paper Stock (image 2) | `catalog.papers` | OK — already groups as Text / Coloured / Recycled |
+| Print to Edge (image 3) | `manual` | OK — unchanged |
+| Inserts (image 4) | `manual` | OK — unchanged |
+
+So the regression is **only on Covers**. Two root causes:
+
+1. **Sub-grouping was lost.** The original manual list had four section headers — `NO COVER`, `CLEAR COVERS`, `WHITE CARD STOCK`, `PRINTED COVERS`. The catalog adapter (`src/lib/catalog/optionAdapter.ts`, `finishingRowsToValues`) sets `group = capitalise(category)` for every cover row, so they all collapse into one "Cover" header.
+
+2. **The master catalog has fewer / different cover entries than the original manual list.** Current catalog rows (11): `acetate-cover`, `matte-pvc-cover`, `frosted-pvc-cover`, `card-back-black/navy`, `card-cover-160/250/300`, `silk-cover-250`, `gloss-cover-250`, `card-back`. The original manual list had 18 entries with descriptive combo names (`Clear Front + Black Card Back`, `Matte Front + White Card Back`, `Printed Cover (300gsm Silk)`, an explicit `No Cover`, etc.) plus richer pricing per combo.
+
 ## Plan
 
-1. **Restore the lost manual Covers list**
-   - Repair the current Bound Documents → Covers row so `source = manual` contains the original manual values again: No Cover, clear/matte/frosted front cover combinations, card-stock covers, and printed cover variants.
-   - Keep the preview metadata on every restored value so the customer preview can still render clear/matte/frosted/card/printed covers correctly.
+### 1. Expand `catalog_finishing` cover rows (data migration)
 
-2. **Stop manual values being overwritten again**
-   - Add a persistent `manual_values` backup field to `product_options` (JSONB), so the admin can switch between `manual` and `catalog.*` without losing the hand-curated manual list.
-   - When switching manual → catalog, save/retain the manual list in `manual_values` and show the catalog mirror separately.
-   - When switching catalog → manual, restore from `manual_values` instead of showing a blank list or catalog rows.
+Add the missing rows so the master catalogue contains every combo the original list had. New codes (illustrative):
 
-3. **Update the admin product option editor**
-   - Load `manual_values` when opening an option currently set to catalog.
-   - On save:
-     - `manual`: save restored/manual `values`, keep `manual_values` in sync.
-     - `catalog.finishing`: save the catalog mirror in `values`, but preserve the manual list in `manual_values`.
-   - Add defensive logic so a catalog mirror is never treated as the manual backup.
+- `cover-none` — *No Cover* → group `No Cover`
+- `clear-front-black-back`, `clear-front-white-back`, `clear-front-navy-back` → group `Clear Covers`
+- `matte-front-black-back`, `matte-front-white-back` (`navy` if you want it) → group `Clear Covers`
+- `frosted-front-black-back`, `frosted-front-white-back` → group `Clear Covers`
+- Re-use existing `card-cover-160 / 250 / 300`, `silk-cover-250`, `gloss-cover-250` for `White Card Stock` (rename label to match old style: `160gsm White Card (Front & Back)` etc.)
+- `printed-cover-body`, `printed-cover-silk-250`, `printed-cover-gloss-250`, `printed-cover-silk-300`, `printed-cover-gloss-300` → group `Printed Covers`
 
-4. **Keep the customer configurator source-driven**
-   - Leave customer reads strictly based on `product_options.source`.
-   - `manual` uses saved `values`.
-   - `catalog.finishing` uses saved product-enabled catalog rows plus master metadata.
+Each row carries:
+- `metadata.cover_group` = `No Cover` | `Clear Covers` | `White Card Stock` | `Printed Covers`
+- `metadata.front` / `back` / `front_thickness_micron` / `weight_gsm` / `finish` / `uses_body_stock` / `is_printed` — so the flip-book preview keeps rendering the right material.
+- A row in `catalog_finishing_prices` so the `(+R 5,00/doc)` chips appear (same numbers the manual list used: R5 clear, R6.50 matte, R7 frosted, R4–R10 card, R10–R14 printed).
 
-5. **Validate with database reads**
-   - Confirm Bound Documents → Covers has restored manual values after repair.
-   - Confirm toggling source no longer destroys the manual list.
-   - Confirm catalog mode still displays the catalog list with cover preview metadata.
+Deprecate the duplicates (`acetate-cover`, single `matte-pvc-cover`, etc.) by setting `is_active = false` so legacy orders still resolve.
+
+### 2. Teach the adapter to honour the sub-group
+
+In `src/lib/catalog/optionAdapter.ts`:
+- In `finishingRowsToValues` and `enrichFinishingValuesFromMaster`, when `category === 'cover'` use `meta.cover_group` (falling back to a code-prefix map) for the `group` field instead of the generic `capitalise(category)`.
+- Extend `previewMetadataForFinishingCode` so every new code maps to the right preview metadata (front/back materials, thickness, weight, `is_printed`, `uses_body_stock`).
+
+No change is needed in `OptionSelector.tsx` — it already renders one `SelectGroup` per distinct `group`, which is exactly how the four section headers appeared originally.
+
+### 3. Wire the Bound Documents → Covers product_option to the new catalogue
+
+Update the row's `values` array (mirror of enabled catalog codes) so all the new codes are enabled with the right `is_default` (`cover-none` default) and group preserved. `manual_values` is left untouched so the manual safety net still works.
+
+### 4. Verify
+
+- Open Bound Documents on Postnet → confirm the Covers dropdown shows the four headers in the right order with the original labels and per-combo prices.
+- Pick `Matte Front + Black Card Back` → confirm flip-book renders matte PVC + black card back exactly as before.
+- Pick `Printed Cover (250gsm Silk)` → confirm preview renders printed silk cover.
+- Confirm `No Cover` is the default and hides cover-related downstream options as before.
+- Switch the Admin source toggle Manual ↔ Catalog → confirm both lists now look effectively identical to the customer.
+
+## Out of scope (working today, will not touch)
+
+- Paper Stock, Print to Edge, Inserts dropdowns — they already match the originals.
+- The Admin Manual/Catalog source toggle and the `manual_values` backup behaviour from the previous round.
+- The catalog `binding` sub-grouping (already correct).
