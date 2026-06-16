@@ -397,16 +397,26 @@ export default function OrderBuild() {
     if (!docW || !docH) return;
 
     const TOLERANCE = 3; // mm
-    const matched = (sizeOpt.values as StructuredOptionValue[]).find((v) => {
-      const meta = v.metadata as Record<string, any>;
+    const docIsLandscape = docW > docH;
+    type Cand = { v: StructuredOptionValue; sameOrientation: boolean };
+    const candidates: Cand[] = [];
+    for (const v of sizeOpt.values as StructuredOptionValue[]) {
+      const meta = (v.metadata ?? {}) as Record<string, any>;
       const w = Number(meta?.width_mm ?? 0);
       const h = Number(meta?.height_mm ?? 0);
-      if (!w || !h) return false;
-      // Check both portrait and landscape
+      if (!w || !h) continue;
       const portrait = Math.abs(docW - w) <= TOLERANCE && Math.abs(docH - h) <= TOLERANCE;
       const landscape = Math.abs(docW - h) <= TOLERANCE && Math.abs(docH - w) <= TOLERANCE;
-      return portrait || landscape;
-    });
+      if (!portrait && !landscape) continue;
+      // A row's stored orientation: explicit metadata, otherwise inferred
+      // from its w/h. Prefer rows whose orientation matches the uploaded
+      // PDF (landscape PDF → "a4-landscape", not "a4").
+      const rowOrientation = String(meta.orientation ?? (w > h ? "landscape" : "portrait")).toLowerCase();
+      const sameOrientation = (docIsLandscape && rowOrientation === "landscape") ||
+        (!docIsLandscape && rowOrientation === "portrait");
+      candidates.push({ v, sameOrientation });
+    }
+    const matched = candidates.find((c) => c.sameOrientation)?.v ?? candidates[0]?.v;
 
     if (matched) {
       autoSizeMatchedRef.current = true;
@@ -773,6 +783,11 @@ export default function OrderBuild() {
   const prevTabInsertRef = useRef<{ hadTabs: boolean; hadInserts: boolean }>({ hadTabs: false, hadInserts: false });
 
   // ── Derive tab info from product options ──
+  // A row counts as "tabs enabled" when it belongs to the tab_dividers
+  // catalogue category (or its slug starts with "tab-") and isn't the
+  // explicit "none" row. tab_count / pack_count / colour fall back to
+  // sensible defaults so the drawer still opens on rows that haven't been
+  // fully annotated in the master catalogue yet.
   const tabInfo = useMemo(() => {
     const tabOpt = options.find((o) => o.name.toLowerCase().includes("tab"));
     if (!tabOpt || !isStructuredValues(tabOpt.values)) return null;
@@ -780,13 +795,26 @@ export default function OrderBuild() {
       (k) => k.toLowerCase() === tabOpt.name.toLowerCase()
     ) || tabOpt.name;
     const slug = spec.selected_options[key];
-    if (!slug || slug === "none") return null;
+    if (!slug) return null;
     const val = (tabOpt.values as StructuredOptionValue[]).find((v) => v.slug === slug);
     if (!val) return null;
-    const count = (val.metadata as any)?.tab_count ?? 0;
-    const packCount = (val.metadata as any)?.pack_count ?? Math.ceil(count / 10);
-    const multiColor = (val.metadata as any)?.color === "multi";
-    return count > 0 ? { count, packCount, multiColor } : null;
+    const meta = (val.metadata ?? {}) as Record<string, any>;
+    const isNone =
+      meta.none === true ||
+      slug === "none" ||
+      /(^|[-_])none([-_]|$)/i.test(slug) ||
+      /^no[-_ ]/i.test(val.label ?? "");
+    if (isNone) return null;
+    const looksLikeTab =
+      meta.category === "tab_dividers" ||
+      /^tab[-_]/i.test(slug) ||
+      /tab/i.test(val.label ?? "");
+    if (!looksLikeTab) return null;
+    const packSize = Number(meta.pack_size ?? 10) || 10;
+    const packCount = Number(meta.pack_count ?? 1) || 1;
+    const count = Number(meta.tab_count ?? packSize * packCount) || packSize;
+    const multiColor = String(meta.color ?? "").toLowerCase() === "multi";
+    return { count, packCount, multiColor };
   }, [options, spec.selected_options]);
 
   // ── Derive insert info from product options ──
@@ -797,7 +825,13 @@ export default function OrderBuild() {
       (k) => k.toLowerCase() === insertOpt.name.toLowerCase()
     ) || insertOpt.name;
     const slug = spec.selected_options[key];
-    return !!slug && slug !== "none" && slug !== "no-inserts" && slug !== "no_inserts";
+    if (!slug) return false;
+    const val = (insertOpt.values as StructuredOptionValue[]).find((v) => v.slug === slug);
+    const meta = (val?.metadata ?? {}) as Record<string, any>;
+    if (meta.none === true) return false;
+    if (slug === "none" || slug === "no-inserts" || slug === "no_inserts") return false;
+    if (/(^|[-_])none([-_]|$)/i.test(slug)) return false;
+    return true;
   }, [options, spec.selected_options]);
 
   // Auto-open drawer when tabs or inserts become enabled

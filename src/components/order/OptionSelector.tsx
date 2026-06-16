@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { useRegionalPricing } from "@/hooks/useRegionalPricing";
 import { formatPriceDelta } from "@/lib/formatCurrency";
+import { humaniseSlug } from "@/lib/utils";
 
 type ProductOption = Tables<"product_options">;
 
@@ -76,7 +77,7 @@ export default function OptionSelector({
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger className="w-full">
         <SelectValue placeholder={`Select ${option.name}`}>
-          {selectedValue?.label ?? value}
+          {selectedValue?.label ?? humaniseSlug(value)}
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
