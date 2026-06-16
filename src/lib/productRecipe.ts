@@ -8,7 +8,7 @@
  * while the admin UI drives everything from the Options tab.
  */
 
-export type ProductRecipeEngine = "click_charges" | "photo_prints";
+export type ProductRecipeEngine = "click_charges" | "photo_prints" | "business_cards";
 
 export interface ProductRecipeFinishingItem {
   code: string;

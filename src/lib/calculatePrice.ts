@@ -273,6 +273,7 @@ import type {
   RateCardPaper,
   RateCardFinishing,
   RateCardPhotoPrint,
+  RateCardBusinessCard,
 } from "@/hooks/useRateCard";
 import type { ProductRecipe } from "@/lib/productRecipe";
 import { resolvePhotoPrintPrice } from "@/lib/photoPrints/pricing";
@@ -284,6 +285,8 @@ export interface RateCardBundle {
   papers: RateCardPaper[];
   finishing: RateCardFinishing[];
   photoPrints?: RateCardPhotoPrint[];
+  /** Business-cards matrix: (quantity × sides × paper × finish) → price. */
+  businessCards?: RateCardBusinessCard[];
   /**
    * Optional: per-line quantity-tier price breaks (flat list across all
    * rate-card tables in the active scope). When present, the engine picks
@@ -382,6 +385,72 @@ export function calculatePriceFromRateCard(
       subtotal_per_unit: unit,
       quantity: spec.quantity,
       total: unit * spec.quantity,
+    };
+  }
+
+  // ---- Business Cards branch ---------------------------------------------
+  if (recipe.engine === "business_cards") {
+    const opts = spec.selected_options ?? {};
+    // Pack size: prefer explicit metadata.quantity from the selected option,
+    // fall back to the spec.quantity field (NewOrder maps Pack Size → qty).
+    const packSize = Number(
+      (opts["Pack Size"] as any)?.metadata?.quantity ??
+        opts["Pack Size"] ??
+        spec.quantity ??
+        0,
+    );
+    const sidesRaw = String(
+      opts["Print Sides"] ?? opts["sides"] ?? "double",
+    ).toLowerCase();
+    const sides: "single" | "double" =
+      sidesRaw.includes("single") || sidesRaw === "simplex" ? "single" : "double";
+    const paper = String(opts["Paper Stock"] ?? opts["paper"] ?? "350gsm Silk");
+    const lamination = String(
+      opts["Lamination"] ?? opts["finish"] ?? "none",
+    ).toLowerCase();
+    const finish = lamination.includes("matt")
+      ? "matt-lam"
+      : lamination.includes("gloss")
+        ? "gloss-lam"
+        : lamination.includes("soft")
+          ? "soft-touch"
+          : "none";
+
+    const matrix = rc.businessCards ?? [];
+    // Best match: exact (quantity, sides, paper, finish), then relax finish, then paper, then sides.
+    const exact = matrix.find(
+      (r) =>
+        r.is_active &&
+        r.quantity === packSize &&
+        r.sides === sides &&
+        r.paper === paper &&
+        r.finish === finish,
+    );
+    const byQtySides = matrix.find(
+      (r) => r.is_active && r.quantity === packSize && r.sides === sides,
+    );
+    const byQty = matrix.find((r) => r.is_active && r.quantity === packSize);
+    const row = exact ?? byQtySides ?? byQty;
+
+    const packPrice = row ? Number(row.sell_price) : 0;
+    const billedQty = spec.quantity > 0 ? spec.quantity : 1;
+
+    const lines: PriceLineItem[] = [
+      {
+        label: row
+          ? `Business cards — ${row.label}`
+          : `Business cards (pack of ${packSize || "?"}, ${sides}-sided)`,
+        type: "per_unit",
+        unit_amount: packPrice,
+        multiplier: billedQty,
+        total: packPrice * billedQty,
+      },
+    ];
+    return {
+      lines,
+      subtotal_per_unit: packPrice,
+      quantity: billedQty,
+      total: packPrice * billedQty,
     };
   }
 
