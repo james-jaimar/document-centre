@@ -37,6 +37,7 @@ type CatalogSizeRow = {
   region: string | null;
   is_active: boolean;
   sort_order: number | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 export type CatalogFinishingRow = {
@@ -316,29 +317,34 @@ export function paperRowsToValues(
         a.label.localeCompare(b.label),
     );
 
-  return filtered.map((p, i) => ({
-    label: p.label,
-    slug: p.code, // canonical catalog code — feeds the rate-card paper lookup
-    group:
-      p.category
-        ? capitalise(p.category) + " Paper"
-        : p.weight_gsm
-        ? `${p.weight_gsm}gsm`
-        : "Paper",
-    price_impact: 0, // priced via catalog_paper_prices in the rate-card engine
-    price_type: "per_document",
-    is_default: i === 0,
-    is_active: true,
-    metadata: {
-      paper_code: p.code,
-      weight_gsm: p.weight_gsm ?? 0,
-      finish: p.finish ?? "",
-      category: p.category ?? "",
-      is_cover_stock: p.is_cover_stock,
-      is_edge_to_edge_only: p.is_edge_to_edge_only,
-      stocked_sizes: (p.stocked_sizes ?? []).join(","),
-    },
-  }));
+  return filtered.map((p, i) => {
+    const pmeta = (p.metadata ?? {}) as Record<string, unknown>;
+    const color = typeof pmeta.color === "string" ? pmeta.color : "";
+    return {
+      label: p.label,
+      slug: p.code, // canonical catalog code — feeds the rate-card paper lookup
+      group:
+        p.category
+          ? capitalise(p.category) + " Paper"
+          : p.weight_gsm
+          ? `${p.weight_gsm}gsm`
+          : "Paper",
+      price_impact: 0, // priced via catalog_paper_prices in the rate-card engine
+      price_type: "per_document" as const,
+      is_default: i === 0,
+      is_active: true,
+      metadata: {
+        paper_code: p.code,
+        weight_gsm: p.weight_gsm ?? 0,
+        finish: p.finish ?? "",
+        category: p.category ?? "",
+        color, // B1: paper colour for preview (defaults to "" → white)
+        is_cover_stock: p.is_cover_stock,
+        is_edge_to_edge_only: p.is_edge_to_edge_only,
+        stocked_sizes: (p.stocked_sizes ?? []).join(","),
+      },
+    };
+  });
 }
 
 /** Project master catalog_sizes rows into structured option values. */
@@ -360,21 +366,33 @@ export function sizeRowsToValues(
   return filtered.map((s, i) => {
     const w = s.width_mm ?? 0;
     const h = s.height_mm ?? 0;
+    const smeta = (s.metadata ?? {}) as Record<string, unknown>;
+    // B3: preview/binding metadata previously hard-coded on size values
+    // (orientation, binding_edge, max_pages). Read from catalog_sizes.metadata
+    // when present; admins can set these via the master catalogue editor.
+    const meta: Record<string, string | number | boolean> = {
+      size_code: s.code,
+      iso: s.iso_name ?? s.label,
+      width_mm: w,
+      height_mm: h,
+      region: s.region ?? "",
+    };
+    if (typeof smeta.orientation === "string") meta.orientation = smeta.orientation;
+    if (typeof smeta.binding_edge === "string") meta.binding_edge = smeta.binding_edge;
+    if (typeof smeta.max_pages === "number") meta.max_pages = smeta.max_pages;
+    // Fallback: infer orientation from dimensions when not explicit.
+    if (!meta.orientation && w && h) {
+      meta.orientation = w > h ? "landscape" : "portrait";
+    }
     return {
       label: `${s.label}${w && h ? ` (${w} × ${h}mm)` : ""}`,
-      slug: s.code, // canonical code — feeds the rate-card size lookup
+      slug: s.code,
       group: s.region === "US" ? "US Sizes" : "Standard Sizes",
       price_impact: 0,
-      price_type: "per_document",
+      price_type: "per_document" as const,
       is_default: i === 0,
       is_active: true,
-      metadata: {
-        size_code: s.code,
-        iso: s.iso_name ?? s.label,
-        width_mm: w,
-        height_mm: h,
-        region: s.region ?? "",
-      },
+      metadata: meta,
     };
   });
 }
@@ -445,10 +463,24 @@ export function isSizeOptionName(name: string): boolean {
 export function inferFinishingCategoryFromName(name: string): string | null {
   const n = name.trim().toLowerCase();
   if (n === "binding") return "binding";
-  if (n === "cover lamination" || n === "lamination") return "lamination";
+  // B5: broaden lamination aliases
+  if (
+    n === "cover lamination" ||
+    n === "page lamination" ||
+    n === "lamination" ||
+    n === "laminating"
+  )
+    return "lamination";
   if (n === "edge painting" || n === "edges") return "edges";
-  if (n === "corner rounding" || n === "corners") return "corners";
-  if (n === "drilling" || n === "hole punch") return "drilling";
+  if (n === "corner rounding" || n === "corners" || n === "corner style") return "corners";
+  if (
+    n === "drilling" ||
+    n === "hole punch" ||
+    n === "hole punching" ||
+    n === "punching"
+  )
+    return "drilling";
+  if (n === "cover" || n === "covers" || n === "cover stock") return "cover";
   return null;
 }
 
