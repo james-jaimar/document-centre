@@ -423,6 +423,114 @@ export function resolvedRowsToSizeValues(
   return sizeRowsToValues(sizes, { allowedCodes: allowed });
 }
 
+/**
+ * Enrich a product's SAVED paper values with metadata from the master
+ * `catalog_papers` rows. Saved array is authoritative for per-product
+ * enabled/default; master only refreshes labels, group, and metadata.
+ *
+ * Rules (mirror of enrichFinishingValuesFromMaster):
+ *  - Drop saved values whose per-product `is_active === false`.
+ *  - Drop saved values whose master row is missing (deleted from catalogue).
+ *  - Preserve per-product `is_default`, `price_impact`, `price_type`.
+ */
+export function enrichPaperValuesFromMaster(
+  savedValues: StructuredOptionValue[],
+  masterRows: CatalogPaperRow[],
+): StructuredOptionValue[] {
+  const byCode = new Map(masterRows.map((r) => [r.code, r]));
+  const enriched: StructuredOptionValue[] = [];
+
+  for (const v of savedValues) {
+    if (v.is_active === false) continue;
+    const code = String((v.metadata as any)?.paper_code ?? v.slug ?? "");
+    if (!code) continue;
+    const master = byCode.get(code);
+    if (!master) continue;
+
+    const pmeta = (master.metadata ?? {}) as Record<string, unknown>;
+    const color = typeof pmeta.color === "string" ? pmeta.color : "";
+    enriched.push({
+      ...v,
+      label: master.label ?? v.label,
+      slug: v.slug ?? master.code,
+      group:
+        v.group ??
+        (master.category
+          ? capitalise(master.category) + " Paper"
+          : master.weight_gsm
+          ? `${master.weight_gsm}gsm`
+          : "Paper"),
+      price_impact: v.price_impact ?? 0,
+      price_type: v.price_type ?? "per_document",
+      is_active: true,
+      metadata: {
+        ...(v.metadata ?? {}),
+        paper_code: master.code,
+        weight_gsm: master.weight_gsm ?? 0,
+        finish: master.finish ?? "",
+        category: master.category ?? "",
+        color,
+        is_cover_stock: master.is_cover_stock,
+        is_edge_to_edge_only: master.is_edge_to_edge_only,
+        stocked_sizes: (master.stocked_sizes ?? []).join(","),
+      },
+    });
+  }
+  return enriched;
+}
+
+/**
+ * Enrich a product's SAVED size values with metadata from master
+ * `catalog_sizes`. Saved array is authoritative for per-product
+ * enabled/default. (Used as a fallback path — Document Sizes are normally
+ * driven by `product_catalog_links` from the Catalogue tab.)
+ */
+export function enrichSizeValuesFromMaster(
+  savedValues: StructuredOptionValue[],
+  masterRows: CatalogSizeRow[],
+): StructuredOptionValue[] {
+  const byCode = new Map(masterRows.map((r) => [r.code, r]));
+  const enriched: StructuredOptionValue[] = [];
+
+  for (const v of savedValues) {
+    if (v.is_active === false) continue;
+    const code = String((v.metadata as any)?.size_code ?? v.slug ?? "");
+    if (!code) continue;
+    const master = byCode.get(code);
+    if (!master) continue;
+
+    const w = master.width_mm ?? 0;
+    const h = master.height_mm ?? 0;
+    const smeta = (master.metadata ?? {}) as Record<string, unknown>;
+    const meta: Record<string, string | number | boolean> = {
+      ...(v.metadata as Record<string, string | number | boolean> ?? {}),
+      size_code: master.code,
+      iso: master.iso_name ?? master.label,
+      width_mm: w,
+      height_mm: h,
+      region: master.region ?? "",
+    };
+    if (typeof smeta.orientation === "string") meta.orientation = smeta.orientation;
+    if (typeof smeta.binding_edge === "string") meta.binding_edge = smeta.binding_edge;
+    if (typeof smeta.max_pages === "number") meta.max_pages = smeta.max_pages;
+    if (!meta.orientation && w && h) {
+      meta.orientation = w > h ? "landscape" : "portrait";
+    }
+
+    enriched.push({
+      ...v,
+      label: `${master.label}${w && h ? ` (${w} × ${h}mm)` : ""}`,
+      slug: v.slug ?? master.code,
+      group: v.group ?? (master.region === "US" ? "US Sizes" : "Standard Sizes"),
+      price_impact: v.price_impact ?? 0,
+      price_type: v.price_type ?? "per_document",
+      is_active: true,
+      metadata: meta,
+    });
+  }
+  return enriched;
+}
+
 function capitalise(s: string): string {
   return s.length ? s[0].toUpperCase() + s.slice(1) : s;
 }
