@@ -300,8 +300,10 @@ export function finishingRowsToValues(
 export function enrichFinishingValuesFromMaster(
   savedValues: StructuredOptionValue[],
   masterRows: CatalogFinishingRow[],
+  priceRows?: CatalogFinishingPriceRow[],
 ): StructuredOptionValue[] {
   const byCode = new Map(masterRows.map((r) => [r.code, r]));
+  const priceMap = pricesByFinishingId(priceRows);
   const enriched: StructuredOptionValue[] = [];
 
   for (const v of savedValues) {
@@ -316,6 +318,7 @@ export function enrichFinishingValuesFromMaster(
     if (!master) continue;
 
     const masterMeta = (master.metadata ?? {}) as Record<string, any>;
+    const pricesBySize = priceMap.get(master.id);
     const meta: Record<string, any> = {
       ...(v.metadata ?? {}),
       ...masterMeta,
@@ -327,6 +330,9 @@ export function enrichFinishingValuesFromMaster(
     if (master.color) meta.color = master.color;
     if (master.size_mm != null) meta.size_mm = master.size_mm;
     if (master.max_sheets != null) meta.max_sheets = master.max_sheets;
+    if (master.pricing_basis) meta.pricing_basis = master.pricing_basis;
+    if (pricesBySize) meta.prices_by_size = pricesBySize;
+
 
     // Master sub-grouping (cover_group) overrides any saved group so a
     // catalog re-categorisation flows through to the customer dropdown.
