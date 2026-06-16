@@ -89,6 +89,7 @@ interface OptionFormData {
   sort_order: number;
   source: OptionSource;
   finishingCategory: string;
+  printAttribute: string;
 }
 
 const emptyOptionForm: OptionFormData = {
@@ -98,6 +99,7 @@ const emptyOptionForm: OptionFormData = {
   sort_order: 0,
   source: "manual",
   finishingCategory: "",
+  printAttribute: "",
 };
 
 const emptyValue: StructuredOptionValue = {
