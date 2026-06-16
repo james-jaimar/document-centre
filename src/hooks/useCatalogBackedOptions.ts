@@ -14,6 +14,8 @@ import {
   sizeRowsToValues,
   finishingRowsToValues,
   enrichFinishingValuesFromMaster,
+  printAttrRowsToValues,
+  enrichPrintAttrValuesFromMaster,
   isPaperStockOptionName,
   isCoverPaperOptionName,
   isSizeOptionName,
