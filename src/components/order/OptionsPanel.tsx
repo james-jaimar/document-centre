@@ -52,7 +52,7 @@ export default function OptionsPanel({
     if (!selected) return "Not selected";
     if (isStructuredValues(option.values)) {
       const match = option.values.find((v) => v.slug === selected);
-      return match?.label ?? selected;
+      return match?.label ?? humaniseSlug(selected);
     }
     return selected;
   };
