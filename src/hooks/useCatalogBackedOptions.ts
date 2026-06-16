@@ -186,6 +186,26 @@ export function useCatalogBackedOptions(
         return opt;
       }
 
+      // ── CATALOG: PRINT ATTRIBUTES (colour_mode / sides / orientation) ────
+      if (source === "catalog.print_attrs") {
+        const attribute = sourceFilter?.attribute ?? null;
+        if (attribute && masterPrintAttrs.length > 0) {
+          const saved = isStructured(opt.values) ? opt.values : [];
+          const next =
+            saved.length > 0
+              ? enrichPrintAttrValuesFromMaster(saved, masterPrintAttrs, attribute)
+              : printAttrRowsToValues(masterPrintAttrs, attribute);
+          if (next.length > 0) {
+            return {
+              ...opt,
+              values: preserveDefault(opt.values, next) as any,
+            };
+          }
+        }
+        return opt;
+      }
+
+
       // ── Legacy rows with no `source` set — fall back to name inference ────
       // so pre-migration option rows still render. New/edited options always
       // carry a source above and won't reach this path.
