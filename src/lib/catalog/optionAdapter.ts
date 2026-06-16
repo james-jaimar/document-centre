@@ -221,7 +221,9 @@ export function previewMetadataForFinishingCode(
 export function finishingRowsToValues(
   rows: CatalogFinishingRow[],
   category: string,
+  priceRows?: CatalogFinishingPriceRow[],
 ): StructuredOptionValue[] {
+  const priceMap = pricesByFinishingId(priceRows);
   const filtered = rows
     .filter((r) => r.is_active)
     .filter((r) => (r.category ?? "") === category)
@@ -234,7 +236,8 @@ export function finishingRowsToValues(
 
   return filtered.map((r, i) => {
     const rowMeta = (r.metadata ?? {}) as Record<string, any>;
-    const meta: Record<string, string | number | boolean> = {
+    const pricesBySize = priceMap.get(r.id);
+    const meta: Record<string, any> = {
       catalog_code: r.code,
       category,
       ...rowMeta,
@@ -244,6 +247,8 @@ export function finishingRowsToValues(
     if (r.color) meta.color = r.color;
     if (r.size_mm != null) meta.size_mm = r.size_mm;
     if (r.max_sheets != null) meta.max_sheets = r.max_sheets;
+    if (r.pricing_basis) meta.pricing_basis = r.pricing_basis;
+    if (pricesBySize) meta.prices_by_size = pricesBySize;
 
     // Per-row group override (e.g. cover_group splits "cover" into
     // No Cover / Clear Covers / White Card Stock / Printed Covers).
@@ -251,13 +256,30 @@ export function finishingRowsToValues(
       (category === "cover" && (rowMeta.cover_group as string | undefined)) ||
       undefined;
 
-    // Master row may carry display pricing in metadata (price_impact + price_type)
-    // so the dropdown shows the same "+R x,xx/doc" chips the manual list had.
-    const priceImpact =
+    // Prefer real catalog_finishing_prices over any legacy metadata.price_impact.
+    const realPrice = pricesBySize ? headlinePrice(pricesBySize) : 0;
+    const fallbackImpact =
       typeof rowMeta.price_impact === "number" ? rowMeta.price_impact : 0;
+    const priceImpact = realPrice > 0 ? realPrice : fallbackImpact;
     const priceType =
       (rowMeta.price_type as "fixed" | "per_document" | "per_page" | undefined) ??
-      "per_document";
+      priceTypeFromBasis(r.pricing_basis);
+
+    return {
+      label: r.label,
+      slug: r.code,
+      group:
+        groupOverride ??
+        (r.binding_method ? capitaliseMethod(r.binding_method) : capitalise(category)),
+      price_impact: priceImpact,
+      price_type: priceType,
+      is_default: Boolean(rowMeta.is_default) || (rowMeta.is_default === undefined && i === 0),
+      is_active: true,
+      metadata: meta,
+    };
+  });
+}
+
 
     return {
       label: r.label,
