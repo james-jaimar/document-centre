@@ -162,35 +162,46 @@ export function useCatalogBackedOptions(
       }
 
       // ── CATALOG: PAPERS ───────────────────────────────────────────────────
+      // Per-product Enabled toggles in the Options editor are authoritative.
+      // When saved values exist, enrich them from master (label + metadata)
+      // and drop anything the admin disabled. Only seed from master/links
+      // when the saved array is empty (new option row).
       if (source === "catalog.papers") {
         const isCover = isCoverPaperOptionName(name);
-        const next = isCover
+        const saved = isStructured(opt.values) ? opt.values : [];
+        if (saved.length > 0 && masterPapers.length > 0) {
+          const next = enrichPaperValuesFromMaster(saved, masterPapers);
+          if (next.length > 0) {
+            return { ...opt, values: preserveDefault(opt.values, next) as any };
+          }
+        }
+        const seed = isCover
           ? allCoverPaperValues
           : paperValuesFromLinks ?? allPaperValues;
-        if (next && next.length > 0) {
-          return {
-            ...opt,
-            values: preserveDefault(opt.values, next) as any,
-          };
+        if (seed && seed.length > 0) {
+          return { ...opt, values: preserveDefault(opt.values, seed) as any };
         }
         return opt;
       }
 
       // ── CATALOG: SIZES ────────────────────────────────────────────────────
       // Document Sizes are configured exclusively in Admin → Products →
-      // Catalogue tab (product_catalog_links). Use ONLY the resolved links;
-      // never silently fall back to the full master catalogue, otherwise
-      // customers see every size whenever the link projection is empty.
-      // Brand-new families with no links at all get the full master as a
-      // starter set so they're not blank.
+      // Catalogue tab (product_catalog_links). When the admin has also
+      // toggled saved size values in the Options editor we respect those;
+      // otherwise we project from links, and as a last resort from the full
+      // master catalogue so brand-new families aren't blank.
       if (source === "catalog.sizes") {
+        const saved = isStructured(opt.values) ? opt.values : [];
+        if (saved.length > 0 && masterSizes.length > 0) {
+          const next = enrichSizeValuesFromMaster(saved, masterSizes);
+          if (next.length > 0) {
+            return { ...opt, values: preserveDefault(opt.values, next) as any };
+          }
+        }
         const hasAnyLinks = resolvedRows.some((r) => r.catalog === "size");
-        const next = hasAnyLinks ? sizeValuesFromLinks : allSizeValues;
-        if (next && next.length > 0) {
-          return {
-            ...opt,
-            values: preserveDefault(opt.values, next) as any,
-          };
+        const seed = hasAnyLinks ? sizeValuesFromLinks : allSizeValues;
+        if (seed && seed.length > 0) {
+          return { ...opt, values: preserveDefault(opt.values, seed) as any };
         }
         return opt;
       }
