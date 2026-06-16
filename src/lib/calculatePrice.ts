@@ -440,7 +440,7 @@ export function calculatePriceFromRateCard(
         label: row
           ? `Business cards — ${row.label}`
           : `Business cards (pack of ${packSize || "?"}, ${sides}-sided)`,
-        type: "per_set",
+        type: "per_unit",
         unit_amount: packPrice,
         multiplier: billedQty,
         total: packPrice * billedQty,
