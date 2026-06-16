@@ -85,6 +85,18 @@ export function useCatalogBackedOptions(
     },
   });
 
+  const printAttrsQ = useQuery({
+    queryKey: ["catalog_print_attrs", "master", "all"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("catalog_print_attrs" as any)
+        .select("*")
+        .eq("scope_type", "master");
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+
   const data = useMemo(() => {
     const opts = legacy.data ?? [];
     const resolvedRows = resolved.data ?? [];
