@@ -94,12 +94,29 @@ export function sheetWeightGrams(
 
 /**
  * Look up GSM from a paper stock slug.
+ *
+ * Resolution order:
+ *   1. Exact match in the static legacy map (`80gsm-bond` etc.).
+ *   2. `<digits>gsm` substring (legacy slugs like `120gsm-bond`).
+ *   3. Trailing `-<digits>` (new catalog codes like `uncoated-80`, `silk-160`).
+ *   4. Any standalone 2-4 digit run (last-ditch).
+ *   5. 80gsm default.
+ *
+ * For maximum accuracy, prefer passing `gsmOverride` from the selected option
+ * value's `metadata.weight_gsm`, which is authoritative for catalog papers.
  */
 export function gsmFromSlug(slug: string): number {
   if (GSM_BY_SLUG[slug]) return GSM_BY_SLUG[slug];
-  // Try to extract GSM from the slug (e.g. "120gsm-bond" → 120)
-  const match = slug.match(/(\d+)gsm/i);
-  return match ? parseInt(match[1], 10) : 80; // default to 80gsm
+  const gsmMatch = slug.match(/(\d+)\s*gsm/i);
+  if (gsmMatch) return parseInt(gsmMatch[1], 10);
+  const trailingMatch = slug.match(/-(\d{2,4})$/);
+  if (trailingMatch) return parseInt(trailingMatch[1], 10);
+  const anyDigits = slug.match(/\b(\d{2,4})\b/);
+  if (anyDigits) {
+    const n = parseInt(anyDigits[1], 10);
+    if (n >= 50 && n <= 800) return n;
+  }
+  return 80;
 }
 
 /**

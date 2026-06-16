@@ -62,6 +62,15 @@ export interface PriceBreakdown {
  * Evaluate whether a pricing rule's conditions match the given spec.
  */
 function conditionsMatch(conditions: Record<string, unknown>, spec: ItemSpec): boolean {
+  // Helper: read a selected_options value by any of several keys (case/space tolerant)
+  const readSelected = (...names: string[]): string | undefined => {
+    for (const n of names) {
+      const v = spec.selected_options?.[n];
+      if (v !== undefined && v !== null && v !== "") return String(v);
+    }
+    return undefined;
+  };
+
   for (const [key, value] of Object.entries(conditions)) {
     switch (key) {
       case "is_color":
@@ -85,6 +94,29 @@ function conditionsMatch(conditions: Record<string, unknown>, spec: ItemSpec): b
       case "paper_stock":
         if (spec.paper_stock !== value) return false;
         break;
+      case "pack_size": {
+        // Business cards: pack size lives in selected_options under "Pack Size"
+        // (or "pack_size"). Compare as numeric where possible to tolerate
+        // "50" vs 50.
+        const selected = readSelected("Pack Size", "pack_size", "Pack");
+        if (selected === undefined) return false;
+        const a = Number(selected);
+        const b = Number(value);
+        if (Number.isFinite(a) && Number.isFinite(b)) {
+          if (a !== b) return false;
+        } else if (selected !== String(value)) {
+          return false;
+        }
+        break;
+      }
+      case "print_size": {
+        // Photo prints: print size lives in selected_options under "Print Size"
+        // (or "print_size" / "size_slug").
+        const selected = readSelected("Print Size", "print_size", "size_slug", "Size");
+        if (selected === undefined) return false;
+        if (String(selected).toLowerCase() !== String(value).toLowerCase()) return false;
+        break;
+      }
     }
   }
   return true;

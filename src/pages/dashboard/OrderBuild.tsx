@@ -232,6 +232,14 @@ export default function OrderBuild() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
 
+  // Saddle-stitched booklets are duplex by definition. Force is_duplex=true
+  // for these families so click-charge billing and the preview stay correct
+  // even if the seeded option default or stored spec says otherwise.
+  const isSaddleStitchedFamily = useMemo(() => {
+    const slug = (productFamily?.slug || "").toLowerCase();
+    return slug === "booklets" || slug === "saddle-stitched" || slug === "saddle_stitched";
+  }, [productFamily?.slug]);
+
   // Sync spec from DB on load
   useEffect(() => {
     if (orderItem?.spec) {
@@ -240,7 +248,7 @@ export default function OrderBuild() {
         page_count: s.page_count ?? 0,
         quantity: s.quantity ?? 1,
         is_color: s.is_color ?? true,
-        is_duplex: s.is_duplex ?? true,
+        is_duplex: isSaddleStitchedFamily ? true : (s.is_duplex ?? true),
         selected_options: s.selected_options ?? {},
         binding_edge_override: s.binding_edge_override ?? null,
       };
@@ -251,7 +259,15 @@ export default function OrderBuild() {
     if (orderItem?.title) {
       setReference(orderItem.title);
     }
-  }, [orderItem?.spec, orderItem?.title]);
+  }, [orderItem?.spec, orderItem?.title, isSaddleStitchedFamily]);
+
+  // Defensive: if the family is saddle-stitched and spec drifts to simplex
+  // (legacy carts, manual edits), clamp it back to duplex.
+  useEffect(() => {
+    if (isSaddleStitchedFamily && !spec.is_duplex) {
+      setSpec((prev) => ({ ...prev, is_duplex: true }));
+    }
+  }, [isSaddleStitchedFamily, spec.is_duplex]);
 
   // Track dirty state
   useEffect(() => {
