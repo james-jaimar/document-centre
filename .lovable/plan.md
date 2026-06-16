@@ -1,62 +1,50 @@
-# Plan: Flip product options from legacy `manual` to catalog-backed
+# Fix Document Size duplication on Bound Documents
 
-## What I found
+## What I found (the three places)
 
-Master catalogue (`tenant_id IS NULL`) currently has **65 product options** across 10 families. About half already point to a catalog source; the rest are still `source = 'manual'` (legacy hard-coded values). The catalogue itself is fully populated:
+1. **Customer configurator** — shows all 10+ master sizes (A6, DL, A5, A5 Landscape, A4, A4 Landscape, A3, SRA3, A2, A1, …).
+2. **Admin → Products → Catalogue tab** — admin has 4 sizes enabled (A4, A5, US Letter, US Legal). This writes to `product_catalog_links` (catalog='size').
+3. **Admin → Products → Options tab** — has a `product_options` row called "Document Size" with `source = catalog.sizes` and 15 frozen `values` left over from the pre-catalogue era.
 
-- `catalog_finishing` categories: binding (25), cover (29), lamination (4), folding (4), hole_punching (3), inserts (3), tab_dividers (2), stapling (3), trimming (3), special (6), guillotining (1), packaging (2).
-- `catalog_papers`, `catalog_sizes`, `catalog_print_attrs` all populated.
+### Why they disagree
+`useCatalogBackedOptions` for `source = 'catalog.sizes'` does:
+```
+next = sizeValuesFromLinks ?? allSizeValues
+```
+When the resolved-links projection comes back empty/unmatched, it silently falls back to the **entire master catalogue** — that's the "every size shows" bug. Meanwhile the Options tab still renders a Document Size picker from its own stale `values` array (15 entries), so admins see a third, different list.
 
-So most `manual` rows can be safely flipped to a catalog source — they'll then resolve through `useCatalogBackedOptions` and inherit master pricing automatically.
+The Catalogue tab (`product_catalog_links`) is the only place actually driven by admin intent. The other two are legacy.
 
-## Mapping I'll apply
+## Plan — make the Catalogue tab authoritative
 
-| Option name (per family) | New `source` | `source_filter` |
-|---|---|---|
-| Covers | `catalog.finishing` | `{category: cover}` |
-| Binding (still manual on presentations / ring-binders) | `catalog.finishing` | `{category: binding}` |
-| Cover Lamination / Page Lamination / Lamination | `catalog.finishing` | `{category: lamination}` |
-| Tab Dividers | `catalog.finishing` | `{category: tab_dividers}` |
-| Inserts | `catalog.finishing` | `{category: inserts}` |
-| Hole Punching | `catalog.finishing` | `{category: hole_punching}` |
-| Fold Type (brochures) | `catalog.finishing` | `{category: folding}` |
-| Finishing (bound-documents, presentations, stapled-loose-pages) | `catalog.finishing` | `{category: trimming}` + special — see note |
-| Special Finishing (business-cards) | `catalog.finishing` | `{category: special}` |
+### 1. Customer-side: respect the links, never fall back to the full master
+In `src/hooks/useCatalogBackedOptions.ts` for the `catalog.sizes` branch:
+- If `product_catalog_links` rows exist for `catalog='size'` on this family, use **only** those (already what `sizeValuesFromLinks` produces).
+- If no links exist at all, keep the current full-master fallback (so a brand-new family still renders something).
+- Drop the silent "links empty → show everything" path. Same treatment for `catalog.papers` Cover/Body so we don't trip the same bug there next.
 
-### Staying `manual` (no catalog equivalent — by design)
+### 2. Hide "Document Size" from the Options tab
+Document Size is now configured exclusively under **Catalogue → Document Sizes**. In the Options admin UI (`src/components/admin/ProductOptionsTab*.tsx` or equivalent), filter out option rows where `source = 'catalog.sizes'` so admins don't see/edit a duplicate picker. The DB row stays (used by the customer hook), but it's no longer editable in two places.
 
-- **Print to Edge** — binary toggle, not a finishing SKU.
-- **Photo Prints** options (Print Size, Border, Finish) — driven by the `photo_prints` rate-card engine, not the finishing catalogue.
-- **Business Cards** Pack Size + Document Size — drive the `business_cards` matrix; not catalog rows.
-- **Business Cards** Corner Style — cosmetic, no priced SKU.
+Add a small banner in the Options tab: *"Document sizes are managed in the Catalogue tab."*
 
-I'll leave these on `manual` and note them in the migration comment.
+### 3. One-time data reconciliation
+For every master `product_options` row with `source = 'catalog.sizes'`, blank out `values` to `[]`. The customer hook will then derive values purely from `product_catalog_links` (via the `resolve_product_options` RPC) + master `catalog_sizes`. No more stale 15-entry list lingering in the DB.
 
-## Approach
+### 4. Sanity-check the resolve RPC
+Spot-check `resolve_product_options(<bound-documents>, null)` returns exactly 4 size rows (A4, A5, US Letter, US Legal) with `is_enabled = true`. If it returns more, the bug is inside the RPC and we fix the SQL there too (the duplicate `scope_type='tenant'` rows in `product_catalog_links` look suspicious — 5 copies of the same 4 sizes — and may need a dedupe).
 
-1. **Audit migration (data only)** — one `UPDATE` per option group that flips `source` / `source_filter`. `useCatalogBackedOptions` will then enrich values from `catalog_finishing` on first read.
-   - For options that already have curated `values` JSON (e.g. Covers with custom prices), I'll keep `values` as-is; the enrichment path `enrichFinishingValuesFromMaster` merges saved values with master metadata, so customer-facing labels and prices are preserved while still pulling from catalogue.
-   - For options with empty `values`, the catalog rows become the value list directly.
-2. **Diff report** — after the flip I'll run a read-only query that shows, per family/option:
-   - new source/filter
-   - master catalog row count that would resolve
-   - any options where resolved count is 0 (i.e. category exists but no rows match) — those need manual attention.
-3. **Cascade to tenants** — the existing `clone_master_catalog_to_tenant` already mirrors catalog rows, but tenants have their own `product_options` rows (from earlier seeding). I'll run the same `source`/`source_filter` flip against tenant-owned product_options (`tenant_id IS NOT NULL`) so tenant configurators behave identically. Tenant-specific `values` overrides are preserved.
-4. **Spot-check in the UI** — load the customer configurator for Bound Documents, Presentations, Ring Binders, Business Cards and confirm:
-   - dropdowns populate from catalogue,
-   - prices come through (clicks + paper + finishing),
-   - no option becomes empty.
-5. **Report back** with the diff table and any flagged rows.
+## Files to touch
+- `src/hooks/useCatalogBackedOptions.ts` — remove silent full-master fallback for `catalog.sizes` (+ same for `catalog.papers`).
+- Admin Options tab component — hide rows where `source ∈ {catalog.sizes}` and show the redirect banner.
+- One `UPDATE` via supabase--insert: clear `values` on all `source='catalog.sizes'` product_options rows.
+- Possibly a small migration to dedupe `product_catalog_links` (only if the spot-check shows duplicates causing the RPC to over-return).
 
-## Technical detail
+## What stays the same
+- Paper Stock, Cover, Binding, Lamination, etc. continue to live in Options (they have no equivalent toggle in the Catalogue tab).
+- Branch overrides via `branch_catalog_overrides` keep working — they layer on top of the family's links exactly as today.
 
-- Two `UPDATE` statements via `supabase--insert` (data change, not schema): one for master rows, one for tenant rows. Filter by `pf.tenant_id IS NULL/NOT NULL` and option name.
-- No code changes expected — the catalog overlay is already live in `useCatalogBackedOptions`. If the spot-check turns up a real bug (e.g. a category mismatch), I'll fix it in a follow-up.
-- No schema migration. No edge-function changes.
-
-## Risks / guard-rails
-
-- If a `manual` option held bespoke labels that don't exist in the catalogue (e.g. a Cover finish the admin invented), enrichment keeps the saved row by slug, so it won't disappear — it just won't get master pricing. The diff report will flag these.
-- Photo Prints and Business Cards engines are intentionally not catalog-backed; leaving their options on `manual` is correct.
-
-Ready to proceed on your approval.
+## Verification
+- Bound Documents customer picker shows exactly A4, A5, US Letter, US Legal.
+- Toggle US Legal off in the Catalogue tab → it disappears from the customer picker on next load.
+- Options tab no longer shows a "Document Size" row.
