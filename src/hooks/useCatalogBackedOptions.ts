@@ -239,7 +239,7 @@ export function useCatalogBackedOptions(
       }
       return opt;
     });
-  }, [legacy.data, resolved.data, papersQ.data, sizesQ.data, finishingQ.data]);
+  }, [legacy.data, resolved.data, papersQ.data, sizesQ.data, finishingQ.data, printAttrsQ.data]);
 
 
   return {
@@ -249,13 +249,15 @@ export function useCatalogBackedOptions(
       resolved.isLoading ||
       papersQ.isLoading ||
       sizesQ.isLoading ||
-      finishingQ.isLoading,
+      finishingQ.isLoading ||
+      printAttrsQ.isLoading,
     error:
       legacy.error ??
       resolved.error ??
       papersQ.error ??
       sizesQ.error ??
-      finishingQ.error,
+      finishingQ.error ??
+      printAttrsQ.error,
   };
 }
 
