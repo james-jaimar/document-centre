@@ -163,9 +163,11 @@ export function finishingRowsToValues(
     );
 
   return filtered.map((r, i) => {
+    const rowMeta = (r.metadata ?? {}) as Record<string, any>;
     const meta: Record<string, string | number | boolean> = {
       catalog_code: r.code,
       category,
+      ...rowMeta,
       ...previewMetadataForFinishingCode(r),
     };
     if (r.binding_method) meta.binding_method = r.binding_method;
@@ -173,15 +175,29 @@ export function finishingRowsToValues(
     if (r.size_mm != null) meta.size_mm = r.size_mm;
     if (r.max_sheets != null) meta.max_sheets = r.max_sheets;
 
+    // Per-row group override (e.g. cover_group splits "cover" into
+    // No Cover / Clear Covers / White Card Stock / Printed Covers).
+    const groupOverride =
+      (category === "cover" && (rowMeta.cover_group as string | undefined)) ||
+      undefined;
+
+    // Master row may carry display pricing in metadata (price_impact + price_type)
+    // so the dropdown shows the same "+R x,xx/doc" chips the manual list had.
+    const priceImpact =
+      typeof rowMeta.price_impact === "number" ? rowMeta.price_impact : 0;
+    const priceType =
+      (rowMeta.price_type as "fixed" | "per_document" | "per_page" | undefined) ??
+      "per_document";
+
     return {
       label: r.label,
       slug: r.code,
-      group: r.binding_method
-        ? capitaliseMethod(r.binding_method)
-        : capitalise(category),
-      price_impact: 0, // priced via catalog_finishing_prices
-      price_type: "per_document",
-      is_default: i === 0,
+      group:
+        groupOverride ??
+        (r.binding_method ? capitaliseMethod(r.binding_method) : capitalise(category)),
+      price_impact: priceImpact,
+      price_type: priceType,
+      is_default: Boolean(rowMeta.is_default) || (rowMeta.is_default === undefined && i === 0),
       is_active: true,
       metadata: meta,
     };
@@ -220,8 +236,10 @@ export function enrichFinishingValuesFromMaster(
     // Only drop if the master row was deleted from the catalogue entirely.
     if (!master) continue;
 
+    const masterMeta = (master.metadata ?? {}) as Record<string, any>;
     const meta: Record<string, any> = {
       ...(v.metadata ?? {}),
+      ...masterMeta,
       catalog_code: master.code,
       category: master.category ?? (v.metadata as any)?.category,
       ...previewMetadataForFinishingCode(master),
@@ -231,13 +249,32 @@ export function enrichFinishingValuesFromMaster(
     if (master.size_mm != null) meta.size_mm = master.size_mm;
     if (master.max_sheets != null) meta.max_sheets = master.max_sheets;
 
+    // Master sub-grouping (cover_group) overrides any saved group so a
+    // catalog re-categorisation flows through to the customer dropdown.
+    const groupOverride =
+      ((master.category ?? "") === "cover" && (masterMeta.cover_group as string | undefined)) ||
+      undefined;
+
+    // Pricing chip: prefer master metadata price_impact when present,
+    // otherwise keep whatever the per-product mirror has.
+    const priceImpact =
+      typeof masterMeta.price_impact === "number" ? masterMeta.price_impact : v.price_impact;
+    const priceType =
+      (masterMeta.price_type as "fixed" | "per_document" | "per_page" | undefined) ??
+      v.price_type;
+
     enriched.push({
       ...v,
       label: master.label ?? v.label,
       slug: v.slug ?? master.code,
-      group: v.group ?? (master.binding_method
-        ? capitaliseMethod(master.binding_method)
-        : capitalise(master.category ?? "")),
+      group:
+        groupOverride ??
+        v.group ??
+        (master.binding_method
+          ? capitaliseMethod(master.binding_method)
+          : capitalise(master.category ?? "")),
+      price_impact: priceImpact,
+      price_type: priceType,
       is_active: true,
       metadata: meta,
     });
