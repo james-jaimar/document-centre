@@ -87,12 +87,13 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
       color_output: "cmyk",
       cmyk_profile: "fogra39",
       render_intent: "relative_colorimetric",
+      pricing_engine: "click_charges",
       printing_rules: DEFAULT_PRINTING_RULES,
     },
   });
 
   useEffect(() => {
-    const fam = family as (ProductFamily & { printing_rules?: Partial<PrintingRules> }) | null;
+    const fam = family as (ProductFamily & { printing_rules?: Partial<PrintingRules>; pricing_engine?: FormValues["pricing_engine"] }) | null;
     if (fam) {
       form.reset({
         name: fam.name,
@@ -104,6 +105,7 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         color_output: (fam.color_output as "cmyk" | "rgb") ?? "cmyk",
         cmyk_profile: fam.cmyk_profile ?? "fogra39",
         render_intent: (fam.render_intent as FormValues["render_intent"]) ?? "relative_colorimetric",
+        pricing_engine: (fam.pricing_engine as FormValues["pricing_engine"]) ?? "click_charges",
         printing_rules: { ...DEFAULT_PRINTING_RULES, ...((fam.printing_rules as Partial<PrintingRules>) ?? {}) },
       });
     } else {
@@ -117,10 +119,12 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         color_output: "cmyk",
         cmyk_profile: "fogra39",
         render_intent: "relative_colorimetric",
+        pricing_engine: "click_charges",
         printing_rules: DEFAULT_PRINTING_RULES,
       });
     }
   }, [family, open]);
+
 
   const watchName = form.watch("name");
   useEffect(() => {
