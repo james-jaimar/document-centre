@@ -417,14 +417,16 @@ export function calculatePriceFromRateCard(
           : "none";
 
     const matrix = rc.businessCards ?? [];
-    // Best match: exact (quantity, sides, paper, finish), then relax finish, then paper, then sides.
+    // Match by (quantity, sides, paper) only. Lamination is priced
+    // separately from the catalogue (per SRA3 sheet, 21-up), so the
+    // matrix row should NOT vary by finish — that would double-count or
+    // silently drop the lamination charge.
     const exact = matrix.find(
       (r) =>
         r.is_active &&
         r.quantity === packSize &&
         r.sides === sides &&
-        r.paper === paper &&
-        r.finish === finish,
+        r.paper === paper,
     );
     const byQtySides = matrix.find(
       (r) => r.is_active && r.quantity === packSize && r.sides === sides,
@@ -446,13 +448,52 @@ export function calculatePriceFromRateCard(
         total: packPrice * billedQty,
       },
     ];
+
+    // ─── Lamination (catalogue-priced, 21-up on SRA3) ───────────────────
+    // Business cards are imposed 3×7 = 21-up on a parent SRA3 sheet for
+    // lamination accounting. Whole sheets only.
+    let lamTotal = 0;
+    if (finish !== "none" && packSize > 0) {
+      const BC_UP = 21;
+      const sheets = Math.ceil(packSize / BC_UP) * billedQty;
+      const lamCode =
+        finish === "matt-lam"
+          ? "matt-lam-ds"
+          : finish === "gloss-lam"
+            ? "gloss-lam-ds"
+            : finish === "soft-touch"
+              ? "soft-touch-ds"
+              : null;
+      const lamRow = lamCode
+        ? (rc.finishing ?? []).find(
+            (r) =>
+              r.is_active &&
+              r.code === lamCode &&
+              (r.size ?? "").toUpperCase() === "SRA3",
+          )
+        : null;
+      if (lamRow) {
+        const unit = Number(lamRow.sell_price);
+        lamTotal = unit * sheets;
+        lines.push({
+          label: `${lamRow.label} — ${sheets} sheet${sheets === 1 ? "" : "s"} (21-up on SRA3)`,
+          type: "per_unit",
+          unit_amount: unit,
+          multiplier: sheets,
+          total: lamTotal,
+        });
+      }
+    }
+
+    const total = packPrice * billedQty + lamTotal;
     return {
       lines,
-      subtotal_per_unit: packPrice,
+      subtotal_per_unit: packPrice + (billedQty > 0 ? lamTotal / billedQty : 0),
       quantity: billedQty,
-      total: packPrice * billedQty,
+      total,
     };
   }
+
 
   // ---- Click-charges (printed pages) branch -------------------------------
   //
