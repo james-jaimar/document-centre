@@ -50,9 +50,8 @@ export default function OptionsPanel({
 }: OptionsPanelProps) {
   const isMultiSection =
     !!familySlug && MULTI_SECTION_FAMILIES.has(familySlug.toLowerCase());
-  const SECTION_CONTROLLED = new Set(["Print Colour", "Print Sides"]);
   const sortedOptions = [...options]
-    .filter((o) => (isMultiSection ? !SECTION_CONTROLLED.has(o.name) : true))
+    .filter((o) => (isMultiSection ? !SECTION_CONTROLLED_OPTION_NAMES.has(o.name) : true))
     .sort((a, b) => a.sort_order - b.sort_order);
 
   // Get current display value for an option
