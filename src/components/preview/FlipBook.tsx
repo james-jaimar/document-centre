@@ -67,48 +67,18 @@ const FlipPage = forwardRef<
   // thumbnail simply means "nothing to print on this side".
   const missingThumbForRealPage = !isContentLess && !url;
 
-  // Apply trimCrop only when:
-  //  - it is provided by PreviewPanel (already guarded to skip < 1 mm diff),
-  //  - the crop is meaningful (width < 1, i.e. there IS bleed to strip),
-  //  - and we're not in the counter-rotate path (top-bound landscape art).
-  // Pre-cropped thumbnails (server-side TrimBox raster) won't trigger this
-  // because their MediaBox already equals the TrimBox and PreviewPanel
-  // returns no trimCrop in that case.
-  const useTrimClip = !!trimCrop && trimCrop.width < 1 && trimCrop.height < 1;
+  // NOTE: trimCrop is intentionally NOT applied here. Flipbook thumbnails
+  // are already rasterised at TrimBox extent by the backend preview
+  // pipeline (see pdf_ops.derive_default_render_box). Applying a CSS
+  // trim-crop on top of an already-trimmed JPEG double-crops the artwork
+  // and was the cause of the "cropped too far + edge band" regression.
+  void trimCrop;
 
   // When the page container is portrait-shaped but represents a landscape
   // sheet (top-bound layout), we render the artwork into a wrapper sized
   // to the landscape aspect and rotate it 90° so it fills the portrait box.
   const renderImage = (src: string) => {
     if (!counterRotate || !artworkAspect) {
-      if (useTrimClip && trimCrop) {
-        // Render the full MediaBox thumbnail oversize and translated so that
-        // only the TrimBox portion is visible inside the page slot. Matches
-        // the technique used by LooseSheetsPreview for cropped PDF rendering.
-        const scaleW = 100 / (trimCrop.width * 100); // = 1 / trimCrop.width
-        const scaleH = 100 / (trimCrop.height * 100);
-        const offsetXPct = -trimCrop.left * 100 * scaleW;
-        const offsetYPct = -trimCrop.top * 100 * scaleH;
-        return (
-          <div className="absolute inset-0 overflow-hidden">
-            <img
-              src={src}
-              alt={`Page ${pageNum}`}
-              style={{
-                position: "absolute",
-                left: `${offsetXPct}%`,
-                top: `${offsetYPct}%`,
-                width: `${scaleW * 100}%`,
-                height: `${scaleH * 100}%`,
-                objectFit: "fill",
-                filter: isColor ? "none" : "grayscale(100%)",
-              }}
-              loading="eager"
-              draggable={false}
-            />
-          </div>
-        );
-      }
       return (
         <img
           src={src}
