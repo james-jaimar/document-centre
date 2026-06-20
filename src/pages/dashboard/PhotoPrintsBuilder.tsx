@@ -517,15 +517,17 @@ export default function PhotoPrintsBuilder() {
             </SelectTrigger>
             <SelectContent>
               {availableSizes.map((s) => {
-                const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === photoSpec.border_slug);
-                const price = resolvePhotoPrintPrice(
+                const borderMm = borderMmForSlug(availableBorders, photoSpec.border_slug);
+                const rcFinish = rcFinishForSlug(availableFinishes, photoSpec.finish_slug);
+                const price = resolveBridgedPhotoPrice(
                   photoRateCard,
                   {
-                    size_slug: s.slug,
-                    finish: photoSpec.finish_slug,
-                    border_mm: border?.border_mm ?? 0,
+                    rcSizeSlug: s.rcSizeSlug,
+                    rcFinish,
+                    border_mm: borderMm,
+                    quantity: totals.totalPrints,
                   },
-                  { breaks: rcPriceBreaks, quantity: totals.totalPrints },
+                  rcPriceBreaks,
                 );
                 return (
                   <SelectItem key={s.slug} value={s.slug}>
@@ -547,7 +549,7 @@ export default function PhotoPrintsBuilder() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {PHOTO_FINISH_OPTIONS.map((o) => (
+              {availableFinishes.map((o) => (
                 <SelectItem key={o.slug} value={o.slug}>
                   {o.label}
                 </SelectItem>
@@ -566,7 +568,7 @@ export default function PhotoPrintsBuilder() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {PHOTO_BORDER_OPTIONS.map((o) => (
+              {availableBorders.map((o) => (
                 <SelectItem key={o.slug} value={o.slug}>
                   {o.label}
                 </SelectItem>
@@ -575,6 +577,7 @@ export default function PhotoPrintsBuilder() {
           </Select>
         </div>
       </div>
+
 
       {isMobile ? (
         <section className="space-y-3">
