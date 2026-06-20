@@ -250,6 +250,23 @@ export default function OrderBuild() {
     return slug === "booklets" || slug === "saddle-stitched" || slug === "saddle_stitched";
   }, [productFamily?.slug]);
 
+  // Single-sheet families: Front + Back are two FACES of one physical sheet,
+  // not two independent sheets. Pricing must collapse the two sections into
+  // one duplex section so clicks, paper, and per-sheet finishing aren't
+  // double-billed. (Bound docs keep their per-section model.)
+  const isSingleSheetFamily = useMemo(() => {
+    const slug = (productFamily?.slug || "").toLowerCase();
+    return (
+      slug === "flyers" ||
+      slug === "flyer" ||
+      slug === "posters" ||
+      slug === "poster" ||
+      slug === "handouts" ||
+      slug === "handout"
+    );
+  }, [productFamily?.slug]);
+
+
   // Sync spec from DB on load
   useEffect(() => {
     if (orderItem?.spec) {
@@ -729,9 +746,29 @@ export default function OrderBuild() {
     const tabSections = sections
       .filter((s) => s.section_type === "tab")
       .map(() => ({ label: "Tab", page_count: 0, is_color: false, is_duplex: false }));
-    const all = [...specSections, ...tabSections];
+
+    // Single-sheet products (flyers/posters/handouts): collapse Front + Back
+    // into ONE duplex section so the calculator bills 1 sheet, not 2.
+    // Front face uses page 1 of its assigned doc, Back face uses page 1 of
+    // its assigned doc — the physical sheet is one piece of paper either way.
+    let finalSections = specSections;
+    if (isSingleSheetFamily && specSections.length > 0) {
+      const front = specSections.find((s) => s.label === "Cover");
+      const back = specSections.find((s) => s.label === "Back Cover");
+      const hasBack = !!back;
+      const collapsed = {
+        label: undefined as string | undefined,
+        page_count: hasBack ? 2 : 1,
+        is_color: !!(front?.is_color || back?.is_color),
+        is_duplex: hasBack,
+      };
+      finalSections = [collapsed];
+    }
+
+    const all = [...finalSections, ...tabSections];
     return all.length > 0 ? { ...spec, sections: all } : spec;
-  }, [spec, sections, documents]);
+  }, [spec, sections, documents, isSingleSheetFamily]);
+
 
 
   const computeBreakdown = useCallback(() => {
