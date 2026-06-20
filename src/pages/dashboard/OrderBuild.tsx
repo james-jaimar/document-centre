@@ -262,7 +262,13 @@ export default function OrderBuild() {
       slug === "posters" ||
       slug === "poster" ||
       slug === "handouts" ||
-      slug === "handout"
+      slug === "handout" ||
+      slug === "brochures" ||
+      slug === "brochure" ||
+      slug === "folded-leaflets" ||
+      slug === "folded_leaflets" ||
+      slug === "folded-leaflet" ||
+      slug === "folded_leaflet"
     );
   }, [productFamily?.slug]);
 
