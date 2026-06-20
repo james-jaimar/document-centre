@@ -1125,6 +1125,13 @@ export default function OrderBuild() {
               selectedOptions={spec.selected_options}
               onOptionChange={handleOptionChange}
               familySlug={productFamily?.slug ?? undefined}
+              suppressPriceDeltaFor={(() => {
+                const slug = (productFamily?.slug ?? "").toLowerCase();
+                if (slug === "business-cards" || slug === "business_cards") {
+                  return ["Lamination", "Corner Style", "Paper Stock", "Pack Size"];
+                }
+                return undefined;
+              })()}
               lockedDisplay={(() => {
                 const slug = (productFamily?.slug ?? "").toLowerCase();
                 if (slug !== "business-cards" && slug !== "business_cards") return undefined;
@@ -1143,6 +1150,7 @@ export default function OrderBuild() {
                 };
               })()}
             />
+
 
 
             {/* Manage Tabs & Inserts button */}
