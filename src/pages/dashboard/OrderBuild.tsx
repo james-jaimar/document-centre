@@ -1125,7 +1125,25 @@ export default function OrderBuild() {
               selectedOptions={spec.selected_options}
               onOptionChange={handleOptionChange}
               familySlug={productFamily?.slug ?? undefined}
+              lockedDisplay={(() => {
+                const slug = (productFamily?.slug ?? "").toLowerCase();
+                if (slug !== "business-cards" && slug !== "business_cards") return undefined;
+                const doc = documents.find((d) => d.page_width_mm && d.page_height_mm);
+                if (!doc) return undefined;
+                const w = Math.round(Number(doc.page_width_mm));
+                const h = Math.round(Number(doc.page_height_mm));
+                const sizeOpt = options.find((o) => o.name.toLowerCase() === "document size");
+                if (!sizeOpt) return undefined;
+                return {
+                  [sizeOpt.name]: {
+                    label: `${w} × ${h} mm`,
+                    helper:
+                      "Detected from your uploaded PDF. Business cards are produced at the file's trim size to avoid scaling artefacts.",
+                  },
+                };
+              })()}
             />
+
 
             {/* Manage Tabs & Inserts button */}
             {(tabInfo || insertEnabled) && (
