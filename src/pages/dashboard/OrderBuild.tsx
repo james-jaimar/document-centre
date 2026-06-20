@@ -250,6 +250,23 @@ export default function OrderBuild() {
     return slug === "booklets" || slug === "saddle-stitched" || slug === "saddle_stitched";
   }, [productFamily?.slug]);
 
+  // Single-sheet families: Front + Back are two FACES of one physical sheet,
+  // not two independent sheets. Pricing must collapse the two sections into
+  // one duplex section so clicks, paper, and per-sheet finishing aren't
+  // double-billed. (Bound docs keep their per-section model.)
+  const isSingleSheetFamily = useMemo(() => {
+    const slug = (productFamily?.slug || "").toLowerCase();
+    return (
+      slug === "flyers" ||
+      slug === "flyer" ||
+      slug === "posters" ||
+      slug === "poster" ||
+      slug === "handouts" ||
+      slug === "handout"
+    );
+  }, [productFamily?.slug]);
+
+
   // Sync spec from DB on load
   useEffect(() => {
     if (orderItem?.spec) {
