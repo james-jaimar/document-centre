@@ -58,6 +58,7 @@ export default function OptionsPanel({
   onOptionChange,
   familySlug,
   lockedDisplay,
+  suppressPriceDeltaFor,
 }: OptionsPanelProps) {
   const isMultiSection =
     !!familySlug && MULTI_SECTION_FAMILIES.has(familySlug.toLowerCase());
@@ -66,6 +67,7 @@ export default function OptionsPanel({
     .sort((a, b) => a.sort_order - b.sort_order);
 
   const lockedFor = (name: string) => lockedDisplay?.[name];
+  const suppressSet = new Set(suppressPriceDeltaFor ?? []);
 
   // Get current display value for an option
   const getDisplayValue = (option: ProductOption) => {
