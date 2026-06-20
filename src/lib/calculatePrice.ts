@@ -490,6 +490,41 @@ export function calculatePriceFromRateCard(
   };
 
   /**
+   * Finishing nUp: when a finishing row is priced per a parent stock
+   * (e.g. lamination priced per SRA3) and the finished doc is smaller,
+   * one parent sheet covers `nUp` finished sheets. SRA3 is treated as
+   * the oversize parent of A3 for bleed/lamination.
+   */
+  function finishingNUp(rowSize: string | null | undefined): number {
+    if (!rowSize) return 1;
+    const parent = String(rowSize).toUpperCase();
+    const imp = SIZE_IMPOSITION[size];
+    if (imp && imp.parent === parent) return imp.nUp;
+    // SRA3 parent rolls (lamination) — A3 finished pieces still fit 1-up,
+    // but SRA3-priced finishes applied to A4/A5/A6/DL get the A3 imposition.
+    if (parent === "SRA3" && imp && imp.parent === "A3") return imp.nUp;
+    if (parent === "SRA3" && size === "A3") return 1;
+    return 1;
+  }
+
+  /** Categories whose per_sheet pricing applies only to the cover, not the body. */
+  const COVER_ONLY_CATEGORIES = new Set([
+    "lamination",
+    "uv",
+    "spot_uv",
+    "foil",
+    "foiling",
+    "embossing",
+  ]);
+
+  function isCoverOnlyFinishing(category: string | null | undefined, code: string | null | undefined): boolean {
+    const cat = String(category ?? "").toLowerCase();
+    if (COVER_ONLY_CATEGORIES.has(cat)) return true;
+    const c = String(code ?? "").toLowerCase();
+    return /^(lam-|matt-lam|gloss-lam|uv-|spot-uv|foil-|emboss)/.test(c);
+  }
+
+  /**
    * Resolve the click price for a given finished size + colour + sides.
    * Prefers a direct active row; otherwise derives from the parent sheet.
    * Returns price per **printed sheet at the parent size**.
