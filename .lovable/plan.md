@@ -1,41 +1,43 @@
-## Business Cards — fixes for Step 1 labels, duplex toggle, and Document Size
+# Fix: Business Cards size dropdown only shows 90×50 mm
 
-### 1. Section badges should read "Front" / "Back" (not "Front Cover" / "Back Cover")
-File: `src/components/order/SectionList.tsx`
+## Root cause
 
-Add a `BUSINESS_CARD_LABELS` map and wire it up in `getLabels`:
-```ts
-const BUSINESS_CARD_LABELS: Record<string, string> = {
-  front_cover: "Front",
-  back_cover: "Back",
-  body: "Body",
-  insert: "Insert",
-  tab: "Tab Divider",
-};
-// in getLabels:
-if (familySlug === "business_cards" || familySlug === "business-cards") return BUSINESS_CARD_LABELS;
+The three Business Card sizes all exist in `catalog_sizes` (master scope, active):
+
+- `bc-90x50` — 90 × 50 mm
+- `bc-90x55` — 90 × 55 mm  ← not linked
+- `bc-85x55` — 85 × 55 mm  ← not linked
+
+But `product_catalog_links` for the Business Cards family (`f0855bbf-…`) currently has **only one** `catalog='size'` row: `bc-90x50`. `useCatalogBackedOptions` projects the dropdown from those links, so the customer sees just `90×50 mm`. The auto-size-match in `OrderBuild.tsx` then has no `90×55 mm` candidate to pre-select against the PDF's trim box, so the field stays "Not selected".
+
+Nothing is hard-coded — it is purely missing link rows.
+
+## Plan
+
+Single data-only migration that inserts master-scope `product_catalog_links` rows for the two missing sizes (idempotent — uses `ON CONFLICT DO NOTHING` against the natural key, or guarded `NOT EXISTS`):
+
+```sql
+INSERT INTO public.product_catalog_links
+  (product_family_id, catalog, item_code, scope_type, sub_attribute, is_default, sort_order)
+SELECT 'f0855bbf-ca0c-40df-a70f-5f286e6985d4', 'size', code, 'master', '', false, sort
+FROM (VALUES ('bc-90x55', 1), ('bc-85x55', 2)) AS v(code, sort)
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.product_catalog_links
+  WHERE product_family_id = 'f0855bbf-ca0c-40df-a70f-5f286e6985d4'
+    AND catalog = 'size'
+    AND scope_type = 'master'
+    AND item_code = v.code
+);
 ```
 
-### 2. Hide the Duplex/Simplex toggle on business cards
-Same file. The customer can't pick simplex/duplex independently of how many faces (Front / Back) they uploaded — sides are determined by the section roster.
+No application code changes — the rendering pipeline (`useCatalogBackedOptions` → `resolvedRowsToSizeValues`) and the auto-match in `OrderBuild.tsx` already do the right thing once the links exist.
 
-```ts
-const HIDE_DUPLEX = new Set(["brochures", "posters", "business_cards", "business-cards"]);
-```
-The colour toggle stays per section (they explicitly want Colour ↔ Mono settable independently for Front and Back).
+## Verification
 
-Downstream: the `business_cards` branch in `calculatePrice.ts` already chooses the `Print Sides` axis (`single` vs `double`) from how many printable sections exist, not from a section's `is_duplex` flag, so nothing else needs to change for pricing.
+1. Re-open Business Cards → Step 2. Document Size dropdown lists **three** options: `90×50 mm`, `90×55 mm`, `85×55 mm`.
+2. Upload the `Ady Bus Card` PDF (trim 90×55). Step 2 pre-selects `90×55 mm` automatically and the chip in the right-hand summary shows `90×55 mm`.
+3. Pricing still resolves from `rate_card_business_cards` (size axis is informational; pack/sides/paper/lamination drive the price).
 
-### 3. Document Size dropdown on Step 2 missing the new sizes
-The "Document Size" option is populated from `product_catalog_links` for the Business Cards family (see `useCatalogBackedOptions.ts` lines 209-222). It currently only resolves to `90×50 mm` because that's the only size linked to the family in the master catalogue.
+## Note on admin UX
 
-The newly-added sizes (`90×55 mm`, `85×55 mm`) exist in `catalog_sizes` but have **not been linked** to the Business Cards family yet.
-
-**Action (data, not code):** In Platform → Products → Business Cards → Catalogue tab, tick the two new sizes so they appear as links. The dropdown will then show all three, and the auto-size-match effect in `OrderBuild.tsx` (lines 438-498) will pre-select `90×55 mm` automatically when it matches the uploaded PDF's trim box within the 3 mm tolerance.
-
-No code change is required for #3 — but I'll add a brief note in the plan execution to confirm the link rows exist after you tick them, and verify the auto-match fires on the Talking Dog PDF.
-
-### Verification
-1. Upload the `Ady Bus Card` PDF → Step 1 shows badges **Front** and **Back** (no "Cover" suffix), each with a **Colour** chip but **no** Simplex/Duplex chip.
-2. Continue to Step 2 → **Document Size** dropdown lists `90×50`, `90×55`, `85×55`, with `90×55 mm` pre-selected (matching the detected trim).
-3. Price still resolves from `rate_card_business_cards` (250 / Double / 350gsm Matt → R250 in current data).
+This is a one-off data fix for the rows you added today. Going forward, new sizes added to the master catalogue still need to be linked to each family in **Platform → Products → Business Cards → Catalogue** before they appear to customers — that's the existing admin-driven model and is intentional. If you'd like, a separate follow-up could add a "Link all matching sizes" shortcut, but that is out of scope here.
