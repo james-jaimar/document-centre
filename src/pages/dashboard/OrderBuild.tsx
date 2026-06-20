@@ -68,6 +68,7 @@ export default function OrderBuild() {
   }, [setCollapsed]);
 
   const productFamilyId = orderItem?.product_family_id ?? null;
+  const orderItemId = orderItem?.id ?? "";
 
   // Compute effective branch up-front so it can feed both the resolved-options
   // hook and the pricing cascade further below.
