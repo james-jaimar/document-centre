@@ -407,14 +407,7 @@ export function calculatePriceFromRateCard(
     const paper = String(opts["Paper Stock"] ?? opts["paper"] ?? "350gsm Silk");
     const lamination = String(
       opts["Lamination"] ?? opts["finish"] ?? "none",
-    ).toLowerCase();
-    const finish = lamination.includes("matt")
-      ? "matt-lam"
-      : lamination.includes("gloss")
-        ? "gloss-lam"
-        : lamination.includes("soft")
-          ? "soft-touch"
-          : "none";
+    ).toLowerCase().trim();
 
     const matrix = rc.businessCards ?? [];
     // Match by (quantity, sides, paper) only. Lamination is priced
@@ -451,27 +444,26 @@ export function calculatePriceFromRateCard(
 
     // ─── Lamination (catalogue-priced, 21-up on SRA3) ───────────────────
     // Business cards are imposed 3×7 = 21-up on a parent SRA3 sheet for
-    // lamination accounting. Whole sheets only.
+    // lamination accounting. Whole sheets only. The selected slug IS the
+    // catalogue code (e.g. matt-lam-ss, lam-gloss-ds) — look it up
+    // directly rather than guessing.
     let lamTotal = 0;
-    if (finish !== "none" && packSize > 0) {
+    const isNoLam =
+      !lamination ||
+      lamination === "none" ||
+      lamination === "lam-none" ||
+      lamination === "no-lamination";
+    if (!isNoLam && packSize > 0) {
       const BC_UP = 21;
       const sheets = Math.ceil(packSize / BC_UP) * billedQty;
-      const lamCode =
-        finish === "matt-lam"
-          ? "matt-lam-ds"
-          : finish === "gloss-lam"
-            ? "gloss-lam-ds"
-            : finish === "soft-touch"
-              ? "soft-touch-ds"
-              : null;
-      const lamRow = lamCode
-        ? (rc.finishing ?? []).find(
-            (r) =>
-              r.is_active &&
-              (r.code === lamCode || r.code === `${lamCode}-sra3`) &&
-              (r.size ?? "").toUpperCase().includes("SRA3"),
-          )
-        : null;
+      const lamRow = (rc.finishing ?? []).find(
+        (r) =>
+          r.is_active &&
+          (r.category ?? "").toLowerCase() === "lamination" &&
+          (r.code.toLowerCase() === lamination ||
+            r.code.toLowerCase() === `${lamination}-sra3`) &&
+          (r.size ?? "").toUpperCase().includes("SRA3"),
+      );
       if (lamRow) {
         const unit = Number(lamRow.sell_price);
         lamTotal = unit * sheets;
@@ -484,6 +476,7 @@ export function calculatePriceFromRateCard(
         });
       }
     }
+
 
     const total = packPrice * billedQty + lamTotal;
     return {

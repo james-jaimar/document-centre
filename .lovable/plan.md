@@ -1,37 +1,64 @@
 ## Problem
 
-Business Cards lamination doesn't add anything to the price. Pack 1000 + Matt Lamination both sides stays at R410.
+Business Cards lamination only prices correctly for **Matt Lamination both sides**. The other three options either price wrong or not at all:
 
-The catalogue rows exist (`matt-lam-ds` = R4.00 / SRA3, `matt-lam-ss` = R2.00, etc.), but `calculatePrice.ts` can't find them.
+| Selected | Selected slug | Current behaviour | Should be |
+|---|---|---|---|
+| Matt both sides | `matt-lam-ds` | R602 ✓ | R602 |
+| Matt 1 side | `matt-lam-ss` | R602 ✗ (charged as DS) | R506 |
+| Gloss both sides | `lam-gloss-ds` | no charge ✗ | R602 |
+| Gloss 1 side | `lam-gloss-ss` | no charge ✗ | R506 |
 
-## Root cause
+### Root cause
 
-`useRateCardFinishing` (src/hooks/useRateCard.ts, ~line 301) **rewrites** each row before handing it to the pricing engine:
-
-- `code` becomes `${item.code}-${size_code}` → real value is `matt-lam-ds-sra3`, not `matt-lam-ds`.
-- `size` becomes the *label* from `catalog_sizes` (e.g. `"SRA3"`).
-
-The business-cards branch of `calculatePrice.ts` (line ~467) looks up:
+`src/lib/calculatePrice.ts` ~lines 408–474 hard-codes a tiny string-match:
 
 ```ts
-r.code === "matt-lam-ds" && (r.size ?? "").toUpperCase() === "SRA3"
+const finish = lamination.includes("matt") ? "matt-lam"
+             : lamination.includes("gloss") ? "gloss-lam"
+             : lamination.includes("soft")  ? "soft-touch"
+             : "none";
+const lamCode = finish === "matt-lam"  ? "matt-lam-ds"
+              : finish === "gloss-lam" ? "gloss-lam-ds"
+              : finish === "soft-touch"? "soft-touch-ds" : null;
 ```
 
-The code check fails on every row, so `lamRow` is `null` and `lamTotal` stays 0.
+Two bugs:
+1. Single-sided (`-ss`) info is thrown away — every matt selection looks up `matt-lam-ds` (R4) instead of `matt-lam-ss` (R2).
+2. The real catalogue code for gloss is `lam-gloss-ds` / `lam-gloss-ss`, **not** `gloss-lam-ds`. So gloss never resolves and nothing is added.
+
+The product option already stores the catalogue slug directly (`matt-lam-ss`, `lam-gloss-ds`, `lam-none`, etc.) — we just need to use it instead of guessing.
 
 ## Fix
 
-Single change in **`src/lib/calculatePrice.ts`**, business-cards lamination lookup:
+Make the lamination lookup catalogue-driven instead of hard-coded. One file, one block.
 
-- Match against the size-suffixed code emitted by the rate-card adapter: look for `r.code === \`${lamCode}-sra3\`` (case-insensitive), keeping the existing size-label sanity check as a fallback (`r.size` upper-cased equals `"SRA3"`).
-- Behaviour for everything else is unchanged.
+**`src/lib/calculatePrice.ts`** (business-cards branch, ~lines 408–486):
 
-No DB migration, no UI changes, no other call-sites touched. Other families don't use this lookup.
+1. Read the selected lamination slug verbatim (`opts["Lamination"]`, fall back to `opts.finish`).
+2. Treat `"none"`, `"lam-none"`, empty, or unknown as "no lamination".
+3. Resolve against `rc.finishing` by matching the slug to the row code (case-insensitive), accepting either the raw code or the size-suffixed code the rate-card adapter emits, and require `category === "lamination"`:
+   ```ts
+   const lamRow = (rc.finishing ?? []).find(r =>
+     r.is_active &&
+     (r.category ?? "").toLowerCase() === "lamination" &&
+     (r.code.toLowerCase() === slug ||
+      r.code.toLowerCase() === `${slug}-sra3`) &&
+     (r.size ?? "").toUpperCase().includes("SRA3"),
+   );
+   ```
+4. Keep the existing 21-up sheet maths (`Math.ceil(packSize / 21) * billedQty`) and the breakdown line — only the code resolution changes.
 
-## Verification
+No other call sites, no UI changes, no DB migration.
 
-1. Pack 1000, Matt Lamination both sides → R410 base + (⌈1000/21⌉ = 48 sheets × R4.00) = **R602**, breakdown shows both lines.
-2. Pack 1000, Gloss Lamination both sides → same maths, gloss label.
-3. Pack 1000, Matt Lamination 1 side → 48 × R2.00 = +R96 → **R506**.
-4. Pack 1000, No Lamination → unchanged at R410.
-5. Pack 250 + Matt both sides → ⌈250/21⌉ = 12 sheets × R4 = +R48.
+## Verification (Pack 1000, base R410)
+
+| Selection | Sheets | Unit | Lam total | Grand total |
+|---|---|---|---|---|
+| No Lamination | – | – | R0 | R410 |
+| Matt 1 side (`matt-lam-ss`) | 48 | R2.00 | R96 | **R506** |
+| Matt both sides (`matt-lam-ds`) | 48 | R4.00 | R192 | **R602** |
+| Gloss 1 side (`lam-gloss-ss`) | 48 | R2.00 | R96 | **R506** |
+| Gloss both sides (`lam-gloss-ds`) | 48 | R4.00 | R192 | **R602** |
+
+Breakdown popover should show the catalogue row label (e.g. "Gloss Lamination 1 side — 48 sheets (21-up on SRA3)") for each.
