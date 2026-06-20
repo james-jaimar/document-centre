@@ -4,13 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { PhotoPrintEntry } from "@/lib/photoPrints/types";
-import { getPhotoPrintSize, PHOTO_BORDER_OPTIONS } from "@/lib/photoPrints/sizes";
+import { getPhotoPrintSize, type PhotoPrintSize } from "@/lib/photoPrints/sizes";
 import { renderPhotoPreview, borderFractionFor } from "@/lib/photoPrints/renderPreview";
 
 interface PhotoTileProps {
   photo: PhotoPrintEntry;
   signedUrl: string | null;
-  borderSlug: string;
+  borderMm: number;
+  /** Optional pre-resolved size (from the bridged catalogue list). Falls back
+   *  to the legacy `getPhotoPrintSize` lookup for historical photo entries. */
+  size?: PhotoPrintSize;
   onEdit: () => void;
   onDuplicate: () => void;
   onRemove: () => void;
@@ -20,15 +23,14 @@ interface PhotoTileProps {
 export default function PhotoTile({
   photo,
   signedUrl,
-  borderSlug,
+  borderMm,
+  size: sizeProp,
   onEdit,
   onDuplicate,
   onRemove,
   onQuantityChange,
 }: PhotoTileProps) {
-  const size = getPhotoPrintSize(photo.print_size_slug);
-  const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === borderSlug);
-  const borderMm = border?.border_mm ?? 0;
+  const size = sizeProp ?? getPhotoPrintSize(photo.print_size_slug);
   const longEdgeMm = Math.max(size.width_mm, size.height_mm);
   const borderFraction = borderFractionFor(longEdgeMm, borderMm);
 
