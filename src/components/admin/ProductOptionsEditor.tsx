@@ -568,6 +568,10 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       toast({ title: "Pick a print attribute", variant: "destructive" });
       return;
     }
+    if (optionForm.source === "rate_card.business_cards" && !optionForm.businessCardAxis) {
+      toast({ title: "Pick a Business Cards axis", variant: "destructive" });
+      return;
+    }
     try {
       const nextManualValues = optionForm.source === "manual"
         ? editValues
@@ -588,8 +592,11 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
             ? { category: optionForm.finishingCategory }
             : optionForm.source === "catalog.print_attrs"
             ? { attribute: optionForm.printAttribute }
+            : optionForm.source === "rate_card.business_cards"
+            ? { axis: optionForm.businessCardAxis }
             : null,
       };
+
       if (editingOption) {
         await updateOption.mutateAsync({ id: editingOption.id, ...payload });
         toast({ title: "Option updated" });
