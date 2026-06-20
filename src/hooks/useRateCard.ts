@@ -278,7 +278,7 @@ export function useRateCardFinishing(args: ScopeArgs) {
       if (sizesRes.error) throw sizesRes.error;
       const items = (itemsRes.data ?? []) as any[];
       const prices = (pricesRes.data ?? []) as any[];
-      const sizes = (sizesRes.data ?? []) as Array<{ code: string; label: string }>;
+      const sizes = ((sizesRes.data ?? []) as unknown) as Array<{ code: string; label: string }>;
       const labelForSize = (code: string | null | undefined) => {
         if (!code) return null;
         const match = sizes.find(
