@@ -4797,6 +4797,59 @@ export type Database = {
         }
         Relationships: []
       }
+      tenant_catalog_overrides: {
+        Row: {
+          catalog: Database["public"]["Enums"]["catalog_kind"]
+          created_at: string
+          id: string
+          is_enabled: boolean
+          item_code: string
+          label_override: string | null
+          metadata_override: Json | null
+          price_delta_minor: number | null
+          price_override_minor: number | null
+          sub_attribute: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          catalog: Database["public"]["Enums"]["catalog_kind"]
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          item_code: string
+          label_override?: string | null
+          metadata_override?: Json | null
+          price_delta_minor?: number | null
+          price_override_minor?: number | null
+          sub_attribute?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          catalog?: Database["public"]["Enums"]["catalog_kind"]
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          item_code?: string
+          label_override?: string | null
+          metadata_override?: Json | null
+          price_delta_minor?: number | null
+          price_override_minor?: number | null
+          sub_attribute?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_catalog_overrides_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenant_delivery_method_overrides: {
         Row: {
           branch_id: string | null
@@ -5728,21 +5781,41 @@ export type Database = {
         }
         Returns: string
       }
-      resolve_product_options: {
-        Args: { p_branch_id?: string; p_product_family_id: string }
-        Returns: {
-          catalog: Database["public"]["Enums"]["catalog_kind"]
-          is_default: boolean
-          is_enabled: boolean
-          item_code: string
-          label: string
-          metadata: Json
-          price_delta_minor: number
-          price_override_minor: number
-          sort_order: number
-          sub_attribute: string
-        }[]
-      }
+      resolve_product_options:
+        | {
+            Args: { p_branch_id?: string; p_product_family_id: string }
+            Returns: {
+              catalog: Database["public"]["Enums"]["catalog_kind"]
+              is_default: boolean
+              is_enabled: boolean
+              item_code: string
+              label: string
+              metadata: Json
+              price_delta_minor: number
+              price_override_minor: number
+              sort_order: number
+              sub_attribute: string
+            }[]
+          }
+        | {
+            Args: {
+              p_branch_id?: string
+              p_product_family_id: string
+              p_tenant_id?: string
+            }
+            Returns: {
+              catalog: Database["public"]["Enums"]["catalog_kind"]
+              is_default: boolean
+              is_enabled: boolean
+              item_code: string
+              label: string
+              metadata: Json
+              price_delta_minor: number
+              price_override_minor: number
+              sort_order: number
+              sub_attribute: string
+            }[]
+          }
       resolve_tenant_setting: {
         Args: { p_category: string; p_key: string; p_tenant_id: string }
         Returns: Json
