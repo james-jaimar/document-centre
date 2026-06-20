@@ -1,49 +1,57 @@
-## Short answer
+## Where R29.20 comes from
 
-No — the calculator currently does **not** account for parent-sheet imposition on finishing. Lamination is priced per SRA3 in the rate card, but the engine multiplies that SRA3 unit price by `totalSheets`, where `totalSheets` is counted in **finished-size sheets per book** (e.g. A5), not parent SRA3 sheets, and is **not** divided by ups or rounded to whole parent sheets across the run.
+I traced the calculation against the rate card:
 
-It does this correctly for **paper** and **clicks** (both divide by `nUp` and `Math.ceil` to whole parent sheets across the run). Finishing was missed.
+```text
+Sections built by OrderBuild for this flyer:
+  • Front  — page_count=2, colour, duplex   →  ceil(2/2) = 1 click, 1 sheet
+  • Back   — page_count=2, colour, duplex   →  ceil(2/2) = 1 click, 1 sheet
+                                            ───────────────────
+                                            2 clicks, 2 sheets
 
-### Worked example — your 28pp A5 booklet, 1 copy, gloss lam one-side (R2.00/SRA3 in your rate card)
+Clicks   : A4 colour duplex (derived from A3 R24 ÷ 2-up) = R12.00 × 2 = R24.00
+Paper    : 130gsm Matt A3 (≈R5.20) ÷ 2-up                =  R2.60 × 2 =  R5.20
+                                                          ──────────
+Total per unit                                                    R29.20  ✓
+```
 
-- Cover is 4pp duplex A4 (printed 2-up on SRA3, so 1 SRA3 sheet yields 2 covers).
-- Engine today: `coverSheets (A5-counted) × R2.00 × qty` → counts 2 "sheets" per book → bills R4.00 for 1 booklet.
-- Reality / your expectation: 1 SRA3 minimum → R2.00 for 1 booklet; still R2.00 up to 2 booklets; R4.00 at 3-4; etc.
+So the click rate (R12) and paper rate are both correct. The bug is that the flyer is being **billed as two physical sheets** when a flyer is one sheet with two printed faces.
 
-Same wrong math affects: matt lam, gloss lam DS, any other `pricing_basis = per_sheet` finishing that's actually priced per parent sheet.
+### Root cause
 
-## What I'll change
+Multi-section pricing in `calculatePriceFromRateCard` (in `src/lib/calculatePrice.ts`) treats every section as its own stack of sheets. That is correct for booklets (Body + Cover are different paper stacks), but wrong for flyers — Front and Back are two **faces of one sheet**, not two sheets.
 
-All changes in `src/lib/calculatePrice.ts` (rate-card engine, `calculatePriceFromRateCard`). No DB migrations needed — the data is already there (`catalog_finishing_prices.size_code = 'sra3'` and the existing `SIZE_IMPOSITION` table that powers paper/clicks).
+The flyer screen presents Front + Back as separate sections (so customers can upload two single-page PDFs and have them imposed onto one sheet), but the spec sent to the calculator carries them as two independent sections. The calculator then doubles every sheet-based cost: clicks, paper, and any per-sheet finishing such as lamination.
 
-1. **Make `per_sheet` finishing parent-sheet aware.**
-   - When a finishing row's `size_code` (or rate-card row size) is a parent stock (e.g. `sra3`, `a3`) larger than the finished size, look up `nUp` from the same `SIZE_IMPOSITION` map already used for paper.
-   - Replace the current `multiplier = totalSheets; then × quantity` with:
-     `parentSheets = max(1, ceil(sectionSheets × quantity / nUp))`
-     then divide back to per-unit: `unit = sell_price; multiplier = parentSheets / quantity` (preserving the existing breakdown shape) **or** emit a single run-level line — pick whichever keeps the popover readable; I'll use the same pattern paper uses (per-unit amount + per-book multiplier shown, run-level rounded under the hood).
+Compounding it: the user assigned the same 2-page PDF to **both** Front and Back, so each section reports 2 pages, which yields 1 duplex click per section instead of the expected 0.5 sheet. (A correct flyer assignment would be page 1 → Front, page 2 → Back, giving each section page_count=1.) Even with the correct assignment we still get 2 × (1 simplex click) = 2 clicks on 2 sheets, so the doubling exists at any assignment.
 
-2. **Scope cover-only finishes to cover sheets.**
-   - Lamination, spot UV, foil, etc. apply to the cover, not the body. Today the engine multiplies by `totalSheets` (whole book).
-   - Detect "cover" scope from either the option metadata (`metadata.scope = 'cover'`) or the section label (`"Cover"` / `"Outside"` / `"Inside"`). When scope = cover, use just `coverSheets`; otherwise fall back to `totalSheets`.
-   - This applies to both the finishing-slot branch (lines ~665) and the product-option `per_sheet` branch (lines ~872).
+### Plan
 
-3. **Minimum 1 parent sheet per finishing line.**
-   - Already implied by `max(1, …)` but I'll make it explicit and document it — so qty=1 of a 4pp cover never bills less than one SRA3 lamination sheet.
+Single-sheet products (flyers, posters, single-sheet handouts) must collapse Front + Back into one duplex billing unit before pricing runs. The change is scoped to spec construction — the calculator stays general.
 
-4. **Preserve tiered pricing.**
-   - `tieredUnit(...)` lookup will use the run-level `parentSheets` total (matching how paper and clicks already do it).
+1. **Flag single-sheet families.** Treat any product family whose `pricing_engine === 'click_charges'` and whose section model is "Front + optional Back" (currently: Flyers, Posters, single-sheet handouts) as single-sheet. Detect from `productFamily.slug ∈ {flyers, posters, handouts}` plus the existing flyer flag already used in `OrderBuild.tsx` (`isFlyerLikeFamily`). If that flag doesn't yet exist for posters/handouts, add it alongside `isSaddleStitchedFamily`.
 
-5. **Sanity-clamp non-`per_sheet` bases.**
-   - `per_unit`, `per_page`, `per_set`, `per_cut`, `per_document` are unchanged — they're already correct.
+2. **Collapse Front + Back into one duplex section in `computeBreakdown`** (around lines 711–733 of `src/pages/dashboard/OrderBuild.tsx`). For single-sheet families:
+   - Combine the Front section and the Back section into **one** section with:
+     - `label: undefined` (single section, no breakdown prefix needed)
+     - `page_count: max(frontDocPages, backDocPages, hasBack ? 2 : 1)` — clamped to 2 when duplex, 1 when simplex
+     - `is_duplex: hasBack` (Back section present → duplex; Front-only → simplex)
+     - `is_color: front.is_color || back.is_color` (Mixed treated as colour to be safe; matches current per-section behaviour for the worst case)
+   - This guarantees `clicks = is_duplex ? 1 : 1` sheet per flyer regardless of how many PDF pages the customer dropped in.
 
-## Out of scope (flagging, not fixing now)
+3. **No calculator changes.** `calculatePriceFromRateCard` already handles `sections: [oneDuplexSection]` correctly: 1 click × R12 (A4 colour duplex) + 1 sheet × R2.60 (130gsm Matt A3 ÷ 2-up) = **R14.60** for the example above.
 
-- **Multi-section parent batching.** If a future job has two different cover stocks both laminated, today each would round to its own min-1 SRA3. That matches shop reality (different stocks ≠ same lam run), so leaving it.
-- **Finishing rows priced per non-SRA3 parent** (e.g. an A3-only finish). The fix above handles this generically via `SIZE_IMPOSITION`, but I won't add new parent codes beyond what's already mapped (A3, SRA3).
-- **Admin UI exposure.** No changes to the master pricing editor; the SRA3 row you already set is what gets used.
+4. **Optional guardrail (separate, not blocking).** Warn at upload time when a multi-page PDF is dropped onto a flyer's Front or Back slot — the customer probably meant a brochure. Out of scope for this fix.
 
-## Verification
+### Verification
 
-- Manual: open the booklet configurator with a 28pp A5, cover = gloss lam 1-side, qty 1 → expect R2.00 lam line (was R4.00). Qty 3 → R2.00. Qty 5 → R4.00. Qty 100 → R50.00 (ceil(100/4) = 25 SRA3 sheets).
-- Body-applied per-sheet finish (e.g. hypothetical full-book lam) still scales off body sheets, divided by ups.
-- Existing paper/click numbers unchanged.
+- Same 2-page PDF assigned to Front + Back, A4 130gsm Matt, qty 1 → expect **R14.60** (was R29.20).
+- 1-page PDF on Front only (simplex), qty 1 → expect 1 simplex click (~R6) + 1 sheet (~R2.60) ≈ **R8.60**.
+- 1-page on Front, 1-page on Back, qty 100 → 1 duplex click × R12 ÷ tier + 1 sheet, × 100; no doubling.
+- Booklets / saddle-stitch / bound documents: unaffected — they don't hit the single-sheet branch.
+- Lamination on a flyer: now bills 1 sheet (not 2), so the new SRA3 nUp logic still rounds the run to whole parent sheets correctly.
+
+### Files to edit
+
+- `src/pages/dashboard/OrderBuild.tsx` — single-sheet detection + section collapse in `computeBreakdown`.
+- (No change to `src/lib/calculatePrice.ts`.)
