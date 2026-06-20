@@ -141,20 +141,42 @@ export default function PhotoPrintsBuilder() {
   const { data: photoRateCard = [] } = useRateCardPhotoPrints(rcScopeArgs);
   const { data: rcPriceBreaks = [] } = useRateCardPriceBreaksBundle(rcScopeArgs);
 
-  const availableSizes = useMemo(
-    () => derivePhotoPrintSizesFromRateCard(photoRateCard),
-    [photoRateCard],
+  // Catalogue-driven options (Print Size / Finish / Border) for this product.
+  const { data: catalogOptions = [] } = useCatalogBackedOptions(
+    family?.id ?? null,
+    activeBranch?.id ?? null,
   );
-  const defaultSizeSlug = availableSizes[0]?.slug ?? "4x6";
+
+  const availableSizes = useMemo<BridgedPhotoSize[]>(
+    () => buildSizesFromOptions(catalogOptions, photoRateCard),
+    [catalogOptions, photoRateCard],
+  );
+  const availableFinishes = useMemo(
+    () => buildFinishesFromOptions(catalogOptions),
+    [catalogOptions],
+  );
+  const availableBorders = useMemo(
+    () => buildBordersFromOptions(catalogOptions),
+    [catalogOptions],
+  );
+
+  const defaultSizeSlug =
+    availableSizes.find((s) => s.slug === availableSizes[0]?.slug)?.slug ?? "";
+  const defaultFinishSlug =
+    availableFinishes.find((f) => f.is_default)?.slug ??
+    availableFinishes[0]?.slug ?? "gloss";
+  const defaultBorderSlug =
+    availableBorders.find((b) => b.is_default)?.slug ??
+    availableBorders[0]?.slug ?? "none";
 
   const initialSpec: PhotoPrintsSpec = useMemo(
     () => ({
       print_size_slug: defaultSizeSlug,
-      finish_slug: PHOTO_FINISH_OPTIONS.find((o) => o.is_default)!.slug,
-      border_slug: PHOTO_BORDER_OPTIONS.find((o) => o.is_default)!.slug,
+      finish_slug: defaultFinishSlug,
+      border_slug: defaultBorderSlug,
       photos: [],
     }),
-    [defaultSizeSlug],
+    [defaultSizeSlug, defaultFinishSlug, defaultBorderSlug],
   );
   const [photoSpec, setPhotoSpec] = useState<PhotoPrintsSpec>(initialSpec);
 
