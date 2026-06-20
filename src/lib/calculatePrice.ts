@@ -356,10 +356,24 @@ export function calculatePriceFromRateCard(
   // ---- Photo Prints branch ------------------------------------------------
   if (recipe.engine === "photo_prints") {
     const opts = spec.selected_options ?? {};
-    const sizeSlug = String(opts["Print Size"] ?? opts.size_slug ?? "4x6");
-    const finish = String(opts["Finish"] ?? opts.finish ?? "gloss");
-    const borderSlug = String(opts["Border"] ?? opts.border_slug ?? "none");
-    const borderMm = borderSlug === "white_3mm" ? 3 : 0;
+    const rawSize = String(opts["Print Size"] ?? opts.size_slug ?? "4x6");
+    const rawFinish = String(opts["Finish"] ?? opts.finish ?? "gloss").toLowerCase();
+    const rawBorder = String(opts["Border"] ?? opts.border_slug ?? "none");
+
+    // Bridge customer-facing catalog slugs onto the rate-card vocabulary.
+    // Sizes: catalog slugs are prefixed `photo-` (e.g. `photo-4x6`) — the
+    // rate-card row uses the bare `4x6`. Strip the prefix for the lookup.
+    const sizeSlug = rawSize.replace(/^photo-/i, "");
+    // Finishes: catalog uses `photo-gloss` / `photo-matt`; rate card uses
+    // `gloss` / `matte` / `lustre`. Infer by substring.
+    const finish = rawFinish.includes("gloss")
+      ? "gloss"
+      : rawFinish.includes("matt") || rawFinish.includes("silk")
+        ? "matte"
+        : rawFinish.includes("lustre") || rawFinish.includes("luster")
+          ? "lustre"
+          : rawFinish || "gloss";
+    const borderMm = rawBorder === "white_3mm" ? 3 : 0;
 
     const unit = resolvePhotoPrintPrice(
       rc.photoPrints ?? [],
@@ -387,6 +401,7 @@ export function calculatePriceFromRateCard(
       total: unit * spec.quantity,
     };
   }
+
 
   // ---- Business Cards branch ---------------------------------------------
   if (recipe.engine === "business_cards") {

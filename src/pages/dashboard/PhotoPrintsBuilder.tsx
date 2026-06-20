@@ -12,17 +12,21 @@ import { useTenantContext } from "@/hooks/useTenantContext";
 import { resolveUrls } from "@/lib/thumbnailUtils";
 import { getCachedBlobUrl, prefetchToCache } from "@/lib/photoPrints/photoBlobCache";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
+import { getPhotoPrintSize } from "@/lib/photoPrints/sizes";
 import {
-  PHOTO_FINISH_OPTIONS,
-  PHOTO_BORDER_OPTIONS,
-  getPhotoPrintSize,
-  derivePhotoPrintSizesFromRateCard,
-} from "@/lib/photoPrints/sizes";
-import { resolvePhotoPrintPrice } from "@/lib/photoPrints/pricing";
+  buildSizesFromOptions,
+  buildFinishesFromOptions,
+  buildBordersFromOptions,
+  resolveBridgedPhotoPrice,
+  borderMmForSlug,
+  rcFinishForSlug,
+  type BridgedPhotoSize,
+} from "@/lib/photoPrints/catalogBridge";
 import {
   useResolvedRateCardPhotoPrints as useRateCardPhotoPrints,
   useResolvedRateCardPriceBreaksBundle as useRateCardPriceBreaksBundle,
 } from "@/hooks/useResolvedRateCard";
+import { useCatalogBackedOptions } from "@/hooks/useCatalogBackedOptions";
 import type { PhotoPrintEntry, PhotoPrintsSpec } from "@/lib/photoPrints/types";
 import PhotoUploader from "@/components/photo/PhotoUploader";
 import QRUploadModal from "@/components/order/QRUploadModal";
@@ -137,20 +141,42 @@ export default function PhotoPrintsBuilder() {
   const { data: photoRateCard = [] } = useRateCardPhotoPrints(rcScopeArgs);
   const { data: rcPriceBreaks = [] } = useRateCardPriceBreaksBundle(rcScopeArgs);
 
-  const availableSizes = useMemo(
-    () => derivePhotoPrintSizesFromRateCard(photoRateCard),
-    [photoRateCard],
+  // Catalogue-driven options (Print Size / Finish / Border) for this product.
+  const { data: catalogOptions = [] } = useCatalogBackedOptions(
+    family?.id ?? null,
+    activeBranch?.id ?? null,
   );
-  const defaultSizeSlug = availableSizes[0]?.slug ?? "4x6";
+
+  const availableSizes = useMemo<BridgedPhotoSize[]>(
+    () => buildSizesFromOptions(catalogOptions, photoRateCard),
+    [catalogOptions, photoRateCard],
+  );
+  const availableFinishes = useMemo(
+    () => buildFinishesFromOptions(catalogOptions),
+    [catalogOptions],
+  );
+  const availableBorders = useMemo(
+    () => buildBordersFromOptions(catalogOptions),
+    [catalogOptions],
+  );
+
+  const defaultSizeSlug =
+    availableSizes.find((s) => s.slug === availableSizes[0]?.slug)?.slug ?? "";
+  const defaultFinishSlug =
+    availableFinishes.find((f) => f.is_default)?.slug ??
+    availableFinishes[0]?.slug ?? "gloss";
+  const defaultBorderSlug =
+    availableBorders.find((b) => b.is_default)?.slug ??
+    availableBorders[0]?.slug ?? "none";
 
   const initialSpec: PhotoPrintsSpec = useMemo(
     () => ({
       print_size_slug: defaultSizeSlug,
-      finish_slug: PHOTO_FINISH_OPTIONS.find((o) => o.is_default)!.slug,
-      border_slug: PHOTO_BORDER_OPTIONS.find((o) => o.is_default)!.slug,
+      finish_slug: defaultFinishSlug,
+      border_slug: defaultBorderSlug,
       photos: [],
     }),
-    [defaultSizeSlug],
+    [defaultSizeSlug, defaultFinishSlug, defaultBorderSlug],
   );
   const [photoSpec, setPhotoSpec] = useState<PhotoPrintsSpec>(initialSpec);
 
@@ -353,22 +379,22 @@ export default function PhotoPrintsBuilder() {
   }, [availableSizes, photoSpec.print_size_slug]);
 
   const totals = useMemo(() => {
-    const size = getPhotoPrintSize(photoSpec.print_size_slug, availableSizes);
+    const bridgedSize =
+      availableSizes.find((s) => s.slug === photoSpec.print_size_slug) ?? null;
+    const size = bridgedSize ?? getPhotoPrintSize(photoSpec.print_size_slug, availableSizes);
     const totalPhotos = photoSpec.photos.length;
     const totalPrints = photoSpec.photos.reduce((s, p) => s + p.quantity, 0);
-    const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === photoSpec.border_slug);
-    const unitPrice = resolvePhotoPrintPrice(
+    const borderMm = borderMmForSlug(availableBorders, photoSpec.border_slug);
+    const rcFinish = rcFinishForSlug(availableFinishes, photoSpec.finish_slug);
+    const rcSizeSlug = bridgedSize?.rcSizeSlug ?? photoSpec.print_size_slug.replace(/^photo-/, "");
+    const unitPrice = resolveBridgedPhotoPrice(
       photoRateCard,
-      {
-        size_slug: photoSpec.print_size_slug,
-        finish: photoSpec.finish_slug,
-        border_mm: border?.border_mm ?? 0,
-      },
-      { breaks: rcPriceBreaks, quantity: totalPrints },
+      { rcSizeSlug, rcFinish, border_mm: borderMm, quantity: totalPrints },
+      rcPriceBreaks,
     );
     const totalPrice = totalPrints * unitPrice;
-    return { size, totalPhotos, totalPrints, totalPrice, unitPrice };
-  }, [photoSpec, photoRateCard, rcPriceBreaks]);
+    return { size, bridgedSize, totalPhotos, totalPrints, totalPrice, unitPrice };
+  }, [photoSpec, photoRateCard, rcPriceBreaks, availableSizes, availableFinishes, availableBorders]);
 
   const [showCartDialog, setShowCartDialog] = useState(false);
   const [cartReference, setCartReference] = useState("");
@@ -491,15 +517,17 @@ export default function PhotoPrintsBuilder() {
             </SelectTrigger>
             <SelectContent>
               {availableSizes.map((s) => {
-                const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === photoSpec.border_slug);
-                const price = resolvePhotoPrintPrice(
+                const borderMm = borderMmForSlug(availableBorders, photoSpec.border_slug);
+                const rcFinish = rcFinishForSlug(availableFinishes, photoSpec.finish_slug);
+                const price = resolveBridgedPhotoPrice(
                   photoRateCard,
                   {
-                    size_slug: s.slug,
-                    finish: photoSpec.finish_slug,
-                    border_mm: border?.border_mm ?? 0,
+                    rcSizeSlug: s.rcSizeSlug,
+                    rcFinish,
+                    border_mm: borderMm,
+                    quantity: totals.totalPrints,
                   },
-                  { breaks: rcPriceBreaks, quantity: totals.totalPrints },
+                  rcPriceBreaks,
                 );
                 return (
                   <SelectItem key={s.slug} value={s.slug}>
@@ -521,7 +549,7 @@ export default function PhotoPrintsBuilder() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {PHOTO_FINISH_OPTIONS.map((o) => (
+              {availableFinishes.map((o) => (
                 <SelectItem key={o.slug} value={o.slug}>
                   {o.label}
                 </SelectItem>
@@ -540,7 +568,7 @@ export default function PhotoPrintsBuilder() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {PHOTO_BORDER_OPTIONS.map((o) => (
+              {availableBorders.map((o) => (
                 <SelectItem key={o.slug} value={o.slug}>
                   {o.label}
                 </SelectItem>
@@ -549,6 +577,7 @@ export default function PhotoPrintsBuilder() {
           </Select>
         </div>
       </div>
+
 
       {isMobile ? (
         <section className="space-y-3">
@@ -690,7 +719,8 @@ export default function PhotoPrintsBuilder() {
                 resolvePhotoUrl(p.thumb_path) ??
                 resolvePhotoUrl(p.original_storage_path)
               }
-              borderSlug={photoSpec.border_slug}
+              borderMm={borderMmForSlug(availableBorders, photoSpec.border_slug)}
+              size={availableSizes.find((s) => s.slug === p.print_size_slug)}
               onEdit={() => setEditorPhotoId(p.id)}
               onDuplicate={() => duplicatePhoto(p.id)}
               onRemove={() => removePhoto(p.id)}
@@ -744,7 +774,8 @@ export default function PhotoPrintsBuilder() {
               Math.max(editorPhoto.preview_width_px, editorPhoto.preview_height_px)
             : 1
         }
-        borderSlug={photoSpec.border_slug}
+        borderMm={borderMmForSlug(availableBorders, photoSpec.border_slug)}
+        size={editorPhoto ? availableSizes.find((s) => s.slug === editorPhoto.print_size_slug) ?? null : null}
         onClose={() => setEditorPhotoId(null)}
         onSave={(next) => {
           if (editorPhotoId) updatePhoto(editorPhotoId, next);

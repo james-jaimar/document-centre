@@ -13,7 +13,7 @@ import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { RotateCw, Maximize2, Minimize2, RotateCcw } from "lucide-react";
 import type { PhotoPrintEntry, PhotoFitMode, CroppedAreaPixels } from "@/lib/photoPrints/types";
-import { getPhotoPrintSize, PHOTO_BORDER_OPTIONS } from "@/lib/photoPrints/sizes";
+import { getPhotoPrintSize, type PhotoPrintSize } from "@/lib/photoPrints/sizes";
 import { borderFractionFor } from "@/lib/photoPrints/renderPreview";
 import { useCropperZoom } from "@/hooks/useCropperZoom";
 import { useElementSize } from "@/hooks/useElementSize";
@@ -22,7 +22,9 @@ interface PhotoEditorModalProps {
   open: boolean;
   photo: PhotoPrintEntry | null;
   signedUrl: string | null;
-  borderSlug: string;
+  borderMm: number;
+  /** Optional pre-resolved size (from the bridged catalogue list). */
+  size?: PhotoPrintSize | null;
   onClose: () => void;
   onSave: (
     next: Pick<
@@ -43,7 +45,8 @@ export default function PhotoEditorModal({
   open,
   photo,
   signedUrl,
-  borderSlug,
+  borderMm,
+  size: sizeProp,
   onClose,
   onSave,
   pixelScale = 1,
@@ -57,7 +60,7 @@ export default function PhotoEditorModal({
   // Measure container — only when dialog is open
   const [containerRef, containerSize] = useElementSize<HTMLDivElement>(open);
 
-  const size = photo ? getPhotoPrintSize(photo.print_size_slug) : null;
+  const size = sizeProp ?? (photo ? getPhotoPrintSize(photo.print_size_slug) : null);
 
   const {
     fillZoom,
@@ -85,8 +88,6 @@ export default function PhotoEditorModal({
     setCroppedAreaPixels(photo.croppedAreaPixels ?? null);
   }, [open, photo]);
 
-  const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === borderSlug);
-  const borderMm = border?.border_mm ?? 0;
   const longEdgeMm = size ? Math.max(size.width_mm, size.height_mm) : 0;
   const borderFraction = size ? borderFractionFor(longEdgeMm, borderMm) : 0;
 
