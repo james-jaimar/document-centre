@@ -913,7 +913,7 @@ export default function OrderBuild() {
     prev.hadInserts = nowHasInserts;
   }, [tabInfo, insertEnabled]);
 
-  const orderItemId = orderItem?.id ?? "";
+  
 
   // ── Cleanup: when tabs/inserts are turned off, remove their sections so the preview matches ──
   useEffect(() => {
