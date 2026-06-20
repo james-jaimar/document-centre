@@ -1,43 +1,74 @@
-# Fix: Business Cards size dropdown only shows 90×50 mm
+## Business Cards — Lamination pricing & dropdown cleanup
 
-## Root cause
+### Problems
+1. **Dropdown shows "+R 2.00 /doc", "+R 4.00 /doc"** — those numbers come from the seeded `product_options.values.price_impact` (in `productOptionValues.ts`). They have nothing to do with the real catalogue lamination rates and are misleading for Business Cards, which price via the BC matrix + finishing catalogue.
+2. **Lamination is not actually charged.** The `business_cards` branch in `calculatePrice.ts` matches a row in `rate_card_business_cards` by `(qty, sides, paper, finish)`. If no row exists for the chosen finish, it falls back to a finish-less row and the customer pays **nothing extra** for lamination — which is what is happening today (R410 stays the same when Matt Lamination is selected).
+3. **Imposition for sheet counting is not defined for BC.** We need a fixed n-up so lamination per-sheet pricing can be computed.
 
-The three Business Card sizes all exist in `catalog_sizes` (master scope, active):
+### Decision recap (from the user)
+- Hard-code Business Cards imposition at **21-up** (3 cols × 7 rows on one SRA3/parent sheet) for pricing only.
+- Sheets needed = `ceil(packSize / 21)`.
+- Pull lamination price from the catalogue (`catalog_finishing_prices`, per-sheet, SRA3) — not from `product_options.price_impact`.
+- Suppress the misleading `+Rx /doc` suffix on the BC Lamination dropdown.
 
-- `bc-90x50` — 90 × 50 mm
-- `bc-90x55` — 90 × 55 mm  ← not linked
-- `bc-85x55` — 85 × 55 mm  ← not linked
+The DB already has the right rates at master scope:
+- `matt-lam-ds` / `gloss-lam-ds` = **R4.00 / SRA3 sheet**
+- `matt-lam-ss` / `gloss-lam-ss` = **R2.00 / SRA3 sheet**
 
-But `product_catalog_links` for the Business Cards family (`f0855bbf-…`) currently has **only one** `catalog='size'` row: `bc-90x50`. `useCatalogBackedOptions` projects the dropdown from those links, so the customer sees just `90×50 mm`. The auto-size-match in `OrderBuild.tsx` then has no `90×55 mm` candidate to pre-select against the PDF's trim box, so the field stays "Not selected".
+### Changes
 
-Nothing is hard-coded — it is purely missing link rows.
+**1. `src/lib/calculatePrice.ts` — `business_cards` branch (around lines 392–455)**
 
-## Plan
+After the BC matrix line, append a second line for lamination when `finish !== "none"`:
 
-Single data-only migration that inserts master-scope `product_catalog_links` rows for the two missing sizes (idempotent — uses `ON CONFLICT DO NOTHING` against the natural key, or guarded `NOT EXISTS`):
-
-```sql
-INSERT INTO public.product_catalog_links
-  (product_family_id, catalog, item_code, scope_type, sub_attribute, is_default, sort_order)
-SELECT 'f0855bbf-ca0c-40df-a70f-5f286e6985d4', 'size', code, 'master', '', false, sort
-FROM (VALUES ('bc-90x55', 1), ('bc-85x55', 2)) AS v(code, sort)
-WHERE NOT EXISTS (
-  SELECT 1 FROM public.product_catalog_links
-  WHERE product_family_id = 'f0855bbf-ca0c-40df-a70f-5f286e6985d4'
-    AND catalog = 'size'
-    AND scope_type = 'master'
-    AND item_code = v.code
+```text
+const BC_UP = 21;                                    // 3 × 7 on SRA3
+const sheets = Math.ceil(packSize / BC_UP) * billedQty;
+const lamCode =
+  finish === "matt-lam"  ? "matt-lam-ds"  :
+  finish === "gloss-lam" ? "gloss-lam-ds" :
+  finish === "soft-touch"? "soft-touch-ds": null;     // ds = both sides (BC norm)
+const lamRow = (rc.finishing ?? []).find(
+  r => r.is_active && r.code === lamCode && (r.size ?? "").toUpperCase() === "SRA3"
 );
+if (lamRow) {
+  const lamTotal = Number(lamRow.sell_price) * sheets;
+  lines.push({
+    label: `${lamRow.label} — ${sheets} sheet${sheets === 1 ? "" : "s"} (21-up)`,
+    type: "per_unit",
+    unit_amount: Number(lamRow.sell_price),
+    multiplier: sheets,
+    total: lamTotal,
+  });
+  // fold into the return total
+}
 ```
 
-No application code changes — the rendering pipeline (`useCatalogBackedOptions` → `resolvedRowsToSizeValues`) and the auto-match in `OrderBuild.tsx` already do the right thing once the links exist.
+Adjust the existing `return` so `total` and `subtotal_per_unit` include `lamTotal` (lamination is a flat per-order add-on; not multiplied by pack count beyond `billedQty`, because `sheets` already includes `billedQty`).
 
-## Verification
+Also stop treating `finish` as a hard filter when matching the BC matrix — current code can fall through to the wrong row. Match by `(qty, sides, paper)` only; lamination is now priced separately.
 
-1. Re-open Business Cards → Step 2. Document Size dropdown lists **three** options: `90×50 mm`, `90×55 mm`, `85×55 mm`.
-2. Upload the `Ady Bus Card` PDF (trim 90×55). Step 2 pre-selects `90×55 mm` automatically and the chip in the right-hand summary shows `90×55 mm`.
-3. Pricing still resolves from `rate_card_business_cards` (size axis is informational; pack/sides/paper/lamination drive the price).
+**2. `src/components/order/OptionSelector.tsx`**
 
-## Note on admin UX
+Add an optional `suppressPriceDelta?: boolean` prop. When true, `formatPrice()` returns `""` for every value. Default behaviour unchanged.
 
-This is a one-off data fix for the rows you added today. Going forward, new sizes added to the master catalogue still need to be linked to each family in **Platform → Products → Business Cards → Catalogue** before they appear to customers — that's the existing admin-driven model and is intentional. If you'd like, a separate follow-up could add a "Link all matching sizes" shortcut, but that is out of scope here.
+**3. `src/components/order/OptionsPanel.tsx` + `src/pages/dashboard/OrderBuild.tsx`**
+
+Pipe a `suppressPriceDeltaFor?: string[]` (option names) prop through `OptionsPanel` to each `OptionSelector`. From `OrderBuild`, for the Business Cards family, pass `["Lamination", "Corner Style", "Paper Stock"]` so none of the legacy `+R x /doc` suffixes appear. The real cost is shown in the right-hand price breakdown.
+
+**4. (Optional, no code) Master rate-card hygiene**
+Inactive `lam-*` and `matt-lam-*` duplicate codes in the dump above are scope-NULL phantom joins (LEFT JOIN noise) — no DB clean-up needed.
+
+### Verification
+- Pack 1000, Matt Lamination both sides → price breakdown shows two lines:
+  - `Business cards — 1000 pack, double-sided` (matrix base, e.g. R410)
+  - `Matt Lamination both sides — 48 sheets (21-up)` at R4 × 48 = R192
+  - Total R602.
+- Pack 1000, No Lamination → only the matrix line, R410.
+- Dropdown labels: "Matt Lamination both sides", "Gloss Lamination both sides", etc. — no `+R x /doc` suffix.
+- Other product families (booklets, flyers) still show their existing price-impact suffixes.
+
+### Out of scope
+- No DB migration.
+- No change to admin rate-card editors.
+- 21-up is a pricing constant only; back-end imposition templates remain admin-configurable as you said you'll set them separately.
