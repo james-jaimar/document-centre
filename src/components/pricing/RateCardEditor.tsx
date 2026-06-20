@@ -287,11 +287,18 @@ function ClicksTab({
       return;
     }
     try {
+      const slug = adding.size.trim();
+      const matched = sizes.find(
+        (s) => String(s.code).toLowerCase() === slug.toLowerCase(),
+      );
+      const sizeLabel = matched?.label ?? slug;
+      const sizeCode = matched?.code ?? slug.toLowerCase();
       await insert.mutateAsync({
         scope_type: scope,
         tenant_id: scope === "master" ? null : tenantId,
         branch_id: scope === "branch" ? branchId : null,
-        size: adding.size.trim().toUpperCase(),
+        size: sizeLabel,
+        catalog_size_code: sizeCode,
         colour: adding.colour,
         sides: adding.sides,
         sell_price: adding.sell_price,
@@ -304,6 +311,7 @@ function ClicksTab({
       toast({ title: "Add failed", description: e.message, variant: "destructive" });
     }
   }
+
 
   return (
     <Card className="p-4">
@@ -331,9 +339,21 @@ function ClicksTab({
           {clicks.map((row) => {
             const sell = drafts[row.id]?.sell ?? String(row.sell_price);
             const cost = drafts[row.id]?.cost ?? String(row.cost_price);
+            const catCode = (row as any).catalog_size_code as string | null | undefined;
+            const byCode = catCode
+              ? sizes.find((s) => s.code === catCode)
+              : undefined;
+            const byLegacy = !byCode
+              ? sizes.find(
+                  (s) =>
+                    String(s.code).toLowerCase() ===
+                    String(row.size ?? "").toLowerCase(),
+                )
+              : undefined;
+            const sizeLabel = byCode?.label ?? byLegacy?.label ?? String(row.size ?? "");
             return (
               <TableRow key={row.id}>
-                <TableCell className="font-medium">{String(row.size).toUpperCase()}</TableCell>
+                <TableCell className="font-medium">{sizeLabel}</TableCell>
                 <TableCell className="capitalize">{row.colour}</TableCell>
                 <TableCell className="capitalize">{row.sides}</TableCell>
                 <TableCell>
@@ -367,7 +387,7 @@ function ClicksTab({
                     <TiersButton
                       table="clicks"
                       lineId={row.id}
-                      label={`${row.size} · ${row.colour} · ${row.sides}`}
+                      label={`${sizeLabel} · ${row.colour} · ${row.sides}`}
                       scope={scope}
                       tenantId={tenantId}
                       branchId={branchId}
@@ -387,6 +407,7 @@ function ClicksTab({
               </TableRow>
             );
           })}
+
           {clicks.length === 0 && (
             <TableRow>
               <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-6">

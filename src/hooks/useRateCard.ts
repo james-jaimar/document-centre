@@ -268,31 +268,42 @@ export function useRateCardFinishing(args: ScopeArgs) {
     queryKey: KEY("finishing", args),
     enabled: args.scope === "master" || (args.scope === "branch" ? !!args.branchId : !!args.tenantId),
     queryFn: async () => {
-      const [itemsRes, pricesRes] = await Promise.all([
+      const [itemsRes, pricesRes, sizesRes] = await Promise.all([
         applyCatalogScopeFilter(supabase.from("catalog_finishing" as any).select("*"), args),
         applyCatalogScopeFilter(supabase.from("catalog_finishing_prices" as any).select("*"), args),
+        supabase.from("catalog_sizes" as any).select("code,label"),
       ]);
       if (itemsRes.error) throw itemsRes.error;
       if (pricesRes.error) throw pricesRes.error;
+      if (sizesRes.error) throw sizesRes.error;
       const items = (itemsRes.data ?? []) as any[];
       const prices = (pricesRes.data ?? []) as any[];
+      const sizes = ((sizesRes.data ?? []) as unknown) as Array<{ code: string; label: string }>;
+      const labelForSize = (code: string | null | undefined) => {
+        if (!code) return null;
+        const match = sizes.find(
+          (s) => String(s.code).toLowerCase() === String(code).toLowerCase(),
+        );
+        return match?.label ?? code;
+      };
       const byId = new Map(items.map((i) => [i.id, i]));
       const rows: RateCardFinishing[] = [];
       for (const fp of prices) {
         const item = byId.get(fp.finishing_id);
         if (!item) continue;
         const sized = fp.size_code && fp.size_code !== "any";
+        const sizeLabel = sized ? labelForSize(fp.size_code) : null;
         rows.push({
           id: fp.id,
           scope_type: fp.scope_type,
           tenant_id: fp.tenant_id ?? null,
           branch_id: fp.branch_id ?? null,
           code: item.code + (sized ? `-${fp.size_code}` : ""),
-          label: item.label + (sized ? ` ${String(fp.size_code).toUpperCase()}` : ""),
+          label: item.label + (sized && sizeLabel ? ` ${sizeLabel}` : ""),
           category: item.category,
           pricing_basis: item.pricing_basis as FinishingBasis,
           variant: item.variant ?? null,
-          size: sized ? String(fp.size_code).toUpperCase() : null,
+          size: sizeLabel,
           sell_price: Number(fp.sell_price_minor ?? 0) / 100,
           cost_price: Number(fp.cost_price_minor ?? 0) / 100,
           sort_order: item.sort_order ?? 0,
@@ -303,6 +314,7 @@ export function useRateCardFinishing(args: ScopeArgs) {
     },
   });
 }
+
 
 /** Deprecated — finishing pricing lives on `catalog_finishing_prices`. */
 export function useUpsertRateCardFinishing() {
