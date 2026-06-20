@@ -67,7 +67,7 @@ export function useResolvedRateCardClicks(args: Args) {
   return useQuery({
     queryKey: KEY("clicks", args),
     queryFn: async () => {
-      const queries: Promise<any>[] = [
+      const queries: any[] = [
         supabase
           .from("rate_card_clicks" as any)
           .select("*")
@@ -242,7 +242,7 @@ export function useResolvedRateCardPhotoPrints(args: Args) {
   return useQuery({
     queryKey: KEY("photo_prints", args),
     queryFn: async () => {
-      const queries: Promise<any>[] = [
+      const queries: any[] = [
         supabase.from("rate_card_photo_prints" as any).select("*").eq("scope_type", "master").is("tenant_id", null),
       ];
       queries.push(
@@ -275,7 +275,7 @@ export function useResolvedRateCardBusinessCards(args: Args) {
   return useQuery({
     queryKey: KEY("business_cards", args),
     queryFn: async () => {
-      const queries: Promise<any>[] = [
+      const queries: any[] = [
         supabase.from("rate_card_business_cards" as any).select("*").eq("scope_type", "master").is("tenant_id", null),
       ];
       queries.push(
@@ -313,7 +313,7 @@ export function useResolvedRateCardPriceBreaksBundle(args: Args) {
   return useQuery({
     queryKey: KEY("price_breaks_bundle", args),
     queryFn: async () => {
-      const queries: Promise<any>[] = [
+      const queries: any[] = [
         supabase.from("rate_card_price_breaks" as any).select("*").eq("scope_type", "master").is("tenant_id", null),
       ];
       queries.push(
