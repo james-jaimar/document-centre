@@ -24,6 +24,10 @@ interface OptionsPanelProps {
    *  `product_options.name`). Used e.g. for Business Cards Document Size,
    *  which is locked to the PDF trim box and not user-changeable. */
   lockedDisplay?: Record<string, { label: string; helper?: string }>;
+  /** Option names whose dropdown values should NOT show the seeded
+   *  `+R x /doc` price-impact suffix. Used for Business Cards where the
+   *  real prices come from the BC matrix + finishing catalogue. */
+  suppressPriceDeltaFor?: string[];
 }
 
 
@@ -54,6 +58,7 @@ export default function OptionsPanel({
   onOptionChange,
   familySlug,
   lockedDisplay,
+  suppressPriceDeltaFor,
 }: OptionsPanelProps) {
   const isMultiSection =
     !!familySlug && MULTI_SECTION_FAMILIES.has(familySlug.toLowerCase());
@@ -62,6 +67,7 @@ export default function OptionsPanel({
     .sort((a, b) => a.sort_order - b.sort_order);
 
   const lockedFor = (name: string) => lockedDisplay?.[name];
+  const suppressSet = new Set(suppressPriceDeltaFor ?? []);
 
   // Get current display value for an option
   const getDisplayValue = (option: ProductOption) => {
@@ -118,7 +124,9 @@ export default function OptionsPanel({
                     option={option}
                     value={selectedOptions[option.name] ?? ""}
                     onChange={(slug) => onOptionChange(option.name, slug)}
+                    suppressPriceDelta={suppressSet.has(option.name)}
                   />
+
                 )}
               </AccordionContent>
             </AccordionItem>
