@@ -35,13 +35,13 @@ import { useTenantContext } from "@/hooks/useTenantContext";
 import { useProductPriceOverrides } from "@/hooks/useProductPriceOverrides";
 import { useDerivedProductRecipe } from "@/hooks/useDerivedProductRecipe";
 import {
-  useRateCardClicks,
-  useRateCardPapers,
-  useRateCardFinishing,
-  useRateCardPhotoPrints,
-  useRateCardBusinessCards,
-} from "@/hooks/useRateCard";
-import { useRateCardPriceBreaksBundle } from "@/hooks/useRateCardPriceBreaks";
+  useResolvedRateCardClicks as useRateCardClicks,
+  useResolvedRateCardPapers as useRateCardPapers,
+  useResolvedRateCardFinishing as useRateCardFinishing,
+  useResolvedRateCardPhotoPrints as useRateCardPhotoPrints,
+  useResolvedRateCardBusinessCards as useRateCardBusinessCards,
+  useResolvedRateCardPriceBreaksBundle as useRateCardPriceBreaksBundle,
+} from "@/hooks/useResolvedRateCard";
 import { useBindingSpecifications } from "@/hooks/useBindingSpecifications";
 import { useBranch } from "@/contexts/BranchContext";
 import { formatPrice } from "@/lib/formatCurrency";
