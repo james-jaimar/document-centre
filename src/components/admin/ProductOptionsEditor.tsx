@@ -425,8 +425,52 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
         );
       return mode === "refresh" ? mergeKeepUnknown(rows, existing) : rows;
     }
+    if (form.source === "rate_card.business_cards") {
+      const axis = form.businessCardAxis;
+      if (!axis) return existing;
+      const activeRows = (rcBusinessCards as any[]).filter((r) => r.is_active);
+      // Build distinct values per axis. Each value carries metadata so the
+      // pricing engine (calculatePrice.ts → business_cards branch) can
+      // resolve the right rate card row.
+      const distinct = new Map<string, { code: string; label: string; meta: Record<string, any> }>();
+      for (const r of activeRows) {
+        if (axis === "pack_size") {
+          const code = String(r.quantity);
+          distinct.set(code, {
+            code,
+            label: `${r.quantity}`,
+            meta: { quantity: Number(r.quantity), axis },
+          });
+        } else if (axis === "sides") {
+          const code = String(r.sides);
+          const label = code === "single" ? "Single-sided" : "Double-sided";
+          distinct.set(code, { code, label, meta: { sides: code, axis } });
+        } else if (axis === "paper") {
+          const code = String(r.paper);
+          if (code) distinct.set(code, { code, label: code, meta: { paper: code, axis } });
+        } else if (axis === "finish") {
+          const code = String(r.finish);
+          const label =
+            code === "none"
+              ? "None"
+              : code === "gloss-lam"
+              ? "Gloss Lamination"
+              : code === "matt-lam"
+              ? "Matt Lamination"
+              : code === "soft-touch"
+              ? "Soft Touch"
+              : code;
+          if (code) distinct.set(code, { code, label, meta: { finish: code, axis } });
+        }
+      }
+      const rows = Array.from(distinct.values())
+        .filter((d) => mode === "seed" || byCode.has(d.code))
+        .map((d) => make(d.code, d.label, axis, "per_document", d.meta));
+      return mode === "refresh" ? mergeKeepUnknown(rows, existing) : rows;
+    }
     return existing;
   }
+
 
   /**
    * Merge refreshed master rows with any existing saved entries whose code no
