@@ -62,7 +62,17 @@ type OptionSource =
   | "catalog.sizes"
   | "catalog.papers"
   | "catalog.finishing"
-  | "catalog.print_attrs";
+  | "catalog.print_attrs"
+  | "rate_card.business_cards";
+
+type BusinessCardAxis = "pack_size" | "sides" | "paper" | "finish";
+
+const BC_AXIS_OPTIONS: { value: BusinessCardAxis; label: string; optionName: string }[] = [
+  { value: "pack_size", label: "Pack Size (quantity)", optionName: "Pack Size" },
+  { value: "sides", label: "Print Sides", optionName: "Print Sides" },
+  { value: "paper", label: "Paper Stock", optionName: "Paper Stock" },
+  { value: "finish", label: "Lamination / Finish", optionName: "Lamination" },
+];
 
 const SOURCE_OPTIONS: { value: OptionSource; label: string; description: string }[] = [
   { value: "manual", label: "Manual (custom)", description: "You type the values by hand" },
@@ -70,6 +80,7 @@ const SOURCE_OPTIONS: { value: OptionSource; label: string; description: string 
   { value: "catalog.papers", label: "Paper Stock (Master Catalogue)", description: "Pulled live from Master Catalogue → Papers" },
   { value: "catalog.finishing", label: "Finishing (Master Catalogue)", description: "Pulled live from Master Catalogue → Finishing (pick a category)" },
   { value: "catalog.print_attrs", label: "Print Attribute (Master Catalogue)", description: "Pulled live from Master Catalogue → Print Attributes (pick an attribute: colour, sides, orientation). Pricing comes from Master Pricing → Click Charges." },
+  { value: "rate_card.business_cards", label: "Business Cards Rate Card (Master Pricing)", description: "Pulled live from Master Pricing → Business Cards (pick an axis: Pack Size, Sides, Paper, Lamination). Final price comes from the matching rate card row." },
 ];
 
 const MASTER_LINKS: Record<OptionSource, string | null> = {
@@ -78,7 +89,9 @@ const MASTER_LINKS: Record<OptionSource, string | null> = {
   "catalog.papers": "/admin/master-pricing",
   "catalog.finishing": "/admin/master-pricing",
   "catalog.print_attrs": "/admin/master-pricing",
+  "rate_card.business_cards": "/admin/master-pricing",
 };
+
 
 interface Props {
   productFamilyId: string;
