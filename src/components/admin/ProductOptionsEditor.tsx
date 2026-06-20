@@ -717,7 +717,9 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
               const src = ((opt as any).source ?? "manual") as OptionSource;
               const cat = (opt as any).source_filter?.category;
               const attr = (opt as any).source_filter?.attribute;
-              const sub = cat ?? attr;
+              const axis = (opt as any).source_filter?.axis;
+              const sub = cat ?? attr ?? axis;
+
               return (
                 <TableRow key={opt.id}>
                   <TableCell className="font-medium">{opt.name}</TableCell>
