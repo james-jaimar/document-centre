@@ -58,8 +58,10 @@ interface FormValues {
   color_output: "cmyk" | "rgb";
   cmyk_profile: string;
   render_intent: "relative_colorimetric" | "perceptual" | "absolute_colorimetric" | "saturation";
+  pricing_engine: "click_charges" | "photo_prints" | "business_cards";
   printing_rules: PrintingRules;
 }
+
 
 interface Props {
   open: boolean;
