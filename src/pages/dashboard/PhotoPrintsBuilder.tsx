@@ -719,7 +719,8 @@ export default function PhotoPrintsBuilder() {
                 resolvePhotoUrl(p.thumb_path) ??
                 resolvePhotoUrl(p.original_storage_path)
               }
-              borderSlug={photoSpec.border_slug}
+              borderMm={borderMmForSlug(availableBorders, photoSpec.border_slug)}
+              size={availableSizes.find((s) => s.slug === p.print_size_slug)}
               onEdit={() => setEditorPhotoId(p.id)}
               onDuplicate={() => duplicatePhoto(p.id)}
               onRemove={() => removePhoto(p.id)}
@@ -773,7 +774,8 @@ export default function PhotoPrintsBuilder() {
               Math.max(editorPhoto.preview_width_px, editorPhoto.preview_height_px)
             : 1
         }
-        borderSlug={photoSpec.border_slug}
+        borderMm={borderMmForSlug(availableBorders, photoSpec.border_slug)}
+        size={editorPhoto ? availableSizes.find((s) => s.slug === editorPhoto.print_size_slug) ?? null : null}
         onClose={() => setEditorPhotoId(null)}
         onSave={(next) => {
           if (editorPhotoId) updatePhoto(editorPhotoId, next);
