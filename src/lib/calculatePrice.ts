@@ -490,6 +490,41 @@ export function calculatePriceFromRateCard(
   };
 
   /**
+   * Finishing nUp: when a finishing row is priced per a parent stock
+   * (e.g. lamination priced per SRA3) and the finished doc is smaller,
+   * one parent sheet covers `nUp` finished sheets. SRA3 is treated as
+   * the oversize parent of A3 for bleed/lamination.
+   */
+  function finishingNUp(rowSize: string | null | undefined): number {
+    if (!rowSize) return 1;
+    const parent = String(rowSize).toUpperCase();
+    const imp = SIZE_IMPOSITION[size];
+    if (imp && imp.parent === parent) return imp.nUp;
+    // SRA3 parent rolls (lamination) — A3 finished pieces still fit 1-up,
+    // but SRA3-priced finishes applied to A4/A5/A6/DL get the A3 imposition.
+    if (parent === "SRA3" && imp && imp.parent === "A3") return imp.nUp;
+    if (parent === "SRA3" && size === "A3") return 1;
+    return 1;
+  }
+
+  /** Categories whose per_sheet pricing applies only to the cover, not the body. */
+  const COVER_ONLY_CATEGORIES = new Set([
+    "lamination",
+    "uv",
+    "spot_uv",
+    "foil",
+    "foiling",
+    "embossing",
+  ]);
+
+  function isCoverOnlyFinishing(category: string | null | undefined, code: string | null | undefined): boolean {
+    const cat = String(category ?? "").toLowerCase();
+    if (COVER_ONLY_CATEGORIES.has(cat)) return true;
+    const c = String(code ?? "").toLowerCase();
+    return /^(lam-|matt-lam|gloss-lam|uv-|spot-uv|foil-|emboss)/.test(c);
+  }
+
+  /**
    * Resolve the click price for a given finished size + colour + sides.
    * Prefers a direct active row; otherwise derives from the parent sheet.
    * Returns price per **printed sheet at the parent size**.
@@ -662,17 +697,61 @@ export function calculatePriceFromRateCard(
   for (const f of recipe.finishing ?? []) {
     if (f.required || customerSelected.has(f.code)) finishingCodes.add(f.code);
   }
+  // Cover-only finishes (lamination, UV, foil) are scoped to cover sheets
+  // when the spec carries explicit cover sections; otherwise fall back to
+  // the whole-book sheet count.
+  const coverSections = printableSections.filter((s) => {
+    const l = (s.label ?? "").toLowerCase();
+    return l.includes("cover") || l === "outside" || l === "inside";
+  });
+  const coverSheets = coverSections.reduce(
+    (acc, s) => acc + (s.is_duplex ? Math.ceil(s.page_count / 2) : s.page_count),
+    0,
+  );
   for (const code of finishingCodes) {
     const fin = rc.finishing.find((x) => x.code === code && x.is_active);
     if (!fin) continue;
     let multiplier = 1;
+    let perSheetParentNUp = 1; // 1 = no imposition saving
+    let perSheetScope: "book" | "cover" = "book";
     switch (fin.pricing_basis) {
       case "per_unit":
         multiplier = 1; // per finished book/piece, multiplied by quantity below
         break;
-      case "per_sheet":
-        multiplier = totalSheets;
-        break;
+      case "per_sheet": {
+        // Decide cover-scope first (lamination etc. is applied only to the cover).
+        const coverScoped = isCoverOnlyFinishing(fin.category, fin.code) && coverSheets > 0;
+        perSheetScope = coverScoped ? "cover" : "book";
+        const sheetsPerPiece = coverScoped ? coverSheets : totalSheets;
+        // Convert finished-size sheets to parent (e.g. SRA3) sheets when the
+        // rate-card row is priced per oversize parent. Lamination rolls are
+        // SRA3 — 1 SRA3 sheet laminates `nUp` finished pieces.
+        perSheetParentNUp = finishingNUp(fin.size);
+        multiplier = sheetsPerPiece; // per-piece sheets (display only)
+        // Run-level parent sheets, with a 1-sheet minimum (you cannot
+        // laminate a fraction of a sheet — and the press won't run less).
+        const parentSheetsRun = Math.max(
+          1,
+          Math.ceil((sheetsPerPiece * spec.quantity) / perSheetParentNUp),
+        );
+        const finUnitParent = tieredUnit(
+          rc.priceBreaks,
+          "finishing",
+          fin.id,
+          parentSheetsRun,
+          Number(fin.sell_price),
+        );
+        const runTotal = finUnitParent * parentSheetsRun;
+        const perBook = spec.quantity > 0 ? runTotal / spec.quantity : runTotal;
+        lines.push({
+          label: `Finishing: ${fin.label}${perSheetParentNUp > 1 ? ` (${parentSheetsRun}× ${String(fin.size ?? "").toUpperCase()})` : ""}`,
+          type: "option",
+          unit_amount: finUnitParent,
+          multiplier: parentSheetsRun,
+          total: perBook,
+        });
+        continue;
+      }
       case "per_page":
         multiplier = printableSections.reduce((s, x) => s + x.page_count, 0);
         break;
@@ -700,7 +779,9 @@ export function calculatePriceFromRateCard(
       multiplier,
       total: finUnit * multiplier,
     });
+    void perSheetParentNUp; void perSheetScope;
   }
+
 
   // 4) Product option price impacts (binding, cover, lamination, paper stock
   //    upgrades, etc.). The rate-card engine had previously ignored these,
@@ -856,12 +937,32 @@ export function calculatePriceFromRateCard(
       | Record<string, number>
       | null;
     const sizeKey = String(size ?? "").toLowerCase();
+    // Parent-sheet detection for per_sheet basis: an explicit
+    // `metadata.parent_size` wins; otherwise we infer the parent from
+    // `prices_by_size` (presence of an SRA3 or A3-parent price row means
+    // this finish runs on the parent stock — e.g. lamination on SRA3).
+    const optionNameLc = option.name.toLowerCase();
+    const looksCoverOnly =
+      /lamin|^uv\b|spot.?uv|foil|emboss/.test(optionNameLc) ||
+      metadata.scope === "cover";
+    const explicitParent = typeof metadata.parent_size === "string"
+      ? String(metadata.parent_size).toLowerCase()
+      : null;
+    const impInfo = SIZE_IMPOSITION[size] ?? null;
+    const inferredParent = pricesBySize && impInfo && typeof pricesBySize[impInfo.parent.toLowerCase()] === "number"
+      ? impInfo.parent.toLowerCase()
+      : pricesBySize && typeof pricesBySize["sra3"] === "number" && (size === "A3" || impInfo?.parent === "A3")
+        ? "sra3"
+        : null;
+    const parentSizeKey = explicitParent ?? inferredParent;
     const sizedPrice =
-      pricesBySize && typeof pricesBySize[sizeKey] === "number"
-        ? pricesBySize[sizeKey]
-        : pricesBySize && typeof pricesBySize.any === "number"
-          ? pricesBySize.any
-          : null;
+      pricesBySize && parentSizeKey && typeof pricesBySize[parentSizeKey] === "number"
+        ? pricesBySize[parentSizeKey]
+        : pricesBySize && typeof pricesBySize[sizeKey] === "number"
+          ? pricesBySize[sizeKey]
+          : pricesBySize && typeof pricesBySize.any === "number"
+            ? pricesBySize.any
+            : null;
     const unitAmount = sizedPrice ?? selectedValue.price_impact ?? 0;
     if (!unitAmount) continue;
 
@@ -869,10 +970,26 @@ export function calculatePriceFromRateCard(
     // tells us how to scale the unit price for this configuration.
     const basis = String(metadata.pricing_basis ?? "").toLowerCase();
     let multiplier = 1;
+    if (basis === "per_sheet") {
+      const coverScoped = looksCoverOnly && coverSheets > 0;
+      const sheetsPerPiece = (coverScoped ? coverSheets : totalSheets) || 1;
+      const nUp = parentSizeKey ? finishingNUp(parentSizeKey) : 1;
+      const parentSheetsRun = Math.max(
+        1,
+        Math.ceil((sheetsPerPiece * spec.quantity) / nUp),
+      );
+      const runTotal = unitAmount * parentSheetsRun;
+      const perBook = spec.quantity > 0 ? runTotal / spec.quantity : runTotal;
+      lines.push({
+        label: `${option.name}: ${selectedValue.label}${nUp > 1 ? ` (${parentSheetsRun}× ${parentSizeKey?.toUpperCase()})` : ""}`,
+        type: "option",
+        unit_amount: unitAmount,
+        multiplier: parentSheetsRun,
+        total: perBook,
+      });
+      continue;
+    }
     switch (basis) {
-      case "per_sheet":
-        multiplier = totalSheets || 1;
-        break;
       case "per_page":
         multiplier =
           printableSections.reduce((s, x) => s + x.page_count, 0) ||
