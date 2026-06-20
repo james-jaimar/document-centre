@@ -12,17 +12,21 @@ import { useTenantContext } from "@/hooks/useTenantContext";
 import { resolveUrls } from "@/lib/thumbnailUtils";
 import { getCachedBlobUrl, prefetchToCache } from "@/lib/photoPrints/photoBlobCache";
 import { invalidateUserOrderCaches } from "@/lib/queryInvalidation";
+import { getPhotoPrintSize } from "@/lib/photoPrints/sizes";
 import {
-  PHOTO_FINISH_OPTIONS,
-  PHOTO_BORDER_OPTIONS,
-  getPhotoPrintSize,
-  derivePhotoPrintSizesFromRateCard,
-} from "@/lib/photoPrints/sizes";
-import { resolvePhotoPrintPrice } from "@/lib/photoPrints/pricing";
+  buildSizesFromOptions,
+  buildFinishesFromOptions,
+  buildBordersFromOptions,
+  resolveBridgedPhotoPrice,
+  borderMmForSlug,
+  rcFinishForSlug,
+  type BridgedPhotoSize,
+} from "@/lib/photoPrints/catalogBridge";
 import {
   useResolvedRateCardPhotoPrints as useRateCardPhotoPrints,
   useResolvedRateCardPriceBreaksBundle as useRateCardPriceBreaksBundle,
 } from "@/hooks/useResolvedRateCard";
+import { useCatalogBackedOptions } from "@/hooks/useCatalogBackedOptions";
 import type { PhotoPrintEntry, PhotoPrintsSpec } from "@/lib/photoPrints/types";
 import PhotoUploader from "@/components/photo/PhotoUploader";
 import QRUploadModal from "@/components/order/QRUploadModal";
