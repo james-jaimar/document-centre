@@ -25,8 +25,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Settings2 } from "lucide-react";
+import { Settings2, SlidersHorizontal } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import TenantProductSpecsDialog from "@/components/admin/TenantProductSpecsDialog";
 
 const AdminProductCatalogue = () => {
   const { tenantId } = useTenantContext();
@@ -46,6 +47,8 @@ const AdminProductCatalogue = () => {
   const [openFamilyId, setOpenFamilyId] = useState<string | null>(null);
   const [openFamilyName, setOpenFamilyName] = useState<string>("");
   const [openFamilySlug, setOpenFamilySlug] = useState<string>("");
+  const [specsFamilyId, setSpecsFamilyId] = useState<string | null>(null);
+  const [specsFamilyName, setSpecsFamilyName] = useState<string>("");
 
   async function handleToggle(familyId: string, next: boolean) {
     if (!tenantId) return;
@@ -95,7 +98,7 @@ const AdminProductCatalogue = () => {
                 <TableHead>Status</TableHead>
                 <TableHead>Tenant Enabled</TableHead>
                 <TableHead>Price Overrides</TableHead>
-                <TableHead className="w-32">Actions</TableHead>
+                <TableHead className="w-56">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -125,18 +128,31 @@ const AdminProductCatalogue = () => {
                       <Badge variant="outline">{oc} override{oc !== 1 ? "s" : ""}</Badge>
                     </TableCell>
                     <TableCell>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setOpenFamilyId(f.id);
-                          setOpenFamilyName(f.name);
-                          setOpenFamilySlug(f.slug);
-                        }}
-                      >
-                        <Settings2 className="h-3 w-3 mr-1" />
-                        Pricing
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setSpecsFamilyId(f.id);
+                            setSpecsFamilyName(f.name);
+                          }}
+                        >
+                          <SlidersHorizontal className="h-3 w-3 mr-1" />
+                          Specs
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setOpenFamilyId(f.id);
+                            setOpenFamilyName(f.name);
+                            setOpenFamilySlug(f.slug);
+                          }}
+                        >
+                          <Settings2 className="h-3 w-3 mr-1" />
+                          Pricing
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -165,6 +181,16 @@ const AdminProductCatalogue = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      {tenantId && specsFamilyId && (
+        <TenantProductSpecsDialog
+          open={!!specsFamilyId}
+          onOpenChange={(o) => { if (!o) setSpecsFamilyId(null); }}
+          tenantId={tenantId}
+          productFamilyId={specsFamilyId}
+          productFamilyName={specsFamilyName}
+        />
+      )}
     </div>
   );
 };
