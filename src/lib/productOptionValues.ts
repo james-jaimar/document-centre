@@ -719,25 +719,26 @@ export const FOLD_TYPE: StructuredOptionValue[] = [
 // POSTER PAPER — limited set
 // ═══════════════════════════════════════════════════════════════════
 export const PAPER_POSTER: StructuredOptionValue[] = [
-  createOptionValue("120gsm Silk", "Coated Paper", {
+  // Slugs MUST match catalog_papers.code so resolvePaper() can build
+  // `${slug}-${size}` (e.g. "poster-paper-bond-a2") and find a price row
+  // in catalog_paper_prices. Keep this list in sync with the Master
+  // Catalogue editor.
+  createOptionValue("Poster Paper (Bond)", "Bond", {
+    slug: "poster-paper-bond",
     is_default: true,
-    metadata: { weight_gsm: 120, finish: "silk" },
+    metadata: { weight_gsm: 100, finish: "bond" },
   }),
-  createOptionValue("160gsm Silk", "Coated Paper", {
-    price_impact: 0.20, price_type: "per_page",
-    metadata: { weight_gsm: 160, finish: "silk" },
+  createOptionValue("Premium Poster Paper (Satin)", "Premium", {
+    slug: "premium-poster-paper",
+    metadata: { weight_gsm: 200, finish: "satin" },
   }),
-  createOptionValue("200gsm Silk Card", "Card Stock", {
-    price_impact: 0.50, price_type: "per_page",
-    metadata: { weight_gsm: 200, finish: "silk" },
+  createOptionValue("Premium Poster Paper (Gloss)", "Premium", {
+    slug: "premium-poster-paper-gloss",
+    metadata: { weight_gsm: 200, finish: "gloss" },
   }),
-  createOptionValue("250gsm Gloss Card", "Card Stock", {
-    price_impact: 0.80, price_type: "per_page",
-    metadata: { weight_gsm: 250, finish: "gloss" },
-  }),
-  createOptionValue("Photo Paper (Satin)", "Specialty", {
-    price_impact: 2.0, price_type: "per_page",
-    metadata: { weight_gsm: 200, finish: "photo_satin" },
+  createOptionValue("Photo Poster Paper (Gloss)", "Photo", {
+    slug: "photo-poster-gloss",
+    metadata: { weight_gsm: 240, finish: "photo_gloss" },
   }),
 ];
 

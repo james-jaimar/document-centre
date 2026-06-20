@@ -502,7 +502,7 @@ export function calculatePriceFromRateCard(
     const direct = rc.clicks.find(
       (c) =>
         c.is_active &&
-        c.size === finishedSize &&
+        String(c.size).toUpperCase() === finishedSize &&
         c.colour === cellColour &&
         c.sides === cellSides
     );
@@ -512,7 +512,7 @@ export function calculatePriceFromRateCard(
       const parent = rc.clicks.find(
         (c) =>
           c.is_active &&
-          c.size === imp.parent &&
+          String(c.size).toUpperCase() === imp.parent &&
           c.colour === cellColour &&
           c.sides === cellSides
       );

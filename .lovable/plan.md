@@ -1,48 +1,64 @@
-## Poster orientation audit
+## Wire posters to clicks + paper
 
-### What already works
-- **PDF acceptance**: `orientationPolicy.ts` does NOT list `posters` as portrait- or landscape-required, so landscape PDFs (and images) upload without any rotation advisory or forced normalisation. ✓
-- **Image uploads**: `PosterImageEditor` auto-detects orientation from the source image's natural aspect, exposes a Portrait/Landscape toggle, and `imageToPosterPdf` emits the PDF at the correct landscape dimensions (594×420 for A2-landscape, etc.). ✓
-- **Pricing**: `calculatePrice.ts` looks up the size by its orientation-agnostic slug (`a2`, `a3`, …). Landscape A2 prices the same as portrait A2. ✓
-- **Bleed / full-bleed rendering**: `buildPreviewSnapshot` and `PreviewPanel` force `isPoster` to full bleed regardless of orientation. ✓
-- **Size auto-detect**: `matchesSize` already checks both portrait and landscape — a 594×420 PDF correctly matches the `a2` option. ✓
+### What you've done
+- Added A2/A1/A0 simplex colour rows to `rate_card_clicks` (R 40 / R 80 / R 160).
+- Stocked A3/A2/A1/A0 prices on `poster-paper-bond`, `premium-poster-paper`, `premium-poster-paper-gloss`, `photo-poster-gloss` in `catalog_papers` / `catalog_paper_prices`.
 
-### The actual bug
-`canvasSizeMm` in `src/pages/dashboard/OrderBuild.tsx` (lines 571-579) is derived purely from the **option's** `sizeMeta.orientation` flag. The poster `DOC_SIZE_POSTER` option values only carry portrait metadata, so even when the uploaded poster PDF is 594×420 (landscape A2), the canvas is forced to 420×594 (portrait A2). Result:
-- Preview renders a portrait-shaped canvas with a landscape PDF letterboxed inside, OR
-- Scale-mode "fill" crops the artwork.
+### Why the poster product doesn't see any of it
 
-Binding edge already solves this elsewhere by preferring the actual page geometry over the option metadata (`docPageOrientation` override, lines 599-613). The canvas calc never got the same treatment.
+Two independent gaps:
+
+**1. Click size lookup is case-sensitive (bug)**
+
+`src/lib/calculatePrice.ts` `resolveClickRate` and `resolvePaper` compare `c.size === finishedSize`. `finishedSize` is upper-cased from the option slug (`"a2"` → `"A2"`), but the new click rows were stored lower-case (`a2/a1/a0`) while older rows are upper-case (`A3/A4/A5/A6/Letter/Legal`). Posters at A2/A1/A0 therefore never match → no click line item.
+
+```
+finishedSize = "A2"   row.size = "a2"   →   miss
+finishedSize = "A3"   row.size = "A3"   →   hit
+```
+
+`SIZE_IMPOSITION` only knows about A4/A5/A6/DL → A3, so there's no parent fallback for A0/A1/A2 (correct — these are real bases now).
+
+**2. Poster paper option slugs don't match catalogue paper codes (wiring gap)**
+
+`PAPER_POSTER` in `src/lib/productOptionValues.ts` carries generic labels — "120gsm Silk", "200gsm Silk Card", "Photo Paper (Satin)" — whose auto-derived slugs (`120gsm-silk`, `200gsm-silk-card`, etc.) have no matching row in `catalog_papers`. `resolvePaper` builds `${slug}-${size}` (e.g. `120gsm-silk-a2`) and finds nothing → no paper line item. The catalog actually stocks `poster-paper-bond`, `premium-poster-paper`, `premium-poster-paper-gloss`, `photo-poster-gloss`.
 
 ### Fix
 
-Single, narrow change in `src/pages/dashboard/OrderBuild.tsx` `canvasSizeMm` memo:
+**A. `src/lib/calculatePrice.ts` — case-insensitive size compare (1 file, ~6 lines)**
 
-1. Compute `docPageOrientation` once (already exists below — hoist or reuse it).
-2. When `docPageOrientation` is known and disagrees with `sizeMeta.orientation`, prefer the document's orientation when swapping width/height.
+- In `resolveClickRate`, compare `c.size.toUpperCase() === finishedSize` (already upper-cased) for both the direct lookup and the parent-imposition lookup.
+- In `resolvePaper`, do the same against the size suffix (already lower-cased in `candidate`/`parentCode`) — the merged `code` from `useRateCardPapers` is built as `${paper.code}-${pp.size_code}` where `pp.size_code` is stored lower-case by the Master Catalogue editor, so it already matches; this is a belt-and-braces normalisation only.
+- Strictly more permissive — no existing product regresses.
 
-Effective rule:
-```
-effectiveLandscape =
-  docPageOrientation
-    ? docPageOrientation === "landscape"
-    : isLandscapeSize;
-```
-Then swap dimensions based on `effectiveLandscape`.
+**B. Replace `PAPER_POSTER` with catalogue-aligned values (1 file in code + 1 admin data sync)**
 
-This keeps every other product working unchanged (bound docs, presentations, ring binders all also pass uploads matching their required orientation; presentations already lock landscape so the result is the same). It just lets posters (and flyers/business cards, which use the same canvas calc) follow the uploaded artwork's true shape.
+Replace the five generic entries with one entry per real poster stock, whose slug **is** the `catalog_papers.code`:
 
-### Files touched
-- `src/pages/dashboard/OrderBuild.tsx` — one memo (~10 lines), no other call sites.
+| Label                          | Slug (must match `catalog_papers.code`) | Group     |
+|--------------------------------|-----------------------------------------|-----------|
+| Poster Paper (Bond)            | `poster-paper-bond`                     | Bond      |
+| Premium Poster Paper (Satin)   | `premium-poster-paper`                  | Premium   |
+| Premium Poster Paper (Gloss)   | `premium-poster-paper-gloss`            | Premium   |
+| Photo Poster Paper (Gloss)     | `photo-poster-gloss`                    | Photo     |
+
+This makes the price purely catalogue-driven: A2 silk paper just becomes `poster-paper-bond-a2` → resolved from `catalog_paper_prices`. Click charge resolves independently from `rate_card_clicks` for the chosen size + colour.
+
+Because `productOptionValues.ts` only seeds *new* product families, existing posters in the DB keep their old option rows. A one-shot data sync is needed for the live posters product:
+
+- Delete current "Paper Stock" values for the Posters family.
+- Insert the four catalogue-aligned values (via the same Master Catalogue editor, OR a single SQL migration into `product_options` for the Posters family).
+
+I'll propose the SQL once the plan is approved so you can review it before it runs.
 
 ### Out of scope
-- No new option values (no `a2-landscape` poster slug needed).
-- No pricing changes.
-- No new orientation policy entries — posters remain "any orientation OK".
-- No preview component changes — `LooseSheetsPreview` already follows `pageAspectRatio` / `canvasSizeMm`.
+- `PRICING_POSTER` per_page rules (R 2.00 B&W / R 3.50 colour, R 25 setup) stay as-is — they layer on top of the rate-card lines. We can revisit whether the setup fee still makes sense once rate-card clicks are flowing.
+- No changes to other products. Flyers/bound docs use the same paper code convention already.
+- No new orientation behaviour (yesterday's landscape-canvas change still applies).
 
 ### Verification
-1. Upload a landscape A2 PDF to a Posters order → preview should render wide, full-bleed, with no letterboxing and the price line item still showing A2.
-2. Upload a portrait A2 PDF → preview unchanged (still portrait).
-3. Upload a landscape JPG → editor opens with Landscape preselected; after confirm, preview renders landscape.
-4. Spot-check Flyers and Business Cards (same memo) — portrait artwork still previews portrait.
+1. Posters product, A2 size, colour, default paper → price line items show **A2 click (R 40)** + **Poster paper A2** + **per-page R 3.50** + **setup R 25**.
+2. A1 + Premium Gloss → A1 click (R 80) + `premium-poster-paper-gloss-a1` (R 14.00) + per-page + setup.
+3. A0 + Photo → A0 click (R 160) + `photo-poster-gloss-a0` (R 28.00) + per-page + setup.
+4. A3 (still the default, no new rows) → no regression: existing A3 colour click row continues to resolve.
+5. Other products (flyers, bound docs, business cards) — same prices as before.
