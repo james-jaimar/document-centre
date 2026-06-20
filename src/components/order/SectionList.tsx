@@ -70,17 +70,26 @@ const PRESENTATION_LABELS: Record<string, string> = {
   tab: "Tab Divider",
 };
 
+const BUSINESS_CARD_LABELS: Record<string, string> = {
+  front_cover: "Front",
+  back_cover: "Back",
+  body: "Body",
+  insert: "Insert",
+  tab: "Tab Divider",
+};
+
 function getLabels(familySlug?: string | null): Record<string, string> {
   if (familySlug === "brochures") return BROCHURE_LABELS;
   if (familySlug === "flyers") return FLYER_LABELS;
   if (familySlug === "posters") return POSTER_LABELS;
   if (familySlug === "ring_binders" || familySlug === "ring-binders") return RING_BINDER_LABELS;
   if (familySlug === "presentations") return PRESENTATION_LABELS;
+  if (familySlug === "business_cards" || familySlug === "business-cards") return BUSINESS_CARD_LABELS;
   return DEFAULT_LABELS;
 }
 
 /* Hide duplex toggle for these families */
-const HIDE_DUPLEX = new Set(["brochures", "posters"]);
+const HIDE_DUPLEX = new Set(["brochures", "posters", "business_cards", "business-cards"]);
 /* Hide colour toggle for these families */
 const HIDE_COLOUR = new Set(["posters"]);
 
