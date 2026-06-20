@@ -13,6 +13,8 @@ import {
   useCatalogFinishing,
   useCatalogPrintAttrs,
 } from "@/hooks/useCatalog";
+import { useRateCardBusinessCards } from "@/hooks/useRateCard";
+
 import type { StructuredOptionValue } from "@/lib/productOptionTypes";
 import {
   isStructuredValues,
@@ -60,7 +62,17 @@ type OptionSource =
   | "catalog.sizes"
   | "catalog.papers"
   | "catalog.finishing"
-  | "catalog.print_attrs";
+  | "catalog.print_attrs"
+  | "rate_card.business_cards";
+
+type BusinessCardAxis = "pack_size" | "sides" | "paper" | "finish";
+
+const BC_AXIS_OPTIONS: { value: BusinessCardAxis; label: string; optionName: string }[] = [
+  { value: "pack_size", label: "Pack Size (quantity)", optionName: "Pack Size" },
+  { value: "sides", label: "Print Sides", optionName: "Print Sides" },
+  { value: "paper", label: "Paper Stock", optionName: "Paper Stock" },
+  { value: "finish", label: "Lamination / Finish", optionName: "Lamination" },
+];
 
 const SOURCE_OPTIONS: { value: OptionSource; label: string; description: string }[] = [
   { value: "manual", label: "Manual (custom)", description: "You type the values by hand" },
@@ -68,6 +80,7 @@ const SOURCE_OPTIONS: { value: OptionSource; label: string; description: string 
   { value: "catalog.papers", label: "Paper Stock (Master Catalogue)", description: "Pulled live from Master Catalogue → Papers" },
   { value: "catalog.finishing", label: "Finishing (Master Catalogue)", description: "Pulled live from Master Catalogue → Finishing (pick a category)" },
   { value: "catalog.print_attrs", label: "Print Attribute (Master Catalogue)", description: "Pulled live from Master Catalogue → Print Attributes (pick an attribute: colour, sides, orientation). Pricing comes from Master Pricing → Click Charges." },
+  { value: "rate_card.business_cards", label: "Business Cards Rate Card (Master Pricing)", description: "Pulled live from Master Pricing → Business Cards (pick an axis: Pack Size, Sides, Paper, Lamination). Final price comes from the matching rate card row." },
 ];
 
 const MASTER_LINKS: Record<OptionSource, string | null> = {
@@ -76,7 +89,9 @@ const MASTER_LINKS: Record<OptionSource, string | null> = {
   "catalog.papers": "/admin/master-pricing",
   "catalog.finishing": "/admin/master-pricing",
   "catalog.print_attrs": "/admin/master-pricing",
+  "rate_card.business_cards": "/admin/master-pricing",
 };
+
 
 interface Props {
   productFamilyId: string;
@@ -90,6 +105,7 @@ interface OptionFormData {
   source: OptionSource;
   finishingCategory: string;
   printAttribute: string;
+  businessCardAxis: BusinessCardAxis | "";
 }
 
 const emptyOptionForm: OptionFormData = {
@@ -100,7 +116,9 @@ const emptyOptionForm: OptionFormData = {
   source: "manual",
   finishingCategory: "",
   printAttribute: "",
+  businessCardAxis: "",
 };
+
 
 const emptyValue: StructuredOptionValue = {
   label: "",
@@ -279,6 +297,8 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
   const { data: catPapers = [] } = useCatalogPapers();
   const { data: catFinishing = [] } = useCatalogFinishing();
   const { data: catPrintAttrs = [] } = useCatalogPrintAttrs();
+  const { data: rcBusinessCards = [] } = useRateCardBusinessCards({ scope: "master" });
+
 
   const finishingCategories = useMemo(
     () => Array.from(new Set(catFinishing.map((f: any) => f.category))).sort(),
@@ -405,8 +425,52 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
         );
       return mode === "refresh" ? mergeKeepUnknown(rows, existing) : rows;
     }
+    if (form.source === "rate_card.business_cards") {
+      const axis = form.businessCardAxis;
+      if (!axis) return existing;
+      const activeRows = (rcBusinessCards as any[]).filter((r) => r.is_active);
+      // Build distinct values per axis. Each value carries metadata so the
+      // pricing engine (calculatePrice.ts → business_cards branch) can
+      // resolve the right rate card row.
+      const distinct = new Map<string, { code: string; label: string; meta: Record<string, any> }>();
+      for (const r of activeRows) {
+        if (axis === "pack_size") {
+          const code = String(r.quantity);
+          distinct.set(code, {
+            code,
+            label: `${r.quantity}`,
+            meta: { quantity: Number(r.quantity), axis },
+          });
+        } else if (axis === "sides") {
+          const code = String(r.sides);
+          const label = code === "single" ? "Single-sided" : "Double-sided";
+          distinct.set(code, { code, label, meta: { sides: code, axis } });
+        } else if (axis === "paper") {
+          const code = String(r.paper);
+          if (code) distinct.set(code, { code, label: code, meta: { paper: code, axis } });
+        } else if (axis === "finish") {
+          const code = String(r.finish);
+          const label =
+            code === "none"
+              ? "None"
+              : code === "gloss-lam"
+              ? "Gloss Lamination"
+              : code === "matt-lam"
+              ? "Matt Lamination"
+              : code === "soft-touch"
+              ? "Soft Touch"
+              : code;
+          if (code) distinct.set(code, { code, label, meta: { finish: code, axis } });
+        }
+      }
+      const rows = Array.from(distinct.values())
+        .filter((d) => mode === "seed" || byCode.has(d.code))
+        .map((d) => make(d.code, d.label, axis, "per_document", d.meta));
+      return mode === "refresh" ? mergeKeepUnknown(rows, existing) : rows;
+    }
     return existing;
   }
+
 
   /**
    * Merge refreshed master rows with any existing saved entries whose code no
@@ -454,12 +518,13 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       return;
     }
 
-    // Same source, but category or master catalogue changed
+    // Same source, but category/axis/master catalogue changed
     if (
       nextSource === "catalog.finishing" ||
       nextSource === "catalog.papers" ||
       nextSource === "catalog.sizes" ||
-      nextSource === "catalog.print_attrs"
+      nextSource === "catalog.print_attrs" ||
+      nextSource === "rate_card.business_cards"
     ) {
       setEditValues((prev) => {
         const isEditingExisting = !!editingOption && prev.length > 0;
@@ -471,7 +536,8 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [optionForm.source, optionForm.finishingCategory, optionForm.printAttribute, catSizes.length, catPapers.length, catFinishing.length, catPrintAttrs.length, optionDialogOpen]);
+  }, [optionForm.source, optionForm.finishingCategory, optionForm.printAttribute, optionForm.businessCardAxis, catSizes.length, catPapers.length, catFinishing.length, catPrintAttrs.length, rcBusinessCards.length, optionDialogOpen]);
+
 
 
 
@@ -489,6 +555,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
     const src = ((opt as any).source ?? "manual") as OptionSource;
     const cat = (opt as any).source_filter?.category ?? "";
     const attr = (opt as any).source_filter?.attribute ?? "";
+    const axis = ((opt as any).source_filter?.axis ?? "") as BusinessCardAxis | "";
     setOptionForm({
       name: opt.name,
       option_type: opt.option_type,
@@ -497,7 +564,9 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       source: src,
       finishingCategory: cat,
       printAttribute: attr,
+      businessCardAxis: axis,
     });
+
     const parsed = parseOptionValues(opt.values);
     const manualParsed = parseOptionValues((opt as any).manual_values);
     const manualSnapshot = manualParsed.length > 0
@@ -545,6 +614,10 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       toast({ title: "Pick a print attribute", variant: "destructive" });
       return;
     }
+    if (optionForm.source === "rate_card.business_cards" && !optionForm.businessCardAxis) {
+      toast({ title: "Pick a Business Cards axis", variant: "destructive" });
+      return;
+    }
     try {
       const nextManualValues = optionForm.source === "manual"
         ? editValues
@@ -565,8 +638,11 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
             ? { category: optionForm.finishingCategory }
             : optionForm.source === "catalog.print_attrs"
             ? { attribute: optionForm.printAttribute }
+            : optionForm.source === "rate_card.business_cards"
+            ? { axis: optionForm.businessCardAxis }
             : null,
       };
+
       if (editingOption) {
         await updateOption.mutateAsync({ id: editingOption.id, ...payload });
         toast({ title: "Option updated" });
@@ -641,7 +717,9 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
               const src = ((opt as any).source ?? "manual") as OptionSource;
               const cat = (opt as any).source_filter?.category;
               const attr = (opt as any).source_filter?.attribute;
-              const sub = cat ?? attr;
+              const axis = (opt as any).source_filter?.axis;
+              const sub = cat ?? attr ?? axis;
+
               return (
                 <TableRow key={opt.id}>
                   <TableCell className="font-medium">{opt.name}</TableCell>
@@ -650,7 +728,7 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
                       <Badge variant="outline" className="text-xs">manual</Badge>
                     ) : (
                       <Badge variant="default" className="text-xs">
-                        {src.replace("catalog.", "")}{sub ? ` · ${sub}` : ""}
+                        {src.replace("catalog.", "").replace("rate_card.", "rate card · ")}{sub ? ` · ${sub}` : ""}
                       </Badge>
                     )}
                   </TableCell>
@@ -751,6 +829,40 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
                 </p>
               </div>
             )}
+
+            {optionForm.source === "rate_card.business_cards" && (
+              <div className="space-y-1">
+                <Label>Business Cards axis</Label>
+                <Select
+                  value={optionForm.businessCardAxis}
+                  onValueChange={(v) => {
+                    const axis = v as BusinessCardAxis;
+                    const preset = BC_AXIS_OPTIONS.find((o) => o.value === axis);
+                    setOptionForm({
+                      ...optionForm,
+                      businessCardAxis: axis,
+                      // Auto-fill the name with the canonical key the pricing
+                      // engine expects, but only if the admin hasn't typed one.
+                      name: optionForm.name?.trim()
+                        ? optionForm.name
+                        : preset?.optionName ?? optionForm.name,
+                    });
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder="Pick an axis…" /></SelectTrigger>
+                  <SelectContent>
+                    {BC_AXIS_OPTIONS.map((a) => (
+                      <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Final unit price comes from Master Pricing → Business Cards, matched on the customer's selected Pack Size / Sides / Paper / Lamination.
+                </p>
+              </div>
+            )}
+
+
 
             {/* Option meta */}
             <div className="grid grid-cols-2 gap-3">

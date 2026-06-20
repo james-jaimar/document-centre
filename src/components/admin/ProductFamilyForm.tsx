@@ -58,8 +58,10 @@ interface FormValues {
   color_output: "cmyk" | "rgb";
   cmyk_profile: string;
   render_intent: "relative_colorimetric" | "perceptual" | "absolute_colorimetric" | "saturation";
+  pricing_engine: "click_charges" | "photo_prints" | "business_cards";
   printing_rules: PrintingRules;
 }
+
 
 interface Props {
   open: boolean;
@@ -85,12 +87,13 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
       color_output: "cmyk",
       cmyk_profile: "fogra39",
       render_intent: "relative_colorimetric",
+      pricing_engine: "click_charges",
       printing_rules: DEFAULT_PRINTING_RULES,
     },
   });
 
   useEffect(() => {
-    const fam = family as (ProductFamily & { printing_rules?: Partial<PrintingRules> }) | null;
+    const fam = family as (ProductFamily & { printing_rules?: Partial<PrintingRules>; pricing_engine?: FormValues["pricing_engine"] }) | null;
     if (fam) {
       form.reset({
         name: fam.name,
@@ -102,6 +105,7 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         color_output: (fam.color_output as "cmyk" | "rgb") ?? "cmyk",
         cmyk_profile: fam.cmyk_profile ?? "fogra39",
         render_intent: (fam.render_intent as FormValues["render_intent"]) ?? "relative_colorimetric",
+        pricing_engine: (fam.pricing_engine as FormValues["pricing_engine"]) ?? "click_charges",
         printing_rules: { ...DEFAULT_PRINTING_RULES, ...((fam.printing_rules as Partial<PrintingRules>) ?? {}) },
       });
     } else {
@@ -115,10 +119,12 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
         color_output: "cmyk",
         cmyk_profile: "fogra39",
         render_intent: "relative_colorimetric",
+        pricing_engine: "click_charges",
         printing_rules: DEFAULT_PRINTING_RULES,
       });
     }
   }, [family, open]);
+
 
   const watchName = form.watch("name");
   useEffect(() => {
@@ -219,7 +225,33 @@ export default function ProductFamilyForm({ open, onOpenChange, family, onSubmit
               />
             </div>
 
+            <FormField
+              control={form.control}
+              name="pricing_engine"
+              rules={{ required: "Pricing engine is required" }}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Pricing Engine</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger><SelectValue placeholder="Select pricing engine" /></SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="click_charges">Click Charges (booklets, flyers, posters, brochures…)</SelectItem>
+                      <SelectItem value="photo_prints">Photo Prints (uses Photo Prints rate card)</SelectItem>
+                      <SelectItem value="business_cards">Business Cards (uses Business Cards rate card)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Determines which Master Pricing tab supplies the per-unit price for this product.
+                  </p>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+
               <div>
                 <h4 className="text-sm font-semibold">Print Output</h4>
                 <p className="text-xs text-muted-foreground">
