@@ -287,11 +287,18 @@ function ClicksTab({
       return;
     }
     try {
+      const slug = adding.size.trim();
+      const matched = sizes.find(
+        (s) => String(s.code).toLowerCase() === slug.toLowerCase(),
+      );
+      const sizeLabel = matched?.label ?? slug;
+      const sizeCode = matched?.code ?? slug.toLowerCase();
       await insert.mutateAsync({
         scope_type: scope,
         tenant_id: scope === "master" ? null : tenantId,
         branch_id: scope === "branch" ? branchId : null,
-        size: adding.size.trim().toUpperCase(),
+        size: sizeLabel,
+        catalog_size_code: sizeCode,
         colour: adding.colour,
         sides: adding.sides,
         sell_price: adding.sell_price,
@@ -304,6 +311,7 @@ function ClicksTab({
       toast({ title: "Add failed", description: e.message, variant: "destructive" });
     }
   }
+
 
   return (
     <Card className="p-4">
