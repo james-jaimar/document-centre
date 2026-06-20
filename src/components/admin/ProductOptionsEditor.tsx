@@ -297,6 +297,8 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
   const { data: catPapers = [] } = useCatalogPapers();
   const { data: catFinishing = [] } = useCatalogFinishing();
   const { data: catPrintAttrs = [] } = useCatalogPrintAttrs();
+  const { data: rcBusinessCards = [] } = useRateCardBusinessCards({ scope: "master" });
+
 
   const finishingCategories = useMemo(
     () => Array.from(new Set(catFinishing.map((f: any) => f.category))).sort(),
