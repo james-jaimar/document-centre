@@ -291,7 +291,7 @@ function ClicksTab({
         scope_type: scope,
         tenant_id: scope === "master" ? null : tenantId,
         branch_id: scope === "branch" ? branchId : null,
-        size: adding.size.trim(),
+        size: adding.size.trim().toUpperCase(),
         colour: adding.colour,
         sides: adding.sides,
         sell_price: adding.sell_price,
@@ -333,7 +333,7 @@ function ClicksTab({
             const cost = drafts[row.id]?.cost ?? String(row.cost_price);
             return (
               <TableRow key={row.id}>
-                <TableCell className="font-medium">{row.size}</TableCell>
+                <TableCell className="font-medium">{String(row.size).toUpperCase()}</TableCell>
                 <TableCell className="capitalize">{row.colour}</TableCell>
                 <TableCell className="capitalize">{row.sides}</TableCell>
                 <TableCell>
