@@ -518,12 +518,13 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       return;
     }
 
-    // Same source, but category or master catalogue changed
+    // Same source, but category/axis/master catalogue changed
     if (
       nextSource === "catalog.finishing" ||
       nextSource === "catalog.papers" ||
       nextSource === "catalog.sizes" ||
-      nextSource === "catalog.print_attrs"
+      nextSource === "catalog.print_attrs" ||
+      nextSource === "rate_card.business_cards"
     ) {
       setEditValues((prev) => {
         const isEditingExisting = !!editingOption && prev.length > 0;
@@ -535,7 +536,8 @@ export default function ProductOptionsEditor({ productFamilyId }: Props) {
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [optionForm.source, optionForm.finishingCategory, optionForm.printAttribute, catSizes.length, catPapers.length, catFinishing.length, catPrintAttrs.length, optionDialogOpen]);
+  }, [optionForm.source, optionForm.finishingCategory, optionForm.printAttribute, optionForm.businessCardAxis, catSizes.length, catPapers.length, catFinishing.length, catPrintAttrs.length, rcBusinessCards.length, optionDialogOpen]);
+
 
 
 
