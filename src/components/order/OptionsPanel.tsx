@@ -19,7 +19,13 @@ interface OptionsPanelProps {
    *  here (they're hidden only for multi-section bound families that
    *  control them per-section in the upload stage). */
   familySlug?: string;
+  /** Option names that should render as read-only display rows instead of
+   *  editable selectors. Keyed by option name (case-sensitive match to
+   *  `product_options.name`). Used e.g. for Business Cards Document Size,
+   *  which is locked to the PDF trim box and not user-changeable. */
+  lockedDisplay?: Record<string, { label: string; helper?: string }>;
 }
+
 
 // Multi-section bound families control Print Colour / Print Sides per
 // section in the upload stage, so we hide them from this global panel.
