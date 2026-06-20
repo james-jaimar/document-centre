@@ -195,6 +195,7 @@ export default function DocumentPreview({
     pageLabels,
     pageColors,
     tabPositions,
+    trimCrop,
   };
 
   // Ring binders use a completely separate renderer — never route through FlipBook
