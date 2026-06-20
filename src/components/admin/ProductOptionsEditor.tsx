@@ -105,6 +105,7 @@ interface OptionFormData {
   source: OptionSource;
   finishingCategory: string;
   printAttribute: string;
+  businessCardAxis: BusinessCardAxis | "";
 }
 
 const emptyOptionForm: OptionFormData = {
@@ -115,7 +116,9 @@ const emptyOptionForm: OptionFormData = {
   source: "manual",
   finishingCategory: "",
   printAttribute: "",
+  businessCardAxis: "",
 };
+
 
 const emptyValue: StructuredOptionValue = {
   label: "",
