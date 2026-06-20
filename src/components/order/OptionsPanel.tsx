@@ -24,6 +24,10 @@ interface OptionsPanelProps {
    *  `product_options.name`). Used e.g. for Business Cards Document Size,
    *  which is locked to the PDF trim box and not user-changeable. */
   lockedDisplay?: Record<string, { label: string; helper?: string }>;
+  /** Option names whose dropdown values should NOT show the seeded
+   *  `+R x /doc` price-impact suffix. Used for Business Cards where the
+   *  real prices come from the BC matrix + finishing catalogue. */
+  suppressPriceDeltaFor?: string[];
 }
 
 
