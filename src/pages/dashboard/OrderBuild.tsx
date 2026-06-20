@@ -11,7 +11,7 @@ import { calculateItemPrice, calculatePriceFromRateCard } from "@/lib/calculateP
 import { isStructuredValues, isValueActive, type StructuredOptionValue } from "@/lib/productOptionTypes";
 import type { ProductPreviewType, PreviewEffects } from "@/components/preview/previewTypes";
 import { DEFAULT_PREVIEW_EFFECTS } from "@/components/preview/previewTypes";
-import OptionsPanel from "@/components/order/OptionsPanel";
+import OptionsPanel, { MULTI_SECTION_FAMILIES, SECTION_CONTROLLED_OPTION_NAMES } from "@/components/order/OptionsPanel";
 import PreviewPanel from "@/components/order/PreviewPanel";
 import PriceSummary from "@/components/order/PriceSummary";
 import TabInsertDrawer from "@/components/order/TabInsertDrawer";
