@@ -379,22 +379,22 @@ export default function PhotoPrintsBuilder() {
   }, [availableSizes, photoSpec.print_size_slug]);
 
   const totals = useMemo(() => {
-    const size = getPhotoPrintSize(photoSpec.print_size_slug, availableSizes);
+    const bridgedSize =
+      availableSizes.find((s) => s.slug === photoSpec.print_size_slug) ?? null;
+    const size = bridgedSize ?? getPhotoPrintSize(photoSpec.print_size_slug, availableSizes);
     const totalPhotos = photoSpec.photos.length;
     const totalPrints = photoSpec.photos.reduce((s, p) => s + p.quantity, 0);
-    const border = PHOTO_BORDER_OPTIONS.find((o) => o.slug === photoSpec.border_slug);
-    const unitPrice = resolvePhotoPrintPrice(
+    const borderMm = borderMmForSlug(availableBorders, photoSpec.border_slug);
+    const rcFinish = rcFinishForSlug(availableFinishes, photoSpec.finish_slug);
+    const rcSizeSlug = bridgedSize?.rcSizeSlug ?? photoSpec.print_size_slug.replace(/^photo-/, "");
+    const unitPrice = resolveBridgedPhotoPrice(
       photoRateCard,
-      {
-        size_slug: photoSpec.print_size_slug,
-        finish: photoSpec.finish_slug,
-        border_mm: border?.border_mm ?? 0,
-      },
-      { breaks: rcPriceBreaks, quantity: totalPrints },
+      { rcSizeSlug, rcFinish, border_mm: borderMm, quantity: totalPrints },
+      rcPriceBreaks,
     );
     const totalPrice = totalPrints * unitPrice;
-    return { size, totalPhotos, totalPrints, totalPrice, unitPrice };
-  }, [photoSpec, photoRateCard, rcPriceBreaks]);
+    return { size, bridgedSize, totalPhotos, totalPrints, totalPrice, unitPrice };
+  }, [photoSpec, photoRateCard, rcPriceBreaks, availableSizes, availableFinishes, availableBorders]);
 
   const [showCartDialog, setShowCartDialog] = useState(false);
   const [cartReference, setCartReference] = useState("");
