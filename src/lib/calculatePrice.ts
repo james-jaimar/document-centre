@@ -937,12 +937,32 @@ export function calculatePriceFromRateCard(
       | Record<string, number>
       | null;
     const sizeKey = String(size ?? "").toLowerCase();
+    // Parent-sheet detection for per_sheet basis: an explicit
+    // `metadata.parent_size` wins; otherwise we infer the parent from
+    // `prices_by_size` (presence of an SRA3 or A3-parent price row means
+    // this finish runs on the parent stock — e.g. lamination on SRA3).
+    const optionNameLc = option.name.toLowerCase();
+    const looksCoverOnly =
+      /lamin|^uv\b|spot.?uv|foil|emboss/.test(optionNameLc) ||
+      metadata.scope === "cover";
+    const explicitParent = typeof metadata.parent_size === "string"
+      ? String(metadata.parent_size).toLowerCase()
+      : null;
+    const impInfo = SIZE_IMPOSITION[size] ?? null;
+    const inferredParent = pricesBySize && impInfo && typeof pricesBySize[impInfo.parent.toLowerCase()] === "number"
+      ? impInfo.parent.toLowerCase()
+      : pricesBySize && typeof pricesBySize["sra3"] === "number" && (size === "A3" || impInfo?.parent === "A3")
+        ? "sra3"
+        : null;
+    const parentSizeKey = explicitParent ?? inferredParent;
     const sizedPrice =
-      pricesBySize && typeof pricesBySize[sizeKey] === "number"
-        ? pricesBySize[sizeKey]
-        : pricesBySize && typeof pricesBySize.any === "number"
-          ? pricesBySize.any
-          : null;
+      pricesBySize && parentSizeKey && typeof pricesBySize[parentSizeKey] === "number"
+        ? pricesBySize[parentSizeKey]
+        : pricesBySize && typeof pricesBySize[sizeKey] === "number"
+          ? pricesBySize[sizeKey]
+          : pricesBySize && typeof pricesBySize.any === "number"
+            ? pricesBySize.any
+            : null;
     const unitAmount = sizedPrice ?? selectedValue.price_impact ?? 0;
     if (!unitAmount) continue;
 
@@ -950,10 +970,26 @@ export function calculatePriceFromRateCard(
     // tells us how to scale the unit price for this configuration.
     const basis = String(metadata.pricing_basis ?? "").toLowerCase();
     let multiplier = 1;
+    if (basis === "per_sheet") {
+      const coverScoped = looksCoverOnly && coverSheets > 0;
+      const sheetsPerPiece = (coverScoped ? coverSheets : totalSheets) || 1;
+      const nUp = parentSizeKey ? finishingNUp(parentSizeKey) : 1;
+      const parentSheetsRun = Math.max(
+        1,
+        Math.ceil((sheetsPerPiece * spec.quantity) / nUp),
+      );
+      const runTotal = unitAmount * parentSheetsRun;
+      const perBook = spec.quantity > 0 ? runTotal / spec.quantity : runTotal;
+      lines.push({
+        label: `${option.name}: ${selectedValue.label}${nUp > 1 ? ` (${parentSheetsRun}× ${parentSizeKey?.toUpperCase()})` : ""}`,
+        type: "option",
+        unit_amount: unitAmount,
+        multiplier: parentSheetsRun,
+        total: perBook,
+      });
+      continue;
+    }
     switch (basis) {
-      case "per_sheet":
-        multiplier = totalSheets || 1;
-        break;
       case "per_page":
         multiplier =
           printableSections.reduce((s, x) => s + x.page_count, 0) ||
