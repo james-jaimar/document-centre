@@ -13,6 +13,8 @@ import {
   useCatalogFinishing,
   useCatalogPrintAttrs,
 } from "@/hooks/useCatalog";
+import { useRateCardBusinessCards } from "@/hooks/useRateCard";
+
 import type { StructuredOptionValue } from "@/lib/productOptionTypes";
 import {
   isStructuredValues,
