@@ -133,9 +133,7 @@ export default function PhotoPrintsBuilder() {
 
   const { uploads, uploadPhotos, clearUploads } = usePhotoUpload(orderItem?.id);
 
-  const rcScopeArgs = activeBranch?.id
-    ? ({ scope: "branch" as const, tenantId: tenantId ?? undefined, branchId: activeBranch.id })
-    : ({ scope: "tenant" as const, tenantId: tenantId ?? undefined });
+  const rcScopeArgs = { tenantId: tenantId ?? undefined, branchId: activeBranch?.id ?? undefined };
   const { data: photoRateCard = [] } = useRateCardPhotoPrints(rcScopeArgs);
   const { data: rcPriceBreaks = [] } = useRateCardPriceBreaksBundle(rcScopeArgs);
 
