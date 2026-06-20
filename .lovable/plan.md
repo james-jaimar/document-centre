@@ -1,73 +1,63 @@
-## What I found
+## Where the extra R4 comes from
 
-There are two independent disconnects, both root-caused:
-
-### 1. R 0,00 on A0/A1/A2 — master rows aren't reaching the tenant/branch
-
-You added the A0/A1/A2 click charges on **Master Pricing**. The data is there:
-
-```
-scope_type=master, tenant_id=NULL, branch_id=NULL
-A0 colour simplex R160 | A1 colour simplex R80 | A2 colour simplex R40
-```
-
-But the storefront pricing engine fetches click rows via `useRateCardClicks({ scope: "branch", tenantId, branchId })`, which does:
-
-```sql
-scope_type = 'branch' AND branch_id = <demo branch> AND tenant_id = <demo tenant>
-```
-
-Master rows (`scope_type='master'`) are filtered out. The Demo branch's rate card only contains A3 mono — copied via the old "Initialise from master" seed before A0/A1/A2 existed. So `resolveClickRate("A1","colour","simplex")` returns `null`, the click line is skipped, and the total is R0.
-
-The platform was designed around manual "Pull missing from master" / "Re-sync from tenant" buttons. That's fragile: every time a platform admin adds a master rate, every tenant + every branch has to be re-synced or new sizes silently price at R0.
-
-### 2. Print Colour shows "Not selected"
-
-`src/pages/dashboard/OrderBuild.tsx` line 323 blacklists `Print Colour` and `Print Sides` from default seeding for **every** family. That's only correct for multi-section bound families (where each section owns its own colour/sides). For single-section products (posters, flyers, brochures, booklets, business cards, loose sheets) the default must seed and the dropdown's value must drive the body section's `is_color` / `is_duplex` — otherwise the pricing engine reads stale section flags.
-
-Currently it happens to "work" only because the body section was created with `is_color=true` (the default in `useOrderBuilder.ts`). Once the user picks "Black & White" nothing updates the section row, so the click row resolves to the wrong colour or stays unchanged.
-
-## Plan
-
-### A. Auto-cascade master → tenant → branch at query time (root fix for #1)
-
-Update the five rate-card hooks in `src/hooks/useRateCard.ts` (`useRateCardClicks`, `useRateCardPapers`, `useRateCardFinishing`, `useRateCardPhotoPrints`, `useRateCardBusinessCards`) so a branch/tenant query returns the **merged** view:
+I traced the price end-to-end:
 
 ```text
-For scope=branch:
-  rows = master ∪ tenant(tenantId) ∪ branch(branchId)
-  Dedupe by natural key (clicks: size+colour+sides; papers: code; finishing: code+variant+size; etc.)
-  Most-specific wins (branch > tenant > master); inactive rows at a more specific scope hide the fallback.
-
-For scope=tenant:
-  rows = master ∪ tenant(tenantId), same dedupe rules.
-
-For scope=master:
-  unchanged — only master rows.
+Click A1 colour simplex (master)              R 80,00
+Paper "Premium Poster Paper (Satin)" A1       R 14,00   ← not R10!
+                                              ───────
+                                              R 94,00
 ```
 
-The `RateCardEditor` (admin UI) keeps using the existing single-scope hooks — those stay separate so the editor still shows only the rows the admin owns. Add a thin `useResolvedRateCardClicks` (and friends) for the **pricing** path; switch `OrderBuild.tsx` to call those.
+The `catalog_paper_prices` table has **tenant-scoped rows that shadow your master edits**. Every tenant (Demo included) has a row that was auto-seeded on 2026-06-16 09:07:33 at a flat ~40% markup over the original master:
 
-Net effect: any new master row is immediately live for every tenant/branch unless overridden, and the existing "Pull missing from master" button becomes optional (just freezes a snapshot).
+| Size | Master (today) | Tenant override (auto-seeded) | What customer pays |
+|------|----------------|-------------------------------|--------------------|
+| A0   | R 20,00        | R 28,00                       | R 28,00            |
+| A1   | R 10,00        | R 14,00                       | R 14,00            |
+| A2   | R 5,00         | R 7,00                        | R 7,00             |
+| A3   | R 0,00         | R 3,50                        | R 3,50             |
 
-### B. Print Colour: seed default + drive the body section (root fix for #2)
+The new cascade hook (`useResolvedRateCard*`) correctly resolves **branch > tenant > master**, so the tenant row wins and your master edit is silently invisible to the storefront. None of those tenant rows have ever been edited (`updated_at == created_at` for all of them) — they're leftover seed data.
 
-In `src/pages/dashboard/OrderBuild.tsx`:
+## The fix
 
-1. Replace the hard-coded `SECTION_CONTROLLED_OPTIONS` blacklist with a family-aware check using the existing `MULTI_SECTION_FAMILIES` set (move that set into a shared `src/lib/orders/multiSectionFamilies.ts`). For single-section families, seed `Print Colour` / `Print Sides` defaults the same way as every other catalogue option.
+Two pieces — a data cleanup + admin UX so this never bites silently again.
 
-2. Add a small effect: when `Print Colour` / `Print Sides` in `spec.selected_options` change on a single-section family, mirror the value onto every printable section row via `updateSectionMut` (mapping `colour`→`is_color=true`/`mono`→`false`; `duplex`→`is_duplex=true`/`simplex`→`false`). This keeps the pricing engine's section-level inputs in sync with the customer's choice.
+### 1. Data cleanup (one-off migration)
 
-### C. Verify
+Delete tenant-scoped `catalog_paper_prices` rows that were auto-seeded and never touched:
 
-1. Reload `/t/demo/demo/orders/.../build` for the existing A1 poster → expect R 80,00 with breakdown `Print A1 colour simplex ×1` + paper line.
-2. Toggle Document Size A0/A1/A2 → expect R 160 / R 80 / R 40 click line.
-3. Toggle Print Colour to Black & White → expect either a new mono price line if a mono row exists, or the line to disappear cleanly (no stale colour pricing).
-4. Confirm `RateCardEditor` (Platform → Master Pricing, and Tenant → Rate Card) still shows only the rows it owns — the merge logic is only on the pricing-path hook.
-5. Re-quote an A3 mono job to confirm no regression on the existing path.
+```sql
+delete from catalog_paper_prices
+where scope_type = 'tenant'
+  and updated_at = created_at;       -- never edited by a human
+```
 
-### Out of scope
+After this, every tenant falls through to the master price, so editing `Master Pricing` immediately affects every storefront — which is what you expected.
 
-- No schema migrations. Rows stay where they are; only the read path merges them.
-- No changes to `calculatePrice.ts` logic — only its input list of rows changes.
-- The "Pull missing from master" / "Re-sync from tenant" buttons stay as-is for admins who want a frozen tenant-owned copy.
+(We do **not** touch tenant rows whose `updated_at > created_at` — those were deliberately changed and stay as real overrides. Same query pattern applied to `catalog_finishing_prices` to clean up the matching finishing seed.)
+
+### 2. Admin UX: show overrides and let you reset them
+
+In `RateCardEditor` (Tenant + Branch scopes) for the Paper and Finishing sections:
+
+- For each row, if a more-general scope (master for tenant view, tenant/master for branch view) has a different active price for the same `(paper code, size_code)` key, render a small badge: **"Overrides master R 10,00"**.
+- Add a per-row **"Reset to master"** action that deletes the override row, so the cascade takes over.
+- Add a header action **"Reset all unchanged overrides to master"** that does the bulk equivalent of step 1 scoped to the current tenant/branch.
+
+This means an admin can always see — and undo — a shadowing row without needing a developer.
+
+### 3. Verification
+
+After applying the migration and refreshing the Posters builder:
+
+- A1 + Premium Poster Paper (Satin) on the Demo tenant should price at **R 90,00** (R 80 click + R 10 paper).
+- Editing any master paper price should immediately reflect in storefront totals for tenants that haven't deliberately overridden it.
+- Tenant admins still see and can edit their own overrides; rows that were deliberately changed are preserved.
+
+## Files / surfaces touched
+
+- New migration: delete unedited `catalog_paper_prices` + `catalog_finishing_prices` tenant rows.
+- `src/components/pricing/RateCardEditor.tsx` (and helpers) — fetch the parent-scope rows for comparison, add the override badge and the per-row + bulk reset actions.
+- No changes to the pricing engine itself; the cascade logic is already correct.
